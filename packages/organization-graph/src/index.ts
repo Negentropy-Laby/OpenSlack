@@ -72,6 +72,8 @@ export type {
   GraphStoreIoTestHooks,
   GraphStoreLimits,
   GraphStorePathSet,
+  GraphSnapshotPublication,
+  GraphSnapshotPublisherPort,
   PublishGraphSnapshotOptions,
   PublishedGraphSnapshot,
 } from './store.js';
@@ -83,6 +85,15 @@ export {
   parseGraphShadowReceipt,
   prepareGraphShadowRequest,
 } from './shadow.js';
+export {
+  GRAPH_AUTHORITY_PUBLISH_POLICY,
+  GraphAuthorityHttpPublisher,
+  GraphAuthorityPublishError,
+} from './authority-publisher.js';
+export type {
+  GraphAuthorityHttpPublisherOptions,
+  GraphAuthorityPublishErrorCode,
+} from './authority-publisher.js';
 export type {
   GraphShadowAuditSink,
   GraphShadowHttpPublisherOptions,
@@ -114,9 +125,16 @@ export type {
 export {
   GRAPH_READ_CANARY_POLICY,
   GRAPH_READ_CANARY_SCHEMA,
+  GRAPH_READ_AUTHORITY_SCHEMA,
   GraphReadCanaryError,
   GraphReadCanaryRouter,
 } from './read-canary.js';
+export { GraphReadAuthorityError, GraphReadAuthorityRouter } from './read-authority.js';
+export type {
+  GraphReadAuthorityErrorCode,
+  GraphReadAuthorityPort,
+  GraphReadAuthorityRouterOptions,
+} from './read-authority.js';
 export type {
   GraphReadCanaryBackend,
   GraphReadCanaryErrorCode,

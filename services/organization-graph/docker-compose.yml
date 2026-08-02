@@ -6,11 +6,11 @@ services:
       POSTGRES_PASSWORD: organization_graph
       POSTGRES_DB: organization_graph
     ports:
-      - "127.0.0.1:${GRAPH_DB_PORT:-5432}:5432"
+      - '127.0.0.1:${GRAPH_DB_PORT:-5432}:5432'
     volumes:
       - graph_db_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U organization_graph -d organization_graph"]
+      test: ['CMD-SHELL', 'pg_isready -U organization_graph -d organization_graph']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,7 +20,7 @@ services:
     build:
       context: .
       target: app
-    entrypoint: ["/migrate"]
+    entrypoint: ['/migrate']
     environment:
       DATABASE_URL: postgres://organization_graph:organization_graph@db:5432/organization_graph?sslmode=disable
       MIGRATION_SOURCE: /migrations
@@ -41,15 +41,17 @@ services:
       target: app
     environment:
       DATABASE_URL: postgres://organization_graph:organization_graph@db:5432/organization_graph?sslmode=disable
-      GRAPH_HTTP_BIND: ":8080"
+      GRAPH_HTTP_BIND: ':8080'
       GRAPH_NETWORK_MODE: internal
-      GRAPH_QUERY_CURSOR_SECRET: "${GRAPH_QUERY_CURSOR_SECRET:?set GRAPH_QUERY_CURSOR_SECRET to at least 32 bytes}"
-      GRAPH_QUERY_CURSOR_SECRET_PREVIOUS: "${GRAPH_QUERY_CURSOR_SECRET_PREVIOUS:-}"
-      GRAPH_SERVICE_BUILD_SHA: "${GRAPH_SERVICE_BUILD_SHA:-0000000000000000000000000000000000000000000000000000000000000000}"
-      GRAPH_CANARY_ROUTING_EPOCH: "${GRAPH_CANARY_ROUTING_EPOCH:-}"
+      GRAPH_QUERY_CURSOR_SECRET: '${GRAPH_QUERY_CURSOR_SECRET:?set GRAPH_QUERY_CURSOR_SECRET to at least 32 bytes}'
+      GRAPH_QUERY_CURSOR_SECRET_PREVIOUS: '${GRAPH_QUERY_CURSOR_SECRET_PREVIOUS:-}'
+      GRAPH_SERVICE_BUILD_SHA: '${GRAPH_SERVICE_BUILD_SHA:-0000000000000000000000000000000000000000000000000000000000000000}'
+      GRAPH_CANARY_ROUTING_EPOCH: '${GRAPH_CANARY_ROUTING_EPOCH:-}'
+      GRAPH_READ_AUTHORITY_ROUTING_EPOCH: '${GRAPH_READ_AUTHORITY_ROUTING_EPOCH:-}'
+      GRAPH_READ_AUTHORITY_TENANT_ID: '${GRAPH_READ_AUTHORITY_TENANT_ID:-}'
       MIGRATION_SOURCE: /migrations
     ports:
-      - "127.0.0.1:${GRAPH_APP_PORT:-8080}:8080"
+      - '127.0.0.1:${GRAPH_APP_PORT:-8080}:8080'
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -71,7 +73,7 @@ services:
       - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - graph_prometheus_data:/prometheus
     ports:
-      - "127.0.0.1:${GRAPH_PROMETHEUS_PORT:-9090}:9090"
+      - '127.0.0.1:${GRAPH_PROMETHEUS_PORT:-9090}:9090'
     depends_on:
       app:
         condition: service_healthy

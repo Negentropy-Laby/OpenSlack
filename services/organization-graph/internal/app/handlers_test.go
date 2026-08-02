@@ -249,6 +249,23 @@ func testCanaryService(t *testing.T, store *fakeStore, epoch int64, now time.Tim
 	return service
 }
 
+func testAuthorityService(t *testing.T, store *fakeStore, epoch int64, now time.Time) *Service {
+	t.Helper()
+	service, err := New(Options{
+		Store:                     store,
+		CursorSecret:              []byte("0123456789abcdef0123456789abcdef"),
+		BuildSHA:                  testServiceBuildSHA,
+		ReadAuthorityRoutingEpoch: &epoch,
+		ReadAuthorityTenantID:     "workspace-1",
+		Logger:                    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Clock:                     fixedClock{value: now.UTC()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
 func performCanaryJSON(
 	service *Service,
 	path string,
@@ -263,6 +280,34 @@ func performCanaryJSON(
 	}
 	if buildSHA != "" {
 		request.Header.Set(HeaderExpectedBuildSHA, buildSHA)
+	}
+	response := httptest.NewRecorder()
+	service.Handler().ServeHTTP(response, request)
+	return response
+}
+
+func performAuthorityJSON(
+	service *Service,
+	path string,
+	body []byte,
+	epoch string,
+	buildSHA string,
+	tenantID string,
+	idempotencyKey string,
+) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	if epoch != "" {
+		request.Header.Set(HeaderCanaryRoutingEpoch, epoch)
+	}
+	if buildSHA != "" {
+		request.Header.Set(HeaderExpectedBuildSHA, buildSHA)
+	}
+	if tenantID != "" {
+		request.Header.Set(HeaderAuthorityTenantID, tenantID)
+	}
+	if idempotencyKey != "" {
+		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
@@ -685,6 +730,104 @@ func TestCanaryCursorFailsClosedAcrossRoutingEpochs(t *testing.T) {
 	}
 }
 
+func TestReadAuthorityBindsIngestHeadQueryAndExplainToOneEpochTenantAndBuild(t *testing.T) {
+	snapshot := testSnapshot(t, "cursor-1", "2026-08-02T10:00:00Z")
+	store := &fakeStore{snapshot: snapshot}
+	epoch := int64(42)
+	service := testAuthorityService(t, store, epoch, time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC))
+
+	for name, supplied := range map[string][3]string{
+		"missing binding": {"", "", ""},
+		"wrong epoch":     {"43", testServiceBuildSHA, "workspace-1"},
+		"wrong build":     {"42", strings.Repeat("f", 64), "workspace-1"},
+		"wrong tenant":    {"42", testServiceBuildSHA, "workspace-2"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := performAuthorityJSON(
+				service,
+				RouteAuthorityQuery,
+				[]byte(`{"scenarioInstanceId":"scenario-1"}`),
+				supplied[0], supplied[1], supplied[2], "",
+			)
+			if response.Code != http.StatusConflict ||
+				!strings.Contains(response.Body.String(), `"code":"GRAPH_AUTHORITY_ROUTE_MISMATCH"`) {
+				t.Fatalf("status/body = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	ingest := performAuthorityJSON(
+		service,
+		RouteAuthoritySnapshotIngest,
+		snapshotRequestBody(t, snapshot, nil),
+		"42", testServiceBuildSHA, "workspace-1", "authority-snapshot-1",
+	)
+	if ingest.Code != http.StatusCreated || len(store.snapshotCommands) != 1 {
+		t.Fatalf("ingest status/body/commands = %d %s %d", ingest.Code, ingest.Body.String(), len(store.snapshotCommands))
+	}
+	target := testSnapshot(t, "cursor-2", "2026-08-02T10:01:00Z")
+	delta, err := graph.SealDelta(graph.Delta{
+		Schema:             graph.DeltaSchema,
+		ScenarioInstanceID: target.ScenarioInstanceID,
+		FromCursor:         "cursor-1",
+		ToCursor:           target.Cursor,
+		GeneratedAt:        target.GeneratedAt,
+		UpsertNodes:        target.Nodes,
+		CloseNodeIDs:       []string{},
+		UpsertEdges:        []graph.Edge{},
+		CloseEdgeIDs:       []string{},
+		EvidenceRefs:       []string{"github:issue:42"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltaIngest := performAuthorityJSON(
+		service,
+		RouteAuthorityDeltaIngest,
+		deltaRequestBody(t, "cursor-1", target, delta),
+		"42", testServiceBuildSHA, "workspace-1", "authority-delta-1",
+	)
+	if deltaIngest.Code != http.StatusCreated || len(store.deltaCommands) != 1 {
+		t.Fatalf("delta status/body/commands = %d %s %d", deltaIngest.Code, deltaIngest.Body.String(), len(store.deltaCommands))
+	}
+
+	query := performAuthorityJSON(
+		service,
+		RouteAuthorityQuery,
+		[]byte(`{"scenarioInstanceId":"scenario-1"}`),
+		"42", testServiceBuildSHA, "workspace-1", "",
+	)
+	if query.Code != http.StatusOK ||
+		!strings.Contains(query.Body.String(), `"schema":"openslack.graph_authority_read.v1"`) ||
+		!strings.Contains(query.Body.String(), `"routingEpoch":42`) {
+		t.Fatalf("query status/body = %d %s", query.Code, query.Body.String())
+	}
+
+	explain := performAuthorityJSON(
+		service,
+		RouteAuthorityExplain,
+		[]byte(`{"scenarioInstanceId":"scenario-1","targetId":"`+snapshot.Nodes[0].ID+`"}`),
+		"42", testServiceBuildSHA, "workspace-1", "",
+	)
+	if explain.Code != http.StatusOK || !strings.Contains(explain.Body.String(), `"operation":"explain"`) {
+		t.Fatalf("explain status/body = %d %s", explain.Code, explain.Body.String())
+	}
+}
+
+func TestReadAuthorityRoutesAreUnavailableWithoutExplicitActivation(t *testing.T) {
+	snapshot := testSnapshot(t, "cursor-1", "2026-08-02T10:00:00Z")
+	response := performAuthorityJSON(
+		testService(t, &fakeStore{snapshot: snapshot}),
+		RouteAuthorityQuery,
+		[]byte(`{"scenarioInstanceId":"scenario-1"}`),
+		"42", testServiceBuildSHA, "workspace-1", "",
+	)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(response.Body.String(), `"code":"GRAPH_AUTHORITY_NOT_CONFIGURED"`) {
+		t.Fatalf("status/body = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestHealthVersionAndMetricsAreBoundedAndDatabaseAware(t *testing.T) {
 	snapshot := testSnapshot(t, "cursor-1", "2026-07-30T10:00:00Z")
 	store := &fakeStore{
@@ -873,6 +1016,8 @@ func TestNewRejectsMissingDependenciesAndUnsafeCursorConfiguration(t *testing.T)
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: "development", CursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), CanaryRoutingEpoch: &zeroEpoch},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), ReadAuthorityRoutingEpoch: &zeroEpoch, ReadAuthorityTenantID: "workspace-1"},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), ReadAuthorityTenantID: "workspace-1"},
 	} {
 		if _, err := New(options); err == nil {
 			t.Fatalf("invalid options were accepted: %#v", options)

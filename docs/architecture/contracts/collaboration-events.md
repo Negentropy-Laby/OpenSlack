@@ -161,6 +161,23 @@ request or response body, raw cursor, graph nodes or edges, explanation payload,
 events. Failure to append a successful Go or explicit rollback event blocks the MCP response with
 `GRAPH_READ_CANARY_AUDIT_FAILED`; it cannot trigger per-request fallback.
 
+### Organization Graph Global Read-Authority Events
+
+- `graph.read_authority.served` — The global Go Graph authority served a bounded read under the
+  configured tenant, routing epoch, and build binding
+- `graph.read_authority.blocked` — The global authority failed closed before releasing a result
+- `graph.read_authority.rolled_back` — A new higher epoch explicitly selected global
+  TypeScript-local rollback
+
+These GS3-C events use the same redacted metadata ceiling as canary events: operation, outcome,
+backend, epoch, expected build, latency, bounded status/code, and a SHA-256 request fingerprint.
+They contain no endpoint, tenant prose, body, cursor, Graph record, evidence, or source-event
+content. Served and rollback append failure blocks the result with
+`GRAPH_READ_AUTHORITY_AUDIT_FAILED`; it never selects another backend. A higher-epoch `ts-local`
+attempt with missing or stale local evidence records `graph.read_authority.blocked` with
+`SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE`; it cannot record
+`graph.read_authority.rolled_back` until the local read succeeds.
+
 ## Storage
 
 ### Local Runtime Projection

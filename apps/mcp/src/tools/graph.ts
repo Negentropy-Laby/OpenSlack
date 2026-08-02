@@ -1,6 +1,7 @@
 import { createBlockedMcpResult, type OpenSlackMcpResult } from '@openslack/qoder-adapter';
 import {
   GraphReadCanaryError,
+  GraphReadAuthorityError,
   type GraphExplainInput,
   type GraphQueryInput,
 } from '@openslack/organization-graph';
@@ -11,7 +12,9 @@ function blocked(error: ProjectionEvidenceUnavailableError): OpenSlackMcpResult 
   return createBlockedMcpResult(error.message, error.code);
 }
 
-function blockedCanary(error: GraphReadCanaryError): OpenSlackMcpResult {
+function blockedReadAuthority(
+  error: GraphReadCanaryError | GraphReadAuthorityError,
+): OpenSlackMcpResult {
   return createBlockedMcpResult(
     'The explicitly selected Organization Graph read authority failed closed.',
     error.code,
@@ -65,7 +68,9 @@ export async function queryOrganizationGraph(
     );
   } catch (error) {
     if (error instanceof ProjectionEvidenceUnavailableError) return blocked(error);
-    if (error instanceof GraphReadCanaryError) return blockedCanary(error);
+    if (error instanceof GraphReadCanaryError || error instanceof GraphReadAuthorityError) {
+      return blockedReadAuthority(error);
+    }
     throw error;
   }
 }
@@ -90,7 +95,9 @@ export async function explainOrganizationGraph(
     );
   } catch (error) {
     if (error instanceof ProjectionEvidenceUnavailableError) return blocked(error);
-    if (error instanceof GraphReadCanaryError) return blockedCanary(error);
+    if (error instanceof GraphReadCanaryError || error instanceof GraphReadAuthorityError) {
+      return blockedReadAuthority(error);
+    }
     throw error;
   }
 }

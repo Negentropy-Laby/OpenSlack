@@ -770,6 +770,8 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 | `openslack mcp serve --stdio --graph-read-mirror-origin http://127.0.0.1:18181`                                                                                                                                                                                                                     | Mirror successful Graph query/explain reads to Go for bounded differential audit while returning TypeScript results  |
 | `openslack mcp serve --stdio --graph-read-canary-backend go --graph-read-canary-routing-epoch <n> --graph-read-canary-tenant <workspace-id> --graph-read-canary-scenarios <ids> --graph-read-canary-expires-at <timestamp> --graph-read-canary-origin <origin> --graph-read-canary-build-sha <sha>` | Route only the exact bounded scenario allowlist to the epoch/build-bound Go read authority without fallback          |
 | `openslack mcp serve --stdio --graph-read-canary-backend ts-local --graph-read-canary-routing-epoch <higher-n> --graph-read-canary-tenant <workspace-id> --graph-read-canary-scenarios <ids> --graph-read-canary-expires-at <timestamp>`                                                            | Explicitly roll the selected scenarios back to TypeScript under a higher routing epoch                               |
+| `openslack mcp serve --stdio --graph-read-authority-backend go --graph-read-authority-routing-epoch <n> --graph-read-authority-tenant <workspace-id> --graph-read-authority-expires-at <timestamp> --graph-read-authority-origin <origin> --graph-read-authority-build-sha <sha>`                   | Select the Go-owned Graph head/query/explain authority globally for every scenario without fallback                  |
+| `openslack mcp serve --stdio --graph-read-authority-backend ts-local --graph-read-authority-routing-epoch <higher-n> --graph-read-authority-tenant <workspace-id> --graph-read-authority-expires-at <timestamp>`                                                                                    | Explicitly roll the global Graph read authority back to TypeScript under a higher epoch                              |
 | `openslack mcp attestation status`                                                                                                                                                                                                                                                                  | Inspect sanitized local human-subject mapping and controlling-TTY readiness                                          |
 | `openslack mcp attestation bind-local-subject --human-principal <human-id> --confirm`                                                                                                                                                                                                               | Bind the current OS subject hash to one asserted human principal; no raw subject or credential is persisted          |
 | `openslack mcp serve --stdio --profile human-attested --principal-ref <agent-id> --human-principal <human-id> [--workspace-id <asserted-workspace-id>]`                                                                                                                                             | Select the exact 17-tool profile only after both the agent binding and independent local human attestation self-test |
@@ -789,6 +791,13 @@ one source is required. The importer reads at most 4 MiB, rejects symlink or
 reparse sources and files that change identity while being read, applies the
 strict Software Delivery source contract, and publishes only through the local
 graph store's compare-and-swap boundary.
+
+To publish the same deterministic projection to the GS3-C Go authority, add the complete
+`--authority-backend go`, `--authority-routing-epoch`, `--authority-tenant`,
+`--authority-origin`, and `--authority-build-sha` binding. The command succeeds only after an exact
+durable `accepted` or `duplicate` ingest receipt; `reconciliation_required`, conflict, transport,
+or invalid receipt fails closed. `--authority-backend ts-local` is explicit documentation of the
+local writer and accepts none of the Go transport flags.
 
 The sealed host dispatch accepts `software-delivery` and
 `contract-to-delivery-lite` under the same locked 4 MiB input ceiling. Pack
@@ -894,6 +903,39 @@ cursors retain the five-minute TTL and bind routing epoch in v2: v1 and cross-ep
 `GRAPH_QUERY_CURSOR_EXPIRED`. No cursor is translated across backends. The canary does not change
 tool names, input schemas, `openslack.mcp_result.v2`, Qoder Skill behavior, profile counts, or
 mutation/approval authority.
+
+`--graph-read-authority-backend` is the GS3-C global selector. Its common policy requires backend,
+positive canonical routing epoch, canonical workspace/tenant assertion, and an expiry in the next
+seven days. `go` additionally requires the exact credential-free loopback/private origin and
+64-lowercase-hex build SHA; `ts-local` is a higher-epoch rollback and rejects Go transport flags.
+The policy selects every scenario and is mutually exclusive with mirror and canary options.
+Authority query cursors are v2 tokens bound to the epoch; old v1, expired, and cross-epoch tokens
+fail without translation. A successful Go read or explicit rollback must commit its redacted audit
+before release. This moves only the derived Graph head/query/explain authority and changes no
+12/16/17 catalog, tool schema, Qoder Skill, plan confirmation, Workflow effect approval, local
+human attestation, GitHub review, remote Connector, live, release, or production claim.
+
+Go-authority publication and `ts-local` publication are intentionally disjoint; there is no hidden
+dual-write. The higher-epoch selector changes routing only and does not make an old local snapshot
+current. Before rollback, keep the Go process available, rebuild each active scenario from current
+bounded source evidence into `.openslack.local/graph`, and verify local query/explain freshness:
+
+```bash
+openslack graph snapshot build \
+  --scenario <registered-id> \
+  --from <current-source.json> \
+  --scenario-instance <scenario-instance-id> \
+  --authority-backend ts-local \
+  --expected-cursor <current-local-cursor>
+```
+
+Omit `--expected-cursor` only when that scenario has no local head. After every active scenario
+passes an ordinary local MCP query and explanation, start the `ts-local` authority command shown in
+the table with an epoch higher than the Go epoch. A missing or stale local snapshot returns
+`SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE` and appends
+`graph.read_authority.blocked`; it never emits `graph.read_authority.rolled_back`. Monitor these
+blocked events before retiring the previous Go process. Query cursors are not recovery data and
+must not be copied or translated between epochs.
 
 The 16-tool profile adds only Scenario/Workflow preview plus plan
 confirm/cancel. It exposes no shell, generic command, human workflow decision,

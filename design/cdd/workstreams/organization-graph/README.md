@@ -287,8 +287,9 @@ current-head binding appears as incomplete evidence.
 
 The Collaboration `ObjectKind` remains a coordination and delivery-observation model for issues,
 PRs, plans, modules, agents, handoffs, decisions, workspaces, workflows, pushes, profile-sync jobs,
-and notification routes. GS3-A/GS3-B additionally permit `graph` only as the scenario-instance
-handle for digest-only read-mirror or bounded canary-route observations. Customer, Contract,
+and notification routes. GS3-A/GS3-B/GS3-C additionally permit `graph` only as the
+scenario-instance handle for digest-only read-mirror, bounded canary, or global read-authority
+observations. Customer, Contract,
 Project, Milestone, Acceptance, and
 other business-domain entities still belong to scenario ontology and are never copied into
 Collaboration event metadata.
@@ -322,6 +323,14 @@ The implemented local graph slice includes:
 - a default-off, workspace/scenario/epoch/build-bound Go query/explain canary with explicit
   higher-epoch TypeScript rollback, v2 epoch-bound cursors, the same bounded snapshot-freshness
   gate as TypeScript, no per-request fallback, and redacted Collaboration audit;
+- a separate default-off global Go head/query/explain authority bound to one workspace/tenant,
+  epoch, expiry, origin, and build. TypeScript projectors complete publication only after durable Go
+  acceptance receipts; authority reads use dedicated v2 epoch-bound routes and required redacted
+  audit, while rollback is an explicit higher global TypeScript epoch. Go-authority publication and
+  local publication are intentionally disjoint: before rollback, operators must rebuild every
+  active scenario into the local store from current bounded source evidence and verify a fresh
+  local read. Missing or stale rollback evidence remains blocked and is audited as blocked, never
+  as a completed rollback;
 - a governed local rehearsal assembler that preserves `demo_fixture` business authority and calls
   the explicit sealed graph builder outside the read tools.
 
@@ -388,8 +397,11 @@ informational and cannot become current authority.
 
 ## Configuration
 
-Snapshot builds accept bounded files or stdin and publish through CAS to the
-workspace-local graph store.
+Snapshot builds accept bounded files or stdin. The default and explicit rollback path publishes
+through CAS to the workspace-local graph store; an explicitly configured GS3-C path publishes only
+through a tenant/epoch/build-bound durable Go receipt. There is no implicit dual-write or store
+synchronization. A global TypeScript rollback therefore requires a deliberate current-source local
+rebuild before its higher-epoch MCP policy is activated.
 
 ## Acceptance Criteria
 

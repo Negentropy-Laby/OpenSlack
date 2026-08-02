@@ -1,11 +1,13 @@
 import { Command, Option } from 'commander';
 import {
   normalizeGraphServiceOrigin,
+  type GraphReadAuthorityPort,
   type GraphReadCanaryPort,
 } from '@openslack/organization-graph';
 import {
   createOpenSlackAgentBoundMutationComposition,
   createOpenSlackGraphReadCanary,
+  createOpenSlackGraphReadAuthority,
   createOpenSlackGraphReadMirror,
   createOpenSlackMcpContext,
   createOpenSlackMcpServer,
@@ -42,6 +44,7 @@ export interface McpCommandDependencies {
   ) => Promise<OpenSlackHumanAttestedMcpComposition>;
   readonly createGraphReadMirror?: typeof createOpenSlackGraphReadMirror;
   readonly createGraphReadCanary?: typeof createOpenSlackGraphReadCanary;
+  readonly createGraphReadAuthority?: typeof createOpenSlackGraphReadAuthority;
   readonly getAttestationStatus?: (workspaceRoot: string) => LocalHumanAttestationStatus;
   readonly bindLocalSubject?: (
     options: BindLocalHumanSubjectOptions,
@@ -65,6 +68,84 @@ interface McpServeOptions {
   readonly graphReadCanaryOrigin?: string;
   readonly graphReadCanaryNetwork?: 'loopback' | 'internal';
   readonly graphReadCanaryBuildSha?: string;
+  readonly graphReadAuthorityBackend?: 'go' | 'ts-local';
+  readonly graphReadAuthorityRoutingEpoch?: string;
+  readonly graphReadAuthorityTenant?: string;
+  readonly graphReadAuthorityExpiresAt?: string;
+  readonly graphReadAuthorityOrigin?: string;
+  readonly graphReadAuthorityNetwork?: 'loopback' | 'internal';
+  readonly graphReadAuthorityBuildSha?: string;
+}
+
+function hasGraphReadAuthority(options: McpServeOptions): boolean {
+  return [
+    options.graphReadAuthorityBackend,
+    options.graphReadAuthorityRoutingEpoch,
+    options.graphReadAuthorityTenant,
+    options.graphReadAuthorityExpiresAt,
+    options.graphReadAuthorityOrigin,
+    options.graphReadAuthorityNetwork,
+    options.graphReadAuthorityBuildSha,
+  ].some((value) => value !== undefined);
+}
+
+function bindGraphReadAuthority(
+  dependencies: McpCommandDependencies,
+  options: McpServeOptions,
+): GraphReadAuthorityPort | undefined {
+  if (!hasGraphReadAuthority(options)) return undefined;
+  if (
+    options.graphReadAuthorityBackend === undefined ||
+    options.graphReadAuthorityRoutingEpoch === undefined ||
+    options.graphReadAuthorityTenant === undefined ||
+    options.graphReadAuthorityExpiresAt === undefined
+  ) {
+    throw new McpProfileArgumentError(
+      'Graph read authority requires backend, routing epoch, tenant, and expiry.',
+    );
+  }
+  if (!/^[1-9]\d*$/u.test(options.graphReadAuthorityRoutingEpoch)) {
+    throw new McpProfileArgumentError('--graph-read-authority-routing-epoch must be canonical.');
+  }
+  const routingEpoch = Number(options.graphReadAuthorityRoutingEpoch);
+  if (!Number.isSafeInteger(routingEpoch)) {
+    throw new McpProfileArgumentError(
+      '--graph-read-authority-routing-epoch must be a safe integer.',
+    );
+  }
+  if (options.graphReadAuthorityBackend === 'go') {
+    if (
+      options.graphReadAuthorityOrigin === undefined ||
+      options.graphReadAuthorityBuildSha === undefined
+    ) {
+      throw new McpProfileArgumentError('Go graph read authority requires origin and build SHA.');
+    }
+  } else if (
+    options.graphReadAuthorityOrigin !== undefined ||
+    options.graphReadAuthorityNetwork !== undefined ||
+    options.graphReadAuthorityBuildSha !== undefined
+  ) {
+    throw new McpProfileArgumentError(
+      'ts-local graph read authority rollback does not accept Go transport settings.',
+    );
+  }
+  const create = dependencies.createGraphReadAuthority ?? createOpenSlackGraphReadAuthority;
+  return create({
+    workspaceRoot: dependencies.workspaceRoot,
+    backend: options.graphReadAuthorityBackend,
+    tenantId: options.graphReadAuthorityTenant,
+    routingEpoch,
+    expiresAt: options.graphReadAuthorityExpiresAt,
+    ...(options.graphReadAuthorityOrigin === undefined
+      ? {}
+      : { origin: options.graphReadAuthorityOrigin }),
+    ...(options.graphReadAuthorityNetwork === undefined
+      ? {}
+      : { networkMode: options.graphReadAuthorityNetwork }),
+    ...(options.graphReadAuthorityBuildSha === undefined
+      ? {}
+      : { expectedBuildSha: options.graphReadAuthorityBuildSha }),
+  });
 }
 
 function bindGraphReadCanary(
@@ -176,7 +257,25 @@ async function createProfileContext(
       'Graph read mirror origin',
     );
   }
+  if (
+    hasGraphReadAuthority(options) &&
+    (options.graphReadMirrorOrigin !== undefined ||
+      options.graphReadMirrorNetwork !== undefined ||
+      options.graphReadCanaryBackend !== undefined ||
+      options.graphReadCanaryRoutingEpoch !== undefined ||
+      options.graphReadCanaryTenant !== undefined ||
+      options.graphReadCanaryScenarios !== undefined ||
+      options.graphReadCanaryExpiresAt !== undefined ||
+      options.graphReadCanaryOrigin !== undefined ||
+      options.graphReadCanaryNetwork !== undefined ||
+      options.graphReadCanaryBuildSha !== undefined)
+  ) {
+    throw new McpProfileArgumentError(
+      'Graph read authority is mutually exclusive with mirror and canary routing.',
+    );
+  }
   const graphReadCanary = bindGraphReadCanary(dependencies, options);
+  const graphReadAuthority = bindGraphReadAuthority(dependencies, options);
   if (options.profile === 'read-only') {
     if (
       options.principalRef !== undefined ||
@@ -191,6 +290,7 @@ async function createProfileContext(
       operator: dependencies.operator,
       ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
       ...(graphReadCanary === undefined ? {} : { graphReadCanary }),
+      ...(graphReadAuthority === undefined ? {} : { graphReadAuthority }),
     });
   }
   if (options.profile !== 'agent-bound' && options.profile !== 'human-attested') {
@@ -217,6 +317,7 @@ async function createProfileContext(
       operator: dependencies.operator,
       ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
       ...(graphReadCanary === undefined ? {} : { graphReadCanary }),
+      ...(graphReadAuthority === undefined ? {} : { graphReadAuthority }),
       governedMutations: composition.governedMutations,
     });
   }
@@ -237,6 +338,7 @@ async function createProfileContext(
     operator: dependencies.operator,
     ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
     ...(graphReadCanary === undefined ? {} : { graphReadCanary }),
+    ...(graphReadAuthority === undefined ? {} : { graphReadAuthority }),
     governedMutations: composition.governedMutations,
     workflowApprovalAuthority: composition.workflowApprovalAuthority,
   });
@@ -351,6 +453,38 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     .option(
       '--graph-read-canary-build-sha <sha>',
       'Bind every Go canary read to one exact service build SHA',
+    )
+    .addOption(
+      new Option(
+        '--graph-read-authority-backend <backend>',
+        'Select the global Go Graph read authority or an explicit ts-local rollback epoch',
+      ).choices(['go', 'ts-local']),
+    )
+    .option(
+      '--graph-read-authority-routing-epoch <epoch>',
+      'Bind every authority read and cursor to one global routing epoch',
+    )
+    .option(
+      '--graph-read-authority-tenant <workspace-id>',
+      'Bind the global authority to the canonical workspace ID',
+    )
+    .option(
+      '--graph-read-authority-expires-at <timestamp>',
+      'Expire the process-immutable authority policy at one bounded timestamp',
+    )
+    .option(
+      '--graph-read-authority-origin <origin>',
+      'Use one exact credential-free Go Graph authority origin',
+    )
+    .addOption(
+      new Option(
+        '--graph-read-authority-network <mode>',
+        'Restrict the authority origin to loopback or explicitly selected internal IPs',
+      ).choices(['loopback', 'internal']),
+    )
+    .option(
+      '--graph-read-authority-build-sha <sha>',
+      'Bind every Go authority read to one exact service build SHA',
     )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;

@@ -148,6 +148,24 @@ describe('events', () => {
     }
   });
 
+  it('validates the three global graph read-authority audit outcomes', () => {
+    for (const type of [
+      'graph.read_authority.served',
+      'graph.read_authority.blocked',
+      'graph.read_authority.rolled_back',
+    ] as const) {
+      const event = createEvent(
+        makeEvent({
+          type,
+          object: { kind: 'graph', id: 'scenario-001' },
+          source: { kind: 'openslack', ref: 'organization-graph-read-authority' },
+          summary: `Recorded ${type}.`,
+        }),
+      );
+      expect(validateEvent(event).valid, type).toBe(true);
+    }
+  });
+
   it('rejects event with wrong schema', () => {
     const result = validateEvent({ schema: 'wrong.schema' });
     expect(result.valid).toBe(false);

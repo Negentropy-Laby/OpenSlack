@@ -4,8 +4,8 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/organization-graph",
     "targetPath": "services/organization-graph",
-    "migrationPhase": "GS3-B",
-    "authority": "TS_DEFAULT_READ_AUTHORITY_BOUNDED_GO_CANARY"
+    "migrationPhase": "GS3-C",
+    "authority": "GO_GRAPH_HEAD_QUERY_EXPLAIN_AUTHORITY_TS_PROJECTOR"
   },
   "containerInputs": {
     "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
@@ -44,7 +44,7 @@
     },
     "openapi": {
       "path": "services/organization-graph/docs/api/openapi.yaml",
-      "sha256": "87c69a77a3333ceef97db9e4f78c7bc53fa358497841b12c1070bed7af0189c0"
+      "sha256": "d2d4bb7dd59a43a5b5cf976903103401c8d818f2bd061ae26653eb43453789f8"
     }
   },
   "legalInputs": {
@@ -69,13 +69,12 @@
     }
   },
   "scope": {
-    "authorizes": [],
+    "authorizes": ["DURABLE_GRAPH_INGEST_ACCEPTANCE", "GRAPH_HEAD_READ_AUTHORITY"],
     "nonClaims": [
       "RELEASE",
       "REGISTRY_INCLUSION",
       "SIGNED_PROVENANCE",
-      "READ_CUTOVER",
-      "GO_WRITE_AUTHORITY",
+      "SOURCE_SYSTEM_MUTATION_AUTHORITY",
       "LIVE_VERIFIED",
       "QODER_VERIFIED",
       "PRODUCTION"

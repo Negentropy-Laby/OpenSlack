@@ -1,13 +1,14 @@
 openapi: 3.1.0
 info:
   title: OpenSlack Organization Graph Service
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Internal-only Organization Graph HTTP contract. The service stores an
     isolated PostgreSQL projection. Ordinary read routes remain suitable for
-    shadow qualification; only the dedicated GS3-B canary routes may become a
-    user-visible read authority, and only under an exact routing epoch and
-    service-build binding selected by the TypeScript MCP process.
+    shadow qualification. Dedicated GS3-B canary and GS3-C global authority
+    routes bind every read to an exact routing epoch and service build selected
+    by the TypeScript MCP process. GS3-C additionally binds the canonical tenant
+    and accepts projector publication only through durable ingest receipts.
     Requests are accepted only over a loopback bind or an explicitly selected
     internal network bind. This contract provides no public-network
     authentication, tenant scope, rate limiting, TLS termination, or mutation
@@ -258,6 +259,183 @@ paths:
           $ref: '#/components/responses/Unavailable'
         default:
           $ref: '#/components/responses/Internal'
+  /v1/authority/graph/snapshots:ingest:
+    post:
+      operationId: ingestGraphSnapshotAsBoundAuthority
+      tags: [ingest]
+      summary: Durably accept one projected snapshot under the global authority epoch
+      description: |
+        Disabled unless GRAPH_READ_AUTHORITY_ROUTING_EPOCH and
+        GRAPH_READ_AUTHORITY_TENANT_ID are configured. The route requires exact
+        epoch, build, and tenant headers. After binding, it uses the frozen
+        `/v1/graph/snapshots:ingest` fingerprint and receipt contract so a lost
+        response can be recovered idempotently. TypeScript must treat 202 as
+        reconciliation, not success.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+        - $ref: '#/components/parameters/AuthorityTenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotIngestRequest'
+      responses:
+        '201':
+          description: New durable acceptance receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '200':
+          description: Original durable duplicate receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '202':
+          description: Durable reconciliation receipt; the caller must not claim success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/authority/graph/deltas:ingest:
+    post:
+      operationId: ingestGraphDeltaAsBoundAuthority
+      tags: [ingest]
+      summary: Durably accept one projected delta under the global authority epoch
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+        - $ref: '#/components/parameters/AuthorityTenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeltaIngestRequest'
+      responses:
+        '201':
+          description: New durable acceptance receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '200':
+          description: Original durable duplicate receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '202':
+          description: Durable reconciliation receipt; the caller must not claim success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/authority/graph:query:
+    post:
+      operationId: queryCurrentGraphAsGlobalAuthority
+      tags: [graph]
+      summary: Query the Go-owned current head under one global authority epoch
+      description: |
+        This route selects every canonical scenario. It issues v2 HMAC cursors
+        bound to the authority epoch. v1, expired, or cross-epoch cursors are
+        rejected without translation or TypeScript fallback.
+      parameters:
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+        - $ref: '#/components/parameters/AuthorityTenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQueryInput'
+      responses:
+        '200':
+          description: Bounded canonical query from the global Go authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorityGraphQueryRead'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: The authority-epoch cursor expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphError'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/authority/graph:explain:
+    post:
+      operationId: explainCurrentGraphObjectAsGlobalAuthority
+      tags: [graph]
+      summary: Explain one object from the Go-owned current head
+      parameters:
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+        - $ref: '#/components/parameters/AuthorityTenantID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphExplainInput'
+      responses:
+        '200':
+          description: Bounded canonical explanation from the global Go authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorityGraphExplainRead'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
   /v1/graph/scenarios:
     get:
       operationId: listPublishedGraphScenarios
@@ -347,6 +525,9 @@ components:
       description: |
         Caller-generated stable key. The GS1-B TypeScript shadow adapter uses
         `openslack.graph-shadow.v1.` followed by a lowercase hexadecimal digest.
+        The GS3-C authority adapter deliberately preserves that frozen
+        key/fingerprint namespace so an already committed identical projection
+        can be recovered without a second write after authority activation.
       schema:
         type: string
         minLength: 1
@@ -365,10 +546,20 @@ components:
       name: X-OpenSlack-Graph-Expected-Build-SHA
       in: header
       required: true
-      description: Exact lowercase build identity selected by the TypeScript canary policy.
+      description: Exact lowercase build identity selected by the TypeScript routing policy.
       schema:
         type: string
         pattern: '^[0-9a-f]{64}$'
+    AuthorityTenantID:
+      name: X-OpenSlack-Graph-Tenant-ID
+      in: header
+      required: true
+      description: Exact canonical workspace/tenant configured for the global authority epoch.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
   responses:
     NotFound:
       description: Scenario, head, query target, or relationship path not found
@@ -395,7 +586,7 @@ components:
           schema:
             $ref: '#/components/schemas/GraphError'
     Unavailable:
-      description: PostgreSQL shadow store unavailable
+      description: PostgreSQL graph store unavailable
       content:
         application/json:
           schema:
@@ -805,6 +996,76 @@ components:
           $ref: '#/components/schemas/Identifier'
         result:
           $ref: '#/components/schemas/GraphExplanation'
+    AuthorityGraphQueryRead:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          operation,
+          backend,
+          routingEpoch,
+          serviceBuildSha,
+          generatedAt,
+          snapshotCursor,
+          result,
+        ]
+      properties:
+        schema:
+          const: openslack.graph_authority_read.v1
+        operation:
+          const: query
+        backend:
+          const: go
+        routingEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        serviceBuildSha:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        generatedAt:
+          type: string
+          format: date-time
+        snapshotCursor:
+          $ref: '#/components/schemas/Identifier'
+        result:
+          $ref: '#/components/schemas/GraphQueryResult'
+    AuthorityGraphExplainRead:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          operation,
+          backend,
+          routingEpoch,
+          serviceBuildSha,
+          generatedAt,
+          snapshotCursor,
+          result,
+        ]
+      properties:
+        schema:
+          const: openslack.graph_authority_read.v1
+        operation:
+          const: explain
+        backend:
+          const: go
+        routingEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        serviceBuildSha:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        generatedAt:
+          type: string
+          format: date-time
+        snapshotCursor:
+          $ref: '#/components/schemas/Identifier'
+        result:
+          $ref: '#/components/schemas/GraphExplanation'
     Completeness:
       $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/completeness'
     ScenarioList:
@@ -858,6 +1119,8 @@ components:
             - GRAPH_INTERNAL
             - GRAPH_CANARY_NOT_CONFIGURED
             - GRAPH_CANARY_ROUTE_MISMATCH
+            - GRAPH_AUTHORITY_NOT_CONFIGURED
+            - GRAPH_AUTHORITY_ROUTE_MISMATCH
             - GRAPH_QUERY_CURSOR_INVALID
             - GRAPH_QUERY_CURSOR_EXPIRED
             - GRAPH_QUERY_CURSOR_MISMATCH

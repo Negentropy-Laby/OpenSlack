@@ -133,6 +133,61 @@ Existing canary cursors are not translated: v1 or cross-epoch tokens return an e
 and expired same-epoch tokens return an explicit expiry. Unselected scenarios remain on TypeScript.
 Both modes preserve the selected 12/16/17 tool catalog and all mutation/approval boundaries.
 
+### Optional GS3-C global Graph read authority
+
+After the Go service is configured with matching
+`GRAPH_READ_AUTHORITY_ROUTING_EPOCH` and `GRAPH_READ_AUTHORITY_TENANT_ID`, publish a projected
+snapshot through its durable authority receipt:
+
+```bash
+bun run openslack graph snapshot build \
+  --scenario contract-to-delivery-lite \
+  --from ./evidence/contract-to-delivery.json \
+  --authority-backend go \
+  --authority-routing-epoch 42 \
+  --authority-tenant openslack-self \
+  --authority-origin http://127.0.0.1:18181 \
+  --authority-build-sha <64-lowercase-hex-service-build>
+```
+
+Then select the same binding for every Graph query/explain read in one MCP process:
+
+```bash
+bun run openslack mcp serve --stdio \
+  --graph-read-authority-backend go \
+  --graph-read-authority-routing-epoch 42 \
+  --graph-read-authority-tenant openslack-self \
+  --graph-read-authority-expires-at 2026-08-03T00:00:00.000Z \
+  --graph-read-authority-origin http://127.0.0.1:18181 \
+  --graph-read-authority-build-sha <64-lowercase-hex-service-build>
+```
+
+The policy selects every scenario and cannot be combined with mirror or canary flags. Go owns the
+durable Graph head and query/explain result while active; TypeScript remains the projector and does
+not claim publication unless the Go service returns an exact durable `accepted` or `duplicate`
+receipt. A `202`, timeout, conflict, invalid receipt, stale read, cursor drift, route drift, or audit
+failure blocks without local fallback. Rollback starts a new MCP process with `backend=ts-local`
+and a higher epoch, omitting all Go transport flags. This changes no Qoder tool, permission,
+confirmation, Workflow approval, human attestation, or GitHub review boundary.
+
+The Go authority and TypeScript-local recovery store are intentionally not dual-written. A higher
+epoch changes routing; it does not synchronize data. Use this recovery order while the Go process
+is still available:
+
+1. Rebuild every active scenario from current bounded source evidence with
+   `graph snapshot build --authority-backend ts-local`, using the exact current local cursor for a
+   replacement or omitting `--expected-cursor` when no local head exists.
+2. Verify query and explain for every rebuilt scenario through an ordinary local MCP process and
+   confirm the snapshot is inside the configured freshness window.
+3. Start the new global MCP process with `--graph-read-authority-backend ts-local` and an epoch
+   higher than the Go authority epoch.
+4. Monitor Collaboration activity for `graph.read_authority.blocked` before retiring the prior Go
+   process. `SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE` means the local rebuild is not
+   rollback-ready; no `graph.read_authority.rolled_back` event is emitted.
+
+Do not copy or translate a Go query cursor into this path. Reprojection from typed source evidence,
+local CAS publication, and a fresh local read are the recovery proof.
+
 ## Exact production catalog
 
 The exact 12-tool production catalog is:

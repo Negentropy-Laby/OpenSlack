@@ -15,7 +15,7 @@ import {
 import { projectSoftwareDeliverySnapshot } from './software-delivery-projector.js';
 import { validateSoftwareDeliverySourceSnapshot } from './software-delivery-validation.js';
 import { parseStrictGraphJson } from './strict-json.js';
-import type { LocalGraphStore, PublishedGraphSnapshot } from './store.js';
+import type { GraphSnapshotPublication, GraphSnapshotPublisherPort } from './store.js';
 import type { GraphSnapshot } from './types.js';
 
 export const SOFTWARE_DELIVERY_SCENARIO_ID = 'software-delivery' as const;
@@ -33,7 +33,7 @@ export interface GraphSnapshotBuildProfile {
   readonly textBytes: number;
 }
 
-export interface PublishedGraphBuildSnapshot extends PublishedGraphSnapshot {
+export interface PublishedGraphBuildSnapshot extends GraphSnapshotPublication {
   readonly nodeCount: number;
   readonly edgeCount: number;
 }
@@ -43,14 +43,14 @@ export type PublishedSoftwareDeliverySnapshot = PublishedGraphBuildSnapshot;
 export interface BuildAndPublishGraphSnapshotInput {
   readonly scenarioId: GraphSnapshotBuildScenarioId;
   readonly sourceBytes: Buffer;
-  readonly store: LocalGraphStore;
+  readonly store: GraphSnapshotPublisherPort;
   readonly expectedCursor: string | null;
   readonly expectedScenarioInstanceId?: string;
 }
 
 export interface BuildAndPublishSoftwareDeliverySnapshotInput {
   readonly sourceBytes: Buffer;
-  readonly store: LocalGraphStore;
+  readonly store: GraphSnapshotPublisherPort;
   readonly expectedCursor: string | null;
   readonly expectedScenarioInstanceId?: string;
 }

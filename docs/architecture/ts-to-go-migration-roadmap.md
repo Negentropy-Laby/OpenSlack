@@ -199,14 +199,29 @@ GS3 is split into three independently reviewed changes:
    `backend=ts-local` and a higher epoch. Go query cursors remain five-minute HMAC tokens; canary
    tokens use v2 and bind the routing epoch, while v1, expired, or cross-epoch tokens return explicit
    mismatch/expired errors without translation. Unselected scenarios remain TypeScript-authoritative.
-3. **GS3-C read authority** remains pending. Only after differential qualification and the canary
-   gate may Go own Graph head/query/explain reads while TypeScript continues projector publication
-   through durable ingest receipts.
+3. **GS3-C read authority** is implemented as a separate, explicit process policy after the merged
+   mirror and canary gates. It selects every canonical scenario for one tenant, positive routing
+   epoch, bounded expiry, exact Go origin, and service build. TypeScript remains the deterministic
+   projector but reports publication success only after the dedicated authority ingest route returns
+   an exact durable `accepted` or `duplicate` receipt. `202 reconciliation_required`, transport,
+   conflict, or malformed receipt fails publication closed. Go owns the durable Graph head and all
+   MCP query/explain reads while the policy is active; those routes use v2 epoch-bound cursors and
+   require a redacted Collaboration audit before releasing a result. Mirror, bounded canary, and
+   global authority cannot be composed together. Rollback is a new global `ts-local` policy with a
+   higher epoch, not a per-request fallback. Authority publication never dual-writes the local
+   recovery store: operators must reproject current bounded source evidence into that store and
+   verify fresh local reads before activating the higher epoch. Missing or stale recovery evidence
+   remains blocked and audited rather than being served as a rollback.
 
 GS3-B transfers read authority only for the exact selected scenario instances while its policy is
 active. It adds no Go write authority, default or full read cutover, Graph-head ownership transfer,
 implicit cursor translation, authenticated Desktop evidence, remote Connector, release, live, or
 production claim.
+
+GS3-C transfers only the local Organization Graph projection head/query/explain authority under an
+explicit activation policy. It does not transfer projector calculation, Scenario Pack execution,
+source-system mutation, Qoder identity, workflow approval, GitHub review, remote Connector, live,
+release, or production authority.
 
 ### GS4–GS6 — Governance Control
 

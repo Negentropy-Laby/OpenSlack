@@ -71,6 +71,29 @@ func TestLoadEnvironmentBindsOptionalCanaryRoutingEpoch(t *testing.T) {
 	}
 }
 
+func TestLoadEnvironmentBindsReadAuthorityEpochAndTenantTogether(t *testing.T) {
+	environment := append(validEnvironment(),
+		"GRAPH_READ_AUTHORITY_ROUTING_EPOCH=42",
+		"GRAPH_READ_AUTHORITY_TENANT_ID=workspace-1",
+	)
+	cfg, err := LoadEnvironment(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadAuthorityRoutingEpoch == nil || *cfg.ReadAuthorityRoutingEpoch != 42 ||
+		cfg.ReadAuthorityTenantID != "workspace-1" {
+		t.Fatalf("authority binding = %#v", cfg)
+	}
+	for _, incomplete := range [][]string{
+		append(validEnvironment(), "GRAPH_READ_AUTHORITY_ROUTING_EPOCH=42"),
+		append(validEnvironment(), "GRAPH_READ_AUTHORITY_TENANT_ID=workspace-1"),
+	} {
+		if _, err := LoadEnvironment(incomplete); err == nil {
+			t.Fatal("incomplete authority binding was accepted")
+		}
+	}
+}
+
 func TestLoadEnvironmentAllowsExplicitInternalContainerBind(t *testing.T) {
 	environment := append(validEnvironment(),
 		"GRAPH_NETWORK_MODE=internal",
@@ -173,6 +196,9 @@ func TestLoadEnvironmentRejectsMissingOrMalformedSecretsAndIdentity(t *testing.T
 		{name: "noncanonical canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: "041"},
 		{name: "whitespace canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: " 41 "},
 		{name: "unsafe canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: "9007199254740992"},
+		{name: "zero authority routing epoch", replace: "GRAPH_READ_AUTHORITY_ROUTING_EPOCH", value: "0"},
+		{name: "noncanonical authority routing epoch", replace: "GRAPH_READ_AUTHORITY_ROUTING_EPOCH", value: "042"},
+		{name: "unsafe authority tenant", replace: "GRAPH_READ_AUTHORITY_TENANT_ID", value: "workspace with space"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

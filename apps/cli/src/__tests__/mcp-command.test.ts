@@ -66,6 +66,13 @@ describe('mcp command', () => {
       '--graph-read-canary-origin',
       '--graph-read-canary-network',
       '--graph-read-canary-build-sha',
+      '--graph-read-authority-backend',
+      '--graph-read-authority-routing-epoch',
+      '--graph-read-authority-tenant',
+      '--graph-read-authority-expires-at',
+      '--graph-read-authority-origin',
+      '--graph-read-authority-network',
+      '--graph-read-authority-build-sha',
     ]);
     expect(command.commands[1].options[0].mandatory).toBe(true);
     expect(command.commands[1].options[1]).toMatchObject({
@@ -363,6 +370,91 @@ describe('mcp command', () => {
       operator: expect.anything(),
       graphReadCanary,
     });
+  });
+
+  it('binds one global Go read authority without changing the exact tool profile', async () => {
+    const graphReadAuthority = Object.freeze({}) as never;
+    const createGraphReadAuthority = vi.fn(() => graphReadAuthority);
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createContext = vi.fn(() => context);
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadAuthority,
+      createContext,
+      createServer: vi.fn(() => server()),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--graph-read-authority-backend',
+      'go',
+      '--graph-read-authority-routing-epoch',
+      '42',
+      '--graph-read-authority-tenant',
+      'openslack-self',
+      '--graph-read-authority-expires-at',
+      '2026-08-03T00:00:00.000Z',
+      '--graph-read-authority-origin',
+      'http://127.0.0.1:18181',
+      '--graph-read-authority-build-sha',
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    ]);
+
+    expect(createGraphReadAuthority).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      backend: 'go',
+      tenantId: 'openslack-self',
+      routingEpoch: 42,
+      expiresAt: '2026-08-03T00:00:00.000Z',
+      origin: 'http://127.0.0.1:18181',
+      expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    expect(createContext).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      operator: expect.anything(),
+      graphReadAuthority,
+    });
+  });
+
+  it('rejects global authority combined with mirror or canary before composition', async () => {
+    const createGraphReadAuthority = vi.fn();
+    const createGraphReadCanary = vi.fn();
+    const createGraphReadMirror = vi.fn();
+    const createContext = vi.fn();
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadAuthority,
+      createGraphReadCanary,
+      createGraphReadMirror,
+      createContext,
+      createServer: vi.fn(),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--graph-read-authority-backend',
+      'ts-local',
+      '--graph-read-authority-routing-epoch',
+      '43',
+      '--graph-read-authority-tenant',
+      'openslack-self',
+      '--graph-read-authority-expires-at',
+      '2026-08-03T00:00:00.000Z',
+      '--graph-read-mirror-origin',
+      'http://127.0.0.1:18181',
+    ]);
+    expect(stderr).toHaveBeenLastCalledWith(
+      'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: Graph read authority is mutually exclusive with mirror and canary routing.',
+    );
+    expect(createGraphReadAuthority).not.toHaveBeenCalled();
+    expect(createGraphReadCanary).not.toHaveBeenCalled();
+    expect(createGraphReadMirror).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
   });
 
   it.each([

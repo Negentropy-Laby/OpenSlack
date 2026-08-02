@@ -171,6 +171,7 @@ describe('notification delivery service workflow', () => {
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
+    const graphAuthorityIndex = stepIndex('Qualify GS3-C global Go Graph read authority');
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
@@ -189,7 +190,8 @@ describe('notification delivery service workflow', () => {
     expect(graphDistIndex).toBe(graphGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
-    expect(imagePullIndex).toBe(graphCanaryIndex + 1);
+    expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
+    expect(imagePullIndex).toBe(graphAuthorityIndex + 1);
     expect(goCheckIndex).toBe(imagePullIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
@@ -258,6 +260,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': 'services/organization-graph',
       run: "OPENSLACK_GS3B_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3BRealGoReadCanary$' -count=1",
     });
+    expect(job.steps[graphAuthorityIndex]).toEqual({
+      name: 'Qualify GS3-C global Go Graph read authority',
+      'working-directory': 'services/organization-graph',
+      run: "OPENSLACK_GS3C_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3CRealGoReadAuthority$' -count=1",
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -304,6 +311,7 @@ describe('notification delivery service workflow', () => {
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
+      'Qualify GS3-C global Go Graph read authority',
       'Pull pinned Go verification images',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
@@ -343,6 +351,8 @@ describe('notification delivery service workflow', () => {
         "OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1",
       'Qualify GS3-B bounded Go read canary':
         "OPENSLACK_GS3B_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3BRealGoReadCanary$' -count=1",
+      'Qualify GS3-C global Go Graph read authority':
+        "OPENSLACK_GS3C_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3CRealGoReadAuthority$' -count=1",
       'Pull pinned Go verification images': lines(
         'set -euo pipefail',
         `docker pull ${goImage}`,

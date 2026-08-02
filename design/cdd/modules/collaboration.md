@@ -175,6 +175,11 @@ Truth boundaries are strict:
   `graph.read_mirror.unavailable` are digest-only differential observations. They do not make Go
   the Graph read authority, mutate Graph/business state, or establish a Qoder, live, release, or
   production claim;
+- `graph.read_authority.served`, `graph.read_authority.blocked`, and
+  `graph.read_authority.rolled_back` are redacted GS3-C routing evidence. They prove only the bound
+  local Graph head/read decision; they do not establish source-system mutation, Qoder identity,
+  approval, live, release, or production authority. A missing or stale TypeScript-local recovery
+  snapshot is blocked evidence, never a successful rollback;
 - blocker time remains unknown without close or unblock evidence;
 - manual-hour and runtime-cost assumptions are always versioned
   `configured_estimate` inputs;
