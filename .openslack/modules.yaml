@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 5447
+vitest_tests: 5448
 vitest_files: 438
 modules:
   - id: self_evolution
@@ -356,7 +356,7 @@ modules:
       - test:packages/organization-graph/src/__tests__/read-authority-http.test.ts
       - test:services/organization-graph/internal/app/gs3c_cross_language_test.go
       - repo:.github/workflows/notification-delivery-service.yml
-      - commit:7a9709cd4cc158c3214545ddfbc77ab6b1ea749c
+      - commit:362436a1393b6935e1d009ecec09a93d3ecaffad
       - test:packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - repo:packages/workflows/contracts/workflow-control/v1/manifest.json
       - test:services/workflow-control/golden_vectors_test.go
@@ -428,7 +428,7 @@ modules:
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
       - github.com/Negentropy-Laby/OpenSlack/services/workflow-control
-    tests: 2457
+    tests: 2458
     test_files: 198
     components:
       - id: agent_runtime
