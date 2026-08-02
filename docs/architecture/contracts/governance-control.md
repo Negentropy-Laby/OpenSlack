@@ -148,12 +148,19 @@ the bounded current binding hashes needed for differential recomputation. The ra
 capability is forbidden from the envelope, HTTP configuration, receipts, projections, logs, and
 durable shadow rows. Go can report whether its recomputation matches TypeScript; it cannot consume
 the capability, claim execution, or dispatch an action.
+Confirmation observations are decision-sequence evidence: `claim_eligible` may precede the
+TypeScript execution-claim CAS and never asserts that execution authority was acquired.
 
 The TypeScript observation port journals source-ordered canonical envelopes outside the runtime
 plan store and publishes them asynchronously. Shadow unavailability, timeout, mismatch, response
 loss, or journal recovery never changes the TypeScript user response, authoritative record,
 approval state, audit decision, or external effect. Restart recovery replays only the observation
 journal and surfaces durable Go shadow receipts; it does not retry a governed mutation.
+When a process observes a confirmation or audit for a newer record revision, the journal places
+that validated record prerequisite first and coalesces record revisions already journaled by
+another process. This keeps dependent observations behind their record across process races.
+The projection endpoint reads its head, matched record, and parity counts in one PostgreSQL
+statement so every response represents one coherent database snapshot.
 
 ## Qualification and evidence ceiling
 

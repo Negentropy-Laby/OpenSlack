@@ -200,6 +200,8 @@ const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const ENTRY_NAME = /^([0-9a-f]{64})\.([0-9]{16})\.([0-9a-f]{64})\.json$/u;
 const STATE_NAME = /^([0-9a-f]{64})\.json$/u;
 const LOCK_NAME = /^([0-9a-f]{64})\.lock$/u;
+const LOCK_NONCE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const JOURNAL_CAPACITY_LOCK_HASH = sha256('openslack.governance-shadow.journal-capacity.v1');
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 const PORTS = new WeakSet<object>();
 const PUBLISHERS = new WeakSet<object>();
@@ -227,6 +229,7 @@ interface PendingObservation {
   readonly workspaceId: string;
   readonly planId: string;
   readonly observation: GovernanceShadowObservation;
+  readonly prerequisiteRecord?: GovernedPlanRecord;
 }
 
 function sha256(value: string | Uint8Array): string {
@@ -620,7 +623,12 @@ async function initializeJournal(rootValue: string): Promise<JournalDirectories>
   return Object.freeze(directories);
 }
 
-async function scanJournalBounds(directories: JournalDirectories): Promise<void> {
+interface JournalBounds {
+  readonly count: number;
+  readonly bytes: number;
+}
+
+async function scanJournalBounds(directories: JournalDirectories): Promise<JournalBounds> {
   let count = 0;
   let bytes = 0;
   for (const [directory, pattern] of [
@@ -648,6 +656,23 @@ async function scanJournalBounds(directories: JournalDirectories): Promise<void>
   if (
     count > GOVERNANCE_SHADOW_POLICY.maxJournalEntries ||
     bytes > GOVERNANCE_SHADOW_POLICY.maxJournalBytes
+  ) {
+    throw new TypeError('Governance shadow journal exceeds its bounded capacity.');
+  }
+  return Object.freeze({ count, bytes });
+}
+
+function assertJournalAppendCapacity(
+  bounds: JournalBounds,
+  entryCount: number,
+  entryBytes: number,
+  stateBytes: number,
+): void {
+  // Account for the new entry and the atomic state temporary. Existing state
+  // bytes remain live until the temporary is renamed over the state file.
+  if (
+    bounds.count + entryCount + 1 > GOVERNANCE_SHADOW_POLICY.maxJournalEntries ||
+    bounds.bytes + entryBytes + stateBytes > GOVERNANCE_SHADOW_POLICY.maxJournalBytes
   ) {
     throw new TypeError('Governance shadow journal exceeds its bounded capacity.');
   }
@@ -812,7 +837,8 @@ async function acquireStreamLock(
   hashValue: string,
 ): Promise<() => Promise<void>> {
   const path = join(directories.locks, `${hashValue}.lock`);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const deadline = Date.now() + GOVERNANCE_SHADOW_POLICY.maxTimeoutMs;
+  while (Date.now() <= deadline) {
     try {
       await writeExclusive(
         path,
@@ -825,24 +851,59 @@ async function acquireStreamLock(
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const observed = await lstat(path).catch((readError: NodeJS.ErrnoException) => {
+        if (readError.code === 'ENOENT') return undefined;
+        throw readError;
+      });
+      if (!observed) continue;
       let owner: unknown;
       try {
         owner = await readCanonical(path);
-      } catch {
+      } catch (readError) {
+        if ((readError as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw new TypeError('Governance shadow journal lock is invalid.');
       }
       const object = plainObject(owner);
       const pid = object.pid;
-      if (!Number.isSafeInteger(pid) || (pid as number) < 1 || pid === process.pid) {
+      if (
+        !exactKeys(object, ['pid', 'nonce']) ||
+        !Number.isSafeInteger(pid) ||
+        (pid as number) < 1 ||
+        typeof object.nonce !== 'string' ||
+        !LOCK_NONCE.test(object.nonce)
+      ) {
         throw new TypeError('Governance shadow journal lock has a live or invalid owner.');
       }
+      let live = true;
       try {
         process.kill(pid as number, 0);
-        throw new TypeError('Governance shadow journal lock owner is still live.');
       } catch (probe) {
-        if ((probe as NodeJS.ErrnoException).code !== 'ESRCH') throw probe;
+        const code = (probe as NodeJS.ErrnoException).code;
+        if (code === 'ESRCH') live = false;
+        else if (code !== 'EPERM') throw probe;
       }
-      await unlink(path);
+      if (live) {
+        await new Promise((resolveDelay) =>
+          setTimeout(resolveDelay, GOVERNANCE_SHADOW_POLICY.defaultOrderingRetryDelayMs),
+        );
+        continue;
+      }
+      const repeated = await lstat(path).catch((readError: NodeJS.ErrnoException) => {
+        if (readError.code === 'ENOENT') return undefined;
+        throw readError;
+      });
+      if (
+        !repeated ||
+        observed.dev !== repeated.dev ||
+        observed.ino !== repeated.ino ||
+        observed.size !== repeated.size ||
+        observed.mtimeMs !== repeated.mtimeMs
+      ) {
+        continue;
+      }
+      await unlink(path).catch((unlinkError: NodeJS.ErrnoException) => {
+        if (unlinkError.code !== 'ENOENT') throw unlinkError;
+      });
       await syncDirectory(directories.locks);
     }
   }
@@ -921,6 +982,7 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
         workspaceId: record.bindings.workspaceId,
         planId: record.planId,
         observation: envelope.observation,
+        prerequisiteRecord: record,
       });
     } catch {
       // Observation failures cannot affect the TypeScript authority.
@@ -949,6 +1011,7 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
           recordHash: governanceShadowRecordHash(record),
           event,
         }),
+        prerequisiteRecord: record,
       });
     } catch {
       // Observation failures cannot affect the TypeScript authority.
@@ -993,45 +1056,88 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
   }
 
   async #append(pending: PendingObservation, hashValue: string): Promise<void> {
-    await scanJournalBounds(this.#directories);
-    const release = await acquireStreamLock(this.#directories, hashValue);
+    const releaseCapacity = await acquireStreamLock(this.#directories, JOURNAL_CAPACITY_LOCK_HASH);
     try {
-      let state = await loadState(this.#directories, pending.workspaceId, pending.planId);
-      const entries = await streamEntries(this.#directories, hashValue);
-      const maximumEntry = entries.at(-1)?.sequence ?? 0;
-      if (maximumEntry > state.lastSequence) {
-        state = Object.freeze({ ...state, lastSequence: maximumEntry });
+      const releaseStream = await acquireStreamLock(this.#directories, hashValue);
+      try {
+        let state = await loadState(this.#directories, pending.workspaceId, pending.planId);
+        const entries = await streamEntries(this.#directories, hashValue);
+        const maximumEntry = entries.at(-1)?.sequence ?? 0;
+        if (maximumEntry > state.lastSequence) {
+          state = Object.freeze({ ...state, lastSequence: maximumEntry });
+        }
+        const observations: GovernanceShadowObservation[] = [];
+        if (
+          pending.prerequisiteRecord !== undefined &&
+          pending.prerequisiteRecord.revision > state.lastRecordRevision
+        ) {
+          observations.push(
+            Object.freeze({
+              kind: 'record',
+              expectedRevision: pending.prerequisiteRecord.revision - 1,
+              record: pending.prerequisiteRecord,
+            }),
+          );
+        }
+        if (
+          pending.observation.kind !== 'record' ||
+          pending.observation.record.revision > state.lastRecordRevision
+        ) {
+          observations.push(pending.observation);
+        }
+        if (observations.length === 0) return;
+
+        let nextState = state;
+        const journalEntries: { readonly path: string; readonly body: string }[] = [];
+        for (const observation of observations) {
+          const sourceSequence = nextState.lastSequence + 1;
+          const envelope = validateGovernanceShadowEnvelope({
+            schema: GOVERNANCE_SHADOW_OBSERVATION_SCHEMA,
+            authority: 'typescript',
+            source: {
+              workspaceId: pending.workspaceId,
+              planId: pending.planId,
+              sourceSequence,
+            },
+            observation,
+          });
+          const body = `${canonicalGovernedJson(envelope)}\n`;
+          const digest = sha256(body);
+          journalEntries.push(
+            Object.freeze({
+              path: join(
+                this.#directories.entries,
+                `${hashValue}.${String(sourceSequence).padStart(16, '0')}.${digest}.json`,
+              ),
+              body,
+            }),
+          );
+          nextState = Object.freeze({
+            ...nextState,
+            lastSequence: sourceSequence,
+            lastRecordRevision:
+              observation.kind === 'record'
+                ? Math.max(nextState.lastRecordRevision, observation.record.revision)
+                : nextState.lastRecordRevision,
+          });
+        }
+        const stateBody = `${canonicalGovernedJson(nextState)}\n`;
+        assertJournalAppendCapacity(
+          await scanJournalBounds(this.#directories),
+          journalEntries.length,
+          journalEntries.reduce((bytes, entry) => bytes + Buffer.byteLength(entry.body, 'utf8'), 0),
+          Buffer.byteLength(stateBody, 'utf8'),
+        );
+        for (const entry of journalEntries) {
+          await writeExclusive(entry.path, entry.body);
+        }
+        await syncDirectory(this.#directories.entries);
+        await persistState(this.#directories, nextState);
+      } finally {
+        await releaseStream();
       }
-      const sourceSequence = state.lastSequence + 1;
-      const envelope = validateGovernanceShadowEnvelope({
-        schema: GOVERNANCE_SHADOW_OBSERVATION_SCHEMA,
-        authority: 'typescript',
-        source: {
-          workspaceId: pending.workspaceId,
-          planId: pending.planId,
-          sourceSequence,
-        },
-        observation: pending.observation,
-      });
-      const body = `${canonicalGovernedJson(envelope)}\n`;
-      const digest = sha256(body);
-      const path = join(
-        this.#directories.entries,
-        `${hashValue}.${String(sourceSequence).padStart(16, '0')}.${digest}.json`,
-      );
-      await writeExclusive(path, body);
-      await syncDirectory(this.#directories.entries);
-      const lastRecordRevision =
-        envelope.observation.kind === 'record'
-          ? Math.max(state.lastRecordRevision, envelope.observation.record.revision)
-          : state.lastRecordRevision;
-      await persistState(this.#directories, {
-        ...state,
-        lastSequence: sourceSequence,
-        lastRecordRevision,
-      });
     } finally {
-      await release();
+      await releaseCapacity();
     }
   }
 
@@ -1044,7 +1150,19 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
   async #drain(workspaceId: string, planId: string, hashValue: string): Promise<void> {
     let state = await loadState(this.#directories, workspaceId, planId);
     for (const entry of await streamEntries(this.#directories, hashValue)) {
-      if (entry.sequence <= state.ackedSequence) continue;
+      if (entry.sequence <= state.ackedSequence) {
+        const release = await acquireStreamLock(this.#directories, hashValue);
+        try {
+          state = await loadState(this.#directories, workspaceId, planId);
+          if (entry.sequence <= state.ackedSequence) {
+            await rm(entry.path, { force: true });
+            await syncDirectory(this.#directories.entries);
+          }
+        } finally {
+          await release();
+        }
+        continue;
+      }
       if (entry.sequence !== state.ackedSequence + 1) {
         await this.#markIncomplete(state, entry.sequence);
         return;
@@ -1137,15 +1255,32 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
       let state = validateState(value, workspaceId, planId);
       const entries = await streamEntries(this.#directories, hashValue);
       const maximumEntry = entries.at(-1)?.sequence ?? 0;
-      if (maximumEntry > state.lastSequence) {
-        state = Object.freeze({ ...state, lastSequence: maximumEntry });
-        await persistState(this.#directories, state);
-      }
+      let lastRecordRevision = state.lastRecordRevision;
       let expected = state.ackedSequence + 1;
       for (const entry of entries) {
-        if (entry.sequence <= state.ackedSequence) continue;
-        if (entry.sequence !== expected) break;
-        expected += 1;
+        const envelope = validateGovernanceShadowEnvelope(await readCanonical(entry.path));
+        if (
+          envelope.source.workspaceId !== workspaceId ||
+          envelope.source.planId !== planId ||
+          envelope.source.sourceSequence !== entry.sequence
+        ) {
+          throw new TypeError('Governance shadow journal entry bindings are inconsistent.');
+        }
+        if (envelope.observation.kind === 'record') {
+          lastRecordRevision = Math.max(lastRecordRevision, envelope.observation.record.revision);
+        }
+        if (entry.sequence > state.ackedSequence) {
+          if (entry.sequence !== expected) break;
+          expected += 1;
+        }
+      }
+      if (maximumEntry > state.lastSequence || lastRecordRevision > state.lastRecordRevision) {
+        state = Object.freeze({
+          ...state,
+          lastSequence: Math.max(state.lastSequence, maximumEntry),
+          lastRecordRevision,
+        });
+        await persistState(this.#directories, state);
       }
       if (expected <= state.lastSequence) {
         await this.#markIncomplete(state, expected);

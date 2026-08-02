@@ -201,17 +201,20 @@ func (repository *Repository) Projection(ctx context.Context, workspaceID, planI
 	}
 	var sourceSequence int64
 	var revision pgtype.Int8
-	if err := repository.pool.QueryRow(ctx, projectionHeadSQL, workspaceID, planID).Scan(&sourceSequence, &revision); errors.Is(err, pgx.ErrNoRows) {
+	var recordBytes []byte
+	result := shadowstore.Projection{Schema: shadowstore.ProjectionSchema, Authority: shadowstore.Authority, Shadow: "go", Parity: shadowstore.ParityMatched,
+		WorkspaceID: workspaceID, PlanID: planID}
+	if err := repository.pool.QueryRow(ctx, projectionSnapshotSQL, workspaceID, planID).Scan(
+		&sourceSequence, &revision, &recordBytes,
+		&result.MatchedObservations, &result.MismatchedObservations, &result.ConfirmationMatched,
+		&result.ConfirmationMismatched, &result.AuditMatched, &result.AuditMismatched,
+	); errors.Is(err, pgx.ErrNoRows) {
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorNotFound, "projection not found", err)
 	} else if err != nil {
-		return shadowstore.Projection{}, databaseFailure("read projection head", err)
+		return shadowstore.Projection{}, databaseFailure("read projection snapshot", err)
 	}
 	if !revision.Valid {
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorNotFound, "matched record projection not found", nil)
-	}
-	recordBytes, err := readRecord(ctx, repository.pool, workspaceID, planID, revision.Int64)
-	if err != nil {
-		return shadowstore.Projection{}, databaseFailure("read projected record", err)
 	}
 	record, err := governance.ValidateCanonicalRecordBytes(recordBytes)
 	if err != nil {
@@ -221,14 +224,9 @@ func (repository *Repository) Projection(ctx context.Context, workspaceID, planI
 	if err != nil {
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorContentInvalid, "project stored record", err)
 	}
-	result := shadowstore.Projection{Schema: shadowstore.ProjectionSchema, Authority: shadowstore.Authority, Shadow: "go", Parity: shadowstore.ParityMatched,
-		WorkspaceID: workspaceID, PlanID: planID, SourceSequence: sourceSequence, MatchedRecordRevision: revision.Int64, ReadModel: readModel}
-	if err := repository.pool.QueryRow(ctx, projectionCountsSQL, workspaceID, planID).Scan(
-		&result.MatchedObservations, &result.MismatchedObservations, &result.ConfirmationMatched,
-		&result.ConfirmationMismatched, &result.AuditMatched, &result.AuditMismatched,
-	); err != nil {
-		return shadowstore.Projection{}, databaseFailure("read projection counts", err)
-	}
+	result.SourceSequence = sourceSequence
+	result.MatchedRecordRevision = revision.Int64
+	result.ReadModel = readModel
 	if result.MismatchedObservations > 0 {
 		result.Parity = shadowstore.ParityMismatched
 	}

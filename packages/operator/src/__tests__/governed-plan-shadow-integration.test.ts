@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGovernedActionExecutionRegistry } from '../action-execution-registry.js';
 import { LocalGovernedPlanStore } from '../governed-plan-store.js';
@@ -22,7 +23,8 @@ import {
 const roots: string[] = [];
 
 async function root(name: string): Promise<string> {
-  const value = await mkdtemp(`/tmp/openslack-${name}-`);
+  const temporaryParent = process.platform === 'win32' ? tmpdir() : '/tmp';
+  const value = await mkdtemp(join(temporaryParent, `openslack-${name}-`));
   roots.push(value);
   return value;
 }
@@ -179,8 +181,9 @@ describe('governance shadow authority integration', () => {
 
   it('preserves rejection outcomes and attempted authority without exposing the token', async () => {
     const calls: GovernanceShadowEnvelope[] = [];
+    const journalRoot = join(await root('governed-shadow-rejection'), 'journal');
     const observer = await createGovernedPlanShadowObservationPort({
-      journalRoot: join(await root('governed-shadow-rejection'), 'journal'),
+      journalRoot,
       publisher: createGovernanceShadowPublisherPort(async (envelope) => {
         calls.push(envelope);
         return receipt(envelope);
@@ -204,6 +207,15 @@ describe('governance shadow authority integration', () => {
       },
     });
     expect(JSON.stringify(calls)).not.toContain(preview.confirmationToken);
+    await waitFor(async () => {
+      expect(await readdir(join(journalRoot, 'entries'))).toHaveLength(0);
+      const states = await readdir(join(journalRoot, 'states'));
+      const state = JSON.parse(await readFile(join(journalRoot, 'states', states[0]!), 'utf8')) as {
+        ackedSequence: number;
+        lastSequence: number;
+      };
+      expect(state).toMatchObject({ ackedSequence: 4, lastSequence: 4 });
+    });
   });
 
   it('keeps TypeScript authoritative when the publisher throws or rejects', async () => {

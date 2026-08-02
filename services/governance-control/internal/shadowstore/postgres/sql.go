@@ -66,21 +66,34 @@ INSERT INTO governance_shadow_receipts (
 ) VALUES ($1,'observation_ingest','reconciliation_required','unknown',$2,$3,$4,$5,$6,$7,$8,NULL,$9)
 ON CONFLICT (idempotency_key) DO NOTHING`
 
-	projectionHeadSQL = `
-SELECT source_sequence, matched_record_revision
-FROM governance_shadow_heads
-WHERE workspace_id = $1 AND plan_id = $2`
-
-	projectionCountsSQL = `
+	projectionSnapshotSQL = `
 SELECT
-    count(*) FILTER (WHERE parity = 'matched'),
-    count(*) FILTER (WHERE parity = 'mismatched'),
-    count(*) FILTER (WHERE kind = 'confirmation' AND parity = 'matched'),
-    count(*) FILTER (WHERE kind = 'confirmation' AND parity = 'mismatched'),
-    count(*) FILTER (WHERE kind = 'audit' AND parity = 'matched'),
-    count(*) FILTER (WHERE kind = 'audit' AND parity = 'mismatched')
-FROM governance_shadow_observations
-WHERE workspace_id = $1 AND plan_id = $2`
+    head.source_sequence,
+    head.matched_record_revision,
+    record.canonical_record_bytes,
+    counts.matched_observations,
+    counts.mismatched_observations,
+    counts.confirmation_matched,
+    counts.confirmation_mismatched,
+    counts.audit_matched,
+    counts.audit_mismatched
+FROM governance_shadow_heads AS head
+LEFT JOIN governance_shadow_record_versions AS record
+  ON record.workspace_id = head.workspace_id
+ AND record.plan_id = head.plan_id
+ AND record.revision = head.matched_record_revision
+CROSS JOIN LATERAL (
+  SELECT
+      count(*) FILTER (WHERE parity = 'matched') AS matched_observations,
+      count(*) FILTER (WHERE parity = 'mismatched') AS mismatched_observations,
+      count(*) FILTER (WHERE kind = 'confirmation' AND parity = 'matched') AS confirmation_matched,
+      count(*) FILTER (WHERE kind = 'confirmation' AND parity = 'mismatched') AS confirmation_mismatched,
+      count(*) FILTER (WHERE kind = 'audit' AND parity = 'matched') AS audit_matched,
+      count(*) FILTER (WHERE kind = 'audit' AND parity = 'mismatched') AS audit_mismatched
+  FROM governance_shadow_observations
+  WHERE workspace_id = head.workspace_id AND plan_id = head.plan_id
+) AS counts
+WHERE head.workspace_id = $1 AND head.plan_id = $2`
 
 	statisticsSQL = `
 SELECT
