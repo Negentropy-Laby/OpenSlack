@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGovernedActionExecutionRegistry } from '../action-execution-registry.js';
@@ -117,8 +117,9 @@ describe('governance shadow authority integration', () => {
 
   it('projects durable records, pre-CAS confirmation, and successful audits in source order', async () => {
     const calls: GovernanceShadowEnvelope[] = [];
+    const journalRoot = join(await root('governed-shadow'), 'journal');
     const observer = await createGovernedPlanShadowObservationPort({
-      journalRoot: join(await root('governed-shadow'), 'journal'),
+      journalRoot,
       publisher: createGovernanceShadowPublisherPort(async (envelope) => {
         calls.push(envelope);
         return receipt(envelope);
@@ -148,6 +149,16 @@ describe('governance shadow authority integration', () => {
       authorityOutcome: 'claim_eligible',
     });
     expect(JSON.stringify(calls)).not.toContain(preview.confirmationToken);
+    await waitFor(async () => {
+      expect(await readdir(join(journalRoot, 'entries'))).toHaveLength(0);
+      const states = await readdir(join(journalRoot, 'states'));
+      expect(states).toHaveLength(1);
+      const state = JSON.parse(await readFile(join(journalRoot, 'states', states[0]!), 'utf8')) as {
+        ackedSequence: number;
+        lastSequence: number;
+      };
+      expect(state).toMatchObject({ ackedSequence: 8, lastSequence: 8 });
+    });
   });
 
   it('does not await a hung shadow publisher or change the TypeScript result', async () => {
