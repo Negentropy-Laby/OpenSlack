@@ -519,6 +519,8 @@ describe('notification delivery service workflow', () => {
     expect(gs6McpClientSource).toContain('InMemoryTransport.createLinkedPair()');
     expect(gs6McpClientSource).toContain('createGovernanceAuthorityHttpClient({');
     expect(gs6McpClientSource).toContain('new LocalGovernedPlanStore');
+    expect(gs6McpClientSource).toContain("record.status !== 'needs_confirmation'");
+    expect(gs6McpClientSource).not.toContain("record.status !== 'awaiting_confirmation'");
     expect(gs6McpClientSource).toContain("schema: 'openslack.gs6_mcp_authority_qualification.v1'");
     expect(gs6McpClientSource).not.toMatch(
       /\b(?:vi\.|jest\.|mockImplementation|mockResolvedValue)\b/u,

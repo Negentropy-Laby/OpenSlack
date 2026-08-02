@@ -260,7 +260,7 @@ function previewMetadata(value: unknown): Readonly<{
   }
   const record = value as Record<string, unknown>;
   if (
-    record.status !== 'awaiting_confirmation' ||
+    record.status !== 'needs_confirmation' ||
     typeof record.planId !== 'string' ||
     typeof record.confirmationToken !== 'string' ||
     typeof record.correlationId !== 'string'
