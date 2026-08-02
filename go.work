@@ -4,4 +4,5 @@ use (
 	./services/governance-control
 	./services/notification-delivery
 	./services/organization-graph
+	./services/workflow-control
 )

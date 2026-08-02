@@ -1,0 +1,144 @@
+{
+  "schema": "openslack.workflow_control_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "localStore": ".openslack.local/workflows/runs",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "credential-free-read-model-only",
+    "authorityEligible": false
+  },
+  "observedBehavior": {
+    "productionInitialState": "running",
+    "dormantStatesWithoutProductionWriter": ["created", "previewed", "confirmed"],
+    "states": [
+      "created",
+      "previewed",
+      "confirmed",
+      "running",
+      "paused",
+      "paused_waiting_approval",
+      "resuming",
+      "completed",
+      "failed",
+      "cancelled"
+    ],
+    "transitions": {
+      "created": ["previewed", "confirmed", "running"],
+      "previewed": ["confirmed", "running"],
+      "confirmed": ["running"],
+      "running": [
+        "paused",
+        "paused_waiting_approval",
+        "resuming",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "paused": ["running"],
+      "paused_waiting_approval": ["resuming", "cancelled"],
+      "resuming": ["running", "failed", "cancelled"],
+      "completed": [],
+      "failed": [],
+      "cancelled": []
+    },
+    "checkpointStates": ["completed", "failed", "skipped"],
+    "checkpointPersistenceAtomic": false,
+    "controlPathsCanBypassTransitionTable": true,
+    "budgetWarningKinds": ["threshold", "exceeded"]
+  },
+  "approvalPlanes": {
+    "legacyRunGate": {
+      "persistedAs": "pending-approvals.json",
+      "semantics": "run-gate-only",
+      "statuses": ["pending", "approved", "rejected"],
+      "effectDecisionAuthority": false
+    },
+    "effectV2": {
+      "schema": "openslack.workflow_effect_approval.v2",
+      "semantics": "effect-decision-only",
+      "statuses": ["pending", "approved", "rejected"],
+      "normative": true
+    },
+    "interchangeable": false
+  },
+  "projectionBoundary": {
+    "credentialFree": true,
+    "allowedSensitiveRepresentations": ["sha256-hash", "status-count"],
+    "forbiddenRawFields": [
+      "args",
+      "result",
+      "detail",
+      "capability",
+      "decision",
+      "evidence",
+      "nonce",
+      "token",
+      "secret",
+      "prompt",
+      "output"
+    ]
+  },
+  "canonicalization": {
+    "encoding": "utf-8",
+    "objectKeys": "lexicographic-ecmascript-code-unit",
+    "hash": "sha256(canonical-json-utf8)",
+    "hashHexLength": 64
+  },
+  "limits": {
+    "maxObservationBytes": 262144,
+    "maxIdentifierBytes": 256,
+    "maxWorkflowNameBytes": 512,
+    "maxPhaseNameBytes": 512,
+    "maxPhaseCheckpoints": 256,
+    "maxBudgetWarnings": 256,
+    "maxCount": 1000000,
+    "maxTokens": 9007199254740991,
+    "maxCostUsd": 1000000000
+  },
+  "errorCodes": [
+    "WORKFLOW_CONTROL_INVALID",
+    "WORKFLOW_CONTROL_UNKNOWN_FIELD",
+    "WORKFLOW_CONTROL_LIMIT_EXCEEDED",
+    "WORKFLOW_CONTROL_INVALID_TRANSITION",
+    "WORKFLOW_CONTROL_APPROVAL_PLANE_MISMATCH",
+    "WORKFLOW_CONTROL_SENSITIVE_FIELD_FORBIDDEN"
+  ],
+  "qualificationGaps": [
+    "no-cas-or-revision",
+    "no-lease",
+    "no-fencing",
+    "no-execution-abort",
+    "no-durable-budget-authority",
+    "resume-correctness-unqualified",
+    "control-transition-bypass-exists"
+  ],
+  "deferred": {
+    "gs8": "JS runner worker protocol, scheduling, lease, cancellation receipts",
+    "gs9": "PostgreSQL authority cutover for checkpoint, approval, and budget state"
+  },
+  "artifacts": {
+    "schemas/workflow-control-observation.v1.schema.json": {
+      "path": "schemas/workflow-control-observation.v1.schema.json",
+      "byteLength": 6687,
+      "sha256": "3773a507266d659c7fc283d7e842055d5a9932c4e268c0da12c184134238ae33"
+    },
+    "schemas/workflow-control-read-model.v1.schema.json": {
+      "path": "schemas/workflow-control-read-model.v1.schema.json",
+      "byteLength": 6211,
+      "sha256": "765aeb667df8a6d0d51e7212fa8f4cc36153b8148987d2cf8559b80a67b4c59d"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 77398,
+      "sha256": "1450a49ad46d2a152e805de8b4ca9536cb07efa839d4e289a8019d59ab6e32e8"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-control-observation.v1.schema.json",
+    "schemas/workflow-control-read-model.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

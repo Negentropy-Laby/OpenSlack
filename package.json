@@ -11,7 +11,7 @@
     "@openslack/collaboration": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -22,6 +22,7 @@
     "schema:stage": "bun scripts/release/stage-schema-assets.ts",
     "graph:golden": "bun scripts/organization-graph-contracts/index.ts",
     "governance:golden": "bun scripts/governance-control-contracts/index.ts",
+    "workflow:golden": "bun scripts/workflow-control-contracts/index.ts",
     "graph:dist-build": "bunx tsc --build packages/organization-graph/tsconfig.json --clean && bunx tsc --build packages/organization-graph/tsconfig.json --force && bun run schema:stage",
     "graph:dist-smoke": "bun scripts/organization-graph-contracts/dist-smoke.ts",
     "release:build": "bun scripts/release/build.ts",
