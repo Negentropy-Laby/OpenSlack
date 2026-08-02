@@ -75,6 +75,7 @@ export {
 } from './governed-composition.js';
 export type {
   CreateOpenSlackAgentBoundMutationCompositionOptions,
+  GovernedPlanAuthorityCompositionOptions,
   OpenSlackAgentBoundMutationComposition,
 } from './governed-composition.js';
 

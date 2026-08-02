@@ -1,4 +1,4 @@
-// Package testsupport owns isolated PostgreSQL schemas for GS5 tests.
+// Package testsupport owns isolated PostgreSQL schemas for Governance Control tests.
 package testsupport
 
 import (
@@ -82,17 +82,19 @@ func openSchema(t testing.TB, schema string, migrate bool, cleanup bool) *pgxpoo
 	}
 	if migrate {
 		_, filename, _, _ := runtime.Caller(0)
-		migrationPath := filepath.Join(filepath.Dir(filename), "..", "..", "migrations", "000001_create_governance_shadow.up.sql")
-		raw, err := os.ReadFile(migrationPath)
-		if err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, string(raw)); err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatal(err)
+		for _, name := range []string{"000001_create_governance_shadow.up.sql", "000002_create_governance_authority.up.sql"} {
+			migrationPath := filepath.Join(filepath.Dir(filename), "..", "..", "migrations", name)
+			raw, err := os.ReadFile(migrationPath)
+			if err != nil {
+				pool.Close()
+				admin.Close()
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, string(raw)); err != nil {
+				pool.Close()
+				admin.Close()
+				t.Fatal(err)
+			}
 		}
 	}
 	t.Cleanup(func() {

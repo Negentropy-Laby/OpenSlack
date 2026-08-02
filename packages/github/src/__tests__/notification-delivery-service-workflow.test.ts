@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -61,6 +62,40 @@ const reusableWorkflowUrl = new URL(
 );
 const reusableSource = readFileSync(reusableWorkflowUrl, 'utf8');
 const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
+const gs6McpClientUrl = new URL(
+  '../../../../scripts/governance-control-contracts/gs6-mcp-client.ts',
+  import.meta.url,
+);
+const gs6McpClientSource = readFileSync(gs6McpClientUrl, 'utf8');
+const pendingAuditSchemaUrl = new URL(
+  '../../../../packages/operator/contracts/governed-plan-authority/v1/schemas/governance-authority-pending-audit.v1.schema.json',
+  import.meta.url,
+);
+const pendingAuditSchemaBytes = readFileSync(pendingAuditSchemaUrl);
+const pendingAuditSchema = JSON.parse(pendingAuditSchemaBytes.toString('utf8')) as Record<
+  string,
+  unknown
+>;
+const authorityManifestUrl = new URL(
+  '../../../../packages/operator/contracts/governed-plan-authority/v1/manifest.json',
+  import.meta.url,
+);
+const authorityManifest = JSON.parse(readFileSync(authorityManifestUrl, 'utf8')) as Record<
+  string,
+  unknown
+>;
+const authorityGoldenUrl = new URL(
+  '../../../../packages/operator/contracts/governed-plan-authority/v1/golden-vectors.json',
+  import.meta.url,
+);
+const authorityGolden = JSON.parse(readFileSync(authorityGoldenUrl, 'utf8')) as Record<
+  string,
+  unknown
+>;
+const pendingAuditMirrorUrl = new URL(
+  '../../../../services/governance-control/internal/contractmirror/generated/authority/v1/schemas/governance-authority-pending-audit.v1.schema.json',
+  import.meta.url,
+);
 
 const checkoutAction = 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd';
 const setupGoAction = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16';
@@ -81,6 +116,7 @@ const triggerPaths = [
   'services/*/go.sum',
   'packages/organization-graph/**',
   'packages/operator/contracts/governed-plan/**',
+  'packages/operator/contracts/governed-plan-authority/**',
   'packages/operator/src/governed-plan*.ts',
   'README.md',
   'docs/README.md',
@@ -122,6 +158,43 @@ function stepIndex(name: string): number {
 
 function lines(...values: string[]): string {
   return `${values.join('\n')}\n`;
+}
+
+function gs6CrossLanguageRun(): string {
+  return lines(
+    'set -euo pipefail',
+    'cd "$GITHUB_WORKSPACE"',
+    'bun run build',
+    'cd services/governance-control',
+    'postgres_container="openslack-gs6-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+    'cleanup() {',
+    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
+    '}',
+    'trap cleanup EXIT',
+    'cleanup',
+    'docker run --detach \\',
+    '  --name "$postgres_container" \\',
+    '  --env POSTGRES_USER=openslack \\',
+    '  --env POSTGRES_PASSWORD=openslack \\',
+    '  --env POSTGRES_DB=openslack \\',
+    '  --publish 127.0.0.1::5432 \\',
+    `  ${postgresImage} >/dev/null`,
+    'for attempt in $(seq 1 60); do',
+    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
+    '    break',
+    '  fi',
+    '  if [ "$attempt" -eq 60 ]; then',
+    '    docker logs "$postgres_container"',
+    '    exit 1',
+    '  fi',
+    '  sleep 1',
+    'done',
+    'published="$(docker port "$postgres_container" 5432/tcp)"',
+    'postgres_port="${published##*:}"',
+    'test "$postgres_port" -ge 1',
+    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
+    "OPENSLACK_GS6_CROSS_LANGUAGE=1 go test ./cmd/server -run '^TestGS6CrossLanguageAuthorityCutover$' -count=1",
+  );
 }
 
 describe('notification delivery service workflow', () => {
@@ -178,6 +251,7 @@ describe('notification delivery service workflow', () => {
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
     const graphAuthorityIndex = stepIndex('Qualify GS3-C global Go Graph read authority');
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
+    const gs6CrossLanguageIndex = stepIndex('Qualify GS6 official-SDK single-writer cutover');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -198,7 +272,8 @@ describe('notification delivery service workflow', () => {
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
     expect(imagePullIndex).toBe(graphAuthorityIndex + 1);
-    expect(goCheckIndex).toBe(imagePullIndex + 1);
+    expect(gs6CrossLanguageIndex).toBe(imagePullIndex + 1);
+    expect(goCheckIndex).toBe(gs6CrossLanguageIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -276,6 +351,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': 'services/organization-graph',
       run: "OPENSLACK_GS3C_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3CRealGoReadAuthority$' -count=1",
     });
+    expect(job.steps[gs6CrossLanguageIndex]).toEqual({
+      name: 'Qualify GS6 official-SDK single-writer cutover',
+      'working-directory': 'services/governance-control',
+      run: gs6CrossLanguageRun(),
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -325,6 +405,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS3-B bounded Go read canary',
       'Qualify GS3-C global Go Graph read authority',
       'Pull pinned Go verification images',
+      'Qualify GS6 official-SDK single-writer cutover',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -372,6 +453,7 @@ describe('notification delivery service workflow', () => {
         `docker pull ${postgresImage}`,
         `docker pull ${prometheusImage}`,
       ),
+      'Qualify GS6 official-SDK single-writer cutover': gs6CrossLanguageRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -403,6 +485,151 @@ describe('notification delivery service workflow', () => {
       } else {
         expect(Object.keys(step).sort()).toEqual(['name', 'run']);
       }
+    }
+  });
+
+  it('runs the non-skippable GS6 official-SDK single-writer contract against real Go HTTP', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS6 official-SDK single-writer cutover',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS6 official-SDK single-writer cutover',
+      'working-directory': 'services/governance-control',
+      run: gs6CrossLanguageRun(),
+    });
+    expect(step?.run).toContain('OPENSLACK_GS6_CROSS_LANGUAGE=1');
+    expect(step?.run).toContain("-run '^TestGS6CrossLanguageAuthorityCutover$'");
+    expect(step?.run).toContain(`docker run --detach \\\n`);
+    expect(step?.run).toContain(postgresImage);
+    expect(step?.run).toContain('trap cleanup EXIT');
+    expect(step?.run).toContain('export DATABASE_URL=');
+    expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+
+    for (const name of [
+      'OPENSLACK_GS6_AUTHORITY_ORIGIN',
+      'OPENSLACK_GS6_AUTHORITY_BUILD_SHA',
+      'OPENSLACK_GS6_AUTHORITY_CALLER_ID',
+      'OPENSLACK_GS6_AUTHORITY_ROUTING_EPOCH',
+      'OPENSLACK_GS6_AUTHORITY_WORKSPACE_ID',
+    ]) {
+      expect(gs6McpClientSource).toContain(name);
+    }
+    expect(gs6McpClientSource).toContain('mcpCommands(dependencies).parseAsync');
+    expect(gs6McpClientSource).toContain('createOpenSlackAgentBoundMutationComposition(options)');
+    expect(gs6McpClientSource).toContain('InMemoryTransport.createLinkedPair()');
+    expect(gs6McpClientSource).toContain('createGovernanceAuthorityHttpClient({');
+    expect(gs6McpClientSource).toContain('new LocalGovernedPlanStore');
+    expect(gs6McpClientSource).toContain("schema: 'openslack.gs6_mcp_authority_qualification.v1'");
+    expect(gs6McpClientSource).not.toMatch(
+      /\b(?:vi\.|jest\.|mockImplementation|mockResolvedValue)\b/u,
+    );
+
+    const properties = pendingAuditSchema.properties as Record<
+      string,
+      { const?: unknown; enum?: unknown[] }
+    >;
+    const responseKeys = [
+      'schema',
+      'status',
+      'workspaceId',
+      'planId',
+      'revision',
+      'operation',
+      'route',
+      'recordHash',
+      'serviceBuildSha',
+    ];
+    const operations = [
+      'accept',
+      'claim_execution',
+      'complete_execution',
+      'cancel',
+      'expire',
+      'require_reconciliation',
+    ];
+    expect(pendingAuditSchema.additionalProperties).toBe(false);
+    expect((pendingAuditSchema.required as string[]).sort()).toEqual([...responseKeys].sort());
+    expect(Object.keys(properties).sort()).toEqual([...responseKeys].sort());
+    expect(properties.schema?.const).toBe('openslack.governance_authority_pending_audit.v1');
+    expect(properties.status?.const).toBe('pending');
+    expect(properties.operation?.enum).toEqual(operations);
+    expect(properties).not.toHaveProperty('record');
+    expect(properties).not.toHaveProperty('state');
+
+    const manifest = authorityManifest as {
+      transport: { pendingAuditRead: Record<string, unknown> };
+      pendingAuditRecoverySemantics: Record<string, unknown>;
+      semanticConstraints: string[];
+      artifacts: Record<string, { byteLength: number; sha256: string }>;
+    };
+    expect(manifest.transport.pendingAuditRead).toEqual({
+      method: 'GET',
+      path: '/v1/governance/plans/{planId}/authority-events/{revision}:pending',
+      headers: [
+        'X-OpenSlack-Governance-Caller-ID',
+        'X-OpenSlack-Governance-Workspace-ID',
+        'X-OpenSlack-Governance-Routing-Epoch',
+        'X-OpenSlack-Governance-Expected-Build-SHA',
+      ],
+      query: 'forbidden',
+      body: 'forbidden',
+    });
+    expect(manifest.pendingAuditRecoverySemantics).toMatchObject({
+      lookup: ['workspaceId', 'planId', 'revision'],
+      status: 'pending',
+      operations,
+      atMostOnePendingPerPlan: true,
+      pendingRevisionEqualsCurrentHead: true,
+      nextTransitionBlockedWhilePending: true,
+      authoritativeRecordLoadedSeparately: true,
+      responseIncludesRecord: false,
+      responseIncludesState: false,
+      absentOrAlreadyRecorded: 404,
+      routeEpochMismatch: 409,
+      invalidBindingOrIdentity: 422,
+      internalFailure: 500,
+      unavailable: 503,
+      restartRecovery: 'bounded-local-sidecar-enumeration-plus-point-read',
+    });
+    expect(manifest.semanticConstraints).toEqual(
+      expect.arrayContaining([
+        'at-most-one-pending-audit-delivery-per-plan',
+        'pending-audit-revision-equals-current-authority-head',
+        'next-transition-requires-current-revision-audit-delivery-recorded',
+      ]),
+    );
+    const artifactPath = 'schemas/governance-authority-pending-audit.v1.schema.json';
+    expect(manifest.artifacts[artifactPath]).toEqual({
+      path: artifactPath,
+      byteLength: pendingAuditSchemaBytes.length,
+      sha256: createHash('sha256').update(pendingAuditSchemaBytes).digest('hex'),
+    });
+    expect(readFileSync(pendingAuditMirrorUrl)).toEqual(pendingAuditSchemaBytes);
+
+    const recoveries = authorityGolden.pendingAuditRecoveries as Array<{
+      request: { method: string; path: string; headers: Record<string, string> };
+      response: Record<string, unknown>;
+    }>;
+    expect(recoveries).toHaveLength(2);
+    expect(authorityGolden.pendingAuditRecoverySemantics).toMatchObject({
+      atMostOnePendingPerPlan: true,
+      pendingRevisionEqualsCurrentHead: true,
+      nextTransitionBlockedWhilePending: true,
+    });
+    for (const recovery of recoveries) {
+      expect(recovery.request.method).toBe('GET');
+      expect(recovery.request.path).toMatch(
+        /^\/v1\/governance\/plans\/GPLAN-[0-9a-f-]+\/authority-events\/[12]:pending$/u,
+      );
+      expect(Object.keys(recovery.request.headers)).toEqual([
+        'X-OpenSlack-Governance-Caller-ID',
+        'X-OpenSlack-Governance-Workspace-ID',
+        'X-OpenSlack-Governance-Routing-Epoch',
+        'X-OpenSlack-Governance-Expected-Build-SHA',
+      ]);
+      expect(Object.keys(recovery.response).sort()).toEqual([...responseKeys].sort());
+      expect(recovery.response).not.toHaveProperty('record');
+      expect(recovery.response).not.toHaveProperty('state');
     }
   });
 

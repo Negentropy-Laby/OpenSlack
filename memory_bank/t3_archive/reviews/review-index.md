@@ -6,7 +6,7 @@ authority: index
 audience:
   - reviewers
 owner: project-governance
-updated: 2026-08-01
+updated: 2026-08-03
 sources:
   - docs/reference/document-path-migration-v1.yaml
   - memory_bank/t3_archive/reviews/notification-delivery-implementation.md
@@ -14,6 +14,7 @@ sources:
   - production/code-reviews/code-review-gs2-b-2026-08-01.md
   - production/code-reviews/code-review-gs3-a-2026-08-01.md
   - production/code-reviews/code-review-gs4-2026-08-02.md
+  - production/code-reviews/code-review-gs6-2026-08-03.md
   - services/notification-delivery/design/cdd/reviews/review-archive.md
 ---
 
@@ -54,8 +55,10 @@ admission, PX2, or live verification.
 | GS2-B Contract-to-Delivery Projector shadow | TypeScript, Go, and QA code review      | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-b-2026-08-01.md` |
 | GS3-A MCP Organization Graph mirror-read    | TypeScript, architecture, and QA review | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs3-a-2026-08-01.md` |
 | GS4 Governance Control contract freeze      | TypeScript, Go, and QA code review      | Ready for independent human review | 2026-08-02 | `production/code-reviews/code-review-gs4-2026-08-02.md`   |
+| GS6 Governance authority new-record cutover | TypeScript, Go, QA, and lead review     | Ready for independent human review | 2026-08-03 | `production/code-reviews/code-review-gs6-2026-08-03.md`   |
 
-The GS2-A, GS2-B, GS3-A, and GS4 verdicts preserve TypeScript as the sole authority.
-They do not establish independent human approval, PRMS readiness, merge, read
-cutover, runtime admission, Qoder qualification, release, live evidence, or
-production verification.
+The GS2-A, GS2-B, GS3-A, and GS4 verdicts preserve TypeScript as the sole authority. GS6 transfers
+only newly Go-routed Governed Plan records to the PostgreSQL writer; existing TypeScript records
+remain local. None of these verdicts establishes independent human approval, PRMS readiness,
+merge, authenticated Qoder Desktop, remote Connector, release, live evidence, or production
+verification.

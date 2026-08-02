@@ -4,9 +4,9 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/governance-control",
     "targetPath": "services/governance-control",
-    "migrationPhase": "GS5",
-    "runtimeProfile": "governance-control-v1",
-    "authority": "TYPESCRIPT_GOVERNED_PLAN_AUTHORITY_GO_CREDENTIAL_FREE_SHADOW"
+    "migrationPhase": "GS6",
+    "runtimeProfile": "governance-control-v2",
+    "authority": "PERSISTED_ROUTE_SINGLE_WRITER_TS_OR_GO_LOCAL_QUALIFICATION"
   },
   "containerInputs": {
     "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
@@ -39,9 +39,13 @@
       "path": "packages/operator/contracts/governed-plan-shadow/v1/manifest.json",
       "sha256": "f6fc7d218486691e1583f28529f35d45f9763d72d7b124b2f32d460817f49b77"
     },
+    "governanceAuthorityManifest": {
+      "path": "packages/operator/contracts/governed-plan-authority/v1/manifest.json",
+      "sha256": "d3afcf8008d115edafc87143e58111db648e2b2966e6a798edb0d3a9eac3140a"
+    },
     "openapi": {
       "path": "services/governance-control/docs/api/openapi.yaml",
-      "sha256": "d80e990a7cfe80b4307bd79e1b22e440fe76f49135690d3bd991793bf854bbbe"
+      "sha256": "8cdea0ebfb2533d46275e9afcfd486a5bc7f787bb3c8706e9798d59f9d7a5537"
     }
   },
   "legalInputs": {
@@ -66,14 +70,19 @@
     }
   },
   "scope": {
-    "authorizes": ["DURABLE_GOVERNANCE_SHADOW_OBSERVATION", "CREDENTIAL_FREE_PARITY_PROJECTION"],
+    "authorizes": [
+      "DURABLE_GOVERNANCE_SHADOW_OBSERVATION",
+      "CREDENTIAL_FREE_PARITY_PROJECTION",
+      "GO_ROUTED_GOVERNED_PLAN_WRITE_AUTHORITY",
+      "DURABLE_EXECUTION_CLAIM_STATE",
+      "AUTHORITY_AUDIT_DELIVERY_TRACKING"
+    ],
     "nonClaims": [
       "RELEASE",
       "REGISTRY_INCLUSION",
       "SIGNED_PROVENANCE",
-      "GOVERNED_PLAN_WRITE_AUTHORITY",
       "CONFIRMATION_AUTHORITY",
-      "EXECUTION_AUTHORITY",
+      "EXTERNAL_EFFECT_EXECUTION_AUTHORITY",
       "WORKFLOW_MUTATION_AUTHORITY",
       "LIVE_VERIFIED",
       "QODER_VERIFIED",

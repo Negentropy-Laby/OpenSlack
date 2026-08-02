@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-pending-audit.v1.schema.json",
+  "title": "OpenSlack Governance Authority Pending Audit Point Read",
+  "$comment": "A bounded recovery sidecar only. Runtime validation requires the exact workspace, plan, revision, persisted Go route, active-or-drain epoch, and expected service build. The authoritative plan record is loaded separately.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "operation",
+    "workspaceId",
+    "planId",
+    "revision",
+    "route",
+    "recordHash",
+    "serviceBuildSha"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.governance_authority_pending_audit.v1" },
+    "status": { "const": "pending" },
+    "operation": {
+      "enum": [
+        "accept",
+        "claim_execution",
+        "complete_execution",
+        "cancel",
+        "expire",
+        "require_reconciliation"
+      ]
+    },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "route": {
+      "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+    },
+    "recordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "serviceBuildSha": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

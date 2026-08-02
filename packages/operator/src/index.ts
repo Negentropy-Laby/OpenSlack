@@ -162,6 +162,30 @@ export {
   GovernedPlanStoreError,
 } from './governed-plan-store.js';
 export type { GovernedPlanStore } from './governed-plan-store.js';
+export {
+  createRoutedGovernedPlanStore,
+  governedPlanAuthorityRoot,
+  GovernedPlanAuthorityStoreError,
+  registerGovernanceAuthorityGoPort,
+} from './governed-plan-authority-store.js';
+export type {
+  CreateRoutedGovernedPlanStoreOptions,
+  GovernanceAuthorityBackend,
+  GovernanceAuthorityGoPort,
+  GovernanceAuthorityMutationOperation,
+  GovernanceAuthorityOwner,
+  GovernanceAuthorityPendingAudit,
+  GovernanceAuthorityTransitionOperation,
+  GovernedPlanAuthorityPolicy,
+  GovernedPlanAuthorityRoute,
+  PersistedGovernedPlanAuthorityRoute,
+} from './governed-plan-authority-store.js';
+export {
+  createGovernanceAuthorityHttpClient,
+  GOVERNANCE_AUTHORITY_HTTP_LIMITS,
+  GovernanceAuthorityHttpError,
+} from './governed-plan-authority-http.js';
+export type { GovernanceAuthorityHttpOptions } from './governed-plan-authority-http.js';
 export { projectGovernedPlanReadModel } from './governed-plan-read-model.js';
 export type {
   GovernedPlanExecutionReadModel,

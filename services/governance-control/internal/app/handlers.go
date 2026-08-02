@@ -117,6 +117,12 @@ func (service *Service) handleReady(w http.ResponseWriter, request *http.Request
 		writeCanonical(w, http.StatusServiceUnavailable, canonicaljson.Object{"status": "not_ready"})
 		return
 	}
+	if service.authorityEnabled {
+		if _, err := service.authorityStore.Statistics(ctx); err != nil {
+			writeCanonical(w, http.StatusServiceUnavailable, canonicaljson.Object{"status": "not_ready"})
+			return
+		}
+	}
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{"status": "ready"})
 }
 
@@ -125,7 +131,7 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 		return
 	}
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{
-		"schema": "openslack.governance_shadow_service_version.v1", "buildSha": service.buildSHA, "contractVersion": "v1",
+		"schema": "openslack.governance_shadow_service_version.v1", "buildSha": service.buildSHA, "contractVersion": "v2", "authorityEnabled": service.authorityEnabled,
 	})
 }
 
@@ -152,6 +158,31 @@ func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Reque
 		"# TYPE openslack_governance_shadow_source_sequence_max gauge",
 		"openslack_governance_shadow_source_sequence_max " + strconv.FormatInt(statistics.SourceSequenceMax, 10),
 	}, "\n") + "\n"
+	if service.authorityEnabled {
+		authorityStatistics, authorityErr := service.authorityStore.Statistics(ctx)
+		if authorityErr != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("metrics unavailable\n"))
+			return
+		}
+		body += strings.Join([]string{
+			"# TYPE openslack_governance_authority_plans gauge",
+			"openslack_governance_authority_plans " + strconv.FormatInt(authorityStatistics.Plans, 10),
+			"# TYPE openslack_governance_authority_outcomes_total counter",
+			`openslack_governance_authority_outcomes_total{outcome="accepted"} ` + strconv.FormatInt(service.authorityAccepted.Load(), 10),
+			`openslack_governance_authority_outcomes_total{outcome="duplicate"} ` + strconv.FormatInt(service.authorityDuplicates.Load(), 10),
+			`openslack_governance_authority_outcomes_total{outcome="reconciliation_required"} ` + strconv.FormatInt(service.authorityReconciliation.Load(), 10),
+			"# TYPE openslack_governance_authority_errors_total counter",
+			`openslack_governance_authority_errors_total{code="conflict"} ` + strconv.FormatInt(service.authorityConflicts.Load(), 10),
+			`openslack_governance_authority_errors_total{code="unavailable"} ` + strconv.FormatInt(service.authorityUnavailable.Load(), 10),
+			`openslack_governance_authority_errors_total{code="commit_unknown"} ` + strconv.FormatInt(service.authorityCommitUnknown.Load(), 10),
+			`openslack_governance_authority_errors_total{code="internal"} ` + strconv.FormatInt(service.authorityInternal.Load(), 10),
+			"# TYPE openslack_governance_authority_reconciliation_pending gauge",
+			"openslack_governance_authority_reconciliation_pending " + strconv.FormatInt(authorityStatistics.ReconciliationPending, 10),
+			"# TYPE openslack_governance_authority_audit_pending gauge",
+			"openslack_governance_authority_audit_pending " + strconv.FormatInt(authorityStatistics.AuditPending, 10),
+		}, "\n") + "\n"
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

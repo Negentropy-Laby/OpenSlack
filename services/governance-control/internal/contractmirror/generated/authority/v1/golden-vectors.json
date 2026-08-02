@@ -1,0 +1,396 @@
+{
+  "schema": "openslack.governance_authority_golden_vectors.v1",
+  "authority": "governance-control",
+  "generator": "@openslack/operator-typescript",
+  "vectors": [
+    {
+      "name": "accept-revision-1-at-routing-epoch-7",
+      "request": {
+        "schema": "openslack.governance_authority_accept.v1",
+        "operation": "accept",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "expectedRevision": 0,
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:00:00.000Z",
+          "expiresAt": "2026-08-03T00:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate governed contract-to-delivery scenario",
+            "input": { "scenarioId": "contract-to-delivery-lite" },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed scenario instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "agent.demo",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d",
+            "planHash": "c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248",
+            "sourceVersionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionSnapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actionCatalogHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "executorBindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "buildNonceHash": "84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e",
+            "processNonceHash": "ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343"
+          },
+          "confirmationTokenHash": "e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417"
+        }
+      },
+      "prepared": {
+        "method": "POST",
+        "path": "/v1/governance/plans:accept",
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "openslack.governance-authority.v1.81cc97e5f632304e81c231b7310e988b7f7fc9db0d5ca7694b5f4a8b0e18870b",
+          "X-OpenSlack-Governance-Caller-ID": "openslack.mcp.local",
+          "X-OpenSlack-Governance-Workspace-ID": "workspace.demo",
+          "X-OpenSlack-Governance-Routing-Epoch": "7",
+          "X-OpenSlack-Governance-Expected-Build-SHA": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "exactBody": "{\"expectedRevision\":0,\"operation\":\"accept\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"record\":{\"bindings\":{\"actionCatalogHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorId\":\"agent.demo\",\"buildNonceHash\":\"84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"inputHash\":\"8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d\",\"permissionSnapshotHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"planHash\":\"c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248\",\"processNonceHash\":\"ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343\",\"sourceVersionHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed scenario instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate governed contract-to-delivery scenario\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417\",\"createdAt\":\"2026-08-03T00:00:00.000Z\",\"expiresAt\":\"2026-08-03T00:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":1,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"pending\",\"updatedAt\":\"2026-08-03T00:00:00.000Z\"},\"route\":{\"authority\":\"governance-control\",\"backend\":\"go\",\"routingEpoch\":7},\"schema\":\"openslack.governance_authority_accept.v1\",\"workspaceId\":\"workspace.demo\"}\n",
+        "requestFingerprint": "sha256:f51b31c25d270016a0d854a0706a36e57ed1e5965ced2898d59aac4d0b734734"
+      },
+      "successReceipt": {
+        "schema": "openslack.governance_authority_receipt.v1",
+        "operation": "accept",
+        "status": "accepted",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "expectedRevision": 0,
+        "acceptedRevision": 1,
+        "state": "pending",
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "idempotencyKey": "openslack.governance-authority.v1.81cc97e5f632304e81c231b7310e988b7f7fc9db0d5ca7694b5f4a8b0e18870b",
+        "requestFingerprint": "sha256:f51b31c25d270016a0d854a0706a36e57ed1e5965ced2898d59aac4d0b734734",
+        "recordHash": "a37d090d197b18e3fa4146f89ec6998964af6f7f1095aa8e7f10e9db1ad8ccfe",
+        "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+        "callerId": "openslack.mcp.local",
+        "serviceBuildSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:00:00.000Z",
+          "expiresAt": "2026-08-03T00:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate governed contract-to-delivery scenario",
+            "input": { "scenarioId": "contract-to-delivery-lite" },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed scenario instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "agent.demo",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d",
+            "planHash": "c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248",
+            "sourceVersionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionSnapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actionCatalogHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "executorBindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "buildNonceHash": "84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e",
+            "processNonceHash": "ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343"
+          },
+          "confirmationTokenHash": "e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417"
+        },
+        "committedAt": "2026-08-03T00:00:00.100Z"
+      }
+    },
+    {
+      "name": "claim-execution-from-revision-1-at-routing-epoch-7",
+      "request": {
+        "schema": "openslack.governance_authority_transition.v1",
+        "operation": "claim_execution",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "expectedRevision": 1,
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 2,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "executing",
+          "createdAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:01:00.000Z",
+          "expiresAt": "2026-08-03T00:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate governed contract-to-delivery scenario",
+            "input": { "scenarioId": "contract-to-delivery-lite" },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed scenario instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "agent.demo",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d",
+            "planHash": "c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248",
+            "sourceVersionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionSnapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actionCatalogHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "executorBindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "buildNonceHash": "84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e",
+            "processNonceHash": "ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343"
+          },
+          "confirmationTokenHash": "e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-03T00:01:00.000Z",
+            "outcomes": []
+          }
+        }
+      },
+      "prepared": {
+        "method": "POST",
+        "path": "/v1/governance/plans/GPLAN-123e4567-e89b-42d3-a456-426614174000:claim-execution",
+        "headers": {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "openslack.governance-authority.v1.f82a6e5f7fcaf17e3f0457a994f9de75e12ae2339856d5c810989ba789023ae5",
+          "X-OpenSlack-Governance-Caller-ID": "openslack.mcp.local",
+          "X-OpenSlack-Governance-Workspace-ID": "workspace.demo",
+          "X-OpenSlack-Governance-Routing-Epoch": "7",
+          "X-OpenSlack-Governance-Expected-Build-SHA": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "exactBody": "{\"expectedRevision\":1,\"operation\":\"claim_execution\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"record\":{\"bindings\":{\"actionCatalogHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorId\":\"agent.demo\",\"buildNonceHash\":\"84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"inputHash\":\"8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d\",\"permissionSnapshotHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"planHash\":\"c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248\",\"processNonceHash\":\"ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343\",\"sourceVersionHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed scenario instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate governed contract-to-delivery scenario\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417\",\"createdAt\":\"2026-08-03T00:00:00.000Z\",\"execution\":{\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"outcomes\":[],\"ownerPid\":42,\"startedAt\":\"2026-08-03T00:01:00.000Z\"},\"expiresAt\":\"2026-08-03T00:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":2,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"executing\",\"updatedAt\":\"2026-08-03T00:01:00.000Z\"},\"route\":{\"authority\":\"governance-control\",\"backend\":\"go\",\"routingEpoch\":7},\"schema\":\"openslack.governance_authority_transition.v1\",\"workspaceId\":\"workspace.demo\"}\n",
+        "requestFingerprint": "sha256:bfdadd5b85b7e6a04827c468240e5ed314ad6c10aa6f57cd4276495a988503fb"
+      },
+      "successReceipt": {
+        "schema": "openslack.governance_authority_receipt.v1",
+        "operation": "claim_execution",
+        "status": "accepted",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "expectedRevision": 1,
+        "acceptedRevision": 2,
+        "state": "executing",
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "idempotencyKey": "openslack.governance-authority.v1.f82a6e5f7fcaf17e3f0457a994f9de75e12ae2339856d5c810989ba789023ae5",
+        "requestFingerprint": "sha256:bfdadd5b85b7e6a04827c468240e5ed314ad6c10aa6f57cd4276495a988503fb",
+        "recordHash": "612f380d2bd31895ea9926634520d9633d18bab866edb87cb5729844e0f93f4d",
+        "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+        "callerId": "openslack.mcp.local",
+        "serviceBuildSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 2,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "executing",
+          "createdAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:01:00.000Z",
+          "expiresAt": "2026-08-03T00:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate governed contract-to-delivery scenario",
+            "input": { "scenarioId": "contract-to-delivery-lite" },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed scenario instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "agent.demo",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "8f1a60364ee3a471dd78504df055a9fb1b490448c3200cc5998ec31e8b30113d",
+            "planHash": "c7ed8761f7b92e6505d8353362a25ffdce65f7de8900b4d901ec501292ad4248",
+            "sourceVersionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionSnapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actionCatalogHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "executorBindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "buildNonceHash": "84b8b6124dc57c010df1d5513f7a086c1e14c4c30765ac23afd95fca0d17577e",
+            "processNonceHash": "ae3df44642b2f60ef298e50be115230b927e0983fd954e3946e907fa24e71343"
+          },
+          "confirmationTokenHash": "e266985d9bf205fad4fe4b5274503810660638fdc7dbf0ee09d00971815e5417",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-03T00:01:00.000Z",
+            "outcomes": []
+          }
+        },
+        "committedAt": "2026-08-03T00:01:00.100Z"
+      },
+      "responseLostReceipt": {
+        "schema": "openslack.governance_authority_receipt.v1",
+        "operation": "claim_execution",
+        "status": "reconciliation_required",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "expectedRevision": 1,
+        "targetRevision": 2,
+        "targetState": "executing",
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "idempotencyKey": "openslack.governance-authority.v1.f82a6e5f7fcaf17e3f0457a994f9de75e12ae2339856d5c810989ba789023ae5",
+        "requestFingerprint": "sha256:bfdadd5b85b7e6a04827c468240e5ed314ad6c10aa6f57cd4276495a988503fb",
+        "recordHash": "612f380d2bd31895ea9926634520d9633d18bab866edb87cb5729844e0f93f4d",
+        "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+        "callerId": "openslack.mcp.local",
+        "serviceBuildSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+        "reconciliationToken": "GREC-authority-vector-0001"
+      }
+    }
+  ],
+  "pendingAuditRecoveries": [
+    {
+      "name": "recover-pending-accept-audit-at-revision-1",
+      "request": {
+        "method": "GET",
+        "path": "/v1/governance/plans/GPLAN-123e4567-e89b-42d3-a456-426614174000/authority-events/1:pending",
+        "headers": {
+          "X-OpenSlack-Governance-Caller-ID": "openslack.mcp.local",
+          "X-OpenSlack-Governance-Workspace-ID": "workspace.demo",
+          "X-OpenSlack-Governance-Routing-Epoch": "7",
+          "X-OpenSlack-Governance-Expected-Build-SHA": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "response": {
+        "schema": "openslack.governance_authority_pending_audit.v1",
+        "status": "pending",
+        "operation": "accept",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "revision": 1,
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "recordHash": "a37d090d197b18e3fa4146f89ec6998964af6f7f1095aa8e7f10e9db1ad8ccfe",
+        "serviceBuildSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "recover-pending-claim-execution-audit-at-revision-2",
+      "request": {
+        "method": "GET",
+        "path": "/v1/governance/plans/GPLAN-123e4567-e89b-42d3-a456-426614174000/authority-events/2:pending",
+        "headers": {
+          "X-OpenSlack-Governance-Caller-ID": "openslack.mcp.local",
+          "X-OpenSlack-Governance-Workspace-ID": "workspace.demo",
+          "X-OpenSlack-Governance-Routing-Epoch": "7",
+          "X-OpenSlack-Governance-Expected-Build-SHA": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "response": {
+        "schema": "openslack.governance_authority_pending_audit.v1",
+        "status": "pending",
+        "operation": "claim_execution",
+        "workspaceId": "workspace.demo",
+        "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+        "revision": 2,
+        "route": {
+          "backend": "go",
+          "routingEpoch": 7,
+          "authority": "governance-control"
+        },
+        "recordHash": "612f380d2bd31895ea9926634520d9633d18bab866edb87cb5729844e0f93f4d",
+        "serviceBuildSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  ],
+  "pendingAuditRecoverySemantics": {
+    "lookup": ["workspaceId", "planId", "revision"],
+    "atMostOnePendingPerPlan": true,
+    "pendingRevisionEqualsCurrentHead": true,
+    "nextTransitionBlockedWhilePending": true,
+    "authoritativeRecordLoadedSeparately": true,
+    "responseHasRecord": false,
+    "responseHasState": false,
+    "query": "forbidden",
+    "body": "forbidden",
+    "absent": 404,
+    "alreadyRecorded": 404,
+    "routeEpochMismatch": 409,
+    "invalidBindingOrIdentity": 422,
+    "internalFailure": 500,
+    "unavailable": 503
+  },
+  "boundaries": {
+    "reconciliationToken": {
+      "minimumAccepted": "GREC-12345678901",
+      "maximumAccepted": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+      "minimumLength": 16,
+      "maximumLength": 256
+    }
+  }
+}

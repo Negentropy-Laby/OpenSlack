@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-accept.v1.schema.json",
+  "title": "OpenSlack Governance Authority Accept Request",
+  "$comment": "Structural prefilter. Runtime validation requires a revision-1 pending record whose identifiers, tenant binding, correlation, hashes, and immutable route all match the request and trusted headers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "operation",
+    "workspaceId",
+    "planId",
+    "expectedRevision",
+    "route",
+    "record"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.governance_authority_accept.v1" },
+    "operation": { "const": "accept" },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "route": {
+      "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+    },
+    "record": {
+      "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan.v1.schema.json"
+    },
+    "expectedRevision": { "const": 0 }
+  }
+}

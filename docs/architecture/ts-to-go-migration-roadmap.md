@@ -7,11 +7,12 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-02
+updated: 2026-08-03
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
   - docs/architecture/contracts/organization-graph.md
+  - docs/architecture/contracts/governance-control.md
   - docs/architecture/contracts/qoder-mcp.md
   - design/cdd/workstreams/organization-graph/README.md
   - design/cdd/workstreams/qoder-work/README.md
@@ -242,14 +243,64 @@ and projection routes. Its result is observational: shadow failure, mismatch,
 or reconciliation cannot change the TypeScript response, runtime record,
 approval state, audit decision, or action effect. `@openslack/operator` remains
 the only writer, compiler, confirmation authority, execution claimant, mutation
-dispatcher, and audit emitter.
+dispatcher, and audit emitter for the legacy route.
 
-GS6 remains the separately reviewed step that may move Qoder mutation
-acceptance to Go durable receipts and stop the TypeScript writer for an exact
-routed record. The project Memory Bank is not part of the runtime plan store and
-grants no mutation authority to the Go service. GS5 does not establish GS6,
-Qoder mutation cutover, authenticated Desktop, `QODER_VERIFIED`, live,
-release, or production evidence.
+GS6 adds the first durable writer transfer, limited to newly created governed
+plans whose immutable route is exactly `go / governance-control`. Missing
+route remains the legacy `ts-local / typescript` authority. The route persists
+`backend`, positive safe-integer `routingEpoch`, and `authority`; one record
+never changes route. A higher epoch can select the new-record policy, including
+`ts-local`, while previously accepted Go records continue to drain through Go.
+Go origin, build, caller, and read transport therefore remain available during
+rollback; rollback does not make TypeScript a second writer for old Go records.
+The Go host defaults to `accept-new-records=false`. Activation explicitly selects
+one active epoch and may list bounded older drain epochs. Only the active epoch
+with `accept-new-records=true` accepts a new record; authority read, receipt,
+transition, and audit operations may use active or drain epochs only when the
+request matches the record's persisted route. Rollback disables new acceptance
+before adding the former active epoch to the drain allowlist.
+
+TypeScript continues compiling the canonical plan, validating the one-time
+token and current bindings, dispatching reviewed actions, and projecting audit.
+Go alone accepts and transitions a Go-routed record with expected-revision CAS.
+TypeScript stops local durable writes for that record only after validating an
+exact accepted or duplicate receipt. Timeout, response loss, malformed receipt,
+or an unproven commit enters reconciliation and never falls back to the local
+writer or replays an effect blindly.
+
+The GS6 contract is separate from GS4 governed-plan v1 and GS5 shadow v1. It
+freezes exact accept and per-transition paths, canonical LF request bytes,
+body-only idempotency, path/header/body request fingerprints, immutable route,
+durable success receipts, unknown-outcome receipts, and authority reads. A
+success receipt carries the committed record. An unknown receipt carries only
+the requested target revision/state/hash and a reconciliation token; it cannot
+invent a committed revision or record.
+
+The GS6 hosted cross-language gate runs the production agent-bound MCP command
+and composition over the official SDK against a real Go authority backed by an
+isolated pinned PostgreSQL instance. Preview, confirmation, terminal Go read,
+immutable route evidence, the exact 16-tool catalog, and zero local
+governed-plan records must all appear in one strictly decoded closed receipt.
+This proves the new-record single-writer handoff at the local/hosted integration
+boundary; it does not broaden the authority or evidence levels below.
+
+Each GS6 Go mutation commit also creates one pending audit delivery in the same transaction. Go
+allows at most one pending delivery per plan, binds it to the current authority-head revision, and
+blocks the next transition until that delivery is recorded. Restart recovery never asks Go for an
+unbounded queue: it scans the bounded local immutable route sidecars, strictly reads the current
+plan, then point-reads the exact current revision through
+`GET /v1/governance/plans/{planId}/authority-events/{revision}:pending`. The strict response omits
+the record and state, binds only pending status, original authority mutation operation, route,
+record hash, workspace/plan/revision, and service build, and is sufficient to reconstruct the
+reviewed audit event from the separately validated record. Missing or already recorded delivery is
+the same `404`; route drift and invalid bindings fail closed. A later revision therefore cannot
+hide an older pending delivery, making the current-revision point read complete. This closes
+process-stop recovery without a second plan writer, blind acknowledgement, or new list authority.
+
+The project Memory Bank remains outside every runtime plan store. GS6 does not
+establish authenticated Qoder Desktop, `QODER_VERIFIED`, remote Connector or
+OAuth, live deployment, release, production activation, old-record migration,
+or TypeScript writer deletion.
 
 ### GS7–GS9 — Workflow Control
 

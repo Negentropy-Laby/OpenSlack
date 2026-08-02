@@ -19,6 +19,7 @@ import {
   type GovernedActionExecutionContext,
   type GovernedJsonValue,
   type GovernedPlanRecord,
+  type GovernedPlanStore,
 } from '@openslack/operator';
 import {
   LocalScenarioInstanceStore,
@@ -58,6 +59,8 @@ export interface ContractDeliveryLiteWorkflowExecution {
 
 export interface AssembleContractDeliveryLiteRehearsalInput {
   readonly governedPlanRoot: string;
+  /** Host-injected routed read authority; defaults to legacy local evidence. */
+  readonly governedPlanStore?: GovernedPlanStore;
   readonly scenarioInstanceRoot: string;
   readonly workflowPlanId: string;
   readonly scenarioInstanceId: string;
@@ -251,9 +254,9 @@ function completedWorkflowRecord(value: GovernedPlanRecord): {
 export async function assembleContractDeliveryLiteRehearsalSource(
   input: AssembleContractDeliveryLiteRehearsalInput,
 ): Promise<ContractToDeliverySourceSnapshot> {
-  const storedPlan = await new LocalGovernedPlanStore(input.governedPlanRoot).load(
-    input.workflowPlanId,
-  );
+  const storedPlan = await (
+    input.governedPlanStore ?? new LocalGovernedPlanStore(input.governedPlanRoot)
+  ).load(input.workflowPlanId);
   if (!storedPlan) {
     return blocked(
       'CONTRACT_DELIVERY_REHEARSAL_EVIDENCE_INVALID',

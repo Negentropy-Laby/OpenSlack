@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-read.v1.schema.json",
+  "title": "OpenSlack Governance Authority Read Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "workspaceId",
+    "planId",
+    "route",
+    "recordHash",
+    "record",
+    "serviceBuildSha"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.governance_authority_read.v1" },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "route": {
+      "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+    },
+    "recordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "record": {
+      "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan.v1.schema.json"
+    },
+    "serviceBuildSha": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

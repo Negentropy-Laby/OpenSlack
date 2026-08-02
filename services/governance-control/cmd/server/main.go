@@ -1,4 +1,4 @@
-// server is the GS5 Governance Control PostgreSQL shadow entry point.
+// server is the GS5 shadow and default-disabled GS6 local authority entry point.
 package main
 
 import (
@@ -13,11 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/app"
+	authoritypostgres "github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/authoritystore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/config"
 	shadowpostgres "github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/shadowstore/postgres"
 )
 
-const requiredSchemaVersion int64 = 1
+const requiredSchemaVersion int64 = 2
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -40,7 +41,11 @@ func main() {
 		logger.Error("governance_shadow_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}
-	service, err := app.New(app.Options{Store: shadowpostgres.New(pool), BuildSHA: cfg.ServiceBuildSHA, Logger: logger})
+	service, err := app.New(app.Options{Store: shadowpostgres.New(pool), BuildSHA: cfg.ServiceBuildSHA, Logger: logger,
+		AuthorityStore: authoritypostgres.New(pool), AuthorityEnabled: cfg.AuthorityEnabled,
+		AuthorityWorkspaceID: cfg.AuthorityWorkspaceID, AuthorityCallerID: cfg.AuthorityCallerID,
+		AuthorityRoutingEpoch: cfg.AuthorityRoutingEpoch, AuthorityAcceptNewRecords: cfg.AuthorityAcceptNewRecords,
+		AuthorityDrainEpochs: cfg.AuthorityDrainEpochs})
 	if err != nil {
 		logger.Error("governance_shadow_composition_failed", "code", "COMPOSITION_INVALID")
 		os.Exit(1)

@@ -542,6 +542,15 @@ func timestampNondecreasing(previous, current string) bool {
 	return previousOK && currentOK && !currentTime.Before(previousTime)
 }
 
+// TimestampAtOrAfter compares two frozen ECMAScript-compatible timestamps.
+// It is exported for the GS6 authority transition validator so Go applies the
+// same expiration boundary as the TypeScript authority.
+func TimestampAtOrAfter(candidate, boundary string) bool {
+	candidateTime, candidateOK := parseECMAScriptTimestamp(candidate)
+	boundaryTime, boundaryOK := parseECMAScriptTimestamp(boundary)
+	return candidateOK && boundaryOK && !candidateTime.Before(boundaryTime)
+}
+
 // parseECMAScriptTimestamp mirrors the frozen governed-plan validator.
 // time.Date supplies ECMAScript-compatible normalization for values such as
 // February 31 and 24:00:00.000 that the TypeScript authority accepts.

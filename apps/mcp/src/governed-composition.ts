@@ -24,8 +24,11 @@ import {
   type BoundCollaborationEventAppender,
 } from '@openslack/collaboration';
 import {
+  createGovernanceAuthorityHttpClient,
   createGovernedActionExecutionRegistry,
   createGovernedPlanService,
+  createRoutedGovernedPlanStore,
+  governedPlanAuthorityRoot,
   governedPlanStoreRoot,
   hashGovernedValue,
   LocalGovernedPlanStore,
@@ -34,6 +37,7 @@ import {
   type GovernedJsonValue,
   type GovernedPlanBindingContext,
   type GovernedPlanHostAuthority,
+  type GovernedPlanStore,
 } from '@openslack/operator';
 import { parseRuntimeIdentityText, resolveAgentPrincipal } from '@openslack/runtime';
 import {
@@ -101,6 +105,18 @@ export interface CreateOpenSlackAgentBoundMutationCompositionOptions {
   readonly principalRef: string;
   readonly provider?: 'cli' | 'slack' | 'github' | 'webhook';
   readonly workspaceIdAssertion?: string;
+  readonly governanceAuthority?: GovernedPlanAuthorityCompositionOptions;
+}
+
+export interface GovernedPlanAuthorityCompositionOptions {
+  readonly backend: 'go' | 'ts-local';
+  readonly routingEpoch: number;
+  readonly tenantId: string;
+  readonly origin?: string;
+  readonly networkMode?: 'loopback' | 'internal';
+  readonly expectedBuildSha?: string;
+  readonly callerId?: string;
+  readonly expiresAt?: string;
 }
 
 export interface OpenSlackAgentBoundMutationComposition {
@@ -160,13 +176,22 @@ function inspectCompositionOptions(
       'workspaceRoot' | 'principalRef' | 'provider'
     >
   > &
-    Pick<CreateOpenSlackAgentBoundMutationCompositionOptions, 'workspaceIdAssertion'>
+    Pick<
+      CreateOpenSlackAgentBoundMutationCompositionOptions,
+      'workspaceIdAssertion' | 'governanceAuthority'
+    >
 > {
   if (!value || typeof value !== 'object' || nodeTypes.isProxy(value)) {
     return fail('GOVERNED_COMPOSITION_INPUT_INVALID', 'Governed composition options are invalid.');
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  const allowed = ['workspaceRoot', 'principalRef', 'provider', 'workspaceIdAssertion'];
+  const allowed = [
+    'workspaceRoot',
+    'principalRef',
+    'provider',
+    'workspaceIdAssertion',
+    'governanceAuthority',
+  ];
   const keys = Reflect.ownKeys(descriptors);
   if (
     keys.length < 2 ||
@@ -187,6 +212,54 @@ function inspectCompositionOptions(
   const principalRef = descriptors.principalRef.value;
   const provider = descriptors.provider?.value ?? 'cli';
   const workspaceIdAssertion = descriptors.workspaceIdAssertion?.value;
+  const governanceAuthorityValue = descriptors.governanceAuthority?.value;
+  let governanceAuthority: GovernedPlanAuthorityCompositionOptions | undefined;
+  if (governanceAuthorityValue !== undefined) {
+    if (
+      !governanceAuthorityValue ||
+      typeof governanceAuthorityValue !== 'object' ||
+      nodeTypes.isProxy(governanceAuthorityValue)
+    ) {
+      return fail(
+        'GOVERNED_COMPOSITION_INPUT_INVALID',
+        'Governed composition options are invalid.',
+      );
+    }
+    const authorityDescriptors = Object.getOwnPropertyDescriptors(governanceAuthorityValue);
+    const authorityAllowed = [
+      'backend',
+      'routingEpoch',
+      'tenantId',
+      'origin',
+      'networkMode',
+      'expectedBuildSha',
+      'callerId',
+      'expiresAt',
+    ];
+    if (
+      Reflect.ownKeys(authorityDescriptors).some(
+        (key) =>
+          typeof key !== 'string' ||
+          !authorityAllowed.includes(key) ||
+          !authorityDescriptors[key]?.enumerable ||
+          !Object.hasOwn(authorityDescriptors[key]!, 'value'),
+      )
+    ) {
+      return fail(
+        'GOVERNED_COMPOSITION_INPUT_INVALID',
+        'Governed composition options are invalid.',
+      );
+    }
+    governanceAuthority = Object.freeze(
+      Object.fromEntries(
+        authorityAllowed.flatMap((key) =>
+          authorityDescriptors[key] === undefined
+            ? []
+            : ([[key, authorityDescriptors[key]!.value]] as const),
+        ),
+      ) as unknown as GovernedPlanAuthorityCompositionOptions,
+    );
+  }
   if (
     typeof workspaceRoot !== 'string' ||
     typeof principalRef !== 'string' ||
@@ -202,6 +275,7 @@ function inspectCompositionOptions(
     principalRef,
     provider: provider as 'cli' | 'slack' | 'github' | 'webhook',
     ...(workspaceIdAssertion === undefined ? {} : { workspaceIdAssertion }),
+    ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
   });
 }
 
@@ -943,7 +1017,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
   });
 
   let audit;
-  let planStore: LocalGovernedPlanStore;
+  let planStore: GovernedPlanStore;
   let scenarioInstanceRoot: string;
   let workflowEventAppender: BoundCollaborationEventAppender;
   try {
@@ -955,7 +1029,44 @@ export async function createOpenSlackAgentBoundMutationComposition(
     ensureChild(localRoot, operatorRoot);
     const planRoot = governedPlanStoreRoot(rootBinding.real);
     ensureChild(operatorRoot, planRoot);
-    planStore = new LocalGovernedPlanStore(planRoot);
+    const localPlanStore = new LocalGovernedPlanStore(planRoot);
+    const authorityPolicy = safeOptions.governanceAuthority ?? {
+      backend: 'ts-local' as const,
+      routingEpoch: 1,
+      tenantId: initialWorkspace.workspaceId,
+    };
+    if (authorityPolicy.tenantId !== initialWorkspace.workspaceId) {
+      return fail(
+        'GOVERNED_COMPOSITION_WORKSPACE_INVALID',
+        'Governance authority tenant does not match canonical openslack.yaml.',
+      );
+    }
+    const hasTransport = [
+      authorityPolicy.origin,
+      authorityPolicy.expectedBuildSha,
+      authorityPolicy.callerId,
+      authorityPolicy.expiresAt,
+    ].some((value) => value !== undefined);
+    const transport = hasTransport
+      ? createGovernanceAuthorityHttpClient({
+          origin: authorityPolicy.origin!,
+          workspaceId: initialWorkspace.workspaceId,
+          callerId: authorityPolicy.callerId!,
+          expectedBuildSha: authorityPolicy.expectedBuildSha!,
+          expiresAt: authorityPolicy.expiresAt!,
+          ...(authorityPolicy.networkMode === undefined
+            ? {}
+            : { networkMode: authorityPolicy.networkMode }),
+        })
+      : undefined;
+    planStore = await createRoutedGovernedPlanStore({
+      routeRoot: governedPlanAuthorityRoot(rootBinding.real),
+      localStore: localPlanStore,
+      backend: authorityPolicy.backend,
+      routingEpoch: authorityPolicy.routingEpoch,
+      ...(transport === undefined ? {} : { go: transport }),
+    });
+    await planStore.recoverAudits?.(audit);
     await planStore.list();
     scenarioInstanceRoot = await initializeScenarioInstanceStoreRoot(rootBinding.real);
   } catch {

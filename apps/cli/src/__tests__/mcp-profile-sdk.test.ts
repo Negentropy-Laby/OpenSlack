@@ -469,6 +469,16 @@ describe('MCP CLI production profiles over the official SDK', () => {
     const createHumanAttestedComposition = async (
       options: Parameters<NonNullable<McpCommandDependencies['createHumanAttestedComposition']>>[0],
     ): Promise<OpenSlackHumanAttestedMcpComposition> => {
+      expect(options.governanceAuthority).toEqual({
+        backend: 'go',
+        routingEpoch: 7,
+        tenantId: WORKSPACE_ID,
+        origin: 'http://10.20.30.40:18082',
+        networkMode: 'internal',
+        expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        callerId: 'qoder.mcp',
+        expiresAt: '2026-08-09T00:00:00.000Z',
+      });
       const agent = await createOpenSlackAgentBoundMutationComposition({
         workspaceRoot: options.workspaceRoot,
         principalRef: options.principalRef,
@@ -540,6 +550,22 @@ describe('MCP CLI production profiles over the official SDK', () => {
         'human.interviewer',
         '--workspace-id',
         WORKSPACE_ID,
+        '--governance-authority-backend',
+        'go',
+        '--governance-authority-routing-epoch',
+        '7',
+        '--governance-authority-tenant',
+        WORKSPACE_ID,
+        '--governance-authority-origin',
+        'http://10.20.30.40:18082',
+        '--governance-authority-network',
+        'internal',
+        '--governance-authority-build-sha',
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        '--governance-authority-caller',
+        'qoder.mcp',
+        '--governance-authority-expires-at',
+        '2026-08-09T00:00:00.000Z',
         ...READ_CANARY_ARGS,
       ],
       async (client) => {

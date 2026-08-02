@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-receipt.v1.schema.json",
+  "title": "OpenSlack Governance Authority Durable Receipt",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "operation",
+        "status",
+        "workspaceId",
+        "planId",
+        "expectedRevision",
+        "route",
+        "idempotencyKey",
+        "requestFingerprint",
+        "recordHash",
+        "correlationId",
+        "callerId",
+        "serviceBuildSha",
+        "acceptedRevision",
+        "state",
+        "record",
+        "committedAt"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.governance_authority_receipt.v1" },
+        "operation": {
+          "enum": [
+            "accept",
+            "claim_execution",
+            "complete_execution",
+            "cancel",
+            "expire",
+            "require_reconciliation"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "planId": {
+          "type": "string",
+          "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "route": {
+          "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^openslack\\.governance-authority\\.v1\\.[0-9a-f]{64}$"
+        },
+        "requestFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "recordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "callerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "serviceBuildSha": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "executionId": {
+          "type": "string",
+          "pattern": "^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": { "enum": ["accepted", "duplicate"] },
+        "acceptedRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "executing",
+            "succeeded",
+            "blocked",
+            "failed",
+            "reconciliation_required",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "record": {
+          "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan.v1.schema.json"
+        },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": { "enum": ["accept", "cancel", "expire"] }
+            }
+          },
+          "then": {
+            "not": {
+              "properties": { "executionId": {} },
+              "required": ["executionId"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "operation",
+        "status",
+        "workspaceId",
+        "planId",
+        "expectedRevision",
+        "route",
+        "idempotencyKey",
+        "requestFingerprint",
+        "recordHash",
+        "correlationId",
+        "callerId",
+        "serviceBuildSha",
+        "targetRevision",
+        "targetState",
+        "reconciliationToken"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.governance_authority_receipt.v1" },
+        "operation": {
+          "enum": [
+            "accept",
+            "claim_execution",
+            "complete_execution",
+            "cancel",
+            "expire",
+            "require_reconciliation"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "planId": {
+          "type": "string",
+          "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740990
+        },
+        "route": {
+          "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^openslack\\.governance-authority\\.v1\\.[0-9a-f]{64}$"
+        },
+        "requestFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "recordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "callerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+        },
+        "serviceBuildSha": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "executionId": {
+          "type": "string",
+          "pattern": "^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": { "const": "reconciliation_required" },
+        "targetRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetState": {
+          "enum": [
+            "pending",
+            "executing",
+            "succeeded",
+            "blocked",
+            "failed",
+            "reconciliation_required",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "reconciliationToken": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": { "enum": ["accept", "cancel", "expire"] }
+            }
+          },
+          "then": {
+            "not": {
+              "properties": { "executionId": {} },
+              "required": ["executionId"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

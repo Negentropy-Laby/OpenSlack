@@ -4,6 +4,7 @@ import {
   createOpenSlackWorkflowApprovalAttestationPort,
   createOpenSlackWorkflowApprovalPort,
   type OpenSlackAgentBoundMutationComposition,
+  type GovernedPlanAuthorityCompositionOptions,
   type OpenSlackWorkflowApprovalPort,
 } from '@openslack/mcp';
 import {
@@ -16,6 +17,7 @@ export interface CreateOpenSlackHumanAttestedMcpCompositionOptions {
   readonly principalRef: string;
   readonly humanPrincipalAssertion: string;
   readonly workspaceIdAssertion?: string;
+  readonly governanceAuthority?: GovernedPlanAuthorityCompositionOptions;
 }
 
 export interface OpenSlackHumanAttestedMcpComposition extends OpenSlackAgentBoundMutationComposition {
@@ -34,6 +36,9 @@ export async function createOpenSlackHumanAttestedMcpComposition(
     ...(options.workspaceIdAssertion === undefined
       ? {}
       : { workspaceIdAssertion: options.workspaceIdAssertion }),
+    ...(options.governanceAuthority === undefined
+      ? {}
+      : { governanceAuthority: options.governanceAuthority }),
   });
   const provider = createLocalHumanAttestationProvider({
     workspaceRoot: options.workspaceRoot,

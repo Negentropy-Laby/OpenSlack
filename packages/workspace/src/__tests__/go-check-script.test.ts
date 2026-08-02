@@ -52,7 +52,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus',
         'docker_target=app',
-        'runtime_profile=governance-control-v1',
+        'runtime_profile=governance-control-v2',
         '',
       ].join('\n'),
     );
@@ -310,13 +310,13 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   }, 15_000);
 
-  it('runs the Governance Control durable shadow qualification without authority secrets', () => {
+  it('runs the Governance Control durable shadow and authority-cutover qualifications without secrets', () => {
     const fixture = createFixture();
     addFullServiceCapabilities(join(fixture.root, 'services/pure'));
     writeServiceConfig(fixture.root, 'pure', {
       capabilities: 'database,distribution,http-openapi,prometheus',
       dockerTarget: 'app',
-      runtimeProfile: 'governance-control-v1',
+      runtimeProfile: 'governance-control-v2',
     });
     commitFixture(fixture.root);
 
@@ -332,16 +332,30 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('GOVERNANCE_GS5_QUALIFICATION=1');
     expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=seed');
     expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=verify');
+    expect(log).toContain('GOVERNANCE_GS6_QUALIFICATION=1');
+    expect(log).toContain('GOVERNANCE_GS6_RESTART_PHASE=seed');
+    expect(log).toContain('GOVERNANCE_GS6_RESTART_PHASE=verify');
+    expect(log).toContain('GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS=true');
+    expect(log).toContain('GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6');
+    expect(log).toContain('-run \\^TestGS6Qualification\\$');
+    expect(log).toContain('-run \\^TestGS6RestartQualification\\$');
+    expect(log).toContain('-run \\^TestGS6ImageSmoke\\$');
     expect(log).toContain('--network-alias application');
     expect(log).toContain('GOVERNANCE_GS5_SMOKE_ORIGIN=http://application:8080');
+    expect(log).toContain('GOVERNANCE_GS6_SMOKE_ORIGIN=http://application:8080');
     expect(goCheckSource).toContain('local restart_token="${run_token,,}"');
     const restartSchemas = [
       ...log.matchAll(/GOVERNANCE_GS5_RESTART_SCHEMA=(governance_control_gs5_restart_[a-z0-9]+)/gu),
     ].map((match) => match[1]);
     expect(restartSchemas).toHaveLength(2);
     expect(new Set(restartSchemas).size).toBe(1);
+    const authorityRestartSchemas = [
+      ...log.matchAll(/GOVERNANCE_GS6_RESTART_SCHEMA=(governance_control_gs6_restart_[a-z0-9]+)/gu),
+    ].map((match) => match[1]);
+    expect(authorityRestartSchemas).toHaveLength(2);
+    expect(new Set(authorityRestartSchemas).size).toBe(1);
     expect(log).toContain(' restart ');
-    expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(4);
+    expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(8);
     expect(log).not.toContain('confirmationToken=');
     expect(log).not.toContain('CONFIRMATION_TOKEN=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
@@ -356,7 +370,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       writeServiceConfig(fixture.root, 'pure', {
         capabilities: 'database,distribution,http-openapi,prometheus',
         dockerTarget: 'app',
-        runtimeProfile: 'governance-control-v1',
+        runtimeProfile: 'governance-control-v2',
       });
       commitFixture(fixture.root);
 
@@ -375,6 +389,37 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       }
       if (phase === 'restart-seed') {
         expect(log).not.toContain(' restart ');
+      }
+    },
+  );
+
+  it.each(['authority-bounds', 'authority-restart-seed', 'authority-restart-verify'])(
+    'propagates a Governance Control GS6 %s qualification failure before later gates',
+    (phase) => {
+      const fixture = createFixture();
+      addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus',
+        dockerTarget: 'app',
+        runtimeProfile: 'governance-control-v2',
+      });
+      commitFixture(fixture.root);
+
+      const result = runGoCheck(fixture, ['services/pure'], {
+        FAKE_GS6_FAIL_PHASE: phase,
+        FAKE_GS6_FAIL_STATUS: '45',
+      });
+
+      expect(result.status).toBe(45);
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).toContain(`-qualification-${phase}`);
+      expect(log).toContain(' rm -f ');
+      expect(log.split('\n').some((line) => line.startsWith('MSYS= build '))).toBe(false);
+      if (phase === 'authority-bounds') {
+        expect(log).not.toContain('GOVERNANCE_GS6_RESTART_PHASE=seed');
+      }
+      if (phase === 'authority-restart-seed') {
+        expect(log.match(/ restart /gu)).toHaveLength(1);
       }
     },
   );
@@ -570,13 +615,32 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     writeServiceConfig(incompleteGovernanceProfile.root, 'pure', {
       capabilities: 'database,distribution,http-openapi,prometheus',
       dockerTarget: 'app',
-      runtimeProfile: 'governance-control-v1',
+      runtimeProfile: 'governance-control-v2',
     });
     commitFixture(incompleteGovernanceProfile.root);
     const incompleteGovernanceResult = runGoCheck(incompleteGovernanceProfile, ['services/pure']);
     expect(incompleteGovernanceResult.status).toBe(1);
     expect(incompleteGovernanceResult.stderr).toContain(
       'Governance Control runtime profile is missing cmd/server/qualification_test.go',
+    );
+
+    const noGS6Qualification = createFixture();
+    addFullServiceCapabilities(join(noGS6Qualification.root, 'services/pure'));
+    writeFileSync(
+      join(noGS6Qualification.root, 'services/pure/cmd/server/qualification_test.go'),
+      'package main\n',
+      'utf8',
+    );
+    writeServiceConfig(noGS6Qualification.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'governance-control-v2',
+    });
+    commitFixture(noGS6Qualification.root);
+    const noGS6Result = runGoCheck(noGS6Qualification, ['services/pure']);
+    expect(noGS6Result.status).toBe(1);
+    expect(noGS6Result.stderr).toContain(
+      'Governance Control v2 runtime profile is missing TestGS6Qualification',
     );
 
     const reopenedContext = createFullServiceFixture();
@@ -908,7 +972,21 @@ function addFullServiceCapabilities(moduleRoot: string): void {
     'package contracts\n',
     'utf8',
   );
-  writeFileSync(join(moduleRoot, 'cmd/server/qualification_test.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS5Fixture(t *testing.T) {}',
+      'func TestGS6Qualification(t *testing.T) {}',
+      'func TestGS6RestartQualification(t *testing.T) {}',
+      'func TestGS6ImageSmoke(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
   writeFileSync(join(moduleRoot, 'docs/api/openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
   writeFileSync(join(moduleRoot, 'Dockerfile'), 'FROM scratch\n', 'utf8');
   writeFileSync(join(moduleRoot, 'SBOM.cdx.json'), '{}\n', 'utf8');
@@ -1075,6 +1153,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS5_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS5_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS5_FAIL_STATUS:-44}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS6_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS6_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS6_FAIL_STATUS:-45}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

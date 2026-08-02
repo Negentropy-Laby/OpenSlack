@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json",
+  "title": "OpenSlack Governance Authority Route",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["backend", "routingEpoch", "authority"],
+  "properties": {
+    "backend": { "enum": ["go", "ts-local"] },
+    "routingEpoch": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "authority": { "enum": ["governance-control", "typescript"] }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "backend": { "const": "go" } },
+        "required": ["backend"]
+      },
+      "then": {
+        "properties": { "authority": { "const": "governance-control" } }
+      },
+      "else": {
+        "properties": {
+          "backend": { "const": "ts-local" },
+          "authority": { "const": "typescript" }
+        }
+      }
+    }
+  ]
+}
