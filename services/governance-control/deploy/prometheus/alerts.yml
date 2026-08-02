@@ -1,0 +1,21 @@
+groups:
+  - name: openslack_governance_shadow_reliability
+    interval: 15s
+    rules:
+      - alert: GovernanceShadowReconciliationRequired
+        expr: openslack_governance_shadow_reconciliation_pending > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Governance shadow has an ambiguous observation result
+          description: Inspect the durable reconciliation receipt before replaying with the same idempotency key.
+
+      - alert: GovernanceShadowUnavailable
+        expr: up{job="openslack_governance_shadow"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Governance shadow metrics endpoint is unavailable
+          description: Check PostgreSQL readiness, migration state, and the private service health endpoints.

@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | notification-delivery-v1 | organization-graph-v1) ;;
+    none | governance-control-v1 | notification-delivery-v1 | organization-graph-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -507,26 +507,29 @@ validate_dockerignore() {
     fi
     case "${line}" in
       '!Dockerfile' | \
-        '!.dockerignore' | \
-        '!go.mod' | \
-        '!go.sum' | \
-        '!organizationgraph.go' | \
-        '!LICENSE' | \
-        '!NOTICE' | \
-        '!THIRD_PARTY_NOTICES.md' | \
-        '!SBOM.cdx.json' | \
-        '!cmd/' | \
-        '!cmd/**/' | \
-        '!cmd/**/*.go' | \
-        '!integration/' | \
-        '!integration/source-manifest.v2.json' | \
-        '!integration/schemas/' | \
-        '!integration/schemas/source-manifest.v2.schema.json' | \
-        '!internal/' | \
-        '!internal/**/' | \
-        '!internal/**/*.go' | \
-        '!migrations/' | \
-        '!migrations/*.sql')
+      '!.dockerignore' | \
+      '!audit.go' | \
+      '!contract.go' | \
+      '!go.mod' | \
+      '!go.sum' | \
+      '!governancecontrol.go' | \
+      '!organizationgraph.go' | \
+      '!LICENSE' | \
+      '!NOTICE' | \
+      '!THIRD_PARTY_NOTICES.md' | \
+      '!SBOM.cdx.json' | \
+      '!cmd/' | \
+      '!cmd/**/' | \
+      '!cmd/**/*.go' | \
+      '!integration/' | \
+      '!integration/source-manifest.v2.json' | \
+      '!integration/schemas/' | \
+      '!integration/schemas/source-manifest.v2.schema.json' | \
+      '!internal/' | \
+      '!internal/**/' | \
+      '!internal/**/*.go' | \
+      '!migrations/' | \
+      '!migrations/*.sql')
         ;;
       !*) fail "distribution .dockerignore contains an unreviewed allow rule: ${line}" ;;
       *) ;;
@@ -670,6 +673,16 @@ detect_capabilities() {
   if [[ "${runtime_profile_ref}" == "notification-delivery-v1" ]] &&
     ! has_capability "${capabilities}" "worker"; then
     fail "Notification Delivery runtime profile requires the worker capability"
+  fi
+
+  if [[ "${runtime_profile_ref}" == "governance-control-v1" ]]; then
+    local governance_evidence
+    for governance_evidence in \
+      cmd/server/qualification_test.go \
+      tests/contracts/openapi_contract_test.go; do
+      [[ -f "${module_dir}/${governance_evidence}" ]] ||
+        fail "Governance Control runtime profile is missing ${governance_evidence}"
+    done
   fi
 
   if ((http_ref)); then
@@ -871,6 +884,12 @@ run_module_gate() {
       --env GRAPH_HTTP_BIND=127.0.0.1:8080
       --env GRAPH_NETWORK_MODE=loopback
     )
+  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+    run_args+=(
+      --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env GOVERNANCE_HTTP_BIND=127.0.0.1:8080
+      --env GOVERNANCE_NETWORK_MODE=loopback
+    )
   fi
 
   log "validating ${module} with the pinned Go image"
@@ -880,6 +899,15 @@ run_module_gate() {
   if [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
     ((has_database)) || fail "Organization Graph qualification requires PostgreSQL"
     run_organization_graph_qualification \
+      "${resource_prefix}" \
+      "${network}" \
+      "${database_container}" \
+      "${database_name}" \
+      "${resource_owner}" \
+      "${run_token}"
+  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+    ((has_database)) || fail "Governance Control qualification requires PostgreSQL"
+    run_governance_control_qualification \
       "${resource_prefix}" \
       "${network}" \
       "${database_container}" \
@@ -984,6 +1012,73 @@ run_organization_graph_qualification() {
     "GRAPH_GS1C_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_governance_control_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  shift 5
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/governance-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/server -run '^TestGS5' -count=1
+}
+
+run_governance_control_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="governance_control_gs5_restart_${restart_token//-/}"
+
+  log "qualifying Governance Control HTTP/PostgreSQL shadow and failure bounds"
+  run_governance_control_test_container \
+    "${resource_prefix}" bounds "${network}" "${database_name}" "${resource_owner}" \
+    GOVERNANCE_GS5_QUALIFICATION=1
+
+  log "seeding Governance Control restart qualification"
+  run_governance_control_test_container \
+    "${resource_prefix}" restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    GOVERNANCE_GS5_RESTART_PHASE=seed \
+    "GOVERNANCE_GS5_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after restart"
+
+  log "verifying Governance Control durable shadow after PostgreSQL restart"
+  run_governance_control_test_container \
+    "${resource_prefix}" restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    GOVERNANCE_GS5_RESTART_PHASE=verify \
+    "GOVERNANCE_GS5_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -1066,6 +1161,12 @@ run_http_smoke() {
       --env GRAPH_HTTP_BIND=:8080
       --env GRAPH_NETWORK_MODE=internal
     )
+  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+    run_args+=(
+      --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env GOVERNANCE_HTTP_BIND=:8080
+      --env GOVERNANCE_NETWORK_MODE=internal
+    )
   else
     fail "HTTP smoke has no reviewed runtime profile"
   fi
@@ -1074,6 +1175,12 @@ run_http_smoke() {
   docker_cmd_interruptible "${run_args[@]}" "${image_tag}" >/dev/null
   require_resource_owned container "${app_container}" "${resource_owner}"
   wait_for_healthy_container "${app_container}" "application"
+  if [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+    log "verifying Governance Control image health and version responses"
+    run_governance_control_test_container \
+      "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
+      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_container}:8080"
+  fi
 }
 
 main() {

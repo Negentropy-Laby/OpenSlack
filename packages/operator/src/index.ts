@@ -194,3 +194,43 @@ export type {
   GovernedPlanService,
   GovernedPlanServiceOptions,
 } from './governed-plan-service.js';
+export {
+  GOVERNANCE_SHADOW_AUDIT_EVENT_TYPES,
+  GOVERNANCE_SHADOW_CONFIRMATION_OUTCOMES,
+  GOVERNANCE_SHADOW_OBSERVATION_KINDS,
+  GOVERNANCE_SHADOW_OBSERVATION_SCHEMA,
+  GOVERNANCE_SHADOW_POLICY,
+  GOVERNANCE_SHADOW_RECEIPT_SCHEMA,
+  createGovernanceShadowConfirmationObservation,
+  createGovernanceShadowPublisherPort,
+  createGovernedPlanShadowObservationPort,
+  governanceShadowRecordHash,
+  isGovernanceShadowPublisherPort,
+  isGovernedPlanShadowObservationPort,
+  prepareGovernanceShadowRequest,
+  validateGovernanceShadowEnvelope,
+} from './governed-plan-shadow.js';
+export type {
+  CreateGovernedPlanShadowObservationPortOptions,
+  GovernanceShadowAuditObservation,
+  GovernanceShadowConfirmationObservation,
+  GovernanceShadowConfirmationOutcome,
+  GovernanceShadowCurrentBindings,
+  GovernanceShadowDiagnostic,
+  GovernanceShadowDiagnosticOutcome,
+  GovernanceShadowDiagnosticSink,
+  GovernanceShadowEnvelope,
+  GovernanceShadowObservation,
+  GovernanceShadowObservationKind,
+  GovernanceShadowPreparedRequest,
+  GovernanceShadowPublisherPort,
+  GovernanceShadowReceipt,
+  GovernanceShadowRecordObservation,
+  GovernanceShadowSource,
+  GovernedPlanShadowObservationPort,
+} from './governed-plan-shadow.js';
+export {
+  GovernanceShadowHttpError,
+  createGovernanceShadowHttpPublisher,
+} from './governed-plan-shadow-http.js';
+export type { GovernanceShadowHttpPublisherOptions } from './governed-plan-shadow-http.js';

@@ -29,6 +29,11 @@ import {
   GOVERNED_PLAN_SERVICE_LIMITS,
 } from '../../packages/operator/src/governed-plan-service.js';
 import { projectGovernedPlanReadModel } from '../../packages/operator/src/governed-plan-read-model.js';
+import {
+  buildGovernanceShadowContractOutputs,
+  governanceShadowContractRoots,
+  GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+} from './shadow.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -43,6 +48,7 @@ const serviceMirrorRoot = resolve(
   generatedOutputRoot,
   'services/governance-control/internal/contractmirror/generated/v1',
 );
+const governanceShadowRoots = governanceShadowContractRoots(generatedOutputRoot);
 
 const HASH_PATTERN = '^[0-9a-f]{64}$';
 const IDENTIFIER_PATTERN = '^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$';
@@ -865,9 +871,9 @@ const expectedPaths = [
   'manifest.json',
 ] as const;
 
-async function exactTreeIssues(root: string): Promise<string[]> {
+async function exactTreeIssues(root: string, paths: readonly string[]): Promise<string[]> {
   const issues: string[] = [];
-  const expectedFiles = new Set(expectedPaths.map((path) => path.split('/').join(sep)));
+  const expectedFiles = new Set(paths.map((path) => path.split('/').join(sep)));
   const expectedDirectories = new Set([`schemas`]);
   try {
     const rootStat = await lstat(root);
@@ -902,8 +908,16 @@ async function exactTreeIssues(root: string): Promise<string[]> {
 
 async function writeOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void> {
   const issues = [
-    ...(await exactTreeIssues(contractRoot)),
-    ...(await exactTreeIssues(serviceMirrorRoot)),
+    ...(await exactTreeIssues(contractRoot, expectedPaths)),
+    ...(await exactTreeIssues(serviceMirrorRoot, expectedPaths)),
+    ...(await exactTreeIssues(
+      governanceShadowRoots.authorityRoot,
+      GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+    )),
+    ...(await exactTreeIssues(
+      governanceShadowRoots.goMirrorRoot,
+      GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+    )),
   ];
   if (issues.length > 0)
     throw new Error(`Refusing to write unsafe generated trees:\n${issues.join('\n')}`);
@@ -916,8 +930,16 @@ async function writeOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void>
 
 async function checkOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void> {
   const stale = [
-    ...(await exactTreeIssues(contractRoot)),
-    ...(await exactTreeIssues(serviceMirrorRoot)),
+    ...(await exactTreeIssues(contractRoot, expectedPaths)),
+    ...(await exactTreeIssues(serviceMirrorRoot, expectedPaths)),
+    ...(await exactTreeIssues(
+      governanceShadowRoots.authorityRoot,
+      GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+    )),
+    ...(await exactTreeIssues(
+      governanceShadowRoots.goMirrorRoot,
+      GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+    )),
   ];
   for (const [path, expected] of outputs) {
     try {
@@ -942,6 +964,9 @@ async function main(): Promise<void> {
     throw new Error('Usage: bun run governance:golden [check|generate]');
   }
   const outputs = await buildOutputs();
+  for (const [path, bytes] of await buildGovernanceShadowContractOutputs(generatedOutputRoot)) {
+    outputs.set(path, bytes);
+  }
   if (mode === 'generate' || mode === '--write') await writeOutputs(outputs);
   else await checkOutputs(outputs);
 }

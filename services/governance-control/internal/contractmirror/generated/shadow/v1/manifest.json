@@ -1,0 +1,82 @@
+{
+  "schema": "openslack.governance_shadow_contract_manifest.v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/operator",
+    "goRole": "credential-free-observer-only",
+    "typescriptRemainsAuthoritative": true,
+    "shadowDefault": "disabled",
+    "journalIndependentFromGovernedPlanStore": true
+  },
+  "schemas": {
+    "observation": "openslack.governance_shadow_observation.v1",
+    "receipt": "openslack.governance_shadow_receipt.v1"
+  },
+  "observationKinds": ["record", "confirmation", "audit"],
+  "confirmationOutcomes": [
+    "claim_eligible",
+    "confirmation_rejected",
+    "binding_changed",
+    "expired",
+    "state_invalid",
+    "execution_active",
+    "aborted_before_claim"
+  ],
+  "auditEventTypes": [
+    "plan.previewed",
+    "plan.confirmed",
+    "plan.confirmation_rejected",
+    "plan.cancelled",
+    "plan.expired",
+    "plan.execution_started",
+    "plan.execution_completed",
+    "plan.execution_blocked",
+    "plan.execution_failed",
+    "plan.reconciliation_required",
+    "workflow.approval_decided"
+  ],
+  "transport": {
+    "method": "POST",
+    "path": "/v1/shadow/governance/observations",
+    "redirect": "forbidden",
+    "dns": "forbidden",
+    "defaultNetworkMode": "loopback-ip-literal",
+    "optionalNetworkMode": "private-link-local-ip-literal"
+  },
+  "algorithms": {
+    "body": "ecmascript_canonical_json_utf8_plus_lf",
+    "idempotencyKey": "openslack.governance-shadow.v1.sha256(body)",
+    "requestBinding": "typescript/{workspaceId}/{planId}/{sourceSequence}",
+    "requestFingerprint": "sha256:sha256(POST\\n/path\\n/requestBinding\\n/body)",
+    "sourceSequence": "monotonic_per_workspace_plan"
+  },
+  "limits": {
+    "maxEnvelopeBytes": 2097152,
+    "maxReceiptBytes": 65536,
+    "defaultTimeoutMs": 2000,
+    "maxTimeoutMs": 30000,
+    "orderingRetryAttempts": 16,
+    "defaultOrderingRetryDelayMs": 25,
+    "maxOrderingRetryDelayMs": 1000,
+    "maxJournalEntries": 16384,
+    "maxJournalBytes": 536870912,
+    "maxJournalFileBytes": 2097152
+  },
+  "artifacts": {
+    "schemas/governance-shadow-observation.v1.schema.json": {
+      "path": "schemas/governance-shadow-observation.v1.schema.json",
+      "byteLength": 5258,
+      "sha256": "f8012e1f8037702771fa25658cbf409aa94d7e58574ec864e81569e77664bba4"
+    },
+    "schemas/governance-shadow-receipt.v1.schema.json": {
+      "path": "schemas/governance-shadow-receipt.v1.schema.json",
+      "byteLength": 3214,
+      "sha256": "3c7845fff10a30db807c5c83c5b92c1daef0bdd412b80d2df9c85be36c7bf3df"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 3008,
+      "sha256": "8e8c9777ddff50fa852a5cbb963530154911292d77e4c45737a457c269a082d2"
+    }
+  }
+}

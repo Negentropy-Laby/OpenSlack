@@ -1,0 +1,41 @@
+{
+  "schema": "openslack.governance_shadow_golden_vectors.v1",
+  "authority": "typescript",
+  "vectors": [
+    {
+      "name": "confirmation-claim-eligible-sequence-7",
+      "envelope": {
+        "schema": "openslack.governance_shadow_observation.v1",
+        "authority": "typescript",
+        "source": {
+          "workspaceId": "workspace.demo",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "sourceSequence": 7
+        },
+        "observation": {
+          "kind": "confirmation",
+          "attemptId": "GCONF-123e4567-e89b-42d3-a456-426614174001",
+          "recordRevision": 1,
+          "attemptedAt": "2026-08-02T00:00:00.000Z",
+          "actorId": "agent.demo",
+          "workspaceId": "workspace.demo",
+          "presentedTokenHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "currentBindings": {
+            "sourceVersionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionSnapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "actionCatalogHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "executorBindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "buildNonceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "processNonceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "authorityOutcome": "claim_eligible"
+        }
+      },
+      "expected": {
+        "body": "{\"authority\":\"typescript\",\"observation\":{\"actorId\":\"agent.demo\",\"attemptId\":\"GCONF-123e4567-e89b-42d3-a456-426614174001\",\"attemptedAt\":\"2026-08-02T00:00:00.000Z\",\"authorityOutcome\":\"claim_eligible\",\"currentBindings\":{\"actionCatalogHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"buildNonceHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"executorBindingHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionSnapshotHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"processNonceHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceVersionHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"kind\":\"confirmation\",\"presentedTokenHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"recordRevision\":1,\"workspaceId\":\"workspace.demo\"},\"schema\":\"openslack.governance_shadow_observation.v1\",\"source\":{\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"sourceSequence\":7,\"workspaceId\":\"workspace.demo\"}}\n",
+        "idempotencyKey": "openslack.governance-shadow.v1.e299839d53a6c088f27d657644483a39e608fe5d4cb2b05b8c88a43ec1c54ebb",
+        "requestFingerprint": "sha256:fe89646dde911afc78a00d779e8959b0a0e372e83e04173b887fa1b8d9e3327e"
+      }
+    }
+  ]
+}

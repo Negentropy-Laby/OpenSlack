@@ -48,7 +48,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         join(repositoryRoot, 'scripts/go-check/services/governance-control.conf'),
         'utf8',
       ),
-    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
+    ).toBe(
+      [
+        'capabilities=database,distribution,http-openapi,prometheus',
+        'docker_target=app',
+        'runtime_profile=governance-control-v1',
+        '',
+      ].join('\n'),
+    );
     expect(
       readFileSync(
         join(repositoryRoot, 'scripts/go-check/services/organization-graph.conf'),
@@ -74,6 +81,13 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(goCheckSource).not.toContain('.gocache');
     expect(`${goCheckSource}\n${containerGateSource}`).not.toContain('host.docker.internal');
     expect(goCheckSource).not.toMatch(/\bdocker\s+(?:login|push|prune)\b/u);
+    for (const reviewedGovernanceSource of [
+      "'!audit.go'",
+      "'!contract.go'",
+      "'!governancecontrol.go'",
+    ]) {
+      expect(goCheckSource).toContain(reviewedGovernanceSource);
+    }
   });
 
   it('rejects malformed invocations before contacting Docker', () => {
@@ -294,7 +308,75 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).not.toContain('IDEMPOTENCY_KEY_PEPPER=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
-  });
+  }, 15_000);
+
+  it('runs the Governance Control durable shadow qualification without authority secrets', () => {
+    const fixture = createFixture();
+    addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'governance-control-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain(
+      'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    );
+    expect(log).toContain('GOVERNANCE_HTTP_BIND=:8080');
+    expect(log).toContain('GOVERNANCE_NETWORK_MODE=internal');
+    expect(log).toContain('GOVERNANCE_GS5_QUALIFICATION=1');
+    expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=seed');
+    expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=verify');
+    expect(log).toContain('GOVERNANCE_GS5_SMOKE_ORIGIN=http://openslack-gocheck-');
+    expect(goCheckSource).toContain('local restart_token="${run_token,,}"');
+    const restartSchemas = [
+      ...log.matchAll(/GOVERNANCE_GS5_RESTART_SCHEMA=(governance_control_gs5_restart_[a-z0-9]+)/gu),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log).toContain(' restart ');
+    expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(4);
+    expect(log).not.toContain('confirmationToken=');
+    expect(log).not.toContain('CONFIRMATION_TOKEN=');
+    expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
+    expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
+  }, 15_000);
+
+  it.each(['bounds', 'restart-seed', 'restart-verify'])(
+    'propagates a Governance Control %s qualification failure before later gates',
+    (phase) => {
+      const fixture = createFixture();
+      addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus',
+        dockerTarget: 'app',
+        runtimeProfile: 'governance-control-v1',
+      });
+      commitFixture(fixture.root);
+
+      const result = runGoCheck(fixture, ['services/pure'], {
+        FAKE_GS5_FAIL_PHASE: phase,
+        FAKE_GS5_FAIL_STATUS: '44',
+      });
+
+      expect(result.status).toBe(44);
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).toContain(`-qualification-${phase}`);
+      expect(log).toContain(' rm -f ');
+      expect(log.split('\n').some((line) => line.startsWith('MSYS= build '))).toBe(false);
+      if (phase === 'bounds') {
+        expect(log).not.toContain('GOVERNANCE_GS5_RESTART_PHASE=seed');
+      }
+      if (phase === 'restart-seed') {
+        expect(log).not.toContain(' restart ');
+      }
+    },
+  );
 
   it.each(['bounds', 'restart-seed', 'restart-verify'])(
     'propagates an Organization Graph %s qualification failure before later gates',
@@ -479,6 +561,23 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       expect(result.stderr, testCase.capabilities).toContain(testCase.expected);
     }
 
+    const incompleteGovernanceProfile = createFixture();
+    addFullServiceCapabilities(join(incompleteGovernanceProfile.root, 'services/pure'));
+    rmSync(
+      join(incompleteGovernanceProfile.root, 'services/pure/cmd/server/qualification_test.go'),
+    );
+    writeServiceConfig(incompleteGovernanceProfile.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'governance-control-v1',
+    });
+    commitFixture(incompleteGovernanceProfile.root);
+    const incompleteGovernanceResult = runGoCheck(incompleteGovernanceProfile, ['services/pure']);
+    expect(incompleteGovernanceResult.status).toBe(1);
+    expect(incompleteGovernanceResult.stderr).toContain(
+      'Governance Control runtime profile is missing cmd/server/qualification_test.go',
+    );
+
     const reopenedContext = createFullServiceFixture();
     const dockerignore = join(reopenedContext.root, 'services/pure/.dockerignore');
     writeFileSync(dockerignore, `${readFileSync(dockerignore, 'utf8')}\n !** \n`, 'utf8');
@@ -538,7 +637,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     });
     expect(pausedResult.status).toBe(1);
     expect(pausedResult.stderr).toContain('application container state is paused');
-  }, 15_000);
+  }, 45_000);
 
   it('maps termination to failure and still cleans registered resources', async () => {
     const fixture = createFixture();
@@ -790,6 +889,7 @@ function addFullServiceCapabilities(moduleRoot: string): void {
     'docs/api',
     'deploy/prometheus',
     'integration',
+    'cmd/server',
     'internal/delivery',
     'internal/leaserecovery',
     'internal/reliability',
@@ -807,6 +907,7 @@ function addFullServiceCapabilities(moduleRoot: string): void {
     'package contracts\n',
     'utf8',
   );
+  writeFileSync(join(moduleRoot, 'cmd/server/qualification_test.go'), 'package main\n', 'utf8');
   writeFileSync(join(moduleRoot, 'docs/api/openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
   writeFileSync(join(moduleRoot, 'Dockerfile'), 'FROM scratch\n', 'utf8');
   writeFileSync(join(moduleRoot, 'SBOM.cdx.json'), '{}\n', 'utf8');
@@ -970,6 +1071,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS1C_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS1C_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS1C_FAIL_STATUS:-43}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS5_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS5_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS5_FAIL_STATUS:-44}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

@@ -23,6 +23,13 @@ import {
   isGovernedPlanStore,
   type GovernedPlanStore,
 } from './governed-plan-store.js';
+import {
+  createGovernanceShadowConfirmationObservation,
+  isGovernedPlanShadowObservationPort,
+  type GovernanceShadowConfirmationOutcome,
+  type GovernanceShadowCurrentBindings,
+  type GovernedPlanShadowObservationPort,
+} from './governed-plan-shadow.js';
 
 export interface GovernedPlanHostAuthority {
   readonly actorId: string;
@@ -116,6 +123,7 @@ export interface GovernedPlanServiceOptions {
     context: GovernedPlanBindingContext,
   ) => GovernedPlanBindingSnapshot | Promise<GovernedPlanBindingSnapshot>;
   readonly audit: GovernedPlanAuditSink;
+  readonly shadowObserver?: GovernedPlanShadowObservationPort;
   readonly defaultTtlMs?: number;
   readonly executionTimeoutMs?: number;
   readonly now?: () => Date;
@@ -359,6 +367,7 @@ function inspectServiceOptions(value: GovernedPlanServiceOptions): GovernedPlanS
     'registry',
     'getBindingSnapshot',
     'audit',
+    'shadowObserver',
     'defaultTtlMs',
     'executionTimeoutMs',
     'now',
@@ -384,6 +393,7 @@ function inspectServiceOptions(value: GovernedPlanServiceOptions): GovernedPlanS
   const getBindingSnapshot = read('getBindingSnapshot');
   const audit = read('audit');
   const now = read('now');
+  const shadowObserver = read('shadowObserver');
   if (
     !isGovernedPlanStore(store) ||
     !isGovernedActionExecutionRegistry(registry) ||
@@ -391,7 +401,8 @@ function inspectServiceOptions(value: GovernedPlanServiceOptions): GovernedPlanS
     utilTypes.isProxy(getBindingSnapshot) ||
     typeof audit !== 'function' ||
     utilTypes.isProxy(audit) ||
-    (now !== undefined && (typeof now !== 'function' || utilTypes.isProxy(now)))
+    (now !== undefined && (typeof now !== 'function' || utilTypes.isProxy(now))) ||
+    (shadowObserver !== undefined && !isGovernedPlanShadowObservationPort(shadowObserver))
   ) {
     return fail(
       'GOVERNED_PLAN_CONFIGURATION_INVALID',
@@ -403,6 +414,9 @@ function inspectServiceOptions(value: GovernedPlanServiceOptions): GovernedPlanS
     registry,
     getBindingSnapshot: getBindingSnapshot as GovernedPlanServiceOptions['getBindingSnapshot'],
     audit: audit as GovernedPlanAuditSink,
+    ...(shadowObserver === undefined
+      ? {}
+      : { shadowObserver: shadowObserver as GovernedPlanShadowObservationPort }),
     ...(read('defaultTtlMs') === undefined ? {} : { defaultTtlMs: read('defaultTtlMs') as number }),
     ...(read('executionTimeoutMs') === undefined
       ? {}
@@ -534,6 +548,7 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
   readonly #registry: GovernedActionExecutionRegistry;
   readonly #getBindingSnapshot: GovernedPlanServiceOptions['getBindingSnapshot'];
   readonly #auditSink: GovernedPlanAuditSink;
+  readonly #shadowObserver: GovernedPlanShadowObservationPort | undefined;
   readonly #ttlMs: number;
   readonly #executionTimeoutMs: number;
   readonly #clock: () => Date;
@@ -564,6 +579,7 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     this.#registry = safe.registry;
     this.#getBindingSnapshot = safe.getBindingSnapshot;
     this.#auditSink = safe.audit;
+    this.#shadowObserver = safe.shadowObserver;
     this.#ttlMs = ttl;
     this.#executionTimeoutMs = executionTimeout;
     this.#clock = safe.now ?? (() => new Date());
@@ -581,6 +597,45 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       permissionSnapshotHash: hashGovernedValue(snapshot.permissionSnapshot),
       buildNonceHash: hashOpaqueValue(snapshot.buildNonce),
     };
+  }
+
+  #currentBindings(current: {
+    readonly sourceVersionHash: string;
+    readonly permissionSnapshotHash: string;
+    readonly buildNonceHash: string;
+  }): GovernanceShadowCurrentBindings {
+    return Object.freeze({
+      ...current,
+      actionCatalogHash: this.#registry.actionCatalogHash,
+      executorBindingHash: this.#registry.executorBindingHash,
+      processNonceHash: this.#processNonceHash,
+    });
+  }
+
+  #observeConfirmation(
+    record: GovernedPlanRecord,
+    request: GovernedPlanConfirmation,
+    authority: GovernedPlanHostAuthority,
+    attemptedAt: string,
+    authorityOutcome: GovernanceShadowConfirmationOutcome,
+    currentBindings?: GovernanceShadowCurrentBindings,
+  ): void {
+    try {
+      this.#shadowObserver?.observeConfirmation(
+        record,
+        createGovernanceShadowConfirmationObservation({
+          recordRevision: record.revision,
+          attemptedAt,
+          actorId: authority.actorId,
+          workspaceId: authority.workspaceId,
+          presentedTokenHash: hashOpaqueValue(request.confirmationToken),
+          ...(currentBindings === undefined ? {} : { currentBindings }),
+          authorityOutcome,
+        }),
+      );
+    } catch {
+      // Shadow projection cannot alter the TypeScript authority result.
+    }
   }
 
   async #audit(
@@ -607,6 +662,11 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       ...(details === undefined ? {} : { details }),
     }) as unknown as GovernedPlanAuditEvent;
     await this.#auditSink(event);
+    try {
+      this.#shadowObserver?.observeAudit(record, event);
+    } catch {
+      // Shadow projection occurs only after the authoritative audit sink succeeds.
+    }
   }
 
   async preview(
@@ -712,12 +772,14 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     record: GovernedPlanRecord,
     request: GovernedPlanConfirmation,
     authority: GovernedPlanHostAuthority,
+    attemptedAt: string,
   ): Promise<void> {
     if (
       record.bindings.actorId !== authority.actorId ||
       record.bindings.workspaceId !== authority.workspaceId ||
       !opaqueHashesEqual(record.confirmationTokenHash, hashOpaqueValue(request.confirmationToken))
     ) {
+      this.#observeConfirmation(record, request, authority, attemptedAt, 'confirmation_rejected');
       await this.#audit('plan.confirmation_rejected', record);
       return fail(
         'GOVERNED_PLAN_CONFIRMATION_INVALID',
@@ -726,7 +788,12 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     }
   }
 
-  async #assertCurrentBindings(record: GovernedPlanRecord): Promise<void> {
+  async #assertCurrentBindings(
+    record: GovernedPlanRecord,
+    request: GovernedPlanConfirmation,
+    authority: GovernedPlanHostAuthority,
+    attemptedAt: string,
+  ): Promise<GovernanceShadowCurrentBindings> {
     const current = await this.#bindingHashes(
       Object.freeze({
         phase: 'confirm',
@@ -737,6 +804,7 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         }),
       }),
     );
+    const currentBindings = this.#currentBindings(current);
     const unchanged =
       opaqueHashesEqual(record.bindings.sourceVersionHash, current.sourceVersionHash) &&
       opaqueHashesEqual(record.bindings.permissionSnapshotHash, current.permissionSnapshotHash) &&
@@ -745,6 +813,14 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       opaqueHashesEqual(record.bindings.executorBindingHash, this.#registry.executorBindingHash) &&
       opaqueHashesEqual(record.bindings.processNonceHash, this.#processNonceHash);
     if (!unchanged) {
+      this.#observeConfirmation(
+        record,
+        request,
+        authority,
+        attemptedAt,
+        'binding_changed',
+        currentBindings,
+      );
       await this.#audit('plan.confirmation_rejected', record, {
         reason: 'binding_changed',
       });
@@ -753,9 +829,16 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         'Governed plan authority, source, executor, catalog, build, or process binding changed.',
       );
     }
+    return currentBindings;
   }
 
-  async #handleExecuting(record: GovernedPlanRecord): Promise<GovernedPlanRecord> {
+  async #handleExecuting(
+    record: GovernedPlanRecord,
+    request: GovernedPlanConfirmation,
+    authority: GovernedPlanHostAuthority,
+    attemptedAt: string,
+  ): Promise<GovernedPlanRecord> {
+    this.#observeConfirmation(record, request, authority, attemptedAt, 'execution_active');
     if (this.#activePlans.has(record.planId) || !record.execution) {
       return fail('GOVERNED_PLAN_EXECUTION_ACTIVE', 'Governed plan execution is already active.');
     }
@@ -792,9 +875,13 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     if (!record) {
       return fail('GOVERNED_PLAN_NOT_FOUND', 'Governed plan was not found.');
     }
-    await this.#assertConfirmation(record, request, authority);
-    if (record.state === 'executing') return this.#handleExecuting(record);
+    const attemptedAt = nowIso(this.#clock);
+    await this.#assertConfirmation(record, request, authority, attemptedAt);
+    if (record.state === 'executing') {
+      return this.#handleExecuting(record, request, authority, attemptedAt);
+    }
     if (record.state !== 'pending') {
+      this.#observeConfirmation(record, request, authority, attemptedAt, 'state_invalid');
       return fail(
         'GOVERNED_PLAN_STATE_INVALID',
         `Governed plan cannot execute from ${record.state}.`,
@@ -802,6 +889,7 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     }
     const confirmedAt = nowIso(this.#clock);
     if (Date.parse(record.expiresAt) <= Date.parse(confirmedAt)) {
+      this.#observeConfirmation(record, request, authority, attemptedAt, 'expired');
       record = await this.#store.expire({
         planId: record.planId,
         expectedRevision: record.revision,
@@ -810,8 +898,21 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       await this.#audit('plan.expired', record);
       return record;
     }
-    await this.#assertCurrentBindings(record);
+    const currentBindings = await this.#assertCurrentBindings(
+      record,
+      request,
+      authority,
+      attemptedAt,
+    );
     if (executionAborted(control)) {
+      this.#observeConfirmation(
+        record,
+        request,
+        authority,
+        attemptedAt,
+        'aborted_before_claim',
+        currentBindings,
+      );
       return fail(
         'GOVERNED_PLAN_EXECUTION_ABORTED',
         'Governed plan execution was aborted before its atomic claim.',
@@ -819,13 +920,39 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     }
 
     const executionId = `GEXEC-${randomUUID()}`;
-    record = await this.#store.claimExecution({
-      planId: record.planId,
-      expectedRevision: record.revision,
-      executionId,
-      ownerPid: process.pid,
-      startedAt: nowIso(this.#clock),
-    });
+    this.#observeConfirmation(
+      record,
+      request,
+      authority,
+      attemptedAt,
+      'claim_eligible',
+      currentBindings,
+    );
+    try {
+      record = await this.#store.claimExecution({
+        planId: record.planId,
+        expectedRevision: record.revision,
+        executionId,
+        ownerPid: process.pid,
+        startedAt: nowIso(this.#clock),
+      });
+    } catch (error) {
+      try {
+        const current = await this.#store.load(record.planId);
+        if (current) {
+          this.#observeConfirmation(
+            current,
+            request,
+            authority,
+            attemptedAt,
+            current.state === 'executing' ? 'execution_active' : 'state_invalid',
+          );
+        }
+      } catch {
+        // Preserve the authoritative claim error exactly.
+      }
+      throw error;
+    }
     this.#activePlans.add(record.planId);
     const outcomes: GovernedActionOutcome[] = [];
     try {
@@ -924,7 +1051,7 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     if (!record) {
       return fail('GOVERNED_PLAN_NOT_FOUND', 'Governed plan was not found.');
     }
-    await this.#assertConfirmation(record, request, authority);
+    await this.#assertConfirmation(record, request, authority, nowIso(this.#clock));
     if (record.state !== 'pending') {
       return fail(
         'GOVERNED_PLAN_STATE_INVALID',

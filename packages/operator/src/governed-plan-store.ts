@@ -21,6 +21,10 @@ import {
   type GovernedPlanRecord,
   type GovernedPlanState,
 } from './governed-plan.js';
+import {
+  isGovernedPlanShadowObservationPort,
+  type GovernedPlanShadowObservationPort,
+} from './governed-plan-shadow.js';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 export const GOVERNED_PLAN_STORE_LIMITS = Object.freeze({
@@ -744,11 +748,24 @@ function nextRecord(
 
 export class LocalGovernedPlanStore implements GovernedPlanStore {
   readonly #root: string;
+  readonly #shadowObserver: GovernedPlanShadowObservationPort | undefined;
 
-  constructor(root: string) {
+  constructor(root: string, shadowObserver?: GovernedPlanShadowObservationPort) {
+    if (shadowObserver !== undefined && !isGovernedPlanShadowObservationPort(shadowObserver)) {
+      throw new TypeError('Governed plan shadow observer must be host-created.');
+    }
     this.#root = root;
+    this.#shadowObserver = shadowObserver;
     STORES.add(this);
     Object.freeze(this);
+  }
+
+  #observe(record: GovernedPlanRecord): void {
+    try {
+      this.#shadowObserver?.observeRecord(record);
+    } catch {
+      // The local TypeScript store remains the sole authority.
+    }
   }
 
   async create(recordValue: GovernedPlanRecord): Promise<GovernedPlanRecord> {
@@ -783,7 +800,9 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     } finally {
       await rm(temporary, { force: true });
     }
-    return (await this.load(record.planId))!;
+    const published = (await this.load(record.planId))!;
+    this.#observe(published);
+    return published;
   }
 
   async load(planId: string): Promise<GovernedPlanRecord | null> {
@@ -857,6 +876,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
           'Governed plan atomic replacement could not be verified.',
         );
       }
+      this.#observe(published.record);
       return published.record;
     } finally {
       if (!released) {

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-shadow-observation.v1.schema.json",
+  "title": "OpenSlack Governance Shadow Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "authority", "source", "observation"],
+  "properties": {
+    "schema": { "const": "openslack.governance_shadow_observation.v1" },
+    "authority": { "const": "typescript" },
+    "source": { "$ref": "#/$defs/source" },
+    "observation": {
+      "oneOf": [
+        { "$ref": "#/$defs/recordObservation" },
+        { "$ref": "#/$defs/confirmationObservation" },
+        { "$ref": "#/$defs/auditObservation" }
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+    },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "attemptId": {
+      "type": "string",
+      "pattern": "^GCONF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "planId", "sourceSequence"],
+      "properties": {
+        "workspaceId": { "$ref": "#/$defs/identifier" },
+        "planId": { "$ref": "#/$defs/planId" },
+        "sourceSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "currentBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceVersionHash",
+        "permissionSnapshotHash",
+        "actionCatalogHash",
+        "executorBindingHash",
+        "buildNonceHash",
+        "processNonceHash"
+      ],
+      "properties": {
+        "sourceVersionHash": { "$ref": "#/$defs/hash" },
+        "permissionSnapshotHash": { "$ref": "#/$defs/hash" },
+        "actionCatalogHash": { "$ref": "#/$defs/hash" },
+        "executorBindingHash": { "$ref": "#/$defs/hash" },
+        "buildNonceHash": { "$ref": "#/$defs/hash" },
+        "processNonceHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "recordObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "expectedRevision", "record"],
+      "properties": {
+        "kind": { "const": "record" },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "record": {
+          "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan.v1.schema.json"
+        }
+      }
+    },
+    "confirmationObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "attemptId",
+        "recordRevision",
+        "attemptedAt",
+        "actorId",
+        "workspaceId",
+        "presentedTokenHash",
+        "authorityOutcome"
+      ],
+      "properties": {
+        "kind": { "const": "confirmation" },
+        "attemptId": { "$ref": "#/$defs/attemptId" },
+        "recordRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "attemptedAt": { "$ref": "#/$defs/timestamp" },
+        "actorId": { "$ref": "#/$defs/identifier" },
+        "workspaceId": { "$ref": "#/$defs/identifier" },
+        "presentedTokenHash": { "$ref": "#/$defs/hash" },
+        "currentBindings": { "$ref": "#/$defs/currentBindings" },
+        "authorityOutcome": {
+          "enum": [
+            "claim_eligible",
+            "confirmation_rejected",
+            "binding_changed",
+            "expired",
+            "state_invalid",
+            "execution_active",
+            "aborted_before_claim"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "authorityOutcome": {
+                "enum": [
+                  "claim_eligible",
+                  "binding_changed",
+                  "aborted_before_claim"
+                ]
+              }
+            },
+            "required": ["authorityOutcome"]
+          },
+          "then": {
+            "properties": { "currentBindings": {} },
+            "required": ["currentBindings"]
+          },
+          "else": {
+            "not": {
+              "properties": { "currentBindings": {} },
+              "required": ["currentBindings"]
+            }
+          }
+        }
+      ]
+    },
+    "auditObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "recordRevision", "recordHash", "event"],
+      "properties": {
+        "kind": { "const": "audit" },
+        "recordRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "recordHash": { "$ref": "#/$defs/hash" },
+        "event": {
+          "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan-audit.v1.schema.json"
+        }
+      }
+    }
+  }
+}
