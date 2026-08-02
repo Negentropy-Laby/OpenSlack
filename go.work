@@ -1,6 +1,7 @@
 go 1.26.5
 
 use (
+	./services/governance-control
 	./services/notification-delivery
 	./services/organization-graph
 )

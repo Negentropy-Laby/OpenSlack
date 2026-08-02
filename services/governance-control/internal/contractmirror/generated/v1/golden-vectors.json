@@ -1,0 +1,943 @@
+{
+  "schema": "openslack.governed_plan_golden_vectors.v1",
+  "authority": "typescript",
+  "cases": [
+    {
+      "id": "canonical-json-utf16-number-and-hash",
+      "operation": "canonicalize_hash",
+      "input": {
+        "value": {
+          "z": 1e-7,
+          "a": { "𐀀": "supplementary", "": "bmp" },
+          "numbers": [0, 1e-7, 0.000001, 100000000000000000000, 1e21, 1.2345678901234567]
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"a\":{\"𐀀\":\"supplementary\",\"\":\"bmp\"},\"numbers\":[0,1e-7,0.000001,100000000000000000000,1e+21,1.2345678901234567],\"z\":1e-7}",
+        "sha256": "7ae628f74bcdce941ff1cfee394b2d7b5dfe6689b6b612391b02806468576456"
+      }
+    },
+    {
+      "id": "opaque-confirmation-hash-and-constant-time-match",
+      "operation": "hash_opaque",
+      "input": {
+        "value": "confirmation-token-0123456789",
+        "other": "different-token-012345678901"
+      },
+      "expected": {
+        "hash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+        "equal": true,
+        "different": false
+      }
+    },
+    {
+      "id": "legacy-unpaired-unicode-surrogate-preserved",
+      "operation": "canonicalize_hash",
+      "input": { "value": "\ud800" },
+      "expected": {
+        "canonicalJson": "\"\\ud800\"",
+        "sha256": "8c0c59dd0d275aadcd462a5fe12eb352cbdfeaf961eae4f85a4660521df7d2f5"
+      }
+    },
+    {
+      "id": "pending-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":1,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"pending\",\"updatedAt\":\"2026-08-02T06:00:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 1,
+          "state": "pending",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": false,
+          "final": false,
+          "reconciliationRequired": false
+        }
+      }
+    },
+    {
+      "id": "succeeded-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 3,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "succeeded",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomes": [
+              {
+                "actionId": "scenario.instantiate",
+                "status": "succeeded",
+                "summary": "Scenario created",
+                "evidenceRefs": ["audit:event:001", "graph:instance:001"]
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"execution\":{\"completedAt\":\"2026-08-02T06:02:00.000Z\",\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"outcomes\":[{\"actionId\":\"scenario.instantiate\",\"evidenceRefs\":[\"audit:event:001\",\"graph:instance:001\"],\"status\":\"succeeded\",\"summary\":\"Scenario created\"}],\"ownerPid\":42,\"startedAt\":\"2026-08-02T06:01:00.000Z\"},\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":3,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"succeeded\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 3,
+          "state": "succeeded",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": true,
+          "final": true,
+          "reconciliationRequired": false,
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomeCount": 1,
+            "evidenceRefCount": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "executing-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 2,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "executing",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:01:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "outcomes": []
+          }
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"execution\":{\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"outcomes\":[],\"ownerPid\":42,\"startedAt\":\"2026-08-02T06:01:00.000Z\"},\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":2,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"executing\",\"updatedAt\":\"2026-08-02T06:01:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 2,
+          "state": "executing",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:01:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": false,
+          "final": false,
+          "reconciliationRequired": false,
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "outcomeCount": 0,
+            "evidenceRefCount": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "blocked-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 3,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "blocked",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomes": [],
+            "blocker": "Awaiting external evidence"
+          }
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"execution\":{\"blocker\":\"Awaiting external evidence\",\"completedAt\":\"2026-08-02T06:02:00.000Z\",\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"outcomes\":[],\"ownerPid\":42,\"startedAt\":\"2026-08-02T06:01:00.000Z\"},\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":3,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"blocked\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 3,
+          "state": "blocked",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": true,
+          "final": true,
+          "reconciliationRequired": false,
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomeCount": 0,
+            "evidenceRefCount": 0,
+            "blocker": "Awaiting external evidence"
+          }
+        }
+      }
+    },
+    {
+      "id": "failed-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 3,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "failed",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomes": [],
+            "failure": "External outcome is uncertain"
+          }
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"execution\":{\"completedAt\":\"2026-08-02T06:02:00.000Z\",\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"failure\":\"External outcome is uncertain\",\"outcomes\":[],\"ownerPid\":42,\"startedAt\":\"2026-08-02T06:01:00.000Z\"},\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":3,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"failed\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 3,
+          "state": "failed",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": true,
+          "final": true,
+          "reconciliationRequired": false,
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomeCount": 0,
+            "evidenceRefCount": 0,
+            "failure": "External outcome is uncertain"
+          }
+        }
+      }
+    },
+    {
+      "id": "reconciliation_required-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 3,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "reconciliation_required",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe",
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "ownerPid": 42,
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomes": [],
+            "failure": "External outcome is uncertain"
+          }
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"execution\":{\"completedAt\":\"2026-08-02T06:02:00.000Z\",\"executionId\":\"GEXEC-123e4567-e89b-42d3-a456-426614174000\",\"failure\":\"External outcome is uncertain\",\"outcomes\":[],\"ownerPid\":42,\"startedAt\":\"2026-08-02T06:01:00.000Z\"},\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":3,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"reconciliation_required\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 3,
+          "state": "reconciliation_required",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": true,
+          "final": true,
+          "reconciliationRequired": true,
+          "execution": {
+            "executionId": "GEXEC-123e4567-e89b-42d3-a456-426614174000",
+            "startedAt": "2026-08-02T06:01:00.000Z",
+            "completedAt": "2026-08-02T06:02:00.000Z",
+            "outcomeCount": 0,
+            "evidenceRefCount": 0,
+            "failure": "External outcome is uncertain"
+          }
+        }
+      }
+    },
+    {
+      "id": "cancelled-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 2,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "cancelled",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":2,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"cancelled\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 2,
+          "state": "cancelled",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": false,
+          "final": true,
+          "reconciliationRequired": false
+        }
+      }
+    },
+    {
+      "id": "expired-record-validation-and-read-model",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 2,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "expired",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-08-02T06:00:00.000Z\",\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":2,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"expired\",\"updatedAt\":\"2026-08-02T06:02:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 2,
+          "state": "expired",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:02:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": false,
+          "final": true,
+          "reconciliationRequired": false
+        }
+      }
+    },
+    {
+      "id": "calendar-overflow-timestamp-v1-accepted",
+      "operation": "validate_project_record",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-02-30T06:00:00.000Z",
+          "updatedAt": "2026-02-30T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expected": {
+        "canonicalRecord": "{\"bindings\":{\"actionCatalogHash\":\"611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242\",\"actorId\":\"qoder.local\",\"buildNonceHash\":\"64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed\",\"correlationId\":\"CORR-123e4567-e89b-42d3-a456-426614174000\",\"executorBindingHash\":\"d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041\",\"inputHash\":\"717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373\",\"permissionSnapshotHash\":\"b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5\",\"planHash\":\"7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000\",\"processNonceHash\":\"7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a\",\"sourceVersionHash\":\"b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef\",\"workspaceId\":\"workspace.demo\"},\"canonicalPlan\":{\"actions\":[{\"actionId\":\"scenario.instantiate\",\"input\":{\"scenarioId\":\"contract-to-delivery-lite\"}}],\"effects\":[{\"risk\":\"medium\",\"summary\":\"Create one governed instance\",\"type\":\"scenario.instance\"}],\"goal\":\"Instantiate 合同 delivery scenario\",\"input\":{\"a\":[\"evidence\",{\"𐀀\":\"supplementary\",\"\":\"bmp\"}],\"z\":1e-7},\"kind\":\"scenario.instantiate\",\"schema\":\"openslack.governed_action_plan.v1\"},\"confirmationTokenHash\":\"f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe\",\"createdAt\":\"2026-02-30T06:00:00.000Z\",\"expiresAt\":\"2026-08-02T06:15:00.000Z\",\"planId\":\"GPLAN-123e4567-e89b-42d3-a456-426614174000\",\"revision\":1,\"schema\":\"openslack.governed_plan.v1\",\"state\":\"pending\",\"updatedAt\":\"2026-02-30T06:00:00.000Z\"}\n",
+        "readModel": {
+          "schema": "openslack.governed_plan_read_model.v1",
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "revision": 1,
+          "state": "pending",
+          "kind": "scenario.instantiate",
+          "goal": "Instantiate 合同 delivery scenario",
+          "actorId": "qoder.local",
+          "workspaceId": "workspace.demo",
+          "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+          "createdAt": "2026-02-30T06:00:00.000Z",
+          "updatedAt": "2026-02-30T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "actionCount": 1,
+          "effectCount": 1,
+          "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+          "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+          "confirmationBound": true,
+          "executionTerminal": false,
+          "final": false,
+          "reconciliationRequired": false
+        }
+      }
+    },
+    {
+      "id": "record-input-hash-drift-rejected",
+      "operation": "validate_record_error",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "changed": true },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expectedError": {
+        "name": "GovernedPlanContractError",
+        "code": "GOVERNED_PLAN_BINDING_MISMATCH",
+        "path": "$",
+        "message": "Input hash does not match canonical input."
+      }
+    },
+    {
+      "id": "executing-record-without-execution-rejected",
+      "operation": "validate_record_error",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "executing",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "7085340e3d93d7944104447321731b0d5e0c71a72873fc737a50023e93432000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expectedError": {
+        "name": "GovernedPlanContractError",
+        "code": "GOVERNED_PLAN_INVALID",
+        "path": "$",
+        "message": "Executing plan must have an open execution."
+      }
+    },
+    {
+      "id": "record-plan-hash-drift-rejected",
+      "operation": "validate_record_error",
+      "input": {
+        "record": {
+          "schema": "openslack.governed_plan.v1",
+          "revision": 1,
+          "planId": "GPLAN-123e4567-e89b-42d3-a456-426614174000",
+          "state": "pending",
+          "createdAt": "2026-08-02T06:00:00.000Z",
+          "updatedAt": "2026-08-02T06:00:00.000Z",
+          "expiresAt": "2026-08-02T06:15:00.000Z",
+          "canonicalPlan": {
+            "schema": "openslack.governed_action_plan.v1",
+            "kind": "scenario.instantiate",
+            "goal": "Instantiate 合同 delivery scenario",
+            "input": { "z": 1e-7, "a": ["evidence", { "𐀀": "supplementary", "": "bmp" }] },
+            "actions": [
+              {
+                "actionId": "scenario.instantiate",
+                "input": { "scenarioId": "contract-to-delivery-lite" }
+              }
+            ],
+            "effects": [
+              {
+                "type": "scenario.instance",
+                "summary": "Create one governed instance",
+                "risk": "medium"
+              }
+            ]
+          },
+          "bindings": {
+            "actorId": "qoder.local",
+            "workspaceId": "workspace.demo",
+            "correlationId": "CORR-123e4567-e89b-42d3-a456-426614174000",
+            "inputHash": "717dd40cef8ef4b1025f47e3f8e00aa92e27b04ec06d054644694472e11a7373",
+            "planHash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "sourceVersionHash": "b8d9ff1ac81ad366b6e40c8ce4649c0b9a87e12add249130ca5725c20ebabaef",
+            "permissionSnapshotHash": "b39b66f1c0d442e00fa3574b93316ac94bb82552309ddae79f23305ee2d834c5",
+            "actionCatalogHash": "611f3c2045702027c6ad55c6b3a5d325242e1358c7e72a7ae4b64574e09bf242",
+            "executorBindingHash": "d35c0ea80500750c40bc0cae7c175e8418c3e0e6c97d42858cfdc1d40d70f041",
+            "buildNonceHash": "64f3c0d89956da44c7ed26801c0a96df2f016899c36a387cace30da10f652eed",
+            "processNonceHash": "7e539d011a6e093da9a4f9228647dea880b58766d8875a195bd5288d7cbc5a5a"
+          },
+          "confirmationTokenHash": "f3bb471d1de53f67d0130236e4c9ab39b257567bc37b0a678a7772267333ebfe"
+        }
+      },
+      "expectedError": {
+        "name": "GovernedPlanContractError",
+        "code": "GOVERNED_PLAN_BINDING_MISMATCH",
+        "path": "$",
+        "message": "Plan hash does not match canonical plan."
+      }
+    }
+  ]
+}

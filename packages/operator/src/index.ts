@@ -119,6 +119,10 @@ export {
   hashOpaqueValue,
   opaqueHashesEqual,
   validateGovernedPlanRecord,
+  GOVERNED_EXECUTION_STATUSES,
+  GOVERNED_PLAN_CONTRACT_ERROR_CODES,
+  GOVERNED_PLAN_CONTRACT_LIMITS,
+  GOVERNED_PLAN_STATES,
   GovernedPlanContractError,
 } from './governed-plan.js';
 export type {
@@ -147,16 +151,29 @@ export type {
   GovernedActionMetadata,
 } from './action-execution-registry.js';
 export {
+  canGovernedPlanStateTransition,
   governedPlanStoreRoot,
   isGovernedPlanExecutionTerminal,
+  GOVERNED_PLAN_STATE_TRANSITIONS,
+  GOVERNED_PLAN_STORE_ALGORITHMS,
+  GOVERNED_PLAN_STORE_ERROR_CODES,
+  GOVERNED_PLAN_STORE_LIMITS,
   LocalGovernedPlanStore,
   GovernedPlanStoreError,
 } from './governed-plan-store.js';
 export type { GovernedPlanStore } from './governed-plan-store.js';
+export { projectGovernedPlanReadModel } from './governed-plan-read-model.js';
+export type {
+  GovernedPlanExecutionReadModel,
+  GovernedPlanReadModel,
+} from './governed-plan-read-model.js';
 export {
   assertGovernedPlanService,
   createGovernedPlanCompiler,
   createGovernedPlanService,
+  GOVERNED_PLAN_AUDIT_EVENT_TYPES,
+  GOVERNED_PLAN_SERVICE_ERROR_CODES,
+  GOVERNED_PLAN_SERVICE_LIMITS,
   GovernedPlanServiceError,
   isGovernedPlanService,
 } from './governed-plan-service.js';

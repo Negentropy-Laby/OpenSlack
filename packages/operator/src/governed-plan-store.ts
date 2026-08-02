@@ -12,6 +12,7 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { TextDecoder } from 'node:util';
 import { threadId } from 'node:worker_threads';
 import {
   canonicalGovernedJson,
@@ -22,32 +23,66 @@ import {
 } from './governed-plan.js';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
-const MAX_RECORD_BYTES = 1024 * 1024;
-const MAX_RECORDS = 4_096;
+export const GOVERNED_PLAN_STORE_LIMITS = Object.freeze({
+  maxRecordBytes: 1024 * 1024,
+  maxRecords: 4_096,
+  maxLockBytes: 512,
+  lockAcquireAttempts: 3,
+} as const);
+
+export const GOVERNED_PLAN_STORE_ERROR_CODES = Object.freeze([
+  'GOVERNED_PLAN_STORE_PATH_UNSAFE',
+  'GOVERNED_PLAN_STORE_FILE_UNSAFE',
+  'GOVERNED_PLAN_STORE_NOT_FOUND',
+  'GOVERNED_PLAN_STORE_ALREADY_EXISTS',
+  'GOVERNED_PLAN_STORE_BUSY',
+  'GOVERNED_PLAN_STORE_CAS_MISMATCH',
+  'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
+  'GOVERNED_PLAN_STORE_LIMIT_EXCEEDED',
+  'GOVERNED_PLAN_STORE_RECORD_INVALID',
+  'GOVERNED_PLAN_STORE_FILE_CHANGED',
+] as const);
+
+export const GOVERNED_PLAN_STATE_TRANSITIONS = Object.freeze({
+  pending: Object.freeze(['executing', 'cancelled', 'expired'] as const),
+  executing: Object.freeze(['succeeded', 'blocked', 'failed', 'reconciliation_required'] as const),
+  succeeded: Object.freeze([] as const),
+  blocked: Object.freeze([] as const),
+  failed: Object.freeze([] as const),
+  reconciliation_required: Object.freeze([] as const),
+  cancelled: Object.freeze([] as const),
+  expired: Object.freeze([] as const),
+} as const satisfies Readonly<Record<GovernedPlanState, readonly GovernedPlanState[]>>);
+
+export const GOVERNED_PLAN_STORE_ALGORITHMS = Object.freeze({
+  persistedRecord: 'canonical_json_utf8_plus_lf',
+  cas: 'plan_id+expected_revision',
+  executionClaim: 'cas_once(plan_id,expected_revision,execution_id)',
+} as const);
+
+export function canGovernedPlanStateTransition(
+  from: GovernedPlanState,
+  to: GovernedPlanState,
+): boolean {
+  return (GOVERNED_PLAN_STATE_TRANSITIONS[from] as readonly GovernedPlanState[]).includes(to);
+}
+
+const MAX_RECORD_BYTES = GOVERNED_PLAN_STORE_LIMITS.maxRecordBytes;
+const MAX_RECORDS = GOVERNED_PLAN_STORE_LIMITS.maxRecords;
 const RECORD_NAME = /^[0-9a-f]{64}\.json$/;
 const LOCK_NAME = /^[0-9a-f]{64}\.lock$/;
 const TEMP_NAME =
   /^\.[0-9a-f]{64}\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const LOCK_OWNER_SCHEMA = 'openslack.governed_plan_lock.v1';
-const LOCK_MAX_BYTES = 512;
+const LOCK_MAX_BYTES = GOVERNED_PLAN_STORE_LIMITS.maxLockBytes;
 const PROCESS_SESSION_ID = randomUUID();
 const LOCK_TEMP_NAME =
   /^\.lock\.([0-9a-f]{64})\.([1-9][0-9]{0,9})\.([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([0-9]{1,10})\.([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.tmp$/;
 const STORES = new WeakSet<object>();
 
 export class GovernedPlanStoreError extends Error {
-  readonly code:
-    | 'GOVERNED_PLAN_STORE_PATH_UNSAFE'
-    | 'GOVERNED_PLAN_STORE_FILE_UNSAFE'
-    | 'GOVERNED_PLAN_STORE_NOT_FOUND'
-    | 'GOVERNED_PLAN_STORE_ALREADY_EXISTS'
-    | 'GOVERNED_PLAN_STORE_BUSY'
-    | 'GOVERNED_PLAN_STORE_CAS_MISMATCH'
-    | 'GOVERNED_PLAN_STORE_TRANSITION_INVALID'
-    | 'GOVERNED_PLAN_STORE_LIMIT_EXCEEDED'
-    | 'GOVERNED_PLAN_STORE_RECORD_INVALID'
-    | 'GOVERNED_PLAN_STORE_FILE_CHANGED';
+  readonly code: (typeof GOVERNED_PLAN_STORE_ERROR_CODES)[number];
   readonly path?: string;
 
   constructor(code: GovernedPlanStoreError['code'], message: string, path?: string) {
@@ -300,7 +335,7 @@ async function prepare(configuredRoot: string): Promise<PreparedStore> {
   };
 }
 
-async function readBounded(path: string): Promise<{ bytes: string; stat: Stats }> {
+async function readBounded(path: string): Promise<{ bytes: Buffer; stat: Stats }> {
   const before = await lstatIfPresent(path);
   if (!before) {
     return fail('GOVERNED_PLAN_STORE_NOT_FOUND', 'Governed plan was not found.', path);
@@ -340,19 +375,25 @@ async function readBounded(path: string): Promise<{ bytes: string; stat: Stats }
         path,
       );
     }
-    return { bytes: buffer.toString('utf8'), stat: after };
+    return { bytes: buffer, stat: after };
   } finally {
     await handle.close();
   }
 }
 
-function parseRecord(bytes: string, expectedPlanId?: string): GovernedPlanRecord {
-  if (!bytes.endsWith('\n')) {
+function parseRecord(bytes: Buffer, expectedPlanId?: string): GovernedPlanRecord {
+  if (bytes.length === 0 || bytes[bytes.length - 1] !== 0x0a) {
     return fail('GOVERNED_PLAN_STORE_RECORD_INVALID', 'Governed plan bytes are not canonical.');
+  }
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return fail('GOVERNED_PLAN_STORE_RECORD_INVALID', 'Governed plan record is not valid UTF-8.');
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(bytes);
+    parsed = JSON.parse(text);
   } catch {
     return fail('GOVERNED_PLAN_STORE_RECORD_INVALID', 'Governed plan record is not valid JSON.');
   }
@@ -365,7 +406,7 @@ function parseRecord(bytes: string, expectedPlanId?: string): GovernedPlanRecord
       `Governed plan record failed validation: ${(error as Error).message}`,
     );
   }
-  if (`${canonicalGovernedJson(record)}\n` !== bytes) {
+  if (!Buffer.from(`${canonicalGovernedJson(record)}\n`, 'utf8').equals(bytes)) {
     return fail(
       'GOVERNED_PLAN_STORE_RECORD_INVALID',
       'Governed plan record is not exact canonical JSON.',
@@ -616,7 +657,7 @@ async function removeProvablyStaleLock(
 
 async function acquireLock(prepared: PreparedStore, planId: string): Promise<HeldLock> {
   const path = join(prepared.locksReal, `${key(planId)}.lock`);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < GOVERNED_PLAN_STORE_LIMITS.lockAcquireAttempts; attempt += 1) {
     const owner: LockOwner = Object.freeze({
       schema: LOCK_OWNER_SCHEMA,
       pid: process.pid,
@@ -836,7 +877,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     readonly startedAt: string;
   }): Promise<GovernedPlanRecord> {
     return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (record.state !== 'pending') {
+      if (!canGovernedPlanStateTransition(record.state, 'executing')) {
         return fail(
           'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
           `Cannot claim governed plan from ${record.state}.`,
@@ -866,7 +907,10 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     readonly failure?: string;
   }): Promise<GovernedPlanRecord> {
     return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (record.state !== 'executing' || record.execution?.executionId !== params.executionId) {
+      if (
+        !canGovernedPlanStateTransition(record.state, params.state) ||
+        record.execution?.executionId !== params.executionId
+      ) {
         return fail(
           'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
           'Only the claimed execution may complete a governed plan.',
@@ -892,7 +936,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     readonly updatedAt: string;
   }): Promise<GovernedPlanRecord> {
     return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (record.state !== 'pending') {
+      if (!canGovernedPlanStateTransition(record.state, 'cancelled')) {
         return fail(
           'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
           `Cannot cancel governed plan from ${record.state}.`,
@@ -911,7 +955,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     readonly updatedAt: string;
   }): Promise<GovernedPlanRecord> {
     return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (record.state !== 'pending') {
+      if (!canGovernedPlanStateTransition(record.state, 'expired')) {
         return fail(
           'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
           `Cannot expire governed plan from ${record.state}.`,

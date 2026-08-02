@@ -36,12 +36,19 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         'go 1.26.5',
         '',
         'use (',
+        '\t./services/governance-control',
         '\t./services/notification-delivery',
         '\t./services/organization-graph',
         ')',
         '',
       ].join('\n'),
     );
+    expect(
+      readFileSync(
+        join(repositoryRoot, 'scripts/go-check/services/governance-control.conf'),
+        'utf8',
+      ),
+    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
     expect(
       readFileSync(
         join(repositoryRoot, 'scripts/go-check/services/organization-graph.conf'),
