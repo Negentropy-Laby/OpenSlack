@@ -62,7 +62,7 @@ INSERT INTO governance_authority_receipts (
     workspace_id, plan_id, expected_revision, target_revision, target_state,
     backend, authority, routing_epoch, record_hash, correlation_id, caller_id,
     execution_id, service_build_sha, reconciliation_token
-) VALUES ($1,$2,'reconciliation_required',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+) VALUES ($1,$2,'reconciliation_required',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 ON CONFLICT (idempotency_key) DO NOTHING`
 
 	eventInsertSQL = `
