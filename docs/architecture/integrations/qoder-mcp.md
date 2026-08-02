@@ -170,6 +170,24 @@ failure blocks without local fallback. Rollback starts a new MCP process with `b
 and a higher epoch, omitting all Go transport flags. This changes no Qoder tool, permission,
 confirmation, Workflow approval, human attestation, or GitHub review boundary.
 
+The Go authority and TypeScript-local recovery store are intentionally not dual-written. A higher
+epoch changes routing; it does not synchronize data. Use this recovery order while the Go process
+is still available:
+
+1. Rebuild every active scenario from current bounded source evidence with
+   `graph snapshot build --authority-backend ts-local`, using the exact current local cursor for a
+   replacement or omitting `--expected-cursor` when no local head exists.
+2. Verify query and explain for every rebuilt scenario through an ordinary local MCP process and
+   confirm the snapshot is inside the configured freshness window.
+3. Start the new global MCP process with `--graph-read-authority-backend ts-local` and an epoch
+   higher than the Go authority epoch.
+4. Monitor Collaboration activity for `graph.read_authority.blocked` before retiring the prior Go
+   process. `SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE` means the local rebuild is not
+   rollback-ready; no `graph.read_authority.rolled_back` event is emitted.
+
+Do not copy or translate a Go query cursor into this path. Reprojection from typed source evidence,
+local CAS publication, and a fresh local read are the recovery proof.
+
 ## Exact production catalog
 
 The exact 12-tool production catalog is:

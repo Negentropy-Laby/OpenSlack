@@ -915,6 +915,28 @@ before release. This moves only the derived Graph head/query/explain authority a
 12/16/17 catalog, tool schema, Qoder Skill, plan confirmation, Workflow effect approval, local
 human attestation, GitHub review, remote Connector, live, release, or production claim.
 
+Go-authority publication and `ts-local` publication are intentionally disjoint; there is no hidden
+dual-write. The higher-epoch selector changes routing only and does not make an old local snapshot
+current. Before rollback, keep the Go process available, rebuild each active scenario from current
+bounded source evidence into `.openslack.local/graph`, and verify local query/explain freshness:
+
+```bash
+openslack graph snapshot build \
+  --scenario <registered-id> \
+  --from <current-source.json> \
+  --scenario-instance <scenario-instance-id> \
+  --authority-backend ts-local \
+  --expected-cursor <current-local-cursor>
+```
+
+Omit `--expected-cursor` only when that scenario has no local head. After every active scenario
+passes an ordinary local MCP query and explanation, start the `ts-local` authority command shown in
+the table with an epoch higher than the Go epoch. A missing or stale local snapshot returns
+`SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE` and appends
+`graph.read_authority.blocked`; it never emits `graph.read_authority.rolled_back`. Monitor these
+blocked events before retiring the previous Go process. Query cursors are not recovery data and
+must not be copied or translated between epochs.
+
 The 16-tool profile adds only Scenario/Workflow preview plus plan
 confirm/cancel. It exposes no shell, generic command, human workflow decision,
 GitHub approval/direct merge, policy, registry, or permission mutation. If

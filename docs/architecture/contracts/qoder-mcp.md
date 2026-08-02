@@ -155,7 +155,9 @@ scenario and is mutually exclusive with mirror and canary configuration. Go read
 authority routes, v2 epoch-bound cursors, the same freshness gate, and required redacted audit. Any
 failure blocks without opening the local snapshot. Tool names, inputs, `openslack.mcp_result.v2`,
 12/16/17 counts, Skill, mutation, confirmation, effect-approval, and human-attestation boundaries
-remain unchanged.
+remain unchanged. Go-authority publication never dual-writes the TypeScript-local recovery store;
+operators must rebuild and freshness-verify every active local scenario before activating a
+higher-epoch rollback. Missing or stale rollback evidence remains blocked and is audited as such.
 
 ## Result Versions
 

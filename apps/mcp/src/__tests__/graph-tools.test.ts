@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readEvents } from '@openslack/collaboration';
 import {
   GRAPH_SNAPSHOT_SCHEMA,
   LocalGraphStore,
@@ -24,6 +25,7 @@ import {
   type OperatorApplicationContextPort,
 } from '../context.js';
 import { OpenSlackMcpCore } from '../core.js';
+import { createOpenSlackGraphReadAuthority } from '../graph-read-authority.js';
 
 const roots: string[] = [];
 const now = '2026-07-27T03:00:00.000Z';
@@ -598,6 +600,77 @@ describe('default graph read adapters', () => {
     });
     expect(graphReadAuthority.route).toHaveBeenCalledWith(current.scenarioInstanceId);
     expect(graphReadAuthority.query).toHaveBeenCalledOnce();
+  });
+
+  it('blocks and audits a global ts-local rollback until local evidence is fresh and present', async () => {
+    const workspaceRoot = root();
+    writeFileSync(
+      join(workspaceRoot, 'openslack.yaml'),
+      [
+        'schema: openslack.workspace.v1',
+        'workspace_id: workspace-1',
+        'name: Rollback Test',
+        'mode: self_project',
+        'workspace:',
+        "  root: '.'",
+        "  state_root: '.openslack'",
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const staleSnapshot = snapshot('2026-07-25T03:00:00.000Z');
+    await new LocalGraphStore(join(workspaceRoot, '.openslack.local', 'graph')).publishSnapshot(
+      staleSnapshot,
+      { expectedCursor: null },
+    );
+    const graphReadAuthority = createOpenSlackGraphReadAuthority({
+      workspaceRoot,
+      backend: 'ts-local',
+      tenantId: 'workspace-1',
+      routingEpoch: 43,
+      expiresAt: '2026-07-28T03:00:00.000Z',
+      now: () => Date.parse(now),
+    });
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        graphReadAuthority,
+      }),
+    );
+
+    const stale = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: staleSnapshot.scenarioInstanceId,
+    });
+    const missing = await core.callTool('openslack_explain_graph', {
+      scenarioInstanceId: 'scenario-missing',
+      targetId: 'node-missing',
+    });
+
+    expect(stale.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'SOURCE_EVIDENCE_STALE' },
+    });
+    expect(missing.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'SOURCE_EVIDENCE_UNAVAILABLE' },
+    });
+    expect(readEvents(workspaceRoot)).toMatchObject([
+      {
+        type: 'graph.read_authority.blocked',
+        metadata: { backend: 'ts-local', routingEpoch: 43, code: 'SOURCE_EVIDENCE_STALE' },
+      },
+      {
+        type: 'graph.read_authority.blocked',
+        metadata: { backend: 'ts-local', routingEpoch: 43, code: 'SOURCE_EVIDENCE_UNAVAILABLE' },
+      },
+    ]);
+    expect(readEvents(workspaceRoot)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'graph.read_authority.rolled_back' }),
+      ]),
+    );
   });
 
   it('rejects programmatic authority composition with mirror or canary routing', () => {

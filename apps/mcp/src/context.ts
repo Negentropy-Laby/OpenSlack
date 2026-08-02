@@ -199,12 +199,21 @@ async function selectGraphReadCanaryRoute(
   try {
     return canary.route(input.scenarioInstanceId);
   } catch (error) {
-    try {
-      await canary.recordBlockedRead?.(operation, structuredClone(input), error);
-    } catch {
-      // A blocked-read audit is best effort and must not replace the original fail-closed reason.
-    }
+    await recordBlockedGraphRead(canary, operation, input, error);
     throw error;
+  }
+}
+
+async function recordBlockedGraphRead(
+  authority: GraphReadCanaryPort,
+  operation: 'query' | 'explain',
+  input: Readonly<GraphQueryInput | GraphExplainInput>,
+  error: unknown,
+): Promise<void> {
+  try {
+    await authority.recordBlockedRead?.(operation, structuredClone(input), error);
+  } catch {
+    // A blocked-read audit is best effort and must not replace the original fail-closed reason.
   }
 }
 
@@ -1466,31 +1475,38 @@ export function createDefaultOpenSlackReadModelPorts(
       if (route?.backend === 'go') {
         return options.graphReadCanary!.query(structuredClone(input));
       }
-      const snapshot = await currentGraph(input.scenarioInstanceId);
-      const result: GraphQueryResult = queryGraph(snapshot, input, {
-        cursorSecret: graphCursorSecret,
-        now: clock(),
-      });
-      if (options.graphReadMirror) {
-        try {
-          await options.graphReadMirror.observeQuery(
-            structuredClone(input),
-            structuredClone(result),
-          );
-        } catch {
-          // Mirror reads are observational and cannot alter the TypeScript authority result.
+      try {
+        const snapshot = await currentGraph(input.scenarioInstanceId);
+        const result: GraphQueryResult = queryGraph(snapshot, input, {
+          cursorSecret: graphCursorSecret,
+          now: clock(),
+        });
+        if (options.graphReadMirror) {
+          try {
+            await options.graphReadMirror.observeQuery(
+              structuredClone(input),
+              structuredClone(result),
+            );
+          } catch {
+            // Mirror reads are observational and cannot alter the TypeScript authority result.
+          }
         }
+        const projection = {
+          generatedAt: snapshot.generatedAt,
+          ...result,
+        };
+        if (authorityRoute?.backend === 'ts-local') {
+          await options.graphReadAuthority?.recordTsLocalRead?.('query', structuredClone(input));
+        } else if (route?.backend === 'ts-local') {
+          await options.graphReadCanary?.recordTsLocalRead?.('query', structuredClone(input));
+        }
+        return projection;
+      } catch (error) {
+        if (authorityRoute?.backend === 'ts-local' && options.graphReadAuthority) {
+          await recordBlockedGraphRead(options.graphReadAuthority, 'query', input, error);
+        }
+        throw error;
       }
-      const projection = {
-        generatedAt: snapshot.generatedAt,
-        ...result,
-      };
-      if (authorityRoute?.backend === 'ts-local') {
-        await options.graphReadAuthority?.recordTsLocalRead?.('query', structuredClone(input));
-      } else if (route?.backend === 'ts-local') {
-        await options.graphReadCanary?.recordTsLocalRead?.('query', structuredClone(input));
-      }
-      return projection;
     },
     graphExplain: async (input) => {
       const authorityRoute = await selectGraphReadCanaryRoute(
@@ -1505,29 +1521,36 @@ export function createDefaultOpenSlackReadModelPorts(
       if (route?.backend === 'go') {
         return options.graphReadCanary!.explain(structuredClone(input));
       }
-      const snapshot = await currentGraph(input.scenarioInstanceId);
-      const result: GraphExplanation = explainGraph(snapshot, input);
-      if (options.graphReadMirror) {
-        try {
-          await options.graphReadMirror.observeExplain(
-            structuredClone(input),
-            structuredClone(result),
-          );
-        } catch {
-          // Mirror reads are observational and cannot alter the TypeScript authority result.
+      try {
+        const snapshot = await currentGraph(input.scenarioInstanceId);
+        const result: GraphExplanation = explainGraph(snapshot, input);
+        if (options.graphReadMirror) {
+          try {
+            await options.graphReadMirror.observeExplain(
+              structuredClone(input),
+              structuredClone(result),
+            );
+          } catch {
+            // Mirror reads are observational and cannot alter the TypeScript authority result.
+          }
         }
+        const projection = {
+          generatedAt: snapshot.generatedAt,
+          snapshotCursor: snapshot.cursor,
+          ...result,
+        };
+        if (authorityRoute?.backend === 'ts-local') {
+          await options.graphReadAuthority?.recordTsLocalRead?.('explain', structuredClone(input));
+        } else if (route?.backend === 'ts-local') {
+          await options.graphReadCanary?.recordTsLocalRead?.('explain', structuredClone(input));
+        }
+        return projection;
+      } catch (error) {
+        if (authorityRoute?.backend === 'ts-local' && options.graphReadAuthority) {
+          await recordBlockedGraphRead(options.graphReadAuthority, 'explain', input, error);
+        }
+        throw error;
       }
-      const projection = {
-        generatedAt: snapshot.generatedAt,
-        snapshotCursor: snapshot.cursor,
-        ...result,
-      };
-      if (authorityRoute?.backend === 'ts-local') {
-        await options.graphReadAuthority?.recordTsLocalRead?.('explain', structuredClone(input));
-      } else if (route?.backend === 'ts-local') {
-        await options.graphReadCanary?.recordTsLocalRead?.('explain', structuredClone(input));
-      }
-      return projection;
     },
   };
   return Object.freeze(ports);

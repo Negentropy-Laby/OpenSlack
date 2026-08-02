@@ -70,7 +70,9 @@ GS3-C global Graph authority events retain only operation/outcome, backend, rout
 build, bounded latency/status/code, and a SHA-256 request fingerprint. A served Go read and an
 explicit higher-epoch TypeScript rollback both require a durable append before release. Audit
 failure blocks with `GRAPH_READ_AUTHORITY_AUDIT_FAILED` and cannot trigger canary, mirror, or local
-fallback.
+fallback. Because Go-authority and local publication are intentionally disjoint, a higher-epoch
+rollback that encounters missing or stale local evidence records only a blocked event with
+`SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE`; it never records a successful rollback.
 
 ## Redaction Rules
 

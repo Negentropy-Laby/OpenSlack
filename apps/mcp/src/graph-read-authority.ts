@@ -88,6 +88,18 @@ function eventType(outcome: 'served' | 'blocked' | 'rolled_back'): Collaboration
   return `graph.read_authority.${outcome}`;
 }
 
+const LOCAL_ROLLBACK_BLOCK_CODES = new Set([
+  'SOURCE_EVIDENCE_UNAVAILABLE',
+  'SOURCE_EVIDENCE_STALE',
+]);
+
+function blockedCode(error: unknown): string | undefined {
+  if (error instanceof GraphReadAuthorityError) return error.code;
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = error.code;
+  return typeof code === 'string' && LOCAL_ROLLBACK_BLOCK_CODES.has(code) ? code : undefined;
+}
+
 function authorityEvent(input: {
   readonly operation: GraphReadCanaryOperation;
   readonly request: Readonly<GraphQueryInput | GraphExplainInput>;
@@ -190,6 +202,7 @@ export function createOpenSlackGraphReadAuthority(
     error?: unknown,
   ): void => {
     const completedAt = safeNow(now);
+    const code = blockedCode(error);
     append(
       authorityEvent({
         operation,
@@ -202,7 +215,7 @@ export function createOpenSlackGraphReadAuthority(
         ...(options.expectedBuildSha === undefined
           ? {}
           : { expectedBuildSha: options.expectedBuildSha }),
-        ...(error instanceof GraphReadAuthorityError ? { code: error.code } : {}),
+        ...(code === undefined ? {} : { code }),
         ...(error instanceof GraphReadAuthorityError && error.httpStatus !== undefined
           ? { httpStatus: error.httpStatus }
           : {}),

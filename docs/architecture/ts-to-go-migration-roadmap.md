@@ -208,7 +208,10 @@ GS3 is split into three independently reviewed changes:
    MCP query/explain reads while the policy is active; those routes use v2 epoch-bound cursors and
    require a redacted Collaboration audit before releasing a result. Mirror, bounded canary, and
    global authority cannot be composed together. Rollback is a new global `ts-local` policy with a
-   higher epoch, not a per-request fallback.
+   higher epoch, not a per-request fallback. Authority publication never dual-writes the local
+   recovery store: operators must reproject current bounded source evidence into that store and
+   verify fresh local reads before activating the higher epoch. Missing or stale recovery evidence
+   remains blocked and audited rather than being served as a rollback.
 
 GS3-B transfers read authority only for the exact selected scenario instances while its policy is
 active. It adds no Go write authority, default or full read cutover, Graph-head ownership transfer,

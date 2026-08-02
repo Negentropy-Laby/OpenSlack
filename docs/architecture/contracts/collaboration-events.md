@@ -173,7 +173,10 @@ These GS3-C events use the same redacted metadata ceiling as canary events: oper
 backend, epoch, expected build, latency, bounded status/code, and a SHA-256 request fingerprint.
 They contain no endpoint, tenant prose, body, cursor, Graph record, evidence, or source-event
 content. Served and rollback append failure blocks the result with
-`GRAPH_READ_AUTHORITY_AUDIT_FAILED`; it never selects another backend.
+`GRAPH_READ_AUTHORITY_AUDIT_FAILED`; it never selects another backend. A higher-epoch `ts-local`
+attempt with missing or stale local evidence records `graph.read_authority.blocked` with
+`SOURCE_EVIDENCE_UNAVAILABLE` or `SOURCE_EVIDENCE_STALE`; it cannot record
+`graph.read_authority.rolled_back` until the local read succeeds.
 
 ## Storage
 

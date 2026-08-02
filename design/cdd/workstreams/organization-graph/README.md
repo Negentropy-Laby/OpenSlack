@@ -326,7 +326,11 @@ The implemented local graph slice includes:
 - a separate default-off global Go head/query/explain authority bound to one workspace/tenant,
   epoch, expiry, origin, and build. TypeScript projectors complete publication only after durable Go
   acceptance receipts; authority reads use dedicated v2 epoch-bound routes and required redacted
-  audit, while rollback is an explicit higher global TypeScript epoch;
+  audit, while rollback is an explicit higher global TypeScript epoch. Go-authority publication and
+  local publication are intentionally disjoint: before rollback, operators must rebuild every
+  active scenario into the local store from current bounded source evidence and verify a fresh
+  local read. Missing or stale rollback evidence remains blocked and is audited as blocked, never
+  as a completed rollback;
 - a governed local rehearsal assembler that preserves `demo_fixture` business authority and calls
   the explicit sealed graph builder outside the read tools.
 
@@ -395,7 +399,9 @@ informational and cannot become current authority.
 
 Snapshot builds accept bounded files or stdin. The default and explicit rollback path publishes
 through CAS to the workspace-local graph store; an explicitly configured GS3-C path publishes only
-through a tenant/epoch/build-bound durable Go receipt.
+through a tenant/epoch/build-bound durable Go receipt. There is no implicit dual-write or store
+synchronization. A global TypeScript rollback therefore requires a deliberate current-source local
+rebuild before its higher-epoch MCP policy is activated.
 
 ## Acceptance Criteria
 

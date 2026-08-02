@@ -248,7 +248,9 @@ GS3-C is a separate all-scenario process policy, not an expanded canary allowlis
 - it binds one canonical workspace/tenant, positive routing epoch, expiry no more than seven days,
   exact credential-free Go origin, and 64-hex service build;
 - the Go service independently requires the same epoch/build/tenant headers on dedicated authority
-  ingest, query, and explain routes;
+  ingest, query, and explain routes. These plaintext equality bindings are not authentication; the
+  service remains restricted to the documented loopback or explicitly isolated internal network
+  boundary, and public or remote authenticated transport remains deferred;
 - TypeScript keeps deterministic projector calculation but publishes through a fail-closed port.
   Only an exact durable `accepted` or `duplicate` receipt completes publication; conflict, transport,
   invalid receipt, or `reconciliation_required` does not update a TypeScript authority copy or claim
@@ -260,7 +262,13 @@ GS3-C is a separate all-scenario process policy, not an expanded canary allowlis
 - a successful Go read or explicit global `ts-local` rollback must commit a bounded redacted
   Collaboration event before the result is released;
 - mirror, bounded canary, and global authority are mutually exclusive in one MCP process. Rollback
-  requires a new global `ts-local` policy with a higher epoch.
+  requires a new global `ts-local` policy with a higher epoch;
+- Go-authority and TypeScript-local publication are deliberately disjoint and never dual-write.
+  Before activating that higher epoch, every active scenario must be reprojected from current
+  bounded source evidence into the local CAS store and its local query/explain freshness verified.
+  A missing or stale local snapshot blocks with `SOURCE_EVIDENCE_UNAVAILABLE` or
+  `SOURCE_EVIDENCE_STALE`, records `graph.read_authority.blocked`, and cannot record
+  `graph.read_authority.rolled_back`.
 
 This authority is limited to the derived Organization Graph projection. It grants no source-system
 mutation, Scenario/Workflow execution, Qoder identity, approval, GitHub review, remote transport,
@@ -350,7 +358,9 @@ GS3-C adds the explicit global Graph-head/query/explain authority described abov
 cross-language qualification must prove the full path from TypeScript projection through a durable
 Go ingest receipt to authority query/explain, v2 cursor rejection across epochs, receipt replay,
 reconciliation blocking, and explicit higher-epoch rollback. This is local repository evidence and
-does not establish authenticated Desktop, live, release, or production qualification.
+does not establish authenticated Desktop, live, release, or production qualification. The hosted
+exact-head workspace verifier additionally runs `go test -race ./...`, covering the authority
+handlers and their shared store access before this Red Zone change can merge.
 
 ## Related Documents
 
