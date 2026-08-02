@@ -124,6 +124,10 @@ func TestOpenAPI31FreezesEveryImplementedRoute(t *testing.T) {
 		app.RouteExplain,
 		app.RouteCanaryQuery,
 		app.RouteCanaryExplain,
+		app.RouteAuthoritySnapshotIngest,
+		app.RouteAuthorityDeltaIngest,
+		app.RouteAuthorityQuery,
+		app.RouteAuthorityExplain,
 		app.RouteScenarios,
 		app.RouteLive,
 		app.RouteReady,
@@ -236,6 +240,8 @@ func TestOpenAPIFreezesFailureAndAmbiguousCommitMappings(t *testing.T) {
 		"GRAPH_INTERNAL",
 		"GRAPH_CANARY_NOT_CONFIGURED",
 		"GRAPH_CANARY_ROUTE_MISMATCH",
+		"GRAPH_AUTHORITY_NOT_CONFIGURED",
+		"GRAPH_AUTHORITY_ROUTE_MISMATCH",
 		"GRAPH_QUERY_CURSOR_INVALID",
 		"GRAPH_QUERY_CURSOR_EXPIRED",
 		"GRAPH_QUERY_CURSOR_MISMATCH",
@@ -244,8 +250,8 @@ func TestOpenAPIFreezesFailureAndAmbiguousCommitMappings(t *testing.T) {
 			t.Fatalf("OpenAPI missing stable error code %s", code)
 		}
 	}
-	if count := strings.Count(document, "'202':"); count != 2 {
-		t.Fatalf("202 reconciliation response count = %d, want 2", count)
+	if count := strings.Count(document, "'202':"); count != 4 {
+		t.Fatalf("202 reconciliation response count = %d, want 4", count)
 	}
 	if !strings.Contains(document, "A durable reconciliation receipt because commit outcome is ambiguous") {
 		t.Fatal("ambiguous commit is not frozen as a durable receipt")

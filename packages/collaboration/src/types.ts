@@ -97,7 +97,10 @@ export type GraphReadEvent =
   | 'graph.read_mirror.unavailable'
   | 'graph.read_canary.served'
   | 'graph.read_canary.blocked'
-  | 'graph.read_canary.rolled_back';
+  | 'graph.read_canary.rolled_back'
+  | 'graph.read_authority.served'
+  | 'graph.read_authority.blocked'
+  | 'graph.read_authority.rolled_back';
 
 export type AgentConversationEventType =
   | 'agent.conversation.started'

@@ -18,6 +18,7 @@ import {
 import { validateGraphDelta, validateGraphSnapshot } from './validation.js';
 
 export const GRAPH_READ_CANARY_SCHEMA = 'openslack.graph_canary_read.v1' as const;
+export const GRAPH_READ_AUTHORITY_SCHEMA = 'openslack.graph_authority_read.v1' as const;
 
 export const GRAPH_READ_CANARY_POLICY = Object.freeze({
   defaultTimeoutMs: 2_000,
@@ -108,6 +109,8 @@ export interface GraphReadCanaryRouterOptions {
   readonly maxSnapshotAgeMs?: number;
   readonly fetch?: GraphReadCanaryFetch;
   readonly now?: () => number;
+  /** @internal GS3-C uses the same closed decoder for its global authority routes. */
+  readonly readAuthority?: boolean;
 }
 
 const BUILD_SHA = /^[0-9a-f]{64}$/u;
@@ -542,7 +545,12 @@ function classifyErrorResponse(response: Response, body: StrictJsonObject): neve
   ) {
     fail(code, 'The Go graph read authority rejected the bound query cursor.', response.status);
   }
-  if (code === 'GRAPH_CANARY_ROUTE_MISMATCH' || code === 'GRAPH_CANARY_NOT_CONFIGURED') {
+  if (
+    code === 'GRAPH_CANARY_ROUTE_MISMATCH' ||
+    code === 'GRAPH_CANARY_NOT_CONFIGURED' ||
+    code === 'GRAPH_AUTHORITY_ROUTE_MISMATCH' ||
+    code === 'GRAPH_AUTHORITY_NOT_CONFIGURED'
+  ) {
     fail(
       'GRAPH_READ_CANARY_ROUTE_MISMATCH',
       'The Go graph read authority rejected its route binding.',
@@ -558,6 +566,7 @@ function classifyErrorResponse(response: Response, body: StrictJsonObject): neve
 
 export class GraphReadCanaryRouter implements GraphReadCanaryPort {
   private readonly backend: GraphReadCanaryBackend;
+  private readonly tenantId: string;
   private readonly scenarios: ReadonlySet<string>;
   private readonly routingEpoch: number;
   private readonly expiresAtMs: number;
@@ -567,8 +576,10 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
   private readonly maxSnapshotAgeMs: number;
   private readonly fetch: GraphReadCanaryFetch;
   private readonly now: () => number;
+  private readonly readAuthority: boolean;
 
   constructor(options: GraphReadCanaryRouterOptions) {
+    this.readAuthority = options.readAuthority === true;
     if (options.backend !== 'go' && options.backend !== 'ts-local') {
       fail('GRAPH_READ_CANARY_POLICY_INVALID', 'Graph read canary backend is not registered.');
     }
@@ -580,13 +591,18 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         'Graph read canary tenant binding does not match the workspace.',
       );
     }
+    this.tenantId = tenantId;
     if (
-      options.scenarioInstanceIds.length < 1 ||
-      options.scenarioInstanceIds.length > GRAPH_READ_CANARY_POLICY.maxScenarioInstanceIds
+      (this.readAuthority && options.scenarioInstanceIds.length !== 0) ||
+      (!this.readAuthority &&
+        (options.scenarioInstanceIds.length < 1 ||
+          options.scenarioInstanceIds.length > GRAPH_READ_CANARY_POLICY.maxScenarioInstanceIds))
     ) {
       fail(
         'GRAPH_READ_CANARY_POLICY_INVALID',
-        'Graph read canary scenario allowlist is outside its bound.',
+        this.readAuthority
+          ? 'Graph read authority must not contain a bounded canary allowlist.'
+          : 'Graph read canary scenario allowlist is outside its bound.',
       );
     }
     const scenarios = options.scenarioInstanceIds.map((value) =>
@@ -652,7 +668,8 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
   }
 
   route(scenarioInstanceId: string): GraphReadCanaryRoute | undefined {
-    if (!this.scenarios.has(scenarioInstanceId)) return undefined;
+    policyIdentifier(scenarioInstanceId, 'scenarioInstanceId');
+    if (!this.readAuthority && !this.scenarios.has(scenarioInstanceId)) return undefined;
     if (this.safeNow() >= this.expiresAtMs) {
       fail(
         'GRAPH_READ_CANARY_POLICY_EXPIRED',
@@ -686,7 +703,13 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         'The selected graph read route explicitly retains TypeScript authority.',
       );
     }
-    const path = operation === 'query' ? '/v1/canary/graph:query' : '/v1/canary/graph:explain';
+    const path = this.readAuthority
+      ? operation === 'query'
+        ? '/v1/authority/graph:query'
+        : '/v1/authority/graph:explain'
+      : operation === 'query'
+        ? '/v1/canary/graph:query'
+        : '/v1/canary/graph:explain';
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
@@ -711,6 +734,7 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
               'Content-Type': 'application/json',
               'X-OpenSlack-Graph-Routing-Epoch': String(this.routingEpoch),
               'X-OpenSlack-Graph-Expected-Build-SHA': this.expectedBuildSha!,
+              ...(this.readAuthority ? { 'X-OpenSlack-Graph-Tenant-ID': this.tenantId } : {}),
             },
             body: canonicalJson(input),
             signal: controller.signal,
@@ -779,7 +803,8 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         'result',
       ]);
       if (
-        envelope.schema !== GRAPH_READ_CANARY_SCHEMA ||
+        envelope.schema !==
+          (this.readAuthority ? GRAPH_READ_AUTHORITY_SCHEMA : GRAPH_READ_CANARY_SCHEMA) ||
         envelope.operation !== operation ||
         envelope.backend !== 'go' ||
         envelope.routingEpoch !== this.routingEpoch ||

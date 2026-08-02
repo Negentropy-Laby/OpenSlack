@@ -117,9 +117,9 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/organization-graph" ||
 		manifest.Service.TargetPath != "services/organization-graph" ||
-		manifest.Service.MigrationPhase != "GS3-B" ||
-		manifest.Service.Authority != "TS_DEFAULT_READ_AUTHORITY_BOUNDED_GO_CANARY" ||
-		len(manifest.Scope.Authorizes) != 0 {
+		manifest.Service.MigrationPhase != "GS3-C" ||
+		manifest.Service.Authority != "GO_GRAPH_HEAD_QUERY_EXPLAIN_AUTHORITY_TS_PROJECTOR" ||
+		strings.Join(manifest.Scope.Authorizes, "\n") != "DURABLE_GRAPH_INGEST_ACCEPTANCE\nGRAPH_HEAD_READ_AUTHORITY" {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 ||
@@ -129,14 +129,13 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 		t.Fatalf("source manifest input inventory drifted")
 	}
 	requiredNonClaims := []string{
-		"GO_WRITE_AUTHORITY",
 		"LIVE_VERIFIED",
 		"PRODUCTION",
 		"QODER_VERIFIED",
-		"READ_CUTOVER",
 		"REGISTRY_INCLUSION",
 		"RELEASE",
 		"SIGNED_PROVENANCE",
+		"SOURCE_SYSTEM_MUTATION_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)
 	sort.Strings(actualNonClaims)

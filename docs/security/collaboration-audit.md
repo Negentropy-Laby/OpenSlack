@@ -49,6 +49,8 @@ The Collaboration Layer never records:
   payloads, authority objects, evidence contents, or source-event contents
 - Graph read-canary origins, request or response bodies, raw cursors, graph contents, evidence
   contents, or source-event contents
+- Graph global-authority origins, tenant prose, request or response bodies, raw cursors, graph
+  contents, evidence contents, or source-event contents
 
 GS3-A Graph read-mirror events store only the operation/outcome, bounded status or difference
 codes, latency, and SHA-256 fingerprints/digests (including a hashed snapshot cursor). Mirror
@@ -63,6 +65,12 @@ never recorded. A selected Go read and an explicit TypeScript rollback read both
 corresponding audit append before the MCP result is released. If that append fails, the request is
 blocked with `GRAPH_READ_CANARY_AUDIT_FAILED`; it is never retried through another backend. A stale
 Go snapshot is recorded only as blocked with `SOURCE_EVIDENCE_STALE`; no served event is committed.
+
+GS3-C global Graph authority events retain only operation/outcome, backend, routing epoch, expected
+build, bounded latency/status/code, and a SHA-256 request fingerprint. A served Go read and an
+explicit higher-epoch TypeScript rollback both require a durable append before release. Audit
+failure blocks with `GRAPH_READ_AUTHORITY_AUDIT_FAILED` and cannot trigger canary, mirror, or local
+fallback.
 
 ## Redaction Rules
 

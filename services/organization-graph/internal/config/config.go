@@ -36,6 +36,8 @@ var (
 		"GRAPH_QUERY_CURSOR_SECRET_PREVIOUS": {},
 		"GRAPH_SERVICE_BUILD_SHA":            {},
 		"GRAPH_CANARY_ROUTING_EPOCH":         {},
+		"GRAPH_READ_AUTHORITY_ROUTING_EPOCH": {},
+		"GRAPH_READ_AUTHORITY_TENANT_ID":     {},
 	}
 )
 
@@ -48,6 +50,8 @@ type Config struct {
 	PreviousQueryCursorSecret []byte
 	ServiceBuildSHA           string
 	CanaryRoutingEpoch        *int64
+	ReadAuthorityRoutingEpoch *int64
+	ReadAuthorityTenantID     string
 	MigrationSource           string
 	ShutdownDeadline          time.Duration
 }
@@ -123,6 +127,20 @@ func LoadEnvironment(environment []string) (Config, error) {
 		}
 		canaryRoutingEpoch = &epoch
 	}
+	var readAuthorityRoutingEpoch *int64
+	readAuthorityTenantID := values["GRAPH_READ_AUTHORITY_TENANT_ID"]
+	if rawEpoch := values["GRAPH_READ_AUTHORITY_ROUTING_EPOCH"]; rawEpoch != "" {
+		epoch, parseErr := strconv.ParseInt(rawEpoch, 10, 64)
+		if parseErr != nil || strconv.FormatInt(epoch, 10) != rawEpoch || epoch < 1 || epoch > 9007199254740991 {
+			return Config{}, fmt.Errorf("GRAPH_READ_AUTHORITY_ROUTING_EPOCH must be a positive safe integer when set")
+		}
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$`).MatchString(readAuthorityTenantID) {
+			return Config{}, fmt.Errorf("GRAPH_READ_AUTHORITY_TENANT_ID must be a canonical bounded identifier")
+		}
+		readAuthorityRoutingEpoch = &epoch
+	} else if readAuthorityTenantID != "" {
+		return Config{}, fmt.Errorf("GRAPH_READ_AUTHORITY_TENANT_ID requires GRAPH_READ_AUTHORITY_ROUTING_EPOCH")
+	}
 
 	return Config{
 		DatabaseURL:               migration.DatabaseURL,
@@ -132,6 +150,8 @@ func LoadEnvironment(environment []string) (Config, error) {
 		PreviousQueryCursorSecret: append([]byte(nil), previousCursorSecret...),
 		ServiceBuildSHA:           buildSHA,
 		CanaryRoutingEpoch:        canaryRoutingEpoch,
+		ReadAuthorityRoutingEpoch: readAuthorityRoutingEpoch,
+		ReadAuthorityTenantID:     readAuthorityTenantID,
 		MigrationSource:           migration.MigrationSource,
 		ShutdownDeadline:          30 * time.Second,
 	}, nil

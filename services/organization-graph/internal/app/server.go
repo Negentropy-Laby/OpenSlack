@@ -15,20 +15,25 @@ import (
 )
 
 const (
-	RouteSnapshotIngest = "/v1/graph/snapshots:ingest"
-	RouteDeltaIngest    = "/v1/graph/deltas:ingest"
-	RouteQuery          = "/v1/graph:query"
-	RouteExplain        = "/v1/graph:explain"
-	RouteCanaryQuery    = "/v1/canary/graph:query"
-	RouteCanaryExplain  = "/v1/canary/graph:explain"
-	RouteScenarios      = "/v1/graph/scenarios"
-	RouteLive           = "/health/live"
-	RouteReady          = "/health/ready"
-	RouteVersion        = "/health/version"
-	RouteMetrics        = "/metrics"
+	RouteSnapshotIngest          = "/v1/graph/snapshots:ingest"
+	RouteDeltaIngest             = "/v1/graph/deltas:ingest"
+	RouteQuery                   = "/v1/graph:query"
+	RouteExplain                 = "/v1/graph:explain"
+	RouteCanaryQuery             = "/v1/canary/graph:query"
+	RouteCanaryExplain           = "/v1/canary/graph:explain"
+	RouteAuthoritySnapshotIngest = "/v1/authority/graph/snapshots:ingest"
+	RouteAuthorityDeltaIngest    = "/v1/authority/graph/deltas:ingest"
+	RouteAuthorityQuery          = "/v1/authority/graph:query"
+	RouteAuthorityExplain        = "/v1/authority/graph:explain"
+	RouteScenarios               = "/v1/graph/scenarios"
+	RouteLive                    = "/health/live"
+	RouteReady                   = "/health/ready"
+	RouteVersion                 = "/health/version"
+	RouteMetrics                 = "/metrics"
 
 	HeaderCanaryRoutingEpoch = "X-OpenSlack-Graph-Routing-Epoch"
 	HeaderExpectedBuildSHA   = "X-OpenSlack-Graph-Expected-Build-SHA"
+	HeaderAuthorityTenantID  = "X-OpenSlack-Graph-Tenant-ID"
 )
 
 var serviceBuildSHAPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -42,25 +47,29 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
 type Options struct {
-	Store                Store
-	CursorSecret         []byte
-	PreviousCursorSecret []byte
-	BuildSHA             string
-	CanaryRoutingEpoch   *int64
-	Logger               *slog.Logger
-	Clock                Clock
+	Store                     Store
+	CursorSecret              []byte
+	PreviousCursorSecret      []byte
+	BuildSHA                  string
+	CanaryRoutingEpoch        *int64
+	ReadAuthorityRoutingEpoch *int64
+	ReadAuthorityTenantID     string
+	Logger                    *slog.Logger
+	Clock                     Clock
 }
 
 type Service struct {
-	store                Store
-	cursorSecret         []byte
-	previousCursorSecret []byte
-	buildSHA             string
-	canaryRoutingEpoch   *int64
-	logger               *slog.Logger
-	clock                Clock
-	counters             *counters
-	handler              http.Handler
+	store                     Store
+	cursorSecret              []byte
+	previousCursorSecret      []byte
+	buildSHA                  string
+	canaryRoutingEpoch        *int64
+	readAuthorityRoutingEpoch *int64
+	readAuthorityTenantID     string
+	logger                    *slog.Logger
+	clock                     Clock
+	counters                  *counters
+	handler                   http.Handler
 }
 
 func New(options Options) (*Service, error) {
@@ -86,6 +95,17 @@ func New(options Options) (*Service, error) {
 		(*options.CanaryRoutingEpoch < 1 || *options.CanaryRoutingEpoch > 9007199254740991) {
 		return nil, fmt.Errorf("graph canary routing epoch must be a positive safe integer")
 	}
+	if options.ReadAuthorityRoutingEpoch != nil &&
+		(*options.ReadAuthorityRoutingEpoch < 1 || *options.ReadAuthorityRoutingEpoch > 9007199254740991) {
+		return nil, fmt.Errorf("graph read authority routing epoch must be a positive safe integer")
+	}
+	if options.ReadAuthorityRoutingEpoch != nil {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$`).MatchString(options.ReadAuthorityTenantID) {
+			return nil, fmt.Errorf("graph read authority tenant ID must be a canonical bounded identifier")
+		}
+	} else if options.ReadAuthorityTenantID != "" {
+		return nil, fmt.Errorf("graph read authority tenant ID requires a routing epoch")
+	}
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
@@ -97,15 +117,22 @@ func New(options Options) (*Service, error) {
 		epoch := *options.CanaryRoutingEpoch
 		canaryRoutingEpoch = &epoch
 	}
+	var readAuthorityRoutingEpoch *int64
+	if options.ReadAuthorityRoutingEpoch != nil {
+		epoch := *options.ReadAuthorityRoutingEpoch
+		readAuthorityRoutingEpoch = &epoch
+	}
 	service := &Service{
-		store:                options.Store,
-		cursorSecret:         append([]byte(nil), options.CursorSecret...),
-		previousCursorSecret: append([]byte(nil), options.PreviousCursorSecret...),
-		buildSHA:             options.BuildSHA,
-		canaryRoutingEpoch:   canaryRoutingEpoch,
-		logger:               options.Logger,
-		clock:                options.Clock,
-		counters:             newCounters(),
+		store:                     options.Store,
+		cursorSecret:              append([]byte(nil), options.CursorSecret...),
+		previousCursorSecret:      append([]byte(nil), options.PreviousCursorSecret...),
+		buildSHA:                  options.BuildSHA,
+		canaryRoutingEpoch:        canaryRoutingEpoch,
+		readAuthorityRoutingEpoch: readAuthorityRoutingEpoch,
+		readAuthorityTenantID:     options.ReadAuthorityTenantID,
+		logger:                    options.Logger,
+		clock:                     options.Clock,
+		counters:                  newCounters(),
 	}
 	service.handler = service.routes()
 	return service, nil
@@ -128,6 +155,10 @@ func (service *Service) routes() http.Handler {
 	mux.HandleFunc("POST "+RouteExplain, service.handleExplain)
 	mux.HandleFunc("POST "+RouteCanaryQuery, service.handleCanaryQuery)
 	mux.HandleFunc("POST "+RouteCanaryExplain, service.handleCanaryExplain)
+	mux.HandleFunc("POST "+RouteAuthoritySnapshotIngest, service.handleAuthoritySnapshotIngest)
+	mux.HandleFunc("POST "+RouteAuthorityDeltaIngest, service.handleAuthorityDeltaIngest)
+	mux.HandleFunc("POST "+RouteAuthorityQuery, service.handleAuthorityQuery)
+	mux.HandleFunc("POST "+RouteAuthorityExplain, service.handleAuthorityExplain)
 	mux.HandleFunc("GET "+RouteScenarios, service.handleScenarios)
 	mux.HandleFunc("GET "+RouteLive, service.handleLive)
 	mux.HandleFunc("GET "+RouteReady, service.handleReady)
@@ -180,6 +211,8 @@ func routeLabel(path string) string {
 	switch path {
 	case RouteSnapshotIngest, RouteDeltaIngest, RouteQuery, RouteExplain,
 		RouteCanaryQuery, RouteCanaryExplain,
+		RouteAuthoritySnapshotIngest, RouteAuthorityDeltaIngest,
+		RouteAuthorityQuery, RouteAuthorityExplain,
 		RouteScenarios, RouteLive, RouteReady, RouteVersion, RouteMetrics:
 		return path
 	default:

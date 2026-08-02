@@ -11,6 +11,7 @@ import {
   sealGraphSnapshot,
   type GraphNode,
   GraphReadCanaryError,
+  type GraphReadAuthorityPort,
   type GraphReadCanaryPort,
   type GraphReadMirrorPort,
   type GraphSnapshot,
@@ -554,6 +555,62 @@ describe('default graph read adapters', () => {
     });
     expect(graphReadCanary.query).toHaveBeenCalledOnce();
     expect(graphReadMirror.observeQuery).not.toHaveBeenCalled();
+  });
+
+  it('uses the global Go authority for every scenario without opening local or mirror state', async () => {
+    const current = snapshot();
+    const graphReadAuthority: GraphReadAuthorityPort = {
+      route: vi.fn(() => ({ backend: 'go' as const, routingEpoch: 42 })),
+      query: vi.fn(async (input) => ({
+        generatedAt: current.generatedAt,
+        scenarioInstanceId: input.scenarioInstanceId,
+        snapshotCursor: 'go-authority-cursor-42',
+        queryHash: `sha256:${'2'.repeat(64)}`,
+        nodes: [],
+        edges: [],
+        paths: [],
+        completeness: current.completeness,
+        truncation: {
+          truncated: false,
+          nodeLimit: false,
+          edgeLimit: false,
+          byteLimit: false,
+          paginated: false,
+          responseBytes: 256,
+        },
+      })),
+      explain: vi.fn(),
+    };
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot: root(),
+        operator: operator(),
+        clock: () => new Date(now),
+        graphReadAuthority,
+      }),
+    );
+    const result = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    expect(result.structuredContent).toMatchObject({
+      status: 'completed',
+      data: { snapshotCursor: 'go-authority-cursor-42' },
+    });
+    expect(graphReadAuthority.route).toHaveBeenCalledWith(current.scenarioInstanceId);
+    expect(graphReadAuthority.query).toHaveBeenCalledOnce();
+  });
+
+  it('rejects programmatic authority composition with mirror or canary routing', () => {
+    const graphReadAuthority = Object.freeze({}) as GraphReadAuthorityPort;
+    const graphReadMirror = Object.freeze({}) as GraphReadMirrorPort;
+    expect(() =>
+      createOpenSlackMcpContext({
+        workspaceRoot: root(),
+        operator: operator(),
+        graphReadAuthority,
+        graphReadMirror,
+      }),
+    ).toThrow(/mutually exclusive/u);
   });
 
   it('fails a selected Go read closed without a local or mirror fallback', async () => {

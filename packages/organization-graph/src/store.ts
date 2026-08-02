@@ -85,6 +85,28 @@ export interface PublishedGraphSnapshot {
   deltaPath?: string;
 }
 
+/**
+ * Common publication result shared by the local cache and a durable remote
+ * authority. Filesystem paths are deliberately excluded from this port.
+ */
+export interface GraphSnapshotPublication {
+  scenarioInstanceId: string;
+  previousCursor: string | null;
+  cursor: string;
+  snapshotIntegrityHash: string;
+  authorityBackend?: 'ts-local' | 'go';
+  routingEpoch?: number;
+  receiptStatus?: 'accepted' | 'duplicate';
+  revision?: number;
+}
+
+export interface GraphSnapshotPublisherPort {
+  publishSnapshot(
+    snapshot: GraphSnapshot,
+    options: PublishGraphSnapshotOptions,
+  ): Promise<GraphSnapshotPublication>;
+}
+
 export interface GraphStorePathSet {
   root: string;
   snapshotsDirectory: string;

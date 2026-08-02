@@ -2,8 +2,10 @@ import { constants as fsConstants } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import {
+  GraphAuthorityHttpPublisher,
+  GraphAuthorityPublishError,
   GraphContractError,
   GraphStoreError,
   LocalGraphStore,
@@ -12,8 +14,11 @@ import {
   buildAndPublishGraphSnapshot,
   graphSnapshotBuildProfile,
   type BuildAndPublishGraphSnapshotInput,
+  type GraphAuthorityHttpPublisherOptions,
+  type GraphSnapshotPublisherPort,
   type PublishedGraphBuildSnapshot,
 } from '@openslack/organization-graph';
+import { resolveWorkspaceContext } from '@openslack/workspace';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 const READ_CHUNK_BYTES = 64 * 1024;
@@ -25,7 +30,8 @@ export type GraphSnapshotCommandErrorCode =
   | 'GRAPH_SOURCE_FILE_TOO_LARGE'
   | 'GRAPH_SOURCE_STDIN_FAILED'
   | 'GRAPH_SCENARIO_UNSUPPORTED'
-  | 'GRAPH_OUTPUT_FORMAT_INVALID';
+  | 'GRAPH_OUTPUT_FORMAT_INVALID'
+  | 'GRAPH_AUTHORITY_ARGUMENT_INVALID';
 
 export class GraphSnapshotCommandError extends Error {
   constructor(
@@ -43,7 +49,10 @@ export interface GraphSourceFileReadTestHooks {
 
 export interface GraphCommandDependencies {
   readonly workspaceRoot: string;
-  readonly createStore?: (root: string) => LocalGraphStore;
+  readonly createStore?: (root: string) => GraphSnapshotPublisherPort;
+  readonly createAuthorityPublisher?: (
+    options: GraphAuthorityHttpPublisherOptions,
+  ) => GraphSnapshotPublisherPort;
   readonly buildSnapshot?: (
     input: BuildAndPublishGraphSnapshotInput,
   ) => Promise<PublishedGraphBuildSnapshot>;
@@ -58,6 +67,12 @@ interface GraphSnapshotBuildOptions {
   scenarioInstance?: string;
   expectedCursor?: string;
   format: string;
+  authorityBackend?: 'go' | 'ts-local';
+  authorityRoutingEpoch?: string;
+  authorityTenant?: string;
+  authorityOrigin?: string;
+  authorityNetwork?: 'loopback' | 'internal';
+  authorityBuildSha?: string;
 }
 
 function commandFail(code: GraphSnapshotCommandErrorCode, message: string): never {
@@ -217,6 +232,10 @@ export function renderGraphSnapshotBuildResult(
     snapshotIntegrityHash: result.snapshotIntegrityHash,
     nodeCount: result.nodeCount,
     edgeCount: result.edgeCount,
+    ...(result.authorityBackend === undefined ? {} : { authorityBackend: result.authorityBackend }),
+    ...(result.routingEpoch === undefined ? {} : { routingEpoch: result.routingEpoch }),
+    ...(result.receiptStatus === undefined ? {} : { receiptStatus: result.receiptStatus }),
+    ...(result.revision === undefined ? {} : { revision: result.revision }),
   };
   if (format === 'json') return JSON.stringify(safeResult, null, 2);
   return [
@@ -227,6 +246,14 @@ export function renderGraphSnapshotBuildResult(
     `Integrity: ${safeResult.snapshotIntegrityHash}`,
     `Nodes: ${safeResult.nodeCount}`,
     `Edges: ${safeResult.edgeCount}`,
+    ...(safeResult.authorityBackend === undefined
+      ? []
+      : [`Authority backend: ${safeResult.authorityBackend}`]),
+    ...(safeResult.routingEpoch === undefined ? [] : [`Routing epoch: ${safeResult.routingEpoch}`]),
+    ...(safeResult.receiptStatus === undefined
+      ? []
+      : [`Durable receipt: ${safeResult.receiptStatus}`]),
+    ...(safeResult.revision === undefined ? [] : [`Revision: ${safeResult.revision}`]),
   ].join('\n');
 }
 
@@ -243,6 +270,9 @@ export function renderGraphSnapshotBuildError(error: unknown): string {
       return `${error.code}: graph cursor may be committed; verify current state before retrying.`;
     }
     return `${error.code}: graph snapshot publication was rejected.`;
+  }
+  if (error instanceof GraphAuthorityPublishError) {
+    return `${error.code}: graph authority publication failed closed.`;
   }
   return 'GRAPH_SNAPSHOT_BUILD_FAILED: graph snapshot build failed closed.';
 }
@@ -261,6 +291,22 @@ export function graphCommands(dependencies: GraphCommandDependencies): Command {
     .option('--scenario-instance <id>', 'Require an exact scenario instance')
     .option('--expected-cursor <cursor>', 'Required current cursor when replacing a snapshot')
     .option('--format <format>', 'Output format: plain or json', 'plain')
+    .addOption(
+      new Option(
+        '--authority-backend <backend>',
+        'Publish to the Go authority or explicitly retain the ts-local writer',
+      ).choices(['go', 'ts-local']),
+    )
+    .option('--authority-routing-epoch <epoch>', 'Bind durable Go acceptance to one routing epoch')
+    .option('--authority-tenant <workspace-id>', 'Assert the canonical workspace/tenant ID')
+    .option('--authority-origin <origin>', 'Use one exact credential-free Go authority origin')
+    .addOption(
+      new Option(
+        '--authority-network <mode>',
+        'Restrict the authority origin to loopback or explicitly selected internal IPs',
+      ).choices(['loopback', 'internal']),
+    )
+    .option('--authority-build-sha <sha>', 'Bind durable acceptance to one service build SHA')
     .action(async (options: GraphSnapshotBuildOptions) => {
       try {
         if (options.from !== undefined && options.fromStdin) {
@@ -293,10 +339,80 @@ export function graphCommands(dependencies: GraphCommandDependencies): Command {
                 resolveSourcePath(dependencies.workspaceRoot, options.from),
                 profile.sourceBytes,
               );
-        const storeRoot = join(dependencies.workspaceRoot, '.openslack.local', 'graph');
-        const store = (dependencies.createStore ?? ((root) => new LocalGraphStore(root)))(
-          storeRoot,
-        );
+        const authoritySupplied = [
+          options.authorityBackend,
+          options.authorityRoutingEpoch,
+          options.authorityTenant,
+          options.authorityOrigin,
+          options.authorityNetwork,
+          options.authorityBuildSha,
+        ].some((value) => value !== undefined);
+        if (authoritySupplied && options.authorityBackend === undefined) {
+          commandFail(
+            'GRAPH_AUTHORITY_ARGUMENT_INVALID',
+            '--authority-backend is required when authority settings are supplied.',
+          );
+        }
+        let store: GraphSnapshotPublisherPort;
+        if (options.authorityBackend === 'go') {
+          if (
+            options.authorityRoutingEpoch === undefined ||
+            options.authorityTenant === undefined ||
+            options.authorityOrigin === undefined ||
+            options.authorityBuildSha === undefined ||
+            !/^[1-9]\d*$/u.test(options.authorityRoutingEpoch)
+          ) {
+            commandFail(
+              'GRAPH_AUTHORITY_ARGUMENT_INVALID',
+              'Go authority publication requires canonical epoch, tenant, origin, and build SHA.',
+            );
+          }
+          const routingEpoch = Number(options.authorityRoutingEpoch);
+          if (!Number.isSafeInteger(routingEpoch)) {
+            commandFail(
+              'GRAPH_AUTHORITY_ARGUMENT_INVALID',
+              'Go authority routing epoch must be a positive safe integer.',
+            );
+          }
+          const workspace = resolveWorkspaceContext({
+            workspaceRoot: dependencies.workspaceRoot,
+            requireWorkspace: true,
+          });
+          if (!workspace.config?.workspace_id) {
+            commandFail(
+              'GRAPH_AUTHORITY_ARGUMENT_INVALID',
+              'Go authority publication requires a canonical workspace ID.',
+            );
+          }
+          const create =
+            dependencies.createAuthorityPublisher ??
+            ((publisherOptions: GraphAuthorityHttpPublisherOptions) =>
+              new GraphAuthorityHttpPublisher(publisherOptions));
+          store = create({
+            origin: options.authorityOrigin,
+            networkMode: options.authorityNetwork ?? 'loopback',
+            tenantId: workspace.config.workspace_id,
+            expectedTenantId: options.authorityTenant,
+            routingEpoch,
+            expectedBuildSha: options.authorityBuildSha,
+          });
+        } else {
+          if (
+            options.authorityBackend === 'ts-local' &&
+            (options.authorityRoutingEpoch !== undefined ||
+              options.authorityTenant !== undefined ||
+              options.authorityOrigin !== undefined ||
+              options.authorityNetwork !== undefined ||
+              options.authorityBuildSha !== undefined)
+          ) {
+            commandFail(
+              'GRAPH_AUTHORITY_ARGUMENT_INVALID',
+              'ts-local publication does not accept Go authority transport settings.',
+            );
+          }
+          const storeRoot = join(dependencies.workspaceRoot, '.openslack.local', 'graph');
+          store = (dependencies.createStore ?? ((root) => new LocalGraphStore(root)))(storeRoot);
+        }
         const result = await (dependencies.buildSnapshot ?? buildAndPublishGraphSnapshot)({
           scenarioId: profile.scenarioId,
           sourceBytes,

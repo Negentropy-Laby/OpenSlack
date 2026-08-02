@@ -241,6 +241,31 @@ publication path still feed the Go store through the existing durable ingest con
 not change MCP tool names, input schemas, `openslack.mcp_result.v2`, the 12/16/17 profile counts,
 Qoder Skill behavior, or any confirmation, workflow-effect, or human-attestation boundary.
 
+### GS3-C global read-authority boundary
+
+GS3-C is a separate all-scenario process policy, not an expanded canary allowlist:
+
+- it binds one canonical workspace/tenant, positive routing epoch, expiry no more than seven days,
+  exact credential-free Go origin, and 64-hex service build;
+- the Go service independently requires the same epoch/build/tenant headers on dedicated authority
+  ingest, query, and explain routes;
+- TypeScript keeps deterministic projector calculation but publishes through a fail-closed port.
+  Only an exact durable `accepted` or `duplicate` receipt completes publication; conflict, transport,
+  invalid receipt, or `reconciliation_required` does not update a TypeScript authority copy or claim
+  success;
+- Go's PostgreSQL head is the only Graph head used by authority query/explain. MCP never opens the
+  local snapshot while `backend=go` is active and never falls back per request;
+- query cursors use the existing v2 HMAC contract bound to the global routing epoch. v1, expired, or
+  cross-epoch tokens fail explicitly without translation;
+- a successful Go read or explicit global `ts-local` rollback must commit a bounded redacted
+  Collaboration event before the result is released;
+- mirror, bounded canary, and global authority are mutually exclusive in one MCP process. Rollback
+  requires a new global `ts-local` policy with a higher epoch.
+
+This authority is limited to the derived Organization Graph projection. It grants no source-system
+mutation, Scenario/Workflow execution, Qoder identity, approval, GitHub review, remote transport,
+live, release, or production authority.
+
 ## Local Store
 
 The MVP store is:
@@ -321,7 +346,11 @@ GS3-B keeps TypeScript as the default and unselected-scenario read authority but
 bounded canary policy above to return Go query/explain results. A hosted cross-language gate starts
 the real Go handler and exercises query, explanation, v2 cursor continuation, v1 cursor rejection,
 build-drift rejection, freshness rejection, and the explicit higher-epoch TypeScript rollback.
-GS3-C full Graph-head and read-authority cutover remains separate and pending.
+GS3-C adds the explicit global Graph-head/query/explain authority described above. Hosted
+cross-language qualification must prove the full path from TypeScript projection through a durable
+Go ingest receipt to authority query/explain, v2 cursor rejection across epochs, receipt replay,
+reconciliation blocking, and explicit higher-epoch rollback. This is local repository evidence and
+does not establish authenticated Desktop, live, release, or production qualification.
 
 ## Related Documents
 

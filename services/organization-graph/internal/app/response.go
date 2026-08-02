@@ -11,14 +11,16 @@ import (
 )
 
 const (
-	errorNotFound            = "GRAPH_NOT_FOUND"
-	errorConflict            = "GRAPH_CONFLICT"
-	errorTooLarge            = "GRAPH_REQUEST_TOO_LARGE"
-	errorUnprocessable       = "GRAPH_UNPROCESSABLE"
-	errorUnavailable         = "GRAPH_UNAVAILABLE"
-	errorInternal            = "GRAPH_INTERNAL"
-	errorCanaryNotConfigured = "GRAPH_CANARY_NOT_CONFIGURED"
-	errorCanaryRouteMismatch = "GRAPH_CANARY_ROUTE_MISMATCH"
+	errorNotFound               = "GRAPH_NOT_FOUND"
+	errorConflict               = "GRAPH_CONFLICT"
+	errorTooLarge               = "GRAPH_REQUEST_TOO_LARGE"
+	errorUnprocessable          = "GRAPH_UNPROCESSABLE"
+	errorUnavailable            = "GRAPH_UNAVAILABLE"
+	errorInternal               = "GRAPH_INTERNAL"
+	errorCanaryNotConfigured    = "GRAPH_CANARY_NOT_CONFIGURED"
+	errorCanaryRouteMismatch    = "GRAPH_CANARY_ROUTE_MISMATCH"
+	errorAuthorityNotConfigured = "GRAPH_AUTHORITY_NOT_CONFIGURED"
+	errorAuthorityRouteMismatch = "GRAPH_AUTHORITY_ROUTE_MISMATCH"
 
 	MaxResponseBodyBytes = 8 * 1024 * 1024
 )

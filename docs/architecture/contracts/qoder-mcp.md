@@ -145,7 +145,17 @@ opening the local snapshot. Unselected scenarios remain TypeScript-authoritative
 Rollback is an explicit higher-epoch `ts-local` policy, never an inferred per-request fallback.
 
 The canary does not change the tool catalog, input schema, `openslack.mcp_result.v2`, Skill,
-mutation authority, or approval boundaries. Full Graph-head/read cutover remains GS3-C.
+mutation authority, or approval boundaries.
+
+GS3-C additionally permits one global, process-immutable Graph authority policy on all three exact
+profiles. Supplying any authority flag requires backend, canonical workspace/tenant assertion,
+positive routing epoch, and bounded expiry. `go` also requires the exact origin and service build;
+`ts-local` is only a higher-epoch rollback and rejects Go transport flags. This mode selects every
+scenario and is mutually exclusive with mirror and canary configuration. Go reads use dedicated
+authority routes, v2 epoch-bound cursors, the same freshness gate, and required redacted audit. Any
+failure blocks without opening the local snapshot. Tool names, inputs, `openslack.mcp_result.v2`,
+12/16/17 counts, Skill, mutation, confirmation, effect-approval, and human-attestation boundaries
+remain unchanged.
 
 ## Result Versions
 

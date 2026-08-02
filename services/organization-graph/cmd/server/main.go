@@ -51,12 +51,14 @@ func main() {
 	repository := graphpostgres.New(pool)
 	store := &storeAdapter{store: repository, pool: pool}
 	service, err := app.New(app.Options{
-		Store:                store,
-		CursorSecret:         cfg.QueryCursorSecret,
-		PreviousCursorSecret: cfg.PreviousQueryCursorSecret,
-		BuildSHA:             cfg.ServiceBuildSHA,
-		CanaryRoutingEpoch:   cfg.CanaryRoutingEpoch,
-		Logger:               logger,
+		Store:                     store,
+		CursorSecret:              cfg.QueryCursorSecret,
+		PreviousCursorSecret:      cfg.PreviousQueryCursorSecret,
+		BuildSHA:                  cfg.ServiceBuildSHA,
+		CanaryRoutingEpoch:        cfg.CanaryRoutingEpoch,
+		ReadAuthorityRoutingEpoch: cfg.ReadAuthorityRoutingEpoch,
+		ReadAuthorityTenantID:     cfg.ReadAuthorityTenantID,
+		Logger:                    logger,
 	})
 	if err != nil {
 		logFailure(logger, "graph_service_composition_failed", "COMPOSITION_INVALID")

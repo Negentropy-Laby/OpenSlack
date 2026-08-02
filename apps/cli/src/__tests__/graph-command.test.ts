@@ -7,6 +7,8 @@ import {
   GraphStoreError,
   LocalGraphStore,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
+  type GraphSnapshot,
+  type PublishGraphSnapshotOptions,
 } from '@openslack/organization-graph';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -101,6 +103,12 @@ describe('graph snapshot build command', () => {
       '--scenario-instance',
       '--expected-cursor',
       '--format',
+      '--authority-backend',
+      '--authority-routing-epoch',
+      '--authority-tenant',
+      '--authority-origin',
+      '--authority-network',
+      '--authority-build-sha',
     ]);
   });
 
@@ -199,6 +207,75 @@ describe('graph snapshot build command', () => {
       nodeCount: readback.nodes.length,
       edgeCount: readback.edges.length,
     });
+  });
+
+  it('publishes to Go only through a durable authority receipt bound to workspace and epoch', async () => {
+    const workspaceRoot = root();
+    writeFileSync(
+      join(workspaceRoot, 'openslack.yaml'),
+      [
+        'schema: openslack.workspace.v1',
+        'workspace_id: workspace-1',
+        'name: Graph CLI Authority Test',
+        'mode: self_project',
+        'workspace:',
+        "  root: '.'",
+        "  state_root: '.openslack'",
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const publishSnapshot = vi.fn(
+      async (snapshot: GraphSnapshot, options: PublishGraphSnapshotOptions) => ({
+        scenarioInstanceId: snapshot.scenarioInstanceId,
+        previousCursor: options.expectedCursor,
+        cursor: snapshot.cursor,
+        snapshotIntegrityHash: snapshot.integrityHash,
+        authorityBackend: 'go' as const,
+        routingEpoch: 42,
+        receiptStatus: 'accepted' as const,
+        revision: 1,
+      }),
+    );
+    const createAuthorityPublisher = vi.fn(() => ({ publishSnapshot }));
+
+    await run(
+      workspaceRoot,
+      [
+        '--scenario',
+        'software-delivery',
+        '--from',
+        'source.json',
+        '--format',
+        'json',
+        '--authority-backend',
+        'go',
+        '--authority-routing-epoch',
+        '42',
+        '--authority-tenant',
+        'workspace-1',
+        '--authority-origin',
+        'http://127.0.0.1:18181',
+        '--authority-build-sha',
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      ],
+      {
+        readSourceFile: vi.fn(async () => fixture()),
+        createAuthorityPublisher,
+      },
+    );
+
+    expect(createAuthorityPublisher).toHaveBeenCalledWith({
+      origin: 'http://127.0.0.1:18181',
+      networkMode: 'loopback',
+      tenantId: 'workspace-1',
+      expectedTenantId: 'workspace-1',
+      routingEpoch: 42,
+      expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    expect(publishSnapshot).toHaveBeenCalledOnce();
+    expect(stdout).toHaveBeenCalledWith(expect.stringContaining('"receiptStatus": "accepted"'));
+    expect(stderr).not.toHaveBeenCalled();
   });
 
   it('reads stdin through the same byte ceiling and publishes the first cursor only from null', async () => {

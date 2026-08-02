@@ -30,6 +30,7 @@ import {
   type GraphQueryInput,
   type GraphQueryResult,
   type GraphReadCanaryPort,
+  type GraphReadAuthorityPort,
   type GraphReadMirrorPort,
 } from '@openslack/organization-graph';
 import type {
@@ -143,6 +144,8 @@ export interface CreateOpenSlackMcpContextOptions {
   readonly graphReadMirror?: GraphReadMirrorPort;
   /** Optional bounded canary router. Selected Go reads fail closed without TypeScript fallback. */
   readonly graphReadCanary?: GraphReadCanaryPort;
+  /** Optional global GS3-C authority. It is mutually exclusive with mirror and canary. */
+  readonly graphReadAuthority?: GraphReadAuthorityPort;
   /** Optional nominal Operator mutation port. Omit to preserve the exact read-only catalog. */
   readonly governedMutations?: OpenSlackGovernedMutationPort;
   /** Optional separately human-attested workflow-effect decision port. Requires governedMutations. */
@@ -1218,8 +1221,17 @@ export function createDefaultOpenSlackReadModelPorts(
     readonly graphMaxAgeMs?: number;
     readonly graphReadMirror?: GraphReadMirrorPort;
     readonly graphReadCanary?: GraphReadCanaryPort;
+    readonly graphReadAuthority?: GraphReadAuthorityPort;
   } = {},
 ): OpenSlackReadModelPorts {
+  if (
+    options.graphReadAuthority !== undefined &&
+    (options.graphReadCanary !== undefined || options.graphReadMirror !== undefined)
+  ) {
+    throw new TypeError(
+      'Graph read authority is mutually exclusive with mirror and canary routing.',
+    );
+  }
   const rootDir = resolve(workspaceRoot);
   const clock = canonicalClock(options.clock);
   const maxGraphAgeMs = graphMaxAge(options.graphMaxAgeMs);
@@ -1442,6 +1454,14 @@ export function createDefaultOpenSlackReadModelPorts(
       };
     },
     graphQuery: async (input) => {
+      const authorityRoute = await selectGraphReadCanaryRoute(
+        options.graphReadAuthority,
+        'query',
+        input,
+      );
+      if (authorityRoute?.backend === 'go') {
+        return options.graphReadAuthority!.query(structuredClone(input));
+      }
       const route = await selectGraphReadCanaryRoute(options.graphReadCanary, 'query', input);
       if (route?.backend === 'go') {
         return options.graphReadCanary!.query(structuredClone(input));
@@ -1465,12 +1485,22 @@ export function createDefaultOpenSlackReadModelPorts(
         generatedAt: snapshot.generatedAt,
         ...result,
       };
-      if (route?.backend === 'ts-local') {
+      if (authorityRoute?.backend === 'ts-local') {
+        await options.graphReadAuthority?.recordTsLocalRead?.('query', structuredClone(input));
+      } else if (route?.backend === 'ts-local') {
         await options.graphReadCanary?.recordTsLocalRead?.('query', structuredClone(input));
       }
       return projection;
     },
     graphExplain: async (input) => {
+      const authorityRoute = await selectGraphReadCanaryRoute(
+        options.graphReadAuthority,
+        'explain',
+        input,
+      );
+      if (authorityRoute?.backend === 'go') {
+        return options.graphReadAuthority!.explain(structuredClone(input));
+      }
       const route = await selectGraphReadCanaryRoute(options.graphReadCanary, 'explain', input);
       if (route?.backend === 'go') {
         return options.graphReadCanary!.explain(structuredClone(input));
@@ -1492,7 +1522,9 @@ export function createDefaultOpenSlackReadModelPorts(
         snapshotCursor: snapshot.cursor,
         ...result,
       };
-      if (route?.backend === 'ts-local') {
+      if (authorityRoute?.backend === 'ts-local') {
+        await options.graphReadAuthority?.recordTsLocalRead?.('explain', structuredClone(input));
+      } else if (route?.backend === 'ts-local') {
         await options.graphReadCanary?.recordTsLocalRead?.('explain', structuredClone(input));
       }
       return projection;
@@ -1511,6 +1543,7 @@ export function createOpenSlackMcpContext(
     graphMaxAgeMs: options.graphMaxAgeMs,
     graphReadMirror: options.graphReadMirror,
     graphReadCanary: options.graphReadCanary,
+    graphReadAuthority: options.graphReadAuthority,
   });
   const runtime = Object.freeze({
     now: clock,
