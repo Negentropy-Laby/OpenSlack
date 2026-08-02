@@ -138,6 +138,7 @@ modules:
       - test:packages/operator/src/__tests__/governed-plan-contract-freeze.test.ts
       - test:services/governance-control/golden_vectors_test.go
       - repo:services/governance-control
+      - commit:5d798569875ad804b0ae6766c87c56e9d249abf9
       - test:packages/operator/src/__tests__/governed-plan-shadow-contract.test.ts
       - test:packages/operator/src/__tests__/governed-plan-shadow-http.test.ts
       - test:packages/operator/src/__tests__/governed-plan-shadow-journal.test.ts
