@@ -134,6 +134,7 @@ modules:
       - commit:99ee0bfc6f597f4ed3dbd797219ccb0a2717f9cf
       - test:packages/operator/src/__tests__/governed-plan-service.test.ts
       - test:packages/operator/src/__tests__/governed-plan-store.test.ts
+      - commit:b6ee784c86f67c31f12d26d23f4df5c463c6456b
       - test:packages/operator/src/__tests__/governed-plan-contract-freeze.test.ts
       - test:services/governance-control/golden_vectors_test.go
       - repo:services/governance-control
