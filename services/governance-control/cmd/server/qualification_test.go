@@ -511,6 +511,14 @@ func TestGS5ImageSmoke(t *testing.T) {
 	if origin == "" {
 		t.Skip("GS5 image smoke origin is not configured")
 	}
+	expectedAuthorityEnabled := "false"
+	switch value := os.Getenv("GOVERNANCE_GS5_EXPECT_AUTHORITY_ENABLED"); value {
+	case "", "false":
+	case "true":
+		expectedAuthorityEnabled = value
+	default:
+		t.Fatalf("invalid GOVERNANCE_GS5_EXPECT_AUTHORITY_ENABLED %q", value)
+	}
 	build := os.Getenv("GOVERNANCE_SERVICE_BUILD_SHA")
 	if build == "" {
 		build = qualificationBuildSHA
@@ -518,7 +526,7 @@ func TestGS5ImageSmoke(t *testing.T) {
 	for path, expected := range map[string]string{
 		app.RouteLive:    `{"status":"live"}` + "\n",
 		app.RouteReady:   `{"status":"ready"}` + "\n",
-		app.RouteVersion: `{"authorityEnabled":false,"buildSha":"` + build + `","contractVersion":"v2","schema":"openslack.governance_shadow_service_version.v1"}` + "\n",
+		app.RouteVersion: `{"authorityEnabled":` + expectedAuthorityEnabled + `,"buildSha":"` + build + `","contractVersion":"v2","schema":"openslack.governance_shadow_service_version.v1"}` + "\n",
 	} {
 		response := qualificationRequest(t, origin, http.MethodGet, path, "", nil, nil)
 		if response.status != http.StatusOK || string(response.body) != expected {

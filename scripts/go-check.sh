@@ -1296,10 +1296,15 @@ run_http_smoke() {
   wait_for_healthy_container "${app_container}" "application"
   if [[ "${runtime_profile}" == "governance-control-v1" ||
     "${runtime_profile}" == "governance-control-v2" ]]; then
+    local expected_authority_enabled=false
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      expected_authority_enabled=true
+    fi
     log "verifying Governance Control image health and version responses"
     run_governance_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
-      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_network_alias}:8080"
+      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_network_alias}:8080" \
+      "GOVERNANCE_GS5_EXPECT_AUTHORITY_ENABLED=${expected_authority_enabled}"
     if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
       log "verifying Governance Control GS6 authority image responses"
       run_governance_control_authority_test_container \

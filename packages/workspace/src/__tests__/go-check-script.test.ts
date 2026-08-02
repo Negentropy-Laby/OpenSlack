@@ -342,6 +342,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('-run \\^TestGS6ImageSmoke\\$');
     expect(log).toContain('--network-alias application');
     expect(log).toContain('GOVERNANCE_GS5_SMOKE_ORIGIN=http://application:8080');
+    expect(log).toContain('GOVERNANCE_GS5_EXPECT_AUTHORITY_ENABLED=true');
     expect(log).toContain('GOVERNANCE_GS6_SMOKE_ORIGIN=http://application:8080');
     expect(goCheckSource).toContain('local restart_token="${run_token,,}"');
     const restartSchemas = [
