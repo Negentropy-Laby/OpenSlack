@@ -276,6 +276,11 @@
       "status": "active"
     },
     {
+      "id": "contract-workflow-control",
+      "path": "docs/architecture/contracts/workflow-control.md",
+      "status": "active"
+    },
+    {
       "id": "architecture-contracts-index",
       "path": "docs/architecture/contracts/README.md",
       "status": "index"
