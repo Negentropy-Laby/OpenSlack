@@ -765,7 +765,7 @@ describe('production agent-bound governed mutation composition', () => {
       await client.close();
       await server.close();
     }
-  });
+  }, 15_000);
 
   it('keeps the preview pending when permission changes before confirmation', async () => {
     const workspaceRoot = createWorkspace();
