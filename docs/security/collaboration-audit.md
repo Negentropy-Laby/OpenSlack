@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - security
 owner: security
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -47,12 +47,22 @@ The Collaboration Layer never records:
 - Personal identifiable information not relevant to collaboration
 - Graph mirror endpoints, canonical request bodies, nodes, edges, titles, explanation target
   payloads, authority objects, evidence contents, or source-event contents
+- Graph read-canary origins, request or response bodies, raw cursors, graph contents, evidence
+  contents, or source-event contents
 
 GS3-A Graph read-mirror events store only the operation/outcome, bounded status or difference
 codes, latency, and SHA-256 fingerprints/digests (including a hashed snapshot cursor). Mirror
 events remain local runtime observations and never establish Go read authority. If the bound audit
 append fails, the MCP result remains TypeScript-authoritative and the process emits only the fixed
 `OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic.
+
+GS3-B Graph read-canary events store only the operation/outcome, selected backend, routing epoch,
+expected or observed build identity, bounded latency, status or error code, and a SHA-256 request
+fingerprint. The origin, bodies, raw cursor, graph contents, explanation payload, and evidence are
+never recorded. A selected Go read and an explicit TypeScript rollback read both require their
+corresponding audit append before the MCP result is released. If that append fails, the request is
+blocked with `GRAPH_READ_CANARY_AUDIT_FAILED`; it is never retried through another backend. A stale
+Go snapshot is recorded only as blocked with `SOURCE_EVIDENCE_STALE`; no served event is committed.
 
 ## Redaction Rules
 

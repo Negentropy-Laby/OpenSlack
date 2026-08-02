@@ -94,7 +94,10 @@ export type NotificationEvent = 'notification.sent' | 'notification.failed';
 export type GraphReadEvent =
   | 'graph.read_mirror.matched'
   | 'graph.read_mirror.mismatched'
-  | 'graph.read_mirror.unavailable';
+  | 'graph.read_mirror.unavailable'
+  | 'graph.read_canary.served'
+  | 'graph.read_canary.blocked'
+  | 'graph.read_canary.rolled_back';
 
 export type AgentConversationEventType =
   | 'agent.conversation.started'

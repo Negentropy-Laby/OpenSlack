@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -188,15 +188,25 @@ GS3 is split into three independently reviewed changes:
    closed timeout, response-size, strict-JSON, content-type, redirect, and difference-code bounds.
    Cursor presence or token drift is a mismatch, not an accepted translation. Audit, transport,
    response, or parity failure never changes the returned result.
-2. **GS3-B canary** remains pending. It will persist one reviewed scenario/tenant routing decision
-   and routing epoch, select exactly one backend for the entire request, expose an explicit rollback
-   to the prior epoch, and forbid silent per-request fallback.
+2. **GS3-B canary** is implemented as a default-off, process-immutable CLI policy. It binds the
+   canonical workspace/tenant, at most 16 exact scenario-instance IDs, one positive routing epoch,
+   a maximum seven-day expiry, and exactly one backend. `go` additionally binds an exact
+   credential-free loopback/private origin and 64-hex service build on every request. A selected Go
+   timeout, HTTP error, invalid response, stale snapshot, policy expiry, build/epoch drift, or audit
+   failure blocks the read and never falls back to TypeScript. The Go envelope's snapshot time must
+   pass the same bounded freshness gate as the TypeScript path before the result or served audit is
+   released. Rollback is a new explicit policy using
+   `backend=ts-local` and a higher epoch. Go query cursors remain five-minute HMAC tokens; canary
+   tokens use v2 and bind the routing epoch, while v1, expired, or cross-epoch tokens return explicit
+   mismatch/expired errors without translation. Unselected scenarios remain TypeScript-authoritative.
 3. **GS3-C read authority** remains pending. Only after differential qualification and the canary
    gate may Go own Graph head/query/explain reads while TypeScript continues projector publication
    through durable ingest receipts.
 
-GS3-A adds no Go write or read authority, routing epoch, canary, Graph-head transfer, implicit cursor
-translation, authenticated Desktop evidence, remote Connector, release, live, or production claim.
+GS3-B transfers read authority only for the exact selected scenario instances while its policy is
+active. It adds no Go write authority, default or full read cutover, Graph-head ownership transfer,
+implicit cursor translation, authenticated Desktop evidence, remote Connector, release, live, or
+production claim.
 
 ### GS4–GS6 — Governance Control
 

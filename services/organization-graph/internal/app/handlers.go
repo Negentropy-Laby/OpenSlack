@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"time"
 	"unicode/utf16"
 
@@ -16,6 +17,8 @@ import (
 )
 
 const maxSafeJSONInteger = int64(9_007_199_254_740_991)
+
+const CanaryReadSchema = "openslack.graph_canary_read.v1"
 
 const (
 	// The frozen maximum graph is about 16 MiB before PostgreSQL TOAST work.
@@ -187,6 +190,111 @@ func (service *Service) handleExplain(w http.ResponseWriter, request *http.Reque
 		return
 	}
 	if !writeCanonicalBytes(w, http.StatusOK, body) {
+		writeFailure(w, http.StatusRequestEntityTooLarge, errorTooLarge, "graph response exceeds a frozen service limit")
+	}
+}
+
+func (service *Service) requireCanaryBinding(w http.ResponseWriter, request *http.Request) (int64, bool) {
+	if service.canaryRoutingEpoch == nil {
+		writeFailure(w, http.StatusServiceUnavailable, errorCanaryNotConfigured, "graph canary read authority is not configured")
+		return 0, false
+	}
+	epochValues := request.Header.Values(HeaderCanaryRoutingEpoch)
+	buildValues := request.Header.Values(HeaderExpectedBuildSHA)
+	if len(epochValues) != 1 || len(buildValues) != 1 {
+		writeFailure(w, http.StatusConflict, errorCanaryRouteMismatch, "graph canary routing binding did not match")
+		return 0, false
+	}
+	epoch, err := strconv.ParseInt(epochValues[0], 10, 64)
+	if err != nil || strconv.FormatInt(epoch, 10) != epochValues[0] ||
+		epoch != *service.canaryRoutingEpoch || buildValues[0] != service.buildSHA {
+		writeFailure(w, http.StatusConflict, errorCanaryRouteMismatch, "graph canary routing binding did not match")
+		return 0, false
+	}
+	return epoch, true
+}
+
+func (service *Service) handleCanaryQuery(w http.ResponseWriter, request *http.Request) {
+	if !service.requireNoQuery(w, request) {
+		return
+	}
+	epoch, ok := service.requireCanaryBinding(w, request)
+	if !ok {
+		return
+	}
+	value, err := readStrictJSON(request)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	input, err := decodeQuery(value)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), readDeadline)
+	defer cancel()
+	current, err := service.store.CurrentSnapshot(ctx, input.ScenarioInstanceID)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	result, err := graph.Query(current.Snapshot, input, graph.QueryOptions{
+		CursorSecret:         append([]byte(nil), service.cursorSecret...),
+		PreviousCursorSecret: append([]byte(nil), service.previousCursorSecret...),
+		RoutingEpoch:         &epoch,
+		NowMS:                service.clock.Now().UnixMilli(),
+	})
+	if err != nil {
+		writeCanaryQueryError(w, service.logger, err, service.counters)
+		return
+	}
+	if !writeCanonical(w, http.StatusOK, graph.Object{
+		"schema": CanaryReadSchema, "operation": "query", "backend": "go",
+		"routingEpoch": float64(epoch), "serviceBuildSha": service.buildSHA,
+		"generatedAt": current.Snapshot.GeneratedAt, "snapshotCursor": current.Snapshot.Cursor,
+		"result": graph.QueryResultValue(result),
+	}) {
+		writeFailure(w, http.StatusRequestEntityTooLarge, errorTooLarge, "graph response exceeds a frozen service limit")
+	}
+}
+
+func (service *Service) handleCanaryExplain(w http.ResponseWriter, request *http.Request) {
+	if !service.requireNoQuery(w, request) {
+		return
+	}
+	epoch, ok := service.requireCanaryBinding(w, request)
+	if !ok {
+		return
+	}
+	value, err := readStrictJSON(request)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	input, err := decodeExplain(value)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), readDeadline)
+	defer cancel()
+	current, err := service.store.CurrentSnapshot(ctx, input.ScenarioInstanceID)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	result, err := graph.Explain(current.Snapshot, input)
+	if err != nil {
+		writeMappedError(w, service.logger, err, "", service.counters)
+		return
+	}
+	if !writeCanonical(w, http.StatusOK, graph.Object{
+		"schema": CanaryReadSchema, "operation": "explain", "backend": "go",
+		"routingEpoch": float64(epoch), "serviceBuildSha": service.buildSHA,
+		"generatedAt": current.Snapshot.GeneratedAt, "snapshotCursor": current.Snapshot.Cursor,
+		"result": graph.ExplanationValue(result),
+	}) {
 		writeFailure(w, http.StatusRequestEntityTooLarge, errorTooLarge, "graph response exceeds a frozen service limit")
 	}
 }

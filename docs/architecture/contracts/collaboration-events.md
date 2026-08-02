@@ -146,6 +146,21 @@ snapshot cursor, and the already hashed normalized query. It must not contain th
 request body, graph nodes or edges, explanation target payload, evidence contents, or source-event
 contents. An append failure cannot replace the TypeScript MCP result or grant Go read authority.
 
+### Organization Graph Read-Canary Events
+
+- `graph.read_canary.served` — The explicitly selected Go backend served a bounded read under the
+  requested routing epoch and build binding
+- `graph.read_canary.blocked` — The selected backend failed closed before a result could be released
+- `graph.read_canary.rolled_back` — An explicit higher routing epoch selected the TypeScript-local
+  backend
+
+These GS3-B events are required release gates, not best-effort telemetry. Metadata is limited to
+operation, outcome, backend, routing epoch, expected or observed build identity, bounded latency,
+status or error code, and a SHA-256 request fingerprint. It must not contain the canary origin,
+request or response body, raw cursor, graph nodes or edges, explanation payload, evidence, or source
+events. Failure to append a successful Go or explicit rollback event blocks the MCP response with
+`GRAPH_READ_CANARY_AUDIT_FAILED`; it cannot trigger per-request fallback.
+
 ## Storage
 
 ### Local Runtime Projection

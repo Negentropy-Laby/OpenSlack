@@ -22,6 +22,7 @@ describe('QW2 MCP source boundary', () => {
       'core.ts',
       'contract-delivery-rehearsal.ts',
       'graph-read-mirror.ts',
+      'graph-read-canary.ts',
       'governed-composition.ts',
       'mutations.ts',
       'workflow-approvals.ts',

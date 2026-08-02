@@ -219,6 +219,8 @@ func SerializeQueryResult(value QueryResult) ([]byte, error) {
 	return graphjson.Encode(graphquery.ResultValue(value))
 }
 
+func QueryResultValue(value QueryResult) Object { return graphquery.ResultValue(value) }
+
 func QueryHash(input QueryInput) (string, error) {
 	return graphquery.GraphQueryHash(input)
 }
@@ -230,3 +232,5 @@ func Explain(snapshot Snapshot, input ExplainInput) (Explanation, error) {
 func SerializeExplanation(value Explanation) ([]byte, error) {
 	return graphjson.Encode(graphquery.ExplanationValue(value))
 }
+
+func ExplanationValue(value Explanation) Object { return graphquery.ExplanationValue(value) }

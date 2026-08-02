@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - users
 owner: project-governance
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -762,15 +762,17 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 
 ## Qoder Work MCP
 
-| Command                                                                                                                                                 | Purpose                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `openslack mcp serve --stdio`                                                                                                                           | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog                                           |
-| `openslack mcp serve --stdio --profile read-only`                                                                                                       | Explicitly select the same exact 12-tool read-only catalog                                                           |
-| `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]`                                 | Select the exact 16-tool governed agent catalog from an active registry/runtime binding                              |
-| `openslack mcp serve --stdio --graph-read-mirror-origin http://127.0.0.1:18181`                                                                         | Mirror successful Graph query/explain reads to Go for bounded differential audit while returning TypeScript results  |
-| `openslack mcp attestation status`                                                                                                                      | Inspect sanitized local human-subject mapping and controlling-TTY readiness                                          |
-| `openslack mcp attestation bind-local-subject --human-principal <human-id> --confirm`                                                                   | Bind the current OS subject hash to one asserted human principal; no raw subject or credential is persisted          |
-| `openslack mcp serve --stdio --profile human-attested --principal-ref <agent-id> --human-principal <human-id> [--workspace-id <asserted-workspace-id>]` | Select the exact 17-tool profile only after both the agent binding and independent local human attestation self-test |
+| Command                                                                                                                                                                                                                                                                                             | Purpose                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `openslack mcp serve --stdio`                                                                                                                                                                                                                                                                       | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog                                           |
+| `openslack mcp serve --stdio --profile read-only`                                                                                                                                                                                                                                                   | Explicitly select the same exact 12-tool read-only catalog                                                           |
+| `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]`                                                                                                                                                                             | Select the exact 16-tool governed agent catalog from an active registry/runtime binding                              |
+| `openslack mcp serve --stdio --graph-read-mirror-origin http://127.0.0.1:18181`                                                                                                                                                                                                                     | Mirror successful Graph query/explain reads to Go for bounded differential audit while returning TypeScript results  |
+| `openslack mcp serve --stdio --graph-read-canary-backend go --graph-read-canary-routing-epoch <n> --graph-read-canary-tenant <workspace-id> --graph-read-canary-scenarios <ids> --graph-read-canary-expires-at <timestamp> --graph-read-canary-origin <origin> --graph-read-canary-build-sha <sha>` | Route only the exact bounded scenario allowlist to the epoch/build-bound Go read authority without fallback          |
+| `openslack mcp serve --stdio --graph-read-canary-backend ts-local --graph-read-canary-routing-epoch <higher-n> --graph-read-canary-tenant <workspace-id> --graph-read-canary-scenarios <ids> --graph-read-canary-expires-at <timestamp>`                                                            | Explicitly roll the selected scenarios back to TypeScript under a higher routing epoch                               |
+| `openslack mcp attestation status`                                                                                                                                                                                                                                                                  | Inspect sanitized local human-subject mapping and controlling-TTY readiness                                          |
+| `openslack mcp attestation bind-local-subject --human-principal <human-id> --confirm`                                                                                                                                                                                                               | Bind the current OS subject hash to one asserted human principal; no raw subject or credential is persisted          |
+| `openslack mcp serve --stdio --profile human-attested --principal-ref <agent-id> --human-principal <human-id> [--workspace-id <asserted-workspace-id>]`                                                                                                                                             | Select the exact 17-tool profile only after both the agent binding and independent local human attestation self-test |
 
 Build current graph evidence explicitly before querying it:
 
@@ -871,6 +873,27 @@ always remains the TypeScript result. Omitting the origin performs no mirror cal
 mirror audit event. Audit append failure emits the fixed
 `OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` diagnostic on stderr without changing that result; this
 option is not a Go read-authority cutover or per-request fallback switch.
+
+`--graph-read-canary-backend` is the separately reviewed GS3-B authority selector and is also
+available to all three unchanged profiles. Supplying any canary flag requires the complete common
+policy: backend, positive canonical safe-integer routing epoch, canonical workspace/tenant
+assertion, one to 16 comma-separated scenario-instance IDs, and an expiry in the next seven days.
+The policy is immutable for the process. `go` additionally requires an exact credential-free
+loopback origin and one expected 64-lowercase-hex service build SHA; use
+`--graph-read-canary-network internal` only for an explicit private/link-local IP literal.
+`ts-local` rejects origin, network, and build flags and is the only explicit rollback mode.
+
+Selected Go query/explain requests never open the local TypeScript snapshot. A timeout, network or
+HTTP error, redirect, non-canonical response, scope/result-bound mismatch, build/epoch drift,
+expired policy, stale snapshot, invalid cursor, or failed durable redacted audit returns a blocked
+MCP result; none causes per-request fallback. The Go snapshot time must pass the same 24-hour default
+freshness gate as TypeScript before the result or served audit is released; stale evidence reports
+`SOURCE_EVIDENCE_STALE`. Unselected scenarios remain TypeScript-authoritative. Canary query
+cursors retain the five-minute TTL and bind routing epoch in v2: v1 and cross-epoch tokens return
+`GRAPH_QUERY_CURSOR_MISMATCH`, while expired same-epoch tokens return
+`GRAPH_QUERY_CURSOR_EXPIRED`. No cursor is translated across backends. The canary does not change
+tool names, input schemas, `openslack.mcp_result.v2`, Qoder Skill behavior, profile counts, or
+mutation/approval authority.
 
 The 16-tool profile adds only Scenario/Workflow preview plus plan
 confirm/cancel. It exposes no shell, generic command, human workflow decision,

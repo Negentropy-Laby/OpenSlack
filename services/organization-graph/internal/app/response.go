@@ -11,15 +11,35 @@ import (
 )
 
 const (
-	errorNotFound      = "GRAPH_NOT_FOUND"
-	errorConflict      = "GRAPH_CONFLICT"
-	errorTooLarge      = "GRAPH_REQUEST_TOO_LARGE"
-	errorUnprocessable = "GRAPH_UNPROCESSABLE"
-	errorUnavailable   = "GRAPH_UNAVAILABLE"
-	errorInternal      = "GRAPH_INTERNAL"
+	errorNotFound            = "GRAPH_NOT_FOUND"
+	errorConflict            = "GRAPH_CONFLICT"
+	errorTooLarge            = "GRAPH_REQUEST_TOO_LARGE"
+	errorUnprocessable       = "GRAPH_UNPROCESSABLE"
+	errorUnavailable         = "GRAPH_UNAVAILABLE"
+	errorInternal            = "GRAPH_INTERNAL"
+	errorCanaryNotConfigured = "GRAPH_CANARY_NOT_CONFIGURED"
+	errorCanaryRouteMismatch = "GRAPH_CANARY_ROUTE_MISMATCH"
 
 	MaxResponseBodyBytes = 8 * 1024 * 1024
 )
+
+func writeCanaryQueryError(w http.ResponseWriter, logger *slog.Logger, err error, metrics *counters) {
+	var queryFailure *graph.QueryError
+	if errors.As(err, &queryFailure) {
+		switch queryFailure.Code {
+		case graph.QueryCursorExpired:
+			writeFailure(w, http.StatusGone, string(graph.QueryCursorExpired), "graph query cursor has expired")
+			return
+		case graph.QueryCursorMismatch:
+			writeFailure(w, http.StatusConflict, string(graph.QueryCursorMismatch), "graph query cursor is bound to a different routing epoch, query, or snapshot")
+			return
+		case graph.QueryCursorInvalid:
+			writeFailure(w, http.StatusUnprocessableEntity, string(graph.QueryCursorInvalid), "graph query cursor is invalid")
+			return
+		}
+	}
+	writeMappedError(w, logger, err, "", metrics)
+}
 
 var (
 	integrityPattern   = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)

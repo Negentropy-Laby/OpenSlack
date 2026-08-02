@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -92,6 +92,46 @@ back between backends, translates a cursor, changes the 12/16/17 catalogs, or gr
 authority. With no origin flag there is no mirror network call or mirror audit event.
 Audit append failure is excluded from stdout and the MCP result; it emits only the fixed
 `OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic.
+
+### Optional GS3-B bounded Graph read canary
+
+After the Go service is started with the same positive `GRAPH_CANARY_ROUTING_EPOCH`, select only
+reviewed scenario instances with a time-bounded policy:
+
+```bash
+bun run openslack mcp serve --stdio \
+  --graph-read-canary-backend go \
+  --graph-read-canary-routing-epoch 41 \
+  --graph-read-canary-tenant openslack-self \
+  --graph-read-canary-scenarios scenario-contract-delivery-001 \
+  --graph-read-canary-expires-at 2026-08-03T00:00:00.000Z \
+  --graph-read-canary-origin http://127.0.0.1:18181 \
+  --graph-read-canary-build-sha <64-lowercase-hex-service-build>
+```
+
+The expiry must be in the future and no more than seven days from process startup. The allowlist
+contains at most 16 exact comma-separated scenario-instance IDs. Internal IP literals additionally
+require `--graph-read-canary-network internal`. The canonical workspace ID, epoch, scenario,
+origin, and service build are immutable for the process. Each selected request uses the fixed
+canary route; timeout, response, scope, epoch/build, cursor, stale snapshot, or audit failure returns
+a blocked MCP result and never reads the TypeScript snapshot as a fallback. The returned snapshot
+time is checked against the same 24-hour default freshness boundary as local TypeScript reads before
+the Go result or its served audit is released.
+
+Rollback is a new explicit policy with a higher epoch and no Go transport flags:
+
+```bash
+bun run openslack mcp serve --stdio \
+  --graph-read-canary-backend ts-local \
+  --graph-read-canary-routing-epoch 42 \
+  --graph-read-canary-tenant openslack-self \
+  --graph-read-canary-scenarios scenario-contract-delivery-001 \
+  --graph-read-canary-expires-at 2026-08-03T00:00:00.000Z
+```
+
+Existing canary cursors are not translated: v1 or cross-epoch tokens return an explicit mismatch,
+and expired same-epoch tokens return an explicit expiry. Unselected scenarios remain on TypeScript.
+Both modes preserve the selected 12/16/17 tool catalog and all mutation/approval boundaries.
 
 ## Exact production catalog
 

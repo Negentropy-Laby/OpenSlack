@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -134,8 +134,18 @@ cause per-request fallback. The Collaboration audit stores digests and closed di
 without the origin, raw input, result graph, target payload, or provenance contents. Omitting the
 origin creates no mirror call or mirror audit. Audit append failure emits only the fixed
 `OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic and still cannot change the MCP result.
-Any canary, routing epoch, cursor issuer change, or Go read authority is a later separately reviewed
-GS3 batch.
+GS3-B additionally permits a default-off, process-immutable canary on all three unchanged profiles.
+It requires backend, canonical workspace/tenant assertion, one to 16 scenario-instance IDs, positive
+routing epoch, and bounded expiry. `go` also requires an exact origin and expected service build SHA;
+`ts-local` is the only rollback backend and rejects all Go transport flags. Selected Go reads use
+the fixed canary routes and return the Go projection only after strict canonical response, scope,
+epoch/build, result-bound, cursor, snapshot-freshness, and durable redacted-audit validation. Stale
+Go evidence preserves the `SOURCE_EVIDENCE_STALE` blocker. Any failure blocks the request without
+opening the local snapshot. Unselected scenarios remain TypeScript-authoritative.
+Rollback is an explicit higher-epoch `ts-local` policy, never an inferred per-request fallback.
+
+The canary does not change the tool catalog, input schema, `openslack.mcp_result.v2`, Skill,
+mutation authority, or approval boundaries. Full Graph-head/read cutover remains GS3-C.
 
 ## Result Versions
 

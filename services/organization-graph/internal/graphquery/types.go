@@ -29,7 +29,11 @@ type Options struct {
 	CursorSecret         []byte
 	PreviousCursorSecret []byte
 	CursorTTLMS          *int64
-	NowMS                int64
+	// RoutingEpoch binds newly-issued cursors to one explicit read-authority
+	// epoch. Nil preserves the frozen v1 cursor contract used outside canary
+	// routing; a positive value issues and accepts only v2 epoch-bound cursors.
+	RoutingEpoch *int64
+	NowMS        int64
 }
 
 type RelationshipPath struct {

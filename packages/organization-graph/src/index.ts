@@ -111,6 +111,22 @@ export type {
   GraphReadMirrorOutcome,
   GraphReadMirrorPort,
 } from './read-mirror.js';
+export {
+  GRAPH_READ_CANARY_POLICY,
+  GRAPH_READ_CANARY_SCHEMA,
+  GraphReadCanaryError,
+  GraphReadCanaryRouter,
+} from './read-canary.js';
+export type {
+  GraphReadCanaryBackend,
+  GraphReadCanaryErrorCode,
+  GraphReadCanaryExplainProjection,
+  GraphReadCanaryOperation,
+  GraphReadCanaryPort,
+  GraphReadCanaryQueryProjection,
+  GraphReadCanaryRoute,
+  GraphReadCanaryRouterOptions,
+} from './read-canary.js';
 export { normalizeGraphServiceOrigin } from './service-origin.js';
 export type { GraphServiceNetworkMode } from './service-origin.js';
 export {

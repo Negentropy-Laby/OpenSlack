@@ -35,6 +35,7 @@ var (
 		"GRAPH_QUERY_CURSOR_SECRET":          {},
 		"GRAPH_QUERY_CURSOR_SECRET_PREVIOUS": {},
 		"GRAPH_SERVICE_BUILD_SHA":            {},
+		"GRAPH_CANARY_ROUTING_EPOCH":         {},
 	}
 )
 
@@ -46,6 +47,7 @@ type Config struct {
 	QueryCursorSecret         []byte
 	PreviousQueryCursorSecret []byte
 	ServiceBuildSHA           string
+	CanaryRoutingEpoch        *int64
 	MigrationSource           string
 	ShutdownDeadline          time.Duration
 }
@@ -113,6 +115,14 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if !buildSHAPattern.MatchString(buildSHA) {
 		return Config{}, fmt.Errorf("GRAPH_SERVICE_BUILD_SHA must be 64 lowercase hexadecimal characters")
 	}
+	var canaryRoutingEpoch *int64
+	if rawEpoch := values["GRAPH_CANARY_ROUTING_EPOCH"]; rawEpoch != "" {
+		epoch, parseErr := strconv.ParseInt(rawEpoch, 10, 64)
+		if parseErr != nil || strconv.FormatInt(epoch, 10) != rawEpoch || epoch < 1 || epoch > 9007199254740991 {
+			return Config{}, fmt.Errorf("GRAPH_CANARY_ROUTING_EPOCH must be a positive safe integer when set")
+		}
+		canaryRoutingEpoch = &epoch
+	}
 
 	return Config{
 		DatabaseURL:               migration.DatabaseURL,
@@ -121,6 +131,7 @@ func LoadEnvironment(environment []string) (Config, error) {
 		QueryCursorSecret:         append([]byte(nil), cursorSecret...),
 		PreviousQueryCursorSecret: append([]byte(nil), previousCursorSecret...),
 		ServiceBuildSHA:           buildSHA,
+		CanaryRoutingEpoch:        canaryRoutingEpoch,
 		MigrationSource:           migration.MigrationSource,
 		ShutdownDeadline:          30 * time.Second,
 	}, nil

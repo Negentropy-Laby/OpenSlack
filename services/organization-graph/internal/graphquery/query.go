@@ -50,6 +50,7 @@ type cursorPayload struct {
 	snapshotHash string
 	offset       int
 	expiresAt    int64
+	routingEpoch *int64
 }
 
 type traversal struct {
@@ -186,10 +187,15 @@ func GraphQueryHash(input Input) (string, error) {
 }
 
 func cursorValue(value cursorPayload) graphjson.Object {
-	return graphjson.Object{
+	result := graphjson.Object{
 		"version": float64(1), "queryHash": value.queryHash, "snapshotHash": value.snapshotHash,
 		"offset": float64(value.offset), "expiresAt": float64(value.expiresAt),
 	}
+	if value.routingEpoch != nil {
+		result["version"] = float64(2)
+		result["routingEpoch"] = float64(*value.routingEpoch)
+	}
+	return result
 }
 
 func encodeCursor(value cursorPayload, secret []byte) (string, error) {
@@ -242,7 +248,7 @@ func decodeCursor(value string, secret []byte) (cursorPayload, error) {
 		return cursorPayload{}, failure(ErrorCursorInvalid, "Graph query cursor payload is invalid.")
 	}
 	object, ok := payloadValue.(graphjson.Object)
-	if !ok || len(object) != 5 {
+	if !ok {
 		return cursorPayload{}, failure(ErrorCursorInvalid, "Graph query cursor payload is invalid.")
 	}
 	version, versionOK := object["version"].(float64)
@@ -250,14 +256,29 @@ func decodeCursor(value string, secret []byte) (cursorPayload, error) {
 	snapshotHash, snapshotOK := object["snapshotHash"].(string)
 	offset, offsetOK := safeInteger(object["offset"])
 	expiresAt, expiryOK := safeInteger(object["expiresAt"])
-	if !versionOK || version != 1 || !queryOK || !snapshotOK || !offsetOK || !expiryOK ||
+	if !versionOK || (version != 1 && version != 2) || !queryOK || !snapshotOK || !offsetOK || !expiryOK ||
 		offset < 0 ||
 		offset > int64(graphcontract.MaxSnapshotNodes+graphcontract.MaxSnapshotEdges) ||
-		expiresAt < 0 ||
-		!hasExactKeys(object, []string{"expiresAt", "offset", "queryHash", "snapshotHash", "version"}) {
+		expiresAt < 0 {
 		return cursorPayload{}, failure(ErrorCursorInvalid, "Graph query cursor payload is invalid.")
 	}
-	return cursorPayload{queryHash: queryHash, snapshotHash: snapshotHash, offset: int(offset), expiresAt: expiresAt}, nil
+	var routingEpoch *int64
+	if version == 1 {
+		if !hasExactKeys(object, []string{"expiresAt", "offset", "queryHash", "snapshotHash", "version"}) {
+			return cursorPayload{}, failure(ErrorCursorInvalid, "Graph query cursor payload is invalid.")
+		}
+	} else {
+		epoch, epochOK := safeInteger(object["routingEpoch"])
+		if !epochOK || epoch < 1 || epoch > maxSafeInteger ||
+			!hasExactKeys(object, []string{"expiresAt", "offset", "queryHash", "routingEpoch", "snapshotHash", "version"}) {
+			return cursorPayload{}, failure(ErrorCursorInvalid, "Graph query cursor payload is invalid.")
+		}
+		routingEpoch = &epoch
+	}
+	return cursorPayload{
+		queryHash: queryHash, snapshotHash: snapshotHash, offset: int(offset),
+		expiresAt: expiresAt, routingEpoch: routingEpoch,
+	}, nil
 }
 
 func safeInteger(value graphjson.Value) (int64, bool) {
@@ -441,7 +462,7 @@ func responseSize(result *Result) (int, error) {
 	return len(encoded), nil
 }
 
-func buildResult(snapshot graphcontract.Snapshot, hash string, query normalizedQuery, walked traversal, offset int, secret []byte, expiresAt int64) (Result, error) {
+func buildResult(snapshot graphcontract.Snapshot, hash string, query normalizedQuery, walked traversal, offset int, secret []byte, expiresAt int64, routingEpoch *int64) (Result, error) {
 	items := make([]resultItem, 0, len(walked.nodes)+len(walked.edges))
 	for index := range walked.nodes {
 		items = append(items, resultItem{node: &walked.nodes[index]})
@@ -506,7 +527,8 @@ func buildResult(snapshot graphcontract.Snapshot, hash string, query normalizedQ
 			result.Truncation.NodeLimit = next.node != nil && nodeCount >= query.maxNodes
 			result.Truncation.EdgeLimit = next.edge != nil && edgeCount >= query.maxEdges
 			cursor, err := encodeCursor(cursorPayload{
-				queryHash: hash, snapshotHash: snapshot.IntegrityHash, offset: nextOffset, expiresAt: expiresAt,
+				queryHash: hash, snapshotHash: snapshot.IntegrityHash, offset: nextOffset,
+				expiresAt: expiresAt, routingEpoch: routingEpoch,
 			}, secret)
 			if err != nil {
 				return Result{}, err
@@ -575,6 +597,9 @@ func Query(snapshotValue graphcontract.Snapshot, input Input, options Options) (
 	if options.NowMS < 0 || options.NowMS > maxSafeInteger {
 		return Result{}, failure(ErrorInvalid, "now must be a valid timestamp.")
 	}
+	if options.RoutingEpoch != nil && (*options.RoutingEpoch < 1 || *options.RoutingEpoch > maxSafeInteger) {
+		return Result{}, failure(ErrorInvalid, "routingEpoch must be a positive safe integer.")
+	}
 	ttl := DefaultCursorTTLMS
 	if options.CursorTTLMS != nil {
 		ttl = *options.CursorTTLMS
@@ -600,6 +625,10 @@ func Query(snapshotValue graphcontract.Snapshot, input Input, options Options) (
 		if decodeErr != nil {
 			return Result{}, decodeErr
 		}
+		if (options.RoutingEpoch == nil) != (cursor.routingEpoch == nil) ||
+			(options.RoutingEpoch != nil && cursor.routingEpoch != nil && *options.RoutingEpoch != *cursor.routingEpoch) {
+			return Result{}, failure(ErrorCursorMismatch, "Graph query cursor is bound to a different routing epoch.")
+		}
 		if cursor.expiresAt <= options.NowMS {
 			return Result{}, failure(ErrorCursorExpired, "Graph query cursor has expired.")
 		}
@@ -612,7 +641,7 @@ func Query(snapshotValue graphcontract.Snapshot, input Input, options Options) (
 	if err != nil {
 		return Result{}, err
 	}
-	return buildResult(snapshot, hash, query, walked, offset, options.CursorSecret, expiresAt)
+	return buildResult(snapshot, hash, query, walked, offset, options.CursorSecret, expiresAt, options.RoutingEpoch)
 }
 
 func itoa(value int) string {

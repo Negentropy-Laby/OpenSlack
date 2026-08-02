@@ -233,6 +233,42 @@ func testService(t *testing.T, store *fakeStore) *Service {
 	return service
 }
 
+func testCanaryService(t *testing.T, store *fakeStore, epoch int64, now time.Time) *Service {
+	t.Helper()
+	service, err := New(Options{
+		Store:              store,
+		CursorSecret:       []byte("0123456789abcdef0123456789abcdef"),
+		BuildSHA:           testServiceBuildSHA,
+		CanaryRoutingEpoch: &epoch,
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Clock:              fixedClock{value: now.UTC()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func performCanaryJSON(
+	service *Service,
+	path string,
+	body []byte,
+	epoch string,
+	buildSHA string,
+) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	if epoch != "" {
+		request.Header.Set(HeaderCanaryRoutingEpoch, epoch)
+	}
+	if buildSHA != "" {
+		request.Header.Set(HeaderExpectedBuildSHA, buildSHA)
+	}
+	response := httptest.NewRecorder()
+	service.Handler().ServeHTTP(response, request)
+	return response
+}
+
 func snapshotRequestBody(t *testing.T, snapshot graph.Snapshot, expected *string) []byte {
 	t.Helper()
 	body, err := graph.CanonicalJSON(graph.Object{
@@ -556,6 +592,99 @@ func TestQueryExplainAndScenarioReadsUseCurrentVerifiedSnapshot(t *testing.T) {
 	}
 }
 
+func TestCanaryReadsRequireExactEpochAndBuildBinding(t *testing.T) {
+	snapshot := testSnapshot(t, "cursor-1", "2026-08-02T10:00:00Z")
+	store := &fakeStore{snapshot: snapshot}
+	epoch := int64(41)
+	service := testCanaryService(t, store, epoch, time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC))
+	body := []byte(`{"scenarioInstanceId":"scenario-1"}`)
+
+	for name, supplied := range map[string][2]string{
+		"missing binding":    {"", ""},
+		"wrong epoch":        {"42", testServiceBuildSHA},
+		"noncanonical epoch": {"041", testServiceBuildSHA},
+		"wrong build":        {"41", strings.Repeat("f", 64)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := performCanaryJSON(service, RouteCanaryQuery, body, supplied[0], supplied[1])
+			if response.Code != http.StatusConflict ||
+				!strings.Contains(response.Body.String(), `"code":"GRAPH_CANARY_ROUTE_MISMATCH"`) {
+				t.Fatalf("status/body = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	query := performCanaryJSON(service, RouteCanaryQuery, body, "41", testServiceBuildSHA)
+	if query.Code != http.StatusOK {
+		t.Fatalf("query status/body = %d %s", query.Code, query.Body.String())
+	}
+	for _, fragment := range []string{
+		`"schema":"openslack.graph_canary_read.v1"`, `"operation":"query"`,
+		`"backend":"go"`, `"routingEpoch":41`, `"serviceBuildSha":"` + testServiceBuildSHA + `"`,
+		`"generatedAt":"2026-08-02T10:00:00Z"`, `"snapshotCursor":"cursor-1"`,
+	} {
+		if !strings.Contains(query.Body.String(), fragment) {
+			t.Fatalf("query body missing %q: %s", fragment, query.Body.String())
+		}
+	}
+
+	explainBody := []byte(`{"scenarioInstanceId":"scenario-1","targetId":"` + snapshot.Nodes[0].ID + `"}`)
+	explain := performCanaryJSON(service, RouteCanaryExplain, explainBody, "41", testServiceBuildSHA)
+	if explain.Code != http.StatusOK ||
+		!strings.Contains(explain.Body.String(), `"operation":"explain"`) ||
+		!strings.Contains(explain.Body.String(), `"targetKind":"node"`) {
+		t.Fatalf("explain status/body = %d %s", explain.Code, explain.Body.String())
+	}
+}
+
+func TestCanaryRouteIsUnavailableUnlessExplicitlyConfigured(t *testing.T) {
+	snapshot := testSnapshot(t, "cursor-1", "2026-08-02T10:00:00Z")
+	response := performCanaryJSON(
+		testService(t, &fakeStore{snapshot: snapshot}),
+		RouteCanaryQuery,
+		[]byte(`{"scenarioInstanceId":"scenario-1"}`),
+		"41",
+		testServiceBuildSHA,
+	)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(response.Body.String(), `"code":"GRAPH_CANARY_NOT_CONFIGURED"`) {
+		t.Fatalf("status/body = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCanaryCursorFailsClosedAcrossRoutingEpochs(t *testing.T) {
+	snapshot := testSnapshotAboveDefaultJSONNodeLimit(t)
+	store := &fakeStore{snapshot: snapshot}
+	body := []byte(`{"maxNodes":1,"scenarioInstanceId":"scenario-large-json"}`)
+	epoch := int64(41)
+	service := testCanaryService(t, store, epoch, time.UnixMilli(2_000).UTC())
+	first := performCanaryJSON(service, RouteCanaryQuery, body, "41", testServiceBuildSHA)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status/body = %d %s", first.Code, first.Body.String())
+	}
+	var envelope struct {
+		Result struct {
+			NextCursor string `json:"nextCursor"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &envelope); err != nil || envelope.Result.NextCursor == "" {
+		t.Fatalf("decode canary cursor: %v %s", err, first.Body.String())
+	}
+	continuedBody := []byte(`{"cursor":"` + envelope.Result.NextCursor + `","maxNodes":1,"scenarioInstanceId":"scenario-large-json"}`)
+	continued := performCanaryJSON(service, RouteCanaryQuery, continuedBody, "41", testServiceBuildSHA)
+	if continued.Code != http.StatusOK {
+		t.Fatalf("same epoch status/body = %d %s", continued.Code, continued.Body.String())
+	}
+
+	laterEpoch := int64(42)
+	laterService := testCanaryService(t, store, laterEpoch, time.UnixMilli(2_001).UTC())
+	mismatch := performCanaryJSON(laterService, RouteCanaryQuery, continuedBody, "42", testServiceBuildSHA)
+	if mismatch.Code != http.StatusConflict ||
+		!strings.Contains(mismatch.Body.String(), `"code":"GRAPH_QUERY_CURSOR_MISMATCH"`) {
+		t.Fatalf("cross-epoch status/body = %d %s", mismatch.Code, mismatch.Body.String())
+	}
+}
+
 func TestHealthVersionAndMetricsAreBoundedAndDatabaseAware(t *testing.T) {
 	snapshot := testSnapshot(t, "cursor-1", "2026-07-30T10:00:00Z")
 	store := &fakeStore{
@@ -736,12 +865,14 @@ func TestPostRoutesRejectUnknownFieldsAndQueryParameters(t *testing.T) {
 }
 
 func TestNewRejectsMissingDependenciesAndUnsafeCursorConfiguration(t *testing.T) {
+	zeroEpoch := int64(0)
 	for _, options := range []Options{
 		{BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte("short")},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte("short")},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: "development", CursorSecret: []byte(strings.Repeat("x", 32))},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), CanaryRoutingEpoch: &zeroEpoch},
 	} {
 		if _, err := New(options); err == nil {
 			t.Fatalf("invalid options were accepted: %#v", options)
