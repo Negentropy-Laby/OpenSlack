@@ -172,6 +172,11 @@ modules:
       - commit:3975ed39
       - test:packages/workflows/src/__tests__/local-human-attestation.test.ts
       - commit:880a16162f614f432893017f2da0b02a1f4d9bcc
+      - commit:e78c5124981c3d71bf77c52c111d5a6ad55b2b4e
+      - test:packages/operator/src/__tests__/governed-plan-authority-store.test.ts
+      - test:packages/operator/src/__tests__/governed-plan-authority-http.test.ts
+      - test:services/governance-control/internal/authoritystore/request_test.go
+      - test:services/governance-control/internal/authoritystore/postgres/repository_test.go
     phase: '2A/2B/2C'
     cli:
       - openslack ask
