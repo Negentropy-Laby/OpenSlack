@@ -250,6 +250,25 @@ function inspectCompositionOptions(
         'Governed composition options are invalid.',
       );
     }
+    const transportFields = [
+      ['origin', authorityDescriptors.origin?.value],
+      ['expectedBuildSha', authorityDescriptors.expectedBuildSha?.value],
+      ['callerId', authorityDescriptors.callerId?.value],
+      ['expiresAt', authorityDescriptors.expiresAt?.value],
+    ] as const;
+    const transportRequested =
+      authorityDescriptors.backend?.value === 'go' ||
+      authorityDescriptors.networkMode?.value !== undefined ||
+      transportFields.some(([, fieldValue]) => fieldValue !== undefined);
+    const missingTransportFields = transportFields
+      .filter(([, fieldValue]) => fieldValue === undefined)
+      .map(([field]) => `governanceAuthority.${field}`);
+    if (transportRequested && missingTransportFields.length > 0) {
+      return fail(
+        'GOVERNED_COMPOSITION_INPUT_INVALID',
+        `Governance authority transport is incomplete; missing ${missingTransportFields.join(', ')}.`,
+      );
+    }
     governanceAuthority = Object.freeze(
       Object.fromEntries(
         authorityAllowed.flatMap((key) =>

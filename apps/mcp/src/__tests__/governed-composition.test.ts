@@ -994,6 +994,41 @@ describe('production agent-bound governed mutation composition', () => {
     ).rejects.toMatchObject({ code: 'GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE' });
   });
 
+  it('reports the exact missing fields for a partial governance-control transport', async () => {
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot: createWorkspace(),
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'ts-local',
+          routingEpoch: 41,
+          tenantId: WORKSPACE_ID,
+          origin: 'http://127.0.0.1:18082',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'GOVERNED_COMPOSITION_INPUT_INVALID',
+      message:
+        'Governance authority transport is incomplete; missing governanceAuthority.expectedBuildSha, governanceAuthority.callerId, governanceAuthority.expiresAt.',
+    });
+
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot: createWorkspace(),
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'go',
+          routingEpoch: 41,
+          tenantId: WORKSPACE_ID,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'GOVERNED_COMPOSITION_INPUT_INVALID',
+      message:
+        'Governance authority transport is incomplete; missing governanceAuthority.origin, governanceAuthority.expectedBuildSha, governanceAuthority.callerId, governanceAuthority.expiresAt.',
+    });
+  });
+
   it('drains a historical Go audit before completing a higher-epoch ts-local composition', async () => {
     const workspaceRoot = createWorkspace();
     await seedCollaborationRecordedJournal(workspaceRoot);

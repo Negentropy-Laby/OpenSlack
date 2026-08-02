@@ -74,6 +74,27 @@ when it also matches the record's persisted route. This permits old Go records
 to drain after a higher-epoch `ts-local` rollback without routing new records to
 Go.
 
+## Rollback and drain
+
+A governance-authority rollback is a new-record routing change, not a rescue or
+data-migration operation for records already accepted by Go:
+
+1. Start the higher-epoch MCP policy with `backend=ts-local` so only newly
+   created plans return to the TypeScript writer.
+2. Disable `GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS` and keep the former Go
+   epoch in `GOVERNANCE_AUTHORITY_DRAIN_EPOCHS`.
+3. Keep Governance Control, PostgreSQL, and the complete origin/build/caller/
+   expiry transport available while every known Go-routed plan reaches a
+   terminal or reconciled state and its pending audit delivery is recorded.
+4. Retire the old epoch only after the point-read and Collaboration audit
+   evidence agree. An outage blocks the affected plan IDs; it never authorizes
+   TypeScript fallback, record copying, or effect replay.
+
+The v1 authority deliberately has no unbounded plan-list route. TypeScript
+enumeration returns only local and legacy plans, so it is not a total plan
+count. Drain operations must retain the `planId` values from MCP receipts and
+use the bounded record/pending-audit point reads plus Collaboration evidence.
+
 ## HTTP surface
 
 - `POST /v1/shadow/governance/observations` requires one `Content-Type:

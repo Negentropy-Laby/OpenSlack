@@ -247,6 +247,45 @@ describe('mcp command', () => {
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
   });
 
+  it('reports exact missing governance-control transport flags before composition', async () => {
+    const createAgentBoundComposition = vi.fn();
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createContext,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--governance-authority-backend',
+      'go',
+      '--governance-authority-routing-epoch',
+      '7',
+      '--governance-authority-tenant',
+      'workspace-test',
+      '--governance-authority-origin',
+      'http://127.0.0.1:18082',
+    ]);
+
+    expect(stderr).toHaveBeenLastCalledWith(
+      'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: Governance-control transport is incomplete; missing --governance-authority-build-sha, --governance-authority-caller, --governance-authority-expires-at.',
+    );
+    expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
   it('binds an explicit internal Go read mirror without changing the selected profile', async () => {
     const graphReadMirror = Object.freeze({}) as never;
     const createGraphReadMirror = vi.fn(() => graphReadMirror);

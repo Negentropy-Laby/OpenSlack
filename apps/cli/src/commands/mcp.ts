@@ -121,20 +121,23 @@ function bindGovernanceAuthority(
       '--governance-authority-routing-epoch must be a safe integer.',
     );
   }
-  const transportValues = [
-    options.governanceAuthorityOrigin,
-    options.governanceAuthorityBuildSha,
-    options.governanceAuthorityCaller,
-    options.governanceAuthorityExpiresAt,
-  ];
-  const transportCount = transportValues.filter((value) => value !== undefined).length;
+  const transportOptions = [
+    ['--governance-authority-origin', options.governanceAuthorityOrigin],
+    ['--governance-authority-build-sha', options.governanceAuthorityBuildSha],
+    ['--governance-authority-caller', options.governanceAuthorityCaller],
+    ['--governance-authority-expires-at', options.governanceAuthorityExpiresAt],
+  ] as const;
+  const transportCount = transportOptions.filter(([, value]) => value !== undefined).length;
   if (
     options.governanceAuthorityBackend === 'go'
-      ? transportCount !== transportValues.length
-      : transportCount !== 0 && transportCount !== transportValues.length
+      ? transportCount !== transportOptions.length
+      : transportCount !== 0 && transportCount !== transportOptions.length
   ) {
+    const missing = transportOptions
+      .filter(([, value]) => value === undefined)
+      .map(([name]) => name);
     throw new McpProfileArgumentError(
-      'Governance-control transport requires origin, build SHA, caller, and expiry together.',
+      `Governance-control transport is incomplete; missing ${missing.join(', ')}.`,
     );
   }
   if (options.governanceAuthorityNetwork !== undefined && transportCount === 0) {
