@@ -551,14 +551,25 @@ func validateObservationShape(value any) error {
 	if err != nil {
 		return err
 	}
+	if err := requireNonNull(root, "$", []string{
+		"schema", "authority", "runId", "workflowName", "mode", "status", "startedAt",
+		"updatedAt", "manifestHash", "phases", "approvals", "budget",
+	}); err != nil {
+		return err
+	}
 	phases, err := requireArray(root["phases"], "$/phases")
 	if err != nil {
 		return err
 	}
 	for index, phaseValue := range phases {
-		if _, err := requireClosedObject(phaseValue, fmt.Sprintf("$/phases/%d", index), []string{
+		phasePath := fmt.Sprintf("$/phases/%d", index)
+		phase, err := requireClosedObject(phaseValue, phasePath, []string{
 			"phase", "observedAt", "status", "resultHash", "cacheKeyHash",
-		}); err != nil {
+		})
+		if err != nil {
+			return err
+		}
+		if err := requireNonNull(phase, phasePath, []string{"phase", "observedAt", "status"}); err != nil {
 			return err
 		}
 	}
@@ -566,18 +577,35 @@ func validateObservationShape(value any) error {
 	if err != nil {
 		return err
 	}
+	if err := requireNonNull(approvals, "$/approvals", []string{"legacyRunGate", "effectV2"}); err != nil {
+		return err
+	}
 	legacy, err := requireClosedObject(approvals["legacyRunGate"], "$/approvals/legacyRunGate", []string{"plane", "semantics", "counts"})
 	if err != nil {
 		return err
 	}
-	if _, err := requireClosedObject(legacy["counts"], "$/approvals/legacyRunGate/counts", []string{"pending", "approved", "rejected"}); err != nil {
+	if err := requireNonNull(legacy, "$/approvals/legacyRunGate", []string{"plane", "semantics", "counts"}); err != nil {
+		return err
+	}
+	legacyCounts, err := requireClosedObject(legacy["counts"], "$/approvals/legacyRunGate/counts", []string{"pending", "approved", "rejected"})
+	if err != nil {
+		return err
+	}
+	if err := requireNonNull(legacyCounts, "$/approvals/legacyRunGate/counts", []string{"pending", "approved", "rejected"}); err != nil {
 		return err
 	}
 	effect, err := requireClosedObject(approvals["effectV2"], "$/approvals/effectV2", []string{"plane", "semantics", "schema", "counts"})
 	if err != nil {
 		return err
 	}
-	if _, err := requireClosedObject(effect["counts"], "$/approvals/effectV2/counts", []string{"pending", "approved", "rejected"}); err != nil {
+	if err := requireNonNull(effect, "$/approvals/effectV2", []string{"plane", "semantics", "schema", "counts"}); err != nil {
+		return err
+	}
+	effectCounts, err := requireClosedObject(effect["counts"], "$/approvals/effectV2/counts", []string{"pending", "approved", "rejected"})
+	if err != nil {
+		return err
+	}
+	if err := requireNonNull(effectCounts, "$/approvals/effectV2/counts", []string{"pending", "approved", "rejected"}); err != nil {
 		return err
 	}
 	budget, err := requireClosedObject(root["budget"], "$/budget", []string{
@@ -586,14 +614,22 @@ func validateObservationShape(value any) error {
 	if err != nil {
 		return err
 	}
+	if err := requireNonNull(budget, "$/budget", []string{"configured", "tokensUsed", "agentCalls", "warnings"}); err != nil {
+		return err
+	}
 	warnings, err := requireArray(budget["warnings"], "$/budget/warnings")
 	if err != nil {
 		return err
 	}
 	for index, warningValue := range warnings {
-		if _, err := requireClosedObject(warningValue, fmt.Sprintf("$/budget/warnings/%d", index), []string{
+		warningPath := fmt.Sprintf("$/budget/warnings/%d", index)
+		warning, err := requireClosedObject(warningValue, warningPath, []string{
 			"observedAt", "kind", "tokensUsed", "tokenBudget", "percent", "costUsd",
-		}); err != nil {
+		})
+		if err != nil {
+			return err
+		}
+		if err := requireNonNull(warning, warningPath, []string{"observedAt", "kind", "tokensUsed", "tokenBudget", "percent"}); err != nil {
 			return err
 		}
 	}
@@ -626,6 +662,15 @@ func requireArray(value any, path string) ([]any, error) {
 		return nil, fail(ErrorInvalid, path, path+" must be a non-null array")
 	}
 	return result, nil
+}
+
+func requireNonNull(record map[string]any, path string, fields []string) error {
+	for _, field := range fields {
+		if record[field] == nil {
+			return fail(ErrorInvalid, path+"/"+field, "required field cannot be null")
+		}
+	}
+	return nil
 }
 
 func validateEscapedSurrogates(input []byte) error {

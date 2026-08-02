@@ -186,6 +186,21 @@ func TestObservationRequiredAndNullShape(t *testing.T) {
 			legacy := approvals["legacyRunGate"].(map[string]any)
 			delete(legacy["counts"].(map[string]any), "rejected")
 		}, "$/approvals/legacyRunGate/counts/rejected"},
+		{"null-zero-approval-count", func(value map[string]any) {
+			approvals := value["approvals"].(map[string]any)
+			legacy := approvals["legacyRunGate"].(map[string]any)
+			legacy["counts"].(map[string]any)["rejected"] = nil
+		}, "$/approvals/legacyRunGate/counts/rejected"},
+		{"null-budget-counter", func(value map[string]any) {
+			value["budget"].(map[string]any)["tokensUsed"] = nil
+		}, "$/budget/tokensUsed"},
+		{"null-budget-configured", func(value map[string]any) {
+			value["budget"].(map[string]any)["configured"] = nil
+		}, "$/budget/configured"},
+		{"null-warning-percent", func(value map[string]any) {
+			budget := value["budget"].(map[string]any)
+			budget["warnings"].([]any)[0].(map[string]any)["percent"] = nil
+		}, "$/budget/warnings/0/percent"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
