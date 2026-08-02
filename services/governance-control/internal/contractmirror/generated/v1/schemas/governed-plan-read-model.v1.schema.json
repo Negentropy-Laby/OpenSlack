@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governed-plan/v1/governed-plan-read-model.v1.schema.json",
+  "title": "OpenSlack governed plan credential-free read model v1",
+  "$comment": "Structural prefilter for runtime-projected data; UTF-8 bytes and timestamps still require runtime validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.governed_plan_read_model.v1" },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "state": {
+      "enum": [
+        "pending",
+        "executing",
+        "succeeded",
+        "blocked",
+        "failed",
+        "reconciliation_required",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$" },
+    "goal": { "type": "string" },
+    "actorId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "workspaceId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "correlationId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "actionCount": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "effectCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "confirmationBound": { "const": true },
+    "executionTerminal": { "type": "boolean" },
+    "final": { "type": "boolean" },
+    "reconciliationRequired": { "type": "boolean" },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executionId": {
+          "type": "string",
+          "pattern": "^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "startedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "completedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "outcomeCount": { "type": "integer", "minimum": 0 },
+        "evidenceRefCount": { "type": "integer", "minimum": 0 },
+        "blocker": { "type": "string" },
+        "failure": { "type": "string" }
+      },
+      "required": ["executionId", "startedAt", "outcomeCount", "evidenceRefCount"]
+    }
+  },
+  "required": [
+    "schema",
+    "planId",
+    "revision",
+    "state",
+    "kind",
+    "goal",
+    "actorId",
+    "workspaceId",
+    "correlationId",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "actionCount",
+    "effectCount",
+    "inputHash",
+    "planHash",
+    "confirmationBound",
+    "executionTerminal",
+    "final",
+    "reconciliationRequired"
+  ],
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "pending" } }, "required": ["state"] },
+      "then": {
+        "properties": {
+          "final": { "const": false },
+          "executionTerminal": { "const": false },
+          "reconciliationRequired": { "const": false }
+        },
+        "not": { "properties": { "execution": {} }, "required": ["execution"] }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "executing" } }, "required": ["state"] },
+      "then": {
+        "properties": {
+          "final": { "const": false },
+          "executionTerminal": { "const": false },
+          "reconciliationRequired": { "const": false },
+          "execution": {
+            "type": "object",
+            "not": { "properties": { "completedAt": {} }, "required": ["completedAt"] }
+          }
+        },
+        "required": ["execution"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "enum": ["succeeded", "blocked", "failed"] } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "final": { "const": true },
+          "executionTerminal": { "const": true },
+          "reconciliationRequired": { "const": false },
+          "execution": {
+            "type": "object",
+            "properties": { "completedAt": {} },
+            "required": ["completedAt"]
+          }
+        },
+        "required": ["execution"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "reconciliation_required" } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "final": { "const": true },
+          "executionTerminal": { "const": true },
+          "reconciliationRequired": { "const": true },
+          "execution": {
+            "type": "object",
+            "properties": { "completedAt": {} },
+            "required": ["completedAt"]
+          }
+        },
+        "required": ["execution"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "enum": ["cancelled", "expired"] } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "final": { "const": true },
+          "executionTerminal": { "const": false },
+          "reconciliationRequired": { "const": false }
+        },
+        "not": { "properties": { "execution": {} }, "required": ["execution"] }
+      }
+    }
+  ]
+}

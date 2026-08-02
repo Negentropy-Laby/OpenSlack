@@ -54,6 +54,43 @@ export type GovernedPlanAuditEventType =
   | 'plan.reconciliation_required'
   | 'workflow.approval_decided';
 
+export const GOVERNED_PLAN_AUDIT_EVENT_TYPES = Object.freeze([
+  'plan.previewed',
+  'plan.confirmed',
+  'plan.confirmation_rejected',
+  'plan.cancelled',
+  'plan.expired',
+  'plan.execution_started',
+  'plan.execution_completed',
+  'plan.execution_blocked',
+  'plan.execution_failed',
+  'plan.reconciliation_required',
+  'workflow.approval_decided',
+] as const satisfies readonly GovernedPlanAuditEventType[]);
+
+export const GOVERNED_PLAN_SERVICE_ERROR_CODES = Object.freeze([
+  'GOVERNED_PLAN_NOT_FOUND',
+  'GOVERNED_PLAN_AUTHORITY_INVALID',
+  'GOVERNED_PLAN_CONFIRMATION_INVALID',
+  'GOVERNED_PLAN_BINDING_CHANGED',
+  'GOVERNED_PLAN_STATE_INVALID',
+  'GOVERNED_PLAN_EXECUTION_ACTIVE',
+  'GOVERNED_PLAN_EXECUTION_ABORTED',
+  'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+  'GOVERNED_PLAN_CONFIGURATION_INVALID',
+] as const);
+
+export const GOVERNED_PLAN_SERVICE_LIMITS = Object.freeze({
+  defaultTtlMs: 15 * 60 * 1_000,
+  minTtlMs: 60 * 1_000,
+  maxTtlMs: 24 * 60 * 60 * 1_000,
+  defaultExecutionTimeoutMs: 5 * 60 * 1_000,
+  minExecutionTimeoutMs: 10,
+  maxExecutionTimeoutMs: 15 * 60 * 1_000,
+  confirmationTokenBytes: 32,
+  confirmationTokenCharacters: 43,
+} as const);
+
 export interface GovernedPlanAuditEvent {
   readonly schema: 'openslack.governed_plan_audit.v1';
   readonly eventId: string;
@@ -140,27 +177,20 @@ export interface GovernedPlanService {
 
 const SAFE_AUTHORITY = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$/;
 const SAFE_PLAN_ID = /^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const TOKEN = /^[a-zA-Z0-9_-]{43}$/;
-const DEFAULT_TTL_MS = 15 * 60 * 1000;
-const MIN_TTL_MS = 60 * 1000;
-const MAX_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_EXECUTION_TIMEOUT_MS = 5 * 60 * 1000;
-const MIN_EXECUTION_TIMEOUT_MS = 10;
-const MAX_EXECUTION_TIMEOUT_MS = 15 * 60 * 1000;
+const TOKEN = new RegExp(
+  `^[a-zA-Z0-9_-]{${GOVERNED_PLAN_SERVICE_LIMITS.confirmationTokenCharacters}}$`,
+);
+const DEFAULT_TTL_MS = GOVERNED_PLAN_SERVICE_LIMITS.defaultTtlMs;
+const MIN_TTL_MS = GOVERNED_PLAN_SERVICE_LIMITS.minTtlMs;
+const MAX_TTL_MS = GOVERNED_PLAN_SERVICE_LIMITS.maxTtlMs;
+const DEFAULT_EXECUTION_TIMEOUT_MS = GOVERNED_PLAN_SERVICE_LIMITS.defaultExecutionTimeoutMs;
+const MIN_EXECUTION_TIMEOUT_MS = GOVERNED_PLAN_SERVICE_LIMITS.minExecutionTimeoutMs;
+const MAX_EXECUTION_TIMEOUT_MS = GOVERNED_PLAN_SERVICE_LIMITS.maxExecutionTimeoutMs;
 const COMPILERS = new WeakMap<object, GovernedPlanCompile>();
 const SERVICES = new WeakSet<object>();
 
 export class GovernedPlanServiceError extends Error {
-  readonly code:
-    | 'GOVERNED_PLAN_NOT_FOUND'
-    | 'GOVERNED_PLAN_AUTHORITY_INVALID'
-    | 'GOVERNED_PLAN_CONFIRMATION_INVALID'
-    | 'GOVERNED_PLAN_BINDING_CHANGED'
-    | 'GOVERNED_PLAN_STATE_INVALID'
-    | 'GOVERNED_PLAN_EXECUTION_ACTIVE'
-    | 'GOVERNED_PLAN_EXECUTION_ABORTED'
-    | 'GOVERNED_PLAN_EXECUTION_UNCERTAIN'
-    | 'GOVERNED_PLAN_CONFIGURATION_INVALID';
+  readonly code: (typeof GOVERNED_PLAN_SERVICE_ERROR_CODES)[number];
 
   constructor(code: GovernedPlanServiceError['code'], message: string) {
     super(message);
@@ -609,7 +639,9 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         authority,
       }),
     );
-    const confirmationToken = randomBytes(32).toString('base64url');
+    const confirmationToken = randomBytes(
+      GOVERNED_PLAN_SERVICE_LIMITS.confirmationTokenBytes,
+    ).toString('base64url');
     const record = validateGovernedPlanRecord({
       schema: 'openslack.governed_plan.v1',
       revision: 1,

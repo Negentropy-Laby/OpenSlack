@@ -76,9 +76,12 @@ const exactHeadExpression = '${{ github.event.pull_request.head.sha || github.sh
 const triggerPaths = [
   'services/notification-delivery/**',
   'services/organization-graph/**',
+  'services/governance-control/**',
   'services/*/go.mod',
   'services/*/go.sum',
   'packages/organization-graph/**',
+  'packages/operator/contracts/governed-plan/**',
+  'packages/operator/src/governed-plan*.ts',
   'README.md',
   'docs/README.md',
   'design/cdd/module-index.md',
@@ -103,6 +106,7 @@ const triggerPaths = [
   'scripts/go-check.sh',
   'scripts/go-check/**',
   'scripts/organization-graph-contracts/**',
+  'scripts/governance-control-contracts/**',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -168,6 +172,7 @@ describe('notification delivery service workflow', () => {
     const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
     const installIndex = stepIndex('Install root dependencies');
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
+    const governanceGoldenIndex = stepIndex('Verify Governance Control golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
@@ -187,7 +192,8 @@ describe('notification delivery service workflow', () => {
     expect(setupBunIndex).toBe(setupNodeIndex + 1);
     expect(installIndex).toBe(setupBunIndex + 1);
     expect(graphGoldenIndex).toBe(installIndex + 1);
-    expect(graphDistIndex).toBe(graphGoldenIndex + 1);
+    expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
+    expect(graphDistIndex).toBe(governanceGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
@@ -244,6 +250,11 @@ describe('notification delivery service workflow', () => {
       name: 'Verify Organization Graph golden contracts',
       'working-directory': '.',
       run: 'bun run graph:golden -- --check',
+    });
+    expect(job.steps[governanceGoldenIndex]).toEqual({
+      name: 'Verify Governance Control golden contracts',
+      'working-directory': '.',
+      run: 'bun run governance:golden -- --check',
     });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
@@ -308,6 +319,7 @@ describe('notification delivery service workflow', () => {
       'Set up the exact Bun toolchain',
       'Install root dependencies',
       'Verify Organization Graph golden contracts',
+      'Verify Governance Control golden contracts',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
@@ -342,6 +354,7 @@ describe('notification delivery service workflow', () => {
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
       'Install root dependencies': 'bun install --frozen-lockfile',
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
+      'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',

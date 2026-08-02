@@ -3,7 +3,9 @@ import {
   canonicalGovernedJson,
   canonicalizeGovernedJson,
   createCanonicalGovernedPlan,
+  GOVERNED_PLAN_CONTRACT_LIMITS,
   hashGovernedValue,
+  hashOpaqueValue,
   validateGovernedPlanRecord,
 } from '../governed-plan.js';
 
@@ -67,6 +69,8 @@ describe('governed plan contract', () => {
     for (let depth = 0; depth < 13; depth += 1) tooDeep = [tooDeep];
     expect(() => canonicalizeGovernedJson(tooDeep)).toThrow('structural limit');
     expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+    expect(canonicalGovernedJson('\ud800')).toBe('"\\ud800"');
+    expect(canonicalGovernedJson({ ['\udc00']: true })).toBe('{"\\udc00":true}');
   });
 
   it('binds exact canonical input and plan hashes', () => {
@@ -99,11 +103,30 @@ describe('governed plan contract', () => {
     };
 
     expect(validateGovernedPlanRecord(record).bindings.planHash).toBe(hash(plan));
+    expect(
+      validateGovernedPlanRecord({
+        ...record,
+        createdAt: '2026-02-30T06:00:00.000Z',
+        updatedAt: '2026-02-30T06:00:00.000Z',
+      }).createdAt,
+    ).toBe('2026-02-30T06:00:00.000Z');
     expect(() =>
       validateGovernedPlanRecord({
         ...record,
         canonicalPlan: { ...plan, input: { changed: true } },
       }),
     ).toThrow('Input hash');
+  });
+
+  it('freezes existing v1 opaque UTF-16-unit boundaries and surrogate hashing', () => {
+    const minimum = GOVERNED_PLAN_CONTRACT_LIMITS.minOpaqueBindingCharacters;
+    const maximum = GOVERNED_PLAN_CONTRACT_LIMITS.maxOpaqueBindingCharacters;
+    expect(() => hashOpaqueValue('a'.repeat(minimum - 1))).toThrow('outside allowed bounds');
+    expect(hashOpaqueValue('a'.repeat(minimum))).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashOpaqueValue('a'.repeat(maximum))).toMatch(/^[0-9a-f]{64}$/);
+    expect(() => hashOpaqueValue('a'.repeat(maximum + 1))).toThrow('outside allowed bounds');
+    expect(hashOpaqueValue('\ud800'.repeat(minimum))).toBe(
+      hashOpaqueValue('\ufffd'.repeat(minimum)),
+    );
   });
 });

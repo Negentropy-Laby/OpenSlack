@@ -1,0 +1,161 @@
+{
+  "schema": "openslack.governed_plan_contract_manifest.v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/operator",
+    "goRole": "credential-free-read-model-only",
+    "runtimeStore": ".openslack.local/operator/governed-plans",
+    "memoryBankIsRuntimeStore": false
+  },
+  "schemas": {
+    "actionPlan": "openslack.governed_action_plan.v1",
+    "record": "openslack.governed_plan.v1",
+    "audit": "openslack.governed_plan_audit.v1",
+    "readModel": "openslack.governed_plan_read_model.v1"
+  },
+  "schemaScope": "structural-prefilter",
+  "semanticValidationRequired": true,
+  "semanticConstraints": [
+    "canonical-json-exact-bytes",
+    "utf8-byte-limits",
+    "depth-and-node-limits",
+    "inert-value-validation",
+    "ecmascript-utf16-string-semantics",
+    "timestamp-acceptance",
+    "binding-hash-recomputation",
+    "state-and-execution-invariants"
+  ],
+  "states": [
+    "pending",
+    "executing",
+    "succeeded",
+    "blocked",
+    "failed",
+    "reconciliation_required",
+    "cancelled",
+    "expired"
+  ],
+  "executionStatuses": ["succeeded", "blocked", "failed"],
+  "stateTransitions": {
+    "pending": ["executing", "cancelled", "expired"],
+    "executing": ["succeeded", "blocked", "failed", "reconciliation_required"],
+    "succeeded": [],
+    "blocked": [],
+    "failed": [],
+    "reconciliation_required": [],
+    "cancelled": [],
+    "expired": []
+  },
+  "auditEventTypes": [
+    "plan.previewed",
+    "plan.confirmed",
+    "plan.confirmation_rejected",
+    "plan.cancelled",
+    "plan.expired",
+    "plan.execution_started",
+    "plan.execution_completed",
+    "plan.execution_blocked",
+    "plan.execution_failed",
+    "plan.reconciliation_required",
+    "workflow.approval_decided"
+  ],
+  "limits": {
+    "contract": {
+      "maxDepth": 12,
+      "maxNodes": 10000,
+      "maxContainerEntries": 1000,
+      "maxStringBytes": 65536,
+      "maxObjectKeyBytes": 256,
+      "maxActions": 32,
+      "maxEffects": 64,
+      "maxGoalBytes": 4096,
+      "maxEffectSummaryBytes": 2048,
+      "maxSummaryBytes": 4096,
+      "maxEvidenceRefBytes": 2048,
+      "maxOpaqueBindingCharacters": 4096,
+      "minOpaqueBindingCharacters": 16
+    },
+    "store": {
+      "maxRecordBytes": 1048576,
+      "maxRecords": 4096,
+      "maxLockBytes": 512,
+      "lockAcquireAttempts": 3
+    },
+    "service": {
+      "defaultTtlMs": 900000,
+      "minTtlMs": 60000,
+      "maxTtlMs": 86400000,
+      "defaultExecutionTimeoutMs": 300000,
+      "minExecutionTimeoutMs": 10,
+      "maxExecutionTimeoutMs": 900000,
+      "confirmationTokenBytes": 32,
+      "confirmationTokenCharacters": 43
+    }
+  },
+  "algorithms": {
+    "canonicalJson": "openslack.ecmascript_canonical_json.v1",
+    "governedValueHash": "sha256(canonical_json_utf8)",
+    "opaqueValueHash": "sha256(ecmascript_string_utf8)",
+    "opaqueHashComparison": "constant_time_sha256_bytes",
+    "persistedRecord": "canonical_json_utf8_plus_lf",
+    "cas": "plan_id+expected_revision",
+    "executionClaim": "cas_once(plan_id,expected_revision,execution_id)"
+  },
+  "errorCodes": {
+    "contract": [
+      "GOVERNED_PLAN_INVALID",
+      "GOVERNED_PLAN_LIMIT_EXCEEDED",
+      "GOVERNED_PLAN_BINDING_MISMATCH"
+    ],
+    "store": [
+      "GOVERNED_PLAN_STORE_PATH_UNSAFE",
+      "GOVERNED_PLAN_STORE_FILE_UNSAFE",
+      "GOVERNED_PLAN_STORE_NOT_FOUND",
+      "GOVERNED_PLAN_STORE_ALREADY_EXISTS",
+      "GOVERNED_PLAN_STORE_BUSY",
+      "GOVERNED_PLAN_STORE_CAS_MISMATCH",
+      "GOVERNED_PLAN_STORE_TRANSITION_INVALID",
+      "GOVERNED_PLAN_STORE_LIMIT_EXCEEDED",
+      "GOVERNED_PLAN_STORE_RECORD_INVALID",
+      "GOVERNED_PLAN_STORE_FILE_CHANGED"
+    ],
+    "service": [
+      "GOVERNED_PLAN_NOT_FOUND",
+      "GOVERNED_PLAN_AUTHORITY_INVALID",
+      "GOVERNED_PLAN_CONFIRMATION_INVALID",
+      "GOVERNED_PLAN_BINDING_CHANGED",
+      "GOVERNED_PLAN_STATE_INVALID",
+      "GOVERNED_PLAN_EXECUTION_ACTIVE",
+      "GOVERNED_PLAN_EXECUTION_ABORTED",
+      "GOVERNED_PLAN_EXECUTION_UNCERTAIN",
+      "GOVERNED_PLAN_CONFIGURATION_INVALID"
+    ]
+  },
+  "artifacts": {
+    "schemas/governed-action-plan.v1.schema.json": {
+      "path": "schemas/governed-action-plan.v1.schema.json",
+      "byteLength": 2330,
+      "sha256": "acbbe752acb679abdb801dde2d0fa1ec1ea97793c17e944137e5c96bc8bacbba"
+    },
+    "schemas/governed-plan.v1.schema.json": {
+      "path": "schemas/governed-plan.v1.schema.json",
+      "byteLength": 8070,
+      "sha256": "adaccddba01402344e55739678021f72495b216081ef7081ca0058b36420113e"
+    },
+    "schemas/governed-plan-audit.v1.schema.json": {
+      "path": "schemas/governed-plan-audit.v1.schema.json",
+      "byteLength": 2897,
+      "sha256": "e8ec8a4fcf8fd72ad5352a94097b6baee3b9ab2596778a8be1d2cf8c6b83ea1b"
+    },
+    "schemas/governed-plan-read-model.v1.schema.json": {
+      "path": "schemas/governed-plan-read-model.v1.schema.json",
+      "byteLength": 5789,
+      "sha256": "3d28e755d271f00c71b6fb9480b35ed3e8d4017c6123533bb4aa6eade7004da3"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 58722,
+      "sha256": "f7925f1e2920a80a17778ec1658f8b19b3170a1bad085938ca1b619b2b993049"
+    }
+  }
+}

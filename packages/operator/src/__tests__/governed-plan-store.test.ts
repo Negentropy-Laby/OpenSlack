@@ -144,6 +144,21 @@ describe('local governed plan store', () => {
     });
   });
 
+  it('rejects malformed UTF-8 before decoding persisted record bytes', async () => {
+    const root = makeRoot();
+    const store = new LocalGovernedPlanStore(root);
+    const created = await store.create(makeRecord());
+    const recordPath = paths(root, created.planId).record;
+    const raw = readFileSync(recordPath);
+    raw[raw.indexOf(Buffer.from('Instantiate scenario'))] = 0xff;
+    writeFileSync(recordPath, raw);
+
+    await expect(store.load(created.planId)).rejects.toMatchObject({
+      code: 'GOVERNED_PLAN_STORE_RECORD_INVALID',
+      message: 'Governed plan record is not valid UTF-8.',
+    });
+  });
+
   it('recovers only a canonical lock whose owner PID is provably dead', async () => {
     const root = makeRoot();
     const store = new LocalGovernedPlanStore(root);

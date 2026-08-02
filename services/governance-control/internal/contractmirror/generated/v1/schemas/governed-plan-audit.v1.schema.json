@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governed-plan/v1/governed-plan-audit.v1.schema.json",
+  "title": "OpenSlack governed plan audit event v1",
+  "$comment": "Structural prefilter only. UTF-8 bytes, depth, nodes, timestamps, and inert values require runtime validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.governed_plan_audit.v1" },
+    "eventId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "type": {
+      "enum": [
+        "plan.previewed",
+        "plan.confirmed",
+        "plan.confirmation_rejected",
+        "plan.cancelled",
+        "plan.expired",
+        "plan.execution_started",
+        "plan.execution_completed",
+        "plan.execution_blocked",
+        "plan.execution_failed",
+        "plan.reconciliation_required",
+        "workflow.approval_decided"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$" },
+    "actorId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "workspaceId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "correlationId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$" },
+    "state": {
+      "enum": [
+        "pending",
+        "executing",
+        "succeeded",
+        "blocked",
+        "failed",
+        "reconciliation_required",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "evidenceRefs": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    },
+    "details": { "$ref": "#/$defs/governedJson" }
+  },
+  "required": [
+    "schema",
+    "eventId",
+    "type",
+    "occurredAt",
+    "planId",
+    "kind",
+    "actorId",
+    "workspaceId",
+    "correlationId",
+    "state",
+    "revision",
+    "evidenceRefs"
+  ],
+  "$defs": {
+    "governedJson": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string", "maxLength": 65536 },
+        { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/governedJson" } },
+        {
+          "type": "object",
+          "maxProperties": 1000,
+          "propertyNames": {
+            "maxLength": 256,
+            "not": { "enum": ["__proto__", "prototype", "constructor"] }
+          },
+          "additionalProperties": { "$ref": "#/$defs/governedJson" }
+        }
+      ]
+    }
+  }
+}

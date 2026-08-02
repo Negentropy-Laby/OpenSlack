@@ -10,17 +10,49 @@ export type GovernedJsonValue =
   | readonly GovernedJsonValue[]
   | { readonly [key: string]: GovernedJsonValue };
 
-export type GovernedPlanState =
-  | 'pending'
-  | 'executing'
-  | 'succeeded'
-  | 'blocked'
-  | 'failed'
-  | 'reconciliation_required'
-  | 'cancelled'
-  | 'expired';
+export const GOVERNED_PLAN_STATES = Object.freeze([
+  'pending',
+  'executing',
+  'succeeded',
+  'blocked',
+  'failed',
+  'reconciliation_required',
+  'cancelled',
+  'expired',
+] as const);
 
-export type GovernedExecutionStatus = 'succeeded' | 'blocked' | 'failed';
+export type GovernedPlanState = (typeof GOVERNED_PLAN_STATES)[number];
+
+export const GOVERNED_EXECUTION_STATUSES = Object.freeze([
+  'succeeded',
+  'blocked',
+  'failed',
+] as const);
+
+export type GovernedExecutionStatus = (typeof GOVERNED_EXECUTION_STATUSES)[number];
+
+export const GOVERNED_PLAN_CONTRACT_ERROR_CODES = Object.freeze([
+  'GOVERNED_PLAN_INVALID',
+  'GOVERNED_PLAN_LIMIT_EXCEEDED',
+  'GOVERNED_PLAN_BINDING_MISMATCH',
+] as const);
+
+export const GOVERNED_PLAN_CONTRACT_LIMITS = Object.freeze({
+  maxDepth: 12,
+  maxNodes: 10_000,
+  maxContainerEntries: 1_000,
+  maxStringBytes: 64 * 1024,
+  maxObjectKeyBytes: 256,
+  maxActions: 32,
+  maxEffects: 64,
+  maxGoalBytes: 4_096,
+  maxEffectSummaryBytes: 2_048,
+  maxSummaryBytes: 4_096,
+  maxEvidenceRefBytes: 2_048,
+  // Existing v1 behavior is intentionally measured in ECMAScript UTF-16 code units.
+  maxOpaqueBindingCharacters: 4_096,
+  minOpaqueBindingCharacters: 16,
+} as const);
 
 export interface GovernedPlanAction {
   readonly actionId: string;
@@ -112,16 +144,13 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const PLAN_ID = /^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXECUTION_ID = /^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const MAX_DEPTH = 12;
-const MAX_NODES = 10_000;
-const MAX_CONTAINER_ENTRIES = 1_000;
-const MAX_STRING_BYTES = 64 * 1024;
+const MAX_DEPTH = GOVERNED_PLAN_CONTRACT_LIMITS.maxDepth;
+const MAX_NODES = GOVERNED_PLAN_CONTRACT_LIMITS.maxNodes;
+const MAX_CONTAINER_ENTRIES = GOVERNED_PLAN_CONTRACT_LIMITS.maxContainerEntries;
+const MAX_STRING_BYTES = GOVERNED_PLAN_CONTRACT_LIMITS.maxStringBytes;
 
 export class GovernedPlanContractError extends Error {
-  readonly code:
-    | 'GOVERNED_PLAN_INVALID'
-    | 'GOVERNED_PLAN_LIMIT_EXCEEDED'
-    | 'GOVERNED_PLAN_BINDING_MISMATCH';
+  readonly code: (typeof GOVERNED_PLAN_CONTRACT_ERROR_CODES)[number];
   readonly path: string;
 
   constructor(code: GovernedPlanContractError['code'], message: string, path = '$') {
@@ -259,7 +288,7 @@ function sanitizeJson(
     if (typeof key !== 'string' || FORBIDDEN_KEYS.has(key)) {
       return fail('GOVERNED_PLAN_INVALID', 'Object contains a forbidden key.', path);
     }
-    if (Buffer.byteLength(key, 'utf8') > 256) {
+    if (Buffer.byteLength(key, 'utf8') > GOVERNED_PLAN_CONTRACT_LIMITS.maxObjectKeyBytes) {
       return fail('GOVERNED_PLAN_LIMIT_EXCEEDED', 'Object key is too long.', pointer(path, key));
     }
     output[key] = sanitizeJson(
@@ -298,7 +327,11 @@ export function hashGovernedValue(value: unknown): string {
 }
 
 export function hashOpaqueValue(value: string): string {
-  if (typeof value !== 'string' || value.length < 16 || value.length > 4_096) {
+  if (
+    typeof value !== 'string' ||
+    value.length < GOVERNED_PLAN_CONTRACT_LIMITS.minOpaqueBindingCharacters ||
+    value.length > GOVERNED_PLAN_CONTRACT_LIMITS.maxOpaqueBindingCharacters
+  ) {
     return fail('GOVERNED_PLAN_INVALID', 'Opaque binding value is outside allowed bounds.');
   }
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -323,6 +356,18 @@ function requireString(
     return fail('GOVERNED_PLAN_INVALID', `${label} is invalid.`, `$.${label}`);
   }
   return value;
+}
+
+function requireOneOf<const Values extends readonly string[]>(
+  value: unknown,
+  label: string,
+  allowed: Values,
+): Values[number] {
+  const text = requireString(value, label);
+  if (!(allowed as readonly string[]).includes(text)) {
+    return fail('GOVERNED_PLAN_INVALID', `${label} is invalid.`, `$.${label}`);
+  }
+  return text as Values[number];
 }
 
 function requireTimestamp(value: unknown, label: string): string {
@@ -401,7 +446,9 @@ function validateEffect(value: GovernedJsonValue): GovernedPlanEffect {
   }) as GovernedPlanEffect['risk'];
   const result: GovernedPlanEffect = {
     type: requireString(effect.type, 'type', { pattern: SAFE_KIND }),
-    summary: requireString(effect.summary, 'summary', { maxBytes: 2_048 }),
+    summary: requireString(effect.summary, 'summary', {
+      maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxEffectSummaryBytes,
+    }),
     risk,
     ...(effect.target === undefined
       ? {}
@@ -430,19 +477,21 @@ export function createCanonicalGovernedPlan(
   exactKeys(sanitized, ['kind', 'goal', 'input', 'actions', 'effects'], 'plan');
   const actions = arrayValue(sanitized.actions!, 'actions').map(validateAction);
   const effects = arrayValue(sanitized.effects!, 'effects').map(validateEffect);
-  if (actions.length === 0 || actions.length > 32) {
+  if (actions.length === 0 || actions.length > GOVERNED_PLAN_CONTRACT_LIMITS.maxActions) {
     return fail(
       'GOVERNED_PLAN_LIMIT_EXCEEDED',
       'Governed plan must contain between 1 and 32 actions.',
     );
   }
-  if (effects.length > 64) {
+  if (effects.length > GOVERNED_PLAN_CONTRACT_LIMITS.maxEffects) {
     return fail('GOVERNED_PLAN_LIMIT_EXCEEDED', 'Governed plan has too many effects.');
   }
   return Object.freeze({
     schema: 'openslack.governed_action_plan.v1',
     kind: requireString(sanitized.kind, 'kind', { pattern: SAFE_KIND }),
-    goal: requireString(sanitized.goal, 'goal', { maxBytes: 4_096 }),
+    goal: requireString(sanitized.goal, 'goal', {
+      maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxGoalBytes,
+    }),
     input: sanitized.input!,
     actions: Object.freeze(actions),
     effects: Object.freeze(effects),
@@ -521,16 +570,18 @@ function validateBindings(value: GovernedJsonValue): GovernedPlanBindings {
 function validateOutcome(value: GovernedJsonValue): GovernedActionOutcome {
   const outcome = objectValue(value, 'outcome');
   assertClosedKeys(outcome, ['actionId', 'status', 'summary', 'data?', 'evidenceRefs'], 'outcome');
-  const status = requireString(outcome.status, 'status', {
-    pattern: /^(?:succeeded|blocked|failed)$/,
-  }) as GovernedExecutionStatus;
+  const status = requireOneOf(outcome.status, 'status', GOVERNED_EXECUTION_STATUSES);
   const evidenceRefs = arrayValue(outcome.evidenceRefs!, 'evidenceRefs').map((item) =>
-    requireString(item, 'evidenceRef', { maxBytes: 2_048 }),
+    requireString(item, 'evidenceRef', {
+      maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxEvidenceRefBytes,
+    }),
   );
   return Object.freeze({
     actionId: requireString(outcome.actionId, 'actionId', { pattern: SAFE_KIND }),
     status,
-    summary: requireString(outcome.summary, 'summary', { maxBytes: 4_096 }),
+    summary: requireString(outcome.summary, 'summary', {
+      maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxSummaryBytes,
+    }),
     ...(outcome.data === undefined ? {} : { data: outcome.data }),
     evidenceRefs: Object.freeze(evidenceRefs),
   });
@@ -561,10 +612,18 @@ function validateExecution(value: GovernedJsonValue): GovernedPlanExecution {
     outcomes: Object.freeze(arrayValue(execution.outcomes!, 'outcomes').map(validateOutcome)),
     ...(execution.blocker === undefined
       ? {}
-      : { blocker: requireString(execution.blocker, 'blocker', { maxBytes: 4_096 }) }),
+      : {
+          blocker: requireString(execution.blocker, 'blocker', {
+            maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxSummaryBytes,
+          }),
+        }),
     ...(execution.failure === undefined
       ? {}
-      : { failure: requireString(execution.failure, 'failure', { maxBytes: 4_096 }) }),
+      : {
+          failure: requireString(execution.failure, 'failure', {
+            maxBytes: GOVERNED_PLAN_CONTRACT_LIMITS.maxSummaryBytes,
+          }),
+        }),
   });
 }
 
@@ -597,10 +656,7 @@ export function validateGovernedPlanRecord(value: unknown): GovernedPlanRecord {
   ) {
     return fail('GOVERNED_PLAN_INVALID', 'Record revision is invalid.');
   }
-  const state = requireString(record.state, 'state', {
-    pattern:
-      /^(?:pending|executing|succeeded|blocked|failed|reconciliation_required|cancelled|expired)$/,
-  }) as GovernedPlanState;
+  const state = requireOneOf(record.state, 'state', GOVERNED_PLAN_STATES);
   const canonicalPlan = validateCanonicalPlan(record.canonicalPlan!);
   const bindings = validateBindings(record.bindings!);
   if (!opaqueHashesEqual(bindings.inputHash, hashGovernedValue(canonicalPlan.input))) {
@@ -611,20 +667,35 @@ export function validateGovernedPlanRecord(value: unknown): GovernedPlanRecord {
   }
   const execution =
     record.execution === undefined ? undefined : validateExecution(record.execution);
-  if (state === 'pending' && execution !== undefined) {
-    return fail('GOVERNED_PLAN_INVALID', 'Pending plan cannot have execution state.');
-  }
-  if (state === 'executing' && (!execution || execution.completedAt !== undefined)) {
-    return fail('GOVERNED_PLAN_INVALID', 'Executing plan must have an open execution.');
-  }
-  if (
-    ['succeeded', 'blocked', 'failed', 'reconciliation_required'].includes(state) &&
-    (!execution || execution.completedAt === undefined)
-  ) {
-    return fail('GOVERNED_PLAN_INVALID', 'Terminal execution state is incomplete.');
-  }
-  if (['cancelled', 'expired'].includes(state) && execution !== undefined) {
-    return fail('GOVERNED_PLAN_INVALID', 'Non-executed terminal plan cannot have execution.');
+  switch (state) {
+    case 'pending':
+      if (execution !== undefined) {
+        return fail('GOVERNED_PLAN_INVALID', 'Pending plan cannot have execution state.');
+      }
+      break;
+    case 'executing':
+      if (!execution || execution.completedAt !== undefined) {
+        return fail('GOVERNED_PLAN_INVALID', 'Executing plan must have an open execution.');
+      }
+      break;
+    case 'succeeded':
+    case 'blocked':
+    case 'failed':
+    case 'reconciliation_required':
+      if (!execution || execution.completedAt === undefined) {
+        return fail('GOVERNED_PLAN_INVALID', 'Terminal execution state is incomplete.');
+      }
+      break;
+    case 'cancelled':
+    case 'expired':
+      if (execution !== undefined) {
+        return fail('GOVERNED_PLAN_INVALID', 'Non-executed terminal plan cannot have execution.');
+      }
+      break;
+    default: {
+      const exhaustive: never = state;
+      return exhaustive;
+    }
   }
   return Object.freeze({
     schema: 'openslack.governed_plan.v1',
