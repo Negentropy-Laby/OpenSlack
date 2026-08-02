@@ -356,7 +356,7 @@ modules:
       - test:packages/organization-graph/src/__tests__/read-authority-http.test.ts
       - test:services/organization-graph/internal/app/gs3c_cross_language_test.go
       - repo:.github/workflows/notification-delivery-service.yml
-      - commit:eca368e6b12d7138bf72bb20abc249e24bc05f1d
+      - commit:7a9709cd4cc158c3214545ddfbc77ab6b1ea749c
       - test:packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - repo:packages/workflows/contracts/workflow-control/v1/manifest.json
       - test:services/workflow-control/golden_vectors_test.go
