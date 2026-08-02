@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -10,6 +11,17 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/shadowstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/governance-control/internal/testsupport"
 )
+
+func TestPlanLockKeyIsPostgresTextSafeAndCollisionFree(t *testing.T) {
+	left := planLockKey(shadowstore.Source{WorkspaceID: "ab", PlanID: "c"})
+	right := planLockKey(shadowstore.Source{WorkspaceID: "a", PlanID: "bc"})
+	if left == right {
+		t.Fatalf("composite identities collided: %q", left)
+	}
+	if strings.ContainsRune(left, '\x00') || strings.ContainsRune(right, '\x00') {
+		t.Fatalf("plan advisory lock key contains a PostgreSQL-forbidden NUL")
+	}
+}
 
 func TestCommittedResponseLossRecoversDurableReceipt(t *testing.T) {
 	pool := testsupport.Open(t)

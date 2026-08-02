@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -305,13 +306,21 @@ func lockScope(ctx context.Context, tx pgx.Tx, key string, source shadowstore.So
 		operation string
 	}{
 		{key, idempotencyLockSalt, "lock idempotency key"},
-		{source.WorkspaceID + "\x00" + source.PlanID, planLockSalt, "lock shadow plan"},
+		{planLockKey(source), planLockSalt, "lock shadow plan"},
 	} {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,$2))`, lock.value, lock.salt); err != nil {
 			return databaseFailure(lock.operation, err)
 		}
 	}
 	return nil
+}
+
+// planLockKey is a collision-free, PostgreSQL-text-safe encoding of the
+// authoritative composite identity. PostgreSQL text values cannot carry NUL,
+// so the wire value must not reuse the in-memory NUL separator convention.
+func planLockKey(source shadowstore.Source) string {
+	return strconv.Itoa(len(source.WorkspaceID)) + ":" + source.WorkspaceID +
+		strconv.Itoa(len(source.PlanID)) + ":" + source.PlanID
 }
 
 func (repository *Repository) resolveCommitOutcome(prepared shadowstore.PreparedObservation, input shadowstore.ObserveInput, fingerprint [sha256.Size]byte, commitErr error) (shadowstore.Receipt, error) {
