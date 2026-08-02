@@ -332,7 +332,8 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('GOVERNANCE_GS5_QUALIFICATION=1');
     expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=seed');
     expect(log).toContain('GOVERNANCE_GS5_RESTART_PHASE=verify');
-    expect(log).toContain('GOVERNANCE_GS5_SMOKE_ORIGIN=http://openslack-gocheck-');
+    expect(log).toContain('--network-alias application');
+    expect(log).toContain('GOVERNANCE_GS5_SMOKE_ORIGIN=http://application:8080');
     expect(goCheckSource).toContain('local restart_token="${run_token,,}"');
     const restartSchemas = [
       ...log.matchAll(/GOVERNANCE_GS5_RESTART_SCHEMA=(governance_control_gs5_restart_[a-z0-9]+)/gu),

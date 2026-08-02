@@ -1128,6 +1128,7 @@ run_http_smoke() {
   local runtime_profile="$6"
   local resource_owner="$7"
   local app_container="${resource_prefix}-app"
+  local app_network_alias="application"
   local -a run_args=(
     run -d
     --pull=never
@@ -1140,6 +1141,7 @@ run_http_smoke() {
   if ((has_database)); then
     run_args+=(
       --network "${network}"
+      --network-alias "${app_network_alias}"
       --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
       --env MIGRATION_SOURCE=/migrations
     )
@@ -1179,7 +1181,7 @@ run_http_smoke() {
     log "verifying Governance Control image health and version responses"
     run_governance_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
-      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_container}:8080"
+      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_network_alias}:8080"
   fi
 }
 
