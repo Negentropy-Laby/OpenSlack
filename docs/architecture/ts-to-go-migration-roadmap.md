@@ -225,11 +225,31 @@ release, or production authority.
 
 ### GS4–GS6 — Governance Control
 
-Freeze the runtime governed-plan contract under
-`.openslack.local/operator/governed-plans`, shadow plan and confirmation state,
-then move Qoder mutation acceptance to Go receipts. The project Memory Bank is
-not part of the runtime plan store and grants no mutation authority to the Go
-service.
+GS4 freezes the runtime governed-plan contract under
+`.openslack.local/operator/governed-plans`. GS5 adds a separate PostgreSQL Go
+shadow for TypeScript-authored record, confirmation, and audit observations.
+Its closed envelope binds `authority: typescript`, workspace, plan, and a
+TypeScript-issued `sourceSequence`; exact canonical bytes determine the
+idempotency key and a method/path/source/body binding determines the request
+fingerprint. Confirmation observations carry only the presented token hash and
+current binding hashes. Raw confirmation capabilities never cross the shadow
+boundary.
+
+The GS5 shadow recomputes state, confirmation, audit, and correlation parity,
+persists immutable observations and receipts, survives PostgreSQL and process
+restart, and exposes bounded internal health, version, metrics, observation,
+and projection routes. Its result is observational: shadow failure, mismatch,
+or reconciliation cannot change the TypeScript response, runtime record,
+approval state, audit decision, or action effect. `@openslack/operator` remains
+the only writer, compiler, confirmation authority, execution claimant, mutation
+dispatcher, and audit emitter.
+
+GS6 remains the separately reviewed step that may move Qoder mutation
+acceptance to Go durable receipts and stop the TypeScript writer for an exact
+routed record. The project Memory Bank is not part of the runtime plan store and
+grants no mutation authority to the Go service. GS5 does not establish GS6,
+Qoder mutation cutover, authenticated Desktop, `QODER_VERIFIED`, live,
+release, or production evidence.
 
 ### GS7–GS9 — Workflow Control
 

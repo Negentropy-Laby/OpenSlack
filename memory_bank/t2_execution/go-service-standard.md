@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-07-30
+updated: 2026-08-02
 sources:
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
   - memory_bank/t2_execution/technical-preferences.md
@@ -244,6 +244,12 @@ approval evidence separately. A passing local wrapper does not establish
 hosted CI. A green service CI does not establish deployment, runtime admission,
 Qoder Desktop qualification, `QODER_VERIFIED`, release, or production
 readiness.
+
+A Governance Control GS5 receipt is durable evidence for a TypeScript-authored
+shadow observation only. Its `accepted`, `duplicate`, or
+`reconciliation_required` result does not grant Go confirmation, execution,
+mutation, audit-decision, Qoder, or single-writer authority and cannot be cited
+as GS6 durable mutation acceptance.
 
 New service work must not modify Notification Delivery's existing stage,
 batch, review archive, or service history. Reused patterns are requalified for

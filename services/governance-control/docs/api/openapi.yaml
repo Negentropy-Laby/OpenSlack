@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: OpenSlack Governance Control Shadow API
+  version: 1.0.0
+  description: >-
+    Private GS5 observation service. TypeScript remains the sole governed-plan
+    writer, confirmation authority, execution claimant, mutation dispatcher,
+    and authoritative audit emitter. This API accepts exact canonical JSON plus
+    LF and grants no action or workflow authority.
+servers:
+  - url: http://127.0.0.1:8080
+x-openslack-authority: typescript
+x-openslack-network-modes: [loopback, internal]
+x-openslack-max-request-bytes: 2097152
+paths:
+  /v1/shadow/governance/observations:
+    post:
+      operationId: observeGovernanceShadow
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservationEnvelope'
+      responses:
+        '201': { description: Durable accepted observation, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
+        '200': { description: Original durable receipt returned as duplicate, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
+        '202': { description: Commit result requires reconciliation and is not success, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/Unprocessable' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /v1/shadow/governance/plans/{planId}/projection:
+    get:
+      operationId: getGovernanceShadowProjection
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/PlanId' }
+        - name: X-OpenSlack-Workspace-ID
+          in: header
+          required: true
+          schema: { $ref: '#/components/schemas/Identifier' }
+      responses:
+        '200': { description: Credential-free recomputed projection, content: { application/json: { schema: { $ref: '#/components/schemas/Projection' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /health/live:
+    get:
+      operationId: governanceShadowLive
+      responses: { '200': { description: Process live } }
+  /health/ready:
+    get:
+      operationId: governanceShadowReady
+      responses: { '200': { description: Database and schema ready }, '503': { description: Not ready } }
+  /health/version:
+    get:
+      operationId: governanceShadowVersion
+      responses: { '200': { description: Build and contract version } }
+  /metrics:
+    get:
+      operationId: governanceShadowMetrics
+      responses: { '200': { description: Low-cardinality Prometheus metrics }, '503': { description: Metrics unavailable } }
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Deterministic openslack.governance-shadow.v1 prefix plus lowercase SHA-256 of the exact canonical body bytes.
+      schema: { type: string, pattern: '^openslack\.governance-shadow\.v1\.[0-9a-f]{64}$' }
+  schemas:
+    Source:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, planId, sourceSequence]
+      properties:
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        sourceSequence: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    RecordObservation:
+      type: object
+      additionalProperties: false
+      required: [kind, expectedRevision, record]
+      properties:
+        kind: { const: record }
+        expectedRevision: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        record:
+          $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan.v1.schema.json'
+    CurrentBindings:
+      type: object
+      additionalProperties: false
+      required: [sourceVersionHash, permissionSnapshotHash, actionCatalogHash, executorBindingHash, buildNonceHash, processNonceHash]
+      properties:
+        sourceVersionHash: { $ref: '#/components/schemas/Hash' }
+        permissionSnapshotHash: { $ref: '#/components/schemas/Hash' }
+        actionCatalogHash: { $ref: '#/components/schemas/Hash' }
+        executorBindingHash: { $ref: '#/components/schemas/Hash' }
+        buildNonceHash: { $ref: '#/components/schemas/Hash' }
+        processNonceHash: { $ref: '#/components/schemas/Hash' }
+    ConfirmationObservation:
+      type: object
+      additionalProperties: false
+      required: [kind, attemptId, recordRevision, attemptedAt, actorId, workspaceId, presentedTokenHash, authorityOutcome]
+      properties:
+        kind: { const: confirmation }
+        attemptId: { type: string, pattern: '^GCONF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+        recordRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        attemptedAt: { type: string, pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' }
+        actorId: { $ref: '#/components/schemas/Identifier' }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        presentedTokenHash: { $ref: '#/components/schemas/Hash' }
+        currentBindings: { $ref: '#/components/schemas/CurrentBindings' }
+        authorityOutcome:
+          enum: [claim_eligible, confirmation_rejected, binding_changed, expired, state_invalid, execution_active, aborted_before_claim]
+      oneOf:
+        - required: [currentBindings]
+          properties:
+            authorityOutcome: { enum: [claim_eligible, binding_changed, aborted_before_claim] }
+        - properties:
+            authorityOutcome: { enum: [confirmation_rejected, expired, state_invalid, execution_active] }
+          not:
+            required: [currentBindings]
+    AuditObservation:
+      type: object
+      additionalProperties: false
+      required: [kind, recordRevision, recordHash, event]
+      properties:
+        kind: { const: audit }
+        recordRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        event:
+          $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan-audit.v1.schema.json'
+    ObservationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [schema, authority, source, observation]
+      properties:
+        schema: { const: openslack.governance_shadow_observation.v1 }
+        authority: { const: typescript }
+        source: { $ref: '#/components/schemas/Source' }
+        observation:
+          oneOf:
+            - $ref: '#/components/schemas/RecordObservation'
+            - $ref: '#/components/schemas/ConfirmationObservation'
+            - $ref: '#/components/schemas/AuditObservation'
+    Hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+    Identifier: { type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$' }
+    PlanId: { type: string, pattern: '^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+    ProjectionCounters:
+      type: object
+      additionalProperties: false
+      required: [matched, mismatched]
+      properties:
+        matched: { type: integer, minimum: 0 }
+        mismatched: { type: integer, minimum: 0 }
+    Projection:
+      type: object
+      additionalProperties: false
+      required: [schema, authority, shadow, parity, workspaceId, planId, sourceSequence, matchedRecordRevision, record, observations, confirmation, audit]
+      properties:
+        schema: { const: openslack.governance_shadow_projection.v1 }
+        authority: { const: typescript }
+        shadow: { const: go }
+        parity: { enum: [matched, mismatched] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        sourceSequence: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        matchedRecordRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        record:
+          $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan-read-model.v1.schema.json'
+        observations: { $ref: '#/components/schemas/ProjectionCounters' }
+        confirmation: { $ref: '#/components/schemas/ProjectionCounters' }
+        audit: { $ref: '#/components/schemas/ProjectionCounters' }
+    Receipt:
+      type: object
+      additionalProperties: false
+      required: [schema, operation, status, parity, idempotencyKey, requestFingerprint, workspaceId, planId, sourceSequence, observationKind, observationDigest]
+      properties:
+        schema: { const: openslack.governance_shadow_receipt.v1 }
+        operation: { const: observation_ingest }
+        status: { enum: [accepted, duplicate, reconciliation_required] }
+        parity: { enum: [matched, mismatched, unknown] }
+        idempotencyKey: { type: string, pattern: '^openslack\.governance-shadow\.v1\.[0-9a-f]{64}$' }
+        requestFingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        workspaceId: { type: string }
+        planId: { type: string }
+        sourceSequence: { type: integer }
+        observationKind: { enum: [record, confirmation, audit] }
+        observationDigest: { $ref: '#/components/schemas/Hash' }
+        mismatchCode: { type: string }
+        committedAt: { type: string, format: date-time }
+        reconciliationToken: { type: string }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { const: openslack.governance_shadow_error.v1 }
+        code: { type: string }
+        message: { type: string }
+  responses:
+    NotFound: { description: Projection not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: Sequence CAS or global idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Timeout: { description: Shared observation request deadline expired, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    TooLarge: { description: Frozen request or response bound exceeded, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Unprocessable: { description: 'Strict JSON, canonical byte, schema, or semantic validation failed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Unavailable: { description: PostgreSQL unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Internal: { description: Unknown result; caller must retain the same Idempotency-Key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

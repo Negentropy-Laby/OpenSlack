@@ -29,3 +29,15 @@ Thumbs.db
 
 # Local agent state
 .claude/
+
+# Aby Assistant local state — never commit (contains local userID, sessions, prompts, secrets)
+.aby/.aby.json
+.aby/settings.local.json
+.aby/backups/
+.aby/debug/
+.aby/dump-prompts/
+.aby/projects/
+.aby/sessions/
+.aby/shell-snapshots/
+.aby/history.jsonl
+.aby/file-history/

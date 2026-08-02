@@ -1,0 +1,83 @@
+{
+  "schema": "openslack.governance_control_source.v2",
+  "status": "REPOSITORY_SOURCE_INPUT_UNRELEASED",
+  "service": {
+    "goModule": "github.com/Negentropy-Laby/OpenSlack/services/governance-control",
+    "targetPath": "services/governance-control",
+    "migrationPhase": "GS5",
+    "runtimeProfile": "governance-control-v1",
+    "authority": "TYPESCRIPT_GOVERNED_PLAN_AUTHORITY_GO_CREDENTIAL_FREE_SHADOW"
+  },
+  "containerInputs": {
+    "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+    "builderImage": "golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+    "runtimeImage": "debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+    "postgresImage": "postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a",
+    "prometheusImage": "prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893",
+    "goVersion": "1.26.5"
+  },
+  "sourceInputs": {
+    "dockerfile": {
+      "path": "services/governance-control/Dockerfile",
+      "sha256": "9bdac3043e992f42035fef03ab3bf1193db0a02a44739f3934fa4e880e853012"
+    },
+    "goMod": {
+      "path": "services/governance-control/go.mod",
+      "sha256": "4a006c847e1b9c260671a46ebf0dd8793bd593699be56b12316b731b2c973d2d"
+    },
+    "goSum": {
+      "path": "services/governance-control/go.sum",
+      "sha256": "5928913791b8b595ecdc0a084e9a822a62b0231fb77441185525d30da287ef64"
+    }
+  },
+  "contractInputs": {
+    "governedPlanManifest": {
+      "path": "packages/operator/contracts/governed-plan/v1/manifest.json",
+      "sha256": "4257748ba9eb26fadef6b0ac3706804d1e6e6dfcb70e46fe2ef6b06c56abcf8a"
+    },
+    "governanceShadowManifest": {
+      "path": "packages/operator/contracts/governed-plan-shadow/v1/manifest.json",
+      "sha256": "f6fc7d218486691e1583f28529f35d45f9763d72d7b124b2f32d460817f49b77"
+    },
+    "openapi": {
+      "path": "services/governance-control/docs/api/openapi.yaml",
+      "sha256": "d80e990a7cfe80b4307bd79e1b22e440fe76f49135690d3bd991793bf854bbbe"
+    }
+  },
+  "legalInputs": {
+    "license": {
+      "path": "services/governance-control/LICENSE",
+      "sha256": "04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+    },
+    "notice": {
+      "path": "services/governance-control/NOTICE",
+      "sha256": "ff02058c8ce171cef8b0225ad830662c3af27b07ef038425f1535d84d218bb8a"
+    },
+    "thirdPartyNotices": {
+      "path": "services/governance-control/THIRD_PARTY_NOTICES.md",
+      "sha256": "b40ade6eaff51447a2a078b11244518bc0abbca8e2f3e73d8a1feef0a6ad9583",
+      "productionModuleCount": 12
+    },
+    "repositorySbomInput": {
+      "path": "services/governance-control/SBOM.cdx.json",
+      "sha256": "48aec8c8337eb447642516e74bfaf8c1b69ac4afedfd0c34dea5f295d0cc912e",
+      "scope": "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS",
+      "attestation": "UNSIGNED"
+    }
+  },
+  "scope": {
+    "authorizes": ["DURABLE_GOVERNANCE_SHADOW_OBSERVATION", "CREDENTIAL_FREE_PARITY_PROJECTION"],
+    "nonClaims": [
+      "RELEASE",
+      "REGISTRY_INCLUSION",
+      "SIGNED_PROVENANCE",
+      "GOVERNED_PLAN_WRITE_AUTHORITY",
+      "CONFIRMATION_AUTHORITY",
+      "EXECUTION_AUTHORITY",
+      "WORKFLOW_MUTATION_AUTHORITY",
+      "LIVE_VERIFIED",
+      "QODER_VERIFIED",
+      "PRODUCTION"
+    ]
+  }
+}

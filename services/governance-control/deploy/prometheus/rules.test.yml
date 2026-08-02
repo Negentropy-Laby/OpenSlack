@@ -1,0 +1,47 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: reconciliation_fires_after_ten_minutes
+    interval: 15s
+    input_series:
+      - series: 'openslack_governance_shadow_reconciliation_pending{job="openslack_governance_shadow",instance="app:8080"}'
+        values: '1+0x44'
+    alert_rule_test:
+      - eval_time: 9m45s
+        alertname: GovernanceShadowReconciliationRequired
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: GovernanceShadowReconciliationRequired
+        exp_alerts:
+          - exp_labels:
+              alertname: GovernanceShadowReconciliationRequired
+              instance: app:8080
+              job: openslack_governance_shadow
+              severity: warning
+            exp_annotations:
+              summary: Governance shadow has an ambiguous observation result
+              description: Inspect the durable reconciliation receipt before replaying with the same idempotency key.
+
+  - name: unavailability_fires_after_five_minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="openslack_governance_shadow",instance="app:8080"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 4m45s
+        alertname: GovernanceShadowUnavailable
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: GovernanceShadowUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: GovernanceShadowUnavailable
+              instance: app:8080
+              job: openslack_governance_shadow
+              severity: critical
+            exp_annotations:
+              summary: Governance shadow metrics endpoint is unavailable
+              description: Check PostgreSQL readiness, migration state, and the private service health endpoints.

@@ -10,12 +10,15 @@ updated: 2026-08-02
 sources:
   - docs/architecture/ts-to-go-migration-roadmap.md
   - packages/operator/contracts/governed-plan/v1/manifest.json
+  - packages/operator/src/governed-plan-shadow.ts
+  - services/governance-control/docs/api/openapi.yaml
 ---
 
 # Governance Control Contract
 
-Status: GS4 contract freeze and credential-free Go read model implemented; GS5 shadow state and
-GS6 mutation receipts are not implemented.
+Status: GS4 contract freeze and credential-free Go read model implemented; GS5 adds a durable Go
+shadow for TypeScript-authored plan, confirmation, and audit observations. GS6 mutation receipts
+and authority transfer are not implemented.
 
 ## Authority boundary
 
@@ -27,9 +30,10 @@ claim owner, and mutation dispatcher. The runtime store remains:
 ```
 
 Memory Bank is governance and documentation context. It is not a runtime plan store and grants no
-mutation authority. `services/governance-control` is currently a pure Go module: it has no
-filesystem store, database, HTTP server, credential, Qoder, GitHub, Workflow, or action-execution
-capability.
+mutation authority. The GS5 `services/governance-control` runtime has a separate PostgreSQL shadow
+namespace and bounded internal HTTP observation route. It has no credential, Qoder, GitHub,
+Workflow, confirmation-capability, or action-execution authority. A shadow receipt records only
+observational acceptance and parity; it cannot authorize or complete a governed mutation.
 
 ## Frozen v1 artifacts
 
@@ -123,14 +127,58 @@ does not disclose or recreate that capability. The Go `Record` is opaque, and pr
 revalidates its private canonical root before setting this flag, so callers cannot construct an
 unvalidated record that claims a confirmation binding.
 
+## GS5 durable shadow
+
+The TypeScript authority emits a closed `openslack.governance_shadow_observation.v1` envelope with
+`authority: typescript`. Each envelope binds one canonical `record`, `confirmation`, or `audit`
+observation to the exact workspace, plan, and positive `sourceSequence`. TypeScript remains the
+only sequence issuer. Go accepts no caller-selected authority and does not read the authoritative
+runtime plan store.
+
+The idempotency key is derived from the exact canonical envelope bytes. The request fingerprint
+additionally binds the HTTP method and path, TypeScript authority, workspace, plan, source sequence,
+and exact body. Same-key/same-fingerprint replay returns the original durable shadow receipt;
+same-key/different-fingerprint and sequence gaps fail closed. A semantic transition or parity
+mismatch is durably accepted as observational evidence with `parity: mismatched` and a bounded
+code, without advancing the matched record head. `reconciliation_required` is reserved for an
+unknown database commit outcome and never means that parity was evaluated as mismatched.
+
+Confirmation observations contain only `presentedTokenHash`, the TypeScript authority outcome, and
+the bounded current binding hashes needed for differential recomputation. The raw confirmation
+capability is forbidden from the envelope, HTTP configuration, receipts, projections, logs, and
+durable shadow rows. Go can report whether its recomputation matches TypeScript; it cannot consume
+the capability, claim execution, or dispatch an action.
+Confirmation observations are decision-sequence evidence: `claim_eligible` may precede the
+TypeScript execution-claim CAS and never asserts that execution authority was acquired.
+
+The TypeScript observation port journals source-ordered canonical envelopes outside the runtime
+plan store and publishes them asynchronously. Shadow unavailability, timeout, mismatch, response
+loss, or journal recovery never changes the TypeScript user response, authoritative record,
+approval state, audit decision, or external effect. Restart recovery replays only the observation
+journal and surfaces durable Go shadow receipts; it does not retry a governed mutation.
+When a process observes a confirmation or audit for a newer record revision, the journal places
+that validated record prerequisite first and coalesces record revisions already journaled by
+another process. This keeps dependent observations behind their record across process races.
+The projection endpoint reads its head, matched record, and parity counts in one PostgreSQL
+statement so every response represents one coherent database snapshot.
+
 ## Qualification and evidence ceiling
 
 `bun run governance:golden -- --check` regenerates the TypeScript authority in memory and rejects
 stale or unexpected generated files. Go golden tests replay canonicalization, hashing, opaque-hash
 comparison, all eight states, calendar-overflow v1 timestamps, read projections, binding drift,
 canonical byte envelopes, audit types, opaque bounds, and invalid state.
-The reviewed Go workspace verifier classifies this module as `capabilities=pure`.
 
-Passing these gates proves a local contract/read-model implementation only. It does not prove a Go
-durable store, shadow plan state, Qoder mutation acceptance, remote MCP, authenticated Desktop,
-release, live, or production readiness.
+The reviewed Go workspace verifier classifies this module as
+`capabilities=database,distribution,http-openapi,prometheus` with runtime profile
+`governance-control-v1`. Its GS5 qualification uses an isolated PostgreSQL database and network,
+replays idempotency/fingerprint, OCC, confirmation, expiry/drift, audit correlation, conflict,
+response-loss, and reconciliation cases, then restarts PostgreSQL on the same owned volume and
+verifies durable state from a new process. The built image must pass exact live, ready, and version
+response smoke in addition to OpenAPI, Prometheus, SBOM/source-manifest, image, and common race
+gates.
+
+Passing these gates proves only a local or hosted GS5 durable shadow, according to where they ran.
+It does not prove Go mutation acceptance, a second or replacement writer, GS6 durable mutation
+receipts, Qoder mutation cutover, authenticated Desktop, `QODER_VERIFIED`, remote MCP, release,
+live, or production readiness.
