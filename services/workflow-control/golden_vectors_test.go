@@ -73,7 +73,7 @@ func TestTypeScriptGoldenVectors(t *testing.T) {
 		"valid-projection", "terminal-run-projection", "invalid-schema", "invalid-status",
 		"invalid-terminal-transition", "legacy-run-gate-is-not-effect-approval",
 		"secret-like-raw-field-rejected", "phase-bound-enforced",
-		"valid-observation-full-sha256",
+		"valid-observation-full-sha256", "unicode-control-and-number-edge-sha256",
 	}
 	actualIDs := make([]string, 0, len(golden.Cases))
 	for _, testCase := range golden.Cases {
@@ -115,6 +115,13 @@ func TestTypeScriptGoldenVectors(t *testing.T) {
 				if actual != expected {
 					t.Fatalf("got %s, want %s", actual, expected)
 				}
+				canonical, err := CanonicalObservationBytes(observation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := parseStrictJSON(canonical, MaxJSONDepth, MaxJSONNodes); err != nil {
+					t.Fatalf("canonical bytes are not strict JSON: %v\n%s", err, canonical)
+				}
 			case "transition":
 				var input struct {
 					From RunState `json:"from"`
@@ -154,5 +161,50 @@ func TestStrictJSONAndCredentialBoundary(t *testing.T) {
 	}
 	if _, err := ValidateObservationJSON([]byte(`{"schema":"openslack.workflow_control_observation.v1","args":{}}`)); contractError(t, err).Code != ErrorSensitiveField {
 		t.Fatalf("sensitive field error: %v", err)
+	}
+	loneSurrogate := bytes.Replace(base, []byte(`"contract-delivery-lite"`), []byte(`"\ud800"`), 1)
+	if _, err := ValidateObservationJSON(loneSurrogate); contractError(t, err).Code != ErrorInvalid {
+		t.Fatalf("lone surrogate error: %v", err)
+	}
+}
+
+func TestObservationRequiredAndNullShape(t *testing.T) {
+	base := loadGolden(t).Cases[0].Input
+	tests := []struct {
+		name string
+		edit func(map[string]any)
+		path string
+	}{
+		{"missing-current-phase", func(value map[string]any) { delete(value, "currentPhase") }, "$/currentPhase"},
+		{"null-phases", func(value map[string]any) { value["phases"] = nil }, "$/phases"},
+		{"null-budget", func(value map[string]any) { value["budget"] = nil }, "$/budget"},
+		{"missing-nullable-phase-hash", func(value map[string]any) {
+			delete(value["phases"].([]any)[0].(map[string]any), "resultHash")
+		}, "$/phases/0/resultHash"},
+		{"missing-zero-approval-count", func(value map[string]any) {
+			approvals := value["approvals"].(map[string]any)
+			legacy := approvals["legacyRunGate"].(map[string]any)
+			delete(legacy["counts"].(map[string]any), "rejected")
+		}, "$/approvals/legacyRunGate/counts/rejected"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			var value map[string]any
+			decoder := json.NewDecoder(bytes.NewReader(base))
+			decoder.UseNumber()
+			if err := decoder.Decode(&value); err != nil {
+				t.Fatal(err)
+			}
+			testCase.edit(value)
+			input, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ValidateObservationJSON(input)
+			actual := contractError(t, err)
+			if actual.Code != ErrorInvalid || actual.Path != testCase.path {
+				t.Fatalf("got %s at %s, want %s at %s", actual.Code, actual.Path, ErrorInvalid, testCase.path)
+			}
+		})
 	}
 }

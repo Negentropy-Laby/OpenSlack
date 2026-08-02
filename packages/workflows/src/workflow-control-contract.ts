@@ -83,6 +83,8 @@ export const WORKFLOW_CONTROL_QUALIFICATION_GAPS = Object.freeze([
 
 export const WORKFLOW_CONTROL_CONTRACT_LIMITS = Object.freeze({
   maxObservationBytes: 256 * 1024,
+  maxJsonDepth: 16,
+  maxJsonNodes: 4_096,
   maxIdentifierBytes: 256,
   maxWorkflowNameBytes: 512,
   maxPhaseNameBytes: 512,
@@ -92,6 +94,21 @@ export const WORKFLOW_CONTROL_CONTRACT_LIMITS = Object.freeze({
   maxTokens: Number.MAX_SAFE_INTEGER,
   maxCostUsd: 1_000_000_000,
 } as const);
+
+export const WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS = Object.freeze([
+  'args',
+  'result',
+  'detail',
+  'capability',
+  'decision',
+  'evidence',
+  'attestationNonce',
+  'nonce',
+  'token',
+  'secret',
+  'prompt',
+  'output',
+] as const);
 
 export const WORKFLOW_CONTROL_CONTRACT_ERROR_CODES = Object.freeze([
   'WORKFLOW_CONTROL_INVALID',
@@ -216,20 +233,7 @@ type DataRecord = Record<string, unknown>;
 const HASH = /^[0-9a-f]{64}$/u;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-const SENSITIVE_RAW_FIELDS = new Set([
-  'args',
-  'result',
-  'detail',
-  'capability',
-  'decision',
-  'evidence',
-  'attestationNonce',
-  'nonce',
-  'token',
-  'secret',
-  'prompt',
-  'output',
-]);
+const SENSITIVE_RAW_FIELDS = new Set<string>(WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS);
 
 function fail(code: WorkflowControlContractErrorCode, path: string, message: string): never {
   throw new WorkflowControlContractError(code, path, message);
@@ -242,7 +246,38 @@ function assertInert(value: unknown, path: string): void {
   }
 }
 
-function rejectSensitiveRawFields(value: unknown, path = '$', seen = new Set<object>()): void {
+interface TraversalBudget {
+  nodes: number;
+}
+
+function validUnicodeScalarSequence(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!Number.isInteger(next) || next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function rejectSensitiveRawFields(
+  value: unknown,
+  path = '$',
+  seen = new Set<object>(),
+  depth = 1,
+  budget: TraversalBudget = { nodes: 0 },
+): void {
+  if (depth > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxJsonDepth) {
+    fail('WORKFLOW_CONTROL_LIMIT_EXCEEDED', path, 'JSON depth exceeds its limit.');
+  }
+  budget.nodes += 1;
+  if (budget.nodes > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxJsonNodes) {
+    fail('WORKFLOW_CONTROL_LIMIT_EXCEEDED', path, 'JSON node count exceeds its limit.');
+  }
   assertInert(value, path);
   if (typeof value !== 'object' || value === null) return;
   if (seen.has(value)) fail('WORKFLOW_CONTROL_INVALID', path, `${path} cannot contain cycles.`);
@@ -250,6 +285,13 @@ function rejectSensitiveRawFields(value: unknown, path = '$', seen = new Set<obj
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== 'string') {
       fail('WORKFLOW_CONTROL_INVALID', path, `${path} cannot contain symbol fields.`);
+    }
+    if (!validUnicodeScalarSequence(key)) {
+      fail(
+        'WORKFLOW_CONTROL_INVALID',
+        `${path}/${key}`,
+        'Field name contains an unpaired surrogate.',
+      );
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
@@ -262,7 +304,7 @@ function rejectSensitiveRawFields(value: unknown, path = '$', seen = new Set<obj
         `Raw field ${key} is forbidden; export only hashes or counts.`,
       );
     }
-    rejectSensitiveRawFields(descriptor.value, `${path}/${key}`, seen);
+    rejectSensitiveRawFields(descriptor.value, `${path}/${key}`, seen, depth + 1, budget);
   }
   seen.delete(value);
 }
@@ -335,6 +377,7 @@ function text(value: unknown, path: string, maximum: number, pattern?: RegExp): 
   if (
     typeof value !== 'string' ||
     value.length === 0 ||
+    !validUnicodeScalarSequence(value) ||
     Buffer.byteLength(value, 'utf8') > maximum ||
     (pattern !== undefined && !pattern.test(value))
   ) {

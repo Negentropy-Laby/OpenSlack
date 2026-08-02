@@ -32,13 +32,29 @@ type contractManifest struct {
 		BudgetWarningKinds                   []string                `json:"budgetWarningKinds"`
 	} `json:"observedBehavior"`
 	ApprovalPlanes     json.RawMessage `json:"approvalPlanes"`
-	ProjectionBoundary json.RawMessage `json:"projectionBoundary"`
-	Canonicalization   json.RawMessage `json:"canonicalization"`
-	Limits             json.RawMessage `json:"limits"`
-	QualificationGaps  []string        `json:"qualificationGaps"`
-	ErrorCodes         []ErrorCode     `json:"errorCodes"`
-	Deferred           json.RawMessage `json:"deferred"`
-	Artifacts          map[string]struct {
+	ProjectionBoundary struct {
+		CredentialFree                  bool     `json:"credentialFree"`
+		AllowedSensitiveRepresentations []string `json:"allowedSensitiveRepresentations"`
+		ForbiddenRawFields              []string `json:"forbiddenRawFields"`
+	} `json:"projectionBoundary"`
+	Canonicalization json.RawMessage `json:"canonicalization"`
+	Limits           struct {
+		MaxObservationBytes  int     `json:"maxObservationBytes"`
+		MaxJSONDepth         int     `json:"maxJsonDepth"`
+		MaxJSONNodes         int     `json:"maxJsonNodes"`
+		MaxIdentifierBytes   int     `json:"maxIdentifierBytes"`
+		MaxWorkflowNameBytes int     `json:"maxWorkflowNameBytes"`
+		MaxPhaseNameBytes    int     `json:"maxPhaseNameBytes"`
+		MaxPhaseCheckpoints  int     `json:"maxPhaseCheckpoints"`
+		MaxBudgetWarnings    int     `json:"maxBudgetWarnings"`
+		MaxCount             int     `json:"maxCount"`
+		MaxTokens            int64   `json:"maxTokens"`
+		MaxCostUSD           float64 `json:"maxCostUsd"`
+	} `json:"limits"`
+	QualificationGaps []string        `json:"qualificationGaps"`
+	ErrorCodes        []ErrorCode     `json:"errorCodes"`
+	Deferred          json.RawMessage `json:"deferred"`
+	Artifacts         map[string]struct {
 		Path       string `json:"path"`
 		ByteLength int    `json:"byteLength"`
 		SHA256     string `json:"sha256"`
@@ -65,6 +81,13 @@ func TestManifestAndExactMirrorParity(t *testing.T) {
 	}
 	if !reflect.DeepEqual(manifest.QualificationGaps, QualificationGaps()) {
 		t.Fatalf("qualification gap drift: %v", manifest.QualificationGaps)
+	}
+	expectedForbidden := []string{"args", "result", "detail", "capability", "decision", "evidence", "attestationNonce", "nonce", "token", "secret", "prompt", "output"}
+	if !manifest.ProjectionBoundary.CredentialFree || !reflect.DeepEqual(manifest.ProjectionBoundary.AllowedSensitiveRepresentations, []string{"sha256-hash", "status-count"}) || !reflect.DeepEqual(manifest.ProjectionBoundary.ForbiddenRawFields, expectedForbidden) {
+		t.Fatalf("projection boundary drift: %+v", manifest.ProjectionBoundary)
+	}
+	if manifest.Limits.MaxObservationBytes != MaxObservationBytes || manifest.Limits.MaxJSONDepth != MaxJSONDepth || manifest.Limits.MaxJSONNodes != MaxJSONNodes || manifest.Limits.MaxIdentifierBytes != MaxIdentifierBytes || manifest.Limits.MaxWorkflowNameBytes != MaxWorkflowNameBytes || manifest.Limits.MaxPhaseNameBytes != MaxPhaseNameBytes || manifest.Limits.MaxPhaseCheckpoints != MaxPhaseCheckpoints || manifest.Limits.MaxBudgetWarnings != MaxBudgetWarnings || manifest.Limits.MaxCount != MaxCount || manifest.Limits.MaxTokens != MaxTokens || manifest.Limits.MaxCostUSD != MaxCostUSD {
+		t.Fatalf("contract limit drift: %+v", manifest.Limits)
 	}
 	expectedErrors := []ErrorCode{ErrorInvalid, ErrorUnknownField, ErrorLimitExceeded, ErrorInvalidTransition, ErrorApprovalPlaneMismatch, ErrorSensitiveField}
 	if !reflect.DeepEqual(manifest.ErrorCodes, expectedErrors) {

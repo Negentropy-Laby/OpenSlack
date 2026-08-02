@@ -10,7 +10,7 @@
     "goRole": { "const": "credential-free-read-model-only" },
     "authorityEligible": { "const": false },
     "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
-    "workflowName": { "type": "string", "minLength": 1 },
+    "workflowName": { "type": "string", "minLength": 1, "maxLength": 512 },
     "mode": { "enum": ["validate", "preview", "dry-run", "execute"] },
     "status": {
       "enum": [
@@ -35,7 +35,9 @@
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
     },
     "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "currentPhase": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+    "currentPhase": {
+      "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+    },
     "terminal": { "type": "boolean" },
     "phaseCounts": {
       "type": "object",

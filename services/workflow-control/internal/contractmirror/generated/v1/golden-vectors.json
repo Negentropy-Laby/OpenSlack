@@ -2444,6 +2444,63 @@
         }
       },
       "expected": "fd9387195b64f80cea3842a7273ab188130bc8f274f2ee1ae2fe0024bf125514"
+    },
+    {
+      "id": "unicode-control-and-number-edge-sha256",
+      "operation": "hash",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "control-\u0000\u0007\u000b\u001f-😀",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "阶段-\u000b-😀",
+        "phases": [
+          {
+            "phase": "阶段-\u000b-😀",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1e-7,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.000001,
+              "costUsd": 1e-7
+            }
+          ]
+        }
+      },
+      "expected": "f2989217c5f6c6225dc23de0ea1034d961144cf6ed5921382f7bcc6c601945ed"
     }
   ]
 }

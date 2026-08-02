@@ -8,6 +8,7 @@ import {
   WORKFLOW_CONTROL_CONTRACT_LIMITS,
   WORKFLOW_CONTROL_DORMANT_STATES,
   WORKFLOW_CONTROL_EFFECT_APPROVAL_SCHEMA,
+  WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS,
   WORKFLOW_CONTROL_GO_ROLE,
   WORKFLOW_CONTROL_PRODUCTION_INITIAL_STATE,
   WORKFLOW_CONTROL_QUALIFICATION_GAPS,
@@ -112,6 +113,7 @@ describe('Workflow Control GS7-A contract freeze', () => {
       qualificationGaps: unknown;
       limits: unknown;
       errorCodes: unknown;
+      projectionBoundary: { forbiddenRawFields: unknown };
     };
     expect(manifest.authority).toBe(WORKFLOW_CONTROL_AUTHORITY);
     expect(manifest.authorityBoundary).toEqual({
@@ -139,6 +141,9 @@ describe('Workflow Control GS7-A contract freeze', () => {
     expect(manifest.qualificationGaps).toEqual(WORKFLOW_CONTROL_QUALIFICATION_GAPS);
     expect(manifest.limits).toEqual(WORKFLOW_CONTROL_CONTRACT_LIMITS);
     expect(manifest.errorCodes).toEqual(WORKFLOW_CONTROL_CONTRACT_ERROR_CODES);
+    expect(manifest.projectionBoundary.forbiddenRawFields).toEqual(
+      WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS,
+    );
   });
 
   it('locks every generated artifact by exact byte length and full SHA-256', () => {
@@ -185,6 +190,7 @@ describe('Workflow Control GS7-A contract freeze', () => {
       'secret-like-raw-field-rejected',
       'phase-bound-enforced',
       'valid-observation-full-sha256',
+      'unicode-control-and-number-edge-sha256',
     ]);
 
     for (const testCase of vectors.cases) {
@@ -232,5 +238,23 @@ describe('Workflow Control GS7-A contract freeze', () => {
       validateWorkflowControlObservation({ ...observation, detail: marker }),
     ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_CONTROL_SENSITIVE_FIELD_FORBIDDEN' }));
     expect(JSON.stringify(projection)).not.toContain(marker);
+  });
+
+  it('bounds hostile traversal and rejects unpaired Unicode surrogates', () => {
+    const vectors = json('golden-vectors.json') as unknown as { cases: GoldenCase[] };
+    const valid = vectors.cases.find((item) => item.id === 'valid-projection')!;
+    let nested: unknown = 'leaf';
+    for (let index = 0; index <= WORKFLOW_CONTROL_CONTRACT_LIMITS.maxJsonDepth; index += 1) {
+      nested = { nested };
+    }
+    expect(() => validateWorkflowControlObservation(nested)).toThrowError(
+      expect.objectContaining({ code: 'WORKFLOW_CONTROL_LIMIT_EXCEEDED' }),
+    );
+    expect(() =>
+      validateWorkflowControlObservation({
+        ...(valid.input as WorkflowControlObservation),
+        workflowName: '\ud800',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_CONTROL_INVALID' }));
   });
 });

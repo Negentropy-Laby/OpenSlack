@@ -29,6 +29,8 @@ const (
 	EffectSchema      = "openslack.workflow_effect_approval.v2"
 
 	MaxObservationBytes  = 256 * 1024
+	MaxJSONDepth         = 16
+	MaxJSONNodes         = 4_096
 	MaxIdentifierBytes   = 256
 	MaxWorkflowNameBytes = 512
 	MaxPhaseNameBytes    = 512
@@ -261,12 +263,18 @@ func ValidateObservationJSON(input []byte) (Observation, error) {
 	if len(input) > MaxObservationBytes {
 		return Observation{}, fail(ErrorLimitExceeded, "$", "observation exceeds its byte limit")
 	}
-	value, err := parseStrictJSON(input, 16, 4096)
+	if err := validateEscapedSurrogates(input); err != nil {
+		return Observation{}, err
+	}
+	value, err := parseStrictJSON(input, MaxJSONDepth, MaxJSONNodes)
 	if err != nil {
 		return Observation{}, err
 	}
 	if path, ok := sensitivePath(value, "$", 0); ok {
 		return Observation{}, fail(ErrorSensitiveField, path, "raw sensitive field is forbidden")
+	}
+	if err := validateObservationShape(value); err != nil {
+		return Observation{}, err
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(input))
@@ -535,6 +543,148 @@ func requireEOF(decoder *json.Decoder) error {
 	return nil
 }
 
+func validateObservationShape(value any) error {
+	root, err := requireClosedObject(value, "$", []string{
+		"schema", "authority", "runId", "workflowName", "mode", "status", "startedAt",
+		"updatedAt", "manifestHash", "currentPhase", "phases", "approvals", "budget",
+	})
+	if err != nil {
+		return err
+	}
+	phases, err := requireArray(root["phases"], "$/phases")
+	if err != nil {
+		return err
+	}
+	for index, phaseValue := range phases {
+		if _, err := requireClosedObject(phaseValue, fmt.Sprintf("$/phases/%d", index), []string{
+			"phase", "observedAt", "status", "resultHash", "cacheKeyHash",
+		}); err != nil {
+			return err
+		}
+	}
+	approvals, err := requireClosedObject(root["approvals"], "$/approvals", []string{"legacyRunGate", "effectV2"})
+	if err != nil {
+		return err
+	}
+	legacy, err := requireClosedObject(approvals["legacyRunGate"], "$/approvals/legacyRunGate", []string{"plane", "semantics", "counts"})
+	if err != nil {
+		return err
+	}
+	if _, err := requireClosedObject(legacy["counts"], "$/approvals/legacyRunGate/counts", []string{"pending", "approved", "rejected"}); err != nil {
+		return err
+	}
+	effect, err := requireClosedObject(approvals["effectV2"], "$/approvals/effectV2", []string{"plane", "semantics", "schema", "counts"})
+	if err != nil {
+		return err
+	}
+	if _, err := requireClosedObject(effect["counts"], "$/approvals/effectV2/counts", []string{"pending", "approved", "rejected"}); err != nil {
+		return err
+	}
+	budget, err := requireClosedObject(root["budget"], "$/budget", []string{
+		"configured", "policyHash", "tokenBudget", "tokensUsed", "costUsd", "agentCalls", "warnings",
+	})
+	if err != nil {
+		return err
+	}
+	warnings, err := requireArray(budget["warnings"], "$/budget/warnings")
+	if err != nil {
+		return err
+	}
+	for index, warningValue := range warnings {
+		if _, err := requireClosedObject(warningValue, fmt.Sprintf("$/budget/warnings/%d", index), []string{
+			"observedAt", "kind", "tokensUsed", "tokenBudget", "percent", "costUsd",
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireClosedObject(value any, path string, required []string) (map[string]any, error) {
+	record, ok := value.(map[string]any)
+	if !ok {
+		return nil, fail(ErrorInvalid, path, path+" must be a non-null object")
+	}
+	allowed := make(map[string]struct{}, len(required))
+	for _, field := range required {
+		allowed[field] = struct{}{}
+		if _, present := record[field]; !present {
+			return nil, fail(ErrorInvalid, path+"/"+field, "required field is missing")
+		}
+	}
+	for field := range record {
+		if _, present := allowed[field]; !present {
+			return nil, fail(ErrorUnknownField, path+"/"+field, "unknown field")
+		}
+	}
+	return record, nil
+}
+
+func requireArray(value any, path string) ([]any, error) {
+	result, ok := value.([]any)
+	if !ok {
+		return nil, fail(ErrorInvalid, path, path+" must be a non-null array")
+	}
+	return result, nil
+}
+
+func validateEscapedSurrogates(input []byte) error {
+	inString := false
+	for index := 0; index < len(input); index++ {
+		switch input[index] {
+		case '"':
+			inString = !inString
+		case '\\':
+			if !inString || index+1 >= len(input) {
+				continue
+			}
+			if input[index+1] != 'u' {
+				index++
+				continue
+			}
+			unit, ok := decodeHexUnit(input, index+2)
+			if !ok {
+				continue
+			}
+			index += 5
+			if unit >= 0xd800 && unit <= 0xdbff {
+				if index+6 >= len(input) || input[index+1] != '\\' || input[index+2] != 'u' {
+					return fail(ErrorInvalid, "$", "JSON string contains an unpaired Unicode surrogate")
+				}
+				low, valid := decodeHexUnit(input, index+3)
+				if !valid || low < 0xdc00 || low > 0xdfff {
+					return fail(ErrorInvalid, "$", "JSON string contains an unpaired Unicode surrogate")
+				}
+				index += 6
+			} else if unit >= 0xdc00 && unit <= 0xdfff {
+				return fail(ErrorInvalid, "$", "JSON string contains an unpaired Unicode surrogate")
+			}
+		}
+	}
+	return nil
+}
+
+func decodeHexUnit(input []byte, start int) (uint16, bool) {
+	if start+4 > len(input) {
+		return 0, false
+	}
+	var value uint16
+	for _, digit := range input[start : start+4] {
+		value <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			value |= uint16(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			value |= uint16(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			value |= uint16(digit-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
+}
+
 func parseStrictJSON(input []byte, maxDepth, maxNodes int) (any, error) {
 	if len(input) >= 3 && bytes.Equal(input[:3], []byte{0xef, 0xbb, 0xbf}) {
 		return nil, fail(ErrorInvalid, "$", "UTF-8 BOM is forbidden")
@@ -663,7 +813,9 @@ func appendCanonical(output *bytes.Buffer, value reflect.Value) error {
 	case reflect.Bool:
 		output.WriteString(strconv.FormatBool(value.Bool()))
 	case reflect.String:
-		output.WriteString(strconv.Quote(value.String()))
+		if err := appendJSONString(output, value.String()); err != nil {
+			return err
+		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		output.WriteString(strconv.FormatInt(value.Int(), 10))
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -712,7 +864,9 @@ func appendCanonical(output *bytes.Buffer, value reflect.Value) error {
 			if index > 0 {
 				output.WriteByte(',')
 			}
-			output.WriteString(strconv.Quote(current.name))
+			if err := appendJSONString(output, current.name); err != nil {
+				return err
+			}
 			output.WriteByte(':')
 			if err := appendCanonical(output, current.value); err != nil {
 				return err
@@ -722,6 +876,42 @@ func appendCanonical(output *bytes.Buffer, value reflect.Value) error {
 	default:
 		return fail(ErrorInvalid, "$", fmt.Sprintf("unsupported canonical value kind %s", value.Kind()))
 	}
+	return nil
+}
+
+func appendJSONString(output *bytes.Buffer, value string) error {
+	if !utf8.ValidString(value) {
+		return fail(ErrorInvalid, "$", "canonical JSON rejects invalid UTF-8")
+	}
+	const hexDigits = "0123456789abcdef"
+	output.WriteByte('"')
+	for _, character := range value {
+		switch character {
+		case '"':
+			output.WriteString(`\"`)
+		case '\\':
+			output.WriteString(`\\`)
+		case '\b':
+			output.WriteString(`\b`)
+		case '\t':
+			output.WriteString(`\t`)
+		case '\n':
+			output.WriteString(`\n`)
+		case '\f':
+			output.WriteString(`\f`)
+		case '\r':
+			output.WriteString(`\r`)
+		default:
+			if character < 0x20 {
+				output.WriteString(`\u00`)
+				output.WriteByte(hexDigits[byte(character)>>4])
+				output.WriteByte(hexDigits[byte(character)&0x0f])
+			} else {
+				output.WriteRune(character)
+			}
+		}
+	}
+	output.WriteByte('"')
 	return nil
 }
 

@@ -73,6 +73,7 @@
       "capability",
       "decision",
       "evidence",
+      "attestationNonce",
       "nonce",
       "token",
       "secret",
@@ -88,6 +89,8 @@
   },
   "limits": {
     "maxObservationBytes": 262144,
+    "maxJsonDepth": 16,
+    "maxJsonNodes": 4096,
     "maxIdentifierBytes": 256,
     "maxWorkflowNameBytes": 512,
     "maxPhaseNameBytes": 512,
@@ -126,13 +129,13 @@
     },
     "schemas/workflow-control-read-model.v1.schema.json": {
       "path": "schemas/workflow-control-read-model.v1.schema.json",
-      "byteLength": 6211,
-      "sha256": "765aeb667df8a6d0d51e7212fa8f4cc36153b8148987d2cf8559b80a67b4c59d"
+      "byteLength": 6257,
+      "sha256": "a540d12616bccb4a8e047129d67cec7d8cf9174296a5a6cf101941c696dc5cff"
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 77398,
-      "sha256": "1450a49ad46d2a152e805de8b4ca9536cb07efa839d4e289a8019d59ab6e32e8"
+      "byteLength": 79512,
+      "sha256": "342c877a46adc5f533d9c9c8b25d1c30c5809d8f219115af3f4e97260f9da023"
     }
   },
   "bundleFiles": [

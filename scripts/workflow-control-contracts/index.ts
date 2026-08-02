@@ -12,6 +12,7 @@ import {
   WORKFLOW_CONTROL_DORMANT_STATES,
   WORKFLOW_CONTROL_EFFECT_APPROVAL_SCHEMA,
   WORKFLOW_CONTROL_EXECUTION_MODES,
+  WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS,
   WORKFLOW_CONTROL_GO_ROLE,
   WORKFLOW_CONTROL_OBSERVATION_SCHEMA,
   WORKFLOW_CONTROL_PRODUCTION_INITIAL_STATE,
@@ -237,13 +238,26 @@ const readModelSchema = {
       goRole: { const: WORKFLOW_CONTROL_GO_ROLE },
       authorityEligible: { const: false },
       runId: { type: 'string', pattern: SAFE_ID_PATTERN },
-      workflowName: { type: 'string', minLength: 1 },
+      workflowName: {
+        type: 'string',
+        minLength: 1,
+        maxLength: WORKFLOW_CONTROL_CONTRACT_LIMITS.maxWorkflowNameBytes,
+      },
       mode: { enum: WORKFLOW_CONTROL_EXECUTION_MODES },
       status: { enum: WORKFLOW_CONTROL_RUN_STATES },
       startedAt: timestampSchema,
       updatedAt: timestampSchema,
       manifestHash: hashSchema,
-      currentPhase: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }] },
+      currentPhase: {
+        anyOf: [
+          {
+            type: 'string',
+            minLength: 1,
+            maxLength: WORKFLOW_CONTROL_CONTRACT_LIMITS.maxPhaseNameBytes,
+          },
+          { type: 'null' },
+        ],
+      },
       terminal: { type: 'boolean' },
       phaseCounts: strictObject(
         {
@@ -417,6 +431,28 @@ function goldenVectors(): JsonRecord {
     },
   };
   const sensitive = { ...base, args: { apiKey: 'not-for-golden-export' } };
+  const unicodeAndNumberEdges = validateWorkflowControlObservation({
+    ...base,
+    workflowName: 'control-\u0000\u0007\u000b\u001f\u007f-😀',
+    currentPhase: '阶段-\u000b-😀',
+    phases: [
+      {
+        ...base.phases[0],
+        phase: '阶段-\u000b-😀',
+      },
+    ],
+    budget: {
+      ...base.budget,
+      costUsd: 1e-7,
+      warnings: [
+        {
+          ...base.budget.warnings[0],
+          percent: 0.000001,
+          costUsd: 1e-7,
+        },
+      ],
+    },
+  });
   const tooManyPhases = {
     ...base,
     phases: Array.from(
@@ -489,6 +525,12 @@ function goldenVectors(): JsonRecord {
         input: base,
         expected: hashWorkflowControlValue(base),
       },
+      {
+        id: 'unicode-control-and-number-edge-sha256',
+        operation: 'hash',
+        input: unicodeAndNumberEdges,
+        expected: hashWorkflowControlValue(unicodeAndNumberEdges),
+      },
     ],
   };
 }
@@ -556,19 +598,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
       projectionBoundary: {
         credentialFree: true,
         allowedSensitiveRepresentations: ['sha256-hash', 'status-count'],
-        forbiddenRawFields: [
-          'args',
-          'result',
-          'detail',
-          'capability',
-          'decision',
-          'evidence',
-          'nonce',
-          'token',
-          'secret',
-          'prompt',
-          'output',
-        ],
+        forbiddenRawFields: WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS,
       },
       canonicalization: {
         encoding: 'utf-8',
