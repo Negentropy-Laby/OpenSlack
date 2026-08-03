@@ -164,6 +164,8 @@ const WINDOWS_SID = /^S-\d(?:-\d+)+$/u;
 const LOCK_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 const WINDOWS_SECURITY_CACHE_LIMIT = 2_048;
+const WINDOWS_SECURITY_MODULE_IMPORT =
+  'Import-Module -Name (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1") -ErrorAction Stop';
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
 const PROCESS_SESSION_ID = randomUUID();
 const JOURNAL_CAPACITY_LOCK_HASH = sha256('openslack.workflow-control-shadow.journal-capacity.v1');
@@ -554,7 +556,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
         if (cached?.identity === identity) return cached.value;
       }
       const script = [
-        'Import-Module -Name (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1") -ErrorAction Stop',
+        WINDOWS_SECURITY_MODULE_IMPORT,
         '$item = Get-Item -Force -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
@@ -590,17 +592,38 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
       }
       productionWindowsSecurityCache.delete(resolve(path).toLowerCase());
       const sid = currentWindowsSid();
-      const grant = directory ? '(OI)(CI)F' : 'F';
-      execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 5_000,
-        maxBuffer: 64 * 1024,
-      });
+      const script = [
+        WINDOWS_SECURITY_MODULE_IMPORT,
+        '$owner = [System.Security.Principal.SecurityIdentifier]::new($env:OPENSLACK_WORKFLOW_SHADOW_SID)',
+        `$system = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_SYSTEM_SID}')`,
+        '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
+        '$acl.SetOwner($owner)',
+        '$acl.SetAccessRuleProtection($true, $false)',
+        'foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($rule) }',
+        '$rights = [System.Security.AccessControl.FileSystemRights]::FullControl',
+        directory
+          ? '$inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit'
+          : '$inheritance = [System.Security.AccessControl.InheritanceFlags]::None',
+        '$propagation = [System.Security.AccessControl.PropagationFlags]::None',
+        '$type = [System.Security.AccessControl.AccessControlType]::Allow',
+        '$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($owner, $rights, $inheritance, $propagation, $type))',
+        '$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($system, $rights, $inheritance, $propagation, $type))',
+        'Set-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH -AclObject $acl',
+      ].join('; ');
       execFileSync(
-        'icacls.exe',
-        [path, '/inheritance:r', '/grant:r', `*${sid}:${grant}`, `*${WINDOWS_SYSTEM_SID}:${grant}`],
-        { encoding: 'utf8', windowsHide: true, timeout: 5_000, maxBuffer: 64 * 1024 },
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+        {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 5_000,
+          maxBuffer: 64 * 1024,
+          env: {
+            ...process.env,
+            OPENSLACK_WORKFLOW_SHADOW_PATH: path,
+            OPENSLACK_WORKFLOW_SHADOW_SID: sid,
+          },
+        },
       );
     },
   });
