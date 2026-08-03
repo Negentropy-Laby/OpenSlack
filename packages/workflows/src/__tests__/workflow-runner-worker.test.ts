@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -19,6 +20,27 @@ const manifest: WorkflowMeta = {
   phases: [{ title: 'Run', detail: 'Run once.' }],
   risk: 'low',
 };
+
+function shortWindowsPath(path: string): string {
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    '$signature = \'[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint bufferLength);\'',
+    'Add-Type -MemberDefinition $signature -Name NativePaths -Namespace OpenSlack',
+    '$buffer = New-Object System.Text.StringBuilder 32768',
+    '$result = [OpenSlack.NativePaths]::GetShortPathName($env:OPENSLACK_TEST_LONG_PATH, $buffer, 32768)',
+    'if ($result -eq 0) { $env:OPENSLACK_TEST_LONG_PATH } else { $buffer.ToString() }',
+  ].join('; ');
+  return execFileSync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20_000,
+      env: { ...process.env, OPENSLACK_TEST_LONG_PATH: path },
+    },
+  ).trim();
+}
 
 function descriptor(workflowSourceBytes: Uint8Array = sourceBytes) {
   return createWorkflowRunnerExecutionDescriptor({
@@ -73,6 +95,23 @@ describe('GS8-B workflow runner worker', () => {
     });
   });
 
+  it('accepts a Windows 8.3 alias for the same non-reparse workflow catalog', async () => {
+    if (process.platform !== 'win32') return;
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-long-worker-root-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    await mkdir(sourceDirectory, { recursive: true });
+    await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
+    const shortRoot = shortWindowsPath(workspaceRoot);
+    if (shortRoot.toUpperCase() === workspaceRoot.toUpperCase()) return;
+
+    const prepared = await createSealedWorkflowRunnerSourceLoader(shortRoot).prepare(descriptor());
+    expect(prepared).toMatchObject({
+      path: join(await realpath(workspaceRoot), '.openslack', 'workflows', 'sealed-test.js'),
+      bytes: sourceBytes,
+    });
+  }, 15_000);
+
   it.each([
     ['static import', 'import value from "./unbound.js";'],
     ['side-effect import', 'import "./unbound.js";'],
@@ -117,6 +156,23 @@ describe('GS8-B workflow runner worker', () => {
       path: sourcePath,
       bytes: inert,
     });
+  });
+
+  it('rejects an ordinary workflow catalog below an ancestor reparse or symlink', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-ancestor-'));
+    roots.push(parent);
+    const target = join(parent, 'target');
+    const targetWorkspace = join(target, 'workspace');
+    const sourceDirectory = join(targetWorkspace, '.openslack', 'workflows');
+    const alias = join(parent, 'alias');
+    await mkdir(sourceDirectory, { recursive: true });
+    await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
+    await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+
+    const loader = createSealedWorkflowRunnerSourceLoader(join(alias, 'workspace'));
+    await expect(loader.prepare(descriptor())).rejects.toThrow(
+      /(?:reparse component|canonical and non-symlinked)/u,
+    );
   });
 
   it('rejects a source replacement between prepare and post-receipt load', async () => {

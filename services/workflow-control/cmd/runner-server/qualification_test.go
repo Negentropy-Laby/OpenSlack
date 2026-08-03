@@ -122,18 +122,30 @@ export async function run(runtime) {
 	}
 	stop()
 
+	ambiguous := createQualificationJob(t, workspaceRoot, descriptorRoot, "effect-ambiguity", `
+export async function run(runtime) {
+  runtime.phase("Run");
+  await runtime.openslack.task.sync(1);
+  return { status: "completed" };
+}
+`)
+	var outcomeCommitObserved atomic.Bool
 	var injected atomic.Bool
 	ambiguousRepository := runnerpostgres.NewWithCommitter(pool, func(ctx context.Context, tx pgx.Tx) error {
-		var kind string
+		var hasEffectOutcome bool
 		err := tx.QueryRow(ctx, `
-SELECT kind FROM workflow_runner_worker_events
-WHERE xmin = pg_current_xact_id()::text::xid
-LIMIT 1`).Scan(&kind)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+SELECT EXISTS (
+  SELECT 1 FROM workflow_runner_worker_events
+  WHERE workspace_id=$1 AND job_id=$2 AND kind='effect_outcome'
+)`, gs8bQualificationWorkspace, ambiguous.Spec.JobID).Scan(&hasEffectOutcome)
+		if err != nil {
 			_ = tx.Rollback(ctx)
 			return err
 		}
-		if kind == "effect_outcome" && injected.CompareAndSwap(false, true) {
+		if hasEffectOutcome {
+			outcomeCommitObserved.Store(true)
+		}
+		if hasEffectOutcome && injected.CompareAndSwap(false, true) {
 			_ = tx.Rollback(ctx)
 			return errGS8BUnknownEffectOutcome
 		}
@@ -142,22 +154,15 @@ LIMIT 1`).Scan(&kind)
 	ambiguousService := qualificationRunnerApp(t, ambiguousRepository)
 	stopAmbiguous := startQualificationScheduler(t, ambiguousRepository, supervisor, "runner.qualification.ambiguous")
 	t.Cleanup(stopAmbiguous)
-	ambiguous := createQualificationJob(t, workspaceRoot, descriptorRoot, "effect-ambiguity", `
-export async function run(runtime) {
-  runtime.phase("Run");
-  await runtime.openslack.task.createIssue({ title: "GS8-B local qualification" });
-  return { status: "completed" };
-}
-`)
 	if response := submitQualificationJob(t, ambiguousService.Handler(), ambiguous); response.Code != http.StatusCreated {
 		t.Fatalf("submit effect ambiguity job: %d %s", response.Code, response.Body.String())
 	}
 	ambiguousView := waitQualificationJob(t, repository, ambiguous.Spec.JobID, func(view runnerstore.JobView) bool {
 		return view.State == runnerstore.JobReconciliationRequired
 	})
-	if !injected.Load() || ambiguousView.ReconciliationID == nil || ambiguousView.OpenEffectCount != 1 ||
+	if !outcomeCommitObserved.Load() || !injected.Load() || ambiguousView.ReconciliationID == nil || ambiguousView.OpenEffectCount != 1 ||
 		ambiguousView.TerminalStatus == nil || *ambiguousView.TerminalStatus != "reconciliation_required" {
-		t.Fatalf("executed effect ambiguity did not fail closed: injected=%v view=%+v", injected.Load(), ambiguousView)
+		t.Fatalf("executed effect ambiguity did not fail closed: outcomeCommitObserved=%v injected=%v view=%+v", outcomeCommitObserved.Load(), injected.Load(), ambiguousView)
 	}
 	var intentCount, reconciledOutcomeCount int
 	if err := pool.QueryRow(t.Context(), `

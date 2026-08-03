@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { chmod, link, lstat, mkdir, open, readdir, realpath, rm, unlink } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import {
   WORKFLOW_RUNNER_DESCRIPTOR_LIMITS,
   canonicalWorkflowRunnerDescriptorJson,
@@ -42,6 +42,7 @@ const SYSTEM_SID = 'S-1-5-18';
 const WINDOWS_SECURITY_MODULE_IMPORT =
   'Import-Module -Name (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1") -ErrorAction Stop';
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
+let cachedWindowsSid: string | undefined;
 
 function storeFail(
   code: WorkflowRunnerDescriptorStoreError['code'],
@@ -109,6 +110,7 @@ function parseWindowsAcl(value: string): {
 }
 
 function currentWindowsSid(): string {
+  if (cachedWindowsSid) return cachedWindowsSid;
   const output = execFileSync(
     'powershell.exe',
     [
@@ -128,7 +130,8 @@ function currentWindowsSid(): string {
       'Current Windows SID is unavailable.',
     );
   }
-  return output;
+  cachedWindowsSid = output;
+  return cachedWindowsSid;
 }
 
 function inspectWindowsAcl(path: string): ReturnType<typeof parseWindowsAcl> {
@@ -162,6 +165,12 @@ function hardenWindowsPath(path: string, sid: string, directory: boolean): void 
   // inherited SACL metadata even when only the DACL changed. icacls writes the
   // protected DACL directly and works for a non-elevated owner.
   const rights = directory ? '(OI)(CI)F' : 'F';
+  execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    windowsHide: true,
+    maxBuffer: 64 * 1024,
+  });
   execFileSync(
     'icacls.exe',
     [path, '/inheritance:r', '/grant:r', `*${sid}:${rights}`, `*${SYSTEM_SID}:${rights}`],
@@ -229,10 +238,20 @@ async function assertStablePath(
   directory: boolean,
   security: WorkflowRunnerDescriptorPathSecurity,
 ): Promise<BigIntStats> {
+  await assertNoWindowsReparseComponents(path, security);
   const before = await lstat(path, { bigint: true });
   await security.assertOwnerOnly(path, directory, before);
   const canonical = await realpath(path);
-  if (canonical !== resolve(path)) {
+  if (security.platform === 'win32') {
+    const canonicalStat = await lstat(canonical, { bigint: true });
+    if (statIdentity(before) !== statIdentity(canonicalStat)) {
+      return storeFail(
+        'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
+        'Descriptor-store path resolves to a different filesystem object.',
+        path,
+      );
+    }
+  } else if (canonical !== resolve(path)) {
     return storeFail(
       'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
       'Descriptor-store path is non-canonical.',
@@ -248,6 +267,29 @@ async function assertStablePath(
     );
   }
   return after;
+}
+
+async function assertNoWindowsReparseComponents(
+  path: string,
+  security: WorkflowRunnerDescriptorPathSecurity,
+): Promise<void> {
+  if (security.platform !== 'win32') return;
+  const root = parse(path).root;
+  const components = relative(root, path).split(sep).filter(Boolean);
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    const linked = await lstat(current, { bigint: true });
+    const canonical = await realpath(current);
+    const resolved = await lstat(canonical, { bigint: true });
+    if (linked.isSymbolicLink() || statIdentity(linked) !== statIdentity(resolved)) {
+      return storeFail(
+        'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
+        'Descriptor-store path contains a reparse component.',
+        current,
+      );
+    }
+  }
 }
 
 async function ensureDirectory(

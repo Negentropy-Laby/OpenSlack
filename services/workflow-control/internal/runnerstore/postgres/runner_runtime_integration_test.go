@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -246,6 +247,58 @@ func TestEffectAmbiguityRequiresReconciliation(t *testing.T) {
 	}
 	if !replayed.Duplicate || !bytes.Equal(replayed.ReceiptBytes, receipt.ReceiptBytes) {
 		t.Fatalf("ambiguous effect receipt is not stable: first=%+v replay=%+v", receipt, replayed)
+	}
+}
+
+func TestEffectOutcomeCommitDetectionDoesNotDependOnXmin(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := t.Context()
+	repository := New(pool)
+	lease := submitAndClaim(t, repository, "effect-outcome-commit-detection")
+	if _, err := repository.RecordEvent(ctx, leaseAcceptInput(t, lease, "accept-effect-outcome-commit-detection")); err != nil {
+		t.Fatal(err)
+	}
+	intent := leasedEventInput(t, lease, runnerprotocol.KindEffectIntent, 2, "intent-effect-outcome-commit-detection", map[string]any{
+		"effectId": "effect-commit-detection", "effectKind": "openslack.task.sync",
+		"effectHash": strings.Repeat("1", 64), "capabilityHash": strings.Repeat("2", 64),
+		"requiresHumanDecision": false,
+	})
+	if _, err := repository.RecordEvent(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	outcome := leasedEventInput(t, lease, runnerprotocol.KindEffectOutcome, 3, "outcome-effect-outcome-commit-detection", map[string]any{
+		"effectId": "effect-commit-detection", "status": "executed", "outcomeHash": strings.Repeat("3", 64),
+	})
+	var observed atomic.Bool
+	var injected atomic.Bool
+	unknown := NewWithCommitter(pool, func(ctx context.Context, tx pgx.Tx) error {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workflow_runner_worker_events WHERE workspace_id=$1 AND job_id=$2 AND event_id=$3 AND kind='effect_outcome')`, lease.WorkspaceID, lease.JobID, outcome.Message.EventID).Scan(&exists); err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if exists {
+			observed.Store(true)
+		}
+		if exists && injected.CompareAndSwap(false, true) {
+			_ = tx.Rollback(ctx)
+			return errSimulatedCommitResponseLoss
+		}
+		return tx.Commit(ctx)
+	})
+	receipt, err := unknown.RecordEvent(ctx, outcome)
+	if err != nil {
+		t.Fatalf("persist deterministic effect outcome reconciliation: %v", err)
+	}
+	if !observed.Load() || !injected.Load() || receipt.Status != runnerstore.ReceiptReconciliationRequired || receipt.JobState != runnerstore.JobReconciliationRequired {
+		t.Fatalf("effect outcome commit was not deterministically intercepted: observed=%v injected=%v receipt=%+v", observed.Load(), injected.Load(), receipt)
+	}
+	view, err := repository.ReadJob(ctx, lease.WorkspaceID, lease.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State != runnerstore.JobReconciliationRequired || view.OpenEffectCount != 1 || view.ReconciliationID == nil {
+		t.Fatalf("effect outcome ambiguity did not preserve the open boundary: %+v", view)
 	}
 }
 

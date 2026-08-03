@@ -1,7 +1,7 @@
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import {
   decodeWorkflowRunnerFrame,
   WorkflowRunnerJsonlDecoder,
@@ -63,16 +63,37 @@ function sourceIdentity(stat: BigIntStats): string {
   return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 }
 
+async function assertNoWindowsReparseComponents(path: string): Promise<void> {
+  if (process.platform !== 'win32') return;
+  const root = parse(path).root;
+  const components = relative(root, path).split(sep).filter(Boolean);
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    const linked = await lstat(current, { bigint: true });
+    const canonical = await realpath(current);
+    const resolved = await lstat(canonical, { bigint: true });
+    if (linked.isSymbolicLink() || !sameSourceIdentity(linked, resolved)) {
+      throw new Error('Sealed workflow path contains a reparse component.');
+    }
+  }
+}
+
 async function readSealedWorkflowSource(path: string): Promise<{
   readonly bytes: Buffer;
   readonly stat: BigIntStats;
 }> {
+  await assertNoWindowsReparseComponents(path);
   const linked = await lstat(path, { bigint: true });
+  const canonical = await realpath(path);
+  const canonicalStat = await lstat(canonical, { bigint: true });
   if (
     !linked.isFile() ||
     linked.isSymbolicLink() ||
     linked.size > BigInt(MAX_SOURCE_BYTES) ||
-    (await realpath(path)) !== path
+    !canonicalStat.isFile() ||
+    canonicalStat.isSymbolicLink() ||
+    (process.platform === 'win32' ? !sameSourceIdentity(linked, canonicalStat) : canonical !== path)
   ) {
     throw new Error('Sealed workflow source is unsafe or exceeds its byte limit.');
   }
@@ -167,12 +188,20 @@ export function createSealedWorkflowRunnerSourceLoader(
   return Object.freeze({
     async prepare(descriptor: WorkflowRunnerExecutionDescriptor): Promise<PreparedWorkflowSource> {
       const root = await sourceRoot(descriptor, workspaceRoot);
+      await assertNoWindowsReparseComponents(root);
       const rootBefore = await lstat(root, { bigint: true });
       if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
         throw new Error('Sealed workflow catalog root is unsafe.');
       }
       const rootReal = await realpath(root);
-      if (rootReal !== resolve(root)) {
+      const rootCanonical = await lstat(rootReal, { bigint: true });
+      if (
+        !rootCanonical.isDirectory() ||
+        rootCanonical.isSymbolicLink() ||
+        (process.platform === 'win32'
+          ? !sameSourceIdentity(rootBefore, rootCanonical)
+          : rootReal !== resolve(root))
+      ) {
         throw new Error('Sealed workflow catalog root must be canonical and non-symlinked.');
       }
       const entries = new Set(await readdir(root));
@@ -183,8 +212,20 @@ export function createSealedWorkflowRunnerSourceLoader(
         throw new Error('Sealed workflow catalog entry is missing or ambiguous.');
       }
       const path = candidates[0]!;
+      const pathBefore = await lstat(path, { bigint: true });
+      if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
+        throw new Error('Sealed workflow source has an unsafe type.');
+      }
       const canonical = await realpath(path);
-      if (canonical !== path || !within(rootReal, canonical)) {
+      const canonicalStat = await lstat(canonical, { bigint: true });
+      if (
+        !canonicalStat.isFile() ||
+        canonicalStat.isSymbolicLink() ||
+        (process.platform === 'win32'
+          ? !sameSourceIdentity(pathBefore, canonicalStat)
+          : canonical !== path) ||
+        !within(rootReal, canonical)
+      ) {
         throw new Error('Sealed workflow source escapes its catalog root.');
       }
       const source = await readSealedWorkflowSource(canonical);

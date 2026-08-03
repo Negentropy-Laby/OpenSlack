@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -27,9 +36,11 @@ const manifest: WorkflowMeta = {
   phases: [{ title: 'Run', detail: 'Run once.' }],
   risk: 'low',
 };
+let cachedWindowsSid: string | undefined;
 
 function currentWindowsSid(): string {
-  return execFileSync(
+  if (cachedWindowsSid) return cachedWindowsSid;
+  cachedWindowsSid = execFileSync(
     'powershell.exe',
     [
       '-NoLogo',
@@ -40,21 +51,43 @@ function currentWindowsSid(): string {
     ],
     { encoding: 'utf8', windowsHide: true, timeout: 20_000 },
   ).trim();
+  return cachedWindowsSid;
 }
 
 function hardenWindowsTestPath(path: string, directory: boolean): void {
   const rights = directory ? '(OI)(CI)F' : 'F';
+  const sid = currentWindowsSid();
+  execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20_000,
+  });
   execFileSync(
     'icacls.exe',
-    [
-      path,
-      '/inheritance:r',
-      '/grant:r',
-      `*${currentWindowsSid()}:${rights}`,
-      `*S-1-5-18:${rights}`,
-    ],
+    [path, '/inheritance:r', '/grant:r', `*${sid}:${rights}`, `*S-1-5-18:${rights}`],
     { encoding: 'utf8', windowsHide: true, timeout: 20_000 },
   );
+}
+
+function shortWindowsPath(path: string): string {
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    '$signature = \'[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint bufferLength);\'',
+    'Add-Type -MemberDefinition $signature -Name NativePaths -Namespace OpenSlack',
+    '$buffer = New-Object System.Text.StringBuilder 32768',
+    '$result = [OpenSlack.NativePaths]::GetShortPathName($env:OPENSLACK_TEST_LONG_PATH, $buffer, 32768)',
+    'if ($result -eq 0) { $env:OPENSLACK_TEST_LONG_PATH } else { $buffer.ToString() }',
+  ].join('; ');
+  return execFileSync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20_000,
+      env: { ...process.env, OPENSLACK_TEST_LONG_PATH: path },
+    },
+  ).trim();
 }
 
 const testSecurity: WorkflowRunnerDescriptorPathSecurity = {
@@ -163,7 +196,20 @@ describe('GS8-B sealed execution descriptor', () => {
 
     await expect(store.create(value)).resolves.toMatchObject({ duplicate: false });
     await expect(store.read(value.descriptorRef)).resolves.toEqual(value);
-  });
+  }, 30_000);
+
+  it('accepts a Windows 8.3 alias for the same non-reparse descriptor root', async () => {
+    if (process.platform !== 'win32') return;
+    const root = await mkdtemp(join(tmpdir(), 'openslack-runner-long-descriptor-root-'));
+    roots.push(root);
+    hardenWindowsTestPath(root, true);
+    const shortRoot = shortWindowsPath(root);
+    if (shortRoot.toUpperCase() === root.toUpperCase()) return;
+    expect(await realpath(shortRoot)).toBe(await realpath(root));
+
+    const store = new WorkflowRunnerDescriptorStore(shortRoot);
+    await expect(store.initialize()).resolves.toBeUndefined();
+  }, 30_000);
 
   it('rejects inherited or foreign-principal Windows ACLs through the real inspector', async () => {
     if (process.platform !== 'win32') return;
@@ -188,7 +234,7 @@ describe('GS8-B sealed execution descriptor', () => {
         code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PERMISSION_DENIED',
       });
     }
-  });
+  }, 30_000);
 
   it('rejects an ancestor symlink or junction before creating a target child', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'openslack-runner-ancestor-'));
@@ -204,6 +250,21 @@ describe('GS8-B sealed execution descriptor', () => {
       code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
     });
     await expect(readFile(escapedChild)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects an existing ordinary store below an ancestor symlink or junction', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'openslack-runner-existing-ancestor-'));
+    roots.push(parent);
+    const target = join(parent, 'target');
+    const targetStore = join(target, 'existing-store');
+    const alias = join(parent, 'alias');
+    await mkdir(targetStore, { recursive: true });
+    await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const store = new WorkflowRunnerDescriptorStore(join(alias, 'existing-store'), testSecurity);
+
+    await expect(store.initialize()).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
+    });
   });
 
   it('rejects non-canonical files rather than normalizing them on read', async () => {

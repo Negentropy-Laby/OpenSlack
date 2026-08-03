@@ -170,7 +170,7 @@ standalone P0 completion.
 
 ## Test Inventory
 
-5539 Vitest tests across 451 test files are recorded in `.openslack/modules.yaml`.
+5543 Vitest tests across 451 test files are recorded in `.openslack/modules.yaml`.
 
 Module-attributed coverage: 5787 tests across 544 module test files (packages shared across modules are counted per module).
 
