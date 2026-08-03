@@ -89,7 +89,7 @@ func assertManifestReference(t *testing.T, repositoryRoot string, reference mani
 	}
 }
 
-func TestSourceManifestBindsGS5InputsWithoutAuthorityOrReleaseClaims(t *testing.T) {
+func TestSourceManifestBindsGS6LocalAuthorityWithoutReleaseClaims(t *testing.T) {
 	repositoryRoot := filepath.Clean(filepath.Join(serviceRoot(t), "..", ".."))
 	var manifest sourceManifest
 	decodeClosedJSON(t, filepath.Join(serviceRoot(t), "integration", "source-manifest.v2.json"), &manifest)
@@ -97,20 +97,20 @@ func TestSourceManifestBindsGS5InputsWithoutAuthorityOrReleaseClaims(t *testing.
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/governance-control" ||
 		manifest.Service.TargetPath != "services/governance-control" ||
-		manifest.Service.MigrationPhase != "GS5" ||
-		manifest.Service.RuntimeProfile != "governance-control-v1" ||
-		manifest.Service.Authority != "TYPESCRIPT_GOVERNED_PLAN_AUTHORITY_GO_CREDENTIAL_FREE_SHADOW" {
+		manifest.Service.MigrationPhase != "GS6" ||
+		manifest.Service.RuntimeProfile != "governance-control-v2" ||
+		manifest.Service.Authority != "PERSISTED_ROUTE_SINGLE_WRITER_TS_OR_GO_LOCAL_QUALIFICATION" {
 		t.Fatalf("source manifest identity or authority drifted: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 3 {
+		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 4 {
 		t.Fatal("source manifest input inventory drifted")
 	}
-	if strings.Join(manifest.Scope.Authorizes, "\n") != "DURABLE_GOVERNANCE_SHADOW_OBSERVATION\nCREDENTIAL_FREE_PARITY_PROJECTION" {
+	if strings.Join(manifest.Scope.Authorizes, "\n") != "DURABLE_GOVERNANCE_SHADOW_OBSERVATION\nCREDENTIAL_FREE_PARITY_PROJECTION\nGO_ROUTED_GOVERNED_PLAN_WRITE_AUTHORITY\nDURABLE_EXECUTION_CLAIM_STATE\nAUTHORITY_AUDIT_DELIVERY_TRACKING" {
 		t.Fatalf("source manifest widened runtime scope: %v", manifest.Scope.Authorizes)
 	}
 	wantNonClaims := []string{
-		"CONFIRMATION_AUTHORITY", "EXECUTION_AUTHORITY", "GOVERNED_PLAN_WRITE_AUTHORITY", "LIVE_VERIFIED", "PRODUCTION",
+		"CONFIRMATION_AUTHORITY", "EXTERNAL_EFFECT_EXECUTION_AUTHORITY", "LIVE_VERIFIED", "PRODUCTION",
 		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "SIGNED_PROVENANCE", "WORKFLOW_MUTATION_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)

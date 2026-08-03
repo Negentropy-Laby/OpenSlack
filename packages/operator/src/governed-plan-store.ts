@@ -25,6 +25,7 @@ import {
   isGovernedPlanShadowObservationPort,
   type GovernedPlanShadowObservationPort,
 } from './governed-plan-shadow.js';
+import type { GovernedPlanAuditEvent, GovernedPlanAuditSink } from './governed-plan-service.js';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 export const GOVERNED_PLAN_STORE_LIMITS = Object.freeze({
@@ -85,6 +86,16 @@ const LOCK_TEMP_NAME =
   /^\.lock\.([0-9a-f]{64})\.([1-9][0-9]{0,9})\.([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([0-9]{1,10})\.([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.tmp$/;
 const STORES = new WeakSet<object>();
 
+/**
+ * Registers a host-created store implementation with the service composition
+ * boundary. Kept outside the public package barrel so arbitrary callers cannot
+ * make duck-typed stores authoritative.
+ */
+export function registerGovernedPlanStore<T extends GovernedPlanStore>(store: T): T {
+  STORES.add(store);
+  return store;
+}
+
 export class GovernedPlanStoreError extends Error {
   readonly code: (typeof GOVERNED_PLAN_STORE_ERROR_CODES)[number];
   readonly path?: string;
@@ -135,6 +146,12 @@ export interface GovernedPlanStore {
     readonly completedAt: string;
     readonly failure: string;
   }): Promise<GovernedPlanRecord>;
+  /** Optional durable prepare before the collaboration audit append begins. */
+  prepareAudit?(event: GovernedPlanAuditEvent): Promise<void>;
+  /** Mark collaboration durable, acknowledge authority, then retire the prepare. */
+  recordAudit?(event: GovernedPlanAuditEvent): Promise<void>;
+  /** Drain durable authority audit prepares before exposing the mutation server. */
+  recoverAudits?(auditSink: GovernedPlanAuditSink): Promise<void>;
 }
 
 interface PreparedStore {
@@ -756,7 +773,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     }
     this.#root = root;
     this.#shadowObserver = shadowObserver;
-    STORES.add(this);
+    registerGovernedPlanStore(this);
     Object.freeze(this);
   }
 

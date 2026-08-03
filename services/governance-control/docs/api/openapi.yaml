@@ -1,16 +1,23 @@
 openapi: 3.1.0
 info:
-  title: OpenSlack Governance Control Shadow API
-  version: 1.0.0
+  title: OpenSlack Governance Control Shadow and Local Authority API
+  version: 2.0.0
   description: >-
-    Private GS5 observation service. TypeScript remains the sole governed-plan
-    writer, confirmation authority, execution claimant, mutation dispatcher,
-    and authoritative audit emitter. This API accepts exact canonical JSON plus
-    LF and grants no action or workflow authority.
+    Private GS5 observation service plus a GS6 Go writer for records explicitly
+    routed to the governance-control authority. GS6 routes are disabled by
+    default and may be enabled only for loopback local qualification with exact
+    caller, workspace, routing epoch, and expected build bindings. This is not a
+    remote-authentication, live, production, release, or Qoder verification claim.
 servers:
   - url: http://127.0.0.1:8080
-x-openslack-authority: typescript
+x-openslack-authority: per-persisted-route
 x-openslack-network-modes: [loopback, internal]
+x-openslack-authority-admission:
+  mode: local-qualification-v1
+  acceptNewRecordsDefault: false
+  acceptEpoch: active-only
+  existingRecordEpochs: active-or-explicit-drain-allowlist
+  remoteAuthentication: false
 x-openslack-max-request-bytes: 2097152
 paths:
   /v1/shadow/governance/observations:
@@ -25,9 +32,21 @@ paths:
             schema:
               $ref: '#/components/schemas/ObservationEnvelope'
       responses:
-        '201': { description: Durable accepted observation, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
-        '200': { description: Original durable receipt returned as duplicate, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
-        '202': { description: Commit result requires reconciliation and is not success, content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } } }
+        '201':
+          {
+            description: Durable accepted observation,
+            content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } },
+          }
+        '200':
+          {
+            description: Original durable receipt returned as duplicate,
+            content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } },
+          }
+        '202':
+          {
+            description: Commit result requires reconciliation and is not success,
+            content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } },
+          }
         '409': { $ref: '#/components/responses/Conflict' }
         '408': { $ref: '#/components/responses/Timeout' }
         '413': { $ref: '#/components/responses/TooLarge' }
@@ -48,10 +67,379 @@ paths:
           required: true
           schema: { $ref: '#/components/schemas/Identifier' }
       responses:
-        '200': { description: Credential-free recomputed projection, content: { application/json: { schema: { $ref: '#/components/schemas/Projection' } } } }
+        '200':
+          {
+            description: Credential-free recomputed projection,
+            content: { application/json: { schema: { $ref: '#/components/schemas/Projection' } } },
+          }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/governance/plans:accept:
+    post:
+      operationId: acceptGovernanceAuthorityPlan
+      parameters:
+        - $ref: '#/components/parameters/AuthorityIdempotencyKey'
+        - $ref: '#/components/parameters/GovernanceCaller'
+        - $ref: '#/components/parameters/GovernanceWorkspace'
+        - $ref: '#/components/parameters/GovernanceEpoch'
+        - $ref: '#/components/parameters/GovernanceBuild'
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json: { schema: { $ref: '#/components/schemas/AuthorityAcceptRequest' } },
+            },
+        }
+      responses:
+        '201':
+          {
+            description: 'Record, head, receipt, event, and pending audit delivery committed atomically',
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+          }
+        '200':
+          {
+            description: Original committed receipt returned as duplicate,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+          }
+        '202':
+          {
+            description: Commit outcome requires reconciliation and is not accepted authority,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+          }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '408': { $ref: '#/components/responses/AuthorityTimeout' }
+        '413': { $ref: '#/components/responses/AuthorityTooLarge' }
+        '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '500': { $ref: '#/components/responses/AuthorityInternal' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
+  /v1/governance/plans/{planId}:claim-execution:
+    post:
+      operationId: claimGovernanceAuthorityExecution
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/AuthorityIdempotencyKey' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: '#/components/schemas/AuthorityTransitionRequest' } },
+            },
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/AuthorityAccepted' },
+          '200': { $ref: '#/components/responses/AuthorityDuplicate' },
+          '202': { $ref: '#/components/responses/AuthorityReconciliation' },
+          '404': { $ref: '#/components/responses/AuthorityNotFound' },
+          '408': { $ref: '#/components/responses/AuthorityTimeout' },
+          '409': { $ref: '#/components/responses/AuthorityConflict' },
+          '413': { $ref: '#/components/responses/AuthorityTooLarge' },
+          '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' },
+          '422': { $ref: '#/components/responses/AuthorityUnprocessable' },
+          '500': { $ref: '#/components/responses/AuthorityInternal' },
+          '503': { $ref: '#/components/responses/AuthorityUnavailable' },
+        }
+  /v1/governance/plans/{planId}:complete-execution:
+    post:
+      operationId: completeGovernanceAuthorityExecution
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/AuthorityIdempotencyKey' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: '#/components/schemas/AuthorityTransitionRequest' } },
+            },
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/AuthorityAccepted' },
+          '200': { $ref: '#/components/responses/AuthorityDuplicate' },
+          '202': { $ref: '#/components/responses/AuthorityReconciliation' },
+          '404': { $ref: '#/components/responses/AuthorityNotFound' },
+          '408': { $ref: '#/components/responses/AuthorityTimeout' },
+          '409': { $ref: '#/components/responses/AuthorityConflict' },
+          '413': { $ref: '#/components/responses/AuthorityTooLarge' },
+          '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' },
+          '422': { $ref: '#/components/responses/AuthorityUnprocessable' },
+          '500': { $ref: '#/components/responses/AuthorityInternal' },
+          '503': { $ref: '#/components/responses/AuthorityUnavailable' },
+        }
+  /v1/governance/plans/{planId}:cancel:
+    post:
+      operationId: cancelGovernanceAuthorityPlan
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/AuthorityIdempotencyKey' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: '#/components/schemas/AuthorityTransitionRequest' } },
+            },
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/AuthorityAccepted' },
+          '200': { $ref: '#/components/responses/AuthorityDuplicate' },
+          '202': { $ref: '#/components/responses/AuthorityReconciliation' },
+          '404': { $ref: '#/components/responses/AuthorityNotFound' },
+          '408': { $ref: '#/components/responses/AuthorityTimeout' },
+          '409': { $ref: '#/components/responses/AuthorityConflict' },
+          '413': { $ref: '#/components/responses/AuthorityTooLarge' },
+          '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' },
+          '422': { $ref: '#/components/responses/AuthorityUnprocessable' },
+          '500': { $ref: '#/components/responses/AuthorityInternal' },
+          '503': { $ref: '#/components/responses/AuthorityUnavailable' },
+        }
+  /v1/governance/plans/{planId}:expire:
+    post:
+      operationId: expireGovernanceAuthorityPlan
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/AuthorityIdempotencyKey' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: '#/components/schemas/AuthorityTransitionRequest' } },
+            },
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/AuthorityAccepted' },
+          '200': { $ref: '#/components/responses/AuthorityDuplicate' },
+          '202': { $ref: '#/components/responses/AuthorityReconciliation' },
+          '404': { $ref: '#/components/responses/AuthorityNotFound' },
+          '408': { $ref: '#/components/responses/AuthorityTimeout' },
+          '409': { $ref: '#/components/responses/AuthorityConflict' },
+          '413': { $ref: '#/components/responses/AuthorityTooLarge' },
+          '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' },
+          '422': { $ref: '#/components/responses/AuthorityUnprocessable' },
+          '500': { $ref: '#/components/responses/AuthorityInternal' },
+          '503': { $ref: '#/components/responses/AuthorityUnavailable' },
+        }
+  /v1/governance/plans/{planId}:require-reconciliation:
+    post:
+      operationId: requireGovernanceAuthorityReconciliation
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/AuthorityIdempotencyKey' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: '#/components/schemas/AuthorityTransitionRequest' } },
+            },
+        }
+      responses:
+        {
+          '201': { $ref: '#/components/responses/AuthorityAccepted' },
+          '200': { $ref: '#/components/responses/AuthorityDuplicate' },
+          '202': { $ref: '#/components/responses/AuthorityReconciliation' },
+          '404': { $ref: '#/components/responses/AuthorityNotFound' },
+          '408': { $ref: '#/components/responses/AuthorityTimeout' },
+          '409': { $ref: '#/components/responses/AuthorityConflict' },
+          '413': { $ref: '#/components/responses/AuthorityTooLarge' },
+          '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' },
+          '422': { $ref: '#/components/responses/AuthorityUnprocessable' },
+          '500': { $ref: '#/components/responses/AuthorityInternal' },
+          '503': { $ref: '#/components/responses/AuthorityUnavailable' },
+        }
+  /v1/governance/plans/{planId}:
+    get:
+      operationId: readGovernanceAuthorityPlan
+      parameters:
+        [
+          { $ref: '#/components/parameters/PlanPath' },
+          { $ref: '#/components/parameters/GovernanceCaller' },
+          { $ref: '#/components/parameters/GovernanceWorkspace' },
+          { $ref: '#/components/parameters/GovernanceEpoch' },
+          { $ref: '#/components/parameters/GovernanceBuild' },
+        ]
+      responses:
+        '200':
+          {
+            description: Current record selected by its persisted Go route,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/AuthorityRead' } } },
+          }
+        '404': { $ref: '#/components/responses/AuthorityNotFound' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '500': { $ref: '#/components/responses/AuthorityInternal' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
+  /v1/governance/receipts/{idempotencyKey}:
+    get:
+      operationId: readGovernanceAuthorityReceipt
+      parameters:
+        - {
+            name: idempotencyKey,
+            in: path,
+            required: true,
+            schema:
+              { type: string, pattern: '^openslack\.governance-authority\.v1\.[0-9a-f]{64}$' },
+          }
+        - $ref: '#/components/parameters/GovernanceCaller'
+        - $ref: '#/components/parameters/GovernanceWorkspace'
+        - $ref: '#/components/parameters/GovernanceEpoch'
+        - $ref: '#/components/parameters/GovernanceBuild'
+      responses:
+        '200':
+          {
+            description: Persisted original authority receipt,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+          }
+        '404': { $ref: '#/components/responses/AuthorityNotFound' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '500': { $ref: '#/components/responses/AuthorityInternal' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
+  /v1/governance/plans/{planId}/authority-events/{acceptedRevision}:record:
+    post:
+      operationId: recordGovernanceAuthorityAuditDelivery
+      parameters:
+        - $ref: '#/components/parameters/PlanPath'
+        - {
+            name: acceptedRevision,
+            in: path,
+            required: true,
+            schema: { type: integer, minimum: 1, maximum: 9007199254740991 },
+          }
+        - {
+            name: Idempotency-Key,
+            in: header,
+            required: true,
+            schema:
+              {
+                type: string,
+                pattern: '^openslack\.governance-authority-audit\.v1\.[0-9a-f]{64}$',
+              },
+          }
+        - $ref: '#/components/parameters/GovernanceCaller'
+        - $ref: '#/components/parameters/GovernanceWorkspace'
+        - $ref: '#/components/parameters/GovernanceEpoch'
+        - $ref: '#/components/parameters/GovernanceBuild'
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan-audit.v1.schema.json',
+                    },
+                },
+            },
+        }
+      responses:
+        '201':
+          {
+            description: Pending audit delivery recorded,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: '#/components/schemas/AuthorityAuditReceipt' } },
+              },
+          }
+        '200':
+          {
+            description: Same exact audit acknowledgement returned as duplicate,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: '#/components/schemas/AuthorityAuditReceipt' } },
+              },
+          }
+        '404': { $ref: '#/components/responses/AuthorityNotFound' }
+        '408': { $ref: '#/components/responses/AuthorityTimeout' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '413': { $ref: '#/components/responses/AuthorityTooLarge' }
+        '415': { $ref: '#/components/responses/AuthorityUnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '500': { $ref: '#/components/responses/AuthorityInternal' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
+  /v1/governance/plans/{planId}/authority-events/{acceptedRevision}:pending:
+    get:
+      operationId: readPendingGovernanceAuthorityAuditDelivery
+      description: Bounded point recovery for the exact current plan revision; recorded or absent deliveries return 404, the next transition is blocked while pending, and no list or claim surface exists.
+      parameters:
+        - $ref: '#/components/parameters/PlanPath'
+        - {
+            name: acceptedRevision,
+            in: path,
+            required: true,
+            schema: { type: integer, minimum: 1, maximum: 9007199254740991 },
+          }
+        - $ref: '#/components/parameters/GovernanceCaller'
+        - $ref: '#/components/parameters/GovernanceWorkspace'
+        - $ref: '#/components/parameters/GovernanceEpoch'
+        - $ref: '#/components/parameters/GovernanceBuild'
+      responses:
+        '200':
+          {
+            description: Exact revision still requires an authority audit acknowledgement,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: '#/components/schemas/AuthorityPendingAudit' } },
+              },
+          }
+        '404': { $ref: '#/components/responses/AuthorityNotFound' }
+        '409': { $ref: '#/components/responses/AuthorityConflict' }
+        '422': { $ref: '#/components/responses/AuthorityUnprocessable' }
+        '500': { $ref: '#/components/responses/AuthorityInternal' }
+        '503': { $ref: '#/components/responses/AuthorityUnavailable' }
   /health/live:
     get:
       operationId: governanceShadowLive
@@ -59,7 +447,8 @@ paths:
   /health/ready:
     get:
       operationId: governanceShadowReady
-      responses: { '200': { description: Database and schema ready }, '503': { description: Not ready } }
+      responses:
+        { '200': { description: Database and schema ready }, '503': { description: Not ready } }
   /health/version:
     get:
       operationId: governanceShadowVersion
@@ -67,7 +456,11 @@ paths:
   /metrics:
     get:
       operationId: governanceShadowMetrics
-      responses: { '200': { description: Low-cardinality Prometheus metrics }, '503': { description: Metrics unavailable } }
+      responses:
+        {
+          '200': { description: Low-cardinality Prometheus metrics },
+          '503': { description: Metrics unavailable },
+        }
 components:
   parameters:
     IdempotencyKey:
@@ -76,7 +469,299 @@ components:
       required: true
       description: Deterministic openslack.governance-shadow.v1 prefix plus lowercase SHA-256 of the exact canonical body bytes.
       schema: { type: string, pattern: '^openslack\.governance-shadow\.v1\.[0-9a-f]{64}$' }
+    AuthorityIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Deterministic authority prefix plus SHA-256 of exact canonical body bytes; it is distinct from the bound request fingerprint.
+      schema: { type: string, pattern: '^openslack\.governance-authority\.v1\.[0-9a-f]{64}$' }
+    GovernanceCaller:
+      name: X-OpenSlack-Governance-Caller-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    GovernanceWorkspace:
+      name: X-OpenSlack-Governance-Workspace-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    GovernanceEpoch:
+      name: X-OpenSlack-Governance-Routing-Epoch
+      in: header
+      required: true
+      schema: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    GovernanceBuild:
+      name: X-OpenSlack-Governance-Expected-Build-SHA
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Hash' }
+    PlanPath:
+      name: planId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/PlanId' }
   schemas:
+    AuthorityRoute:
+      type: object
+      additionalProperties: false
+      required: [backend, authority, routingEpoch]
+      properties:
+        backend: { const: go }
+        authority: { const: governance-control }
+        routingEpoch: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    AuthorityAcceptRequest:
+      type: object
+      additionalProperties: false
+      required: [schema, operation, workspaceId, planId, expectedRevision, route, record]
+      properties:
+        schema: { const: openslack.governance_authority_accept.v1 }
+        operation: { const: accept }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        expectedRevision: { const: 0 }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        record:
+          {
+            $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan.v1.schema.json',
+          }
+    AuthorityTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema, operation, workspaceId, planId, expectedRevision, route, record]
+      properties:
+        schema: { const: openslack.governance_authority_transition.v1 }
+        operation:
+          { enum: [claim_execution, complete_execution, cancel, expire, require_reconciliation] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        expectedRevision: { type: integer, minimum: 1, maximum: 9007199254740990 }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        record:
+          {
+            $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan.v1.schema.json',
+          }
+    AuthorityReceipt:
+      oneOf:
+        - $ref: '#/components/schemas/AuthorityAcceptedReceipt'
+        - $ref: '#/components/schemas/AuthorityReconciliationReceipt'
+    AuthorityAcceptedReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          operation,
+          status,
+          workspaceId,
+          planId,
+          expectedRevision,
+          route,
+          idempotencyKey,
+          requestFingerprint,
+          recordHash,
+          correlationId,
+          callerId,
+          serviceBuildSha,
+          acceptedRevision,
+          state,
+          record,
+          committedAt,
+        ]
+      properties:
+        schema: { const: openslack.governance_authority_receipt.v1 }
+        operation:
+          {
+            enum:
+              [accept, claim_execution, complete_execution, cancel, expire, require_reconciliation],
+          }
+        status: { enum: [accepted, duplicate] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        expectedRevision: { type: integer, minimum: 0, maximum: 9007199254740990 }
+        acceptedRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        state:
+          {
+            enum:
+              [
+                pending,
+                executing,
+                succeeded,
+                blocked,
+                failed,
+                reconciliation_required,
+                cancelled,
+                expired,
+              ],
+          }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        idempotencyKey:
+          { type: string, pattern: '^openslack\.governance-authority\.v1\.[0-9a-f]{64}$' }
+        requestFingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        callerId: { $ref: '#/components/schemas/Identifier' }
+        executionId:
+          {
+            type: string,
+            pattern: '^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          }
+        serviceBuildSha: { $ref: '#/components/schemas/Hash' }
+        record:
+          {
+            $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan.v1.schema.json',
+          }
+        committedAt:
+          {
+            type: string,
+            pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$',
+          }
+      allOf:
+        - if: { properties: { operation: { enum: [accept, cancel, expire] } } }
+          then: { not: { required: [executionId] } }
+    AuthorityReconciliationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          operation,
+          status,
+          workspaceId,
+          planId,
+          expectedRevision,
+          route,
+          idempotencyKey,
+          requestFingerprint,
+          recordHash,
+          correlationId,
+          callerId,
+          serviceBuildSha,
+          targetRevision,
+          targetState,
+          reconciliationToken,
+        ]
+      properties:
+        schema: { const: openslack.governance_authority_receipt.v1 }
+        operation:
+          {
+            enum:
+              [accept, claim_execution, complete_execution, cancel, expire, require_reconciliation],
+          }
+        status: { const: reconciliation_required }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        expectedRevision: { type: integer, minimum: 0, maximum: 9007199254740990 }
+        targetRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        targetState:
+          {
+            enum:
+              [
+                pending,
+                executing,
+                succeeded,
+                blocked,
+                failed,
+                reconciliation_required,
+                cancelled,
+                expired,
+              ],
+          }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        idempotencyKey:
+          { type: string, pattern: '^openslack\.governance-authority\.v1\.[0-9a-f]{64}$' }
+        requestFingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        callerId: { $ref: '#/components/schemas/Identifier' }
+        executionId:
+          {
+            type: string,
+            pattern: '^GEXEC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          }
+        serviceBuildSha: { $ref: '#/components/schemas/Hash' }
+        reconciliationToken:
+          {
+            type: string,
+            minLength: 16,
+            maxLength: 256,
+            pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:@/-]*$',
+          }
+      allOf:
+        - if: { properties: { operation: { enum: [accept, cancel, expire] } } }
+          then: { not: { required: [executionId] } }
+    AuthorityRead:
+      type: object
+      additionalProperties: false
+      required: [schema, workspaceId, planId, route, recordHash, record, serviceBuildSha]
+      properties:
+        schema: { const: openslack.governance_authority_read.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        record:
+          {
+            $ref: '../../internal/contractmirror/generated/v1/schemas/governed-plan.v1.schema.json',
+          }
+        serviceBuildSha: { $ref: '#/components/schemas/Hash' }
+    AuthorityAuditReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          planId,
+          revision,
+          eventId,
+          eventHash,
+          idempotencyKey,
+          requestFingerprint,
+          recordedAt,
+        ]
+      properties:
+        schema: { const: openslack.governance_authority_audit_receipt.v1 }
+        status: { enum: [recorded, duplicate] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        eventId: { $ref: '#/components/schemas/Identifier' }
+        eventHash: { $ref: '#/components/schemas/Hash' }
+        idempotencyKey:
+          { type: string, pattern: '^openslack\.governance-authority-audit\.v1\.[0-9a-f]{64}$' }
+        requestFingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        recordedAt:
+          { type: string, pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' }
+    AuthorityPendingAudit:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          planId,
+          revision,
+          operation,
+          route,
+          recordHash,
+          serviceBuildSha,
+        ]
+      properties:
+        schema: { const: openslack.governance_authority_pending_audit.v1 }
+        status: { const: pending }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        planId: { $ref: '#/components/schemas/PlanId' }
+        revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        operation:
+          {
+            enum:
+              [accept, claim_execution, complete_execution, cancel, expire, require_reconciliation],
+          }
+        route: { $ref: '#/components/schemas/AuthorityRoute' }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        serviceBuildSha: { $ref: '#/components/schemas/Hash' }
     Source:
       type: object
       additionalProperties: false
@@ -97,7 +782,15 @@ components:
     CurrentBindings:
       type: object
       additionalProperties: false
-      required: [sourceVersionHash, permissionSnapshotHash, actionCatalogHash, executorBindingHash, buildNonceHash, processNonceHash]
+      required:
+        [
+          sourceVersionHash,
+          permissionSnapshotHash,
+          actionCatalogHash,
+          executorBindingHash,
+          buildNonceHash,
+          processNonceHash,
+        ]
       properties:
         sourceVersionHash: { $ref: '#/components/schemas/Hash' }
         permissionSnapshotHash: { $ref: '#/components/schemas/Hash' }
@@ -108,24 +801,49 @@ components:
     ConfirmationObservation:
       type: object
       additionalProperties: false
-      required: [kind, attemptId, recordRevision, attemptedAt, actorId, workspaceId, presentedTokenHash, authorityOutcome]
+      required:
+        [
+          kind,
+          attemptId,
+          recordRevision,
+          attemptedAt,
+          actorId,
+          workspaceId,
+          presentedTokenHash,
+          authorityOutcome,
+        ]
       properties:
         kind: { const: confirmation }
-        attemptId: { type: string, pattern: '^GCONF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+        attemptId:
+          {
+            type: string,
+            pattern: '^GCONF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          }
         recordRevision: { type: integer, minimum: 1, maximum: 9007199254740991 }
-        attemptedAt: { type: string, pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' }
+        attemptedAt:
+          { type: string, pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' }
         actorId: { $ref: '#/components/schemas/Identifier' }
         workspaceId: { $ref: '#/components/schemas/Identifier' }
         presentedTokenHash: { $ref: '#/components/schemas/Hash' }
         currentBindings: { $ref: '#/components/schemas/CurrentBindings' }
         authorityOutcome:
-          enum: [claim_eligible, confirmation_rejected, binding_changed, expired, state_invalid, execution_active, aborted_before_claim]
+          enum:
+            [
+              claim_eligible,
+              confirmation_rejected,
+              binding_changed,
+              expired,
+              state_invalid,
+              execution_active,
+              aborted_before_claim,
+            ]
       oneOf:
         - required: [currentBindings]
           properties:
             authorityOutcome: { enum: [claim_eligible, binding_changed, aborted_before_claim] }
         - properties:
-            authorityOutcome: { enum: [confirmation_rejected, expired, state_invalid, execution_active] }
+            authorityOutcome:
+              { enum: [confirmation_rejected, expired, state_invalid, execution_active] }
           not:
             required: [currentBindings]
     AuditObservation:
@@ -153,7 +871,11 @@ components:
             - $ref: '#/components/schemas/AuditObservation'
     Hash: { type: string, pattern: '^[0-9a-f]{64}$' }
     Identifier: { type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$' }
-    PlanId: { type: string, pattern: '^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+    PlanId:
+      {
+        type: string,
+        pattern: '^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      }
     ProjectionCounters:
       type: object
       additionalProperties: false
@@ -164,7 +886,21 @@ components:
     Projection:
       type: object
       additionalProperties: false
-      required: [schema, authority, shadow, parity, workspaceId, planId, sourceSequence, matchedRecordRevision, record, observations, confirmation, audit]
+      required:
+        [
+          schema,
+          authority,
+          shadow,
+          parity,
+          workspaceId,
+          planId,
+          sourceSequence,
+          matchedRecordRevision,
+          record,
+          observations,
+          confirmation,
+          audit,
+        ]
       properties:
         schema: { const: openslack.governance_shadow_projection.v1 }
         authority: { const: typescript }
@@ -182,13 +918,27 @@ components:
     Receipt:
       type: object
       additionalProperties: false
-      required: [schema, operation, status, parity, idempotencyKey, requestFingerprint, workspaceId, planId, sourceSequence, observationKind, observationDigest]
+      required:
+        [
+          schema,
+          operation,
+          status,
+          parity,
+          idempotencyKey,
+          requestFingerprint,
+          workspaceId,
+          planId,
+          sourceSequence,
+          observationKind,
+          observationDigest,
+        ]
       properties:
         schema: { const: openslack.governance_shadow_receipt.v1 }
         operation: { const: observation_ingest }
         status: { enum: [accepted, duplicate, reconciliation_required] }
         parity: { enum: [matched, mismatched, unknown] }
-        idempotencyKey: { type: string, pattern: '^openslack\.governance-shadow\.v1\.[0-9a-f]{64}$' }
+        idempotencyKey:
+          { type: string, pattern: '^openslack\.governance-shadow\.v1\.[0-9a-f]{64}$' }
         requestFingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         workspaceId: { type: string }
         planId: { type: string }
@@ -206,11 +956,105 @@ components:
         schema: { const: openslack.governance_shadow_error.v1 }
         code: { type: string }
         message: { type: string }
+    AuthorityError:
+      type: object
+      additionalProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { const: openslack.governance_authority_error.v1 }
+        code: { type: string }
+        message: { type: string }
   responses:
-    NotFound: { description: Projection not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Conflict: { description: Sequence CAS or global idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Timeout: { description: Shared observation request deadline expired, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    TooLarge: { description: Frozen request or response bound exceeded, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Unprocessable: { description: 'Strict JSON, canonical byte, schema, or semantic validation failed', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Unavailable: { description: PostgreSQL unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Internal: { description: Unknown result; caller must retain the same Idempotency-Key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound:
+      {
+        description: Projection not found,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Conflict:
+      {
+        description: Sequence CAS or global idempotency conflict,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Timeout:
+      {
+        description: Shared observation request deadline expired,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    TooLarge:
+      {
+        description: Frozen request or response bound exceeded,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Unprocessable:
+      {
+        description: 'Strict JSON, canonical byte, schema, or semantic validation failed',
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Unavailable:
+      {
+        description: PostgreSQL unavailable,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Internal:
+      {
+        description: Unknown result; caller must retain the same Idempotency-Key,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    AuthorityAccepted:
+      {
+        description: Durable authority transition accepted,
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+      }
+    AuthorityDuplicate:
+      {
+        description: Original authority receipt returned as duplicate,
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+      }
+    AuthorityReconciliation:
+      {
+        description: Commit outcome requires reconciliation and is not accepted authority,
+        content:
+          { application/json: { schema: { $ref: '#/components/schemas/AuthorityReceipt' } } },
+      }
+    AuthorityNotFound:
+      {
+        description: Persisted authority record or receipt not found,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityConflict:
+      {
+        description: 'Idempotency, route, CAS, transition, or immutable binding conflict',
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityTimeout:
+      {
+        description: Authority request deadline expired before a durable result,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityTooLarge:
+      {
+        description: Authority request exceeded the closed byte limit,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityUnsupportedMediaType:
+      {
+        description: Content-Type was not exactly application/json,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityUnprocessable:
+      {
+        description: 'Exact header, canonical byte, schema, or semantic validation failed',
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityInternal:
+      {
+        description: Unknown commit result or invalid persisted result; caller retains the same Idempotency-Key for reconciliation,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }
+    AuthorityUnavailable:
+      {
+        description: PostgreSQL authority store is unavailable,
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorityError' } } },
+      }

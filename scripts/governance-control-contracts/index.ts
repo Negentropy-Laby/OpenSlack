@@ -34,6 +34,11 @@ import {
   governanceShadowContractRoots,
   GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
 } from './shadow.js';
+import {
+  buildGovernanceAuthorityContractOutputs,
+  governanceAuthorityContractRoots,
+  GOVERNANCE_AUTHORITY_CONTRACT_EXPECTED_PATHS,
+} from './authority.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -49,6 +54,7 @@ const serviceMirrorRoot = resolve(
   'services/governance-control/internal/contractmirror/generated/v1',
 );
 const governanceShadowRoots = governanceShadowContractRoots(generatedOutputRoot);
+const governanceAuthorityRoots = governanceAuthorityContractRoots(generatedOutputRoot);
 
 const HASH_PATTERN = '^[0-9a-f]{64}$';
 const IDENTIFIER_PATTERN = '^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$';
@@ -918,6 +924,14 @@ async function writeOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void>
       governanceShadowRoots.goMirrorRoot,
       GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
     )),
+    ...(await exactTreeIssues(
+      governanceAuthorityRoots.authorityRoot,
+      GOVERNANCE_AUTHORITY_CONTRACT_EXPECTED_PATHS,
+    )),
+    ...(await exactTreeIssues(
+      governanceAuthorityRoots.goMirrorRoot,
+      GOVERNANCE_AUTHORITY_CONTRACT_EXPECTED_PATHS,
+    )),
   ];
   if (issues.length > 0)
     throw new Error(`Refusing to write unsafe generated trees:\n${issues.join('\n')}`);
@@ -939,6 +953,14 @@ async function checkOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void>
     ...(await exactTreeIssues(
       governanceShadowRoots.goMirrorRoot,
       GOVERNANCE_SHADOW_CONTRACT_EXPECTED_PATHS,
+    )),
+    ...(await exactTreeIssues(
+      governanceAuthorityRoots.authorityRoot,
+      GOVERNANCE_AUTHORITY_CONTRACT_EXPECTED_PATHS,
+    )),
+    ...(await exactTreeIssues(
+      governanceAuthorityRoots.goMirrorRoot,
+      GOVERNANCE_AUTHORITY_CONTRACT_EXPECTED_PATHS,
     )),
   ];
   for (const [path, expected] of outputs) {
@@ -965,6 +987,9 @@ async function main(): Promise<void> {
   }
   const outputs = await buildOutputs();
   for (const [path, bytes] of await buildGovernanceShadowContractOutputs(generatedOutputRoot)) {
+    outputs.set(path, bytes);
+  }
+  for (const [path, bytes] of await buildGovernanceAuthorityContractOutputs(generatedOutputRoot)) {
     outputs.set(path, bytes);
   }
   if (mode === 'generate' || mode === '--write') await writeOutputs(outputs);

@@ -14,6 +14,7 @@ import {
   type OpenSlackMcpContext,
   type OpenSlackMcpServer,
   type OperatorApplicationContextPort,
+  type GovernedPlanAuthorityCompositionOptions,
 } from '@openslack/mcp';
 import {
   bindLocalHumanSubject,
@@ -75,6 +76,95 @@ interface McpServeOptions {
   readonly graphReadAuthorityOrigin?: string;
   readonly graphReadAuthorityNetwork?: 'loopback' | 'internal';
   readonly graphReadAuthorityBuildSha?: string;
+  readonly governanceAuthorityBackend?: 'go' | 'ts-local';
+  readonly governanceAuthorityRoutingEpoch?: string;
+  readonly governanceAuthorityTenant?: string;
+  readonly governanceAuthorityOrigin?: string;
+  readonly governanceAuthorityNetwork?: 'loopback' | 'internal';
+  readonly governanceAuthorityBuildSha?: string;
+  readonly governanceAuthorityCaller?: string;
+  readonly governanceAuthorityExpiresAt?: string;
+}
+
+function hasGovernanceAuthority(options: McpServeOptions): boolean {
+  return [
+    options.governanceAuthorityBackend,
+    options.governanceAuthorityRoutingEpoch,
+    options.governanceAuthorityTenant,
+    options.governanceAuthorityOrigin,
+    options.governanceAuthorityNetwork,
+    options.governanceAuthorityBuildSha,
+    options.governanceAuthorityCaller,
+    options.governanceAuthorityExpiresAt,
+  ].some((value) => value !== undefined);
+}
+
+function bindGovernanceAuthority(
+  options: McpServeOptions,
+): GovernedPlanAuthorityCompositionOptions | undefined {
+  if (!hasGovernanceAuthority(options)) return undefined;
+  if (
+    options.governanceAuthorityBackend === undefined ||
+    options.governanceAuthorityRoutingEpoch === undefined ||
+    options.governanceAuthorityTenant === undefined
+  ) {
+    throw new McpProfileArgumentError(
+      'Governance authority requires backend, routing epoch, and tenant.',
+    );
+  }
+  if (!/^[1-9]\d*$/u.test(options.governanceAuthorityRoutingEpoch)) {
+    throw new McpProfileArgumentError('--governance-authority-routing-epoch must be canonical.');
+  }
+  const routingEpoch = Number(options.governanceAuthorityRoutingEpoch);
+  if (!Number.isSafeInteger(routingEpoch)) {
+    throw new McpProfileArgumentError(
+      '--governance-authority-routing-epoch must be a safe integer.',
+    );
+  }
+  const transportOptions = [
+    ['--governance-authority-origin', options.governanceAuthorityOrigin],
+    ['--governance-authority-build-sha', options.governanceAuthorityBuildSha],
+    ['--governance-authority-caller', options.governanceAuthorityCaller],
+    ['--governance-authority-expires-at', options.governanceAuthorityExpiresAt],
+  ] as const;
+  const transportCount = transportOptions.filter(([, value]) => value !== undefined).length;
+  if (
+    options.governanceAuthorityBackend === 'go'
+      ? transportCount !== transportOptions.length
+      : transportCount !== 0 && transportCount !== transportOptions.length
+  ) {
+    const missing = transportOptions
+      .filter(([, value]) => value === undefined)
+      .map(([name]) => name);
+    throw new McpProfileArgumentError(
+      `Governance-control transport is incomplete; missing ${missing.join(', ')}.`,
+    );
+  }
+  if (options.governanceAuthorityNetwork !== undefined && transportCount === 0) {
+    throw new McpProfileArgumentError(
+      '--governance-authority-network requires a complete governance-control transport.',
+    );
+  }
+  return Object.freeze({
+    backend: options.governanceAuthorityBackend,
+    routingEpoch,
+    tenantId: options.governanceAuthorityTenant,
+    ...(options.governanceAuthorityOrigin === undefined
+      ? {}
+      : { origin: options.governanceAuthorityOrigin }),
+    ...(options.governanceAuthorityNetwork === undefined
+      ? {}
+      : { networkMode: options.governanceAuthorityNetwork }),
+    ...(options.governanceAuthorityBuildSha === undefined
+      ? {}
+      : { expectedBuildSha: options.governanceAuthorityBuildSha }),
+    ...(options.governanceAuthorityCaller === undefined
+      ? {}
+      : { callerId: options.governanceAuthorityCaller }),
+    ...(options.governanceAuthorityExpiresAt === undefined
+      ? {}
+      : { expiresAt: options.governanceAuthorityExpiresAt }),
+  });
 }
 
 function hasGraphReadAuthority(options: McpServeOptions): boolean {
@@ -280,7 +370,8 @@ async function createProfileContext(
     if (
       options.principalRef !== undefined ||
       options.humanPrincipal !== undefined ||
-      options.workspaceId !== undefined
+      options.workspaceId !== undefined ||
+      hasGovernanceAuthority(options)
     ) {
       throw new McpProfileArgumentError('read-only does not accept authority-binding arguments.');
     }
@@ -299,6 +390,7 @@ async function createProfileContext(
   if (options.principalRef === undefined) {
     throw new McpProfileArgumentError(`${options.profile} requires --principal-ref.`);
   }
+  const governanceAuthority = bindGovernanceAuthority(options);
   if (options.profile === 'agent-bound') {
     if (options.humanPrincipal !== undefined) {
       throw new McpProfileArgumentError('agent-bound does not accept --human-principal.');
@@ -310,6 +402,7 @@ async function createProfileContext(
       principalRef: options.principalRef,
       provider: 'cli',
       ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
+      ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
     });
     const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
@@ -331,6 +424,7 @@ async function createProfileContext(
     principalRef: options.principalRef,
     humanPrincipalAssertion: options.humanPrincipal,
     ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
+    ...(governanceAuthority === undefined ? {} : { governanceAuthority }),
   });
   const graphReadMirror = bindGraphReadMirror(dependencies, options);
   return createContext({
@@ -485,6 +579,42 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
     .option(
       '--graph-read-authority-build-sha <sha>',
       'Bind every Go authority read to one exact service build SHA',
+    )
+    .addOption(
+      new Option(
+        '--governance-authority-backend <backend>',
+        'Select the backend for newly created governed plans in this routing epoch',
+      ).choices(['go', 'ts-local']),
+    )
+    .option(
+      '--governance-authority-routing-epoch <epoch>',
+      'Bind newly created governed plans to one immutable authority epoch',
+    )
+    .option(
+      '--governance-authority-tenant <workspace-id>',
+      'Bind governance authority to the canonical workspace tenant',
+    )
+    .option(
+      '--governance-authority-origin <origin>',
+      'Use one exact private governance-control origin',
+    )
+    .addOption(
+      new Option(
+        '--governance-authority-network <mode>',
+        'Restrict governance-control to loopback or explicitly selected internal IPs',
+      ).choices(['loopback', 'internal']),
+    )
+    .option(
+      '--governance-authority-build-sha <sha>',
+      'Bind governance authority receipts to one exact service build SHA',
+    )
+    .option(
+      '--governance-authority-caller <caller-id>',
+      'Bind governance-control requests to one host-owned caller ID',
+    )
+    .option(
+      '--governance-authority-expires-at <timestamp>',
+      'Expire the process governance-control transport binding',
     )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;

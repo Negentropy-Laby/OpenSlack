@@ -856,6 +856,11 @@
       "status": "active"
     },
     {
+      "id": "production-gs6-code-review",
+      "path": "production/code-reviews/code-review-gs6-2026-08-03.md",
+      "status": "active"
+    },
+    {
       "id": "production-epics-index",
       "path": "production/epics/README.md",
       "status": "index"

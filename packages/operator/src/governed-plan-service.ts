@@ -196,6 +196,16 @@ const MIN_EXECUTION_TIMEOUT_MS = GOVERNED_PLAN_SERVICE_LIMITS.minExecutionTimeou
 const MAX_EXECUTION_TIMEOUT_MS = GOVERNED_PLAN_SERVICE_LIMITS.maxExecutionTimeoutMs;
 const COMPILERS = new WeakMap<object, GovernedPlanCompile>();
 const SERVICES = new WeakSet<object>();
+const AUTHORITY_AUDIT_ACK_TYPES = new Set<GovernedPlanAuditEventType>([
+  'plan.previewed',
+  'plan.confirmed',
+  'plan.cancelled',
+  'plan.expired',
+  'plan.execution_completed',
+  'plan.execution_blocked',
+  'plan.execution_failed',
+  'plan.reconciliation_required',
+]);
 
 export class GovernedPlanServiceError extends Error {
   readonly code: (typeof GOVERNED_PLAN_SERVICE_ERROR_CODES)[number];
@@ -661,7 +671,13 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       evidenceRefs,
       ...(details === undefined ? {} : { details }),
     }) as unknown as GovernedPlanAuditEvent;
+    if (AUTHORITY_AUDIT_ACK_TYPES.has(type)) {
+      await this.#store.prepareAudit?.(event);
+    }
     await this.#auditSink(event);
+    if (AUTHORITY_AUDIT_ACK_TYPES.has(type)) {
+      await this.#store.recordAudit?.(event);
+    }
     try {
       this.#shadowObserver?.observeAudit(record, event);
     } catch {

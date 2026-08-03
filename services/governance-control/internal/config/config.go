@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,21 +15,31 @@ import (
 )
 
 const (
-	defaultHTTPBind        = "127.0.0.1:8080"
-	defaultMigrationSource = "/migrations"
-	NetworkLoopback        = "loopback"
-	NetworkInternal        = "internal"
+	defaultHTTPBind             = "127.0.0.1:8080"
+	defaultMigrationSource      = "/migrations"
+	NetworkLoopback             = "loopback"
+	NetworkInternal             = "internal"
+	AuthorityDisabled           = ""
+	AuthorityLocalQualification = "local-qualification-v1"
+	MaxAuthorityDrainEpochs     = 128
 )
 
 var buildPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var authorityIdentifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$`)
 
 type Config struct {
-	DatabaseURL      string
-	HTTPBind         string
-	NetworkMode      string
-	ServiceBuildSHA  string
-	MigrationSource  string
-	ShutdownDeadline time.Duration
+	DatabaseURL               string
+	HTTPBind                  string
+	NetworkMode               string
+	ServiceBuildSHA           string
+	MigrationSource           string
+	ShutdownDeadline          time.Duration
+	AuthorityEnabled          bool
+	AuthorityWorkspaceID      string
+	AuthorityCallerID         string
+	AuthorityRoutingEpoch     int64
+	AuthorityAcceptNewRecords bool
+	AuthorityDrainEpochs      []int64
 }
 
 type MigrationConfig struct{ DatabaseURL, MigrationDatabaseURL, MigrationSource string }
@@ -63,8 +74,54 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if !buildPattern.MatchString(build) {
 		return Config{}, fmt.Errorf("GOVERNANCE_SERVICE_BUILD_SHA must be 64 lowercase hexadecimal characters")
 	}
+	authorityMode := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_MODE"])
+	if authorityMode != AuthorityDisabled && authorityMode != AuthorityLocalQualification {
+		return Config{}, fmt.Errorf("GOVERNANCE_AUTHORITY_MODE must be empty or local-qualification-v1")
+	}
+	authorityWorkspaceID := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_WORKSPACE_ID"])
+	authorityCallerID := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_CALLER_ID"])
+	authorityRoutingEpochText := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_ROUTING_EPOCH"])
+	authorityAcceptNewText := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS"])
+	authorityDrainText := strings.TrimSpace(values["GOVERNANCE_AUTHORITY_DRAIN_EPOCHS"])
+	var authorityRoutingEpoch int64
+	var authorityAcceptNew bool
+	var authorityDrainEpochs []int64
+	if authorityMode == AuthorityLocalQualification {
+		var epochErr error
+		authorityRoutingEpoch, epochErr = strconv.ParseInt(authorityRoutingEpochText, 10, 64)
+		if !authorityIdentifierPattern.MatchString(authorityWorkspaceID) || !authorityIdentifierPattern.MatchString(authorityCallerID) ||
+			epochErr != nil || authorityRoutingEpoch < 1 || authorityRoutingEpoch > 9_007_199_254_740_991 || strconv.FormatInt(authorityRoutingEpoch, 10) != authorityRoutingEpochText {
+			return Config{}, fmt.Errorf("enabled GS6 authority requires exact workspace, caller, and canonical positive routing epoch")
+		}
+		if authorityAcceptNewText != "" && authorityAcceptNewText != "true" && authorityAcceptNewText != "false" {
+			return Config{}, fmt.Errorf("GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS must be true or false")
+		}
+		authorityAcceptNew = authorityAcceptNewText == "true"
+		seen := map[int64]struct{}{authorityRoutingEpoch: {}}
+		if authorityDrainText != "" {
+			for _, item := range strings.Split(authorityDrainText, ",") {
+				if len(authorityDrainEpochs) >= MaxAuthorityDrainEpochs {
+					return Config{}, fmt.Errorf("GOVERNANCE_AUTHORITY_DRAIN_EPOCHS exceeds the %d epoch limit", MaxAuthorityDrainEpochs)
+				}
+				epoch, epochErr := strconv.ParseInt(item, 10, 64)
+				if epochErr != nil || epoch < 1 || epoch > 9_007_199_254_740_991 || strconv.FormatInt(epoch, 10) != item {
+					return Config{}, fmt.Errorf("GOVERNANCE_AUTHORITY_DRAIN_EPOCHS must contain canonical positive safe integers")
+				}
+				if _, duplicate := seen[epoch]; duplicate {
+					return Config{}, fmt.Errorf("GOVERNANCE_AUTHORITY_DRAIN_EPOCHS must be unique and exclude the active epoch")
+				}
+				seen[epoch] = struct{}{}
+				authorityDrainEpochs = append(authorityDrainEpochs, epoch)
+			}
+		}
+	} else if authorityWorkspaceID != "" || authorityCallerID != "" || authorityRoutingEpochText != "" || authorityAcceptNewText != "" || authorityDrainText != "" {
+		return Config{}, fmt.Errorf("authority bindings require GOVERNANCE_AUTHORITY_MODE=local-qualification-v1")
+	}
 	return Config{DatabaseURL: migration.DatabaseURL, HTTPBind: bind, NetworkMode: mode, ServiceBuildSHA: build,
-		MigrationSource: migration.MigrationSource, ShutdownDeadline: 30 * time.Second}, nil
+		MigrationSource: migration.MigrationSource, ShutdownDeadline: 30 * time.Second,
+		AuthorityEnabled: authorityMode == AuthorityLocalQualification, AuthorityWorkspaceID: authorityWorkspaceID,
+		AuthorityCallerID: authorityCallerID, AuthorityRoutingEpoch: authorityRoutingEpoch,
+		AuthorityAcceptNewRecords: authorityAcceptNew, AuthorityDrainEpochs: authorityDrainEpochs}, nil
 }
 
 func LoadMigration() (MigrationConfig, error) { return LoadMigrationEnvironment(os.Environ()) }
@@ -79,7 +136,10 @@ func LoadMigrationEnvironment(environment []string) (MigrationConfig, error) {
 
 func parse(environment []string) (map[string]string, error) {
 	values := map[string]string{}
-	allowed := map[string]struct{}{"GOVERNANCE_HTTP_BIND": {}, "GOVERNANCE_NETWORK_MODE": {}, "GOVERNANCE_SERVICE_BUILD_SHA": {}}
+	allowed := map[string]struct{}{"GOVERNANCE_HTTP_BIND": {}, "GOVERNANCE_NETWORK_MODE": {}, "GOVERNANCE_SERVICE_BUILD_SHA": {}, "GOVERNANCE_AUTHORITY_MODE": {},
+		"GOVERNANCE_AUTHORITY_WORKSPACE_ID": {}, "GOVERNANCE_AUTHORITY_CALLER_ID": {}, "GOVERNANCE_AUTHORITY_ROUTING_EPOCH": {}}
+	allowed["GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS"] = struct{}{}
+	allowed["GOVERNANCE_AUTHORITY_DRAIN_EPOCHS"] = struct{}{}
 	for _, entry := range environment {
 		name, value, found := strings.Cut(entry, "=")
 		if !found || name == "" {

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/governance-authority-transition.v1.schema.json",
+  "title": "OpenSlack Governance Authority Transition Request",
+  "$comment": "Structural prefilter. Runtime validation requires record.revision=expectedRevision+1, an immutable route, and the exact operation/state transition permitted by governed-plan v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "operation",
+    "workspaceId",
+    "planId",
+    "expectedRevision",
+    "route",
+    "record"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.governance_authority_transition.v1" },
+    "operation": {
+      "enum": [
+        "claim_execution",
+        "complete_execution",
+        "cancel",
+        "expire",
+        "require_reconciliation"
+      ]
+    },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,255}$"
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^GPLAN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "route": {
+      "$ref": "https://openslack.dev/contracts/governance-authority-route.v1.schema.json"
+    },
+    "record": {
+      "$ref": "https://openslack.dev/contracts/governed-plan/v1/governed-plan.v1.schema.json"
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740990
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "claim_execution" } } },
+      "then": {
+        "properties": {
+          "record": { "properties": { "state": { "const": "executing" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "complete_execution" } }
+      },
+      "then": {
+        "properties": {
+          "record": {
+            "properties": {
+              "state": { "enum": ["succeeded", "blocked", "failed"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "cancel" } } },
+      "then": {
+        "properties": {
+          "record": { "properties": { "state": { "const": "cancelled" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "expire" } } },
+      "then": {
+        "properties": {
+          "record": { "properties": { "state": { "const": "expired" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "require_reconciliation" } }
+      },
+      "then": {
+        "properties": {
+          "record": {
+            "properties": { "state": { "const": "reconciliation_required" } }
+          }
+        }
+      }
+    }
+  ]
+}

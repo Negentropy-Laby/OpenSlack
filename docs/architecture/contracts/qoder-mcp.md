@@ -6,9 +6,10 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-02
+updated: 2026-08-03
 sources:
   - docs/reference/document-path-migration-v1.yaml
+  - packages/operator/contracts/governed-plan-authority/v1/manifest.json
 ---
 
 # Qoder MCP Contract
@@ -159,6 +160,67 @@ remain unchanged. Go-authority publication never dual-writes the TypeScript-loca
 operators must rebuild and freshness-verify every active local scenario before activating a
 higher-epoch rollback. Missing or stale rollback evidence remains blocked and is audited as such.
 
+GS6 adds an independent, process-immutable governed-mutation policy for newly previewed plans. It
+does not change tool names, inputs, `openslack.mcp_result.v2`, Skill behavior, or the exact
+12/16/17 production counts. Read-only still exposes no mutation tools. Agent-bound and
+human-attested continue using the same Operator compiler, confirmation capability and binding
+validation, reviewed executor catalog, and audit projection.
+
+The new-record policy selects `backend: go | ts-local`, a positive safe-integer `routingEpoch`, and
+the matching `authority: governance-control | typescript`. A pre-GS6 plan with no persisted route
+is permanently `ts-local / typescript`. Every new plan persists one immutable sidecar route before
+durable acceptance. A `go / governance-control` plan is written and transitioned only through the
+bounded Governance Control API; after a valid committed receipt, TypeScript never writes that plan
+to `.openslack.local/operator/governed-plans`. Transport, timeout, invalid receipt, build drift,
+scope drift, or unknown commit blocks and reconciles through the Go authority read without local
+fallback or effect replay.
+
+The CLI expresses that closed policy with `--governance-authority-backend`,
+`--governance-authority-routing-epoch`, and `--governance-authority-tenant`. The bounded Go
+transport is supplied as one all-or-none group:
+`--governance-authority-origin`, `--governance-authority-build-sha`,
+`--governance-authority-caller`, and `--governance-authority-expires-at`; optional
+`--governance-authority-network internal` permits only the already-reviewed private/link-local IP
+mode. DNS, public/wildcard origins, redirects, credentials, and added URL components remain
+forbidden.
+
+A higher epoch may select `ts-local` for new plans, but it does not reroute existing Go plans.
+Origin, expected build, caller binding, and Go read/mutation transport remain configured while old
+Go records drain. Governance rollback therefore differs from a transport-free per-request
+fallback: TypeScript writes only newly routed local plans and never becomes a second writer for an
+existing Go plan.
+
+The Go host separately defaults new acceptance off. An operator must explicitly enable new records
+for one active epoch; older allowlisted drain epochs permit read, receipt, transition, and audit
+projection only. Rollback disables new acceptance while retaining the former Go epoch for drain.
+
+GS6 transfers only durable governed-plan acceptance and state transitions for the explicit Go
+route. TypeScript still compiles plans, validates token and current bindings, dispatches sealed
+actions, and projects Collaboration audit. It does not merge OpenSlack confirmation with Workflow
+effect approval, Qoder connector permission, or GitHub review. Local or hosted GS6 qualification
+does not establish authenticated Desktop, `QODER_VERIFIED`, remote Connector/OAuth, live, release,
+or production evidence.
+
+The hosted GS6 single-writer qualification uses the production CLI command and agent-bound
+composition over the official MCP SDK in-memory transport. It asserts the exact 16-tool catalog,
+runs `openslack_preview_scenario` followed by `openslack_confirm_plan`, obtains terminal
+`succeeded` state from the real Go authority route, and checks that no governed-plan record is ever
+written to the TypeScript local authority store. Its closed receipt is cross-language integration
+evidence only; it is not an authenticated Qoder Desktop session and cannot set `QODER_VERIFIED`.
+
+Go-routed mutation recovery also remains outside the MCP surface. Each committed authority
+revision owns one pending audit delivery, but each plan can have at most one pending delivery and
+Go blocks its next transition until that current-head delivery is recorded. On restart, the host
+enumerates only its bounded immutable route sidecars, strictly loads the current Go plan, and
+point-reads
+`GET /v1/governance/plans/{planId}/authority-events/{revision}:pending` with the four exact
+governance binding headers. The closed response carries only pending status, the original authority
+mutation operation, route, record hash, and scope/build identities; it carries no plan record,
+state, audit event, confirmation capability, or new Qoder permission. Missing and already recorded
+deliveries are both `404`, so recovery is bounded and idempotent without an unbounded Go list route.
+No pending delivery can be hidden behind a later revision, so the current-revision point read is
+complete without adding Qoder-visible authority.
+
 ## Result Versions
 
 `openslack.mcp_result.v1` remains frozen as the internal compatibility contract for the nine
@@ -266,6 +328,9 @@ canonical ActionPlan / effect manifest
 source versions and current-head SHAs / permission snapshot
 action catalog / executor binding / build nonce / process nonce
 ```
+
+GS6 stores `backend / routingEpoch / authority` in a separate immutable authority sidecar so the
+frozen `openslack.governed_plan.v1` bytes do not change. Missing sidecar is the legacy local route.
 
 Confirmation performs a bounded strict read, verifies expiry and bindings, recomputes the plan
 hash, revalidates the sealed registry, rereads source versions, resolves current permission

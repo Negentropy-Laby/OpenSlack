@@ -73,6 +73,14 @@ describe('mcp command', () => {
       '--graph-read-authority-origin',
       '--graph-read-authority-network',
       '--graph-read-authority-build-sha',
+      '--governance-authority-backend',
+      '--governance-authority-routing-epoch',
+      '--governance-authority-tenant',
+      '--governance-authority-origin',
+      '--governance-authority-network',
+      '--governance-authority-build-sha',
+      '--governance-authority-caller',
+      '--governance-authority-expires-at',
     ]);
     expect(command.commands[1].options[0].mandatory).toBe(true);
     expect(command.commands[1].options[1]).toMatchObject({
@@ -174,6 +182,108 @@ describe('mcp command', () => {
     });
     expect(createServer).toHaveBeenCalledWith(context);
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
+  });
+
+  it('binds the same host-only Go governance authority into agent-bound composition', async () => {
+    const composition = Object.freeze({
+      authority: Object.freeze({ actorId: 'agent.test', workspaceId: 'workspace-test' }),
+      governedMutations: Object.freeze({}) as never,
+      governedPlanRoot: 'plan-root',
+      scenarioInstanceRoot: 'scenario-root',
+      scenarioIds: Object.freeze(['software-delivery']),
+    }) as OpenSlackAgentBoundMutationComposition;
+    const createAgentBoundComposition = vi.fn(async () => composition);
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createdServer = server();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createContext: vi.fn(() => context),
+      createServer: vi.fn(() => createdServer),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--governance-authority-backend',
+      'go',
+      '--governance-authority-routing-epoch',
+      '7',
+      '--governance-authority-tenant',
+      'workspace-test',
+      '--governance-authority-origin',
+      'http://10.20.30.40:18082',
+      '--governance-authority-network',
+      'internal',
+      '--governance-authority-build-sha',
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '--governance-authority-caller',
+      'qoder.mcp',
+      '--governance-authority-expires-at',
+      '2026-08-04T00:00:00.000Z',
+    ]);
+
+    expect(createAgentBoundComposition).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      principalRef: 'agent-1',
+      provider: 'cli',
+      governanceAuthority: {
+        backend: 'go',
+        routingEpoch: 7,
+        tenantId: 'workspace-test',
+        origin: 'http://10.20.30.40:18082',
+        networkMode: 'internal',
+        expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        callerId: 'qoder.mcp',
+        expiresAt: '2026-08-04T00:00:00.000Z',
+      },
+    });
+    expect(createdServer.serveStdio).toHaveBeenCalledOnce();
+  });
+
+  it('reports exact missing governance-control transport flags before composition', async () => {
+    const createAgentBoundComposition = vi.fn();
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createContext,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--governance-authority-backend',
+      'go',
+      '--governance-authority-routing-epoch',
+      '7',
+      '--governance-authority-tenant',
+      'workspace-test',
+      '--governance-authority-origin',
+      'http://127.0.0.1:18082',
+    ]);
+
+    expect(stderr).toHaveBeenLastCalledWith(
+      'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: Governance-control transport is incomplete; missing --governance-authority-build-sha, --governance-authority-caller, --governance-authority-expires-at.',
+    );
+    expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
   it('binds an explicit internal Go read mirror without changing the selected profile', async () => {
@@ -559,6 +669,22 @@ describe('mcp command', () => {
       'workspace-test',
       '--graph-read-mirror-origin',
       'http://127.0.0.1:18181',
+      '--governance-authority-backend',
+      'go',
+      '--governance-authority-routing-epoch',
+      '7',
+      '--governance-authority-tenant',
+      'workspace-test',
+      '--governance-authority-origin',
+      'http://10.20.30.40:18082',
+      '--governance-authority-network',
+      'internal',
+      '--governance-authority-build-sha',
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '--governance-authority-caller',
+      'qoder.mcp',
+      '--governance-authority-expires-at',
+      '2026-08-09T00:00:00.000Z',
     ]);
 
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
@@ -567,6 +693,16 @@ describe('mcp command', () => {
       principalRef: 'agent-1',
       humanPrincipalAssertion: 'human.interviewer',
       workspaceIdAssertion: 'workspace-test',
+      governanceAuthority: {
+        backend: 'go',
+        routingEpoch: 7,
+        tenantId: 'workspace-test',
+        origin: 'http://10.20.30.40:18082',
+        networkMode: 'internal',
+        expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        callerId: 'qoder.mcp',
+        expiresAt: '2026-08-09T00:00:00.000Z',
+      },
     });
     expect(createContext).toHaveBeenCalledWith({
       workspaceRoot: process.cwd(),
@@ -645,6 +781,19 @@ describe('mcp command', () => {
     {
       name: 'human authority on read-only',
       args: ['--human-principal', 'human.interviewer'],
+      message:
+        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
+    },
+    {
+      name: 'governance mutation authority on read-only',
+      args: [
+        '--governance-authority-backend',
+        'ts-local',
+        '--governance-authority-routing-epoch',
+        '2',
+        '--governance-authority-tenant',
+        'workspace-test',
+      ],
       message:
         'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
     },
@@ -734,6 +883,54 @@ describe('mcp command', () => {
     expect(stdout).not.toHaveBeenCalled();
     expect(createContext).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does not construct a server when composition startup recovery rejects', async () => {
+    const createAgentBoundComposition = vi.fn(async (input: unknown) => {
+      expect(input).toMatchObject({
+        governanceAuthority: {
+          backend: 'ts-local',
+          routingEpoch: 41,
+          tenantId: 'workspace-test',
+        },
+      });
+      throw Object.assign(new Error('startup audit recovery failed'), {
+        code: 'GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE',
+      });
+    });
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createContext,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--governance-authority-backend',
+      'ts-local',
+      '--governance-authority-routing-epoch',
+      '41',
+      '--governance-authority-tenant',
+      'workspace-test',
+    ]);
+
+    expect(createAgentBoundComposition).toHaveBeenCalledOnce();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenLastCalledWith(
+      'OPENSLACK_MCP_START_FAILED: the requested stdio profile did not start.',
+    );
     expect(process.exitCode).toBe(1);
   });
 });

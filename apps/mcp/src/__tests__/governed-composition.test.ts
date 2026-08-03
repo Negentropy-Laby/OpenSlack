@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { createServer as createHttpServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +17,20 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { readEvents } from '@openslack/collaboration';
 import { LocalGraphStore } from '@openslack/organization-graph';
-import { LocalGovernedPlanStore } from '@openslack/operator';
+import {
+  canonicalGovernedJson,
+  createCanonicalGovernedPlan,
+  createRoutedGovernedPlanStore,
+  governedPlanAuthorityRoot,
+  governedPlanStoreRoot,
+  hashGovernedValue,
+  hashOpaqueValue,
+  LocalGovernedPlanStore,
+  registerGovernanceAuthorityGoPort,
+  validateGovernedPlanRecord,
+  type GovernedPlanAuditEvent,
+  type GovernedPlanRecord,
+} from '@openslack/operator';
 import {
   OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_NAMES,
@@ -34,6 +57,7 @@ const contractDeliverySourcePack = join(repositoryRoot, 'scenarios', 'contract-t
 const PRINCIPAL_REF = 'agent-bound';
 const WORKSPACE_ID = 'workspace-governed-composition';
 const roots: string[] = [];
+const GOVERNANCE_BUILD = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -233,6 +257,146 @@ async function rewritePackLock(pack: string): Promise<void> {
     entry.sha256 = createHash('sha256').update(bytes).digest('hex');
   }
   writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
+}
+
+function pendingGovernedRecord(): GovernedPlanRecord {
+  const plan = createCanonicalGovernedPlan({
+    kind: 'scenario.instantiate',
+    goal: 'Instantiate scenario',
+    input: { scenarioId: 'software-delivery' },
+    actions: [{ actionId: 'scenario.instantiate', input: { scenarioId: 'software-delivery' } }],
+    effects: [{ type: 'scenario.instance', summary: 'Create instance', risk: 'medium' }],
+  });
+  return validateGovernedPlanRecord({
+    schema: 'openslack.governed_plan.v1',
+    revision: 1,
+    planId: 'GPLAN-123e4567-e89b-42d3-a456-426614174090',
+    state: 'pending',
+    createdAt: '2026-08-03T00:00:00.000Z',
+    updatedAt: '2026-08-03T00:00:00.000Z',
+    expiresAt: '2026-08-03T00:15:00.000Z',
+    canonicalPlan: plan,
+    bindings: {
+      actorId: 'agent.test',
+      workspaceId: WORKSPACE_ID,
+      correlationId: 'CORR-123e4567-e89b-42d3-a456-426614174091',
+      inputHash: hashGovernedValue(plan.input),
+      planHash: hashGovernedValue(plan),
+      sourceVersionHash: hashGovernedValue({ source: 'v1' }),
+      permissionSnapshotHash: hashGovernedValue({ allowed: true }),
+      actionCatalogHash: hashGovernedValue(['scenario.instantiate']),
+      executorBindingHash: hashGovernedValue(['scenario.instantiate@v1']),
+      buildNonceHash: hashOpaqueValue('build-nonce-0123456789'),
+      processNonceHash: hashOpaqueValue('process-nonce-0123456789'),
+    },
+    confirmationTokenHash: hashOpaqueValue('confirmation-token-0123456789'),
+  });
+}
+
+async function seedCollaborationRecordedJournal(workspaceRoot: string): Promise<void> {
+  const records = new Map<string, GovernedPlanRecord>();
+  const go = registerGovernanceAuthorityGoPort({
+    async accept(record) {
+      records.set(record.planId, record);
+      return record;
+    },
+    async load(planId) {
+      return records.get(planId) ?? null;
+    },
+    async transition(_operation, target) {
+      records.set(target.planId, target);
+      return target;
+    },
+    async pendingAudit() {
+      return null;
+    },
+    async recordAudit() {
+      throw new Error('seed response loss');
+    },
+  });
+  const store = await createRoutedGovernedPlanStore({
+    routeRoot: governedPlanAuthorityRoot(workspaceRoot),
+    localStore: new LocalGovernedPlanStore(governedPlanStoreRoot(workspaceRoot)),
+    backend: 'go',
+    routingEpoch: 40,
+    go,
+    now: () => new Date('2026-08-03T00:00:00.000Z'),
+  });
+  const record = await store.create(pendingGovernedRecord());
+  const event: GovernedPlanAuditEvent = Object.freeze({
+    schema: 'openslack.governed_plan_audit.v1',
+    eventId: 'GAUDIT-123e4567-e89b-42d3-a456-426614174092',
+    type: 'plan.previewed',
+    occurredAt: '2026-08-03T00:00:00.000Z',
+    planId: record.planId,
+    kind: record.canonicalPlan.kind,
+    actorId: record.bindings.actorId,
+    workspaceId: record.bindings.workspaceId,
+    correlationId: record.bindings.correlationId,
+    state: record.state,
+    revision: record.revision,
+    evidenceRefs: Object.freeze([]),
+  });
+  await store.prepareAudit?.(event);
+  await expect(store.recordAudit?.(event)).rejects.toThrow('seed response loss');
+}
+
+async function listenAuthority(mode: 'ack' | 'fail'): Promise<{
+  readonly origin: string;
+  readonly requests: string[];
+  readonly close: () => Promise<void>;
+}> {
+  const requests: string[] = [];
+  const server: Server = createHttpServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => {
+      const path = request.url ?? '/';
+      requests.push(`${request.method ?? 'GET'} ${path}`);
+      if (mode === 'fail') {
+        response.writeHead(503).end();
+        return;
+      }
+      if (request.method === 'GET') {
+        response.writeHead(404).end();
+        return;
+      }
+      const body = Buffer.concat(chunks).toString('utf8');
+      const event = JSON.parse(body) as GovernedPlanAuditEvent;
+      const eventHash = createHash('sha256').update(body, 'utf8').digest('hex');
+      const idempotencyKey = `openslack.governance-authority-audit.v1.${eventHash}`;
+      const requestFingerprint = `sha256:${createHash('sha256')
+        .update(
+          `POST\n${path}\nqoder.mcp\n${WORKSPACE_ID}\n40\n${GOVERNANCE_BUILD}\n${body}`,
+          'utf8',
+        )
+        .digest('hex')}`;
+      const receipt = {
+        schema: 'openslack.governance_authority_audit_receipt.v1',
+        status: 'duplicate',
+        workspaceId: WORKSPACE_ID,
+        planId: event.planId,
+        revision: event.revision,
+        eventId: event.eventId,
+        eventHash,
+        idempotencyKey,
+        requestFingerprint,
+        recordedAt: '2026-08-03T00:01:00.000Z',
+      };
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(`${canonicalGovernedJson(receipt)}\n`);
+    });
+  });
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolvePromise);
+  });
+  const address = server.address() as AddressInfo;
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () => new Promise<void>((resolvePromise) => server.close(() => resolvePromise())),
+  };
 }
 
 describe('production agent-bound governed mutation composition', () => {
@@ -601,7 +765,7 @@ describe('production agent-bound governed mutation composition', () => {
       await client.close();
       await server.close();
     }
-  });
+  }, 15_000);
 
   it('keeps the preview pending when permission changes before confirmation', async () => {
     const workspaceRoot = createWorkspace();
@@ -797,6 +961,136 @@ describe('production agent-bound governed mutation composition', () => {
         principalRef: PRINCIPAL_REF,
       }),
     ).rejects.toMatchObject({ code });
+  });
+
+  it('fails rollback composition before server construction when Go history has no transport', async () => {
+    const workspaceRoot = createWorkspace();
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot,
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'go',
+          routingEpoch: 40,
+          tenantId: WORKSPACE_ID,
+          origin: 'http://127.0.0.1:18082',
+          expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          callerId: 'qoder.mcp',
+          expiresAt: '2099-08-03T00:00:00.000Z',
+        },
+      }),
+    ).resolves.toBeDefined();
+
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot,
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'ts-local',
+          routingEpoch: 41,
+          tenantId: WORKSPACE_ID,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE' });
+  });
+
+  it('reports the exact missing fields for a partial governance-control transport', async () => {
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot: createWorkspace(),
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'ts-local',
+          routingEpoch: 41,
+          tenantId: WORKSPACE_ID,
+          origin: 'http://127.0.0.1:18082',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'GOVERNED_COMPOSITION_INPUT_INVALID',
+      message:
+        'Governance authority transport is incomplete; missing governanceAuthority.expectedBuildSha, governanceAuthority.callerId, governanceAuthority.expiresAt.',
+    });
+
+    await expect(
+      createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot: createWorkspace(),
+        principalRef: PRINCIPAL_REF,
+        governanceAuthority: {
+          backend: 'go',
+          routingEpoch: 41,
+          tenantId: WORKSPACE_ID,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'GOVERNED_COMPOSITION_INPUT_INVALID',
+      message:
+        'Governance authority transport is incomplete; missing governanceAuthority.origin, governanceAuthority.expectedBuildSha, governanceAuthority.callerId, governanceAuthority.expiresAt.',
+    });
+  });
+
+  it('drains a historical Go audit before completing a higher-epoch ts-local composition', async () => {
+    const workspaceRoot = createWorkspace();
+    await seedCollaborationRecordedJournal(workspaceRoot);
+    const authority = await listenAuthority('ack');
+    try {
+      await expect(
+        createOpenSlackAgentBoundMutationComposition({
+          workspaceRoot,
+          principalRef: PRINCIPAL_REF,
+          governanceAuthority: {
+            backend: 'ts-local',
+            routingEpoch: 41,
+            tenantId: WORKSPACE_ID,
+            origin: authority.origin,
+            expectedBuildSha: GOVERNANCE_BUILD,
+            callerId: 'qoder.mcp',
+            expiresAt: '2099-08-03T00:00:00.000Z',
+          },
+        }),
+      ).resolves.toBeDefined();
+      expect(authority.requests).toEqual([
+        expect.stringMatching(/^POST \/v1\/governance\/plans\/.+\/authority-events\/1:record$/),
+        expect.stringMatching(/^GET \/v1\/governance\/plans\/.+$/),
+      ]);
+      expect(
+        readFileSync(join(governedPlanAuthorityRoot(workspaceRoot), 'policy.json'), 'utf8'),
+      ).toContain('"routingEpoch":41');
+      expect(readdirSync(join(governedPlanAuthorityRoot(workspaceRoot), 'audit-journal'))).toEqual(
+        [],
+      );
+    } finally {
+      await authority.close();
+    }
+  });
+
+  it('rejects the composition factory when startup audit recovery cannot acknowledge Go', async () => {
+    const workspaceRoot = createWorkspace();
+    await seedCollaborationRecordedJournal(workspaceRoot);
+    const authority = await listenAuthority('fail');
+    try {
+      await expect(
+        createOpenSlackAgentBoundMutationComposition({
+          workspaceRoot,
+          principalRef: PRINCIPAL_REF,
+          governanceAuthority: {
+            backend: 'ts-local',
+            routingEpoch: 41,
+            tenantId: WORKSPACE_ID,
+            origin: authority.origin,
+            expectedBuildSha: GOVERNANCE_BUILD,
+            callerId: 'qoder.mcp',
+            expiresAt: '2099-08-03T00:00:00.000Z',
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'GOVERNED_COMPOSITION_STORAGE_UNAVAILABLE' });
+      expect(authority.requests).toEqual([
+        expect.stringMatching(/^POST \/v1\/governance\/plans\/.+\/authority-events\/1:record$/),
+        expect.stringMatching(/^POST \/v1\/governance\/plans\/.+\/authority-events\/1:record$/),
+      ]);
+    } finally {
+      await authority.close();
+    }
   });
 
   it('fails composition for workspace assertion or audit-storage mismatch', async () => {

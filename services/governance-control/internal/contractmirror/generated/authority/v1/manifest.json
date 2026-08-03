@@ -1,0 +1,226 @@
+{
+  "schema": "openslack.governance_authority_contract_manifest.v1",
+  "authority": "governance-control",
+  "generator": "@openslack/operator-typescript",
+  "authorityBoundary": {
+    "durableWriter": "services/governance-control",
+    "typescriptRoles": [
+      "plan-compiler",
+      "confirmation-token-and-binding-validator",
+      "action-dispatcher",
+      "audit-projection"
+    ],
+    "goApiAcceptedRoute": {
+      "backend": "go",
+      "authority": "governance-control"
+    },
+    "legacyMissingRoute": {
+      "backend": "ts-local",
+      "routingEpoch": 1,
+      "authority": "typescript"
+    },
+    "routeImmutablePerRecord": true,
+    "higherEpochAffectsNewRecordsOnly": true,
+    "perRequestFallback": false,
+    "doubleWrite": false,
+    "hostActivation": {
+      "acceptNewRecordsDefault": false,
+      "acceptRequiresActiveEpoch": true,
+      "drainEpochOperations": [
+        "authority_read",
+        "receipt_read",
+        "pending_audit_read",
+        "transition",
+        "audit_projection"
+      ],
+      "drainEpochAccept": false
+    }
+  },
+  "schemas": {
+    "accept": "openslack.governance_authority_accept.v1",
+    "transition": "openslack.governance_authority_transition.v1",
+    "receipt": "openslack.governance_authority_receipt.v1",
+    "read": "openslack.governance_authority_read.v1",
+    "pendingAudit": "openslack.governance_authority_pending_audit.v1",
+    "record": "openslack.governed_plan.v1"
+  },
+  "operations": [
+    "accept",
+    "claim_execution",
+    "complete_execution",
+    "cancel",
+    "expire",
+    "require_reconciliation"
+  ],
+  "transport": {
+    "accept": { "method": "POST", "path": "/v1/governance/plans:accept" },
+    "transitions": {
+      "method": "POST",
+      "paths": {
+        "claim_execution": "/v1/governance/plans/{planId}:claim-execution",
+        "complete_execution": "/v1/governance/plans/{planId}:complete-execution",
+        "cancel": "/v1/governance/plans/{planId}:cancel",
+        "expire": "/v1/governance/plans/{planId}:expire",
+        "require_reconciliation": "/v1/governance/plans/{planId}:require-reconciliation"
+      }
+    },
+    "authorityRead": {
+      "method": "GET",
+      "path": "/v1/governance/plans/{planId}"
+    },
+    "receiptRead": {
+      "method": "GET",
+      "path": "/v1/governance/receipts/{idempotencyKey}"
+    },
+    "pendingAuditRead": {
+      "method": "GET",
+      "path": "/v1/governance/plans/{planId}/authority-events/{revision}:pending",
+      "headers": [
+        "X-OpenSlack-Governance-Caller-ID",
+        "X-OpenSlack-Governance-Workspace-ID",
+        "X-OpenSlack-Governance-Routing-Epoch",
+        "X-OpenSlack-Governance-Expected-Build-SHA"
+      ],
+      "query": "forbidden",
+      "body": "forbidden"
+    },
+    "headers": [
+      "Content-Type",
+      "Idempotency-Key",
+      "X-OpenSlack-Governance-Caller-ID",
+      "X-OpenSlack-Governance-Workspace-ID",
+      "X-OpenSlack-Governance-Routing-Epoch",
+      "X-OpenSlack-Governance-Expected-Build-SHA"
+    ],
+    "redirect": "forbidden",
+    "dns": "forbidden"
+  },
+  "algorithms": {
+    "body": "openslack.ecmascript_canonical_json.v1 UTF-8 plus LF",
+    "idempotencyKey": "openslack.governance-authority.v1. + hex(SHA256(exactBodyBytes))",
+    "requestFingerprint": "sha256:hex(SHA256(UTF8(method+'\\n'+path+'\\n'+callerId+'\\n'+workspaceId+'\\n'+canonicalEpoch+'\\n'+expectedBuildSha+'\\n') + exactBodyBytes))",
+    "canonicalEpoch": "base-10 positive safe integer without leading zeroes",
+    "recordHash": "sha256(openslack.ecmascript_canonical_json.v1(record) UTF-8 plus LF)"
+  },
+  "receiptSemantics": {
+    "acceptedOrDuplicate": [
+      "acceptedRevision",
+      "state",
+      "record",
+      "committedAt"
+    ],
+    "reconciliationRequired": [
+      "targetRevision",
+      "targetState",
+      "recordHash",
+      "reconciliationToken"
+    ],
+    "reconciliationForbids": [
+      "acceptedRevision",
+      "state",
+      "record",
+      "committedAt"
+    ],
+    "responseLossNeverInventsCommit": true
+  },
+  "pendingAuditRecoverySemantics": {
+    "lookup": ["workspaceId", "planId", "revision"],
+    "status": "pending",
+    "operations": [
+      "accept",
+      "claim_execution",
+      "complete_execution",
+      "cancel",
+      "expire",
+      "require_reconciliation"
+    ],
+    "atMostOnePendingPerPlan": true,
+    "pendingRevisionEqualsCurrentHead": true,
+    "nextTransitionBlockedWhilePending": true,
+    "exactResponseKeys": [
+      "schema",
+      "status",
+      "workspaceId",
+      "planId",
+      "revision",
+      "operation",
+      "route",
+      "recordHash",
+      "serviceBuildSha"
+    ],
+    "authoritativeRecordLoadedSeparately": true,
+    "responseIncludesRecord": false,
+    "responseIncludesState": false,
+    "absentOrAlreadyRecorded": 404,
+    "routeEpochMismatch": 409,
+    "invalidBindingOrIdentity": 422,
+    "internalFailure": 500,
+    "unavailable": 503,
+    "restartRecovery": "bounded-local-sidecar-enumeration-plus-point-read"
+  },
+  "limits": {
+    "requestBytes": 2097152,
+    "identifierBytes": 256,
+    "reconciliationTokenCharacters": { "minimum": 16, "maximum": 256 },
+    "routingEpoch": { "minimum": 1, "maximum": 9007199254740991 }
+  },
+  "semanticValidationRequired": true,
+  "semanticConstraints": [
+    "request-header-and-body-scope-equality",
+    "go-api-requires-go-governance-control-route",
+    "record-workspace-plan-correlation-equality",
+    "accept-requires-expected-revision-zero-and-pending-revision-one",
+    "transition-requires-record-revision-equals-expected-revision-plus-one",
+    "operation-state-transition-match",
+    "immutable-record-route",
+    "strict-idempotency-fingerprint-conflict",
+    "receipt-record-and-record-hash-equality",
+    "receipt-committed-at-canonical-millisecond-utc",
+    "pending-audit-workspace-plan-revision-route-and-record-hash-equality",
+    "pending-audit-operation-is-original-authority-mutation-operation",
+    "at-most-one-pending-audit-delivery-per-plan",
+    "pending-audit-revision-equals-current-authority-head",
+    "next-transition-requires-current-revision-audit-delivery-recorded",
+    "pending-audit-record-is-loaded-through-authority-read-before-reconstruction",
+    "pending-audit-recorded-or-absent-is-not-found",
+    "exact-expected-service-build",
+    "no-fallback-or-double-write"
+  ],
+  "artifacts": {
+    "schemas/governance-authority-route.v1.schema.json": {
+      "path": "schemas/governance-authority-route.v1.schema.json",
+      "byteLength": 946,
+      "sha256": "5dbd143c908b17de7b7e11a4fe1c0de115110b3f72e89da32aac9b53917b106c"
+    },
+    "schemas/governance-authority-accept.v1.schema.json": {
+      "path": "schemas/governance-authority-accept.v1.schema.json",
+      "byteLength": 1266,
+      "sha256": "bb9bf3700a36793106b973b6ed6da3be45aa24a65d13ff5e15b899bf28dad1ed"
+    },
+    "schemas/governance-authority-transition.v1.schema.json": {
+      "path": "schemas/governance-authority-transition.v1.schema.json",
+      "byteLength": 2738,
+      "sha256": "4d3c4b17e8b3ce6dad90bfddf057909053641639a295120bd1ec40fff1450fc6"
+    },
+    "schemas/governance-authority-receipt.v1.schema.json": {
+      "path": "schemas/governance-authority-receipt.v1.schema.json",
+      "byteLength": 6669,
+      "sha256": "f4cd798931239a58b106a4135d45534e929eb700dd869bb8e7b3e5c18bdb522a"
+    },
+    "schemas/governance-authority-read.v1.schema.json": {
+      "path": "schemas/governance-authority-read.v1.schema.json",
+      "byteLength": 1110,
+      "sha256": "93aeaa88bc9ee7a2c484db7475761bf8a97a23fbc6460bd87377f6d8ef69201b"
+    },
+    "schemas/governance-authority-pending-audit.v1.schema.json": {
+      "path": "schemas/governance-authority-pending-audit.v1.schema.json",
+      "byteLength": 1629,
+      "sha256": "46c79562cff897c82ec4171782166ad3bec555050c89cd4d5254362024133146"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 22579,
+      "sha256": "ff38a595df0268656cec32435f74698fac807145ddb04d6a3243ff2bd722821d"
+    }
+  }
+}

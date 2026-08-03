@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | notification-delivery-v1 | organization-graph-v1) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -675,7 +675,8 @@ detect_capabilities() {
     fail "Notification Delivery runtime profile requires the worker capability"
   fi
 
-  if [[ "${runtime_profile_ref}" == "governance-control-v1" ]]; then
+  if [[ "${runtime_profile_ref}" == "governance-control-v1" ||
+    "${runtime_profile_ref}" == "governance-control-v2" ]]; then
     local governance_evidence
     for governance_evidence in \
       cmd/server/qualification_test.go \
@@ -683,6 +684,13 @@ detect_capabilities() {
       [[ -f "${module_dir}/${governance_evidence}" ]] ||
         fail "Governance Control runtime profile is missing ${governance_evidence}"
     done
+    if [[ "${runtime_profile_ref}" == "governance-control-v2" ]]; then
+      local gs6_test
+      for gs6_test in TestGS6Qualification TestGS6RestartQualification TestGS6ImageSmoke; do
+        grep -Eq "^func[[:space:]]+${gs6_test}\\(" "${module_dir}"/cmd/server/*_test.go ||
+          fail "Governance Control v2 runtime profile is missing ${gs6_test}"
+      done
+    fi
   fi
 
   if ((http_ref)); then
@@ -884,12 +892,23 @@ run_module_gate() {
       --env GRAPH_HTTP_BIND=127.0.0.1:8080
       --env GRAPH_NETWORK_MODE=loopback
     )
-  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+  elif [[ "${runtime_profile}" == "governance-control-v1" ||
+    "${runtime_profile}" == "governance-control-v2" ]]; then
     run_args+=(
       --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env GOVERNANCE_HTTP_BIND=127.0.0.1:8080
       --env GOVERNANCE_NETWORK_MODE=loopback
     )
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      run_args+=(
+        --env GOVERNANCE_AUTHORITY_MODE=local-qualification-v1
+        --env GOVERNANCE_AUTHORITY_WORKSPACE_ID=workspace.demo
+        --env GOVERNANCE_AUTHORITY_CALLER_ID=typescript:qoder-mcp
+        --env GOVERNANCE_AUTHORITY_ROUTING_EPOCH=7
+        --env GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS=true
+        --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
+      )
+    fi
   fi
 
   log "validating ${module} with the pinned Go image"
@@ -905,7 +924,8 @@ run_module_gate() {
       "${database_name}" \
       "${resource_owner}" \
       "${run_token}"
-  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+  elif [[ "${runtime_profile}" == "governance-control-v1" ||
+    "${runtime_profile}" == "governance-control-v2" ]]; then
     ((has_database)) || fail "Governance Control qualification requires PostgreSQL"
     run_governance_control_qualification \
       "${resource_prefix}" \
@@ -914,6 +934,15 @@ run_module_gate() {
       "${database_name}" \
       "${resource_owner}" \
       "${run_token}"
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      run_governance_control_authority_qualification \
+        "${resource_prefix}" \
+        "${network}" \
+        "${database_container}" \
+        "${database_name}" \
+        "${resource_owner}" \
+        "${run_token}"
+    fi
   fi
 
   if ((has_prometheus)); then
@@ -1079,6 +1108,83 @@ run_governance_control_qualification() {
     "GOVERNANCE_GS5_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_governance_control_authority_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local test_name="$6"
+  shift 6
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    --env GOVERNANCE_AUTHORITY_MODE=local-qualification-v1
+    --env GOVERNANCE_AUTHORITY_WORKSPACE_ID=workspace.demo
+    --env GOVERNANCE_AUTHORITY_CALLER_ID=typescript:qoder-mcp
+    --env GOVERNANCE_AUTHORITY_ROUTING_EPOCH=7
+    --env GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS=true
+    --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/governance-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/server -run "^${test_name}$" -count=1
+}
+
+run_governance_control_authority_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="governance_control_gs6_restart_${restart_token//-/}"
+
+  log "qualifying Governance Control GS6 durable authority cutover and failure bounds"
+  run_governance_control_authority_test_container \
+    "${resource_prefix}" authority-bounds "${network}" "${database_name}" "${resource_owner}" \
+    TestGS6Qualification \
+    GOVERNANCE_GS6_QUALIFICATION=1
+
+  log "seeding Governance Control GS6 authority restart qualification"
+  run_governance_control_authority_test_container \
+    "${resource_prefix}" authority-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    TestGS6RestartQualification \
+    GOVERNANCE_GS6_RESTART_PHASE=seed \
+    "GOVERNANCE_GS6_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS6 authority restart"
+
+  log "verifying Governance Control GS6 durable authority after PostgreSQL restart"
+  run_governance_control_authority_test_container \
+    "${resource_prefix}" authority-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    TestGS6RestartQualification \
+    GOVERNANCE_GS6_RESTART_PHASE=verify \
+    "GOVERNANCE_GS6_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -1163,12 +1269,23 @@ run_http_smoke() {
       --env GRAPH_HTTP_BIND=:8080
       --env GRAPH_NETWORK_MODE=internal
     )
-  elif [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+  elif [[ "${runtime_profile}" == "governance-control-v1" ||
+    "${runtime_profile}" == "governance-control-v2" ]]; then
     run_args+=(
       --env 'GOVERNANCE_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env GOVERNANCE_HTTP_BIND=:8080
       --env GOVERNANCE_NETWORK_MODE=internal
     )
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      run_args+=(
+        --env GOVERNANCE_AUTHORITY_MODE=local-qualification-v1
+        --env GOVERNANCE_AUTHORITY_WORKSPACE_ID=workspace.demo
+        --env GOVERNANCE_AUTHORITY_CALLER_ID=typescript:qoder-mcp
+        --env GOVERNANCE_AUTHORITY_ROUTING_EPOCH=7
+        --env GOVERNANCE_AUTHORITY_ACCEPT_NEW_RECORDS=true
+        --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
+      )
+    fi
   else
     fail "HTTP smoke has no reviewed runtime profile"
   fi
@@ -1177,11 +1294,24 @@ run_http_smoke() {
   docker_cmd_interruptible "${run_args[@]}" "${image_tag}" >/dev/null
   require_resource_owned container "${app_container}" "${resource_owner}"
   wait_for_healthy_container "${app_container}" "application"
-  if [[ "${runtime_profile}" == "governance-control-v1" ]]; then
+  if [[ "${runtime_profile}" == "governance-control-v1" ||
+    "${runtime_profile}" == "governance-control-v2" ]]; then
+    local expected_authority_enabled=false
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      expected_authority_enabled=true
+    fi
     log "verifying Governance Control image health and version responses"
     run_governance_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
-      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_network_alias}:8080"
+      "GOVERNANCE_GS5_SMOKE_ORIGIN=http://${app_network_alias}:8080" \
+      "GOVERNANCE_GS5_EXPECT_AUTHORITY_ENABLED=${expected_authority_enabled}"
+    if [[ "${runtime_profile}" == "governance-control-v2" ]]; then
+      log "verifying Governance Control GS6 authority image responses"
+      run_governance_control_authority_test_container \
+        "${resource_prefix}" authority-image-smoke "${network}" "${database_name}" "${resource_owner}" \
+        TestGS6ImageSmoke \
+        "GOVERNANCE_GS6_SMOKE_ORIGIN=http://${app_network_alias}:8080"
+    fi
   fi
 }
 

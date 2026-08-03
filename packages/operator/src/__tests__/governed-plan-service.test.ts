@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,13 @@ import {
   createGovernedActionExecutionRegistry,
   type GovernedActionExecutorDefinition,
 } from '../action-execution-registry.js';
+import {
+  createRoutedGovernedPlanStore,
+  registerGovernanceAuthorityGoPort,
+} from '../governed-plan-authority-store.js';
+import type { GovernedPlanRecord } from '../governed-plan.js';
 import { LocalGovernedPlanStore } from '../governed-plan-store.js';
+import type { GovernedPlanStore } from '../governed-plan-store.js';
 import {
   assertGovernedPlanService,
   createGovernedPlanCompiler,
@@ -71,6 +77,8 @@ function makeHarness(
     executionTimeoutMs?: number;
     defaultTtlMs?: number;
     now?: () => Date;
+    store?: GovernedPlanStore;
+    audit?: (event: GovernedPlanAuditEvent) => void | Promise<void>;
   } = {},
 ) {
   let sourceVersion = 'source-v1';
@@ -94,7 +102,7 @@ function makeHarness(
     },
   ];
   const registry = createGovernedActionExecutionRegistry(definitions);
-  const store = new LocalGovernedPlanStore(makeRoot());
+  const store = options.store ?? new LocalGovernedPlanStore(makeRoot());
   const service = createGovernedPlanService({
     store,
     registry,
@@ -108,6 +116,7 @@ function makeHarness(
     }),
     audit: (event) => {
       events.push(event);
+      return options.audit?.(event);
     },
     ...(options.executionTimeoutMs === undefined
       ? {}
@@ -138,6 +147,64 @@ afterEach(() => {
 });
 
 describe('governed plan service', () => {
+  it('prepares Go audit recovery before Collaboration and acknowledges only after it is durable', async () => {
+    const workspace = makeRoot();
+    const routeRoot = join(workspace, 'authority');
+    const journalRoot = join(routeRoot, 'audit-journal');
+    const local = new LocalGovernedPlanStore(join(workspace, 'local'));
+    const goRecords = new Map<string, GovernedPlanRecord>();
+    const phases: string[] = [];
+    const go = registerGovernanceAuthorityGoPort({
+      async accept(record) {
+        goRecords.set(record.planId, record);
+        return record;
+      },
+      async load(planId) {
+        return goRecords.get(planId) ?? null;
+      },
+      async transition(_operation, target) {
+        goRecords.set(target.planId, target);
+        return target;
+      },
+      async pendingAudit() {
+        return null;
+      },
+      async recordAudit() {
+        const names = readdirSync(journalRoot);
+        expect(names).toHaveLength(1);
+        expect(JSON.parse(readFileSync(join(journalRoot, names[0]!), 'utf8'))).toMatchObject({
+          state: 'collaboration_recorded',
+        });
+        phases.push('go_ack');
+      },
+    });
+    const routed = await createRoutedGovernedPlanStore({
+      routeRoot,
+      localStore: local,
+      backend: 'go',
+      routingEpoch: 1,
+      go,
+      now: () => new Date('2026-08-03T00:00:00.000Z'),
+    });
+    const { service } = makeHarness(async () => ({ status: 'succeeded', summary: 'Created' }), {
+      store: routed,
+      now: () => new Date('2026-08-03T00:00:00.000Z'),
+      audit: () => {
+        const names = readdirSync(journalRoot);
+        expect(names).toHaveLength(1);
+        expect(JSON.parse(readFileSync(join(journalRoot, names[0]!), 'utf8'))).toMatchObject({
+          state: 'prepared',
+        });
+        phases.push('collaboration');
+      },
+    });
+
+    await service.preview(compiler(), authority);
+
+    expect(phases).toEqual(['collaboration', 'go_ack']);
+    expect(readdirSync(journalRoot)).toEqual([]);
+  });
+
   it('compiles after generating the business correlation and returns the token only once', async () => {
     const { service, store, events } = makeHarness();
     const preview = await service.preview(compiler(), authority);
