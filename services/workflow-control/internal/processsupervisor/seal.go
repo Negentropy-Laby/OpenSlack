@@ -169,7 +169,16 @@ func validateArtifact(value, expectedHash string, requireExecutable bool) (strin
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
 	resolved, err = filepath.Abs(resolved)
-	if err != nil || !samePath(value, filepath.Clean(resolved)) {
+	if err != nil {
+		return "", fmt.Errorf("path is not canonical")
+	}
+	resolved = filepath.Clean(resolved)
+	if runtime.GOOS == "windows" {
+		resolvedInfo, inspectErr := os.Lstat(resolved)
+		if inspectErr != nil || hasReparsePoint(resolvedInfo) || !os.SameFile(before, resolvedInfo) {
+			return "", fmt.Errorf("path is not canonical")
+		}
+	} else if !samePath(value, resolved) {
 		return "", fmt.Errorf("path is not canonical")
 	}
 	file, err := os.Open(value)
@@ -267,7 +276,16 @@ func validateWorkingDirectory(value string) (string, error) {
 		return "", fmt.Errorf("sealed working directory path contains a reparse point")
 	}
 	resolved, err := filepath.EvalSymlinks(value)
-	if err != nil || !samePath(value, filepath.Clean(resolved)) {
+	if err != nil {
+		return "", fmt.Errorf("sealed working directory is not canonical")
+	}
+	resolved = filepath.Clean(resolved)
+	if runtime.GOOS == "windows" {
+		resolvedInfo, inspectErr := os.Lstat(resolved)
+		if inspectErr != nil || hasReparsePoint(resolvedInfo) || !os.SameFile(before, resolvedInfo) {
+			return "", fmt.Errorf("sealed working directory is not canonical")
+		}
+	} else if !samePath(value, resolved) {
 		return "", fmt.Errorf("sealed working directory is not canonical")
 	}
 	after, err := os.Lstat(value)
