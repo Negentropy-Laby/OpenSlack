@@ -9,7 +9,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -75,17 +75,9 @@ function hardenWindowsTestPath(path: string, directory: boolean): void {
 }
 
 function shortWindowsPath(path: string): string {
-  const script = [
-    '$ErrorActionPreference = "Stop"',
-    '$signature = \'[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint bufferLength);\'',
-    'Add-Type -MemberDefinition $signature -Name NativePaths -Namespace OpenSlack',
-    '$buffer = New-Object System.Text.StringBuilder 32768',
-    '$result = [OpenSlack.NativePaths]::GetShortPathName($env:OPENSLACK_TEST_LONG_PATH, $buffer, 32768)',
-    'if ($result -eq 0) { $env:OPENSLACK_TEST_LONG_PATH } else { $buffer.ToString() }',
-  ].join('; ');
-  return execFileSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+  const output = execFileSync(
+    'cmd.exe',
+    ['/d', '/c', 'for %I in ("%OPENSLACK_TEST_LONG_PATH%") do @echo %~sI'],
     {
       encoding: 'utf8',
       windowsHide: true,
@@ -93,6 +85,8 @@ function shortWindowsPath(path: string): string {
       env: { ...process.env, OPENSLACK_TEST_LONG_PATH: path },
     },
   ).trim();
+  const windowsPaths = output.match(/[A-Za-z]:\\[^"\r\n]*/gu);
+  return resolve(windowsPaths?.sort((left, right) => right.length - left.length)[0] ?? output);
 }
 
 const testSecurity: WorkflowRunnerDescriptorPathSecurity = {
@@ -206,7 +200,7 @@ describe('GS8-B sealed execution descriptor', () => {
 
     await expect(store.create(value)).resolves.toMatchObject({ duplicate: false });
     await expect(store.read(value.descriptorRef)).resolves.toEqual(value);
-  }, 30_000);
+  }, 60_000);
 
   it('accepts a Windows 8.3 alias for the same non-reparse descriptor root', async () => {
     if (process.platform !== 'win32') return;

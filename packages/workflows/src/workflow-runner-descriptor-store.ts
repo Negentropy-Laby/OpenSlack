@@ -56,6 +56,10 @@ function statIdentity(stat: BigIntStats): string {
   return [stat.dev, stat.ino, stat.birthtimeNs, stat.ctimeNs, stat.size, stat.mode].join(':');
 }
 
+function statObjectIdentity(stat: BigIntStats): string {
+  return [stat.dev, stat.ino].join(':');
+}
+
 function descriptorFileName(descriptorRef: string): string {
   return `${createHash('sha256').update(descriptorRef, 'utf8').digest('hex')}.json`;
 }
@@ -252,7 +256,7 @@ async function assertStablePath(
   const canonical = await realpath(path);
   if (security.platform === 'win32') {
     const canonicalStat = await lstat(canonical, { bigint: true });
-    if (statIdentity(before) !== statIdentity(canonicalStat)) {
+    if (statObjectIdentity(before) !== statObjectIdentity(canonicalStat)) {
       return storeFail(
         'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
         'Descriptor-store path resolves to a different filesystem object.',
@@ -290,7 +294,7 @@ async function assertNoWindowsReparseComponents(
     const linked = await lstat(current, { bigint: true });
     const canonical = await realpath(current);
     const resolved = await lstat(canonical, { bigint: true });
-    if (linked.isSymbolicLink() || statIdentity(linked) !== statIdentity(resolved)) {
+    if (linked.isSymbolicLink() || statObjectIdentity(linked) !== statObjectIdentity(resolved)) {
       return storeFail(
         'WORKFLOW_RUNNER_DESCRIPTOR_STORE_PATH_UNSAFE',
         'Descriptor-store path contains a reparse component.',

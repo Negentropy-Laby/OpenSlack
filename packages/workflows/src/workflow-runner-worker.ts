@@ -59,6 +59,10 @@ function sameSourceIdentity(left: BigIntStats, right: BigIntStats): boolean {
   );
 }
 
+function sameFilesystemObject(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
 function sourceIdentity(stat: BigIntStats): string {
   return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 }
@@ -73,7 +77,7 @@ async function assertNoWindowsReparseComponents(path: string): Promise<void> {
     const linked = await lstat(current, { bigint: true });
     const canonical = await realpath(current);
     const resolved = await lstat(canonical, { bigint: true });
-    if (linked.isSymbolicLink() || !sameSourceIdentity(linked, resolved)) {
+    if (linked.isSymbolicLink() || !sameFilesystemObject(linked, resolved)) {
       throw new Error('Sealed workflow path contains a reparse component.');
     }
   }
@@ -93,7 +97,9 @@ async function readSealedWorkflowSource(path: string): Promise<{
     linked.size > BigInt(MAX_SOURCE_BYTES) ||
     !canonicalStat.isFile() ||
     canonicalStat.isSymbolicLink() ||
-    (process.platform === 'win32' ? !sameSourceIdentity(linked, canonicalStat) : canonical !== path)
+    (process.platform === 'win32'
+      ? !sameFilesystemObject(linked, canonicalStat)
+      : canonical !== path)
   ) {
     throw new Error('Sealed workflow source is unsafe or exceeds its byte limit.');
   }
@@ -199,7 +205,7 @@ export function createSealedWorkflowRunnerSourceLoader(
         !rootCanonical.isDirectory() ||
         rootCanonical.isSymbolicLink() ||
         (process.platform === 'win32'
-          ? !sameSourceIdentity(rootBefore, rootCanonical)
+          ? !sameFilesystemObject(rootBefore, rootCanonical)
           : rootReal !== resolve(root))
       ) {
         throw new Error('Sealed workflow catalog root must be canonical and non-symlinked.');
@@ -222,7 +228,7 @@ export function createSealedWorkflowRunnerSourceLoader(
         !canonicalStat.isFile() ||
         canonicalStat.isSymbolicLink() ||
         (process.platform === 'win32'
-          ? !sameSourceIdentity(pathBefore, canonicalStat)
+          ? !sameFilesystemObject(pathBefore, canonicalStat)
           : canonical !== path) ||
         !within(rootReal, canonical)
       ) {
