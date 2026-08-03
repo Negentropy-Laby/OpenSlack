@@ -126,7 +126,11 @@ export interface CreateWorkflowControlObservationPortOptions {
 export interface WorkflowControlShadowJournalSecurityDependencies {
   readonly platform: NodeJS.Platform;
   readonly currentWindowsSid: () => string;
-  readonly readWindowsPathSecurity: (path: string, identity: string) => unknown;
+  readonly readWindowsPathSecurity: (
+    path: string,
+    identity: string,
+    cacheable: boolean,
+  ) => unknown;
   readonly hardenPath: (path: string, directory: boolean) => void;
 }
 
@@ -500,8 +504,10 @@ function assertOwnerOnlyPath(
   if (!WINDOWS_SID.test(sid)) {
     throw new TypeError('Workflow Control shadow journal Windows SID is invalid.');
   }
+  // Windows SET_SECURITY only guarantees LastChangeTime updates for non-directory files.
+  const cacheable = stat.isFile();
   const acl = parseWindowsPathSecurity(
-    security.readWindowsPathSecurity(path, securityIdentity(stat)),
+    security.readWindowsPathSecurity(path, securityIdentity(stat), cacheable),
   );
   const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
   if (
@@ -534,10 +540,12 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
   return Object.freeze({
     platform: process.platform,
     currentWindowsSid,
-    readWindowsPathSecurity(path: string, identity: string) {
+    readWindowsPathSecurity(path: string, identity: string, cacheable: boolean) {
       const cacheKey = resolve(path).toLowerCase();
-      const cached = productionWindowsSecurityCache.get(cacheKey);
-      if (cached?.identity === identity) return cached.value;
+      if (cacheable) {
+        const cached = productionWindowsSecurityCache.get(cacheKey);
+        if (cached?.identity === identity) return cached.value;
+      }
       const script = [
         '$item = Get-Item -Force -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
@@ -557,10 +565,14 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
           env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
         },
       );
-      if (productionWindowsSecurityCache.size >= WINDOWS_SECURITY_CACHE_LIMIT) {
-        productionWindowsSecurityCache.delete(productionWindowsSecurityCache.keys().next().value!);
+      if (cacheable) {
+        if (productionWindowsSecurityCache.size >= WINDOWS_SECURITY_CACHE_LIMIT) {
+          productionWindowsSecurityCache.delete(
+            productionWindowsSecurityCache.keys().next().value!,
+          );
+        }
+        productionWindowsSecurityCache.set(cacheKey, Object.freeze({ identity, value }));
       }
-      productionWindowsSecurityCache.set(cacheKey, Object.freeze({ identity, value }));
       return value;
     },
     hardenPath(path: string, directory: boolean) {

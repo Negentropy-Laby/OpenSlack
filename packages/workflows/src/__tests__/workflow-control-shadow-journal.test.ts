@@ -52,7 +52,11 @@ function safeWindowsAcl() {
 function windowsSecurity(
   options: {
     readonly hardenPath?: (path: string, directory: boolean) => void;
-    readonly readWindowsPathSecurity?: (path: string) => unknown;
+    readonly readWindowsPathSecurity?: (
+      path: string,
+      identity: string,
+      cacheable: boolean,
+    ) => unknown;
   } = {},
 ): WorkflowControlShadowJournalSecurityDependencies {
   return Object.freeze({
@@ -284,7 +288,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
 
   it('hardens and proves Windows ACL ownership for every journal directory and new file', async () => {
     const hardened: { path: string; directory: boolean }[] = [];
-    const verified: string[] = [];
+    const verified: { path: string; cacheable: boolean }[] = [];
     const root = await journalRoot('workflow-shadow-windows-acl');
     const observation = shadowObservation();
     const port = await createWorkflowControlObservationPortForTest(
@@ -301,8 +305,8 @@ describe('Workflow Control GS7-B durable observation journal', () => {
         hardenPath: (path, directory) => {
           hardened.push({ path, directory });
         },
-        readWindowsPathSecurity: (path) => {
-          verified.push(path);
+        readWindowsPathSecurity: (path, _identity, cacheable) => {
+          verified.push({ path, cacheable });
           return JSON.stringify(safeWindowsAcl());
         },
       }),
@@ -324,7 +328,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     );
     expect(hardenedFiles.some((path) => /[\\/]entries[\\/].+\.json$/u.test(path))).toBe(true);
     expect(hardenedFiles.some((path) => /[\\/]states[\\/].+\.tmp$/u.test(path))).toBe(true);
-    expect(verified).toEqual(
+    expect(verified.filter(({ cacheable }) => !cacheable).map(({ path }) => path)).toEqual(
       expect.arrayContaining([
         root,
         join(root, 'entries'),
@@ -332,7 +336,12 @@ describe('Workflow Control GS7-B durable observation journal', () => {
         join(root, 'states'),
       ]),
     );
-    expect(verified.some((path) => /[\\/]states[\\/][0-9a-f]{64}\.json$/u.test(path))).toBe(true);
+    expect(
+      verified.some(
+        ({ path, cacheable }) =>
+          cacheable && /[\\/]states[\\/][0-9a-f]{64}\.json$/u.test(path),
+      ),
+    ).toBe(true);
   });
 
   it('rejects pre-existing Windows journals with unprotected, foreign, broad, or reparse ACLs', async () => {
