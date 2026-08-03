@@ -437,7 +437,11 @@ describe('notification delivery service workflow', () => {
     expect(job.steps[workflowRunnerLinuxIndex]).toEqual({
       name: 'Qualify the sealed TypeScript Workflow Runner on Linux',
       'working-directory': '.',
-      run: 'bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts',
+      run: lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts',
+      ),
     });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
@@ -567,8 +571,11 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
-      'Qualify the sealed TypeScript Workflow Runner on Linux':
+      'Qualify the sealed TypeScript Workflow Runner on Linux': lines(
+        'set -euo pipefail',
+        'bun run build',
         'bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts',
+      ),
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',

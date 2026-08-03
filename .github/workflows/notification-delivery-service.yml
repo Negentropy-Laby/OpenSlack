@@ -224,7 +224,10 @@ jobs:
         run: bun run workflow:runner-golden -- --check
       - name: Qualify the sealed TypeScript Workflow Runner on Linux
         working-directory: .
-        run: bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts
+        run: |
+          set -euo pipefail
+          bun run build
+          bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts
       - name: Clean-build and smoke Organization Graph distribution
         working-directory: .
         run: |
