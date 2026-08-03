@@ -17,9 +17,10 @@ sources:
 
 # Workflow Control Contract
 
-Status: GS7-A contract freeze and credential-free Go parity only. TypeScript remains the sole
-workflow writer and execution authority. No Go store, transport, worker, lease, approval decision,
-resume path, or user-visible read authority exists in this stage.
+Status: GS7-A contract freeze plus a GS7-B PostgreSQL observational shadow candidate. TypeScript
+remains the sole workflow writer, runner, approval, budget, effect, resume, and user-visible read
+authority. The Go service owns only an isolated credential-free observation journal and matched
+projection index; hosted PostgreSQL/container qualification remains a separate exact-head gate.
 
 ## Authority boundary
 
@@ -27,7 +28,9 @@ resume path, or user-visible read authority exists in this stage.
 calls, permission and trust checks, human decisions, effect execution, local RunStore writes,
 resume behavior, and CLI/TUI/MCP views. The pure `services/workflow-control` Go module accepts only
 the closed, bounded contract record, validates it, checks declared status transitions, and produces
-a deterministic credential-free read model for differential qualification.
+a deterministic credential-free read model for differential qualification. GS7-B may durably
+record that observation in a separate PostgreSQL namespace, but its result cannot alter a RunStore
+write, workflow result, approval, budget, effect, resume, or user response.
 
 The cross-language record never carries raw workflow arguments, prompts, phase results, approval
 details, capabilities, decision evidence, provider payloads, transcripts, commands, credentials, or
@@ -82,6 +85,38 @@ It contains closed JSON Schemas, a manifest with SHA-256 artifact locks, and pos
 golden vectors. The Go module consumes an exact generated mirror. Drift in schema bytes, vectors,
 constants, projection output, transition decisions, or manifest hashes fails qualification.
 
+The independent GS7-B transport bundle is under:
+
+```text
+packages/workflows/contracts/workflow-control-shadow/v1/
+```
+
+Its exact canonical envelope includes the TypeScript observation and TypeScript projection plus a
+workspace/run/source-sequence binding. The body has exactly one trailing LF. Its idempotency key is
+derived from the exact body; the request fingerprint additionally binds method, path, authority,
+workspace, run, and sequence. It never changes the GS7-A bundle bytes.
+
+## GS7-B observational store
+
+The private Go surface is intentionally closed to six routes: observation ingest, matched
+projection, live, ready, version, and metrics. It has no workflow control, worker, scheduler, lease,
+cancel, approval, budget, effect, routing, or generic command route. Network binding is loopback by
+default and accepts only IP literals; explicit internal mode permits only loopback, private,
+link-local, or wildcard container addresses.
+
+PostgreSQL persists immutable observations and receipts plus one CAS-updated per-run head.
+TypeScript alone issues a contiguous source sequence. A semantically valid projection or evolution
+difference is committed as `mismatched`: it advances the observed source sequence but not the
+matched head. Same-key/same-fingerprint replay returns the original receipt, while a different
+fingerprint conflicts. An unknown transaction outcome is looked up by key and otherwise becomes a
+durable `reconciliation_required` receipt; it is never treated as accepted and never triggers a
+workflow mutation retry.
+
+The TypeScript port is default-off and fail-open. Its owner-only journal is independent from the
+RunStore and may replay only shadow observations after restart. Missing full manifest hashes or
+incomplete approval/budget evidence cause a bounded diagnostic and skipped observation; the port
+must not fabricate evidence, pad a legacy hash, block a workflow, or resume an execution.
+
 ## Explicit GS7-A gaps
 
 The contract marks the read model ineligible for authority while any of these remain true:
@@ -94,7 +129,9 @@ The contract marks the read model ineligible for authority while any of these re
 - control paths can write status outside the frozen transition method; or
 - the strict v2 effect approval is not an exactly-once runtime pause/decision/resume boundary.
 
-GS7-B may add a separate Go shadow observation store only after its own review and qualification.
-GS8 owns the versioned JS runner worker protocol and any scheduler/lease work. GS9 is the separate
-PostgreSQL authority cutover for checkpoint, approval, and budget state. None of those later stages
-is implied by a GS7-A local or hosted pass.
+GS7-B remains an observational candidate until its exact hosted head passes real PostgreSQL,
+response-loss, restart, concurrency, corruption, OpenAPI, Prometheus, distribution, image-smoke,
+cross-language, review-thread, and independent-human-approval gates. GS8 owns the versioned JS
+runner worker protocol and any scheduler/lease work. GS9 is the separate PostgreSQL authority
+cutover for checkpoint, approval, and budget state. None of those later stages is implied by a
+GS7-A or GS7-B local pass.

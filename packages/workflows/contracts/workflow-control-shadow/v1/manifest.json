@@ -1,0 +1,76 @@
+{
+  "schema": "openslack.workflow_control_shadow_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "credential-free-shadow-observer-only",
+    "shadowDefault": "disabled",
+    "journalIndependentFromRunStore": true
+  },
+  "envelopeFields": ["authority", "observation", "projection", "schema", "source"],
+  "sourceFields": ["runId", "sourceSequence", "workspaceId"],
+  "transport": {
+    "method": "POST",
+    "path": "/v1/shadow/workflow-control/observations",
+    "redirect": "forbidden",
+    "dns": "forbidden",
+    "defaultNetworkMode": "loopback-ip-literal",
+    "optionalNetworkMode": "private-link-local-ip-literal"
+  },
+  "algorithms": {
+    "body": "ecmascript_canonical_json_utf8_plus_single_lf",
+    "idempotencyKey": "openslack.workflow-control-shadow.v1.sha256(body)",
+    "requestBinding": "typescript/{workspaceId}/{runId}/{sourceSequence}",
+    "requestFingerprint": "sha256:sha256(POST\\n/path\\n/requestBinding\\n/body)",
+    "sourceSequence": "monotonic_per_workspace_run_shadow_stream_only",
+    "duplicateCoalescing": "sha256(canonical_observation_json)"
+  },
+  "failureBoundary": {
+    "authority": "fail-closed-on-authority-write-errors",
+    "shadowRelativeToAuthority": "fail-open",
+    "shadowInternal": "fail-closed-before-journal-and-receipt-binding",
+    "legacyManifestHash": "diagnostic-and-skip-never-pad-or-fabricate"
+  },
+  "deferred": {
+    "gs8": "worker protocol, scheduler, lease, cancellation receipts",
+    "gs9": "PostgreSQL workflow authority cutover"
+  },
+  "limits": {
+    "maxEnvelopeBytes": 524288,
+    "maxReceiptBytes": 65536,
+    "defaultTimeoutMs": 2000,
+    "maxTimeoutMs": 30000,
+    "orderingRetryAttempts": 16,
+    "defaultOrderingRetryDelayMs": 25,
+    "maxOrderingRetryDelayMs": 1000,
+    "maxJournalEntries": 16384,
+    "maxJournalBytes": 536870912,
+    "maxJournalFileBytes": 1048576,
+    "maxDiagnosticCodeBytes": 256
+  },
+  "artifacts": {
+    "schemas/workflow-control-shadow-observation.v1.schema.json": {
+      "path": "schemas/workflow-control-shadow-observation.v1.schema.json",
+      "byteLength": 1445,
+      "sha256": "c787c6f30b7eba90c4c7121bf302f497924f1c7287aa0777fe89028a61d53cba"
+    },
+    "schemas/workflow-control-shadow-receipt.v1.schema.json": {
+      "path": "schemas/workflow-control-shadow-receipt.v1.schema.json",
+      "byteLength": 2648,
+      "sha256": "398d3290caad4c1366c40bd58898bc89febd237dc50a42729fbad458ef0c30cb"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 7506,
+      "sha256": "58c6cf89fa6b7b11b63bfda611b4de1a70298e965359a387f765354e8ca84ee0"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-control-shadow-observation.v1.schema.json",
+    "schemas/workflow-control-shadow-receipt.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

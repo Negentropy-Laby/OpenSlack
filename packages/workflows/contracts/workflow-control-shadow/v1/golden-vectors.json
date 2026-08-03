@@ -1,0 +1,121 @@
+{
+  "schema": "openslack.workflow_control_shadow_golden_vectors.v1",
+  "authority": "typescript",
+  "vectors": [
+    {
+      "id": "paused-effect-approval-sequence-7",
+      "envelope": {
+        "authority": "typescript",
+        "observation": {
+          "schema": "openslack.workflow_control_observation.v1",
+          "authority": "typescript",
+          "runId": "run-gs7b-shadow",
+          "workflowName": "contract-to-delivery-lite",
+          "mode": "execute",
+          "status": "paused_waiting_approval",
+          "startedAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:00:02.000Z",
+          "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "currentPhase": "review",
+          "phases": [
+            {
+              "phase": "prepare",
+              "observedAt": "2026-08-03T00:00:01.000Z",
+              "status": "completed",
+              "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "cacheKeyHash": null
+            }
+          ],
+          "approvals": {
+            "legacyRunGate": {
+              "plane": "legacy-run-gate",
+              "semantics": "run-gate-only",
+              "counts": { "pending": 1, "approved": 0, "rejected": 0 }
+            },
+            "effectV2": {
+              "plane": "workflow-effect-v2",
+              "semantics": "effect-decision-only",
+              "schema": "openslack.workflow_effect_approval.v2",
+              "counts": { "pending": 1, "approved": 1, "rejected": 0 }
+            }
+          },
+          "budget": {
+            "configured": true,
+            "policyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "tokenBudget": 100000,
+            "tokensUsed": 12345,
+            "costUsd": 0.42,
+            "agentCalls": 2,
+            "warnings": []
+          }
+        },
+        "projection": {
+          "schema": "openslack.workflow_control_read_model.v1",
+          "authority": "typescript",
+          "goRole": "credential-free-read-model-only",
+          "authorityEligible": false,
+          "runId": "run-gs7b-shadow",
+          "workflowName": "contract-to-delivery-lite",
+          "mode": "execute",
+          "status": "paused_waiting_approval",
+          "startedAt": "2026-08-03T00:00:00.000Z",
+          "updatedAt": "2026-08-03T00:00:02.000Z",
+          "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "currentPhase": "review",
+          "terminal": false,
+          "phaseCounts": {
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+            "skipped": 0,
+            "resultHashBound": 1,
+            "cacheKeyHashBound": 0
+          },
+          "approvals": {
+            "legacyRunGate": {
+              "plane": "legacy-run-gate",
+              "semantics": "run-gate-only",
+              "counts": { "pending": 1, "approved": 0, "rejected": 0 }
+            },
+            "effectV2": {
+              "plane": "workflow-effect-v2",
+              "semantics": "effect-decision-only",
+              "schema": "openslack.workflow_effect_approval.v2",
+              "counts": { "pending": 1, "approved": 1, "rejected": 0 }
+            }
+          },
+          "budget": {
+            "configured": true,
+            "policyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "tokenBudget": 100000,
+            "tokensUsed": 12345,
+            "costUsd": 0.42,
+            "agentCalls": 2,
+            "warningCounts": { "threshold": 0, "exceeded": 0 }
+          },
+          "qualificationGaps": [
+            "no-cas-or-revision",
+            "no-lease",
+            "no-fencing",
+            "no-execution-abort",
+            "no-durable-budget-authority",
+            "resume-correctness-unqualified",
+            "control-transition-bypass-exists"
+          ],
+          "observationHash": "9a6938739a820db8c658aca209280f99bab53303cba1eeb59a23796d88a71239"
+        },
+        "schema": "openslack.workflow_control_shadow_observation.v1",
+        "source": {
+          "runId": "run-gs7b-shadow",
+          "sourceSequence": 7,
+          "workspaceId": "workspace.demo"
+        }
+      },
+      "expected": {
+        "body": "{\"authority\":\"typescript\",\"observation\":{\"approvals\":{\"effectV2\":{\"counts\":{\"approved\":1,\"pending\":1,\"rejected\":0},\"plane\":\"workflow-effect-v2\",\"schema\":\"openslack.workflow_effect_approval.v2\",\"semantics\":\"effect-decision-only\"},\"legacyRunGate\":{\"counts\":{\"approved\":0,\"pending\":1,\"rejected\":0},\"plane\":\"legacy-run-gate\",\"semantics\":\"run-gate-only\"}},\"authority\":\"typescript\",\"budget\":{\"agentCalls\":2,\"configured\":true,\"costUsd\":0.42,\"policyHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"tokenBudget\":100000,\"tokensUsed\":12345,\"warnings\":[]},\"currentPhase\":\"review\",\"manifestHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"execute\",\"phases\":[{\"cacheKeyHash\":null,\"observedAt\":\"2026-08-03T00:00:01.000Z\",\"phase\":\"prepare\",\"resultHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"status\":\"completed\"}],\"runId\":\"run-gs7b-shadow\",\"schema\":\"openslack.workflow_control_observation.v1\",\"startedAt\":\"2026-08-03T00:00:00.000Z\",\"status\":\"paused_waiting_approval\",\"updatedAt\":\"2026-08-03T00:00:02.000Z\",\"workflowName\":\"contract-to-delivery-lite\"},\"projection\":{\"approvals\":{\"effectV2\":{\"counts\":{\"approved\":1,\"pending\":1,\"rejected\":0},\"plane\":\"workflow-effect-v2\",\"schema\":\"openslack.workflow_effect_approval.v2\",\"semantics\":\"effect-decision-only\"},\"legacyRunGate\":{\"counts\":{\"approved\":0,\"pending\":1,\"rejected\":0},\"plane\":\"legacy-run-gate\",\"semantics\":\"run-gate-only\"}},\"authority\":\"typescript\",\"authorityEligible\":false,\"budget\":{\"agentCalls\":2,\"configured\":true,\"costUsd\":0.42,\"policyHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"tokenBudget\":100000,\"tokensUsed\":12345,\"warningCounts\":{\"exceeded\":0,\"threshold\":0}},\"currentPhase\":\"review\",\"goRole\":\"credential-free-read-model-only\",\"manifestHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mode\":\"execute\",\"observationHash\":\"9a6938739a820db8c658aca209280f99bab53303cba1eeb59a23796d88a71239\",\"phaseCounts\":{\"cacheKeyHashBound\":0,\"completed\":1,\"failed\":0,\"resultHashBound\":1,\"skipped\":0,\"total\":1},\"qualificationGaps\":[\"no-cas-or-revision\",\"no-lease\",\"no-fencing\",\"no-execution-abort\",\"no-durable-budget-authority\",\"resume-correctness-unqualified\",\"control-transition-bypass-exists\"],\"runId\":\"run-gs7b-shadow\",\"schema\":\"openslack.workflow_control_read_model.v1\",\"startedAt\":\"2026-08-03T00:00:00.000Z\",\"status\":\"paused_waiting_approval\",\"terminal\":false,\"updatedAt\":\"2026-08-03T00:00:02.000Z\",\"workflowName\":\"contract-to-delivery-lite\"},\"schema\":\"openslack.workflow_control_shadow_observation.v1\",\"source\":{\"runId\":\"run-gs7b-shadow\",\"sourceSequence\":7,\"workspaceId\":\"workspace.demo\"}}\n",
+        "idempotencyKey": "openslack.workflow-control-shadow.v1.18b8274a77699ad0b51a396bbfb5529c5070b48b5a77b63c65fc899365ec3e8a",
+        "requestFingerprint": "sha256:f857af602f6a07f234426e68c866356217f52c1c9e3bb008b5157278e9b4fece"
+      }
+    }
+  ]
+}

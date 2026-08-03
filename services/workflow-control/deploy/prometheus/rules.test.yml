@@ -1,0 +1,47 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: reconciliation_fires_after_ten_minutes
+    interval: 15s
+    input_series:
+      - series: 'openslack_workflow_control_shadow_reconciliation_pending{job="openslack_workflow_control_shadow",instance="app:8080"}'
+        values: '1+0x44'
+    alert_rule_test:
+      - eval_time: 9m45s
+        alertname: WorkflowControlShadowReconciliationRequired
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: WorkflowControlShadowReconciliationRequired
+        exp_alerts:
+          - exp_labels:
+              alertname: WorkflowControlShadowReconciliationRequired
+              instance: app:8080
+              job: openslack_workflow_control_shadow
+              severity: warning
+            exp_annotations:
+              summary: Workflow Control shadow has an ambiguous observation result
+              description: Inspect the durable reconciliation receipt before replaying the exact observation key.
+
+  - name: unavailability_fires_after_five_minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="openslack_workflow_control_shadow",instance="app:8080"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 4m45s
+        alertname: WorkflowControlShadowUnavailable
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: WorkflowControlShadowUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: WorkflowControlShadowUnavailable
+              instance: app:8080
+              job: openslack_workflow_control_shadow
+              severity: critical
+            exp_annotations:
+              summary: Workflow Control shadow metrics endpoint is unavailable
+              description: Check PostgreSQL readiness, migration state, and the private service health endpoints.

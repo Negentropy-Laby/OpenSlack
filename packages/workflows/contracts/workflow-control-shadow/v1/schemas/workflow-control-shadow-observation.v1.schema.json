@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-control-shadow/v1/workflow-control-shadow-observation.v1.schema.json",
+  "title": "OpenSlack Workflow Control GS7-B shadow observation envelope",
+  "$comment": "Runtime validation additionally requires source.runId to match observation.runId and projection to equal the deterministic TypeScript projection byte-for-byte.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "authority": { "const": "typescript" },
+    "observation": {
+      "$ref": "https://openslack.dev/contracts/workflow-control/v1/workflow-control-observation.v1.schema.json"
+    },
+    "projection": {
+      "$ref": "https://openslack.dev/contracts/workflow-control/v1/workflow-control-read-model.v1.schema.json"
+    },
+    "schema": { "const": "openslack.workflow_control_shadow_observation.v1" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" }
+      },
+      "required": ["runId", "sourceSequence", "workspaceId"]
+    }
+  },
+  "required": ["authority", "observation", "projection", "schema", "source"]
+}

@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -514,6 +514,8 @@ validate_dockerignore() {
       '!go.sum' | \
       '!governancecontrol.go' | \
       '!organizationgraph.go' | \
+	  '!shadow_contract.go' | \
+	  '!workflowcontrol.go' | \
       '!LICENSE' | \
       '!NOTICE' | \
       '!THIRD_PARTY_NOTICES.md' | \
@@ -691,6 +693,18 @@ detect_capabilities() {
           fail "Governance Control v2 runtime profile is missing ${gs6_test}"
       done
     fi
+  fi
+
+  if [[ "${runtime_profile_ref}" == "workflow-control-shadow-v1" ]]; then
+    local workflow_control_evidence
+    for workflow_control_evidence in \
+      cmd/server/qualification_test.go \
+      internal/app/handlers_test.go \
+      internal/shadowstore/postgres/repository_test.go \
+      tests/contracts/openapi_contract_test.go; do
+      [[ -f "${module_dir}/${workflow_control_evidence}" ]] ||
+        fail "Workflow Control shadow runtime profile is missing ${workflow_control_evidence}"
+    done
   fi
 
   if ((http_ref)); then
@@ -909,6 +923,12 @@ run_module_gate() {
         --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
       )
     fi
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+    run_args+=(
+      --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env WORKFLOW_CONTROL_HTTP_BIND=127.0.0.1:8080
+      --env WORKFLOW_CONTROL_NETWORK_MODE=loopback
+    )
   fi
 
   log "validating ${module} with the pinned Go image"
@@ -1286,6 +1306,12 @@ run_http_smoke() {
         --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
       )
     fi
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+    run_args+=(
+      --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env WORKFLOW_CONTROL_HTTP_BIND=:8080
+      --env WORKFLOW_CONTROL_NETWORK_MODE=internal
+    )
   else
     fail "HTTP smoke has no reviewed runtime profile"
   fi
@@ -1312,6 +1338,8 @@ run_http_smoke() {
         TestGS6ImageSmoke \
         "GOVERNANCE_GS6_SMOKE_ORIGIN=http://${app_network_alias}:8080"
     fi
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+    log "verified Workflow Control shadow image health"
   fi
 }
 

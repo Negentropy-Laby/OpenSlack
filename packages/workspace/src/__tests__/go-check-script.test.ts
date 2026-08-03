@@ -72,7 +72,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     );
     expect(
       readFileSync(join(repositoryRoot, 'scripts/go-check/services/workflow-control.conf'), 'utf8'),
-    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
+    ).toBe(
+      [
+        'capabilities=database,distribution,http-openapi,prometheus',
+        'docker_target=app',
+        'runtime_profile=workflow-control-shadow-v1',
+        '',
+      ].join('\n'),
+    );
     expect(goCheckSource).toContain(
       'golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647',
     );
@@ -363,6 +370,45 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(8);
     expect(log).not.toContain('confirmationToken=');
     expect(log).not.toContain('CONFIRMATION_TOKEN=');
+    expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
+    expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
+  }, 15_000);
+
+  it('runs the Workflow Control PostgreSQL shadow profile without authority credentials', () => {
+    const fixture = createFixture();
+    addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+    mkdirSync(join(fixture.root, 'services/pure/internal/app'), { recursive: true });
+    mkdirSync(join(fixture.root, 'services/pure/internal/shadowstore/postgres'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(fixture.root, 'services/pure/internal/app/handlers_test.go'),
+      'package app\n',
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture.root, 'services/pure/internal/shadowstore/postgres/repository_test.go'),
+      'package postgres\n',
+      'utf8',
+    );
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-shadow-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain(
+      'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    );
+    expect(log).toContain('WORKFLOW_CONTROL_HTTP_BIND=:8080');
+    expect(log).toContain('WORKFLOW_CONTROL_NETWORK_MODE=internal');
+    expect(log).toContain('MIGRATION_SOURCE=/migrations');
+    expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   }, 15_000);

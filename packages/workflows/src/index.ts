@@ -412,6 +412,48 @@ export type {
   DecideWorkflowEffectApprovalInput,
   MarkWorkflowEffectApprovalAuditProjectedInput,
 } from './workflow-effect-approval-store.js';
+
+// ── Workflow Control GS7-B credential-free shadow ─────────────────────────
+export {
+  buildWorkflowControlObservation,
+  WORKFLOW_CONTROL_OBSERVATION_ERROR_CODES,
+  WorkflowControlObservationError,
+} from './workflow-control-observation.js';
+export type {
+  BuildWorkflowControlObservationOptions,
+  WorkflowControlObservationErrorCode,
+} from './workflow-control-observation.js';
+export {
+  createWorkflowControlObservationPort,
+  createWorkflowControlShadowPublisherPort,
+  isWorkflowControlObservationPort,
+  isWorkflowControlShadowPublisherPort,
+  prepareWorkflowControlShadowRequest,
+  validateWorkflowControlShadowEnvelope,
+  validateWorkflowControlShadowReceipt,
+  WORKFLOW_CONTROL_SHADOW_IDEMPOTENCY_PREFIX,
+  WORKFLOW_CONTROL_SHADOW_OBSERVATION_SCHEMA,
+  WORKFLOW_CONTROL_SHADOW_POLICY,
+  WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
+  WORKFLOW_CONTROL_SHADOW_ROUTE,
+} from './workflow-control-shadow.js';
+export type {
+  CreateWorkflowControlObservationPortOptions,
+  WorkflowControlObservationPort,
+  WorkflowControlShadowDiagnostic,
+  WorkflowControlShadowDiagnosticOutcome,
+  WorkflowControlShadowDiagnosticSink,
+  WorkflowControlShadowEnvelope,
+  WorkflowControlShadowPreparedRequest,
+  WorkflowControlShadowPublisherPort,
+  WorkflowControlShadowReceipt,
+  WorkflowControlShadowSource,
+} from './workflow-control-shadow.js';
+export {
+  createWorkflowControlShadowHttpPublisher,
+  WorkflowControlShadowHttpError,
+} from './workflow-control-shadow-http.js';
+export type { WorkflowControlShadowHttpPublisherOptions } from './workflow-control-shadow-http.js';
 export {
   bindLocalHumanSubject,
   createLocalHumanAttestationProvider,

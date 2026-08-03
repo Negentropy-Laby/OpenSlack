@@ -1018,7 +1018,12 @@
         "stage": "Implementation",
         "maturity": "local_ready",
         "blockers": ["authenticated_host_qualification_pending"],
-        "evidence": ["repo:packages/workflows", "repo:.openslack/workflows"]
+        "evidence": [
+          "repo:packages/workflows",
+          "repo:services/workflow-control",
+          "repo:.openslack/workflows",
+          "docs/architecture/contracts/workflow-control.md"
+        ]
       },
       {
         "id": "organization-graph",
