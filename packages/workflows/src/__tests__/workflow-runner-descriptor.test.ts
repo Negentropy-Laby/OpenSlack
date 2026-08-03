@@ -57,6 +57,11 @@ function currentWindowsSid(): string {
 function hardenWindowsTestPath(path: string, directory: boolean): void {
   const rights = directory ? '(OI)(CI)F' : 'F';
   const sid = currentWindowsSid();
+  execFileSync('icacls.exe', [path, '/reset'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20_000,
+  });
   execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
     encoding: 'utf8',
     windowsHide: true,
@@ -190,6 +195,11 @@ describe('GS8-B sealed execution descriptor', () => {
     if (process.platform !== 'win32') return;
     const root = await mkdtemp(join(tmpdir(), 'openslack-runner-descriptor-'));
     roots.push(root);
+    execFileSync('icacls.exe', [root, '/grant', '*S-1-1-0:(OI)(CI)RX'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20_000,
+    });
     hardenWindowsTestPath(root, true);
     const store = new WorkflowRunnerDescriptorStore(root);
     const value = descriptor();

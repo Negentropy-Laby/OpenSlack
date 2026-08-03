@@ -83,14 +83,15 @@ describe('GS8-B workflow runner worker', () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
     roots.push(workspaceRoot);
     const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    const sourcePath = join(sourceDirectory, 'sealed-test.js');
     await mkdir(sourceDirectory, { recursive: true });
-    await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
+    await writeFile(sourcePath, sourceBytes);
 
     const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
     const prepared = await loader.prepare(descriptor());
 
     expect(prepared).toMatchObject({
-      path: join(sourceDirectory, 'sealed-test.js'),
+      path: await realpath(sourcePath),
       bytes: sourceBytes,
     });
   });
@@ -227,7 +228,7 @@ async function sealedSourceLoader(source: Uint8Array) {
   await writeFile(sourcePath, source);
   return {
     loader: createSealedWorkflowRunnerSourceLoader(workspaceRoot),
-    sourcePath,
+    sourcePath: await realpath(sourcePath),
   };
 }
 

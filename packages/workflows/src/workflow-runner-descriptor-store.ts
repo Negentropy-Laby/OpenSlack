@@ -165,6 +165,14 @@ function hardenWindowsPath(path: string, sid: string, directory: boolean): void 
   // inherited SACL metadata even when only the DACL changed. icacls writes the
   // protected DACL directly and works for a non-elevated owner.
   const rights = directory ? '(OI)(CI)F' : 'F';
+  // Reset this exact path to its bounded parent defaults first so pre-existing
+  // explicit grants cannot survive /inheritance:r. No recursive flag is used.
+  execFileSync('icacls.exe', [path, '/reset'], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    windowsHide: true,
+    maxBuffer: 64 * 1024,
+  });
   execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
     encoding: 'utf8',
     timeout: 20_000,

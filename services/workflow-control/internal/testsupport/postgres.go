@@ -20,8 +20,11 @@ import (
 )
 
 const (
-	WorkspaceID = "workspace-test"
-	RunID       = "run-test"
+	WorkspaceID                       = "workspace-test"
+	RunID                             = "run-test"
+	persistentSchemaReadinessTimeout  = 30 * time.Second
+	persistentSchemaReadinessInterval = 100 * time.Millisecond
+	persistentSchemaPingTimeout       = 3 * time.Second
 )
 
 var schemaPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
@@ -109,11 +112,7 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 	}
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	config.ConnConfig.RuntimeParams["search_path"] = schema
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		admin.Close()
-		t.Fatal(err)
-	}
+	pool := openReadyPersistentPool(t, config, "persistent PostgreSQL schema")
 	if migrate {
 		for _, migrationPath := range migrationPaths(t) {
 			migration, err := os.ReadFile(migrationPath)
@@ -134,6 +133,45 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 		admin.Close()
 	})
 	return pool
+}
+
+func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string) *pgxpool.Pool {
+	t.Helper()
+	deadline := time.Now().Add(persistentSchemaReadinessTimeout)
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt-1, lastErr)
+		}
+		pingTimeout := persistentSchemaPingTimeout
+		if pingTimeout > remaining {
+			pingTimeout = remaining
+		}
+		pingCtx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		pool, err := pgxpool.NewWithConfig(pingCtx, config.Copy())
+		if err == nil {
+			err = pool.Ping(pingCtx)
+		}
+		cancel()
+		if err == nil {
+			return pool
+		}
+		lastErr = err
+		if pool != nil {
+			pool.Close()
+		}
+		remaining = time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt, lastErr)
+		}
+		delay := persistentSchemaReadinessInterval
+		if delay > remaining {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
+		<-timer.C
+	}
 }
 
 func DropSchema(t testing.TB, schema string) {
