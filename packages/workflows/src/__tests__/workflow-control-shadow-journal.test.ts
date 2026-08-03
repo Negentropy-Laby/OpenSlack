@@ -340,26 +340,29 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     ]);
   });
 
-  it('rejects a symlinked journal root before Windows ACL inspection', async () => {
-    const root = await journalRoot('workflow-shadow-windows-symlink');
-    const target = join(resolve(root, '..'), 'journal-target');
-    await mkdir(target, { mode: 0o700 });
-    await symlink(target, root, 'dir');
-    const readWindowsPathSecurity = vi.fn(() => safeWindowsAcl());
-    await expect(
-      createWorkflowControlObservationPortForTest(
-        {
-          enabled: true,
-          workspaceId: 'workspace.test',
-          journalRoot: root,
-          publisher: createWorkflowControlShadowPublisherPort(async (envelope) =>
-            receiptFor(envelope),
-          ),
-          buildObservation: async () => shadowObservation(),
-        },
-        windowsSecurity({ readWindowsPathSecurity }),
-      ),
-    ).rejects.toThrow(/directory must be owner-only/u);
-    expect(readWindowsPathSecurity).not.toHaveBeenCalled();
-  });
+  it.skipIf(process.platform === 'win32')(
+    'rejects a symlinked journal root before Windows ACL inspection',
+    async () => {
+      const root = await journalRoot('workflow-shadow-windows-symlink');
+      const target = join(resolve(root, '..'), 'journal-target');
+      await mkdir(target, { mode: 0o700 });
+      await symlink(target, root, 'dir');
+      const readWindowsPathSecurity = vi.fn(() => safeWindowsAcl());
+      await expect(
+        createWorkflowControlObservationPortForTest(
+          {
+            enabled: true,
+            workspaceId: 'workspace.test',
+            journalRoot: root,
+            publisher: createWorkflowControlShadowPublisherPort(async (envelope) =>
+              receiptFor(envelope),
+            ),
+            buildObservation: async () => shadowObservation(),
+          },
+          windowsSecurity({ readWindowsPathSecurity }),
+        ),
+      ).rejects.toThrow(/directory must be owner-only/u);
+      expect(readWindowsPathSecurity).not.toHaveBeenCalled();
+    },
+  );
 });

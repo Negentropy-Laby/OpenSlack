@@ -126,7 +126,7 @@ export interface CreateWorkflowControlObservationPortOptions {
 export interface WorkflowControlShadowJournalSecurityDependencies {
   readonly platform: NodeJS.Platform;
   readonly currentWindowsSid: () => string;
-  readonly readWindowsPathSecurity: (path: string) => unknown;
+  readonly readWindowsPathSecurity: (path: string, identity: string) => unknown;
   readonly hardenPath: (path: string, directory: boolean) => void;
 }
 
@@ -158,9 +158,15 @@ const STATE_NAME = /^([0-9a-f]{64})\.json$/u;
 const ENTRY_NAME = /^([0-9a-f]{64})\.([0-9]{16})\.([0-9a-f]{64})\.json$/u;
 const WINDOWS_SID = /^S-\d(?:-\d+)+$/u;
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
+const WINDOWS_SECURITY_CACHE_LIMIT = 2_048;
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
 const PROCESS_SESSION_ID = randomUUID();
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
+let productionWindowsSid: string | undefined;
+const productionWindowsSecurityCache = new Map<
+  string,
+  Readonly<{ identity: string; value: unknown }>
+>();
 const PUBLISHERS = new WeakSet<object>();
 const PORTS = new WeakSet<object>();
 const streamTails = new Map<string, Promise<void>>();
@@ -420,6 +426,10 @@ function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
   );
 }
 
+function securityIdentity(stat: BigIntStats): string {
+  return [stat.dev, stat.ino, stat.birthtimeNs, stat.ctimeNs, stat.mode].join(':');
+}
+
 interface WindowsPathSecurity {
   readonly owner: string;
   readonly protected: boolean;
@@ -488,7 +498,9 @@ function assertOwnerOnlyPath(
   if (!WINDOWS_SID.test(sid)) {
     throw new TypeError('Workflow Control shadow journal Windows SID is invalid.');
   }
-  const acl = parseWindowsPathSecurity(security.readWindowsPathSecurity(path));
+  const acl = parseWindowsPathSecurity(
+    security.readWindowsPathSecurity(path, securityIdentity(stat)),
+  );
   const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
   if (
     acl.reparse ||
@@ -502,9 +514,8 @@ function assertOwnerOnlyPath(
 }
 
 function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
-  let cachedSid: string | undefined;
   const currentWindowsSid = () => {
-    if (cachedSid !== undefined) return cachedSid;
+    if (productionWindowsSid !== undefined) return productionWindowsSid;
     const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
       encoding: 'utf8',
       windowsHide: true,
@@ -515,13 +526,16 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
     if (!match || !WINDOWS_SID.test(match[1]!.toUpperCase())) {
       throw new TypeError('Workflow Control shadow journal Windows SID is unavailable.');
     }
-    cachedSid = match[1]!.toUpperCase();
-    return cachedSid;
+    productionWindowsSid = match[1]!.toUpperCase();
+    return productionWindowsSid;
   };
   return Object.freeze({
     platform: process.platform,
     currentWindowsSid,
-    readWindowsPathSecurity(path: string) {
+    readWindowsPathSecurity(path: string, identity: string) {
+      const cacheKey = resolve(path).toLowerCase();
+      const cached = productionWindowsSecurityCache.get(cacheKey);
+      if (cached?.identity === identity) return cached.value;
       const script = [
         '$item = Get-Item -Force -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
@@ -530,7 +544,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
         '$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString() } })',
         '[pscustomobject]@{ owner = $owner; protected = $acl.AreAccessRulesProtected; reparse = $reparse; rules = $rules } | ConvertTo-Json -Compress -Depth 4',
       ].join('; ');
-      return execFileSync(
+      const value = execFileSync(
         'powershell.exe',
         ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
         {
@@ -541,12 +555,18 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
           env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
         },
       );
+      if (productionWindowsSecurityCache.size >= WINDOWS_SECURITY_CACHE_LIMIT) {
+        productionWindowsSecurityCache.delete(productionWindowsSecurityCache.keys().next().value!);
+      }
+      productionWindowsSecurityCache.set(cacheKey, Object.freeze({ identity, value }));
+      return value;
     },
     hardenPath(path: string, directory: boolean) {
       if (process.platform !== 'win32') {
         chmodSync(path, directory ? 0o700 : 0o600);
         return;
       }
+      productionWindowsSecurityCache.delete(resolve(path).toLowerCase());
       const sid = currentWindowsSid();
       const grant = directory ? '(OI)(CI)F' : 'F';
       execFileSync(
