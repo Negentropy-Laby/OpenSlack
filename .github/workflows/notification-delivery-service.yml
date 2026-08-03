@@ -384,6 +384,10 @@ jobs:
             fi
             sleep 1
           done
+          published="$(docker port "$postgres_container" 5432/tcp)"
+          postgres_port="${published##*:}"
+          test "$postgres_port" -ge 1
+          export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"
           WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify \
             WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA="$restart_schema" \
             go test -race ./cmd/runner-server -run '^TestGS8BRestartQualification$' -count=1

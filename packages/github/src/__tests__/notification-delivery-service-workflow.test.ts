@@ -832,6 +832,9 @@ describe('notification delivery service workflow', () => {
     }
     expect(linuxStep?.run).toContain(postgresImage);
     expect(linuxStep?.run).toContain('trap cleanup EXIT');
+    expect(
+      linuxStep?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
+    ).toHaveLength(2);
     expect(linuxStep?.run).not.toContain('cp -R packages/workflows/dist');
     expect(linuxStep?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
 
