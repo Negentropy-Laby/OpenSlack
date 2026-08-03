@@ -281,6 +281,11 @@
       "status": "active"
     },
     {
+      "id": "contract-workflow-runner",
+      "path": "docs/architecture/contracts/workflow-runner.md",
+      "status": "active"
+    },
+    {
       "id": "architecture-contracts-index",
       "path": "docs/architecture/contracts/README.md",
       "status": "index"
@@ -1022,7 +1027,8 @@
           "repo:packages/workflows",
           "repo:services/workflow-control",
           "repo:.openslack/workflows",
-          "docs/architecture/contracts/workflow-control.md"
+          "docs/architecture/contracts/workflow-control.md",
+          "docs/architecture/contracts/workflow-runner.md"
         ]
       },
       {

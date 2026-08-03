@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-runner/v1/workflow-runner-prepared-message.v1.schema.json",
+  "title": "OpenSlack GS8-A exact-byte prepared runner message v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_runner_prepared_message.v1" },
+    "body": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 262144,
+      "pattern": "^[^\\r\\n]*(?:\\n)$"
+    },
+    "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^openslack\\.workflow-runner\\.v1\\.[0-9a-f]{64}$"
+    },
+    "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "required": ["schema", "body", "messageDigest", "idempotencyKey", "requestFingerprint"]
+}

@@ -1,0 +1,297 @@
+{
+  "schema": "openslack.workflow_runner_contract_manifest.v1",
+  "protocolVersion": "openslack.workflow_runner.v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "contractOwner": "@openslack/workflows",
+    "javascriptRunnerRemains": true,
+    "workflowCodeAndAgentCallsRemainTypescript": true,
+    "durableAuthorityTransferred": false,
+    "runtimeAdded": false
+  },
+  "envelopeFields": [
+    "protocolVersion",
+    "kind",
+    "workspaceId",
+    "jobId",
+    "workflowRunId",
+    "attemptId",
+    "leaseId",
+    "fencingToken",
+    "sequence",
+    "eventId",
+    "correlationId",
+    "sentAt",
+    "payload"
+  ],
+  "handshakeIdentity": {
+    "kinds": ["hello", "hello_ack"],
+    "requiredNullFields": [
+      "jobId",
+      "workflowRunId",
+      "attemptId",
+      "leaseId",
+      "fencingToken",
+      "sequence"
+    ],
+    "requiredNonEmptyFields": ["workspaceId", "eventId", "correlationId", "sentAt"]
+  },
+  "leaseIdentity": {
+    "requiredNonEmptyFields": ["jobId", "workflowRunId", "attemptId", "leaseId"],
+    "requiredPositiveSafeIntegerFields": ["fencingToken", "sequence"],
+    "emptyStringOrZeroSentinelAllowed": false
+  },
+  "messages": {
+    "kinds": [
+      "hello",
+      "hello_ack",
+      "lease_offer",
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_request",
+      "cancel_ack",
+      "terminal",
+      "event_receipt"
+    ],
+    "directions": {
+      "runnerToControl": [
+        "hello",
+        "lease_accept",
+        "lease_reject",
+        "heartbeat",
+        "effect_intent",
+        "effect_outcome",
+        "cancel_ack",
+        "terminal"
+      ],
+      "controlToRunner": ["hello_ack", "lease_offer", "cancel_request", "event_receipt"]
+    },
+    "directionVocabulary": ["runner-to-control", "control-to-runner"],
+    "receiptableKinds": [
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_ack",
+      "terminal"
+    ],
+    "payloadFields": {
+      "hello": [
+        "runtimeName",
+        "runtimeVersion",
+        "runnerBuildHash",
+        "supportedProtocolVersions",
+        "capabilities",
+        "maxConcurrentJobs"
+      ],
+      "hello_ack": [
+        "controlBuildHash",
+        "selectedProtocolVersion",
+        "heartbeatIntervalMs",
+        "leaseOfferTimeoutMs"
+      ],
+      "lease_offer": [
+        "executionDescriptorRef",
+        "executionDescriptorHash",
+        "jobSpecHash",
+        "workflowId",
+        "workflowVersion",
+        "workflowSourceHash",
+        "manifestHash",
+        "inputHash",
+        "offeredAt",
+        "expiresAt"
+      ],
+      "lease_accept": ["acceptedAt", "leaseExpiresAt"],
+      "lease_reject": ["rejectedAt", "reason"],
+      "heartbeat": ["observedAt", "leaseExpiresAt", "state", "lastReceiptSequence"],
+      "effect_intent": [
+        "effectId",
+        "effectKind",
+        "effectHash",
+        "capabilityHash",
+        "requiresHumanDecision"
+      ],
+      "effect_outcome": ["effectId", "status", "outcomeHash"],
+      "cancel_request": ["cancelId", "requestedAt", "expiresAt", "reason"],
+      "cancel_ack": ["cancelId", "acknowledgedAt", "status"],
+      "terminal": ["status", "finishedAt", "resultHash", "terminalReason"],
+      "event_receipt": [
+        "receivedEventId",
+        "receivedKind",
+        "receivedSequence",
+        "receivedDigest",
+        "receivedIdempotencyKey",
+        "receivedFingerprint",
+        "status",
+        "controlBuildHash",
+        "committedAt",
+        "errorCode"
+      ]
+    }
+  },
+  "advancementRules": {
+    "helloRequires": "hello_ack",
+    "leaseOfferRequiresOneOf": ["lease_accept", "lease_reject"],
+    "receiptRequiredFor": [
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_ack",
+      "terminal"
+    ],
+    "advancingReceiptStatuses": ["accepted", "duplicate"],
+    "stoppingReceiptStatus": "reconciliation_required",
+    "receiptIsReceiptable": false,
+    "oneOutstandingWorkerEvent": true,
+    "leaseAcceptReceiptBeforeJavascriptExecution": true,
+    "terminalReceiptBeforeSuccessfulRunnerExit": true,
+    "cancelRequestPreemptsReceiptWait": true,
+    "cancelAckQueuedBehindOutstandingWorkerEvent": true,
+    "cancelValidityEvaluatedAtRunnerReceipt": true,
+    "appliedCancelAckMayFollowExpiry": true
+  },
+  "leaseOfferBoundary": {
+    "sealedDescriptorOnly": true,
+    "descriptorReferencePattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+    "forbiddenRawFields": [
+      "args",
+      "prompt",
+      "result",
+      "transcript",
+      "credential",
+      "token",
+      "secret",
+      "command",
+      "modulePath",
+      "url"
+    ],
+    "genericExtensionAllowed": false
+  },
+  "canonicalization": {
+    "objectKeyOrder": "ECMAScript UTF-16 code-unit lexicographic",
+    "wireEncoding": "UTF-8",
+    "framing": "canonical JSON followed by exactly one LF",
+    "bomAllowed": false,
+    "carriageReturnAllowed": false,
+    "hashAlgorithm": "SHA-256",
+    "hashHexLength": 64
+  },
+  "algorithms": {
+    "messageDigest": "lowerhex(SHA-256(exact canonical message body including one LF))",
+    "idempotencyKey": "openslack.workflow-runner.v1.<messageDigest>",
+    "requestFingerprint": {
+      "schema": "openslack.workflow_runner_request_fingerprint.v1",
+      "formula": "sha256:lowerhex(SHA-256(canonical JSON fingerprint preimage without LF))",
+      "fields": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "direction",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "eventId",
+        "correlationId",
+        "messageDigest"
+      ]
+    },
+    "receiptEventId": {
+      "schema": "openslack.workflow_runner_receipt_identity.v1",
+      "formula": "receipt.lowerhex(SHA-256(canonical JSON receipt identity without LF))",
+      "fields": [
+        "schema",
+        "workspaceId",
+        "eventId",
+        "messageDigest",
+        "status",
+        "controlBuildHash",
+        "committedAt",
+        "errorCode"
+      ]
+    }
+  },
+  "vocabularies": {
+    "runtimeName": "node",
+    "runtimeVersionPattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+    "capabilities": ["cancel_ack", "effect_receipts", "lease_heartbeat"],
+    "leaseRejectReasons": ["busy", "unsupported", "stale", "shutting_down"],
+    "heartbeatStates": ["running", "waiting_effect", "cancelling"],
+    "effectOutcomes": ["rejected", "executed", "failed", "reconciliation_required"],
+    "cancelReasons": ["operator", "lease_expired", "shutdown", "superseded", "timeout"],
+    "cancelAckStates": ["cancelling", "cancelled", "already_terminal"],
+    "terminalStates": ["completed", "failed", "cancelled", "timed_out", "reconciliation_required"],
+    "terminalReasons": [
+      "workflow_failed",
+      "process_crash",
+      "cancelled_by_control",
+      "timeout",
+      "commit_outcome_unknown"
+    ],
+    "receiptStatuses": ["accepted", "duplicate", "reconciliation_required"],
+    "receiptErrorCodes": [
+      "WORKFLOW_RUNNER_COMMIT_OUTCOME_UNKNOWN",
+      "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"
+    ]
+  },
+  "limits": {
+    "maxMessageBytes": 262144,
+    "maxJsonDepth": 12,
+    "maxJsonNodes": 2048,
+    "maxStringBytes": 2048,
+    "maxIdentifierBytes": 256,
+    "maxEffectKindBytes": 128,
+    "maxCapabilities": 64,
+    "maxProtocolVersions": 4,
+    "maxConcurrentJobs": 1024,
+    "minHeartbeatIntervalMs": 250,
+    "maxHeartbeatIntervalMs": 300000,
+    "maxLeaseDurationMs": 86400000,
+    "maxSafeInteger": 9007199254740991
+  },
+  "errorCodes": [
+    "WORKFLOW_RUNNER_UNSUPPORTED_VERSION",
+    "WORKFLOW_RUNNER_INVALID_MESSAGE",
+    "WORKFLOW_RUNNER_UNKNOWN_FIELD",
+    "WORKFLOW_RUNNER_LIMIT_EXCEEDED",
+    "WORKFLOW_RUNNER_IDENTITY_MISMATCH",
+    "WORKFLOW_RUNNER_HASH_MISMATCH",
+    "WORKFLOW_RUNNER_IDEMPOTENCY_CONFLICT",
+    "WORKFLOW_RUNNER_SEQUENCE_CONFLICT",
+    "WORKFLOW_RUNNER_LEASE_EXPIRED",
+    "WORKFLOW_RUNNER_STALE_FENCE",
+    "WORKFLOW_RUNNER_CONTROL_EXPIRED",
+    "WORKFLOW_RUNNER_PROCESS_CRASH",
+    "WORKFLOW_RUNNER_TIMEOUT",
+    "WORKFLOW_RUNNER_COMMIT_OUTCOME_UNKNOWN",
+    "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"
+  ],
+  "vectors": { "positive": 12, "receipts": 7, "negative": 36 },
+  "artifacts": {
+    "schemas/workflow-runner-message.v1.schema.json": {
+      "path": "schemas/workflow-runner-message.v1.schema.json",
+      "byteLength": 31073,
+      "sha256": "a14f0793323efbecc085770f51309046701fd9c8f4280738560e20bcddbd02c6"
+    },
+    "schemas/workflow-runner-prepared-message.v1.schema.json": {
+      "path": "schemas/workflow-runner-prepared-message.v1.schema.json",
+      "byteLength": 898,
+      "sha256": "58524e1e1c4c64ed985b6a3daa91eb8b33cd1764f97837eb83cf4fd937a752d3"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 365141,
+      "sha256": "b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844"
+    }
+  }
+}

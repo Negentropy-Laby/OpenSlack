@@ -17,10 +17,11 @@ sources:
 
 # Workflow Control Contract
 
-Status: GS7-A contract freeze plus a GS7-B PostgreSQL observational shadow candidate. TypeScript
-remains the sole workflow writer, runner, approval, budget, effect, resume, and user-visible read
-authority. The Go service owns only an isolated credential-free observation journal and matched
-projection index; hosted PostgreSQL/container qualification remains a separate exact-head gate.
+Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
+shadow. TypeScript remains the sole workflow writer, runner, approval, budget, effect, resume, and
+user-visible read authority. The Go service owns only an isolated credential-free observation
+journal and matched projection index; its hosted PostgreSQL/container evidence does not transfer
+runtime authority.
 
 ## Authority boundary
 
@@ -137,12 +138,18 @@ The contract marks the read model ineligible for authority while any of these re
 The reviewed `workflow-control-shadow-v1` Go gate requires and invokes named qualification tests
 against PostgreSQL. Those tests check the private handler and durable receipt path,
 seeds state, restarts the exact database container, verifies replay from a new process, starts the
-built image, and calls its observation, projection, and version APIs. These are gate definitions,
-not a claim that an unpublished head has passed hosted infrastructure.
+built image, and calls its observation, projection, and version APIs. These are gate definitions;
+their hosted result remains evidence for the exact reviewed GS7-B head only.
 
-GS7-B remains an observational candidate until its exact hosted head passes real PostgreSQL,
-response-loss, restart, concurrency, corruption, OpenAPI, Prometheus, distribution, image-smoke,
-cross-language, review-thread, and independent-human-approval gates. GS8 owns the versioned JS
-runner worker protocol and any scheduler/lease work. GS9 is the separate PostgreSQL authority
-cutover for checkpoint, approval, and budget state. None of those later stages is implied by a
-GS7-A or GS7-B local pass.
+GS7-B has passed its exact-head hosted PostgreSQL, response-loss, restart, concurrency, corruption,
+OpenAPI, Prometheus, distribution, image-smoke, cross-language, review-thread, and independent
+human-approval gates and is merged. It remains an observational shadow and does not gain runtime
+authority from those results.
+
+GS8-A separately freezes the versioned JS runner worker protocol and exact-byte TypeScript/Go
+parity without adding runtime behavior. GS8-B owns any default-off scheduler/lease/cancellation
+implementation. GS9 is the separate PostgreSQL authority cutover for checkpoint, approval, and
+budget state. Its complete new-record scope also includes revisioned RunStatus/control transitions
+and the checkpoint-backed resume cursor; legacy run-gate approval remains TypeScript compatibility
+state. None of those later stages is implied by a GS7 local pass, shadow receipt, or GS8 protocol
+validation.
