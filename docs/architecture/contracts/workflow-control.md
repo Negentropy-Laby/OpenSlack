@@ -134,8 +134,8 @@ The contract marks the read model ineligible for authority while any of these re
 - control paths can write status outside the frozen transition method; or
 - the strict v2 effect approval is not an exactly-once runtime pause/decision/resume boundary.
 
-The reviewed `workflow-control-shadow-v1` Go gate rejects placeholder evidence and invokes named
-qualification tests against PostgreSQL. It checks the private handler and durable receipt path,
+The reviewed `workflow-control-shadow-v1` Go gate requires and invokes named qualification tests
+against PostgreSQL. Those tests check the private handler and durable receipt path,
 seeds state, restarts the exact database container, verifies replay from a new process, starts the
 built image, and calls its observation, projection, and version APIs. These are gate definitions,
 not a claim that an unpublished head has passed hosted infrastructure.
