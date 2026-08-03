@@ -547,6 +547,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
         if (cached?.identity === identity) return cached.value;
       }
       const script = [
+        'Import-Module -Name (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1") -ErrorAction Stop',
         '$item = Get-Item -Force -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
         '$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
@@ -583,6 +584,12 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
       productionWindowsSecurityCache.delete(resolve(path).toLowerCase());
       const sid = currentWindowsSid();
       const grant = directory ? '(OI)(CI)F' : 'F';
+      execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5_000,
+        maxBuffer: 64 * 1024,
+      });
       execFileSync(
         'icacls.exe',
         [path, '/inheritance:r', '/grant:r', `*${sid}:${grant}`, `*${WINDOWS_SYSTEM_SID}:${grant}`],

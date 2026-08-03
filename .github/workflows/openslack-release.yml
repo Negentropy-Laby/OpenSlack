@@ -64,6 +64,10 @@ jobs:
       - name: Typecheck release and runtime sources
         run: bun run typecheck
 
+      - name: Qualify Windows Workflow Control journal ACLs
+        if: ${{ matrix.target == 'windows-x64' }}
+        run: bunx vitest run packages/workflows/src/__tests__/workflow-control-shadow-journal.test.ts
+
       - name: Require tag to match the package version
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         shell: bash
