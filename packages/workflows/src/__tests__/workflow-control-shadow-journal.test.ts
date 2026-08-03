@@ -238,7 +238,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       );
 
       port.observeRun(observation.runId);
-      setTimeout(() => void rm(lockPath, { force: true }), 50);
+      setTimeout(() => void rm(lockPath, { force: true }), 1_100);
 
       await port.flush();
       expect(published).toEqual([observation.runId]);

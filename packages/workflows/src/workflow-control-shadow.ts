@@ -157,6 +157,7 @@ const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u;
 const STATE_NAME = /^([0-9a-f]{64})\.json$/u;
 const ENTRY_NAME = /^([0-9a-f]{64})\.([0-9]{16})\.([0-9a-f]{64})\.json$/u;
 const WINDOWS_SID = /^S-\d(?:-\d+)+$/u;
+const LOCK_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 const WINDOWS_SECURITY_CACHE_LIMIT = 2_048;
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
@@ -817,7 +818,8 @@ async function acquireStreamLock(
   hashValue: string,
 ): Promise<() => Promise<void>> {
   const path = join(directories.locks, `${hashValue}.lock`);
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  const deadline = Date.now() + WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs;
+  while (Date.now() <= deadline) {
     try {
       await writeExclusive(
         path,
@@ -854,7 +856,7 @@ async function acquireStreamLock(
         !exactKeys(lock, ['schema', 'pid', 'sessionId', 'createdAt']) ||
         lock.schema !== JOURNAL_LOCK_SCHEMA ||
         typeof lock.sessionId !== 'string' ||
-        !/^[0-9a-f-]{36}$/u.test(lock.sessionId) ||
+        !LOCK_SESSION_ID.test(lock.sessionId) ||
         typeof lock.createdAt !== 'string' ||
         !TIMESTAMP.test(lock.createdAt) ||
         !Number.isFinite(Date.parse(lock.createdAt))
@@ -862,13 +864,15 @@ async function acquireStreamLock(
         throw new TypeError('Workflow Control shadow journal lock is invalid.');
       }
       const pid = safeInteger(lock.pid, 1, 'lock.pid');
-      let dead = false;
+      let live = true;
       try {
         process.kill(pid, 0);
       } catch (probeError) {
-        if ((probeError as NodeJS.ErrnoException).code === 'ESRCH') dead = true;
+        const code = (probeError as NodeJS.ErrnoException).code;
+        if (code === 'ESRCH') live = false;
+        else if (code !== 'EPERM') throw probeError;
       }
-      if (dead) {
+      if (!live) {
         try {
           const repeated = await lstat(path, { bigint: true });
           if (sameIdentity(before, repeated)) {
@@ -881,10 +885,12 @@ async function acquireStreamLock(
           throw reclaimError;
         }
       }
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 5));
+      await new Promise((resolvePromise) =>
+        setTimeout(resolvePromise, WORKFLOW_CONTROL_SHADOW_POLICY.defaultOrderingRetryDelayMs),
+      );
     }
   }
-  throw new TypeError('Workflow Control shadow journal lock retry limit exceeded.');
+  throw new TypeError('Workflow Control shadow journal lock deadline exceeded.');
 }
 
 async function streamEntries(directories: JournalDirectories, hashValue: string) {
