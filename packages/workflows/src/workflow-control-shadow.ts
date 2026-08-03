@@ -126,11 +126,7 @@ export interface CreateWorkflowControlObservationPortOptions {
 export interface WorkflowControlShadowJournalSecurityDependencies {
   readonly platform: NodeJS.Platform;
   readonly currentWindowsSid: () => string;
-  readonly readWindowsPathSecurity: (
-    path: string,
-    identity: string,
-    cacheable: boolean,
-  ) => unknown;
+  readonly readWindowsPathSecurity: (path: string, identity: string, cacheable: boolean) => unknown;
   readonly hardenPath: (path: string, directory: boolean) => void;
 }
 
@@ -166,6 +162,9 @@ const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 const WINDOWS_SECURITY_CACHE_LIMIT = 2_048;
 const WINDOWS_SECURITY_MODULE_IMPORT =
   'Import-Module -Name (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1") -ErrorAction Stop';
+// Hosted Windows runners can exceed five seconds while loading the security module.
+// Keep ACL inspection and hardening bounded without treating normal cold starts as failures.
+const WINDOWS_SECURITY_COMMAND_TIMEOUT_MS = 20_000;
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
 const PROCESS_SESSION_ID = randomUUID();
 const JOURNAL_CAPACITY_LOCK_HASH = sha256('openslack.workflow-control-shadow.journal-capacity.v1');
@@ -570,7 +569,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
         {
           encoding: 'utf8',
           windowsHide: true,
-          timeout: 5_000,
+          timeout: WINDOWS_SECURITY_COMMAND_TIMEOUT_MS,
           maxBuffer: 64 * 1024,
           env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
         },
@@ -616,7 +615,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
         {
           encoding: 'utf8',
           windowsHide: true,
-          timeout: 5_000,
+          timeout: WINDOWS_SECURITY_COMMAND_TIMEOUT_MS,
           maxBuffer: 64 * 1024,
           env: {
             ...process.env,

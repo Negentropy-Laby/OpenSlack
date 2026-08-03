@@ -32,8 +32,8 @@ import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 const roots: string[] = [];
 const WINDOWS_OWNER_SID = 'S-1-5-21-1000-1001-1002-1003';
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
-// The exact-DACL path measured 15.25s on windows-2022; 20s adds at least a 25% margin.
-const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000;
+// Hosted windows-2022 runs have reached 17.8s and each ACL subprocess remains bounded at 20s.
+const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 45_000 : 5_000;
 
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');
@@ -349,8 +349,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     );
     expect(
       verified.some(
-        ({ path, cacheable }) =>
-          cacheable && /[\\/]states[\\/][0-9a-f]{64}\.json$/u.test(path),
+        ({ path, cacheable }) => cacheable && /[\\/]states[\\/][0-9a-f]{64}\.json$/u.test(path),
       ),
     ).toBe(true);
   });
