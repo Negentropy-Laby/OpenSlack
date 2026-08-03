@@ -361,7 +361,7 @@ modules:
       - repo:packages/workflows/contracts/workflow-control/v1/manifest.json
       - test:services/workflow-control/golden_vectors_test.go
       - test:services/workflow-control/manifest_parity_test.go
-      - commit:9b148a03e9b2d0c89efc55eaa9abdbb84c4e1dc6
+      - commit:7a1be5b8f71974ad3369531f72d2611f90c4643a
       - test:packages/workflows/src/__tests__/workflow-control-observation.test.ts
       - test:packages/workflows/src/__tests__/workflow-control-shadow-contract.test.ts
       - test:packages/workflows/src/__tests__/workflow-control-shadow-hooks.test.ts
