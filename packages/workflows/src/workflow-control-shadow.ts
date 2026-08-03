@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { constants as fsConstants, type BigIntStats } from 'node:fs';
+import { chmodSync, constants as fsConstants, type BigIntStats } from 'node:fs';
 import { lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
@@ -122,6 +123,13 @@ export interface CreateWorkflowControlObservationPortOptions {
   readonly diagnosticSink?: WorkflowControlShadowDiagnosticSink;
 }
 
+export interface WorkflowControlShadowJournalSecurityDependencies {
+  readonly platform: NodeJS.Platform;
+  readonly currentWindowsSid: () => string;
+  readonly readWindowsPathSecurity: (path: string) => unknown;
+  readonly hardenPath: (path: string, directory: boolean) => void;
+}
+
 type JsonRecord = Readonly<Record<string, unknown>>;
 
 interface JournalDirectories {
@@ -129,6 +137,7 @@ interface JournalDirectories {
   readonly entries: string;
   readonly states: string;
   readonly locks: string;
+  readonly security: WorkflowControlShadowJournalSecurityDependencies;
 }
 
 interface JournalState {
@@ -147,6 +156,8 @@ const RECEIPT_CODE = /^[a-z0-9][a-z0-9._:-]{0,255}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u;
 const STATE_NAME = /^([0-9a-f]{64})\.json$/u;
 const ENTRY_NAME = /^([0-9a-f]{64})\.([0-9]{16})\.([0-9a-f]{64})\.json$/u;
+const WINDOWS_SID = /^S-\d(?:-\d+)+$/u;
+const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
 const PROCESS_SESSION_ID = randomUUID();
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
@@ -389,6 +400,16 @@ function contained(root: string, candidate: string): boolean {
   return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
+function sameCanonicalPath(
+  left: string,
+  right: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): boolean {
+  const normalize = (value: string) =>
+    security.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
+  return normalize(left) === normalize(right);
+}
+
 function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
   return (
     left.dev === right.dev &&
@@ -399,23 +420,165 @@ function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
   );
 }
 
-async function ensureOwnerDirectory(path: string, parent?: string): Promise<string> {
-  await mkdir(path, { recursive: parent === undefined, mode: 0o700 }).catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EEXIST') throw error;
-    },
-  );
-  const before = await lstat(path, { bigint: true });
+interface WindowsPathSecurity {
+  readonly owner: string;
+  readonly protected: boolean;
+  readonly reparse: boolean;
+  readonly rules: readonly {
+    readonly sid: string;
+    readonly type: 'Allow' | 'Deny';
+  }[];
+}
+
+function parseWindowsPathSecurity(value: unknown): WindowsPathSecurity {
+  let parsed: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      throw new TypeError('Workflow Control shadow journal Windows ACL is invalid.');
+    }
+  }
+  const object = plainObject(parsed, 'Workflow Control shadow journal Windows ACL');
   if (
-    !before.isDirectory() ||
-    before.isSymbolicLink() ||
-    (process.platform !== 'win32' && (Number(before.mode) & 0o077) !== 0)
+    !exactKeys(object, ['owner', 'protected', 'reparse', 'rules']) ||
+    typeof object.owner !== 'string' ||
+    !WINDOWS_SID.test(object.owner.toUpperCase()) ||
+    typeof object.protected !== 'boolean' ||
+    typeof object.reparse !== 'boolean' ||
+    !Array.isArray(object.rules)
   ) {
+    throw new TypeError('Workflow Control shadow journal Windows ACL is invalid.');
+  }
+  const rules = object.rules.map((ruleValue) => {
+    const rule = plainObject(ruleValue, 'Workflow Control shadow journal Windows ACL rule');
+    if (
+      !exactKeys(rule, ['sid', 'type']) ||
+      typeof rule.sid !== 'string' ||
+      !WINDOWS_SID.test(rule.sid.toUpperCase()) ||
+      (rule.type !== 'Allow' && rule.type !== 'Deny')
+    ) {
+      throw new TypeError('Workflow Control shadow journal Windows ACL is invalid.');
+    }
+    return Object.freeze({
+      sid: rule.sid.toUpperCase(),
+      type: rule.type,
+    });
+  });
+  return Object.freeze({
+    owner: object.owner.toUpperCase(),
+    protected: object.protected,
+    reparse: object.reparse,
+    rules: Object.freeze(rules),
+  });
+}
+
+function assertOwnerOnlyPath(
+  path: string,
+  stat: BigIntStats,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): void {
+  if (security.platform !== 'win32') {
+    if ((Number(stat.mode) & 0o077) !== 0) {
+      throw new TypeError('Workflow Control shadow journal path must be owner-only.');
+    }
+    return;
+  }
+  const sid = security.currentWindowsSid().toUpperCase();
+  if (!WINDOWS_SID.test(sid)) {
+    throw new TypeError('Workflow Control shadow journal Windows SID is invalid.');
+  }
+  const acl = parseWindowsPathSecurity(security.readWindowsPathSecurity(path));
+  const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
+  if (
+    acl.reparse ||
+    acl.owner !== sid ||
+    !acl.protected ||
+    acl.rules.some((rule) => rule.type === 'Allow' && !allowed.has(rule.sid)) ||
+    !acl.rules.some((rule) => rule.type === 'Allow' && rule.sid === sid)
+  ) {
+    throw new TypeError('Workflow Control shadow journal Windows ACL is not owner-only.');
+  }
+}
+
+function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
+  let cachedSid: string | undefined;
+  const currentWindowsSid = () => {
+    if (cachedSid !== undefined) return cachedSid;
+    const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5_000,
+      maxBuffer: 16 * 1024,
+    }).trim();
+    const match = /^"(?:""|[^"])*","(S-\d(?:-\d+)+)"$/iu.exec(output);
+    if (!match || !WINDOWS_SID.test(match[1]!.toUpperCase())) {
+      throw new TypeError('Workflow Control shadow journal Windows SID is unavailable.');
+    }
+    cachedSid = match[1]!.toUpperCase();
+    return cachedSid;
+  };
+  return Object.freeze({
+    platform: process.platform,
+    currentWindowsSid,
+    readWindowsPathSecurity(path: string) {
+      const script = [
+        '$item = Get-Item -Force -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
+        '$acl = Get-Acl -LiteralPath $env:OPENSLACK_WORKFLOW_SHADOW_PATH',
+        '$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value',
+        '$reparse = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)',
+        '$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { [pscustomobject]@{ sid = $_.IdentityReference.Value; type = $_.AccessControlType.ToString() } })',
+        '[pscustomobject]@{ owner = $owner; protected = $acl.AreAccessRulesProtected; reparse = $reparse; rules = $rules } | ConvertTo-Json -Compress -Depth 4',
+      ].join('; ');
+      return execFileSync(
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+        {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 5_000,
+          maxBuffer: 64 * 1024,
+          env: { ...process.env, OPENSLACK_WORKFLOW_SHADOW_PATH: path },
+        },
+      );
+    },
+    hardenPath(path: string, directory: boolean) {
+      if (process.platform !== 'win32') {
+        chmodSync(path, directory ? 0o700 : 0o600);
+        return;
+      }
+      const sid = currentWindowsSid();
+      const grant = directory ? '(OI)(CI)F' : 'F';
+      execFileSync(
+        'icacls.exe',
+        [path, '/inheritance:r', '/grant:r', `*${sid}:${grant}`, `*${WINDOWS_SYSTEM_SID}:${grant}`],
+        { encoding: 'utf8', windowsHide: true, timeout: 5_000, maxBuffer: 64 * 1024 },
+      );
+    },
+  });
+}
+
+async function ensureOwnerDirectory(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  parent?: string,
+): Promise<string> {
+  let created = false;
+  try {
+    const firstCreated = await mkdir(path, { recursive: parent === undefined, mode: 0o700 });
+    created = parent === undefined ? firstCreated !== undefined : true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  if (created) security.hardenPath(path, true);
+  const before = await lstat(path, { bigint: true });
+  if (!before.isDirectory() || before.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
   }
+  assertOwnerOnlyPath(path, before, security);
   const canonical = await realpath(path);
   if (
-    resolve(canonical) !== resolve(path) ||
+    !sameCanonicalPath(canonical, path, security) ||
     (parent !== undefined && !contained(parent, canonical))
   ) {
     throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
@@ -427,11 +590,14 @@ async function ensureOwnerDirectory(path: string, parent?: string): Promise<stri
   return canonical;
 }
 
-async function initializeJournal(rootValue: string): Promise<JournalDirectories> {
+async function initializeJournal(
+  rootValue: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<JournalDirectories> {
   if (!isAbsolute(rootValue) || resolve(rootValue) !== rootValue || rootValue.includes('\0')) {
     throw new TypeError('Workflow Control shadow journal root must be normalized and absolute.');
   }
-  const root = await ensureOwnerDirectory(rootValue);
+  const root = await ensureOwnerDirectory(rootValue, security);
   const rootEntries = await readdir(root, { withFileTypes: true });
   if (
     rootEntries.some(
@@ -443,10 +609,10 @@ async function initializeJournal(rootValue: string): Promise<JournalDirectories>
   ) {
     throw new TypeError('Workflow Control shadow journal root contains an unknown entry.');
   }
-  const entries = await ensureOwnerDirectory(join(root, 'entries'), root);
-  const locks = await ensureOwnerDirectory(join(root, 'locks'), root);
-  const states = await ensureOwnerDirectory(join(root, 'states'), root);
-  return Object.freeze({ root, entries, locks, states });
+  const entries = await ensureOwnerDirectory(join(root, 'entries'), security, root);
+  const locks = await ensureOwnerDirectory(join(root, 'locks'), security, root);
+  const states = await ensureOwnerDirectory(join(root, 'states'), security, root);
+  return Object.freeze({ root, entries, locks, states, security });
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -459,39 +625,75 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
-async function writeExclusive(path: string, body: string): Promise<void> {
+async function assertOwnerFile(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<BigIntStats> {
+  const before = await lstat(path, { bigint: true });
+  if (!before.isFile() || before.isSymbolicLink()) {
+    throw new TypeError('Workflow Control shadow journal file is unsafe.');
+  }
+  assertOwnerOnlyPath(path, before, security);
+  const canonical = await realpath(path);
+  if (!sameCanonicalPath(canonical, path, security)) {
+    throw new TypeError('Workflow Control shadow journal file is non-canonical.');
+  }
+  const after = await lstat(path, { bigint: true });
+  if (!sameIdentity(before, after)) {
+    throw new TypeError('Workflow Control shadow journal file changed during validation.');
+  }
+  return after;
+}
+
+async function writeExclusive(
+  path: string,
+  body: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
   const handle = await open(
     path,
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
   );
+  let complete = false;
   try {
+    security.hardenPath(path, false);
+    const linked = await assertOwnerFile(path, security);
+    const opened = await handle.stat({ bigint: true });
+    if (!sameIdentity(linked, opened)) {
+      throw new TypeError('Workflow Control shadow journal file identity changed.');
+    }
     await handle.writeFile(body, 'utf8');
     await handle.sync();
+    complete = true;
   } finally {
     await handle.close();
+    if (!complete) await rm(path, { force: true }).catch(() => undefined);
   }
 }
 
-async function atomicWrite(path: string, body: string): Promise<void> {
+async function atomicWrite(
+  path: string,
+  body: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
   const temporary = join(dirname(path), `.${sha256(path)}.${process.pid}.${randomUUID()}.tmp`);
-  await writeExclusive(temporary, body);
+  await writeExclusive(temporary, body, security);
   try {
     await rename(temporary, path);
+    await assertOwnerFile(path, security);
     await syncDirectory(dirname(path));
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
   }
 }
 
-async function readCanonical(path: string): Promise<unknown> {
-  const before = await lstat(path, { bigint: true });
-  if (
-    !before.isFile() ||
-    before.isSymbolicLink() ||
-    (process.platform !== 'win32' && (Number(before.mode) & 0o077) !== 0) ||
-    before.size > BigInt(WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes)
-  ) {
+async function readCanonical(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<unknown> {
+  const before = await assertOwnerFile(path, security);
+  if (before.size > BigInt(WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes)) {
     throw new TypeError('Workflow Control shadow journal file is unsafe.');
   }
   const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
@@ -574,7 +776,7 @@ async function loadState(
 ): Promise<JournalState> {
   const path = join(directories.states, `${streamHash(workspaceId, runId)}.json`);
   try {
-    return validateState(await readCanonical(path), workspaceId, runId);
+    return validateState(await readCanonical(path, directories.security), workspaceId, runId);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return defaultState(workspaceId, runId);
     throw error;
@@ -585,6 +787,7 @@ async function persistState(directories: JournalDirectories, state: JournalState
   await atomicWrite(
     join(directories.states, `${streamHash(state.workspaceId, state.runId)}.json`),
     `${canonicalWorkflowControlJson(validateState(state, state.workspaceId, state.runId))}\n`,
+    directories.security,
   );
 }
 
@@ -603,6 +806,7 @@ async function acquireStreamLock(
           sessionId: PROCESS_SESSION_ID,
           createdAt: new Date().toISOString(),
         })}\n`,
+        directories.security,
       );
       await syncDirectory(directories.locks);
       return async () => {
@@ -614,7 +818,10 @@ async function acquireStreamLock(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const before = await lstat(path, { bigint: true });
-      const lock = plainObject(await readCanonical(path), 'Workflow Control shadow journal lock');
+      const lock = plainObject(
+        await readCanonical(path, directories.security),
+        'Workflow Control shadow journal lock',
+      );
       if (
         !exactKeys(lock, ['schema', 'pid', 'sessionId', 'createdAt']) ||
         lock.schema !== JOURNAL_LOCK_SCHEMA ||
@@ -664,11 +871,9 @@ async function assertJournalCapacity(directories: JournalDirectories, addedBytes
   for (const directory of [directories.entries, directories.states]) {
     for (const name of await readdir(directory)) {
       const path = join(directory, name);
-      const value = await lstat(path);
-      if (!value.isFile() || value.isSymbolicLink())
-        throw new TypeError('Journal entry is unsafe.');
+      const value = await assertOwnerFile(path, directories.security);
       entries += 1;
-      bytes += value.size;
+      bytes += Number(value.size);
     }
   }
   if (
@@ -741,7 +946,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         const hashValue = match[1]!;
         stateHashes.add(hashValue);
         const object = plainObject(
-          await readCanonical(join(this.#directories.states, name)),
+          await readCanonical(join(this.#directories.states, name), this.#directories.security),
           'Workflow Control shadow state',
         );
         const workspaceId = identifier(object.workspaceId, 'state.workspaceId');
@@ -754,7 +959,9 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         let expected = state.ackedSequence + 1;
         let markedIncomplete = false;
         for (const entry of entries.filter((item) => item.sequence > state.ackedSequence)) {
-          const envelope = validateWorkflowControlShadowEnvelope(await readCanonical(entry.path));
+          const envelope = validateWorkflowControlShadowEnvelope(
+            await readCanonical(entry.path, this.#directories.security),
+          );
           if (
             envelope.source.workspaceId !== workspaceId ||
             envelope.source.runId !== runId ||
@@ -772,7 +979,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         const maximumEntry = entries.at(-1);
         if (maximumEntry && maximumEntry.sequence > state.lastSequence) {
           const envelope = validateWorkflowControlShadowEnvelope(
-            await readCanonical(maximumEntry.path),
+            await readCanonical(maximumEntry.path, this.#directories.security),
           );
           state = immutable({
             ...state,
@@ -798,7 +1005,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         const first = entries[0];
         if (!first) continue;
         const firstEnvelope = validateWorkflowControlShadowEnvelope(
-          await readCanonical(first.path),
+          await readCanonical(first.path, this.#directories.security),
         );
         const { workspaceId, runId } = firstEnvelope.source;
         if (workspaceId !== this.#workspaceId || streamHash(workspaceId, runId) !== hashValue) {
@@ -808,7 +1015,9 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         let incomplete = false;
         let lastObservationHash = hashWorkflowControlValue(firstEnvelope.observation);
         for (const entry of entries) {
-          const envelope = validateWorkflowControlShadowEnvelope(await readCanonical(entry.path));
+          const envelope = validateWorkflowControlShadowEnvelope(
+            await readCanonical(entry.path, this.#directories.security),
+          );
           if (
             envelope.source.workspaceId !== workspaceId ||
             envelope.source.runId !== runId ||
@@ -893,7 +1102,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         this.#directories,
         Buffer.byteLength(body, 'utf8') + Buffer.byteLength(stateBody, 'utf8'),
       );
-      await writeExclusive(path, body);
+      await writeExclusive(path, body, this.#directories.security);
       await syncDirectory(this.#directories.entries);
       await persistState(this.#directories, state);
     } finally {
@@ -906,6 +1115,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
     let state = await loadState(this.#directories, this.#workspaceId, runId);
     for (const entry of await streamEntries(this.#directories, hashValue)) {
       if (entry.sequence <= state.ackedSequence) {
+        await assertOwnerFile(entry.path, this.#directories.security);
         await rm(entry.path, { force: true });
         continue;
       }
@@ -913,7 +1123,9 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
         await this.#markIncomplete(state, entry.sequence);
         return;
       }
-      const envelope = validateWorkflowControlShadowEnvelope(await readCanonical(entry.path));
+      const envelope = validateWorkflowControlShadowEnvelope(
+        await readCanonical(entry.path, this.#directories.security),
+      );
       if (
         envelope.source.workspaceId !== this.#workspaceId ||
         envelope.source.runId !== runId ||
@@ -1001,9 +1213,33 @@ const NOOP_PORT: WorkflowControlObservationPort = Object.freeze({
 });
 PORTS.add(NOOP_PORT);
 
-/** Default-off composition. Enabling requires every host-owned shadow dependency. */
-export async function createWorkflowControlObservationPort(
-  options: CreateWorkflowControlObservationPortOptions = {},
+function validateJournalSecurityDependencies(
+  value: WorkflowControlShadowJournalSecurityDependencies,
+): WorkflowControlShadowJournalSecurityDependencies {
+  const object = plainObject(value, 'Workflow Control shadow journal security dependencies');
+  if (
+    !exactKeys(object, [
+      'platform',
+      'currentWindowsSid',
+      'readWindowsPathSecurity',
+      'hardenPath',
+    ]) ||
+    typeof object.platform !== 'string' ||
+    typeof object.currentWindowsSid !== 'function' ||
+    nodeTypes.isProxy(object.currentWindowsSid) ||
+    typeof object.readWindowsPathSecurity !== 'function' ||
+    nodeTypes.isProxy(object.readWindowsPathSecurity) ||
+    typeof object.hardenPath !== 'function' ||
+    nodeTypes.isProxy(object.hardenPath)
+  ) {
+    throw new TypeError('Workflow Control shadow journal security dependencies are invalid.');
+  }
+  return value;
+}
+
+async function createWorkflowControlObservationPortWithSecurity(
+  options: CreateWorkflowControlObservationPortOptions,
+  securityValue: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<WorkflowControlObservationPort> {
   const object = plainObject(options, 'Workflow Control observation port options');
   if (object.enabled !== true) {
@@ -1030,7 +1266,8 @@ export async function createWorkflowControlObservationPort(
     throw new TypeError('Enabled Workflow Control shadow options are invalid or incomplete.');
   }
   const workspaceId = identifier(object.workspaceId, 'workspaceId');
-  const directories = await initializeJournal(object.journalRoot as string);
+  const security = validateJournalSecurityDependencies(securityValue);
+  const directories = await initializeJournal(object.journalRoot as string, security);
   const port = Object.freeze(
     new WorkflowControlObservationPortImpl(
       workspaceId,
@@ -1043,6 +1280,21 @@ export async function createWorkflowControlObservationPort(
   PORTS.add(port);
   await port.replay();
   return port;
+}
+
+/** Default-off composition. Enabling requires every host-owned shadow dependency. */
+export async function createWorkflowControlObservationPort(
+  options: CreateWorkflowControlObservationPortOptions = {},
+): Promise<WorkflowControlObservationPort> {
+  return createWorkflowControlObservationPortWithSecurity(options, productionJournalSecurity());
+}
+
+/** Qualification seam for platform ACL checks; production always uses host-derived security. */
+export async function createWorkflowControlObservationPortForTest(
+  options: CreateWorkflowControlObservationPortOptions,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<WorkflowControlObservationPort> {
+  return createWorkflowControlObservationPortWithSecurity(options, security);
 }
 
 export function isWorkflowControlObservationPort(

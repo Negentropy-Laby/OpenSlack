@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ import (
 )
 
 const requestDeadline = 30 * time.Second
+
+var receiptCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,255}$`)
 
 func (service *Service) handleObservation(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
@@ -232,10 +235,23 @@ func validReceiptBinding(receipt shadowstore.Receipt, prepared shadowstore.Prepa
 	}
 	switch receipt.Status {
 	case shadowstore.ReceiptAccepted, shadowstore.ReceiptDuplicate:
-		return receipt.CommittedAt != nil && receipt.ReconciliationToken == nil &&
-			(receipt.Parity == shadowstore.ParityMatched || receipt.Parity == shadowstore.ParityMismatched)
+		if receipt.CommittedAt == nil || receipt.ReconciliationToken != nil ||
+			receipt.ObservationHash != prepared.Envelope.Projection.ObservationHash {
+			return false
+		}
+		switch receipt.Parity {
+		case shadowstore.ParityMatched:
+			return receipt.MismatchCode == ""
+		case shadowstore.ParityMismatched:
+			return receiptCodePattern.MatchString(receipt.MismatchCode)
+		default:
+			return false
+		}
 	case shadowstore.ReceiptReconciliationRequired:
-		return receipt.Parity == shadowstore.ParityUnknown && receipt.CommittedAt == nil && receipt.ReconciliationToken != nil
+		return receipt.Parity == shadowstore.ParityUnknown && receipt.CommittedAt == nil &&
+			receipt.ObservationHash == "" && receipt.MismatchCode == "" &&
+			receipt.ReconciliationToken != nil && len(*receipt.ReconciliationToken) > 0 &&
+			len(*receipt.ReconciliationToken) <= 512
 	default:
 		return false
 	}

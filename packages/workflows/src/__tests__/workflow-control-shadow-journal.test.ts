@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,14 +7,18 @@ import { WorkflowControlObservationError } from '../workflow-control-observation
 import {
   WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
   createWorkflowControlObservationPort,
+  createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
   prepareWorkflowControlShadowRequest,
+  type WorkflowControlShadowJournalSecurityDependencies,
   type WorkflowControlShadowDiagnostic,
 } from '../workflow-control-shadow.js';
 import { hashWorkflowControlValue } from '../workflow-control-contract.js';
 import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 
 const roots: string[] = [];
+const WINDOWS_OWNER_SID = 'S-1-5-21-1000-1001-1002-1003';
+const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');
@@ -27,6 +31,33 @@ async function journalRoot(name: string) {
   roots.push(parent);
   await chmod(parent, 0o700);
   return join(parent, 'journal');
+}
+
+function safeWindowsAcl() {
+  return {
+    owner: WINDOWS_OWNER_SID,
+    protected: true,
+    reparse: false,
+    rules: [
+      { sid: WINDOWS_OWNER_SID, type: 'Allow' },
+      { sid: WINDOWS_SYSTEM_SID, type: 'Allow' },
+    ],
+  } as const;
+}
+
+function windowsSecurity(
+  options: {
+    readonly hardenPath?: (path: string, directory: boolean) => void;
+    readonly readWindowsPathSecurity?: (path: string) => unknown;
+  } = {},
+): WorkflowControlShadowJournalSecurityDependencies {
+  return Object.freeze({
+    platform: 'win32' as const,
+    currentWindowsSid: () => WINDOWS_OWNER_SID,
+    readWindowsPathSecurity:
+      options.readWindowsPathSecurity ?? (() => JSON.stringify(safeWindowsAcl())),
+    hardenPath: options.hardenPath ?? (() => undefined),
+  });
 }
 
 function receiptFor(
@@ -189,5 +220,146 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     ]);
     expect(JSON.stringify(diagnostics)).not.toContain('workspace.test');
     expect(JSON.stringify(diagnostics)).not.toContain('run-shadow-test');
+  });
+
+  it('hardens and proves Windows ACL ownership for every journal directory and new file', async () => {
+    const hardened: { path: string; directory: boolean }[] = [];
+    const verified: string[] = [];
+    const root = await journalRoot('workflow-shadow-windows-acl');
+    const observation = shadowObservation();
+    const port = await createWorkflowControlObservationPortForTest(
+      {
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: createWorkflowControlShadowPublisherPort(async (envelope) =>
+          receiptFor(envelope),
+        ),
+        buildObservation: async () => observation,
+      },
+      windowsSecurity({
+        hardenPath: (path, directory) => {
+          hardened.push({ path, directory });
+        },
+        readWindowsPathSecurity: (path) => {
+          verified.push(path);
+          return JSON.stringify(safeWindowsAcl());
+        },
+      }),
+    );
+    port.observeRun(observation.runId);
+    await port.flush();
+
+    expect(hardened.filter(({ directory }) => directory).map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        root,
+        join(root, 'entries'),
+        join(root, 'locks'),
+        join(root, 'states'),
+      ]),
+    );
+    const hardenedFiles = hardened.filter(({ directory }) => !directory).map(({ path }) => path);
+    expect(hardenedFiles.some((path) => /[\\/]locks[\\/][0-9a-f]{64}\.lock$/u.test(path))).toBe(
+      true,
+    );
+    expect(hardenedFiles.some((path) => /[\\/]entries[\\/].+\.json$/u.test(path))).toBe(true);
+    expect(hardenedFiles.some((path) => /[\\/]states[\\/].+\.tmp$/u.test(path))).toBe(true);
+    expect(verified).toEqual(
+      expect.arrayContaining([
+        root,
+        join(root, 'entries'),
+        join(root, 'locks'),
+        join(root, 'states'),
+      ]),
+    );
+    expect(verified.some((path) => /[\\/]states[\\/][0-9a-f]{64}\.json$/u.test(path))).toBe(true);
+  });
+
+  it('rejects pre-existing Windows journals with unprotected, foreign, broad, or reparse ACLs', async () => {
+    const unsafeAcls = [
+      { ...safeWindowsAcl(), protected: false },
+      { ...safeWindowsAcl(), owner: 'S-1-5-21-9999' },
+      {
+        ...safeWindowsAcl(),
+        rules: [...safeWindowsAcl().rules, { sid: 'S-1-1-0', type: 'Allow' as const }],
+      },
+      { ...safeWindowsAcl(), reparse: true },
+    ] as const;
+    for (const [index, acl] of unsafeAcls.entries()) {
+      const root = await journalRoot(`workflow-shadow-windows-unsafe-${index}`);
+      await mkdir(root, { mode: 0o700 });
+      const hardenPath = vi.fn();
+      await expect(
+        createWorkflowControlObservationPortForTest(
+          {
+            enabled: true,
+            workspaceId: 'workspace.test',
+            journalRoot: root,
+            publisher: createWorkflowControlShadowPublisherPort(async (envelope) =>
+              receiptFor(envelope),
+            ),
+            buildObservation: async () => shadowObservation(),
+          },
+          windowsSecurity({ hardenPath, readWindowsPathSecurity: () => acl }),
+        ),
+      ).rejects.toThrow(/Windows ACL is not owner-only/u);
+      expect(hardenPath).not.toHaveBeenCalled();
+    }
+  });
+
+  it('fails open without publishing when a newly created Windows journal file has an unsafe ACL', async () => {
+    const diagnostics: WorkflowControlShadowDiagnostic[] = [];
+    const publish = vi.fn(async (envelope) => receiptFor(envelope));
+    const root = await journalRoot('workflow-shadow-windows-file-unsafe');
+    const port = await createWorkflowControlObservationPortForTest(
+      {
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: createWorkflowControlShadowPublisherPort(publish),
+        buildObservation: async () => shadowObservation(),
+        diagnosticSink: (diagnostic) => {
+          diagnostics.push(diagnostic);
+        },
+      },
+      windowsSecurity({
+        readWindowsPathSecurity: (path) =>
+          path.endsWith('.lock')
+            ? {
+                ...safeWindowsAcl(),
+                rules: [...safeWindowsAcl().rules, { sid: 'S-1-1-0', type: 'Allow' as const }],
+              }
+            : safeWindowsAcl(),
+      }),
+    );
+    port.observeRun('run-shadow-test');
+    await port.flush();
+    expect(publish).not.toHaveBeenCalled();
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ outcome: 'journal_invalid', code: 'append' }),
+    ]);
+  });
+
+  it('rejects a symlinked journal root before Windows ACL inspection', async () => {
+    const root = await journalRoot('workflow-shadow-windows-symlink');
+    const target = join(resolve(root, '..'), 'journal-target');
+    await mkdir(target, { mode: 0o700 });
+    await symlink(target, root, 'dir');
+    const readWindowsPathSecurity = vi.fn(() => safeWindowsAcl());
+    await expect(
+      createWorkflowControlObservationPortForTest(
+        {
+          enabled: true,
+          workspaceId: 'workspace.test',
+          journalRoot: root,
+          publisher: createWorkflowControlShadowPublisherPort(async (envelope) =>
+            receiptFor(envelope),
+          ),
+          buildObservation: async () => shadowObservation(),
+        },
+        windowsSecurity({ readWindowsPathSecurity }),
+      ),
+    ).rejects.toThrow(/directory must be owner-only/u);
+    expect(readWindowsPathSecurity).not.toHaveBeenCalled();
   });
 });

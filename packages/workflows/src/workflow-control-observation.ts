@@ -235,36 +235,13 @@ async function readJsonFile(
   }
 }
 
-async function readOptionalJsonFile(
-  path: string,
-  root: string,
-  maximum = MAX_FILE_BYTES,
-): Promise<unknown | undefined> {
-  const present = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return undefined;
-    throw error;
-  });
-  return present === undefined ? undefined : readJsonFile(path, root, maximum);
-}
-
 async function readBoundedJsonDirectory(
   directory: string,
   root: string,
   maximumEntries: number,
   visitor: (value: unknown) => void,
 ): Promise<void> {
-  let directoryRoot: string;
-  try {
-    directoryRoot = await assertDirectory(directory, root);
-  } catch (error) {
-    if (
-      error instanceof WorkflowControlObservationError &&
-      error.code === 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND'
-    ) {
-      return;
-    }
-    throw error;
-  }
+  const directoryRoot = await assertDirectory(directory, root);
   const before = await lstat(directoryRoot, { bigint: true });
   const handle = await opendir(directoryRoot);
   let count = 0;
@@ -458,16 +435,14 @@ export async function buildWorkflowControlObservation(
   const status = validateStatus(await readJsonFile(join(runRoot, 'status.json'), runRoot), runId);
 
   const legacyCounts = zeroCounts();
-  const legacy = await readOptionalJsonFile(join(runRoot, 'pending-approvals.json'), runRoot);
-  if (legacy !== undefined) {
-    if (!Array.isArray(legacy) || legacy.length > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxCount) {
-      fail('WORKFLOW_CONTROL_OBSERVATION_LIMIT_EXCEEDED', 'Legacy approval bound is exceeded.');
-    }
-    for (const value of legacy) {
-      const approval = record(value, 'legacy approval');
-      exactKeys(approval, ['id', 'operation', 'detail', 'timestamp', 'status']);
-      incrementCount(legacyCounts, approval.status);
-    }
+  const legacy = await readJsonFile(join(runRoot, 'pending-approvals.json'), runRoot);
+  if (!Array.isArray(legacy) || legacy.length > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxCount) {
+    fail('WORKFLOW_CONTROL_OBSERVATION_LIMIT_EXCEEDED', 'Legacy approval bound is exceeded.');
+  }
+  for (const value of legacy) {
+    const approval = record(value, 'legacy approval');
+    exactKeys(approval, ['id', 'operation', 'detail', 'timestamp', 'status']);
+    incrementCount(legacyCounts, approval.status);
   }
 
   let tokensUsed = 0;
@@ -481,12 +456,24 @@ export async function buildWorkflowControlObservation(
       result.workflowEvidence === undefined
         ? undefined
         : record(result.workflowEvidence, 'agent workflow evidence');
-    const usage =
+    const directUsage =
       result.tokenUsage === undefined
-        ? evidence?.tokenUsage === undefined
-          ? 0
-          : nonNegativeInteger(evidence.tokenUsage, 'workflowEvidence.tokenUsage')
+        ? undefined
         : nonNegativeInteger(result.tokenUsage, 'agentResult.tokenUsage');
+    const evidenceUsage =
+      evidence?.tokenUsage === undefined
+        ? undefined
+        : nonNegativeInteger(evidence.tokenUsage, 'workflowEvidence.tokenUsage');
+    if (directUsage === undefined && evidenceUsage === undefined) {
+      fail(
+        'WORKFLOW_CONTROL_OBSERVATION_INVALID',
+        'Agent result is missing authoritative token usage evidence.',
+      );
+    }
+    if (directUsage !== undefined && evidenceUsage !== undefined && directUsage !== evidenceUsage) {
+      fail('WORKFLOW_CONTROL_OBSERVATION_INVALID', 'Agent token usage evidence is conflicting.');
+    }
+    const usage = directUsage ?? evidenceUsage!;
     tokensUsed += usage;
     agentCalls += 1;
     if (

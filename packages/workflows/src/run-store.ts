@@ -308,6 +308,10 @@ export class RunStore {
       phases: [],
     };
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
+    // The empty file is authoritative evidence that the legacy run-gate plane
+    // was observed and currently has no approvals. Absence is not equivalent
+    // to an observed zero count for the Workflow Control shadow.
+    await this.fs.writeFile(this.pendingApprovalsPath(runId), JSON.stringify([], null, 2));
     this.observeRun(runId);
   }
 

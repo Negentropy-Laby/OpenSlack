@@ -705,6 +705,23 @@ detect_capabilities() {
       [[ -f "${module_dir}/${workflow_control_evidence}" ]] ||
         fail "Workflow Control shadow runtime profile is missing ${workflow_control_evidence}"
     done
+    local workflow_control_test workflow_control_test_file
+    for workflow_control_test in \
+      TestGS7BQualification \
+      TestGS7BRestartQualification \
+      TestGS7BImageSmoke; do
+      grep -Eq "^func[[:space:]]+${workflow_control_test}\\(" "${module_dir}"/cmd/server/*_test.go ||
+        fail "Workflow Control shadow runtime profile is missing ${workflow_control_test}"
+    done
+    for workflow_control_test_file in \
+      'internal/app/handlers_test.go:TestObservationRejectsStoreReceiptStateDrift' \
+      'internal/shadowstore/postgres/repository_test.go:TestUnknownCommitPersistsStableReconciliationReceipt' \
+      'tests/contracts/openapi_contract_test.go:TestOpenAPIIsValidAndContainsOnlyShadowRoutes'; do
+      local evidence_path="${workflow_control_test_file%%:*}"
+      local evidence_test="${workflow_control_test_file#*:}"
+      grep -Eq "^func[[:space:]]+${evidence_test}\\(" "${module_dir}/${evidence_path}" ||
+        fail "Workflow Control shadow runtime profile is missing ${evidence_test}"
+    done
   fi
 
   if ((http_ref)); then
@@ -963,6 +980,15 @@ run_module_gate() {
         "${resource_owner}" \
         "${run_token}"
     fi
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+    ((has_database)) || fail "Workflow Control shadow qualification requires PostgreSQL"
+    run_workflow_control_qualification \
+      "${resource_prefix}" \
+      "${network}" \
+      "${database_container}" \
+      "${database_name}" \
+      "${resource_owner}" \
+      "${run_token}"
   fi
 
   if ((has_prometheus)); then
@@ -1205,6 +1231,77 @@ run_governance_control_authority_qualification() {
     "GOVERNANCE_GS6_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_workflow_control_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local test_name="$6"
+  shift 6
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/workflow-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/server -run "^${test_name}$" -count=1
+}
+
+run_workflow_control_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="workflow_control_gs7b_restart_${restart_token//-/}"
+
+  log "qualifying Workflow Control GS7-B HTTP/PostgreSQL shadow and failure bounds"
+  run_workflow_control_test_container \
+    "${resource_prefix}" bounds "${network}" "${database_name}" "${resource_owner}" \
+    TestGS7BQualification \
+    WORKFLOW_CONTROL_GS7B_QUALIFICATION=1
+
+  log "seeding Workflow Control GS7-B restart qualification"
+  run_workflow_control_test_container \
+    "${resource_prefix}" restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    TestGS7BRestartQualification \
+    WORKFLOW_CONTROL_GS7B_RESTART_PHASE=seed \
+    "WORKFLOW_CONTROL_GS7B_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS7-B restart"
+
+  log "verifying Workflow Control GS7-B durable shadow after PostgreSQL restart"
+  run_workflow_control_test_container \
+    "${resource_prefix}" restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    TestGS7BRestartQualification \
+    WORKFLOW_CONTROL_GS7B_RESTART_PHASE=verify \
+    "WORKFLOW_CONTROL_GS7B_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -1339,7 +1436,11 @@ run_http_smoke() {
         "GOVERNANCE_GS6_SMOKE_ORIGIN=http://${app_network_alias}:8080"
     fi
   elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
-    log "verified Workflow Control shadow image health"
+    log "verifying Workflow Control GS7-B image API responses"
+    run_workflow_control_test_container \
+      "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
+      TestGS7BImageSmoke \
+      "WORKFLOW_CONTROL_GS7B_SMOKE_ORIGIN=http://${app_network_alias}:8080"
   fi
 }
 

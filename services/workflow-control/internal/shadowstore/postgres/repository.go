@@ -173,6 +173,7 @@ func (repository *Repository) Projection(ctx context.Context, workspaceID, runID
 		return shadowstore.Projection{}, err
 	}
 	var sourceSequence int64
+	var matchedSourceSequence pgtype.Int8
 	var rawHash, envelopeBytes []byte
 	result := shadowstore.Projection{
 		Schema: shadowstore.ProjectionSchema, Authority: shadowstore.Authority, Shadow: "go",
@@ -180,15 +181,18 @@ func (repository *Repository) Projection(ctx context.Context, workspaceID, runID
 		Parity: shadowstore.ParityMatched, WorkspaceID: workspaceID, RunID: runID,
 	}
 	if err := repository.pool.QueryRow(ctx, projectionSnapshotSQL, workspaceID, runID).Scan(
-		&sourceSequence, &result.MatchedSourceSequence, &rawHash, &envelopeBytes,
+		&sourceSequence, &matchedSourceSequence, &rawHash, &envelopeBytes,
 		&result.MatchedObservations, &result.MismatchedObservations,
 	); errors.Is(err, pgx.ErrNoRows) {
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorNotFound, "projection not found", err)
 	} else if err != nil {
 		return shadowstore.Projection{}, databaseFailure("read projection snapshot", err)
 	}
-	if len(rawHash) != sha256.Size || len(envelopeBytes) == 0 {
+	if !matchedSourceSequence.Valid || len(rawHash) == 0 || len(envelopeBytes) == 0 {
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorNotFound, "matched observation projection not found", nil)
+	}
+	if len(rawHash) != sha256.Size {
+		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorContentInvalid, "stored matched observation hash length is invalid", nil)
 	}
 	envelope, err := workflowcontrol.ValidateCanonicalShadowEnvelopeBytes(envelopeBytes)
 	if err != nil {
@@ -203,6 +207,7 @@ func (repository *Repository) Projection(ctx context.Context, workspaceID, runID
 		return shadowstore.Projection{}, shadowstore.Failure(shadowstore.ErrorContentInvalid, "stored matched observation hash is invalid", err)
 	}
 	result.SourceSequence = sourceSequence
+	result.MatchedSourceSequence = matchedSourceSequence.Int64
 	result.MatchedObservationHash = readModel.ObservationHash
 	result.ReadModel = readModel
 	if result.MismatchedObservations > 0 {

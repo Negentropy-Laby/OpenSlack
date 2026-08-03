@@ -137,6 +137,52 @@ func TestStoreErrorsAreSanitized(t *testing.T) {
 	}
 }
 
+func TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {
+	body, prepared, readModel := testBody(t)
+	committed := time.Date(2026, 8, 3, 0, 0, 2, 0, time.UTC)
+	base := shadowstore.Receipt{
+		Schema: shadowstore.ReceiptSchema, Operation: "observation_ingest", Status: shadowstore.ReceiptAccepted,
+		Parity: shadowstore.ParityMatched, IdempotencyKey: shadowstore.ExpectedIdempotencyKey(prepared),
+		RequestFingerprint: shadowstore.RequestFingerprint(prepared), WorkspaceID: "workspace-test",
+		RunID: "run-test", SourceSequence: 1, ObservationDigest: shadowstore.DigestString(prepared.BodyDigest),
+		ObservationHash: readModel.ObservationHash, CommittedAt: &committed,
+	}
+	token := "reconcile-token"
+	tests := []struct {
+		name   string
+		mutate func(*shadowstore.Receipt)
+	}{
+		{name: "observation hash", mutate: func(value *shadowstore.Receipt) { value.ObservationHash = strings.Repeat("f", 64) }},
+		{name: "matched mismatch code", mutate: func(value *shadowstore.Receipt) { value.MismatchCode = "projection_mismatch" }},
+		{name: "mismatch without code", mutate: func(value *shadowstore.Receipt) { value.Parity = shadowstore.ParityMismatched }},
+		{name: "reconciliation observation hash", mutate: func(value *shadowstore.Receipt) {
+			value.Status, value.Parity, value.CommittedAt, value.ReconciliationToken = shadowstore.ReceiptReconciliationRequired, shadowstore.ParityUnknown, nil, &token
+		}},
+		{name: "reconciliation mismatch code", mutate: func(value *shadowstore.Receipt) {
+			value.Status, value.Parity, value.CommittedAt, value.ObservationHash, value.MismatchCode, value.ReconciliationToken = shadowstore.ReceiptReconciliationRequired, shadowstore.ParityUnknown, nil, "", "unexpected", &token
+		}},
+		{name: "empty reconciliation token", mutate: func(value *shadowstore.Receipt) {
+			empty := ""
+			value.Status, value.Parity, value.CommittedAt, value.ObservationHash, value.ReconciliationToken = shadowstore.ReceiptReconciliationRequired, shadowstore.ParityUnknown, nil, "", &empty
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			receipt := base
+			test.mutate(&receipt)
+			service := testService(t, &fakeStore{receipt: receipt})
+			request := httptest.NewRequest(http.MethodPost, RouteObservation, bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", base.IdempotencyKey)
+			response := httptest.NewRecorder()
+			service.Handler().ServeHTTP(response, request)
+			if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "WORKFLOW_CONTROL_SHADOW_INTERNAL") {
+				t.Fatalf("invalid receipt returned %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func testService(t *testing.T, store shadowstore.Store) *Service {
 	t.Helper()
 	service, err := New(Options{Store: store, BuildSHA: testBuildSHA, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})

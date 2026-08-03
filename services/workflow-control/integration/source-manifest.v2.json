@@ -40,7 +40,7 @@
     },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
-      "sha256": "853d0d062fe6df44961339d8b9445ff2c8461a87d302a86a6a1af24393ab4d83"
+      "sha256": "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f"
     }
   },
   "legalInputs": {

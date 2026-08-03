@@ -55,6 +55,32 @@ func TestFirstDuplicateAndMismatchDoNotAdvanceMatchedHead(t *testing.T) {
 	}
 }
 
+func TestFirstMismatchHasNoMatchedProjection(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	repository := shadowpostgres.New(pool)
+	ctx := context.Background()
+
+	drifted := testsupport.Envelope(t, 1, workflowcontrol.RunRunning)
+	drifted.Projection.Status = workflowcontrol.RunCompleted
+	receipt, err := repository.Observe(ctx, testsupport.ObserveInput(t, drifted))
+	if err != nil {
+		t.Fatalf("observe first mismatch: %v", err)
+	}
+	if receipt.Status != shadowstore.ReceiptAccepted || receipt.Parity != shadowstore.ParityMismatched {
+		t.Fatalf("unexpected first mismatch receipt: %#v", receipt)
+	}
+	if _, err := repository.Projection(ctx, testsupport.WorkspaceID, testsupport.RunID); !shadowstore.IsCode(err, shadowstore.ErrorNotFound) {
+		t.Fatalf("first mismatch projection error = %v, want %s", err, shadowstore.ErrorNotFound)
+	}
+	statistics, err := repository.Statistics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statistics.Runs != 1 || statistics.MatchedObservations != 0 || statistics.MismatchedObservations != 1 {
+		t.Fatalf("unexpected first mismatch statistics: %#v", statistics)
+	}
+}
+
 func TestSourceSequenceConflictDoesNotAdvanceHead(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	repository := shadowpostgres.New(pool)

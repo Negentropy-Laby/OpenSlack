@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -18,7 +18,9 @@ async function authorityFixture(manifestHash = 'a'.repeat(64)) {
   roots.push(root);
   const runId = 'run-observation-test';
   const runRoot = join(root, '.openslack.local', 'workflows', 'runs', runId);
+  const effectRoot = join(root, '.openslack.local', 'workflows', 'effect-approvals');
   await mkdir(join(runRoot, 'agents'), { recursive: true });
+  await mkdir(join(effectRoot, 'records'), { recursive: true });
   await writeFile(
     join(runRoot, 'meta.json'),
     JSON.stringify({
@@ -80,7 +82,7 @@ async function authorityFixture(manifestHash = 'a'.repeat(64)) {
       workflowEvidence: { tokenUsage: 250, promptSummary: 'not-exported' },
     }),
   );
-  return { root, runId, runRoot };
+  return { root, runId, runRoot, effectRoot };
 }
 
 describe('Workflow Control GS7-B authoritative observation builder', () => {
@@ -124,6 +126,73 @@ describe('Workflow Control GS7-B authoritative observation builder', () => {
     } satisfies Partial<WorkflowControlObservationError>);
   });
 
+  it('rejects a missing authoritative legacy approval file instead of projecting zero', async () => {
+    const fixture = await authorityFixture();
+    await rm(join(fixture.runRoot, 'pending-approvals.json'));
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
+  it('rejects a missing authoritative agents directory instead of projecting zero calls', async () => {
+    const fixture = await authorityFixture();
+    await rm(join(fixture.runRoot, 'agents'), { recursive: true });
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
+  it('rejects a missing effect approval root instead of projecting zero decisions', async () => {
+    const fixture = await authorityFixture();
+    await rm(fixture.effectRoot, { recursive: true });
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
+  it('rejects missing effect approval records instead of projecting zero decisions', async () => {
+    const fixture = await authorityFixture();
+    await rm(join(fixture.effectRoot, 'records'), { recursive: true });
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_NOT_FOUND',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
+  it('rejects an agent result without authoritative token usage evidence', async () => {
+    const fixture = await authorityFixture();
+    await writeFile(join(fixture.runRoot, 'agents', 'agent-1.json'), JSON.stringify({ data: {} }));
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_INVALID',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
+  it('rejects conflicting direct and workflow token usage evidence', async () => {
+    const fixture = await authorityFixture();
+    await writeFile(
+      join(fixture.runRoot, 'agents', 'agent-1.json'),
+      JSON.stringify({
+        data: {},
+        tokenUsage: 250,
+        workflowEvidence: { tokenUsage: 251 },
+      }),
+    );
+    await expect(
+      buildWorkflowControlObservation({ rootDir: fixture.root, runId: fixture.runId }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_OBSERVATION_INVALID',
+    } satisfies Partial<WorkflowControlObservationError>);
+  });
+
   it.skipIf(process.platform === 'win32')(
     'rejects a symlinked authoritative status file',
     async () => {
@@ -131,7 +200,6 @@ describe('Workflow Control GS7-B authoritative observation builder', () => {
       const status = join(fixture.runRoot, 'status.json');
       const bytes = await readFile(status);
       const target = join(fixture.root, 'outside-status.json');
-      const { rm } = await import('node:fs/promises');
       await writeFile(target, bytes);
       await rm(status);
       await symlink(target, status);

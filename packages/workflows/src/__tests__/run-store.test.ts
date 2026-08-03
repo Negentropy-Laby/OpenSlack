@@ -125,6 +125,11 @@ describe('RunStore', () => {
       expect(status.runId).toBe('run-001');
       expect(status.status).toBe('running');
       expect(status.phases).toEqual([]);
+
+      // An explicit empty list is authoritative evidence. Missing evidence
+      // must never be projected as a zero approval count by the Go shadow.
+      const approvalsContent = fs.files.get('/test/workflows/runs/run-001/pending-approvals.json');
+      expect(JSON.parse(approvalsContent!)).toEqual([]);
     });
 
     it('sets updatedAt to startedAt initially', async () => {
