@@ -6,6 +6,7 @@ require (
 	github.com/getkin/kin-openapi v0.143.0
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/jackc/pgx/v5 v5.7.1
+	golang.org/x/sys v0.25.0
 )
 
 require (

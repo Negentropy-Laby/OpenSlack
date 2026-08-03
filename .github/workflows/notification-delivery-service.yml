@@ -24,7 +24,12 @@ on:
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
       - packages/workflows/src/workflow-runner-contract.ts
-      - packages/workflows/src/__tests__/workflow-runner-contract.test.ts
+      - packages/workflows/src/workflow-runner*.ts
+      - packages/workflows/src/__tests__/workflow-runner*.test.ts
+      - packages/workflows/src/agent-shim.ts
+      - packages/workflows/src/execute.ts
+      - packages/workflows/src/loader.ts
+      - packages/workflows/src/runtime.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
       - packages/workflows/src/workflow-effect-approval-store.ts
@@ -92,7 +97,12 @@ on:
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
       - packages/workflows/src/workflow-runner-contract.ts
-      - packages/workflows/src/__tests__/workflow-runner-contract.test.ts
+      - packages/workflows/src/workflow-runner*.ts
+      - packages/workflows/src/__tests__/workflow-runner*.test.ts
+      - packages/workflows/src/agent-shim.ts
+      - packages/workflows/src/execute.ts
+      - packages/workflows/src/loader.ts
+      - packages/workflows/src/runtime.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
       - packages/workflows/src/workflow-effect-approval-store.ts
@@ -212,6 +222,9 @@ jobs:
       - name: Verify Workflow Runner golden contracts
         working-directory: .
         run: bun run workflow:runner-golden -- --check
+      - name: Qualify the sealed TypeScript Workflow Runner on Linux
+        working-directory: .
+        run: bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts
       - name: Clean-build and smoke Organization Graph distribution
         working-directory: .
         run: |
@@ -301,6 +314,75 @@ jobs:
           test "$postgres_port" -ge 1
           export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"
           OPENSLACK_GS7B_CROSS_LANGUAGE=1 go test ./cmd/server -run '^TestGS7BCrossLanguageShadowObservation$' -count=1
+      - name: Qualify GS8-B real TypeScript runner lifecycle
+        working-directory: services/workflow-control
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          bun run build
+          bundle_root="$RUNNER_TEMP/openslack-gs8b-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "$bundle_root"
+          mkdir -m 0700 "$bundle_root"
+          bun run --cwd packages/workflows build:runner-worker
+          install -m 0600 \
+            packages/workflows/dist/workflow-runner-worker-bundle.mjs \
+            "$bundle_root/workflow-runner-worker.js"
+          cp "$(command -v node)" "$bundle_root/runner-node"
+          chmod 0700 "$bundle_root/runner-node"
+          executable_hash="$(sha256sum "$bundle_root/runner-node" | cut -d' ' -f1)"
+          entrypoint_hash="$(sha256sum "$bundle_root/workflow-runner-worker.js" | cut -d' ' -f1)"
+          printf '%s\n' "{\"schema\":\"openslack.workflow_runner_bundle.v1\",\"bundleId\":\"gs8b.ci.bundle\",\"runnerBuildHash\":\"${entrypoint_hash}\",\"executable\":{\"relativePath\":\"runner-node\",\"sha256\":\"${executable_hash}\"},\"entrypoint\":{\"relativePath\":\"workflow-runner-worker.js\",\"sha256\":\"${entrypoint_hash}\"},\"entrypointMode\":\"first-argument\",\"fixedArguments\":[],\"fixedEnvironment\":[\"NODE_ENV=test\"],\"workingDirectory\":\".\"}" > "$bundle_root/workflow-runner-bundle.v1.json"
+          chmod 0600 "$bundle_root/workflow-runner-bundle.v1.json"
+          export WORKFLOW_RUNNER_GS8B_BUNDLE_ROOT="$bundle_root"
+          export WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256="$(sha256sum "$bundle_root/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
+          cd services/workflow-control
+          postgres_container="openslack-gs8b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$postgres_container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cleanup
+          docker run --detach \
+            --name "$postgres_container" \
+            --env POSTGRES_USER=openslack \
+            --env POSTGRES_PASSWORD=openslack \
+            --env POSTGRES_DB=openslack \
+            --publish 127.0.0.1::5432 \
+            postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a >/dev/null
+          for attempt in $(seq 1 60); do
+            if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker logs "$postgres_container"
+              exit 1
+            fi
+            sleep 1
+          done
+          published="$(docker port "$postgres_container" 5432/tcp)"
+          postgres_port="${published##*:}"
+          test "$postgres_port" -ge 1
+          export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"
+          go test ./internal/runnerstore/postgres -count=1
+          WORKFLOW_RUNNER_GS8B_QUALIFICATION=1 go test -race ./cmd/runner-server -run '^TestGS8BQualification$' -count=1
+          restart_schema="workflow_control_gs8b_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed \
+            WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA="$restart_schema" \
+            go test -race ./cmd/runner-server -run '^TestGS8BRestartQualification$' -count=1
+          docker restart "$postgres_container" >/dev/null
+          for attempt in $(seq 1 60); do
+            if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker logs "$postgres_container"
+              exit 1
+            fi
+            sleep 1
+          done
+          WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify \
+            WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA="$restart_schema" \
+            go test -race ./cmd/runner-server -run '^TestGS8BRestartQualification$' -count=1
       - name: Run reviewed Go workspace verifier
         working-directory: .
         run: bash scripts/go-check.sh --all
@@ -321,3 +403,64 @@ jobs:
         run: bun run docs:notification-verify
       - name: Render the Compose configuration
         run: docker compose --env-file deploy/local.env.example config >/dev/null
+
+  workflow-runner-windows:
+    name: Qualify GS8-B runner on Windows
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      GOWORK: 'off'
+    steps:
+      - name: Check out the exact source head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Require the exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse --verify 'HEAD^{commit}').Trim() -ne $env:EXPECTED_COMMIT) {
+            throw 'checkout is not the exact requested head'
+          }
+      - name: Set up the exact Go toolchain
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: services/workflow-control/go.sum
+      - name: Set up the exact Node toolchain
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.14.0
+      - name: Set up the exact Bun toolchain
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.11
+      - name: Install and build the sealed TypeScript runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          bun install --frozen-lockfile
+          bun run build
+      - name: Qualify native Windows descriptor ACL and reparse boundaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          bunx vitest run `
+            packages/workflows/src/__tests__/workflow-runner-descriptor.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-worker.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-session.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-cancellation-boundaries.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-execute.test.ts `
+            packages/workflows/src/__tests__/workflow-runner-framing.test.ts
+      - name: Qualify native Windows Job Object process trees
+        working-directory: services/workflow-control
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((go env GOVERSION) -ne 'go1.26.5') { throw 'unexpected Go toolchain' }
+          go test ./internal/processsupervisor ./cmd/runner-server -count=1

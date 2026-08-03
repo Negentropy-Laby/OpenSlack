@@ -10,7 +10,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 )
 
-func TestMigrationCreatesIsolatedShadowNamespaceAndImmutableTriggers(t *testing.T) {
+func TestMigrationCreatesIsolatedShadowAndRunnerNamespacesWithImmutableEvidence(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := context.Background()
 
@@ -38,6 +38,17 @@ ORDER BY table_name`)
 		"workflow_control_shadow_heads",
 		"workflow_control_shadow_observations",
 		"workflow_control_shadow_receipts",
+		"workflow_runner_attempts",
+		"workflow_runner_cancel_controls",
+		"workflow_runner_control_messages",
+		"workflow_runner_effect_boundaries",
+		"workflow_runner_event_receipts",
+		"workflow_runner_job_receipts",
+		"workflow_runner_jobs",
+		"workflow_runner_leases",
+		"workflow_runner_process_sessions",
+		"workflow_runner_reconciliations",
+		"workflow_runner_worker_events",
 	}
 	if len(tables) != len(want) {
 		t.Fatalf("unexpected migrated tables: got=%v want=%v", tables, want)
@@ -53,16 +64,58 @@ ORDER BY table_name`)
 SELECT count(*)
 FROM information_schema.triggers
 WHERE trigger_schema = current_schema()
-  AND event_object_table IN (
-      'workflow_control_shadow_observations',
-      'workflow_control_shadow_receipts'
-  )
+	  AND event_object_table IN (
+	      'workflow_control_shadow_observations',
+	      'workflow_control_shadow_receipts',
+	      'workflow_runner_job_receipts',
+	      'workflow_runner_worker_events',
+	      'workflow_runner_event_receipts',
+	      'workflow_runner_effect_boundaries',
+	      'workflow_runner_reconciliations'
+	  )
   AND action_timing = 'BEFORE'
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 4 {
-		t.Fatalf("immutable trigger coverage = %d, want 4 event rows", triggerEvents)
+	if triggerEvents != 13 {
+		t.Fatalf("immutable trigger coverage = %d, want 13 event rows", triggerEvents)
+	}
+}
+
+func TestRunnerMigrationDoesNotClaimGS9Authority(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+
+	rows, err := pool.Query(ctx, `
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+  AND table_name LIKE 'workflow_runner_%'
+  AND (
+      column_name IN ('run_status','checkpoint','resume_cursor','approval','approval_decision','budget','budget_used')
+      OR column_name LIKE 'checkpoint_%'
+      OR column_name LIKE 'resume_%'
+      OR column_name LIKE 'approval_%'
+      OR column_name LIKE 'budget_%'
+  )
+ORDER BY table_name, column_name`)
+	if err != nil {
+		t.Fatalf("query forbidden GS9 authority columns: %v", err)
+	}
+	defer rows.Close()
+	var forbidden []string
+	for rows.Next() {
+		var table, column string
+		if err := rows.Scan(&table, &column); err != nil {
+			t.Fatalf("scan forbidden GS9 authority column: %v", err)
+		}
+		forbidden = append(forbidden, table+"."+column)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate forbidden GS9 authority columns: %v", err)
+	}
+	if len(forbidden) != 0 {
+		t.Fatalf("GS8-B runner schema claimed GS9 authority: %v", forbidden)
 	}
 }
 

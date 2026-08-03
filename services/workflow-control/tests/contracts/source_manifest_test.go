@@ -49,7 +49,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedShadowInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS8BInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -70,18 +70,28 @@ func TestSourceManifestBindsOnlyUnreleasedShadowInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS7-B" ||
-		manifest.Service.Authority != "TYPESCRIPT_WORKFLOW_AUTHORITY_GO_OBSERVER_ONLY" ||
-		strings.Join(manifest.Scope.Authorizes, "\n") != "WORKFLOW_CONTROL_SHADOW_OBSERVATION" {
+		manifest.Service.MigrationPhase != "GS8-B" ||
+		manifest.Service.Authority != "GO_RUNNER_LIFECYCLE_TYPESCRIPT_WORKFLOW_AUTHORITY" ||
+		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
+			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
+			"WORKFLOW_RUNNER_ATTEMPT_LEASE_FENCING",
+			"WORKFLOW_RUNNER_CANCELLATION_CONTROL",
+			"WORKFLOW_RUNNER_JOB_LIFECYCLE_CONTROL",
+			"WORKFLOW_RUNNER_PROCESS_SUPERVISION",
+			"WORKFLOW_RUNNER_PROTOCOL_RECEIPT",
+		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 3 {
+		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 5 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantNonClaims := []string{
-		"AUTHORITY_CUTOVER", "LIVE_VERIFIED", "PRODUCTION", "QODER_VERIFIED",
-		"REGISTRY_INCLUSION", "RELEASE", "SIGNED_PROVENANCE", "WORKER_PROTOCOL",
+		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",
+		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "REMOTE_CONNECTOR",
+		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_AUTHORITY",
+		"WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY", "WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
+		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)
 	sort.Strings(actualNonClaims)
@@ -97,7 +107,7 @@ func TestSourceManifestBindsOnlyUnreleasedShadowInputs(t *testing.T) {
 	assertReference(t, repositoryRoot, manifest.LegalInputs.Notice)
 	assertReference(t, repositoryRoot, manifest.LegalInputs.ThirdPartyNotices.manifestReference)
 	assertReference(t, repositoryRoot, manifest.LegalInputs.RepositorySBOMInput.manifestReference)
-	if manifest.LegalInputs.ThirdPartyNotices.ProductionModuleCount != 12 ||
+	if manifest.LegalInputs.ThirdPartyNotices.ProductionModuleCount != 13 ||
 		manifest.LegalInputs.RepositorySBOMInput.Scope != "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS" ||
 		manifest.LegalInputs.RepositorySBOMInput.Attestation != "UNSIGNED" {
 		t.Fatal("source manifest distribution scope drifted")
@@ -120,7 +130,7 @@ func TestRepositorySBOMAndComposeStayBounded(t *testing.T) {
 	if err := json.Unmarshal(body, &sbom); err != nil {
 		t.Fatal(err)
 	}
-	if sbom.BOMFormat != "CycloneDX" || sbom.SpecVersion != "1.6" || len(sbom.Components) != 12 {
+	if sbom.BOMFormat != "CycloneDX" || sbom.SpecVersion != "1.6" || len(sbom.Components) != 13 {
 		t.Fatalf("unexpected SBOM inventory: %#v", sbom)
 	}
 	compose, err := os.ReadFile(filepath.Join(serviceRoot, "docker-compose.yml"))

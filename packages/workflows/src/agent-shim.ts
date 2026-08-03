@@ -4,6 +4,7 @@ import {
   AgentRunRestartRequestedError,
   generateRunId,
   getAgentRunFailureSummary,
+  requestAgentRunCancellation,
   redactSensitiveText,
 } from '@openslack/agent-runtime';
 import type {
@@ -354,8 +355,16 @@ export async function executeAgentCall<T>(
     rootDir?: string;
     runStore?: RunStore;
     budgetPolicy?: WorkflowBudgetPolicy;
+    signal?: AbortSignal;
   },
 ): Promise<T> {
+  const throwIfAborted = (): void => {
+    if (!config.signal?.aborted) return;
+    throw config.signal.reason instanceof Error
+      ? config.signal.reason
+      : new Error('Workflow agent call cancelled.');
+  };
+  throwIfAborted();
   // 1. Mode check
   if (config.mode === 'validate') {
     throw new Error('Agent calls not allowed in validate mode');
@@ -437,6 +446,7 @@ export async function executeAgentCall<T>(
   let launchPrompt = providerPrompt;
 
   while (true) {
+    throwIfAborted();
     const replayResult = await persistReplayInput({
       runStore: config.runStore,
       runId: config.runId,
@@ -463,7 +473,16 @@ export async function executeAgentCall<T>(
     }
 
     try {
-      result = await config.launcher(launchPrompt, launchOptions);
+      const cancelActiveAgent = () => {
+        requestAgentRunCancellation(agentRunId, 'workflow runner requested cancellation');
+      };
+      config.signal?.addEventListener('abort', cancelActiveAgent, { once: true });
+      try {
+        result = await config.launcher(launchPrompt, launchOptions);
+      } finally {
+        config.signal?.removeEventListener('abort', cancelActiveAgent);
+      }
+      throwIfAborted();
       break;
     } catch (err) {
       if (err instanceof AgentRunRestartRequestedError) {

@@ -45,3 +45,47 @@ tests:
             exp_annotations:
               summary: Workflow Control shadow metrics endpoint is unavailable
               description: Check PostgreSQL readiness, migration state, and the private service health endpoints.
+
+  - name: runner_reconciliation_fires_after_five_minutes
+    interval: 15s
+    input_series:
+      - series: 'openslack_workflow_runner_jobs{state="reconciliation_required",job="openslack_workflow_runner",instance="runner:8081"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 4m45s
+        alertname: WorkflowRunnerReconciliationRequired
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: WorkflowRunnerReconciliationRequired
+        exp_alerts:
+          - exp_labels:
+              alertname: WorkflowRunnerReconciliationRequired
+              instance: runner:8081
+              job: openslack_workflow_runner
+              severity: critical
+              state: reconciliation_required
+            exp_annotations:
+              summary: Workflow Runner has an ambiguous lifecycle or effect result
+              description: Stop automatic replay and inspect the durable runner reconciliation record.
+
+  - name: runner_process_safety_event_fires
+    interval: 1m
+    input_series:
+      - series: 'openslack_workflow_runner_process_crashes_total{job="openslack_workflow_runner",instance="runner:8081"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1'
+      - series: 'openslack_workflow_runner_forced_terminations_total{job="openslack_workflow_runner",instance="runner:8081"}'
+        values: '0+0x11'
+      - series: 'openslack_workflow_runner_stale_fence_rejections_total{job="openslack_workflow_runner",instance="runner:8081"}'
+        values: '0+0x11'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: WorkflowRunnerProcessSafetyEvent
+        exp_alerts:
+          - exp_labels:
+              alertname: WorkflowRunnerProcessSafetyEvent
+              instance: runner:8081
+              job: openslack_workflow_runner
+              severity: warning
+            exp_annotations:
+              summary: Workflow Runner observed a crash, forced termination, or stale fence
+              description: Correlate the bounded metric with runner job, attempt, lease, and reconciliation evidence.

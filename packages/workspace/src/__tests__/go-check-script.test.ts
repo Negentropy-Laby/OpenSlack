@@ -74,9 +74,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       readFileSync(join(repositoryRoot, 'scripts/go-check/services/workflow-control.conf'), 'utf8'),
     ).toBe(
       [
-        'capabilities=database,distribution,http-openapi,prometheus',
+        'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-shadow-v1',
+        'runtime_profile=workflow-control-runner-v1',
         '',
       ].join('\n'),
     );
@@ -454,6 +454,41 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
+  }, 15_000);
+
+  it('runs the Workflow Control GS8-B runner profile with durable restart and default-off image gates', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-runner-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify');
+    expect(log).toContain('./internal/runnerstore/postgres');
+    expect(log).toContain('-run \\^TestGS8BRestartQualification\\$');
+    expect(log).toContain('-run \\^TestGS8BImageDefaultOff\\$');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://application:8080');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=(workflow_control_gs8b_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(2);
+    expect(log).not.toContain('WORKFLOW_RUNNER_GS8B_QUALIFICATION=1');
+    expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
   }, 15_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
@@ -1161,6 +1196,70 @@ function addFullServiceCapabilities(moduleRoot: string): void {
   writeFileSync(join(moduleRoot, 'deploy/prometheus/prometheus.yml'), 'global: {}\n', 'utf8');
   writeFileSync(join(moduleRoot, 'deploy/prometheus/alerts.yml'), 'groups: []\n', 'utf8');
   writeFileSync(join(moduleRoot, 'deploy/prometheus/rules.test.yml'), 'rule_files: []\n', 'utf8');
+}
+
+function addWorkflowRunnerEvidence(moduleRoot: string): void {
+  for (const directory of [
+    'cmd/runner-server',
+    'internal/app',
+    'internal/processsupervisor',
+    'internal/runnerscheduler',
+    'internal/runnerstore/postgres',
+    'internal/shadowstore/postgres',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(join(moduleRoot, 'cmd/runner-server/main.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/runner-server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS8BQualification(t *testing.T) {}',
+      'func TestGS8BRestartQualification(t *testing.T) {}',
+      'func TestGS8BImageDefaultOff(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/processsupervisor/supervisor_test.go'),
+    'package processsupervisor\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerscheduler/session_test.go'),
+    'package runnerscheduler\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/runner_runtime_integration_test.go'),
+    'package postgres\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/app/handlers_test.go'),
+    'package app\n\nimport "testing"\n\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/shadowstore/postgres/repository_test.go'),
+    'package postgres\n\nimport "testing"\n\nfunc TestUnknownCommitPersistsStableReconciliationReceipt(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/openapi_contract_test.go'),
+    'package contracts\n\nimport "testing"\n\nfunc TestOpenAPIIsValidAndContainsOnlyShadowRoutes(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/runner_openapi_contract_test.go'),
+    'package contracts\n',
+    'utf8',
+  );
+  writeFileSync(join(moduleRoot, 'docs/api/runner-openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
 }
 
 function createFullServiceFixture(): Fixture {

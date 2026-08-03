@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-03
+updated: 2026-08-04
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -17,30 +17,31 @@ sources:
 
 # Workflow Runner Protocol Contract
 
-Status: GS8-A contract freeze only. This batch defines the closed
-`openslack.workflow_runner.v1` bidirectional TypeScript/Go message contract, exact-byte rules, ownership
-boundary, and differential vectors. It adds no worker process, scheduler, lease store, database,
-HTTP route, CLI route, cancellation behavior, or runtime authority.
+Status: GS8-B local implementation. GS8-A remains the immutable
+`openslack.workflow_runner.v1` bidirectional TypeScript/Go contract. GS8-B implements an explicit,
+default-off Go runner-lifecycle control plane and the sealed TypeScript worker without changing the
+normal CLI/TUI route or moving any GS9-deferred workflow authority.
 
 ## Purpose
 
-The protocol is the future boundary between a Go Workflow Control scheduler and the existing
+The protocol is the boundary between a Go Workflow Control scheduler and the existing
 JavaScript/TypeScript workflow runner. It permits Go to own runner jobs, attempts, leases, fencing,
 cancel requests, and durable message receipts while TypeScript continues to execute workflow code,
 call agents, enforce workflow policy, and own all GS9-deferred run state.
 
-GS8-A is deliberately executable-contract work rather than a runtime cutover. Validation of a
-message or successful replay of a golden vector proves only cross-language agreement about the
-wire contract.
+GS8-A validation or successful replay of a golden vector proves only cross-language agreement
+about the wire contract. GS8-B adds the runtime implementation, but its evidence remains a local,
+default-off runner-lifecycle qualification and does not establish a Workflow Control authority
+cutover.
 
 ## Authority boundary
 
 | Object or action                           | GS8 owner                    | Constraint                                                                                            |
 | ------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Runner job and attempt                     | Future Go scheduler          | TypeScript cannot create or mutate their durable scheduling state.                                    |
-| Lease, expiry, takeover, and fencing token | Future Go scheduler          | A worker can accept, reject, or report; it cannot grant, extend, or increment a lease.                |
-| Cancel request                             | Future Go scheduler          | TypeScript can acknowledge and apply it only after binding the exact job, attempt, lease, and fence.  |
-| Worker event and receipt                   | Future Go receipt store      | A receipt records durable protocol acceptance; it is never workflow approval or effect success.       |
+| Runner job and attempt                     | Go scheduler                 | TypeScript cannot create or mutate their durable scheduling state.                                    |
+| Lease, expiry, takeover, and fencing token | Go scheduler                 | A worker can accept, reject, or report; it cannot grant, extend, or increment a lease.                |
+| Cancel request                             | Go scheduler                 | TypeScript can acknowledge and apply it only after binding the exact job, attempt, lease, and fence.  |
+| Worker event and receipt                   | Go receipt store             | A receipt records durable protocol acceptance; it is never workflow approval or effect success.       |
 | Workflow source and JavaScript execution   | TypeScript worker            | Go cannot load workflow modules, embed a JavaScript runtime, or accept an arbitrary command/path/URL. |
 | Agent/provider call and effect execution   | TypeScript worker            | Go cannot call a provider or execute an effect.                                                       |
 | RunStore status, checkpoint, and resume    | TypeScript through GS8       | GS9 alone may transfer new-record authority after separate qualification.                             |
@@ -115,8 +116,11 @@ and expiry. All later messages must preserve those identities.
 
 The lease offer carries an opaque safe-ID `executionDescriptorRef`, never a path. Independent full
 hashes bind the execution descriptor, job specification, workflow source, workflow manifest, and
-input. The TypeScript worker resolves that reference only through a future sealed, owner-only
-descriptor catalog; neither Go nor a wire field supplies raw arguments or selects executable code.
+input. The TypeScript worker resolves that reference only through its sealed, owner-only descriptor
+catalog; neither Go nor a wire field supplies raw arguments or selects executable code. GS8-B
+treats the bound workflow source as the full executable workflow-code closure and rejects runtime
+imports, re-exports, dynamic imports, and `require()` before lease acceptance. The established CLI
+loader is outside this restriction and remains unchanged.
 
 Sequences are monotonic within the direction and attempt defined by the generated schemas and
 vectors. An event ID is allocated and durably retained before first transmission. A retry reuses
@@ -269,27 +273,44 @@ only when that receipt status is `reconciliation_required`.
 These errors do not encode raw provider failures, prompts, outputs, approval reasons, commands,
 credentials, or stack traces.
 
-## GS8-A evidence ceiling
+## GS8-B implementation and evidence ceiling
 
-GS8-A can claim only:
+GS8-A continues to prove the frozen contract. GS8-B additionally implements:
 
-- closed TypeScript schemas and validators;
-- exact-byte manifest and positive/negative vectors;
-- a pure importable Go mirror with cross-language parity;
-- consumer import and contract generation checks; and
-- explicit single-writer and GS9 exclusion documentation.
+- PostgreSQL-backed runner jobs, attempts, leases, monotonic fencing, cancel controls, immutable
+  events and durable receipts;
+- response-loss recovery and reconciliation for unprovable submission or event commits;
+- durable exponential dispatch backoff with a five-failure ceiling for launch, pre-execution crash,
+  and lease-rejection loops;
+- a sealed direct-argv process supervisor with Linux parent-death and Windows Job Object process
+  trees;
+- an externally hash-anchored, exact closed bundle containing one copied Node executable, one
+  self-contained JavaScript entrypoint and its manifest, plus owner-only TypeScript execution
+  descriptors;
+- exact recomputation of `runnerBuildHash` from the entrypoint bytes and rejection of extra bundle
+  paths, links, reparse points, dependency drift, or workflow-source runtime imports;
+- canonical JSONL negotiation, one outstanding event, receipt-gated execution and terminal exit;
+- exact cancel-control acknowledgement, terminal-state preservation for a queued
+  `already_terminal` acknowledgement, and rejection of terminal events before receipt-gated
+  execution;
+- cooperative cancellation through workflow, agent, fan-out, pipeline, and effect boundaries; and
+- a private bearer-authenticated, single-workspace admission/read API in
+  `services/workflow-control/docs/api/runner-openapi.yaml`.
 
-It cannot claim a running worker, process isolation, scheduling, durable lease, cancellation,
-PostgreSQL receipt store, response-loss recovery, checkpoint/approval/budget cutover, Qoder
-qualification, release, live use, or production readiness.
+The implementation is off unless `WORKFLOW_RUNNER_CONTROL_ENABLED=1` and every sealed workspace,
+bundle, build, token, and database binding is present. The default service image entry point and
+all existing CLI/TUI/MCP run paths remain unchanged. GS8-B cannot claim RunStore, checkpoint,
+resume, effect-approval, effect-execution, budget, or user-visible read authority; authenticated
+Qoder Desktop, remote Connector, release, live use, and production readiness also remain outside
+its evidence.
 
 ## Later gates
 
-GS8-B may implement the default-off worker/scheduler path only after this contract is reviewed. It
-must qualify negotiation, duplicate/replay, lease expiry/takeover, stale fencing, response loss,
-Go/PostgreSQL restart, process crash, whole-workflow timeout, cancellation at every execution
-boundary, effect reconciliation, owner-only local spool behavior, Windows process trees, sealed
-worker command selection, and exact TypeScript/Go parity.
+GS8-B qualification requires negotiation, duplicate/replay, lease expiry/takeover, stale fencing,
+response loss, Go/PostgreSQL restart, process crash, whole-workflow timeout, cancellation at every
+execution boundary, effect reconciliation, owner-only descriptor behavior, Windows process trees,
+sealed worker command selection, and exact TypeScript/Go parity. Repository tests may report only
+`LOCAL_PASS`; hosted exact-head checks, review state and independent approval remain separate.
 
 GS9 is a distinct cutover. It alone may move the new-record Workflow Control record: revisioned
 RunStatus/control transitions, checkpoint and resume cursor, effect-approval v2 state, and durable

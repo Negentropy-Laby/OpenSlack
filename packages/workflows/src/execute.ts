@@ -7,7 +7,12 @@ import type {
   WorkflowFormat,
   ConfirmationPolicy,
 } from './types.js';
-import { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js';
+import {
+  createRuntime,
+  ExecuteDeniedError,
+  WorkflowExecutionCancelledError,
+  WorkflowPausedError,
+} from './runtime.js';
 import type { ConfirmCallback } from './runtime.js';
 import { validateEffectAgainstManifest } from './manifest-validator.js';
 import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js';
@@ -16,6 +21,7 @@ import { RunStore } from './run-store.js';
 import type { RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
 import { join } from 'node:path';
+import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -121,6 +127,26 @@ export interface ExecuteRunOptions {
    * Defaults to process.cwd().
    */
   rootDir?: string;
+  /** Exact host-selected run identity. Must match confirmationPolicy.runId when both are present. */
+  runId?: string;
+  /** Cooperative cancellation for the default-off GS8-B worker path. */
+  signal?: AbortSignal;
+  /** Durable runner intent/outcome observation; never an approval or execution authority. */
+  effectBoundary?: WorkflowEffectBoundary;
+}
+
+function throwIfExecutionAborted(
+  signal: AbortSignal | undefined,
+  runId: string,
+  boundary: 'pre_javascript' | 'terminal_commit' = 'pre_javascript',
+): void {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  throw new WorkflowExecutionCancelledError(
+    runId,
+    reason instanceof Error ? reason.message : String(reason ?? 'workflow control cancelled'),
+    boundary,
+  );
 }
 
 function workflowRunStore(rootDir: string): RunStore {
@@ -389,12 +415,21 @@ export async function executeRun(
 ): Promise<RunResult> {
   const { manifest, args = {}, budget } = options;
 
+  if (
+    options.runId !== undefined &&
+    options.confirmationPolicy !== undefined &&
+    options.runId !== options.confirmationPolicy.runId
+  ) {
+    throw new Error('Execute runId must match confirmationPolicy.runId.');
+  }
   const runId =
+    options.runId ??
     options.confirmationPolicy?.runId ??
     `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const rootDir = options.rootDir ?? process.cwd();
   const store = workflowRunStore(rootDir);
   const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
+  throwIfExecutionAborted(options.signal, runId);
 
   await ensureRunInitialized({
     store,
@@ -441,9 +476,12 @@ export async function executeRun(
     agentEventEmitter: options.agentEventEmitter,
     rootDir,
     runStore: store,
+    signal: options.signal,
+    effectBoundary: options.effectBoundary,
   });
 
   try {
+    throwIfExecutionAborted(options.signal, runId);
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
       const { executeAmbientWorkflow } = await import('./ambient-runner.js');
@@ -455,7 +493,9 @@ export async function executeRun(
           : { result: ambientResult }),
       } as RunResult;
       const output = { ...result, runId };
+      throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await flushRuntime(runtime);
+      throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
       await safeTransition(store, runId, 'completed');
       return output;
@@ -467,7 +507,9 @@ export async function executeRun(
 
     const result = await workflow.run(runtime, args);
     const output = { ...result, runId };
+    throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);
+    throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
     await safeTransition(store, runId, 'completed');
     return output;
@@ -480,6 +522,12 @@ export async function executeRun(
     if (err instanceof WorkflowBudgetPausedError) {
       await safeTransition(store, runId, 'paused_waiting_approval');
       throw err;
+    }
+    if (err instanceof WorkflowExecutionCancelledError || options.signal?.aborted) {
+      await safeTransition(store, runId, 'cancelled');
+      throw err instanceof WorkflowExecutionCancelledError
+        ? err
+        : new WorkflowExecutionCancelledError(runId, 'workflow control cancelled');
     }
     await safeTransition(store, runId, 'failed');
     throw err;
@@ -519,12 +567,15 @@ export async function executeResume(
     agentEventEmitter?: AgentEventEmitter;
     /** Root directory for resolving agent types and collaboration paths. */
     rootDir?: string;
+    signal?: AbortSignal;
+    effectBoundary?: WorkflowEffectBoundary;
   },
 ): Promise<RunResult> {
   const { runId, manifest, args = {}, budget } = options;
   const rootDir = options.rootDir ?? process.cwd();
   const store = workflowRunStore(rootDir);
   const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
+  throwIfExecutionAborted(options.signal, runId);
 
   await ensureRunInitialized({
     store,
@@ -579,9 +630,12 @@ export async function executeResume(
     agentEventEmitter: options.agentEventEmitter,
     rootDir,
     runStore: store,
+    signal: options.signal,
+    effectBoundary: options.effectBoundary,
   });
 
   try {
+    throwIfExecutionAborted(options.signal, runId);
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
       const { executeAmbientWorkflow } = await import('./ambient-runner.js');
@@ -593,7 +647,9 @@ export async function executeResume(
           : { result: ambientResult }),
       } as RunResult;
       const output = { ...result, runId };
+      throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await flushRuntime(runtime);
+      throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
       await safeTransition(store, runId, 'completed');
       return output;
@@ -605,7 +661,9 @@ export async function executeResume(
 
     const result = await workflow.run(runtime, args);
     const output = { ...result, runId };
+    throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);
+    throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
     await safeTransition(store, runId, 'completed');
     return output;
@@ -618,6 +676,12 @@ export async function executeResume(
     if (err instanceof WorkflowBudgetPausedError) {
       await safeTransition(store, runId, 'paused_waiting_approval');
       throw err;
+    }
+    if (err instanceof WorkflowExecutionCancelledError || options.signal?.aborted) {
+      await safeTransition(store, runId, 'cancelled');
+      throw err instanceof WorkflowExecutionCancelledError
+        ? err
+        : new WorkflowExecutionCancelledError(runId, 'workflow control cancelled');
     }
     await safeTransition(store, runId, 'failed');
     throw err;

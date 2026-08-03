@@ -1,0 +1,540 @@
+openapi: 3.1.0
+info:
+  title: OpenSlack Workflow Runner Control API
+  version: 1.0.0
+  description: >-
+    Private GS8-B runner lifecycle admission service. It is default-off and
+    must be explicitly enabled for one configured workspace. TypeScript remains
+    authoritative for workflow source execution, RunStore state, effects,
+    approvals, budgets, checkpoints, and resume. Go owns only runner jobs,
+    attempts, leases, fencing, cancellation controls, and durable receipts.
+servers:
+  - url: http://127.0.0.1:8081
+security: []
+x-openslack-default-off: true
+x-openslack-workspace-mode: single
+x-openslack-workflow-authority: typescript
+x-openslack-go-authority: [job, attempt, lease, fence, cancel, receipt]
+x-openslack-authority-eligible: false
+x-openslack-network-modes: [loopback, internal]
+x-openslack-max-request-bytes: 65536
+x-openslack-forbidden-authority-fields:
+  [
+    command,
+    path,
+    args,
+    url,
+    prompt,
+    credential,
+    providerPayload,
+    approval,
+    budget,
+    checkpoint,
+    resume,
+  ]
+paths:
+  /v1/runner/jobs:
+    post:
+      operationId: submitWorkflowRunnerJob
+      description: >-
+        Admit one exact canonical, hash-only job specification. The idempotency
+        key and request fingerprint must bind the canonical request exactly.
+      x-openslack-canonical-json: required
+      x-openslack-go-authority: [job, receipt]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/JobIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobSpec' }
+      responses:
+        '201': { $ref: '#/components/responses/JobAccepted' }
+        '200': { $ref: '#/components/responses/JobDuplicate' }
+        '202': { $ref: '#/components/responses/JobReconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/runner/jobs/{jobId}:
+    get:
+      operationId: getWorkflowRunnerJob
+      x-openslack-go-authority: [job, attempt, lease, fence, receipt]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+      responses:
+        '200':
+          description: Current runner lifecycle projection for the bound job.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/runner/jobs/{jobId}/cancellations:
+    post:
+      operationId: cancelWorkflowRunnerJob
+      description: >-
+        Admit a cancellation bound to the exact current attempt, lease, fence,
+        correlation, request time, and expiry. Exact replay returns the original
+        accepted response with the same status and bytes.
+      x-openslack-canonical-json: required
+      x-openslack-go-authority: [cancel, fence, receipt]
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/CancelIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelRequest' }
+      responses:
+        '202':
+          description: Original durable cancellation admission receipt, including on exact replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CancelReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /health/live:
+    get:
+      operationId: workflowRunnerControlLive
+      security: []
+      responses:
+        '200':
+          description: Process is live.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /health/ready:
+    get:
+      operationId: workflowRunnerControlReady
+      security: []
+      responses:
+        '200':
+          description: PostgreSQL runner store and exact schema are ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: Runner store is not ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /health/version:
+    get:
+      operationId: workflowRunnerControlVersion
+      security: []
+      responses:
+        '200':
+          description: Exact runner-control build, authority, and schema version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Version' }
+  /metrics:
+    get:
+      operationId: workflowRunnerControlMetrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+      responses:
+        '200':
+          description: Low-cardinality runner lifecycle metrics.
+          content:
+            text/plain:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: Metrics store query unavailable.
+          content:
+            text/plain:
+              schema: { type: string }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-random-token
+      description: Raw bearer value is verified against the configured SHA-256 identity.
+  parameters:
+    WorkspaceHeader:
+      name: X-OpenSlack-Workspace-ID
+      in: header
+      required: true
+      description: Must equal the one workspace sealed into this runner-server process.
+      schema: { $ref: '#/components/schemas/Identifier' }
+    JobID:
+      name: jobId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    JobIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-job\.v1\.[0-9a-f]{64}$'
+        maxLength: 160
+    CancelIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-cancel\.v1\.[0-9a-f]{64}$'
+        maxLength: 160
+    RequestFingerprint:
+      name: X-OpenSlack-Request-Fingerprint
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^sha256:[0-9a-f]{64}$'
+        maxLength: 71
+  responses:
+    JobAccepted:
+      description: Job and original receipt committed atomically.
+      content: { application/json: { schema: { $ref: '#/components/schemas/JobReceipt' } } }
+    JobDuplicate:
+      description: Original durable job receipt returned for exact replay.
+      content: { application/json: { schema: { $ref: '#/components/schemas/JobReceipt' } } }
+    JobReconciliation:
+      description: Submission commit outcome requires durable reconciliation.
+      content: { application/json: { schema: { $ref: '#/components/schemas/JobReceipt' } } }
+    Unauthorized:
+      description: Bearer or single-workspace identity is invalid.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Timeout:
+      description: Bounded request deadline exceeded.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Idempotency, identity, lease, or fencing precondition conflicted.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TooLarge:
+      description: Exact request exceeds 64 KiB.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnsupportedMediaType:
+      description: Content-Type is not exactly application/json.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unprocessable:
+      description: Closed shape, canonical bytes, hash, or header binding is invalid.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: The bound runner job does not exist.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Internal:
+      description: Sanitized internal integrity failure.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unavailable:
+      description: PostgreSQL or commit-outcome recovery is unavailable.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Identifier:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$'
+      maxLength: 256
+    Hash:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      minLength: 64
+      maxLength: 64
+    Timestamp:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+      minLength: 24
+      maxLength: 24
+    SafePositiveInteger:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9007199254740991
+    JobSpec:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          correlationId,
+          executionDescriptorRef,
+          executionDescriptorHash,
+          workflowId,
+          workflowVersion,
+          workflowSourceHash,
+          manifestHash,
+          inputHash,
+          wholeTimeoutMs,
+          submittedAt,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_job_spec.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        executionDescriptorRef: { $ref: '#/components/schemas/Identifier' }
+        executionDescriptorHash: { $ref: '#/components/schemas/Hash' }
+        workflowId: { $ref: '#/components/schemas/Identifier' }
+        workflowVersion: { $ref: '#/components/schemas/Identifier' }
+        workflowSourceHash: { $ref: '#/components/schemas/Hash' }
+        manifestHash: { $ref: '#/components/schemas/Hash' }
+        inputHash: { $ref: '#/components/schemas/Hash' }
+        wholeTimeoutMs:
+          allOf:
+            - $ref: '#/components/schemas/SafePositiveInteger'
+            - minimum: 1000
+              maximum: 86400000
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+    JobReceipt:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          state,
+          revision,
+          jobSpecHash,
+          idempotencyKey,
+          requestFingerprint,
+          committedAt,
+          reconciliationId,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_job_receipt.v1 }
+        status: { enum: [accepted, duplicate, reconciliation_required] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        state: { enum: [queued, reconciliation_required] }
+        revision: { $ref: '#/components/schemas/SafePositiveInteger' }
+        jobSpecHash: { $ref: '#/components/schemas/Hash' }
+        idempotencyKey:
+          type: string
+          pattern: '^openslack\.workflow-runner-job\.v1\.[0-9a-f]{64}$'
+        requestFingerprint:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        committedAt: { $ref: '#/components/schemas/Timestamp' }
+        reconciliationId:
+          type: [string, 'null']
+          maxLength: 512
+    JobView:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          correlationId,
+          state,
+          revision,
+          fencingToken,
+          attemptId,
+          leaseId,
+          attemptState,
+          leaseExpiresAt,
+          terminalStatus,
+          terminalReason,
+          resultHash,
+          openEffectCount,
+          reconciliationId,
+          reconciliationCode,
+          executionStarted,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_job_view.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        state:
+          enum: [queued, offered, running, cancelling, terminal, reconciliation_required]
+        revision: { $ref: '#/components/schemas/SafePositiveInteger' }
+        fencingToken:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        attemptId:
+          type: [string, 'null']
+          maxLength: 256
+        leaseId:
+          type: [string, 'null']
+          maxLength: 256
+        attemptState:
+          type: [string, 'null']
+          enum:
+            [
+              offered,
+              accepted,
+              running,
+              cancelling,
+              terminal,
+              rejected,
+              expired,
+              crashed,
+              reconciliation_required,
+              null,
+            ]
+        leaseExpiresAt:
+          type: [string, 'null']
+          maxLength: 24
+        terminalStatus:
+          type: [string, 'null']
+          enum: [completed, failed, cancelled, timed_out, reconciliation_required, null]
+        terminalReason:
+          type: [string, 'null']
+          maxLength: 512
+        resultHash:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+        openEffectCount:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        reconciliationId:
+          type: [string, 'null']
+          maxLength: 512
+        reconciliationCode:
+          type: [string, 'null']
+          maxLength: 256
+        executionStarted: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    CancelRequest:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          correlationId,
+          expectedAttemptId,
+          expectedLeaseId,
+          expectedFence,
+          reason,
+          requestedAt,
+          expiresAt,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_cancel_request.v1 }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        expectedAttemptId: { $ref: '#/components/schemas/Identifier' }
+        expectedLeaseId: { $ref: '#/components/schemas/Identifier' }
+        expectedFence: { $ref: '#/components/schemas/SafePositiveInteger' }
+        reason: { enum: [operator, lease_expired, shutdown, superseded, timeout] }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    CancelReceipt:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          attemptId,
+          leaseId,
+          fencingToken,
+          cancelId,
+          reason,
+          requestedAt,
+          expiresAt,
+          controlSequence,
+          idempotencyKey,
+          requestFingerprint,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_cancel_receipt.v1 }
+        status: { const: accepted }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        attemptId: { $ref: '#/components/schemas/Identifier' }
+        leaseId: { $ref: '#/components/schemas/Identifier' }
+        fencingToken: { $ref: '#/components/schemas/SafePositiveInteger' }
+        cancelId: { $ref: '#/components/schemas/Identifier' }
+        reason: { enum: [operator, lease_expired, shutdown, superseded, timeout] }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+        controlSequence: { $ref: '#/components/schemas/SafePositiveInteger' }
+        idempotencyKey:
+          type: string
+          pattern: '^openslack\.workflow-runner-cancel\.v1\.[0-9a-f]{64}$'
+        requestFingerprint:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+    Health:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [status]
+      properties:
+        status: { enum: [live, ready, not_ready] }
+    Version:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [schema, buildSha, schemaVersion, mode, workflowAuthority]
+      properties:
+        schema: { const: openslack.workflow_runner_control_service_version.v1 }
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        schemaVersion: { const: 2 }
+        mode: { const: runner-control-explicit }
+        workflowAuthority: { const: typescript }
+    Error:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { const: openslack.workflow_runner_control_error.v1 }
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{0,127}$'
+          maxLength: 128
+        message: { type: string, minLength: 1, maxLength: 512 }

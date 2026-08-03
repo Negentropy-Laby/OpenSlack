@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 type WorkflowStep = {
   name?: string;
   run?: string;
+  shell?: string;
   uses?: string;
   with?: Record<string, boolean | number | string>;
   'working-directory'?: string;
@@ -37,6 +38,13 @@ type ServiceWorkflow = {
       };
       env: Record<string, string>;
       permissions?: unknown;
+      steps: WorkflowStep[];
+    };
+    'workflow-runner-windows': {
+      name: string;
+      'runs-on': string;
+      'timeout-minutes': number;
+      env: Record<string, string>;
       steps: WorkflowStep[];
     };
   };
@@ -132,7 +140,12 @@ const triggerPaths = [
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
   'packages/workflows/src/workflow-runner-contract.ts',
-  'packages/workflows/src/__tests__/workflow-runner-contract.test.ts',
+  'packages/workflows/src/workflow-runner*.ts',
+  'packages/workflows/src/__tests__/workflow-runner*.test.ts',
+  'packages/workflows/src/agent-shim.ts',
+  'packages/workflows/src/execute.ts',
+  'packages/workflows/src/loader.ts',
+  'packages/workflows/src/runtime.ts',
   'packages/workflows/src/run-store.ts',
   'packages/workflows/src/workflow-runs.ts',
   'packages/workflows/src/workflow-effect-approval-store.ts',
@@ -276,7 +289,7 @@ describe('notification delivery service workflow', () => {
 
   it('uses a read-only exact-head checkout before any service command', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(Object.keys(workflow.jobs)).toEqual(['validate']);
+    expect(Object.keys(workflow.jobs)).toEqual(['validate', 'workflow-runner-windows']);
 
     const job = workflow.jobs.validate;
     expect(Object.keys(job).sort()).toEqual([
@@ -310,6 +323,9 @@ describe('notification delivery service workflow', () => {
     const workflowGoldenIndex = stepIndex('Verify Workflow Control golden contracts');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
+    const workflowRunnerLinuxIndex = stepIndex(
+      'Qualify the sealed TypeScript Workflow Runner on Linux',
+    );
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
@@ -317,6 +333,7 @@ describe('notification delivery service workflow', () => {
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const gs6CrossLanguageIndex = stepIndex('Qualify GS6 official-SDK single-writer cutover');
     const gs7bCrossLanguageIndex = stepIndex('Qualify GS7-B TypeScript-to-Go shadow observation');
+    const gs8bRunnerIndex = stepIndex('Qualify GS8-B real TypeScript runner lifecycle');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -335,14 +352,16 @@ describe('notification delivery service workflow', () => {
     expect(workflowGoldenIndex).toBe(governanceGoldenIndex + 1);
     expect(workflowShadowGoldenIndex).toBe(workflowGoldenIndex + 1);
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
-    expect(graphDistIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(workflowRunnerLinuxIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(graphDistIndex).toBe(workflowRunnerLinuxIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
     expect(imagePullIndex).toBe(graphAuthorityIndex + 1);
     expect(gs6CrossLanguageIndex).toBe(imagePullIndex + 1);
     expect(gs7bCrossLanguageIndex).toBe(gs6CrossLanguageIndex + 1);
-    expect(goCheckIndex).toBe(gs7bCrossLanguageIndex + 1);
+    expect(gs8bRunnerIndex).toBe(gs7bCrossLanguageIndex + 1);
+    expect(goCheckIndex).toBe(gs8bRunnerIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -415,6 +434,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: 'bun run workflow:runner-golden -- --check',
     });
+    expect(job.steps[workflowRunnerLinuxIndex]).toEqual({
+      name: 'Qualify the sealed TypeScript Workflow Runner on Linux',
+      'working-directory': '.',
+      run: 'bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts',
+    });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
       'working-directory': '.',
@@ -444,6 +468,10 @@ describe('notification delivery service workflow', () => {
       name: 'Qualify GS7-B TypeScript-to-Go shadow observation',
       'working-directory': 'services/workflow-control',
       run: gs7bCrossLanguageRun(),
+    });
+    expect(job.steps[gs8bRunnerIndex]).toMatchObject({
+      name: 'Qualify GS8-B real TypeScript runner lifecycle',
+      'working-directory': 'services/workflow-control',
     });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
@@ -492,6 +520,7 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control golden contracts',
       'Verify Workflow Control shadow golden contracts',
       'Verify Workflow Runner golden contracts',
+      'Qualify the sealed TypeScript Workflow Runner on Linux',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
@@ -499,6 +528,7 @@ describe('notification delivery service workflow', () => {
       'Pull pinned Go verification images',
       'Qualify GS6 official-SDK single-writer cutover',
       'Qualify GS7-B TypeScript-to-Go shadow observation',
+      'Qualify GS8-B real TypeScript runner lifecycle',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -507,6 +537,10 @@ describe('notification delivery service workflow', () => {
     expect(job.steps.map((step) => step.name)).toEqual(expectedStepNames);
     expect(new Set(expectedStepNames).size).toBe(expectedStepNames.length);
 
+    const gs8bRunnerRun = job.steps.find(
+      (step) => step.name === 'Qualify GS8-B real TypeScript runner lifecycle',
+    )?.run;
+    expect(gs8bRunnerRun).toEqual(expect.any(String));
     const expectedRuns: Record<string, string> = {
       'Require the exact source head': lines(
         'set -euo pipefail',
@@ -533,6 +567,8 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
+      'Qualify the sealed TypeScript Workflow Runner on Linux':
+        'bunx vitest run packages/workflows/src/__tests__/workflow-runner*.test.ts',
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',
@@ -552,6 +588,7 @@ describe('notification delivery service workflow', () => {
       ),
       'Qualify GS6 official-SDK single-writer cutover': gs6CrossLanguageRun(),
       'Qualify GS7-B TypeScript-to-Go shadow observation': gs7bCrossLanguageRun(),
+      'Qualify GS8-B real TypeScript runner lifecycle': gs8bRunnerRun as string,
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -757,6 +794,85 @@ describe('notification delivery service workflow', () => {
     expect(step?.run).toContain('trap cleanup EXIT');
     expect(step?.run).toContain('export DATABASE_URL=');
     expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+  });
+
+  it('qualifies the GS8-B sealed runner, durable restart, and default-off image boundary', () => {
+    const linuxStep = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS8-B real TypeScript runner lifecycle',
+    );
+    expect(linuxStep).toMatchObject({
+      name: 'Qualify GS8-B real TypeScript runner lifecycle',
+      'working-directory': 'services/workflow-control',
+    });
+    for (const evidence of [
+      'bun run build',
+      'bun run --cwd packages/workflows build:runner-worker',
+      'packages/workflows/dist/workflow-runner-worker-bundle.mjs',
+      '"$bundle_root/workflow-runner-worker.js"',
+      'runner-node',
+      'workflow-runner-bundle.v1.json',
+      '\\"runnerBuildHash\\":\\"${entrypoint_hash}\\"',
+      '\\"entrypointMode\\":\\"first-argument\\"',
+      'WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256',
+      'go test ./internal/runnerstore/postgres -count=1',
+      'WORKFLOW_RUNNER_GS8B_QUALIFICATION=1',
+      "-run '^TestGS8BQualification$'",
+      'WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed',
+      'docker restart "$postgres_container"',
+      'WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify',
+    ]) {
+      expect(linuxStep?.run).toContain(evidence);
+    }
+    expect(linuxStep?.run).toContain(postgresImage);
+    expect(linuxStep?.run).toContain('trap cleanup EXIT');
+    expect(linuxStep?.run).not.toContain('cp -R packages/workflows/dist');
+    expect(linuxStep?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+
+    const windowsJob = workflow.jobs['workflow-runner-windows'];
+    expect(windowsJob).toMatchObject({
+      name: 'Qualify GS8-B runner on Windows',
+      'runs-on': 'windows-2022',
+      'timeout-minutes': 45,
+      env: { EXPECTED_COMMIT: exactHeadExpression, GOWORK: 'off' },
+    });
+    expect(windowsJob.steps.map((step) => step.name)).toEqual([
+      'Check out the exact source head',
+      'Require the exact source head',
+      'Set up the exact Go toolchain',
+      'Set up the exact Node toolchain',
+      'Set up the exact Bun toolchain',
+      'Install and build the sealed TypeScript runner',
+      'Qualify native Windows descriptor ACL and reparse boundaries',
+      'Qualify native Windows Job Object process trees',
+    ]);
+    const windowsActions = windowsJob.steps.flatMap((step) =>
+      step.uses === undefined ? [] : [step.uses],
+    );
+    expect(windowsActions).toEqual([
+      checkoutAction,
+      setupGoAction,
+      setupNodeAction,
+      setupBunAction,
+    ]);
+    expect(windowsActions.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
+    const windowsTests = windowsJob.steps.find(
+      (step) => step.name === 'Qualify native Windows descriptor ACL and reparse boundaries',
+    )?.run;
+    for (const file of [
+      'workflow-runner-descriptor.test.ts',
+      'workflow-runner-worker.test.ts',
+      'workflow-runner-session.test.ts',
+      'workflow-runner-cancellation-boundaries.test.ts',
+      'workflow-runner-source-invariants.test.ts',
+      'workflow-runner-execute.test.ts',
+      'workflow-runner-framing.test.ts',
+    ]) {
+      expect(windowsTests).toContain(file);
+    }
+    const processTests = windowsJob.steps.find(
+      (step) => step.name === 'Qualify native Windows Job Object process trees',
+    )?.run;
+    expect(processTests).toContain('go test ./internal/processsupervisor ./cmd/runner-server');
   });
 
   it('does not expand into deployment, external-input, or broad repository authority', () => {

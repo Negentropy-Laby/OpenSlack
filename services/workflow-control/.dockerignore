@@ -20,6 +20,8 @@
 !internal/**/*.go
 internal/testsupport/
 internal/testsupport/**
+!runnerprotocol/
+!runnerprotocol/*.go
 !migrations/
 !migrations/*.sql
 

@@ -154,3 +154,20 @@ explicit. Generated drafts do not gain trust automatically.
 - Identical inputs produce inspectable deterministic plans where specified.
 - Resume rehydrates and revalidates the current bindings.
 - Workflow code cannot approve itself or bypass repository governance.
+
+## GS8-B Runner Lifecycle Boundary
+
+The optional Go runner-server is a separate, default-off execution host for the existing
+TypeScript workflow runner. Go owns runner job admission, attempt identity, lease, fencing token,
+cancellation control, child-process supervision, and protocol receipts. TypeScript continues to
+own workflow code, agent/provider calls, confirmation and effect execution, RunStore, checkpoint,
+resume, and budget state.
+
+The host accepts only hash-bound job and descriptor identities. A sealed deployment manifest fixes
+the executable, one self-contained JavaScript entrypoint, argv, environment, working directory,
+and artifact hashes; its closed bundle root rejects extra paths and no job or API request can choose
+them. The worker treats an accepted workflow source file as the full workflow-code closure and
+rejects runtime imports without changing the legacy CLI loader. JavaScript import begins only after
+descriptor/source validation and a durable lease-accept receipt. An unprovable effect outcome
+enters reconciliation and cannot be replayed automatically. Existing CLI/TUI run and resume
+commands remain on their TypeScript route until the separately reviewed GS9 cutover.
