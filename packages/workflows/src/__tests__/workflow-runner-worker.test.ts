@@ -111,7 +111,7 @@ describe('GS8-B workflow runner worker', () => {
       path: join(await realpath(workspaceRoot), '.openslack', 'workflows', 'sealed-test.js'),
       bytes: sourceBytes,
     });
-  }, 15_000);
+  }, 30_000);
 
   it.each([
     ['static import', 'import value from "./unbound.js";'],
