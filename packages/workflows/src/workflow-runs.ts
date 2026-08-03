@@ -8,6 +8,10 @@ import type {
   WorkflowRunControlTarget,
 } from './types.js';
 import { RunStore } from './run-store.js';
+import {
+  isWorkflowControlObservationPort,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
 
 const TERMINAL_RUN_STATUSES = new Set<RunStatus['status']>(['completed', 'failed', 'cancelled']);
 
@@ -124,8 +128,20 @@ export async function showWorkflowRun(
 export async function controlWorkflowRun(
   runId: string,
   action: WorkflowRunControlAction,
-  options: { rootDir?: string; target?: WorkflowRunControlTarget } = {},
+  options: {
+    rootDir?: string;
+    target?: WorkflowRunControlTarget;
+    observationPort?: WorkflowControlObservationPort;
+  } = {},
 ): Promise<WorkflowRunControlResult> {
+  if (
+    options.observationPort !== undefined &&
+    !isWorkflowControlObservationPort(options.observationPort)
+  ) {
+    throw new TypeError(
+      'Workflow control observationPort must be a host-created Workflow Control port.',
+    );
+  }
   const rootDir = options.rootDir ?? process.cwd();
   const dir = join(runsDir(rootDir), runId);
   const statusPath = join(dir, 'status.json');
@@ -226,6 +242,11 @@ export async function controlWorkflowRun(
     { action, timestamp, target: options.target, status: resultStatus, message },
   ];
   await writeFile(statusPath, JSON.stringify(status, null, 2), 'utf-8');
+  try {
+    options.observationPort?.observeRun(runId);
+  } catch {
+    // Direct control remains TypeScript-authoritative when the Go shadow is unavailable.
+  }
   return { runId, action, status: resultStatus, message, target: options.target };
 }
 

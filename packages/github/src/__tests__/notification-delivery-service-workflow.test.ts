@@ -120,8 +120,16 @@ const triggerPaths = [
   'packages/operator/contracts/governed-plan-authority/**',
   'packages/operator/src/governed-plan*.ts',
   'packages/workflows/contracts/workflow-control/**',
+  'packages/workflows/contracts/workflow-control-shadow/**',
   'packages/workflows/src/workflow-control-contract.ts',
+  'packages/workflows/src/workflow-control-observation.ts',
+  'packages/workflows/src/workflow-control-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
+  'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
+  'packages/workflows/src/run-store.ts',
+  'packages/workflows/src/workflow-runs.ts',
+  'packages/workflows/src/workflow-effect-approval-store.ts',
+  'packages/workflows/src/index.ts',
   'README.md',
   'docs/README.md',
   'design/cdd/module-index.md',
@@ -148,6 +156,7 @@ const triggerPaths = [
   'scripts/organization-graph-contracts/**',
   'scripts/governance-control-contracts/**',
   'scripts/workflow-control-contracts/**',
+  'scripts/workflow-control-shadow-contracts/**',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -202,6 +211,40 @@ function gs6CrossLanguageRun(): string {
   );
 }
 
+function gs7bCrossLanguageRun(): string {
+  return lines(
+    'set -euo pipefail',
+    'postgres_container="openslack-gs7b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+    'cleanup() {',
+    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
+    '}',
+    'trap cleanup EXIT',
+    'cleanup',
+    'docker run --detach \\',
+    '  --name "$postgres_container" \\',
+    '  --env POSTGRES_USER=openslack \\',
+    '  --env POSTGRES_PASSWORD=openslack \\',
+    '  --env POSTGRES_DB=openslack \\',
+    '  --publish 127.0.0.1::5432 \\',
+    `  ${postgresImage} >/dev/null`,
+    'for attempt in $(seq 1 60); do',
+    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
+    '    break',
+    '  fi',
+    '  if [ "$attempt" -eq 60 ]; then',
+    '    docker logs "$postgres_container"',
+    '    exit 1',
+    '  fi',
+    '  sleep 1',
+    'done',
+    'published="$(docker port "$postgres_container" 5432/tcp)"',
+    'postgres_port="${published##*:}"',
+    'test "$postgres_port" -ge 1',
+    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
+    "OPENSLACK_GS7B_CROSS_LANGUAGE=1 go test ./cmd/server -run '^TestGS7BCrossLanguageShadowObservation$' -count=1",
+  );
+}
+
 describe('notification delivery service workflow', () => {
   it('runs only for the service contract on main and manual dispatch', () => {
     expect(workflow.name).toBe('Notification Delivery Service CI');
@@ -252,12 +295,14 @@ describe('notification delivery service workflow', () => {
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
     const governanceGoldenIndex = stepIndex('Verify Governance Control golden contracts');
     const workflowGoldenIndex = stepIndex('Verify Workflow Control golden contracts');
+    const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
     const graphAuthorityIndex = stepIndex('Qualify GS3-C global Go Graph read authority');
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const gs6CrossLanguageIndex = stepIndex('Qualify GS6 official-SDK single-writer cutover');
+    const gs7bCrossLanguageIndex = stepIndex('Qualify GS7-B TypeScript-to-Go shadow observation');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -274,13 +319,15 @@ describe('notification delivery service workflow', () => {
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
     expect(workflowGoldenIndex).toBe(governanceGoldenIndex + 1);
-    expect(graphDistIndex).toBe(workflowGoldenIndex + 1);
+    expect(workflowShadowGoldenIndex).toBe(workflowGoldenIndex + 1);
+    expect(graphDistIndex).toBe(workflowShadowGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
     expect(imagePullIndex).toBe(graphAuthorityIndex + 1);
     expect(gs6CrossLanguageIndex).toBe(imagePullIndex + 1);
-    expect(goCheckIndex).toBe(gs6CrossLanguageIndex + 1);
+    expect(gs7bCrossLanguageIndex).toBe(gs6CrossLanguageIndex + 1);
+    expect(goCheckIndex).toBe(gs7bCrossLanguageIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -343,6 +390,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: 'bun run workflow:golden -- --check',
     });
+    expect(job.steps[workflowShadowGoldenIndex]).toEqual({
+      name: 'Verify Workflow Control shadow golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:shadow-golden -- --check',
+    });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
       'working-directory': '.',
@@ -367,6 +419,11 @@ describe('notification delivery service workflow', () => {
       name: 'Qualify GS6 official-SDK single-writer cutover',
       'working-directory': 'services/governance-control',
       run: gs6CrossLanguageRun(),
+    });
+    expect(job.steps[gs7bCrossLanguageIndex]).toEqual({
+      name: 'Qualify GS7-B TypeScript-to-Go shadow observation',
+      'working-directory': 'services/workflow-control',
+      run: gs7bCrossLanguageRun(),
     });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
@@ -413,12 +470,14 @@ describe('notification delivery service workflow', () => {
       'Verify Organization Graph golden contracts',
       'Verify Governance Control golden contracts',
       'Verify Workflow Control golden contracts',
+      'Verify Workflow Control shadow golden contracts',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
       'Qualify GS3-C global Go Graph read authority',
       'Pull pinned Go verification images',
       'Qualify GS6 official-SDK single-writer cutover',
+      'Qualify GS7-B TypeScript-to-Go shadow observation',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -450,6 +509,8 @@ describe('notification delivery service workflow', () => {
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
       'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',
       'Verify Workflow Control golden contracts': 'bun run workflow:golden -- --check',
+      'Verify Workflow Control shadow golden contracts':
+        'bun run workflow:shadow-golden -- --check',
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',
@@ -468,6 +529,7 @@ describe('notification delivery service workflow', () => {
         `docker pull ${prometheusImage}`,
       ),
       'Qualify GS6 official-SDK single-writer cutover': gs6CrossLanguageRun(),
+      'Qualify GS7-B TypeScript-to-Go shadow observation': gs7bCrossLanguageRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -647,6 +709,23 @@ describe('notification delivery service workflow', () => {
       expect(recovery.response).not.toHaveProperty('record');
       expect(recovery.response).not.toHaveProperty('state');
     }
+  });
+
+  it('runs the non-skippable GS7-B TypeScript-to-Go shadow contract against PostgreSQL', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS7-B TypeScript-to-Go shadow observation',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS7-B TypeScript-to-Go shadow observation',
+      'working-directory': 'services/workflow-control',
+      run: gs7bCrossLanguageRun(),
+    });
+    expect(step?.run).toContain('OPENSLACK_GS7B_CROSS_LANGUAGE=1');
+    expect(step?.run).toContain("-run '^TestGS7BCrossLanguageShadowObservation$'");
+    expect(step?.run).toContain(postgresImage);
+    expect(step?.run).toContain('trap cleanup EXIT');
+    expect(step?.run).toContain('export DATABASE_URL=');
+    expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
   });
 
   it('does not expand into deployment, external-input, or broad repository authority', () => {

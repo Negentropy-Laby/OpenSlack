@@ -1,0 +1,80 @@
+{
+  "schema": "openslack.workflow_control_source.v2",
+  "status": "REPOSITORY_SOURCE_INPUT_UNRELEASED",
+  "service": {
+    "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
+    "targetPath": "services/workflow-control",
+    "migrationPhase": "GS7-B",
+    "authority": "TYPESCRIPT_WORKFLOW_AUTHORITY_GO_OBSERVER_ONLY"
+  },
+  "containerInputs": {
+    "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+    "builderImage": "golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+    "runtimeImage": "debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+    "postgresImage": "postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a",
+    "prometheusImage": "prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893",
+    "goVersion": "1.26.5"
+  },
+  "sourceInputs": {
+    "dockerfile": {
+      "path": "services/workflow-control/Dockerfile",
+      "sha256": "a1addba45b0fe30c869ef613d90902f03eab982ccea2127cdb661f7e6f775a19"
+    },
+    "goMod": {
+      "path": "services/workflow-control/go.mod",
+      "sha256": "e7f6b56934355ac0d2a1bf6668fd03e645069ba95e05de60c0c9fd526db86707"
+    },
+    "goSum": {
+      "path": "services/workflow-control/go.sum",
+      "sha256": "5928913791b8b595ecdc0a084e9a822a62b0231fb77441185525d30da287ef64"
+    }
+  },
+  "contractInputs": {
+    "workflowControlContractManifest": {
+      "path": "packages/workflows/contracts/workflow-control/v1/manifest.json",
+      "sha256": "3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86"
+    },
+    "workflowControlShadowContractManifest": {
+      "path": "packages/workflows/contracts/workflow-control-shadow/v1/manifest.json",
+      "sha256": "91e6eaab207e9baa85fb3be84e1b3370983e881f0057a97cb566c5dc834f5f23"
+    },
+    "openapi": {
+      "path": "services/workflow-control/docs/api/openapi.yaml",
+      "sha256": "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f"
+    }
+  },
+  "legalInputs": {
+    "license": {
+      "path": "services/workflow-control/LICENSE",
+      "sha256": "04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+    },
+    "notice": {
+      "path": "services/workflow-control/NOTICE",
+      "sha256": "e47d9f262d220cee7f095fb3298165e47a2342f575614d71d607316496c32f36"
+    },
+    "thirdPartyNotices": {
+      "path": "services/workflow-control/THIRD_PARTY_NOTICES.md",
+      "sha256": "0b37d23edfee3e952ff77595942b3579f24ca0ab8106f7f9264979456821e3b8",
+      "productionModuleCount": 12
+    },
+    "repositorySbomInput": {
+      "path": "services/workflow-control/SBOM.cdx.json",
+      "sha256": "d699947623fa268d58f06a6b47a8d990bc556e0c0603280124ab8aeedb7ef7f3",
+      "scope": "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS",
+      "attestation": "UNSIGNED"
+    }
+  },
+  "scope": {
+    "authorizes": ["WORKFLOW_CONTROL_SHADOW_OBSERVATION"],
+    "nonClaims": [
+      "AUTHORITY_CUTOVER",
+      "LIVE_VERIFIED",
+      "PRODUCTION",
+      "QODER_VERIFIED",
+      "REGISTRY_INCLUSION",
+      "RELEASE",
+      "SIGNED_PROVENANCE",
+      "WORKER_PROTOCOL"
+    ]
+  }
+}

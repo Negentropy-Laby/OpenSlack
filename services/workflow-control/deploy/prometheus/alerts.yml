@@ -1,0 +1,21 @@
+groups:
+  - name: openslack_workflow_control_shadow_reliability
+    interval: 15s
+    rules:
+      - alert: WorkflowControlShadowReconciliationRequired
+        expr: openslack_workflow_control_shadow_reconciliation_pending > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Workflow Control shadow has an ambiguous observation result
+          description: Inspect the durable reconciliation receipt before replaying the exact observation key.
+
+      - alert: WorkflowControlShadowUnavailable
+        expr: up{job="openslack_workflow_control_shadow"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Workflow Control shadow metrics endpoint is unavailable
+          description: Check PostgreSQL readiness, migration state, and the private service health endpoints.

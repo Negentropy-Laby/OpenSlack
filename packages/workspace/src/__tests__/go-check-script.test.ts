@@ -72,7 +72,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     );
     expect(
       readFileSync(join(repositoryRoot, 'scripts/go-check/services/workflow-control.conf'), 'utf8'),
-    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
+    ).toBe(
+      [
+        'capabilities=database,distribution,http-openapi,prometheus',
+        'docker_target=app',
+        'runtime_profile=workflow-control-shadow-v1',
+        '',
+      ].join('\n'),
+    );
     expect(goCheckSource).toContain(
       'golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647',
     );
@@ -366,6 +373,137 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   }, 15_000);
+
+  it('runs the Workflow Control PostgreSQL shadow profile without authority credentials', () => {
+    const fixture = createFixture();
+    addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+    mkdirSync(join(fixture.root, 'services/pure/internal/app'), { recursive: true });
+    mkdirSync(join(fixture.root, 'services/pure/internal/shadowstore/postgres'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(fixture.root, 'services/pure/internal/app/handlers_test.go'),
+      [
+        'package app',
+        '',
+        'import "testing"',
+        '',
+        'func TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture.root, 'services/pure/internal/shadowstore/postgres/repository_test.go'),
+      [
+        'package postgres',
+        '',
+        'import "testing"',
+        '',
+        'func TestUnknownCommitPersistsStableReconciliationReceipt(t *testing.T) {}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture.root, 'services/pure/tests/contracts/openapi_contract_test.go'),
+      [
+        'package contracts',
+        '',
+        'import "testing"',
+        '',
+        'func TestOpenAPIIsValidAndContainsOnlyShadowRoutes(t *testing.T) {}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-shadow-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain(
+      'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    );
+    expect(log).toContain('WORKFLOW_CONTROL_HTTP_BIND=:8080');
+    expect(log).toContain('WORKFLOW_CONTROL_NETWORK_MODE=internal');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS7BQualification\\$');
+    expect(log).toContain('-run \\^TestGS7BRestartQualification\\$');
+    expect(log).toContain('-run \\^TestGS7BImageSmoke\\$');
+    expect(log).toContain('--network-alias application');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_SMOKE_ORIGIN=http://application:8080');
+    expect(log).toContain('MIGRATION_SOURCE=/migrations');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_CONTROL_GS7B_RESTART_SCHEMA=(workflow_control_gs7b_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log).toContain(' restart ');
+    expect(log.match(/go test -race \.\/cmd\/server -run/gu)).toHaveLength(4);
+    expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
+    expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
+    expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
+  }, 15_000);
+
+  it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
+    'propagates a Workflow Control GS7-B %s qualification failure before completion',
+    (phase) => {
+      const fixture = createFixture();
+      addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+      mkdirSync(join(fixture.root, 'services/pure/internal/app'), { recursive: true });
+      mkdirSync(join(fixture.root, 'services/pure/internal/shadowstore/postgres'), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(fixture.root, 'services/pure/internal/app/handlers_test.go'),
+        'package app\n\nimport "testing"\n\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(fixture.root, 'services/pure/internal/shadowstore/postgres/repository_test.go'),
+        'package postgres\n\nimport "testing"\n\nfunc TestUnknownCommitPersistsStableReconciliationReceipt(t *testing.T) {}\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(fixture.root, 'services/pure/tests/contracts/openapi_contract_test.go'),
+        'package contracts\n\nimport "testing"\n\nfunc TestOpenAPIIsValidAndContainsOnlyShadowRoutes(t *testing.T) {}\n',
+        'utf8',
+      );
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus',
+        dockerTarget: 'app',
+        runtimeProfile: 'workflow-control-shadow-v1',
+      });
+      commitFixture(fixture.root);
+
+      const result = runGoCheck(fixture, ['services/pure'], {
+        FAKE_GS7B_FAIL_PHASE: phase,
+        FAKE_GS7B_FAIL_STATUS: '46',
+      });
+
+      expect(result.status).toBe(46);
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).toContain(`-qualification-${phase}`);
+      expect(log).toContain(' rm -f ');
+      if (phase === 'bounds') {
+        expect(log).not.toContain('WORKFLOW_CONTROL_GS7B_RESTART_PHASE=seed');
+      }
+      if (phase === 'restart-seed') {
+        expect(log).not.toContain(' restart ');
+      }
+    },
+  );
 
   it.each(['bounds', 'restart-seed', 'restart-verify'])(
     'propagates a Governance Control %s qualification failure before later gates',
@@ -988,6 +1126,9 @@ function addFullServiceCapabilities(moduleRoot: string): void {
       'func TestGS6Qualification(t *testing.T) {}',
       'func TestGS6RestartQualification(t *testing.T) {}',
       'func TestGS6ImageSmoke(t *testing.T) {}',
+      'func TestGS7BQualification(t *testing.T) {}',
+      'func TestGS7BRestartQualification(t *testing.T) {}',
+      'func TestGS7BImageSmoke(t *testing.T) {}',
       '',
     ].join('\n'),
     'utf8',
@@ -1161,6 +1302,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS6_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS6_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS6_FAIL_STATUS:-45}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS7B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS7B_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS7B_FAIL_STATUS:-46}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

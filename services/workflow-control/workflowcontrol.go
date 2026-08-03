@@ -11,14 +11,12 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"reflect"
 	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 )
 
 const (
@@ -369,7 +367,7 @@ func CanonicalObservationBytes(value Observation) ([]byte, error) {
 	if err := ValidateObservation(value); err != nil {
 		return nil, err
 	}
-	return canonicalJSON(value)
+	return encodeCanonicalJSON(value)
 }
 
 func HashObservation(value Observation) (string, error) {
@@ -426,7 +424,7 @@ func ProjectReadModel(value Observation) (ReadModel, error) {
 	return result, nil
 }
 
-func CanonicalReadModelBytes(value ReadModel) ([]byte, error) { return canonicalJSON(value) }
+func CanonicalReadModelBytes(value ReadModel) ([]byte, error) { return encodeCanonicalJSON(value) }
 
 func validatePhase(value PhaseObservation, index int) error {
 	path := fmt.Sprintf("$/phases/%d", index)
@@ -834,165 +832,10 @@ func sensitivePath(value any, path string, depth int) (string, bool) {
 	return "", false
 }
 
-func canonicalJSON(value any) ([]byte, error) {
-	var output bytes.Buffer
-	if err := appendCanonical(&output, reflect.ValueOf(value)); err != nil {
-		return nil, err
+func encodeCanonicalJSON(value any) ([]byte, error) {
+	encoded, err := canonicaljson.Encode(value)
+	if err != nil {
+		return nil, fail(ErrorInvalid, "$", err.Error())
 	}
-	return output.Bytes(), nil
-}
-
-func appendCanonical(output *bytes.Buffer, value reflect.Value) error {
-	if !value.IsValid() {
-		output.WriteString("null")
-		return nil
-	}
-	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
-		if value.IsNil() {
-			output.WriteString("null")
-			return nil
-		}
-		value = value.Elem()
-	}
-	switch value.Kind() {
-	case reflect.Bool:
-		output.WriteString(strconv.FormatBool(value.Bool()))
-	case reflect.String:
-		if err := appendJSONString(output, value.String()); err != nil {
-			return err
-		}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		output.WriteString(strconv.FormatInt(value.Int(), 10))
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		output.WriteString(strconv.FormatUint(value.Uint(), 10))
-	case reflect.Float32, reflect.Float64:
-		number, err := formatNumber(value.Float())
-		if err != nil {
-			return err
-		}
-		output.WriteString(number)
-	case reflect.Slice, reflect.Array:
-		output.WriteByte('[')
-		for index := 0; index < value.Len(); index++ {
-			if index > 0 {
-				output.WriteByte(',')
-			}
-			if err := appendCanonical(output, value.Index(index)); err != nil {
-				return err
-			}
-		}
-		output.WriteByte(']')
-	case reflect.Struct:
-		type field struct {
-			name  string
-			value reflect.Value
-		}
-		fields := []field{}
-		typeInfo := value.Type()
-		for index := 0; index < value.NumField(); index++ {
-			descriptor := typeInfo.Field(index)
-			if !descriptor.IsExported() {
-				continue
-			}
-			name := strings.Split(descriptor.Tag.Get("json"), ",")[0]
-			if name == "-" {
-				continue
-			}
-			if name == "" {
-				name = descriptor.Name
-			}
-			fields = append(fields, field{name, value.Field(index)})
-		}
-		sort.Slice(fields, func(left, right int) bool { return utf16Less(fields[left].name, fields[right].name) })
-		output.WriteByte('{')
-		for index, current := range fields {
-			if index > 0 {
-				output.WriteByte(',')
-			}
-			if err := appendJSONString(output, current.name); err != nil {
-				return err
-			}
-			output.WriteByte(':')
-			if err := appendCanonical(output, current.value); err != nil {
-				return err
-			}
-		}
-		output.WriteByte('}')
-	default:
-		return fail(ErrorInvalid, "$", fmt.Sprintf("unsupported canonical value kind %s", value.Kind()))
-	}
-	return nil
-}
-
-func appendJSONString(output *bytes.Buffer, value string) error {
-	if !utf8.ValidString(value) {
-		return fail(ErrorInvalid, "$", "canonical JSON rejects invalid UTF-8")
-	}
-	const hexDigits = "0123456789abcdef"
-	output.WriteByte('"')
-	for _, character := range value {
-		switch character {
-		case '"':
-			output.WriteString(`\"`)
-		case '\\':
-			output.WriteString(`\\`)
-		case '\b':
-			output.WriteString(`\b`)
-		case '\t':
-			output.WriteString(`\t`)
-		case '\n':
-			output.WriteString(`\n`)
-		case '\f':
-			output.WriteString(`\f`)
-		case '\r':
-			output.WriteString(`\r`)
-		default:
-			if character < 0x20 {
-				output.WriteString(`\u00`)
-				output.WriteByte(hexDigits[byte(character)>>4])
-				output.WriteByte(hexDigits[byte(character)&0x0f])
-			} else {
-				output.WriteRune(character)
-			}
-		}
-	}
-	output.WriteByte('"')
-	return nil
-}
-
-func utf16Less(left, right string) bool {
-	leftUnits := utf16.Encode([]rune(left))
-	rightUnits := utf16.Encode([]rune(right))
-	limit := min(len(leftUnits), len(rightUnits))
-	for index := 0; index < limit; index++ {
-		if leftUnits[index] != rightUnits[index] {
-			return leftUnits[index] < rightUnits[index]
-		}
-	}
-	return len(leftUnits) < len(rightUnits)
-}
-
-func formatNumber(value float64) (string, error) {
-	if math.IsNaN(value) || math.IsInf(value, 0) {
-		return "", fail(ErrorInvalid, "$", "canonical JSON rejects non-finite number")
-	}
-	if value == 0 {
-		return "0", nil
-	}
-	absolute := math.Abs(value)
-	if absolute >= 1e-6 && absolute < 1e21 {
-		return strconv.FormatFloat(value, 'f', -1, 64), nil
-	}
-	result := strconv.FormatFloat(value, 'e', -1, 64)
-	exponent := strings.LastIndexByte(result, 'e')
-	prefix, suffix := result[:exponent+1], result[exponent+1:]
-	sign := ""
-	if strings.HasPrefix(suffix, "+") || strings.HasPrefix(suffix, "-") {
-		sign, suffix = suffix[:1], suffix[1:]
-	}
-	suffix = strings.TrimLeft(suffix, "0")
-	if suffix == "" {
-		suffix = "0"
-	}
-	return prefix + sign + suffix, nil
+	return encoded, nil
 }

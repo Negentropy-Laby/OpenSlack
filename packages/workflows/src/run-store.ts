@@ -17,6 +17,10 @@ import {
 } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
+import {
+  isWorkflowControlObservationPort,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
 
 // ── Directory layout ──────────────────────────────────────────────────────────
 //
@@ -170,6 +174,8 @@ export interface RunStoreOptions {
   baseDir: string;
   /** Filesystem abstraction. Defaults to Node.js fs if not provided. */
   fs?: RunStoreFs;
+  /** Optional, default-off GS7-B fail-open shadow observation seam. */
+  observationPort?: WorkflowControlObservationPort;
 }
 
 /**
@@ -180,10 +186,26 @@ export interface RunStoreOptions {
 export class RunStore {
   private readonly baseDir: string;
   private readonly fs: RunStoreFs;
+  private readonly observationPort: WorkflowControlObservationPort | undefined;
 
   constructor(options: RunStoreOptions) {
     this.baseDir = options.baseDir;
     this.fs = options.fs ?? createNodeFs();
+    if (
+      options.observationPort !== undefined &&
+      !isWorkflowControlObservationPort(options.observationPort)
+    ) {
+      throw new TypeError('RunStore observationPort must be a host-created Workflow Control port.');
+    }
+    this.observationPort = options.observationPort;
+  }
+
+  private observeRun(runId: string): void {
+    try {
+      this.observationPort?.observeRun(runId);
+    } catch {
+      // The Go shadow can never affect the TypeScript RunStore authority.
+    }
   }
 
   // ── Path helpers ──────────────────────────────────────────────────────────
@@ -286,6 +308,11 @@ export class RunStore {
       phases: [],
     };
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
+    // The empty file is authoritative evidence that the legacy run-gate plane
+    // was observed and currently has no approvals. Absence is not equivalent
+    // to an observed zero count for the Workflow Control shadow.
+    await this.fs.writeFile(this.pendingApprovalsPath(runId), JSON.stringify([], null, 2));
+    this.observeRun(runId);
   }
 
   // ── Status management ─────────────────────────────────────────────────────
@@ -315,6 +342,7 @@ export class RunStore {
     current.status = newStatus;
     current.updatedAt = new Date().toISOString();
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(current, null, 2));
+    this.observeRun(runId);
   }
 
   /**
@@ -328,6 +356,7 @@ export class RunStore {
     current.currentPhase = phase;
     current.updatedAt = new Date().toISOString();
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(current, null, 2));
+    this.observeRun(runId);
   }
 
   // ── Phase checkpoints ─────────────────────────────────────────────────────
@@ -353,6 +382,7 @@ export class RunStore {
       status.updatedAt = new Date().toISOString();
       await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
     }
+    this.observeRun(runId);
   }
 
   /**
@@ -371,6 +401,7 @@ export class RunStore {
    */
   async saveAgentResult(runId: string, cacheKey: string, result: unknown): Promise<void> {
     await this.fs.writeFile(this.agentPath(runId, cacheKey), JSON.stringify(result, null, 2));
+    this.observeRun(runId);
   }
 
   async saveAgentReplayInput(
@@ -478,6 +509,7 @@ export class RunStore {
     status.budgetWarnings = [...(status.budgetWarnings ?? []), warning];
     status.updatedAt = new Date().toISOString();
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
+    this.observeRun(runId);
   }
 
   /**
@@ -566,6 +598,7 @@ export class RunStore {
       ...approval,
     });
     await this.fs.writeFile(this.pendingApprovalsPath(runId), JSON.stringify(approvals, null, 2));
+    this.observeRun(runId);
   }
 
   /**
@@ -592,6 +625,7 @@ export class RunStore {
     }
     approvals[idx].status = decision;
     await this.fs.writeFile(this.pendingApprovalsPath(runId), JSON.stringify(approvals, null, 2));
+    this.observeRun(runId);
   }
 
   // ── Listing ───────────────────────────────────────────────────────────────

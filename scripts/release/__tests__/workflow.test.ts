@@ -41,5 +41,9 @@ describe('native release workflow integrity', () => {
     expect(workflow).toContain('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
     expect(workflow).not.toContain('setup-bun@v2');
     expect(workflow).not.toContain('--clobber');
+    expect(workflow).toContain("if: ${{ matrix.target == 'windows-x64' }}");
+    expect(workflow).toContain(
+      'bunx vitest run packages/workflows/src/__tests__/workflow-control-shadow-journal.test.ts',
+    );
   });
 });

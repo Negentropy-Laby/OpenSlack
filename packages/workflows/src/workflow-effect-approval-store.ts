@@ -28,6 +28,10 @@ import {
   type WorkflowEffectApprovalRecord,
 } from './workflow-effect-approval.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
+import {
+  isWorkflowControlObservationPort,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 const MAX_FILE_BYTES = 64 * 1024;
@@ -945,11 +949,13 @@ export class LocalWorkflowEffectApprovalStore {
   readonly #root: string;
   readonly #authority: WorkflowEffectDecisionAuthority;
   readonly #now: () => string;
+  readonly #observationPort: WorkflowControlObservationPort | undefined;
 
   constructor(
     root: string,
     authority: WorkflowEffectDecisionAuthority,
     now: () => string = () => new Date().toISOString(),
+    observationPort?: WorkflowControlObservationPort,
   ) {
     WorkflowEffectDecisionAuthority.assertSealed(authority);
     if (
@@ -969,9 +975,24 @@ export class LocalWorkflowEffectApprovalStore {
         'Approval-store clock must be host-owned.',
       );
     }
+    if (observationPort !== undefined && !isWorkflowControlObservationPort(observationPort)) {
+      fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_RECORD_INVALID',
+        'Approval-store observationPort must be a host-created Workflow Control port.',
+      );
+    }
     this.#root = root;
     this.#authority = authority;
     this.#now = now;
+    this.#observationPort = observationPort;
+  }
+
+  #observe(runId: string): void {
+    try {
+      this.#observationPort?.observeRun(runId);
+    } catch {
+      // Effect authority commits are never coupled to the Go shadow.
+    }
   }
 
   async createPending(
@@ -1008,6 +1029,7 @@ export class LocalWorkflowEffectApprovalStore {
         );
       }
       await atomicWrite(prepared, record.runId, record.approvalId, record, null);
+      this.#observe(record.runId);
       return record;
     } finally {
       await releaseLock(lock);
@@ -1105,6 +1127,7 @@ export class LocalWorkflowEffectApprovalStore {
         this.#now(),
       );
       await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+      this.#observe(values.runId);
       return next;
     } finally {
       await releaseLock(lock);
@@ -1173,6 +1196,7 @@ export class LocalWorkflowEffectApprovalStore {
         this.#now(),
       );
       await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+      this.#observe(values.runId);
       return next;
     } finally {
       await releaseLock(lock);

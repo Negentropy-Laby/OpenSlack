@@ -1,0 +1,73 @@
+services:
+  db:
+    image: postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+    environment:
+      POSTGRES_USER: workflow_control
+      POSTGRES_PASSWORD: workflow_control
+      POSTGRES_DB: workflow_control
+    ports:
+      - '127.0.0.1:${WORKFLOW_CONTROL_DB_PORT:-5432}:5432'
+    volumes:
+      - workflow_control_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U workflow_control -d workflow_control']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  migrate:
+    build:
+      context: .
+      target: app
+    entrypoint: ['/migrate']
+    environment:
+      DATABASE_URL: postgres://workflow_control:workflow_control@db:5432/workflow_control?sslmode=disable
+      MIGRATION_SOURCE: /migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  app:
+    build:
+      context: .
+      target: app
+    environment:
+      DATABASE_URL: postgres://workflow_control:workflow_control@db:5432/workflow_control?sslmode=disable
+      WORKFLOW_CONTROL_HTTP_BIND: ':8080'
+      WORKFLOW_CONTROL_NETWORK_MODE: internal
+      WORKFLOW_CONTROL_SERVICE_BUILD_SHA: '${WORKFLOW_CONTROL_SERVICE_BUILD_SHA:-0000000000000000000000000000000000000000000000000000000000000000}'
+      MIGRATION_SOURCE: /migrations
+    ports:
+      - '127.0.0.1:${WORKFLOW_CONTROL_APP_PORT:-8080}:8080'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - workflow_control_prometheus_data:/prometheus
+    ports:
+      - '127.0.0.1:${WORKFLOW_CONTROL_PROMETHEUS_PORT:-9090}:9090'
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  workflow_control_db_data:
+  workflow_control_prometheus_data:

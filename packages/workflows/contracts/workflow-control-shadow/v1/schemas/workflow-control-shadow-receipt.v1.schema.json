@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-control-shadow/v1/workflow-control-shadow-receipt.v1.schema.json",
+  "title": "OpenSlack Workflow Control GS7-B strict ingestion receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_control_shadow_receipt.v1" },
+    "operation": { "const": "observation_ingest" },
+    "status": { "enum": ["accepted", "duplicate", "reconciliation_required"] },
+    "parity": { "enum": ["matched", "mismatched", "unknown"] },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^openslack\\.workflow-control-shadow\\.v1\\.[0-9a-f]{64}$"
+    },
+    "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "observationDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "mismatchCode": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$" },
+    "committedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "reconciliationToken": { "type": "string", "minLength": 1 }
+  },
+  "required": [
+    "schema",
+    "operation",
+    "status",
+    "parity",
+    "idempotencyKey",
+    "requestFingerprint",
+    "workspaceId",
+    "runId",
+    "sourceSequence",
+    "observationDigest"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "reconciliation_required" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": { "parity": { "const": "unknown" } },
+        "required": ["reconciliationToken"],
+        "not": {
+          "anyOf": [
+            { "required": ["observationHash"] },
+            { "required": ["mismatchCode"] },
+            { "required": ["committedAt"] }
+          ]
+        }
+      },
+      "else": {
+        "properties": { "parity": { "enum": ["matched", "mismatched"] } },
+        "required": ["observationHash", "committedAt"],
+        "not": { "required": ["reconciliationToken"] }
+      }
+    },
+    {
+      "if": { "properties": { "parity": { "const": "mismatched" } }, "required": ["parity"] },
+      "then": { "required": ["mismatchCode"] },
+      "else": { "not": { "required": ["mismatchCode"] } }
+    }
+  ]
+}

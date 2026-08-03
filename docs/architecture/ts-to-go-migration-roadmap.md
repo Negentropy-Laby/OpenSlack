@@ -325,13 +325,30 @@ workflow lease or fencing implementation. Raw arguments, prompts, results,
 approval details, capabilities, decision evidence, transcripts, credentials,
 commands, and provider payloads cannot cross the parity boundary.
 
-GS7-B is a later PostgreSQL shadow stage and remains observational. GS8 defines
-the versioned JS runner worker protocol and may add scheduler, lease, cancellation,
-and receipt behavior without moving the JavaScript runner. GS9 alone may transfer
-new-record checkpoint, effect-approval, and budget authority after revision/CAS,
-recovery, response-loss, restart, duplicate, concurrency, fencing, and rollback
-qualification. Legacy run-gate approvals remain distinct from the exact
-`openslack.workflow_effect_approval.v2` decision contract throughout.
+GS7-B adds a separate PostgreSQL observational shadow without changing the GS7-A
+bytes or the TypeScript authority. A default-off TypeScript port emits a closed,
+credential-free observation and its TypeScript projection into an owner-only
+journal after an authoritative write. The Go service recomputes the projection,
+records exact-body idempotency receipts and semantic mismatch evidence, advances
+only its observation sequence on mismatch, and exposes private observation,
+matched-projection, health, version, and low-cardinality metrics routes. Unknown
+commit outcomes become durable reconciliation receipts rather than success or a
+workflow retry. Legacy/truncated manifest identities and incomplete effect or
+budget evidence are skipped with bounded diagnostics rather than fabricated.
+
+GS7-B adds no worker, scheduler, lease, cancellation, approval decision, budget
+decision, effect execution, routing epoch, user-visible read source, or authority
+cutover. Its local candidate still requires exact-head hosted PostgreSQL,
+response-loss, restart, concurrency, corruption, OpenAPI, Prometheus,
+distribution, cross-language, review-thread, and independent-human-approval
+evidence before it is called hosted-qualified.
+
+GS8 defines the versioned JS runner worker protocol and may add scheduler, lease,
+cancellation, and receipt behavior without moving the JavaScript runner. GS9
+alone may transfer new-record checkpoint, effect-approval, and budget authority
+after revision/CAS, recovery, response-loss, restart, duplicate, concurrency,
+fencing, and rollback qualification. Legacy run-gate approvals remain distinct
+from the exact `openslack.workflow_effect_approval.v2` decision contract throughout.
 
 ### GS10–GS13 — Platform Runtime
 
