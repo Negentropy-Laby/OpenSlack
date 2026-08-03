@@ -113,9 +113,14 @@ durable `reconciliation_required` receipt; it is never treated as accepted and n
 workflow mutation retry.
 
 The TypeScript port is default-off and fail-open. Its owner-only journal is independent from the
-RunStore and may replay only shadow observations after restart. Missing full manifest hashes or
-incomplete approval/budget evidence cause a bounded diagnostic and skipped observation; the port
-must not fabricate evidence, pad a legacy hash, block a workflow, or resume an execution.
+RunStore and may replay only shadow observations after restart. Existing paths are verified rather
+than silently hardened: POSIX paths require owner modes and no-follow opens, while Windows paths
+must be owned by the current SID, use a protected ACL with only that SID and SYSTEM as allowed
+principals, and not be reparse points. Every new journal directory, lock, entry, and state temporary
+or target file is hardened and then reverified. Missing full manifest hashes or incomplete legacy
+approval, agent-token, effect-approval, or budget evidence cause a bounded diagnostic and skipped
+observation; the port must not fabricate evidence, pad a legacy hash, block a workflow, or resume an
+execution.
 
 ## Explicit GS7-A gaps
 
@@ -128,6 +133,12 @@ The contract marks the read model ineligible for authority while any of these re
 - resume does not yet prove exactly-once phase continuation from a durable checkpoint;
 - control paths can write status outside the frozen transition method; or
 - the strict v2 effect approval is not an exactly-once runtime pause/decision/resume boundary.
+
+The reviewed `workflow-control-shadow-v1` Go gate rejects placeholder evidence and invokes named
+qualification tests against PostgreSQL. It checks the private handler and durable receipt path,
+seeds state, restarts the exact database container, verifies replay from a new process, starts the
+built image, and calls its observation, projection, and version APIs. These are gate definitions,
+not a claim that an unpublished head has passed hosted infrastructure.
 
 GS7-B remains an observational candidate until its exact hosted head passes real PostgreSQL,
 response-loss, restart, concurrency, corruption, OpenAPI, Prometheus, distribution, image-smoke,
