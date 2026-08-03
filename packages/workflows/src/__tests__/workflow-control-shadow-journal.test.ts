@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,7 +41,7 @@ afterEach(async () => {
 
 async function journalRoot(name: string) {
   const temporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
-  const parent = resolve(await mkdtemp(join(temporaryRoot, `${name}-`)));
+  const parent = await realpath(resolve(await mkdtemp(join(temporaryRoot, `${name}-`))));
   roots.push(parent);
   await chmod(parent, 0o700);
   return join(parent, 'journal');

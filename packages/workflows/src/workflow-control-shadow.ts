@@ -510,14 +510,21 @@ function assertOwnerOnlyPath(
     security.readWindowsPathSecurity(path, securityIdentity(stat), cacheable),
   );
   const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
-  if (
-    acl.reparse ||
-    acl.owner !== sid ||
-    !acl.protected ||
-    acl.rules.some((rule) => rule.type === 'Allow' && !allowed.has(rule.sid)) ||
-    !acl.rules.some((rule) => rule.type === 'Allow' && rule.sid === sid)
-  ) {
-    throw new TypeError('Workflow Control shadow journal Windows ACL is not owner-only.');
+  const failure = acl.reparse
+    ? 'reparse point'
+    : acl.owner !== sid
+      ? 'owner mismatch'
+      : !acl.protected
+        ? 'inherited access'
+        : acl.rules.some((rule) => rule.type === 'Allow' && !allowed.has(rule.sid))
+          ? 'foreign allow rule'
+          : !acl.rules.some((rule) => rule.type === 'Allow' && rule.sid === sid)
+            ? 'owner allow rule missing'
+            : undefined;
+  if (failure !== undefined) {
+    throw new TypeError(
+      `Workflow Control shadow journal Windows ACL is not owner-only: ${failure}.`,
+    );
   }
 }
 
