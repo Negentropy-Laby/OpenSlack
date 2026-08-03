@@ -32,7 +32,8 @@ import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 const roots: string[] = [];
 const WINDOWS_OWNER_SID = 'S-1-5-21-1000-1001-1002-1003';
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
-const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 15_000 : 5_000;
+// The exact-DACL path measured 15.25s on windows-2022; 20s adds at least a 25% margin.
+const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000;
 
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');
