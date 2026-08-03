@@ -1,0 +1,2506 @@
+{
+  "schema": "openslack.workflow_control_golden_vectors.v1",
+  "authority": "typescript",
+  "hashAlgorithm": "sha256(canonical-json-utf8)",
+  "cases": [
+    {
+      "id": "valid-projection",
+      "operation": "project",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expected": {
+        "schema": "openslack.workflow_control_read_model.v1",
+        "authority": "typescript",
+        "goRole": "credential-free-read-model-only",
+        "authorityEligible": false,
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "terminal": false,
+        "phaseCounts": {
+          "total": 2,
+          "completed": 1,
+          "failed": 0,
+          "skipped": 1,
+          "resultHashBound": 1,
+          "cacheKeyHashBound": 1
+        },
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warningCounts": { "threshold": 1, "exceeded": 0 }
+        },
+        "qualificationGaps": [
+          "no-cas-or-revision",
+          "no-lease",
+          "no-fencing",
+          "no-execution-abort",
+          "no-durable-budget-authority",
+          "resume-correctness-unqualified",
+          "control-transition-bypass-exists"
+        ],
+        "observationHash": "fd9387195b64f80cea3842a7273ab188130bc8f274f2ee1ae2fe0024bf125514"
+      }
+    },
+    {
+      "id": "terminal-run-projection",
+      "operation": "project",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "completed",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:03:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": null,
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expected": {
+        "schema": "openslack.workflow_control_read_model.v1",
+        "authority": "typescript",
+        "goRole": "credential-free-read-model-only",
+        "authorityEligible": false,
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "completed",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:03:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": null,
+        "terminal": true,
+        "phaseCounts": {
+          "total": 2,
+          "completed": 1,
+          "failed": 0,
+          "skipped": 1,
+          "resultHashBound": 1,
+          "cacheKeyHashBound": 1
+        },
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warningCounts": { "threshold": 1, "exceeded": 0 }
+        },
+        "qualificationGaps": [
+          "no-cas-or-revision",
+          "no-lease",
+          "no-fencing",
+          "no-execution-abort",
+          "no-durable-budget-authority",
+          "resume-correctness-unqualified",
+          "control-transition-bypass-exists"
+        ],
+        "observationHash": "643c6a4d9d64df1c3fc90c11f689900f73a6b278629ec131aa2d4e0a943a4c97"
+      }
+    },
+    {
+      "id": "invalid-schema",
+      "operation": "validate",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v0",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_INVALID",
+        "path": "$/schema",
+        "message": "Observation schema is unsupported."
+      }
+    },
+    {
+      "id": "invalid-status",
+      "operation": "validate",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "waiting",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_INVALID",
+        "path": "$/status",
+        "message": "$/status is outside the closed vocabulary."
+      }
+    },
+    {
+      "id": "invalid-terminal-transition",
+      "operation": "transition",
+      "input": { "from": "completed", "to": "running" },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_INVALID_TRANSITION",
+        "path": "$/transition",
+        "message": "Workflow control transition completed -> running is not in the observed table."
+      }
+    },
+    {
+      "id": "legacy-run-gate-is-not-effect-approval",
+      "operation": "validate",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "workflow-effect-v2",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_APPROVAL_PLANE_MISMATCH",
+        "path": "$/approvals/legacyRunGate",
+        "message": "Legacy pending approvals are run gates, not effect decisions."
+      }
+    },
+    {
+      "id": "secret-like-raw-field-rejected",
+      "operation": "validate",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        },
+        "args": { "apiKey": "not-for-golden-export" }
+      },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_SENSITIVE_FIELD_FORBIDDEN",
+        "path": "$/args",
+        "message": "Raw field args is forbidden; export only hashes or counts."
+      }
+    },
+    {
+      "id": "phase-bound-enforced",
+      "operation": "validate",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "phase-0",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-1",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-2",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-3",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-4",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-5",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-6",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-7",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-8",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-9",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-10",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-11",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-12",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-13",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-14",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-15",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-16",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-17",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-18",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-19",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-20",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-21",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-22",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-23",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-24",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-25",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-26",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-27",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-28",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-29",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-30",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-31",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-32",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-33",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-34",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-35",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-36",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-37",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-38",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-39",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-40",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-41",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-42",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-43",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-44",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-45",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-46",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-47",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-48",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-49",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-50",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-51",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-52",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-53",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-54",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-55",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-56",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-57",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-58",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-59",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-60",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-61",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-62",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-63",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-64",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-65",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-66",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-67",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-68",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-69",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-70",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-71",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-72",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-73",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-74",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-75",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-76",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-77",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-78",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-79",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-80",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-81",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-82",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-83",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-84",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-85",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-86",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-87",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-88",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-89",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-90",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-91",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-92",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-93",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-94",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-95",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-96",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-97",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-98",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-99",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-100",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-101",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-102",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-103",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-104",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-105",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-106",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-107",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-108",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-109",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-110",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-111",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-112",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-113",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-114",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-115",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-116",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-117",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-118",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-119",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-120",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-121",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-122",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-123",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-124",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-125",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-126",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-127",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-128",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-129",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-130",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-131",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-132",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-133",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-134",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-135",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-136",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-137",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-138",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-139",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-140",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-141",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-142",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-143",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-144",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-145",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-146",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-147",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-148",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-149",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-150",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-151",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-152",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-153",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-154",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-155",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-156",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-157",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-158",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-159",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-160",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-161",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-162",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-163",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-164",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-165",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-166",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-167",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-168",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-169",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-170",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-171",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-172",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-173",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-174",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-175",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-176",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-177",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-178",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-179",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-180",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-181",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-182",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-183",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-184",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-185",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-186",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-187",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-188",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-189",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-190",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-191",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-192",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-193",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-194",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-195",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-196",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-197",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-198",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-199",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-200",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-201",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-202",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-203",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-204",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-205",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-206",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-207",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-208",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-209",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-210",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-211",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-212",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-213",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-214",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-215",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-216",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-217",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-218",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-219",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-220",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-221",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-222",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-223",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-224",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-225",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-226",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-227",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-228",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-229",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-230",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-231",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-232",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-233",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-234",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-235",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-236",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-237",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-238",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-239",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-240",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-241",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-242",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-243",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-244",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-245",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-246",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-247",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-248",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-249",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-250",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-251",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-252",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-253",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-254",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-255",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          },
+          {
+            "phase": "phase-256",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlContractError",
+        "code": "WORKFLOW_CONTROL_LIMIT_EXCEEDED",
+        "path": "$/phases",
+        "message": "$/phases exceeds its item limit."
+      }
+    },
+    {
+      "id": "valid-observation-full-sha256",
+      "operation": "hash",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "contract-delivery-lite",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "verify",
+        "phases": [
+          {
+            "phase": "discover",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "phase": "verify",
+            "observedAt": "2026-08-03T01:02:00.000Z",
+            "status": "skipped",
+            "resultHash": null,
+            "cacheKeyHash": null
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1.25,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.8,
+              "costUsd": 1.25
+            }
+          ]
+        }
+      },
+      "expected": "fd9387195b64f80cea3842a7273ab188130bc8f274f2ee1ae2fe0024bf125514"
+    },
+    {
+      "id": "unicode-control-and-number-edge-sha256",
+      "operation": "hash",
+      "input": {
+        "schema": "openslack.workflow_control_observation.v1",
+        "authority": "typescript",
+        "runId": "run-gs7-001",
+        "workflowName": "control-\u0000\u0007\u000b\u001f-😀",
+        "mode": "execute",
+        "status": "running",
+        "startedAt": "2026-08-03T01:00:00.000Z",
+        "updatedAt": "2026-08-03T01:02:00.000Z",
+        "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "currentPhase": "阶段-\u000b-😀",
+        "phases": [
+          {
+            "phase": "阶段-\u000b-😀",
+            "observedAt": "2026-08-03T01:01:00.000Z",
+            "status": "completed",
+            "resultHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cacheKeyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy-run-gate",
+            "semantics": "run-gate-only",
+            "counts": { "pending": 1, "approved": 2, "rejected": 0 }
+          },
+          "effectV2": {
+            "plane": "workflow-effect-v2",
+            "semantics": "effect-decision-only",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "counts": { "pending": 2, "approved": 1, "rejected": 1 }
+          }
+        },
+        "budget": {
+          "configured": true,
+          "policyHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "tokenBudget": 10000,
+          "tokensUsed": 8000,
+          "costUsd": 1e-7,
+          "agentCalls": 3,
+          "warnings": [
+            {
+              "observedAt": "2026-08-03T01:02:00.000Z",
+              "kind": "threshold",
+              "tokensUsed": 8000,
+              "tokenBudget": 10000,
+              "percent": 0.000001,
+              "costUsd": 1e-7
+            }
+          ]
+        }
+      },
+      "expected": "f2989217c5f6c6225dc23de0ea1034d961144cf6ed5921382f7bcc6c601945ed"
+    }
+  ]
+}

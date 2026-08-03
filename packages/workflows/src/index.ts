@@ -51,6 +51,45 @@ export type {
   ModelIsolationRoute,
 } from './types.js';
 
+// ── Workflow Control GS7 contract ──────────────────────────────────────────────────
+export {
+  WORKFLOW_CONTROL_OBSERVATION_SCHEMA,
+  WORKFLOW_CONTROL_READ_MODEL_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY,
+  WORKFLOW_CONTROL_GO_ROLE,
+  WORKFLOW_CONTROL_RUN_STATES,
+  WORKFLOW_CONTROL_STATE_TRANSITIONS,
+  WORKFLOW_CONTROL_DORMANT_STATES,
+  WORKFLOW_CONTROL_PRODUCTION_INITIAL_STATE,
+  WORKFLOW_CONTROL_EXECUTION_MODES,
+  WORKFLOW_CONTROL_CHECKPOINT_STATES,
+  WORKFLOW_CONTROL_APPROVAL_STATES,
+  WORKFLOW_CONTROL_EFFECT_APPROVAL_SCHEMA,
+  WORKFLOW_CONTROL_QUALIFICATION_GAPS,
+  WORKFLOW_CONTROL_CONTRACT_LIMITS,
+  WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS,
+  WORKFLOW_CONTROL_CONTRACT_ERROR_CODES,
+  WorkflowControlContractError,
+  validateWorkflowControlTransition,
+  validateWorkflowControlObservation,
+  canonicalWorkflowControlJson,
+  hashWorkflowControlValue,
+  projectWorkflowControlReadModel,
+} from './workflow-control-contract.js';
+export type {
+  WorkflowControlRunState,
+  WorkflowControlExecutionMode,
+  WorkflowControlCheckpointState,
+  WorkflowControlApprovalState,
+  WorkflowControlContractErrorCode,
+  WorkflowControlPhaseObservation,
+  WorkflowControlApprovalCounts,
+  WorkflowControlApprovalObservation,
+  WorkflowControlBudgetObservation,
+  WorkflowControlObservation,
+  WorkflowControlReadModel,
+} from './workflow-control-contract.js';
+
 // ── Manifest ──────────────────────────────────────────────────────────────────
 export { parseManifest, validateManifest, computeManifestHash } from './manifest.js';
 

@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-control/v1/workflow-control-observation.v1.schema.json",
+  "title": "OpenSlack Workflow Control credential-free observation v1",
+  "$comment": "Structural prefilter. Runtime validation additionally enforces UTF-8 byte bounds, inert values, unique phase names, canonical timestamps, and sensitive-field rejection.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_control_observation.v1" },
+    "authority": { "const": "typescript" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "workflowName": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "mode": { "enum": ["validate", "preview", "dry-run", "execute"] },
+    "status": {
+      "enum": [
+        "created",
+        "previewed",
+        "confirmed",
+        "running",
+        "paused",
+        "paused_waiting_approval",
+        "resuming",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "startedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "currentPhase": {
+      "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+    },
+    "phases": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "phase": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          },
+          "status": { "enum": ["completed", "failed", "skipped"] },
+          "resultHash": {
+            "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+          },
+          "cacheKeyHash": {
+            "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+          }
+        },
+        "required": ["phase", "observedAt", "status", "resultHash", "cacheKeyHash"]
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "legacyRunGate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plane": { "const": "legacy-run-gate" },
+            "semantics": { "const": "run-gate-only" },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pending": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+                "approved": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+                "rejected": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+              },
+              "required": ["pending", "approved", "rejected"]
+            }
+          },
+          "required": ["plane", "semantics", "counts"]
+        },
+        "effectV2": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plane": { "const": "workflow-effect-v2" },
+            "semantics": { "const": "effect-decision-only" },
+            "schema": { "const": "openslack.workflow_effect_approval.v2" },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pending": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+                "approved": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+                "rejected": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+              },
+              "required": ["pending", "approved", "rejected"]
+            }
+          },
+          "required": ["plane", "semantics", "schema", "counts"]
+        }
+      },
+      "required": ["legacyRunGate", "effectV2"]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "configured": { "type": "boolean" },
+        "policyHash": {
+          "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+        },
+        "tokenBudget": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            { "type": "null" }
+          ]
+        },
+        "tokensUsed": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "costUsd": {
+          "anyOf": [{ "type": "number", "minimum": 0, "maximum": 1000000000 }, { "type": "null" }]
+        },
+        "agentCalls": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "warnings": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "observedAt": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              },
+              "kind": { "enum": ["threshold", "exceeded"] },
+              "tokensUsed": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "tokenBudget": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "percent": { "type": "number", "minimum": 0, "maximum": 1000000 },
+              "costUsd": {
+                "anyOf": [
+                  { "type": "number", "minimum": 0, "maximum": 1000000000 },
+                  { "type": "null" }
+                ]
+              }
+            },
+            "required": ["observedAt", "kind", "tokensUsed", "tokenBudget", "percent", "costUsd"]
+          }
+        }
+      },
+      "required": [
+        "configured",
+        "policyHash",
+        "tokenBudget",
+        "tokensUsed",
+        "costUsd",
+        "agentCalls",
+        "warnings"
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "configured": { "const": false } }, "required": ["configured"] },
+          "then": {
+            "properties": { "policyHash": { "type": "null" }, "tokenBudget": { "type": "null" } }
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "authority",
+    "runId",
+    "workflowName",
+    "mode",
+    "status",
+    "startedAt",
+    "updatedAt",
+    "manifestHash",
+    "currentPhase",
+    "phases",
+    "approvals",
+    "budget"
+  ]
+}

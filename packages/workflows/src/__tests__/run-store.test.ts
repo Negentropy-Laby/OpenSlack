@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { RunStore } from '../run-store.js';
+import { RunStore, isRunStatusTransitionAllowed } from '../run-store.js';
 import type { RunStoreFs, RunMeta, LogEntry } from '../run-store.js';
 import type { PhaseCheckpoint, ExecutionMode } from '../types.js';
+import {
+  WORKFLOW_CONTROL_RUN_STATES,
+  WORKFLOW_CONTROL_STATE_TRANSITIONS,
+  validateWorkflowControlTransition,
+} from '../workflow-control-contract.js';
 
 // ── In-memory filesystem for tests ──────────────────────────────────────────
 
@@ -151,7 +156,26 @@ describe('RunStore', () => {
   });
 
   describe('transitionStatus', () => {
-    it('transitions from running to completed', async () => {
+    it('matches every frozen contract edge and transitions from running to completed', async () => {
+      for (const from of WORKFLOW_CONTROL_RUN_STATES) {
+        for (const to of WORKFLOW_CONTROL_RUN_STATES) {
+          const contractAllows = (
+            WORKFLOW_CONTROL_STATE_TRANSITIONS[from] as readonly string[]
+          ).includes(to);
+          expect(
+            isRunStatusTransitionAllowed(from, to),
+            `RunStore parity for ${from} -> ${to}`,
+          ).toBe(contractAllows);
+          if (contractAllows) {
+            expect(() => validateWorkflowControlTransition(from, to)).not.toThrow();
+          } else {
+            expect(() => validateWorkflowControlTransition(from, to)).toThrowError(
+              expect.objectContaining({ code: 'WORKFLOW_CONTROL_INVALID_TRANSITION' }),
+            );
+          }
+        }
+      }
+
       const { store } = makeStore();
       await store.initRun('run-001', makeMeta());
       await store.transitionStatus('run-001', 'completed');

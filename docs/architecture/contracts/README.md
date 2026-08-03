@@ -21,3 +21,4 @@ also live beside their authority package and generated service mirror.
 - [Governance Control](governance-control.md)
 - [Organization Graph](organization-graph.md)
 - [Qoder MCP](qoder-mcp.md)
+- [Workflow Control](workflow-control.md)

@@ -8,12 +8,16 @@ on:
       - services/notification-delivery/**
       - services/organization-graph/**
       - services/governance-control/**
+      - services/workflow-control/**
       - services/*/go.mod
       - services/*/go.sum
       - packages/organization-graph/**
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**
       - packages/operator/src/governed-plan*.ts
+      - packages/workflows/contracts/workflow-control/**
+      - packages/workflows/src/workflow-control-contract.ts
+      - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -39,6 +43,7 @@ on:
       - scripts/go-check/**
       - scripts/organization-graph-contracts/**
       - scripts/governance-control-contracts/**
+      - scripts/workflow-control-contracts/**
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
@@ -53,12 +58,16 @@ on:
       - services/notification-delivery/**
       - services/organization-graph/**
       - services/governance-control/**
+      - services/workflow-control/**
       - services/*/go.mod
       - services/*/go.sum
       - packages/organization-graph/**
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**
       - packages/operator/src/governed-plan*.ts
+      - packages/workflows/contracts/workflow-control/**
+      - packages/workflows/src/workflow-control-contract.ts
+      - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -84,6 +93,7 @@ on:
       - scripts/go-check/**
       - scripts/organization-graph-contracts/**
       - scripts/governance-control-contracts/**
+      - scripts/workflow-control-contracts/**
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
@@ -157,6 +167,9 @@ jobs:
       - name: Verify Governance Control golden contracts
         working-directory: .
         run: bun run governance:golden -- --check
+      - name: Verify Workflow Control golden contracts
+        working-directory: .
+        run: bun run workflow:golden -- --check
       - name: Clean-build and smoke Organization Graph distribution
         working-directory: .
         run: |

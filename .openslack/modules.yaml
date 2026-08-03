@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 5441
-vitest_files: 437
+vitest_tests: 5448
+vitest_files: 438
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -356,6 +356,12 @@ modules:
       - test:packages/organization-graph/src/__tests__/read-authority-http.test.ts
       - test:services/organization-graph/internal/app/gs3c_cross_language_test.go
       - repo:.github/workflows/notification-delivery-service.yml
+      - commit:362436a1393b6935e1d009ecec09a93d3ecaffad
+      - test:packages/workflows/src/__tests__/workflow-control-contract.test.ts
+      - repo:packages/workflows/contracts/workflow-control/v1/manifest.json
+      - test:services/workflow-control/golden_vectors_test.go
+      - test:services/workflow-control/manifest_parity_test.go
+      - repo:services/workflow-control
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
@@ -421,8 +427,9 @@ modules:
       - '@openslack/organization-graph'
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
-    tests: 2451
-    test_files: 197
+      - github.com/Negentropy-Laby/OpenSlack/services/workflow-control
+    tests: 2458
+    test_files: 198
     components:
       - id: agent_runtime
         name: Agent Runtime
@@ -447,6 +454,7 @@ modules:
       GS3-A adds an explicit default-off MCP Graph read mirror. Successful TypeScript query/explain results are cloned to one exact loopback or explicitly internal Go HTTP origin, compared under end-to-end timeout, response-size, strict-JSON, and closed field-difference bounds, and still returned only from TypeScript. Collaboration persists unique digest-only matched, mismatched, or unavailable observations without endpoints, bodies, graph objects, evidence contents, or raw snapshot cursors. A hosted cross-language gate starts the real Go handler and requires both query and explain to match the TypeScript client. This batch adds no routing epoch, canary, cursor translation, per-request fallback, Graph-head transfer, Go read/write authority, new Qoder claim, remote Connector, release, live, or production claim.
       GS3-B adds a default-off, tenant- and scenario-selected Go read canary for MCP query/explain. The selected route binds an immutable positive routing epoch, exact service build, bounded expiry, strict canonical response validation, the same one-minute-to-seven-day snapshot-freshness policy with a 24-hour default as TypeScript reads, redacted mandatory audit, and HMAC cursor v2 carrying the epoch; legacy, expired, and cross-epoch cursors fail explicitly without translation. The transport deadline covers response streaming, and non-canonical intermediary failures retain their bounded HTTP classification. An explicit higher epoch selects TypeScript-local rollback. Unselected scenarios remain TypeScript-authoritative, stale or otherwise failed selected reads never fall back per request, and the 12/16/17 tools, schemas, mutation boundaries, Skill, QODER_VERIFIED, remote Connector, release, live, and production claims remain unchanged.
       GS3-C adds an explicit all-scenario Go Graph head/query/explain authority. Dedicated authority ingest and read routes require exact tenant, epoch, and build bindings; TypeScript projector publication completes only from a durable accepted or duplicate Go receipt, while reconciliation and every ambiguous or invalid result fail closed. MCP global authority is mutually exclusive with mirror/canary, never opens the local store or falls back per request, uses v2 epoch-bound cursors and mandatory redacted audit, and rolls back only through a higher global ts-local epoch. This is derived Graph projection authority only; source-system mutation, authenticated Desktop, remote Connector, live, release, and production remain outside the claim.
+      GS7-A freezes a TypeScript-owned closed Workflow Control observation, RunStore transition table, checkpoint summary, budget evidence, and the strict separation between legacy run-gate approvals and workflow-effect approval v2. Its exact-byte manifest, schemas, and golden vectors are mirrored into a pure importable Go module that validates the same bounded input and emits only a credential-free read model. TypeScript remains the sole Workflow RunStore writer, JavaScript runner, agent/provider caller, approval and effect authority, resume implementation, and user-visible read source. The Go slice has no HTTP, database, migration, Docker, worker, scheduler, lease, command, approval, effect, routing, or runtime authority. Missing CAS/revision, workflow lease/fencing, durable abort, cumulative budget, exactly-once resume, and transition-bypass closure remain explicit authority blockers for GS7-B/GS8/GS9; this batch makes no shadow-store, worker-protocol, authority-cutover, release, live, or production claim.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
       The explicit graph snapshot build CLI accepts one bounded file or stdin source through a sealed two-profile dispatch under the same locked 4 MiB Software Delivery source ceiling. Each profile applies strict JSON plus its registered validator/projector and defaults to CAS publication in the workspace-local graph store; an explicitly complete GS3-C binding instead succeeds only from a durable Go authority receipt. Unknown scenarios and partial bindings fail closed. It performs no live evidence collection, exposes no force overwrite, and remains separate from the side-effect-free MCP query/explain tools.
       Contract-to-Delivery Projector v1 is active as a deterministic composite projection. It invokes the existing Software Delivery projector, preserves its nodes and edges exactly, and adds bounded Customer, Contract, Project, Milestone, Acceptance, Deliverable, and Outcome relationships only from typed demo-fixture business evidence. Acceptance requires a current merged deliverable, an independent current-head human approval, and a current accepted transition; Outcome requires that promoted acceptance, a live closed work item, and the existing Software Delivery outcome. Missing or drifted bridges remain incomplete and never create dangling authority edges. The checked fixture and official stock 12-tool MCP SDK test prove the Customer-to-Outcome graph, bounded query/explain evidence, projection-only authority, and no query-side store mutation.

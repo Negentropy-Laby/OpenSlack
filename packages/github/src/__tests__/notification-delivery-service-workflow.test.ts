@@ -112,12 +112,16 @@ const triggerPaths = [
   'services/notification-delivery/**',
   'services/organization-graph/**',
   'services/governance-control/**',
+  'services/workflow-control/**',
   'services/*/go.mod',
   'services/*/go.sum',
   'packages/organization-graph/**',
   'packages/operator/contracts/governed-plan/**',
   'packages/operator/contracts/governed-plan-authority/**',
   'packages/operator/src/governed-plan*.ts',
+  'packages/workflows/contracts/workflow-control/**',
+  'packages/workflows/src/workflow-control-contract.ts',
+  'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'README.md',
   'docs/README.md',
   'design/cdd/module-index.md',
@@ -143,6 +147,7 @@ const triggerPaths = [
   'scripts/go-check/**',
   'scripts/organization-graph-contracts/**',
   'scripts/governance-control-contracts/**',
+  'scripts/workflow-control-contracts/**',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -246,6 +251,7 @@ describe('notification delivery service workflow', () => {
     const installIndex = stepIndex('Install root dependencies');
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
     const governanceGoldenIndex = stepIndex('Verify Governance Control golden contracts');
+    const workflowGoldenIndex = stepIndex('Verify Workflow Control golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
@@ -267,7 +273,8 @@ describe('notification delivery service workflow', () => {
     expect(installIndex).toBe(setupBunIndex + 1);
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
-    expect(graphDistIndex).toBe(governanceGoldenIndex + 1);
+    expect(workflowGoldenIndex).toBe(governanceGoldenIndex + 1);
+    expect(graphDistIndex).toBe(workflowGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
@@ -330,6 +337,11 @@ describe('notification delivery service workflow', () => {
       name: 'Verify Governance Control golden contracts',
       'working-directory': '.',
       run: 'bun run governance:golden -- --check',
+    });
+    expect(job.steps[workflowGoldenIndex]).toEqual({
+      name: 'Verify Workflow Control golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:golden -- --check',
     });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
@@ -400,6 +412,7 @@ describe('notification delivery service workflow', () => {
       'Install root dependencies',
       'Verify Organization Graph golden contracts',
       'Verify Governance Control golden contracts',
+      'Verify Workflow Control golden contracts',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
@@ -436,6 +449,7 @@ describe('notification delivery service workflow', () => {
       'Install root dependencies': 'bun install --frozen-lockfile',
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
       'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',
+      'Verify Workflow Control golden contracts': 'bun run workflow:golden -- --check',
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',

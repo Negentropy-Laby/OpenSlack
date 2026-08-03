@@ -309,6 +309,30 @@ JavaScript/TypeScript runner remains responsible for workflow code and agent
 calls. The worker protocol is versioned and reports effects through durable
 receipts.
 
+GS7-A first freezes a closed, bounded Workflow Control contract and exact-byte
+golden bundle. TypeScript remains the sole RunStore writer, runner, approval and
+effect authority, resume implementation, and user-visible read source. A pure,
+importable Go module may validate records, evaluate the frozen RunStore status
+table, and project a credential-free read model; it has no store, HTTP route,
+database, worker, lease, command, approval, effect, or routing authority.
+
+The contract records current limitations rather than converting them into
+promises. In particular, production runs currently initialize at `running`,
+some control paths bypass the RunStore transition method, status and checkpoint
+writes have no shared revision/CAS, pause and stop do not durably abort the
+workflow body, budget is not durably cumulative across resume, and there is no
+workflow lease or fencing implementation. Raw arguments, prompts, results,
+approval details, capabilities, decision evidence, transcripts, credentials,
+commands, and provider payloads cannot cross the parity boundary.
+
+GS7-B is a later PostgreSQL shadow stage and remains observational. GS8 defines
+the versioned JS runner worker protocol and may add scheduler, lease, cancellation,
+and receipt behavior without moving the JavaScript runner. GS9 alone may transfer
+new-record checkpoint, effect-approval, and budget authority after revision/CAS,
+recovery, response-loss, restart, duplicate, concurrency, fencing, and rollback
+qualification. Legacy run-gate approvals remain distinct from the exact
+`openslack.workflow_effect_approval.v2` decision contract throughout.
+
 ### GS10–GS13 — Platform Runtime
 
 1. Repository Observer owns webhook and poll intake, normalization, dedupe,
