@@ -385,6 +385,25 @@ modules:
       - test:services/workflow-control/runnerprotocol/golden_vectors_test.go
       - test:services/workflow-control/runnerprotocol/manifest_parity_test.go
       - repo:services/workflow-control/runnerprotocol
+      - commit:387ba6767e95786c75ae93ca79c2cb3c17014f28
+      - test:packages/workflows/src/__tests__/workflow-runner-cancellation-boundaries.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-descriptor.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-execute.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-framing.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-session.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-worker.test.ts
+      - test:services/workflow-control/internal/processsupervisor/supervisor_test.go
+      - test:services/workflow-control/internal/runnerapp/server_test.go
+      - test:services/workflow-control/internal/runnerconfig/config_test.go
+      - test:services/workflow-control/internal/runnerscheduler/session_test.go
+      - test:services/workflow-control/internal/runnerstore/postgres/runner_runtime_integration_test.go
+      - test:services/workflow-control/internal/workerregistry/registry_test.go
+      - test:services/workflow-control/cmd/runner-server/qualification_test.go
+      - test:services/workflow-control/tests/contracts/runner_openapi_contract_test.go
+      - repo:services/workflow-control/docs/api/runner-openapi.yaml
+      - repo:services/workflow-control/migrations/000002_create_workflow_runner_runtime.up.sql
+      - repo:services/workflow-control/cmd/runner-server
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
