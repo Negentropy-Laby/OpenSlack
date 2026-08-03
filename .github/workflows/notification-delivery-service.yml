@@ -334,7 +334,8 @@ jobs:
           printf '%s\n' "{\"schema\":\"openslack.workflow_runner_bundle.v1\",\"bundleId\":\"gs8b.ci.bundle\",\"runnerBuildHash\":\"${entrypoint_hash}\",\"executable\":{\"relativePath\":\"runner-node\",\"sha256\":\"${executable_hash}\"},\"entrypoint\":{\"relativePath\":\"workflow-runner-worker.js\",\"sha256\":\"${entrypoint_hash}\"},\"entrypointMode\":\"first-argument\",\"fixedArguments\":[],\"fixedEnvironment\":[\"NODE_ENV=test\"],\"workingDirectory\":\".\"}" > "$bundle_root/workflow-runner-bundle.v1.json"
           chmod 0600 "$bundle_root/workflow-runner-bundle.v1.json"
           export WORKFLOW_RUNNER_GS8B_BUNDLE_ROOT="$bundle_root"
-          export WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256="$(sha256sum "$bundle_root/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
+          bundle_manifest_hash="$(sha256sum "$bundle_root/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
+          export WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256="$bundle_manifest_hash"
           cd services/workflow-control
           postgres_container="openslack-gs8b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() {
