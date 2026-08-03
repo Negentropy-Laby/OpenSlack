@@ -134,7 +134,7 @@ func CanonicalShadowEnvelopeBytes(value ShadowEnvelope) ([]byte, error) {
 	if err := ValidateShadowEnvelope(value); err != nil {
 		return nil, err
 	}
-	encoded, err := canonicalJSON(value)
+	encoded, err := encodeCanonicalJSON(value)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func validateShadowProjectionShape(value ReadModel) error {
 	if len(value.QualificationGaps) > MaxCount {
 		return fail(ErrorLimitExceeded, "$/projection/qualificationGaps", "qualification gap count exceeds its limit")
 	}
-	if _, err := canonicalJSON(value); err != nil {
+	if _, err := encodeCanonicalJSON(value); err != nil {
 		return err
 	}
 	return nil

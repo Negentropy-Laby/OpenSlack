@@ -161,6 +161,7 @@ const WINDOWS_SYSTEM_SID = 'S-1-5-18';
 const WINDOWS_SECURITY_CACHE_LIMIT = 2_048;
 const JOURNAL_LOCK_SCHEMA = 'openslack.workflow_control_shadow_journal_lock.v1' as const;
 const PROCESS_SESSION_ID = randomUUID();
+const JOURNAL_CAPACITY_LOCK_HASH = sha256('openslack.workflow-control-shadow.journal-capacity.v1');
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 let productionWindowsSid: string | undefined;
 const productionWindowsSecurityCache = new Map<
@@ -837,11 +838,18 @@ async function acquireStreamLock(
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const before = await lstat(path, { bigint: true });
-      const lock = plainObject(
-        await readCanonical(path, directories.security),
-        'Workflow Control shadow journal lock',
-      );
+      let before: BigIntStats;
+      let lock: JsonRecord;
+      try {
+        before = await lstat(path, { bigint: true });
+        lock = plainObject(
+          await readCanonical(path, directories.security),
+          'Workflow Control shadow journal lock',
+        );
+      } catch (inspectionError) {
+        if ((inspectionError as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw inspectionError;
+      }
       if (
         !exactKeys(lock, ['schema', 'pid', 'sessionId', 'createdAt']) ||
         lock.schema !== JOURNAL_LOCK_SCHEMA ||
@@ -861,11 +869,16 @@ async function acquireStreamLock(
         if ((probeError as NodeJS.ErrnoException).code === 'ESRCH') dead = true;
       }
       if (dead) {
-        const repeated = await lstat(path, { bigint: true });
-        if (sameIdentity(before, repeated)) {
-          await unlink(path);
-          await syncDirectory(directories.locks);
-          continue;
+        try {
+          const repeated = await lstat(path, { bigint: true });
+          if (sameIdentity(before, repeated)) {
+            await unlink(path);
+            await syncDirectory(directories.locks);
+            continue;
+          }
+        } catch (reclaimError) {
+          if ((reclaimError as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw reclaimError;
         }
       }
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 5));
@@ -1093,40 +1106,45 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
   async #append(observation: WorkflowControlObservation): Promise<void> {
     const runId = observation.runId;
     const hashValue = streamHash(this.#workspaceId, runId);
-    const release = await acquireStreamLock(this.#directories, hashValue);
+    const releaseCapacity = await acquireStreamLock(this.#directories, JOURNAL_CAPACITY_LOCK_HASH);
     try {
-      let state = await loadState(this.#directories, this.#workspaceId, runId);
-      const observationHash = hashWorkflowControlValue(observation);
-      if (state.lastObservationHash === observationHash) return;
-      const sourceSequence = state.lastSequence + 1;
-      const envelope = validateWorkflowControlShadowEnvelope({
-        authority: 'typescript',
-        observation,
-        projection: projectWorkflowControlReadModel(observation),
-        schema: WORKFLOW_CONTROL_SHADOW_OBSERVATION_SCHEMA,
-        source: { runId, sourceSequence, workspaceId: this.#workspaceId },
-      });
-      const body = `${canonicalWorkflowControlJson(envelope)}\n`;
-      const digest = sha256(body);
-      const path = join(
-        this.#directories.entries,
-        `${hashValue}.${String(sourceSequence).padStart(16, '0')}.${digest}.json`,
-      );
-      state = immutable({
-        ...state,
-        lastSequence: sourceSequence,
-        lastObservationHash: observationHash,
-      });
-      const stateBody = `${canonicalWorkflowControlJson(state)}\n`;
-      await assertJournalCapacity(
-        this.#directories,
-        Buffer.byteLength(body, 'utf8') + Buffer.byteLength(stateBody, 'utf8'),
-      );
-      await writeExclusive(path, body, this.#directories.security);
-      await syncDirectory(this.#directories.entries);
-      await persistState(this.#directories, state);
+      const releaseStream = await acquireStreamLock(this.#directories, hashValue);
+      try {
+        let state = await loadState(this.#directories, this.#workspaceId, runId);
+        const observationHash = hashWorkflowControlValue(observation);
+        if (state.lastObservationHash === observationHash) return;
+        const sourceSequence = state.lastSequence + 1;
+        const envelope = validateWorkflowControlShadowEnvelope({
+          authority: 'typescript',
+          observation,
+          projection: projectWorkflowControlReadModel(observation),
+          schema: WORKFLOW_CONTROL_SHADOW_OBSERVATION_SCHEMA,
+          source: { runId, sourceSequence, workspaceId: this.#workspaceId },
+        });
+        const body = `${canonicalWorkflowControlJson(envelope)}\n`;
+        const digest = sha256(body);
+        const path = join(
+          this.#directories.entries,
+          `${hashValue}.${String(sourceSequence).padStart(16, '0')}.${digest}.json`,
+        );
+        state = immutable({
+          ...state,
+          lastSequence: sourceSequence,
+          lastObservationHash: observationHash,
+        });
+        const stateBody = `${canonicalWorkflowControlJson(state)}\n`;
+        await assertJournalCapacity(
+          this.#directories,
+          Buffer.byteLength(body, 'utf8') + Buffer.byteLength(stateBody, 'utf8'),
+        );
+        await writeExclusive(path, body, this.#directories.security);
+        await syncDirectory(this.#directories.entries);
+        await persistState(this.#directories, state);
+      } finally {
+        await releaseStream();
+      }
     } finally {
-      await release();
+      await releaseCapacity();
     }
   }
 

@@ -1,10 +1,11 @@
 // Package canonicaljson provides the bounded ECMAScript-compatible encoder
-// used for the Workflow Control shadow HTTP surface.
+// shared by the Workflow Control contract and shadow HTTP surface.
 package canonicaljson
 
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,84 +17,168 @@ type Value any
 type Array []Value
 type Object map[string]Value
 
+const maxDepth = 64
+
+type visit struct {
+	kind     reflect.Kind
+	pointer  uintptr
+	length   int
+	capacity int
+}
+
 func Encode(value Value) ([]byte, error) {
-	encoder := &state{arrays: map[*Array]struct{}{}, objects: map[*Object]struct{}{}}
-	if err := encoder.write(value, "$", 0); err != nil {
+	encoder := &state{active: make(map[visit]struct{})}
+	if err := encoder.write(reflect.ValueOf(value), "$", 0); err != nil {
 		return nil, err
 	}
 	return encoder.output, nil
 }
 
 type state struct {
-	output  []byte
-	arrays  map[*Array]struct{}
-	objects map[*Object]struct{}
+	output []byte
+	active map[visit]struct{}
 }
 
-func (encoder *state) write(value Value, path string, depth int) error {
-	if depth > 64 {
+func (encoder *state) enter(value reflect.Value, path string) (func(), error) {
+	if value.IsNil() {
+		return func() {}, nil
+	}
+	current := visit{kind: value.Kind(), pointer: value.Pointer()}
+	if value.Kind() == reflect.Slice {
+		current.length = value.Len()
+		current.capacity = value.Cap()
+	}
+	if _, exists := encoder.active[current]; exists {
+		return nil, fmt.Errorf("canonical JSON cycle at %s", path)
+	}
+	encoder.active[current] = struct{}{}
+	return func() { delete(encoder.active, current) }, nil
+}
+
+func (encoder *state) write(value reflect.Value, path string, depth int) error {
+	if depth > maxDepth {
 		return fmt.Errorf("canonical JSON depth exceeded at %s", path)
 	}
-	switch current := value.(type) {
-	case nil:
+	if !value.IsValid() {
 		encoder.output = append(encoder.output, "null"...)
-	case bool:
-		encoder.output = strconv.AppendBool(encoder.output, current)
-	case string:
-		return encoder.writeString(current, path)
-	case float64:
-		number, err := formatNumber(current)
+		return nil
+	}
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			encoder.output = append(encoder.output, "null"...)
+			return nil
+		}
+		if value.Kind() == reflect.Pointer {
+			leave, err := encoder.enter(value, path)
+			if err != nil {
+				return err
+			}
+			defer leave()
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Bool:
+		encoder.output = strconv.AppendBool(encoder.output, value.Bool())
+	case reflect.String:
+		return encoder.writeString(value.String(), path)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		encoder.output = strconv.AppendInt(encoder.output, value.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		encoder.output = strconv.AppendUint(encoder.output, value.Uint(), 10)
+	case reflect.Float32, reflect.Float64:
+		number, err := formatNumber(value.Float())
 		if err != nil {
 			return fmt.Errorf("canonical JSON number at %s: %w", path, err)
 		}
 		encoder.output = append(encoder.output, number...)
-	case int:
-		encoder.output = strconv.AppendInt(encoder.output, int64(current), 10)
-	case int64:
-		encoder.output = strconv.AppendInt(encoder.output, current, 10)
-	case Array:
-		if _, active := encoder.arrays[&current]; active {
-			return fmt.Errorf("canonical JSON cycle at %s", path)
+	case reflect.Slice, reflect.Array:
+		if value.Kind() == reflect.Slice {
+			leave, err := encoder.enter(value, path)
+			if err != nil {
+				return err
+			}
+			defer leave()
 		}
-		encoder.arrays[&current] = struct{}{}
-		defer delete(encoder.arrays, &current)
 		encoder.output = append(encoder.output, '[')
-		for index, item := range current {
+		for index := 0; index < value.Len(); index++ {
 			if index > 0 {
 				encoder.output = append(encoder.output, ',')
 			}
-			if err := encoder.write(item, path+"["+strconv.Itoa(index)+"]", depth+1); err != nil {
+			if err := encoder.write(value.Index(index), path+"["+strconv.Itoa(index)+"]", depth+1); err != nil {
 				return err
 			}
 		}
 		encoder.output = append(encoder.output, ']')
-	case Object:
-		if _, active := encoder.objects[&current]; active {
-			return fmt.Errorf("canonical JSON cycle at %s", path)
+	case reflect.Map:
+		if value.Type().Key().Kind() != reflect.String {
+			return fmt.Errorf("unsupported canonical JSON map key %s at %s", value.Type().Key(), path)
 		}
-		encoder.objects[&current] = struct{}{}
-		defer delete(encoder.objects, &current)
-		keys := make([]string, 0, len(current))
-		for key := range current {
-			keys = append(keys, key)
+		leave, err := encoder.enter(value, path)
+		if err != nil {
+			return err
 		}
-		sort.Slice(keys, func(left, right int) bool { return utf16Less(keys[left], keys[right]) })
+		defer leave()
+		keys := value.MapKeys()
+		sort.Slice(keys, func(left, right int) bool {
+			return utf16Less(keys[left].String(), keys[right].String())
+		})
 		encoder.output = append(encoder.output, '{')
 		for index, key := range keys {
+			name := key.String()
 			if index > 0 {
 				encoder.output = append(encoder.output, ',')
 			}
-			if err := encoder.writeString(key, path+"/"+key); err != nil {
+			if err := encoder.writeString(name, path+"/"+name); err != nil {
 				return err
 			}
 			encoder.output = append(encoder.output, ':')
-			if err := encoder.write(current[key], path+"/"+key, depth+1); err != nil {
+			if err := encoder.write(value.MapIndex(key), path+"/"+name, depth+1); err != nil {
+				return err
+			}
+		}
+		encoder.output = append(encoder.output, '}')
+	case reflect.Struct:
+		type field struct {
+			name  string
+			value reflect.Value
+		}
+		fields := make([]field, 0, value.NumField())
+		typeInfo := value.Type()
+		for index := 0; index < value.NumField(); index++ {
+			descriptor := typeInfo.Field(index)
+			if !descriptor.IsExported() {
+				continue
+			}
+			name := strings.Split(descriptor.Tag.Get("json"), ",")[0]
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = descriptor.Name
+			}
+			fields = append(fields, field{name: name, value: value.Field(index)})
+		}
+		sort.Slice(fields, func(left, right int) bool {
+			return utf16Less(fields[left].name, fields[right].name)
+		})
+		encoder.output = append(encoder.output, '{')
+		for index, current := range fields {
+			if index > 0 {
+				encoder.output = append(encoder.output, ',')
+			}
+			if err := encoder.writeString(current.name, path+"/"+current.name); err != nil {
+				return err
+			}
+			encoder.output = append(encoder.output, ':')
+			if err := encoder.write(current.value, path+"/"+current.name, depth+1); err != nil {
 				return err
 			}
 		}
 		encoder.output = append(encoder.output, '}')
 	default:
-		return fmt.Errorf("unsupported canonical JSON value %T at %s", value, path)
+		return fmt.Errorf("unsupported canonical JSON value %s at %s", value.Kind(), path)
 	}
 	return nil
 }
@@ -132,10 +217,7 @@ func (encoder *state) writeString(value, path string) error {
 func utf16Less(left, right string) bool {
 	leftUnits := utf16.Encode([]rune(left))
 	rightUnits := utf16.Encode([]rune(right))
-	limit := len(leftUnits)
-	if len(rightUnits) < limit {
-		limit = len(rightUnits)
-	}
+	limit := min(len(leftUnits), len(rightUnits))
 	for index := 0; index < limit; index++ {
 		if leftUnits[index] != rightUnits[index] {
 			return leftUnits[index] < rightUnits[index]

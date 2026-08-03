@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,10 @@ import {
   type WorkflowControlShadowJournalSecurityDependencies,
   type WorkflowControlShadowDiagnostic,
 } from '../workflow-control-shadow.js';
-import { hashWorkflowControlValue } from '../workflow-control-contract.js';
+import {
+  canonicalWorkflowControlJson,
+  hashWorkflowControlValue,
+} from '../workflow-control-contract.js';
 import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 
 const roots: string[] = [];
@@ -195,6 +198,50 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       });
       await second.flush();
       expect(sequences).toEqual([1]);
+      expect(await readdir(join(root, 'entries'))).toEqual([]);
+    },
+    DURABLE_JOURNAL_TIMEOUT_MS,
+  );
+
+  it(
+    'waits for global journal-capacity lock contention without dropping another run',
+    async () => {
+      const root = await journalRoot('workflow-shadow-capacity-lock');
+      const published: string[] = [];
+      const observation = shadowObservation({ runId: 'run-capacity-lock' });
+      const port = await createWorkflowControlObservationPortForTest(
+        {
+          enabled: true,
+          workspaceId: 'workspace.test',
+          journalRoot: root,
+          publisher: createWorkflowControlShadowPublisherPort(async (envelope) => {
+            published.push(envelope.source.runId);
+            return receiptFor(envelope);
+          }),
+          buildObservation: async () => observation,
+        },
+        windowsSecurity(),
+      );
+      const capacityHash = createHash('sha256')
+        .update('openslack.workflow-control-shadow.journal-capacity.v1')
+        .digest('hex');
+      const lockPath = join(root, 'locks', `${capacityHash}.lock`);
+      await writeFile(
+        lockPath,
+        `${canonicalWorkflowControlJson({
+          schema: 'openslack.workflow_control_shadow_journal_lock.v1',
+          pid: process.pid,
+          sessionId: '123e4567-e89b-42d3-a456-426614174003',
+          createdAt: '2026-08-03T00:00:00.000Z',
+        })}\n`,
+        { encoding: 'utf8', mode: 0o600 },
+      );
+
+      port.observeRun(observation.runId);
+      setTimeout(() => void rm(lockPath, { force: true }), 50);
+
+      await port.flush();
+      expect(published).toEqual([observation.runId]);
       expect(await readdir(join(root, 'entries'))).toEqual([]);
     },
     DURABLE_JOURNAL_TIMEOUT_MS,
