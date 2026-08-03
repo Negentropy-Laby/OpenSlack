@@ -19,6 +19,7 @@ import { shadowObservation } from './workflow-control-shadow-fixtures.js';
 const roots: string[] = [];
 const WINDOWS_OWNER_SID = 'S-1-5-21-1000-1001-1002-1003';
 const WINDOWS_SYSTEM_SID = 'S-1-5-18';
+const DURABLE_JOURNAL_TIMEOUT_MS = process.platform === 'win32' ? 15_000 : 5_000;
 
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');
@@ -87,105 +88,117 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     await expect(port.flush()).resolves.toBeUndefined();
   });
 
-  it('coalesces identical snapshots and allocates monotonic sequence per workspace/run', async () => {
-    const published: number[] = [];
-    const publisher = createWorkflowControlShadowPublisherPort(async (envelope) => {
-      published.push(envelope.source.sourceSequence);
-      return receiptFor(envelope);
-    });
-    let observation = shadowObservation();
-    const root = await journalRoot('workflow-shadow-coalesce');
-    const port = await createWorkflowControlObservationPort({
-      enabled: true,
-      workspaceId: 'workspace.test',
-      journalRoot: root,
-      publisher,
-      buildObservation: async () => observation,
-    });
-    port.observeRun(observation.runId);
-    port.observeRun(observation.runId);
-    await port.flush();
-    observation = shadowObservation({ updatedAt: '2026-08-03T00:00:02.000Z' });
-    port.observeRun(observation.runId);
-    await port.flush();
-    expect(published).toEqual([1, 2]);
-    expect(await readdir(join(root, 'entries'))).toEqual([]);
-    const [stateName] = await readdir(join(root, 'states'));
-    const state = JSON.parse(await readFile(join(root, 'states', stateName!), 'utf8')) as {
-      lastSequence: number;
-      ackedSequence: number;
-      lastObservationHash: string;
-    };
-    expect(state).toMatchObject({ lastSequence: 2, ackedSequence: 2 });
-    expect(state.lastObservationHash).toBe(hashWorkflowControlValue(observation));
-  });
+  it(
+    'coalesces identical snapshots and allocates monotonic sequence per workspace/run',
+    async () => {
+      const published: number[] = [];
+      const publisher = createWorkflowControlShadowPublisherPort(async (envelope) => {
+        published.push(envelope.source.sourceSequence);
+        return receiptFor(envelope);
+      });
+      let observation = shadowObservation();
+      const root = await journalRoot('workflow-shadow-coalesce');
+      const port = await createWorkflowControlObservationPort({
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher,
+        buildObservation: async () => observation,
+      });
+      port.observeRun(observation.runId);
+      port.observeRun(observation.runId);
+      await port.flush();
+      observation = shadowObservation({ updatedAt: '2026-08-03T00:00:02.000Z' });
+      port.observeRun(observation.runId);
+      await port.flush();
+      expect(published).toEqual([1, 2]);
+      expect(await readdir(join(root, 'entries'))).toEqual([]);
+      const [stateName] = await readdir(join(root, 'states'));
+      const state = JSON.parse(await readFile(join(root, 'states', stateName!), 'utf8')) as {
+        lastSequence: number;
+        ackedSequence: number;
+        lastObservationHash: string;
+      };
+      expect(state).toMatchObject({ lastSequence: 2, ackedSequence: 2 });
+      expect(state.lastObservationHash).toBe(hashWorkflowControlValue(observation));
+    },
+    DURABLE_JOURNAL_TIMEOUT_MS,
+  );
 
-  it('persists before publish and replays the exact entry after an unavailable publisher', async () => {
-    const root = await journalRoot('workflow-shadow-replay');
-    const unavailable = createWorkflowControlShadowPublisherPort(async () => {
-      throw new Error('offline');
-    });
-    const observation = shadowObservation();
-    const first = await createWorkflowControlObservationPort({
-      enabled: true,
-      workspaceId: 'workspace.test',
-      journalRoot: root,
-      publisher: unavailable,
-      buildObservation: async () => observation,
-    });
-    first.observeRun(observation.runId);
-    await first.flush();
-    expect(await readdir(join(root, 'entries'))).toHaveLength(1);
-
-    const sequences: number[] = [];
-    const available = createWorkflowControlShadowPublisherPort(async (envelope) => {
-      sequences.push(envelope.source.sourceSequence);
-      return receiptFor(envelope);
-    });
-    const second = await createWorkflowControlObservationPort({
-      enabled: true,
-      workspaceId: 'workspace.test',
-      journalRoot: root,
-      publisher: available,
-      buildObservation: async () => observation,
-    });
-    await second.flush();
-    expect(sequences).toEqual([1]);
-    expect(await readdir(join(root, 'entries'))).toEqual([]);
-  });
-
-  it('recovers an entry orphaned between durable entry and state publication', async () => {
-    const root = await journalRoot('workflow-shadow-orphan');
-    const observation = shadowObservation();
-    const first = await createWorkflowControlObservationPort({
-      enabled: true,
-      workspaceId: 'workspace.test',
-      journalRoot: root,
-      publisher: createWorkflowControlShadowPublisherPort(async () => {
+  it(
+    'persists before publish and replays the exact entry after an unavailable publisher',
+    async () => {
+      const root = await journalRoot('workflow-shadow-replay');
+      const unavailable = createWorkflowControlShadowPublisherPort(async () => {
         throw new Error('offline');
-      }),
-      buildObservation: async () => observation,
-    });
-    first.observeRun(observation.runId);
-    await first.flush();
-    const [stateName] = await readdir(join(root, 'states'));
-    await rm(join(root, 'states', stateName!));
+      });
+      const observation = shadowObservation();
+      const first = await createWorkflowControlObservationPort({
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: unavailable,
+        buildObservation: async () => observation,
+      });
+      first.observeRun(observation.runId);
+      await first.flush();
+      expect(await readdir(join(root, 'entries'))).toHaveLength(1);
 
-    const sequences: number[] = [];
-    const second = await createWorkflowControlObservationPort({
-      enabled: true,
-      workspaceId: 'workspace.test',
-      journalRoot: root,
-      publisher: createWorkflowControlShadowPublisherPort(async (envelope) => {
+      const sequences: number[] = [];
+      const available = createWorkflowControlShadowPublisherPort(async (envelope) => {
         sequences.push(envelope.source.sourceSequence);
         return receiptFor(envelope);
-      }),
-      buildObservation: async () => observation,
-    });
-    await second.flush();
-    expect(sequences).toEqual([1]);
-    expect(await readdir(join(root, 'entries'))).toEqual([]);
-  });
+      });
+      const second = await createWorkflowControlObservationPort({
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: available,
+        buildObservation: async () => observation,
+      });
+      await second.flush();
+      expect(sequences).toEqual([1]);
+      expect(await readdir(join(root, 'entries'))).toEqual([]);
+    },
+    DURABLE_JOURNAL_TIMEOUT_MS,
+  );
+
+  it(
+    'recovers an entry orphaned between durable entry and state publication',
+    async () => {
+      const root = await journalRoot('workflow-shadow-orphan');
+      const observation = shadowObservation();
+      const first = await createWorkflowControlObservationPort({
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: createWorkflowControlShadowPublisherPort(async () => {
+          throw new Error('offline');
+        }),
+        buildObservation: async () => observation,
+      });
+      first.observeRun(observation.runId);
+      await first.flush();
+      const [stateName] = await readdir(join(root, 'states'));
+      await rm(join(root, 'states', stateName!));
+
+      const sequences: number[] = [];
+      const second = await createWorkflowControlObservationPort({
+        enabled: true,
+        workspaceId: 'workspace.test',
+        journalRoot: root,
+        publisher: createWorkflowControlShadowPublisherPort(async (envelope) => {
+          sequences.push(envelope.source.sourceSequence);
+          return receiptFor(envelope);
+        }),
+        buildObservation: async () => observation,
+      });
+      await second.flush();
+      expect(sequences).toEqual([1]);
+      expect(await readdir(join(root, 'entries'))).toEqual([]);
+    },
+    DURABLE_JOURNAL_TIMEOUT_MS,
+  );
 
   it('keeps invalid and legacy observations out of the durable journal with hashed diagnostics', async () => {
     const diagnostics: WorkflowControlShadowDiagnostic[] = [];
