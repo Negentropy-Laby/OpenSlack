@@ -62,6 +62,10 @@ const reusableWorkflowUrl = new URL(
 );
 const reusableSource = readFileSync(reusableWorkflowUrl, 'utf8');
 const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
+const rootPackageUrl = new URL('../../../../package.json', import.meta.url);
+const rootPackage = JSON.parse(readFileSync(rootPackageUrl, 'utf8')) as {
+  scripts: Record<string, string>;
+};
 const gs6McpClientUrl = new URL(
   '../../../../scripts/governance-control-contracts/gs6-mcp-client.ts',
   import.meta.url,
@@ -121,11 +125,14 @@ const triggerPaths = [
   'packages/operator/src/governed-plan*.ts',
   'packages/workflows/contracts/workflow-control/**',
   'packages/workflows/contracts/workflow-control-shadow/**',
+  'packages/workflows/contracts/workflow-runner/**',
   'packages/workflows/src/workflow-control-contract.ts',
   'packages/workflows/src/workflow-control-observation.ts',
   'packages/workflows/src/workflow-control-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
+  'packages/workflows/src/workflow-runner-contract.ts',
+  'packages/workflows/src/__tests__/workflow-runner-contract.test.ts',
   'packages/workflows/src/run-store.ts',
   'packages/workflows/src/workflow-runs.ts',
   'packages/workflows/src/workflow-effect-approval-store.ts',
@@ -134,6 +141,11 @@ const triggerPaths = [
   'docs/README.md',
   'design/cdd/module-index.md',
   'design/cdd/workstreams/notification-delivery/README.md',
+  'design/cdd/workstreams/workflow-runtime/README.md',
+  'docs/architecture/components/workflow-runtime.md',
+  'docs/architecture/contracts/workflow-control.md',
+  'docs/architecture/contracts/workflow-runner.md',
+  'docs/architecture/ts-to-go-migration-roadmap.md',
   'docs/user/guides/notification-delivery-operations.md',
   'docs/user/guides/core-workflows.md',
   'docs/user/cli-reference.md',
@@ -157,6 +169,7 @@ const triggerPaths = [
   'scripts/governance-control-contracts/**',
   'scripts/workflow-control-contracts/**',
   'scripts/workflow-control-shadow-contracts/**',
+  'scripts/workflow-runner-contracts/**',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -296,6 +309,7 @@ describe('notification delivery service workflow', () => {
     const governanceGoldenIndex = stepIndex('Verify Governance Control golden contracts');
     const workflowGoldenIndex = stepIndex('Verify Workflow Control golden contracts');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
+    const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
@@ -320,7 +334,8 @@ describe('notification delivery service workflow', () => {
     expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
     expect(workflowGoldenIndex).toBe(governanceGoldenIndex + 1);
     expect(workflowShadowGoldenIndex).toBe(workflowGoldenIndex + 1);
-    expect(graphDistIndex).toBe(workflowShadowGoldenIndex + 1);
+    expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
+    expect(graphDistIndex).toBe(workflowRunnerGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
     expect(graphAuthorityIndex).toBe(graphCanaryIndex + 1);
@@ -394,6 +409,11 @@ describe('notification delivery service workflow', () => {
       name: 'Verify Workflow Control shadow golden contracts',
       'working-directory': '.',
       run: 'bun run workflow:shadow-golden -- --check',
+    });
+    expect(job.steps[workflowRunnerGoldenIndex]).toEqual({
+      name: 'Verify Workflow Runner golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:runner-golden -- --check',
     });
     expect(job.steps[graphDistIndex]).toEqual({
       name: 'Clean-build and smoke Organization Graph distribution',
@@ -471,6 +491,7 @@ describe('notification delivery service workflow', () => {
       'Verify Governance Control golden contracts',
       'Verify Workflow Control golden contracts',
       'Verify Workflow Control shadow golden contracts',
+      'Verify Workflow Runner golden contracts',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
       'Qualify GS3-B bounded Go read canary',
@@ -511,6 +532,7 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control golden contracts': 'bun run workflow:golden -- --check',
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
+      'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
       'Clean-build and smoke Organization Graph distribution': lines(
         'set -euo pipefail',
         'bun run graph:dist-build',
@@ -562,6 +584,15 @@ describe('notification delivery service workflow', () => {
         expect(Object.keys(step).sort()).toEqual(['name', 'run']);
       }
     }
+  });
+
+  it('binds the Workflow Runner contract step to a checked root script', () => {
+    expect(rootPackage.scripts['workflow:runner-golden']).toBe(
+      'bun scripts/workflow-runner-contracts/index.ts',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json',
+    );
   });
 
   it('runs the non-skippable GS6 official-SDK single-writer contract against real Go HTTP', () => {

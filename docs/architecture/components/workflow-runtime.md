@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-08-03
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -758,6 +758,21 @@ function renderHtmlArtifact(
 All CSS and JS are inline. No external resources. No network requests.
 
 ## Integration Points
+
+### GS8 Workflow Runner process boundary
+
+The frozen `openslack.workflow_runner.v1` contract defines a future JSONL child-process boundary
+between a Go scheduler and the existing TypeScript runner. Go may own only runner jobs, attempts,
+leases/fencing, cancel requests, and durable protocol receipts. TypeScript continues to load and
+execute JavaScript, call agents, enforce permissions, decide or execute effects, and own RunStore,
+checkpoint, resume, approval, and budget state through GS8.
+
+GS8-A provides schemas, validators, exact-byte vectors, and an importable Go mirror only. It does
+not change the CLI `run` or `resume` paths, launch a worker, create a scheduler or lease, or add
+runtime cancellation. See
+[`../contracts/workflow-runner.md`](../contracts/workflow-runner.md). A future GS8-B worker must be
+a sealed TypeScript executable; the protocol cannot select an arbitrary command, module path, or
+URL, and Go cannot embed a second JavaScript runtime.
 
 ### Operator Module
 

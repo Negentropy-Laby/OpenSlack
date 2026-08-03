@@ -336,19 +336,26 @@ commit outcomes become durable reconciliation receipts rather than success or a
 workflow retry. Legacy/truncated manifest identities and incomplete effect or
 budget evidence are skipped with bounded diagnostics rather than fabricated.
 
-GS7-B adds no worker, scheduler, lease, cancellation, approval decision, budget
-decision, effect execution, routing epoch, user-visible read source, or authority
-cutover. Its local candidate still requires exact-head hosted PostgreSQL,
-response-loss, restart, concurrency, corruption, OpenAPI, Prometheus,
-distribution, cross-language, review-thread, and independent-human-approval
-evidence before it is called hosted-qualified.
+GS7-B adds no worker, scheduler, lease, cancellation, approval decision, budget decision, effect
+execution, routing epoch, user-visible read source, or authority cutover. Its final exact head has
+passed hosted PostgreSQL, response-loss, restart, concurrency, corruption, OpenAPI, Prometheus,
+distribution, cross-language, review-thread, and independent-human-approval gates and is merged.
+Those results qualify the observational shadow only; they do not promote it to runtime authority.
 
-GS8 defines the versioned JS runner worker protocol and may add scheduler, lease,
-cancellation, and receipt behavior without moving the JavaScript runner. GS9
-alone may transfer new-record checkpoint, effect-approval, and budget authority
-after revision/CAS, recovery, response-loss, restart, duplicate, concurrency,
-fencing, and rollback qualification. Legacy run-gate approvals remain distinct
-from the exact `openslack.workflow_effect_approval.v2` decision contract throughout.
+GS8-A freezes the closed `openslack.workflow_runner.v1` JS runner protocol, exact-byte schemas,
+message/idempotency/receipt algorithms, cross-language vectors, object ownership, and GS9
+exclusions. It adds no worker process, scheduler, lease store, database, HTTP or CLI route,
+cancellation behavior, or runtime authority. GS8-B may then add a default-off scheduler, lease,
+cancellation, and durable receipt implementation without moving the JavaScript runner or the
+current CLI route. Go may launch only a sealed TypeScript worker executable; it cannot accept a
+wire-provided command, module path, or URL and cannot embed a second JavaScript runtime.
+
+GS9 alone may transfer the new-record Workflow Control record: revisioned RunStatus/control
+transitions, checkpoint and resume cursor, exact effect-approval v2 state, and durable budget
+accounting. It does so only after revision/CAS, recovery, response-loss, restart, duplicate,
+concurrency, fencing, and rollback qualification. Legacy run-gate approvals remain TypeScript
+compatibility state and stay distinct from the exact `openslack.workflow_effect_approval.v2`
+decision contract throughout. A runner message or durable receipt is never an approval decision.
 
 ### GS10–GS13 — Platform Runtime
 

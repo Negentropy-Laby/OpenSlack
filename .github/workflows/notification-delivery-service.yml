@@ -17,11 +17,14 @@ on:
       - packages/operator/src/governed-plan*.ts
       - packages/workflows/contracts/workflow-control/**
       - packages/workflows/contracts/workflow-control-shadow/**
+      - packages/workflows/contracts/workflow-runner/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-observation.ts
       - packages/workflows/src/workflow-control-shadow*.ts
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
+      - packages/workflows/src/workflow-runner-contract.ts
+      - packages/workflows/src/__tests__/workflow-runner-contract.test.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
       - packages/workflows/src/workflow-effect-approval-store.ts
@@ -30,6 +33,11 @@ on:
       - docs/README.md
       - design/cdd/module-index.md
       - design/cdd/workstreams/notification-delivery/README.md
+      - design/cdd/workstreams/workflow-runtime/README.md
+      - docs/architecture/components/workflow-runtime.md
+      - docs/architecture/contracts/workflow-control.md
+      - docs/architecture/contracts/workflow-runner.md
+      - docs/architecture/ts-to-go-migration-roadmap.md
       - docs/user/guides/notification-delivery-operations.md
       - docs/user/guides/core-workflows.md
       - docs/user/cli-reference.md
@@ -53,6 +61,7 @@ on:
       - scripts/governance-control-contracts/**
       - scripts/workflow-control-contracts/**
       - scripts/workflow-control-shadow-contracts/**
+      - scripts/workflow-runner-contracts/**
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
@@ -76,11 +85,14 @@ on:
       - packages/operator/src/governed-plan*.ts
       - packages/workflows/contracts/workflow-control/**
       - packages/workflows/contracts/workflow-control-shadow/**
+      - packages/workflows/contracts/workflow-runner/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-observation.ts
       - packages/workflows/src/workflow-control-shadow*.ts
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
+      - packages/workflows/src/workflow-runner-contract.ts
+      - packages/workflows/src/__tests__/workflow-runner-contract.test.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
       - packages/workflows/src/workflow-effect-approval-store.ts
@@ -89,6 +101,11 @@ on:
       - docs/README.md
       - design/cdd/module-index.md
       - design/cdd/workstreams/notification-delivery/README.md
+      - design/cdd/workstreams/workflow-runtime/README.md
+      - docs/architecture/components/workflow-runtime.md
+      - docs/architecture/contracts/workflow-control.md
+      - docs/architecture/contracts/workflow-runner.md
+      - docs/architecture/ts-to-go-migration-roadmap.md
       - docs/user/guides/notification-delivery-operations.md
       - docs/user/guides/core-workflows.md
       - docs/user/cli-reference.md
@@ -112,6 +129,7 @@ on:
       - scripts/governance-control-contracts/**
       - scripts/workflow-control-contracts/**
       - scripts/workflow-control-shadow-contracts/**
+      - scripts/workflow-runner-contracts/**
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
@@ -191,6 +209,9 @@ jobs:
       - name: Verify Workflow Control shadow golden contracts
         working-directory: .
         run: bun run workflow:shadow-golden -- --check
+      - name: Verify Workflow Runner golden contracts
+        working-directory: .
+        run: bun run workflow:runner-golden -- --check
       - name: Clean-build and smoke Organization Graph distribution
         working-directory: .
         run: |

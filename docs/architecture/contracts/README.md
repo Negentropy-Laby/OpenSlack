@@ -6,7 +6,7 @@ authority: index
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-02
+updated: 2026-08-03
 sources:
   - docs/architecture/architecture.md
 ---
@@ -22,3 +22,4 @@ also live beside their authority package and generated service mirror.
 - [Organization Graph](organization-graph.md)
 - [Qoder MCP](qoder-mcp.md)
 - [Workflow Control](workflow-control.md)
+- [Workflow Runner Protocol](workflow-runner.md)
