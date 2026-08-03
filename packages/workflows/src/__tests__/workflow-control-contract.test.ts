@@ -4,6 +4,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import {
   WORKFLOW_CONTROL_AUTHORITY,
+  WORKFLOW_CONTROL_CHECKPOINT_STATES,
   WORKFLOW_CONTROL_CONTRACT_ERROR_CODES,
   WORKFLOW_CONTROL_CONTRACT_LIMITS,
   WORKFLOW_CONTROL_DORMANT_STATES,
@@ -108,7 +109,16 @@ describe('Workflow Control GS7-A contract freeze', () => {
     const manifest = json('manifest.json') as {
       authority: string;
       authorityBoundary: Record<string, unknown>;
-      observedBehavior: Record<string, unknown>;
+      observedBehavior: {
+        productionInitialState: string;
+        dormantStatesWithoutProductionWriter: readonly string[];
+        states: readonly string[];
+        transitions: Record<string, readonly string[]>;
+        checkpointStates: readonly string[];
+        checkpointPersistenceAtomic: boolean;
+        controlPathsCanBypassTransitionTable: boolean;
+        budgetWarningKinds: readonly string[];
+      };
       approvalPlanes: Record<string, unknown>;
       qualificationGaps: unknown;
       limits: unknown;
@@ -126,8 +136,12 @@ describe('Workflow Control GS7-A contract freeze', () => {
     expect(manifest.observedBehavior).toMatchObject({
       productionInitialState: 'running',
       dormantStatesWithoutProductionWriter: ['created', 'previewed', 'confirmed'],
+      states: WORKFLOW_CONTROL_RUN_STATES,
+      transitions: WORKFLOW_CONTROL_STATE_TRANSITIONS,
+      checkpointStates: WORKFLOW_CONTROL_CHECKPOINT_STATES,
       checkpointPersistenceAtomic: false,
       controlPathsCanBypassTransitionTable: true,
+      budgetWarningKinds: ['threshold', 'exceeded'],
     });
     expect(manifest.approvalPlanes).toMatchObject({
       legacyRunGate: { semantics: 'run-gate-only', effectDecisionAuthority: false },

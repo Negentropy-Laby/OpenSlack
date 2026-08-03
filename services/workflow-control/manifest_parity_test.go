@@ -79,6 +79,28 @@ func TestManifestAndExactMirrorParity(t *testing.T) {
 	if manifest.ObservedBehavior.ProductionInitialState != RunRunning || manifest.ObservedBehavior.CheckpointPersistenceAtomic || !manifest.ObservedBehavior.ControlPathsCanBypassTransitionTable {
 		t.Fatalf("observed behavior drift: %+v", manifest.ObservedBehavior)
 	}
+	expectedStates := []RunState{
+		RunCreated, RunPreviewed, RunConfirmed, RunRunning, RunPaused,
+		RunPausedWaitingApproval, RunResuming, RunCompleted, RunFailed, RunCancelled,
+	}
+	if !reflect.DeepEqual(manifest.ObservedBehavior.States, expectedStates) ||
+		!reflect.DeepEqual(manifest.ObservedBehavior.DormantStates, []RunState{RunCreated, RunPreviewed, RunConfirmed}) ||
+		!reflect.DeepEqual(manifest.ObservedBehavior.CheckpointStates, []CheckpointState{CheckpointCompleted, CheckpointFailed, CheckpointSkipped}) ||
+		!reflect.DeepEqual(manifest.ObservedBehavior.BudgetWarningKinds, []string{"threshold", "exceeded"}) {
+		t.Fatalf("observed vocabulary drift: %+v", manifest.ObservedBehavior)
+	}
+	expectedTransitions := make(map[RunState][]RunState, len(expectedStates))
+	for _, from := range expectedStates {
+		expectedTransitions[from] = []RunState{}
+		for _, to := range expectedStates {
+			if _, allowed := transitions[from][to]; allowed {
+				expectedTransitions[from] = append(expectedTransitions[from], to)
+			}
+		}
+	}
+	if !reflect.DeepEqual(manifest.ObservedBehavior.Transitions, expectedTransitions) {
+		t.Fatalf("transition table drift:\n got  %#v\n want %#v", manifest.ObservedBehavior.Transitions, expectedTransitions)
+	}
 	if !reflect.DeepEqual(manifest.QualificationGaps, QualificationGaps()) {
 		t.Fatalf("qualification gap drift: %v", manifest.QualificationGaps)
 	}

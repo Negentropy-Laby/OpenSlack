@@ -64,6 +64,16 @@ const VALID_TRANSITIONS: Record<string, Set<string>> = {
 };
 
 /**
+ * Return whether the authoritative RunStore transition method accepts an edge.
+ *
+ * This narrow predicate lets the frozen Workflow Control contract prove parity
+ * against runtime behavior without exporting the mutable transition sets.
+ */
+export function isRunStatusTransitionAllowed(from: RunStatusState, to: RunStatusState): boolean {
+  return VALID_TRANSITIONS[from]?.has(to) ?? false;
+}
+
+/**
  * Run metadata persisted to meta.json.
  */
 export interface RunMeta {
@@ -298,8 +308,7 @@ export class RunStore {
       throw new Error(`Run ${runId} not found`);
     }
 
-    const allowed = VALID_TRANSITIONS[current.status];
-    if (!allowed || !allowed.has(newStatus)) {
+    if (!isRunStatusTransitionAllowed(current.status, newStatus)) {
       throw new Error(`Invalid status transition: ${current.status} -> ${newStatus}`);
     }
 
