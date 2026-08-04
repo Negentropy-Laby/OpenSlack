@@ -19,3 +19,32 @@ groups:
         annotations:
           summary: Workflow Control shadow metrics endpoint is unavailable
           description: Check PostgreSQL readiness, migration state, and the private service health endpoints.
+
+  - name: openslack_workflow_runner_reliability
+    interval: 15s
+    rules:
+      - alert: WorkflowRunnerReconciliationRequired
+        expr: openslack_workflow_runner_jobs{state="reconciliation_required"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Workflow Runner has an ambiguous lifecycle or effect result
+          description: Stop automatic replay and inspect the durable runner reconciliation record.
+
+      - alert: WorkflowRunnerExpiredLeasePending
+        expr: openslack_workflow_runner_leases{state="expired"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Workflow Runner has an expired lease pending recovery
+          description: Inspect scheduler recovery, process-tree termination, and the current fencing token.
+
+      - alert: WorkflowRunnerProcessSafetyEvent
+        expr: increase(openslack_workflow_runner_process_crashes_total[10m]) + increase(openslack_workflow_runner_forced_terminations_total[10m]) + increase(openslack_workflow_runner_stale_fence_rejections_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Workflow Runner observed a crash, forced termination, or stale fence
+          description: Correlate the bounded metric with runner job, attempt, lease, and reconciliation evidence.

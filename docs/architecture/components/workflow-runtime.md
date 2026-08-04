@@ -767,12 +767,20 @@ leases/fencing, cancel requests, and durable protocol receipts. TypeScript conti
 execute JavaScript, call agents, enforce permissions, decide or execute effects, and own RunStore,
 checkpoint, resume, approval, and budget state through GS8.
 
-GS8-A provides schemas, validators, exact-byte vectors, and an importable Go mirror only. It does
-not change the CLI `run` or `resume` paths, launch a worker, create a scheduler or lease, or add
-runtime cancellation. See
-[`../contracts/workflow-runner.md`](../contracts/workflow-runner.md). A future GS8-B worker must be
-a sealed TypeScript executable; the protocol cannot select an arbitrary command, module path, or
-URL, and Go cannot embed a second JavaScript runtime.
+GS8-A provides the immutable schemas, validators, exact-byte vectors, and importable Go mirror.
+GS8-B implements a separate, explicit runner-server with PostgreSQL job/attempt/lease/fence/cancel
+and receipt ownership. It launches only an externally hash-anchored, closed worker bundle containing
+one copied Node executable, one self-contained JavaScript entrypoint, and the exact manifest under
+the platform process-tree supervisor. The worker resolves a hash-bound descriptor from an
+owner-only store, rejects workflow sources with runtime imports, revalidates the source immediately
+before import, and starts JavaScript only after the durable `lease_accept` receipt. This source
+closure is specific to the GS8 worker and does not change the legacy CLI loader. See
+[`../contracts/workflow-runner.md`](../contracts/workflow-runner.md).
+
+GS8-B remains off by default and does not change the CLI `run` or `resume` paths. Go cannot select
+or receive an arbitrary workflow command, module path, raw argument, URL, prompt, or credential and
+does not embed another JavaScript runtime. TypeScript continues to own RunStore, checkpoint,
+resume, approval, effect execution, agent/provider calls, and budget state until GS9.
 
 ### Operator Module
 

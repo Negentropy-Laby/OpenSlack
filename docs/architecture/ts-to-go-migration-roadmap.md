@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-03
+updated: 2026-08-04
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -344,11 +344,19 @@ Those results qualify the observational shadow only; they do not promote it to r
 
 GS8-A freezes the closed `openslack.workflow_runner.v1` JS runner protocol, exact-byte schemas,
 message/idempotency/receipt algorithms, cross-language vectors, object ownership, and GS9
-exclusions. It adds no worker process, scheduler, lease store, database, HTTP or CLI route,
-cancellation behavior, or runtime authority. GS8-B may then add a default-off scheduler, lease,
-cancellation, and durable receipt implementation without moving the JavaScript runner or the
-current CLI route. Go may launch only a sealed TypeScript worker executable; it cannot accept a
-wire-provided command, module path, or URL and cannot embed a second JavaScript runtime.
+exclusions. GS8-B implements the default-off lifecycle path: Go owns runner job admission,
+attempts, leases, fences, cancellation controls, process supervision, and durable protocol
+receipts; the sealed TypeScript child still owns JavaScript execution, agents, effects, and every
+GS9-deferred record. Its closed bundle contains exactly the manifest, a copied Node executable and
+one self-contained JavaScript entrypoint whose bytes define `runnerBuildHash`. Accepted workflow
+source is also a closed single-file execution unit: runtime imports are rejected in this GS8 path
+without changing the existing CLI loader. The private runner API is a separate binary, requires
+exact workspace and bearer bindings, and is absent from normal CLI composition. Jobs contain only
+descriptor and content hashes; neither the wire nor HTTP can choose a command, module path, raw
+arguments, URL, or environment. Unknown effect outcomes stop in reconciliation and are never
+replayed automatically. Pre-execution launch, crash, and lease-rejection failures use a durable
+bounded backoff and a five-failure dead/reconciliation ceiling; an unproven process termination is
+also reconciliation evidence, not permission to requeue.
 
 GS9 alone may transfer the new-record Workflow Control record: revisioned RunStatus/control
 transitions, checkpoint and resume cursor, exact effect-approval v2 state, and durable budget

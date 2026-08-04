@@ -26,6 +26,14 @@ export interface WorkflowDiscoveryOptions {
   userHomeDir?: string | null;
 }
 
+export interface WorkflowLoadOptions {
+  /**
+   * Optional full source identity used only to separate ESM module-cache
+   * entries. Existing callers keep the historical path-only behavior.
+   */
+  moduleCacheKey?: string;
+}
+
 /**
  * Built-in workflows shipped with @openslack/workflows.
  */
@@ -145,7 +153,13 @@ export async function discoverWorkflows(
  * Performs static analysis before module import, then detects format.
  * For claude-ambient workflows, returns source without importing.
  */
-export async function loadWorkflow(filePath: string): Promise<WorkflowModule> {
+export async function loadWorkflow(
+  filePath: string,
+  options: WorkflowLoadOptions = {},
+): Promise<WorkflowModule> {
+  if (options.moduleCacheKey !== undefined && !/^[0-9a-f]{64}$/u.test(options.moduleCacheKey)) {
+    throw new Error('Workflow module cache key must be a full lowercase SHA-256.');
+  }
   const embedded = getEmbeddedBuiltin(filePath);
   if (embedded) {
     const errors = validateManifest(embedded.meta);
@@ -181,8 +195,11 @@ export async function loadWorkflow(filePath: string): Promise<WorkflowModule> {
 
   // Step 5: Dynamic import (only after static analysis passes, and not claude-ambient)
   const resolvedPath = resolve(filePath);
-  const moduleUrl = pathToFileURL(resolvedPath).href;
-  const mod = (await import(moduleUrl)) as Record<string, unknown>;
+  const moduleUrl = pathToFileURL(resolvedPath);
+  if (options.moduleCacheKey !== undefined) {
+    moduleUrl.searchParams.set('openslackSourceHash', options.moduleCacheKey);
+  }
+  const mod = (await import(moduleUrl.href)) as Record<string, unknown>;
 
   // Step 6: Detect format from module exports
   const format = detectFormat(mod);

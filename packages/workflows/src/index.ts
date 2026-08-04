@@ -109,12 +109,19 @@ export {
 export type { WorkflowSummary } from './loader.js';
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
-export { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js';
+export {
+  createRuntime,
+  ExecuteDeniedError,
+  WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES,
+  WorkflowExecutionCancelledError,
+  WorkflowPausedError,
+} from './runtime.js';
 export type {
   RuntimeOptions,
   RuntimeInternals,
   ConfirmCallback,
   RuntimeWithPersistence,
+  WorkflowRunnerCancellationBoundary,
 } from './runtime.js';
 
 // ── Permission Checker ────────────────────────────────────────────────────────
@@ -492,6 +499,55 @@ export {
   WORKFLOW_RUNNER_TERMINAL_STATES,
   WorkflowRunnerContractError,
 } from './workflow-runner-contract.js';
+export {
+  assertWorkflowRunnerDescriptorOfferBinding,
+  canonicalWorkflowRunnerDescriptorJson,
+  createWorkflowRunnerExecutionDescriptor,
+  hashWorkflowRunnerDescriptor,
+  hashWorkflowRunnerDomain,
+  hashWorkflowRunnerEffect,
+  hashWorkflowRunnerInput,
+  hashWorkflowRunnerManifest,
+  hashWorkflowRunnerResult,
+  hashWorkflowRunnerSource,
+  validateWorkflowRunnerExecutionDescriptor,
+  WORKFLOW_RUNNER_DESCRIPTOR_LIMITS,
+  WORKFLOW_RUNNER_DESCRIPTOR_SCHEMA,
+  WORKFLOW_RUNNER_DESCRIPTOR_SOURCES,
+  WorkflowRunnerDescriptorError,
+} from './workflow-runner-descriptor.js';
+export type {
+  CreateWorkflowRunnerExecutionDescriptorInput,
+  WorkflowRunnerExecutionBudget,
+  WorkflowRunnerExecutionDescriptor,
+} from './workflow-runner-descriptor.js';
+export {
+  createWorkflowRunnerDescriptorPathSecurity,
+  WorkflowRunnerDescriptorStore,
+  WorkflowRunnerDescriptorStoreError,
+} from './workflow-runner-descriptor-store.js';
+export type { WorkflowRunnerDescriptorPathSecurity } from './workflow-runner-descriptor-store.js';
+export {
+  decodeWorkflowRunnerFrame,
+  WorkflowRunnerFramingError,
+  WorkflowRunnerJsonlDecoder,
+} from './workflow-runner-framing.js';
+export { createWorkflowRunnerProtocolEffectBoundary } from './workflow-runner-effect-boundary.js';
+export type {
+  WorkflowEffectBoundary,
+  WorkflowEffectBoundaryHandle,
+  WorkflowEffectBoundaryIntentInput,
+  WorkflowEffectBoundaryOutcomeInput,
+  WorkflowRunnerEffectEventPort,
+} from './workflow-runner-effect-boundary.js';
+export { WorkflowRunnerSession, WorkflowRunnerSessionError } from './workflow-runner-session.js';
+export type {
+  WorkflowRunnerExecutionContext,
+  WorkflowRunnerPreparedSource,
+  WorkflowRunnerSessionOptions,
+  WorkflowRunnerSessionState,
+  WorkflowRunnerSourceLoader,
+} from './workflow-runner-session.js';
 export type {
   CreateWorkflowRunnerEventReceiptInput,
   WorkflowRunnerCancelAckMessage,

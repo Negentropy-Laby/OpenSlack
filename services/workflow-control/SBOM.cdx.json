@@ -273,6 +273,27 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/sys@v0.25.0",
+      "name": "golang.org/x/sys",
+      "version": "v0.25.0",
+      "scope": "required",
+      "purl": "pkg:golang/golang.org/x/sys@v0.25.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:golang/golang.org/x/text@v0.18.0",
       "name": "golang.org/x/text",
       "version": "v0.18.0",
@@ -308,6 +329,7 @@
         "pkg:golang/go.uber.org/atomic@v1.7.0",
         "pkg:golang/golang.org/x/crypto@v0.27.0",
         "pkg:golang/golang.org/x/sync@v0.8.0",
+        "pkg:golang/golang.org/x/sys@v0.25.0",
         "pkg:golang/golang.org/x/text@v0.18.0"
       ]
     }

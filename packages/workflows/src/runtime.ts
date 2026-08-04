@@ -20,6 +20,10 @@ import type { PipelineCacheStore } from './pipeline-runner.js';
 import { resolveAgentType } from './agent-resolver.js';
 import type { RunStore } from './run-store.js';
 import { classifyPathGroups } from './risk-classification.js';
+import type {
+  WorkflowEffectBoundary,
+  WorkflowEffectBoundaryHandle,
+} from './workflow-runner-effect-boundary.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -71,6 +75,10 @@ export interface RuntimeOptions {
   rootDir?: string;
   /** Workflow run store used for evidence, replay, budget warnings, and approvals. */
   runStore?: RunStore;
+  /** Cooperative cancellation owned by the TypeScript worker host. */
+  signal?: AbortSignal;
+  /** Optional durable runner observation around the existing TS effect authority. */
+  effectBoundary?: WorkflowEffectBoundary;
 }
 
 export interface RuntimeWithPersistence extends WorkflowRuntime {
@@ -114,6 +122,32 @@ export class WorkflowPausedError extends Error {
   }
 }
 
+export class WorkflowExecutionCancelledError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly reason: string,
+    readonly boundary: WorkflowRunnerCancellationBoundary = 'runtime_api',
+  ) {
+    super(`Workflow run ${runId} cancelled at ${boundary}: ${reason}`);
+    this.name = 'WorkflowExecutionCancelledError';
+  }
+}
+
+export const WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES = Object.freeze([
+  'pre_javascript',
+  'accept_receipt_wait',
+  'runtime_api',
+  'agent_call',
+  'parallel_dispatch',
+  'pipeline_dispatch',
+  'effect_intent',
+  'effect_execution',
+  'effect_outcome',
+  'terminal_commit',
+] as const);
+export type WorkflowRunnerCancellationBoundary =
+  (typeof WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES)[number];
+
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const { runId, mode, manifest, nestingDepth = 0, onWorkflowCall, onConfirm } = options;
 
@@ -124,6 +158,72 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const logEntries: LogEntry[] = [];
   const phaseStatusMap = new Map<string, 'running' | 'completed' | 'failed'>();
   const persistenceTasks: Promise<void>[] = [];
+
+  function throwIfAborted(boundary: WorkflowRunnerCancellationBoundary): void {
+    if (!options.signal?.aborted) return;
+    const reason = options.signal.reason;
+    throw new WorkflowExecutionCancelledError(
+      runId,
+      reason instanceof Error ? reason.message : String(reason ?? 'workflow control cancelled'),
+      boundary,
+    );
+  }
+
+  function boundedErrorEvidence(error: unknown): Readonly<Record<string, string>> {
+    if (!(error instanceof Error)) return Object.freeze({ name: 'Error' });
+    const code = (error as Error & { code?: unknown }).code;
+    return Object.freeze({
+      name: error.name || 'Error',
+      ...(typeof code === 'string' ? { code: code.slice(0, 128) } : {}),
+    });
+  }
+
+  async function reportOutcome(
+    handle: WorkflowEffectBoundaryHandle | undefined,
+    status: 'rejected' | 'executed' | 'failed' | 'reconciliation_required',
+    evidence: unknown,
+  ): Promise<void> {
+    if (handle) await options.effectBoundary!.outcome(handle, { status, evidence });
+  }
+
+  async function executeConfirmedEffect<T>(
+    operation: string,
+    detail: string,
+    effect: () => Promise<T> | T,
+  ): Promise<T> {
+    throwIfAborted('effect_intent');
+    if (!onConfirm) {
+      throw new ExecuteDeniedError(operation, 'Execute mode requires confirmation callback');
+    }
+    let handle: WorkflowEffectBoundaryHandle | undefined;
+    if (options.effectBoundary) {
+      handle = await options.effectBoundary.intent({ runId, operation, detail });
+    }
+    throwIfAborted('effect_intent');
+    let approved: boolean;
+    try {
+      approved = await onConfirm(operation, detail);
+    } catch (error) {
+      await reportOutcome(handle, 'failed', boundedErrorEvidence(error));
+      throw error;
+    }
+    if (!approved) {
+      await reportOutcome(handle, 'rejected', { decision: 'denied' });
+      throw new ExecuteDeniedError(operation, `User denied ${operation}`);
+    }
+    throwIfAborted('effect_execution');
+    let value: T;
+    try {
+      value = await effect();
+    } catch (error) {
+      // A thrown effect cannot prove whether an external commit happened.
+      await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+      throw error;
+    }
+    await reportOutcome(handle, 'executed', value);
+    throwIfAborted('effect_outcome');
+    return value;
+  }
 
   function persist(task: Promise<void> | undefined): void {
     if (!task) return;
@@ -222,6 +322,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
 
   // --- Workflow helper function object ---
   const workflowCall = (async (name: string, args?: Record<string, unknown>): Promise<unknown> => {
+    throwIfAborted('runtime_api');
     if (nestingDepth >= MAX_NESTING_DEPTH) {
       throw new Error(
         `Workflow nesting depth limit (${MAX_NESTING_DEPTH}) exceeded. ` +
@@ -357,6 +458,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     },
 
     phase(name: string): void {
+      throwIfAborted('runtime_api');
       // 1. Validate name exists in manifest.phases
       const phaseDef = manifest.phases.find((p) => p.title === name);
       if (!phaseDef) {
@@ -394,6 +496,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     },
 
     log(message: string): void {
+      throwIfAborted('runtime_api');
       const entry: LogEntry = {
         ts: new Date().toISOString(),
         phase: currentPhase,
@@ -405,6 +508,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     },
 
     async agent<T>(prompt: string, agentOptions: AgentOptions): Promise<T> {
+      throwIfAborted('agent_call');
       // Resolve agentType if provided
       let resolvedAgent: import('./agent-resolver.js').ResolvedAgentConfig | null = null;
       if (agentOptions.agentType) {
@@ -441,6 +545,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         rootDir: options.rootDir,
         runStore: options.runStore,
         budgetPolicy: manifest.budgetPolicy,
+        signal: options.signal,
       });
     },
 
@@ -448,6 +553,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       tasks: Array<() => Promise<T>>,
       parallelOptions?: ParallelOptions,
     ): Promise<T[]> {
+      throwIfAborted('parallel_dispatch');
       if (mode === 'validate') {
         throw new Error('Parallel execution not allowed in validate mode');
       }
@@ -461,6 +567,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         | Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
       pipelineOptions?: PipelineOptions,
     ): Promise<R[]> {
+      throwIfAborted('pipeline_dispatch');
       if (mode === 'validate') {
         throw new Error('Pipeline execution not allowed in validate mode');
       }
@@ -502,31 +609,17 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
               issueNumber: -1,
             };
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.task.createIssue',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const detail =
-              typeof issueData === 'object' && issueData !== null
-                ? JSON.stringify(issueData)
-                : String(issueData);
-            const approved = await onConfirm('openslack.task.createIssue', detail);
-            if (!approved) {
-              throw new ExecuteDeniedError(
-                'openslack.task.createIssue',
-                'User denied issue creation',
-              );
-            }
-          }
-          runtime.log('openslack.task.createIssue called');
-          return {
-            issueUrl: `https://github.com/example/issue/1`,
-            issueNumber: 1,
-          };
+          const detail =
+            typeof issueData === 'object' && issueData !== null
+              ? JSON.stringify(issueData)
+              : String(issueData);
+          return executeConfirmedEffect('openslack.task.createIssue', detail, () => {
+            runtime.log('openslack.task.createIssue called');
+            return {
+              issueUrl: `https://github.com/example/issue/1`,
+              issueNumber: 1,
+            };
+          });
         },
         async checkout(issueNumber: number, agentId: string) {
           if (mode === 'preview') {
@@ -541,27 +634,17 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
               branchName: `agent/${agentId}/dry-run-${issueNumber}`,
             };
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.task.checkout',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const approved = await onConfirm(
-              'openslack.task.checkout',
-              `Checkout issue #${issueNumber} for agent ${agentId}`,
-            );
-            if (!approved) {
-              throw new ExecuteDeniedError('openslack.task.checkout', 'User denied checkout');
-            }
-          }
-          runtime.log(`openslack.task.checkout called for #${issueNumber}`);
-          return {
-            worktreePath: `.openslack.local/worktrees/${issueNumber}`,
-            branchName: `agent/${agentId}/${issueNumber}`,
-          };
+          return executeConfirmedEffect(
+            'openslack.task.checkout',
+            `Checkout issue #${issueNumber} for agent ${agentId}`,
+            () => {
+              runtime.log(`openslack.task.checkout called for #${issueNumber}`);
+              return {
+                worktreePath: `.openslack.local/worktrees/${issueNumber}`,
+                branchName: `agent/${agentId}/${issueNumber}`,
+              };
+            },
+          );
         },
         async sync(issueNumber: number) {
           if (mode === 'preview') {
@@ -571,21 +654,10 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.task.sync: would sync #${issueNumber}`);
             return { pushed: false };
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.task.sync',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const approved = await onConfirm('openslack.task.sync', `Sync issue #${issueNumber}`);
-            if (!approved) {
-              throw new ExecuteDeniedError('openslack.task.sync', 'User denied sync');
-            }
-          }
-          runtime.log(`openslack.task.sync called for #${issueNumber}`);
-          return { pushed: false };
+          return executeConfirmedEffect('openslack.task.sync', `Sync issue #${issueNumber}`, () => {
+            runtime.log(`openslack.task.sync called for #${issueNumber}`);
+            return { pushed: false };
+          });
         },
       },
       prms: {
@@ -618,27 +690,14 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             );
             return { merged: false, prmsStatus: 'dry-run' };
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.prms.requestMerge',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const approved = await onConfirm(
-              'openslack.prms.requestMerge',
-              `Request merge for PR #${prNumber}`,
-            );
-            if (!approved) {
-              throw new ExecuteDeniedError(
-                'openslack.prms.requestMerge',
-                'User denied merge request',
-              );
-            }
-          }
-          runtime.log(`openslack.prms.requestMerge called for PR #${prNumber}`);
-          return { merged: false, prmsStatus: 'pending' };
+          return executeConfirmedEffect(
+            'openslack.prms.requestMerge',
+            `Request merge for PR #${prNumber}`,
+            () => {
+              runtime.log(`openslack.prms.requestMerge called for PR #${prNumber}`);
+              return { merged: false, prmsStatus: 'pending' };
+            },
+          );
         },
       },
       collaboration: {
@@ -650,25 +709,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.recordEvent: would record event`);
             return;
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.collaboration.recordEvent',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const detail =
-              typeof event === 'object' && event !== null ? JSON.stringify(event) : String(event);
-            const approved = await onConfirm('openslack.collaboration.recordEvent', detail);
-            if (!approved) {
-              throw new ExecuteDeniedError(
-                'openslack.collaboration.recordEvent',
-                'User denied event recording',
-              );
-            }
-          }
-          runtime.log('openslack.collaboration.recordEvent called');
+          const detail =
+            typeof event === 'object' && event !== null ? JSON.stringify(event) : String(event);
+          await executeConfirmedEffect('openslack.collaboration.recordEvent', detail, () => {
+            runtime.log('openslack.collaboration.recordEvent called');
+          });
         },
         async createHandoff(details: unknown) {
           if (mode === 'preview') {
@@ -678,28 +723,14 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.createHandoff: would create handoff`);
             return details;
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.collaboration.createHandoff',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const detail =
-              typeof details === 'object' && details !== null
-                ? JSON.stringify(details)
-                : String(details);
-            const approved = await onConfirm('openslack.collaboration.createHandoff', detail);
-            if (!approved) {
-              throw new ExecuteDeniedError(
-                'openslack.collaboration.createHandoff',
-                'User denied handoff creation',
-              );
-            }
-          }
-          runtime.log('openslack.collaboration.createHandoff called');
-          return details;
+          const detail =
+            typeof details === 'object' && details !== null
+              ? JSON.stringify(details)
+              : String(details);
+          return executeConfirmedEffect('openslack.collaboration.createHandoff', detail, () => {
+            runtime.log('openslack.collaboration.createHandoff called');
+            return details;
+          });
         },
         async recordDecision(details: unknown) {
           if (mode === 'preview') {
@@ -711,28 +742,14 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.recordDecision: would record decision`);
             return details;
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.collaboration.recordDecision',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const detail =
-              typeof details === 'object' && details !== null
-                ? JSON.stringify(details)
-                : String(details);
-            const approved = await onConfirm('openslack.collaboration.recordDecision', detail);
-            if (!approved) {
-              throw new ExecuteDeniedError(
-                'openslack.collaboration.recordDecision',
-                'User denied decision recording',
-              );
-            }
-          }
-          runtime.log('openslack.collaboration.recordDecision called');
-          return details;
+          const detail =
+            typeof details === 'object' && details !== null
+              ? JSON.stringify(details)
+              : String(details);
+          return executeConfirmedEffect('openslack.collaboration.recordDecision', detail, () => {
+            runtime.log('openslack.collaboration.recordDecision called');
+            return details;
+          });
         },
       },
       governance: {
@@ -744,21 +761,10 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.governance.audit: ${action}`);
             return;
           }
-          // execute mode: confirmation gate (required)
-          if (!onConfirm) {
-            throw new ExecuteDeniedError(
-              'openslack.governance.audit',
-              'Execute mode requires confirmation callback',
-            );
-          }
-          {
-            const detail = details !== undefined ? String(details) : action;
-            const approved = await onConfirm('openslack.governance.audit', detail);
-            if (!approved) {
-              throw new ExecuteDeniedError('openslack.governance.audit', 'User denied audit');
-            }
-          }
-          runtime.log(`openslack.governance.audit: ${action}`);
+          const detail = details !== undefined ? String(details) : action;
+          await executeConfirmedEffect('openslack.governance.audit', detail, () => {
+            runtime.log(`openslack.governance.audit: ${action}`);
+          });
         },
       },
     },

@@ -1,0 +1,103 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { validateWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
+
+async function source(path: string): Promise<string> {
+  return readFile(resolve(process.cwd(), path), 'utf8');
+}
+
+describe('GS8-B source and authority invariants', () => {
+  it('keeps the existing CLI run and resume routes on TypeScript authority', async () => {
+    const [collaboration, tuiExecutors] = await Promise.all([
+      source('apps/cli/src/commands/collaboration.ts'),
+      source('apps/cli/src/commands/tui-executors.ts'),
+    ]);
+    for (const cli of [collaboration, tuiExecutors]) {
+      expect(cli).toContain('executeRun');
+      expect(cli).toContain('executeResume');
+      expect(cli).not.toContain('workflow-runner-worker');
+      expect(cli).not.toContain('OPENSLACK_WORKFLOW_RUNNER_ENABLED');
+    }
+  });
+
+  it('keeps wire descriptors closed against command, module-path, URL, and GS9 state', () => {
+    const base = {
+      schema: 'openslack.workflow_runner_execution_descriptor.v1',
+      descriptorRef: 'descriptor.invariant.1',
+      workspaceId: 'workspace.test',
+      workflowRunId: 'run.invariant.1',
+      correlationId: 'correlation.invariant.1',
+      workflowId: 'workflow-test',
+      workflowVersion: '1.0.0',
+      workflowSource: 'openslack-project',
+      workflowSourceHash: 'a'.repeat(64),
+      manifestHash: 'b'.repeat(64),
+      inputHash: 'c'.repeat(64),
+      input: {},
+      budget: { tokens: 1, costUsd: 0 },
+      confirmationPolicy: {
+        mode: 'unattended-explicit',
+        actorId: 'actor.test',
+        runId: 'run.invariant.1',
+        allowUnattended: true,
+        onUnexpectedEffect: 'fail',
+      },
+      createdAt: '2026-08-04T01:00:00.000Z',
+      expiresAt: '2026-08-04T02:00:00.000Z',
+    } as const;
+    for (const [field, value] of [
+      ['command', 'node'],
+      ['modulePath', '/tmp/evil.mjs'],
+      ['url', 'https://example.test/worker'],
+      ['checkpoint', 4],
+      ['resumeCursor', 'cursor'],
+      ['authorityEpoch', 9],
+    ] as const) {
+      expect(() => validateWorkflowRunnerExecutionDescriptor({ ...base, [field]: value })).toThrow(
+        /missing or unknown fields/u,
+      );
+    }
+  });
+
+  it('locates dynamic import only behind the accepted-receipt session gate', async () => {
+    const [session, worker] = await Promise.all([
+      source('packages/workflows/src/workflow-runner-session.ts'),
+      source('packages/workflows/src/workflow-runner-worker.ts'),
+    ]);
+    const accept = session.indexOf("await this.#emitReceiptable('lease_accept'");
+    const execute = session.indexOf('void this.#executeLease()');
+    const load = session.indexOf('this.#options.sourceLoader.load', execute);
+    expect(accept).toBeGreaterThan(-1);
+    expect(execute).toBeGreaterThan(accept);
+    expect(load).toBeGreaterThan(execute);
+    expect(worker.indexOf("await import('./loader.js')")).toBeGreaterThan(
+      worker.indexOf('async load('),
+    );
+    expect(worker.indexOf("await import('./execute.js')")).toBeGreaterThan(
+      worker.indexOf('execute: async'),
+    );
+  });
+
+  it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {
+    const [worker, legacyLoader, packageJson] = await Promise.all([
+      source('packages/workflows/src/workflow-runner-worker.ts'),
+      source('packages/workflows/src/loader.ts'),
+      source('packages/workflows/package.json'),
+    ]);
+    const prepare = worker.indexOf('async prepare(');
+    const policy = worker.indexOf('assertWorkflowRunnerSourceIsSelfContained(source.bytes)');
+    const load = worker.indexOf('async load(', prepare);
+    expect(prepare).toBeGreaterThan(-1);
+    expect(policy).toBeGreaterThan(prepare);
+    expect(policy).toBeLessThan(load);
+    expect(legacyLoader).not.toContain('assertWorkflowRunnerSourceIsSelfContained');
+
+    const packageDocument = JSON.parse(packageJson) as {
+      scripts?: Record<string, string>;
+    };
+    expect(packageDocument.scripts?.['build:runner-worker']).toBe(
+      'bun build ./src/workflow-runner-worker-bin.ts --target=node --format=esm --bundle --outfile=./dist/workflow-runner-worker-bundle.mjs',
+    );
+  });
+});

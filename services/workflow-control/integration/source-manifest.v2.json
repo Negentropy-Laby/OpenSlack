@@ -4,8 +4,8 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
     "targetPath": "services/workflow-control",
-    "migrationPhase": "GS7-B",
-    "authority": "TYPESCRIPT_WORKFLOW_AUTHORITY_GO_OBSERVER_ONLY"
+    "migrationPhase": "GS8-B",
+    "authority": "GO_RUNNER_LIFECYCLE_TYPESCRIPT_WORKFLOW_AUTHORITY"
   },
   "containerInputs": {
     "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
@@ -18,11 +18,11 @@
   "sourceInputs": {
     "dockerfile": {
       "path": "services/workflow-control/Dockerfile",
-      "sha256": "a1addba45b0fe30c869ef613d90902f03eab982ccea2127cdb661f7e6f775a19"
+      "sha256": "59b0d90c7c2bc589a8d2824ddc35617cb79baf51282fb95e3ebc40e57923ff06"
     },
     "goMod": {
       "path": "services/workflow-control/go.mod",
-      "sha256": "e7f6b56934355ac0d2a1bf6668fd03e645069ba95e05de60c0c9fd526db86707"
+      "sha256": "443b57d7f5516a1cbea8288ddd58cfaaa1640cac9d2c93f6c445e7a094e21852"
     },
     "goSum": {
       "path": "services/workflow-control/go.sum",
@@ -38,9 +38,17 @@
       "path": "packages/workflows/contracts/workflow-control-shadow/v1/manifest.json",
       "sha256": "91e6eaab207e9baa85fb3be84e1b3370983e881f0057a97cb566c5dc834f5f23"
     },
+    "workflowRunnerContractManifest": {
+      "path": "packages/workflows/contracts/workflow-runner/v1/manifest.json",
+      "sha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6"
+    },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
       "sha256": "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f"
+    },
+    "runnerOpenapi": {
+      "path": "services/workflow-control/docs/api/runner-openapi.yaml",
+      "sha256": "8d05d7b08cb1e7a11cf76b6f10b26079e54b546c527efb6325f6bdc42ab3d632"
     }
   },
   "legalInputs": {
@@ -54,27 +62,41 @@
     },
     "thirdPartyNotices": {
       "path": "services/workflow-control/THIRD_PARTY_NOTICES.md",
-      "sha256": "0b37d23edfee3e952ff77595942b3579f24ca0ab8106f7f9264979456821e3b8",
-      "productionModuleCount": 12
+      "sha256": "f5251ed4455ec3c7f62051654be5fd31c5bea10cc8ea28473a4f07fe683b3789",
+      "productionModuleCount": 13
     },
     "repositorySbomInput": {
       "path": "services/workflow-control/SBOM.cdx.json",
-      "sha256": "d699947623fa268d58f06a6b47a8d990bc556e0c0603280124ab8aeedb7ef7f3",
+      "sha256": "e25312e302572ca14febd033d330001b5e694d1e8d6e92df0636aec5e923ca4d",
       "scope": "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS",
       "attestation": "UNSIGNED"
     }
   },
   "scope": {
-    "authorizes": ["WORKFLOW_CONTROL_SHADOW_OBSERVATION"],
+    "authorizes": [
+      "WORKFLOW_CONTROL_SHADOW_OBSERVATION",
+      "WORKFLOW_RUNNER_ATTEMPT_LEASE_FENCING",
+      "WORKFLOW_RUNNER_CANCELLATION_CONTROL",
+      "WORKFLOW_RUNNER_JOB_LIFECYCLE_CONTROL",
+      "WORKFLOW_RUNNER_PROCESS_SUPERVISION",
+      "WORKFLOW_RUNNER_PROTOCOL_RECEIPT"
+    ],
     "nonClaims": [
-      "AUTHORITY_CUTOVER",
+      "CHECKPOINT_RESUME_AUTHORITY",
+      "CLI_ROUTE_CUTOVER",
       "LIVE_VERIFIED",
       "PRODUCTION",
       "QODER_VERIFIED",
       "REGISTRY_INCLUSION",
       "RELEASE",
+      "REMOTE_CONNECTOR",
       "SIGNED_PROVENANCE",
-      "WORKER_PROTOCOL"
+      "USER_VISIBLE_READ_AUTHORITY",
+      "WORKFLOW_BUDGET_AUTHORITY",
+      "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
+      "WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
+      "WORKFLOW_EFFECT_EXECUTION_AUTHORITY",
+      "WORKFLOW_RUNSTORE_AUTHORITY"
     ]
   }
 }

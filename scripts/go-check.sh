@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -530,6 +530,8 @@ validate_dockerignore() {
       '!internal/' | \
       '!internal/**/' | \
       '!internal/**/*.go' | \
+      '!runnerprotocol/' | \
+      '!runnerprotocol/*.go' | \
       '!migrations/' | \
       '!migrations/*.sql')
         ;;
@@ -657,6 +659,17 @@ detect_capabilities() {
         [[ -f "${module_dir}/${worker_evidence}" ]] ||
           fail "Notification Delivery worker capability is missing ${worker_evidence}"
       done
+    elif [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ]]; then
+      local runner_evidence
+      for runner_evidence in \
+        cmd/runner-server/main.go \
+        cmd/runner-server/qualification_test.go \
+        internal/processsupervisor/supervisor_test.go \
+        internal/runnerscheduler/session_test.go \
+        internal/runnerstore/postgres/runner_runtime_integration_test.go; do
+        [[ -f "${module_dir}/${runner_evidence}" ]] ||
+          fail "Workflow Control runner capability is missing ${runner_evidence}"
+      done
     else
       [[ -f "${module_dir}/cmd/worker/main.go" ]] ||
         fail "worker capability requires cmd/worker/main.go"
@@ -675,6 +688,10 @@ detect_capabilities() {
   if [[ "${runtime_profile_ref}" == "notification-delivery-v1" ]] &&
     ! has_capability "${capabilities}" "worker"; then
     fail "Notification Delivery runtime profile requires the worker capability"
+  fi
+  if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ]] &&
+    ! has_capability "${capabilities}" "worker"; then
+    fail "Workflow Control runner runtime profile requires the worker capability"
   fi
 
   if [[ "${runtime_profile_ref}" == "governance-control-v1" ||
@@ -695,7 +712,8 @@ detect_capabilities() {
     fi
   fi
 
-  if [[ "${runtime_profile_ref}" == "workflow-control-shadow-v1" ]]; then
+  if [[ "${runtime_profile_ref}" == "workflow-control-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-runner-v1" ]]; then
     local workflow_control_evidence
     for workflow_control_evidence in \
       cmd/server/qualification_test.go \
@@ -721,6 +739,25 @@ detect_capabilities() {
       local evidence_test="${workflow_control_test_file#*:}"
       grep -Eq "^func[[:space:]]+${evidence_test}\\(" "${module_dir}/${evidence_path}" ||
         fail "Workflow Control shadow runtime profile is missing ${evidence_test}"
+    done
+  fi
+
+  if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ]]; then
+    local workflow_runner_evidence
+    for workflow_runner_evidence in \
+      cmd/runner-server/qualification_test.go \
+      docs/api/runner-openapi.yaml \
+      tests/contracts/runner_openapi_contract_test.go; do
+      [[ -f "${module_dir}/${workflow_runner_evidence}" ]] ||
+        fail "Workflow Control runner runtime profile is missing ${workflow_runner_evidence}"
+    done
+    local workflow_runner_test
+    for workflow_runner_test in \
+      TestGS8BQualification \
+      TestGS8BRestartQualification \
+      TestGS8BImageDefaultOff; do
+      grep -Eq "^func[[:space:]]+${workflow_runner_test}\\(" "${module_dir}"/cmd/runner-server/*_test.go ||
+        fail "Workflow Control runner runtime profile is missing ${workflow_runner_test}"
     done
   fi
 
@@ -940,7 +977,8 @@ run_module_gate() {
         --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
       )
     fi
-  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=127.0.0.1:8080
@@ -980,7 +1018,8 @@ run_module_gate() {
         "${resource_owner}" \
         "${run_token}"
     fi
-  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
     ((has_database)) || fail "Workflow Control shadow qualification requires PostgreSQL"
     run_workflow_control_qualification \
       "${resource_prefix}" \
@@ -989,6 +1028,15 @@ run_module_gate() {
       "${database_name}" \
       "${resource_owner}" \
       "${run_token}"
+    if [[ "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
+      run_workflow_runner_qualification \
+        "${resource_prefix}" \
+        "${network}" \
+        "${database_container}" \
+        "${database_name}" \
+        "${resource_owner}" \
+        "${run_token}"
+    fi
   fi
 
   if ((has_prometheus)); then
@@ -1302,6 +1350,79 @@ run_workflow_control_qualification() {
     "WORKFLOW_CONTROL_GS7B_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_workflow_runner_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local package="$6"
+  local test_name="$7"
+  shift 7
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/workflow-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  local -a command=(go test -race "${package}" -count=1)
+  if [[ -n "${test_name}" ]]; then
+    command+=(-run "^${test_name}$")
+  fi
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" "${command[@]}"
+}
+
+run_workflow_runner_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="workflow_control_gs8b_restart_${restart_token//-/}"
+
+  log "qualifying Workflow Control GS8-B PostgreSQL runner lifecycle bounds"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-bounds "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres ""
+
+  log "seeding Workflow Control GS8-B Go/PostgreSQL restart qualification"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    ./cmd/runner-server TestGS8BRestartQualification \
+    WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed \
+    "WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS8-B runner restart"
+
+  log "verifying Workflow Control GS8-B durable runner state after PostgreSQL restart"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    ./cmd/runner-server TestGS8BRestartQualification \
+    WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify \
+    "WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -1403,7 +1524,8 @@ run_http_smoke() {
         --env GOVERNANCE_AUTHORITY_DRAIN_EPOCHS=6
       )
     fi
-  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=:8080
@@ -1435,12 +1557,20 @@ run_http_smoke() {
         TestGS6ImageSmoke \
         "GOVERNANCE_GS6_SMOKE_ORIGIN=http://${app_network_alias}:8080"
     fi
-  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ]]; then
+  elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
     log "verifying Workflow Control GS7-B image API responses"
     run_workflow_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
       TestGS7BImageSmoke \
       "WORKFLOW_CONTROL_GS7B_SMOKE_ORIGIN=http://${app_network_alias}:8080"
+    if [[ "${runtime_profile}" == "workflow-control-runner-v1" ]]; then
+      log "verifying Workflow Control GS8-B default image keeps runner disabled"
+      run_workflow_runner_test_container \
+        "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
+        ./cmd/runner-server TestGS8BImageDefaultOff \
+        "WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://${app_network_alias}:8080"
+    fi
   fi
 }
 

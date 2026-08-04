@@ -1,0 +1,241 @@
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
+import {
+  createSealedWorkflowRunnerSourceLoader,
+  loadWorkflowRunnerWorkerConfig,
+  WorkflowRunnerWorkerConfigError,
+} from '../workflow-runner-worker.js';
+import type { WorkflowMeta } from '../types.js';
+
+const roots: string[] = [];
+const sourceBytes = Buffer.from('this is deliberately not valid JavaScript', 'utf8');
+const manifest: WorkflowMeta = {
+  name: 'sealed-test',
+  version: '1.0.0',
+  description: 'Sealed runner worker test.',
+  phases: [{ title: 'Run', detail: 'Run once.' }],
+  risk: 'low',
+};
+
+function shortWindowsPath(path: string): string {
+  const output = execFileSync(
+    'cmd.exe',
+    ['/d', '/c', 'for %I in ("%OPENSLACK_TEST_LONG_PATH%") do @echo %~sI'],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20_000,
+      env: { ...process.env, OPENSLACK_TEST_LONG_PATH: path },
+    },
+  ).trim();
+  const windowsPaths = output.match(/[A-Za-z]:\\[^"\r\n]*/gu);
+  return resolve(windowsPaths?.sort((left, right) => right.length - left.length)[0] ?? output);
+}
+
+function descriptor(workflowSourceBytes: Uint8Array = sourceBytes) {
+  return createWorkflowRunnerExecutionDescriptor({
+    descriptorRef: 'descriptor.worker.1',
+    workspaceId: 'workspace.test',
+    workflowRunId: 'run.worker.1',
+    correlationId: 'correlation.worker.1',
+    workflowId: 'sealed-test',
+    workflowVersion: '1.0.0',
+    workflowSource: 'openslack-project',
+    workflowSourceBytes,
+    manifest,
+    input: {},
+    budget: { tokens: 1_000, costUsd: 1 },
+    confirmationPolicy: {
+      mode: 'unattended-explicit',
+      actorId: 'test-actor',
+      runId: 'run.worker.1',
+      allowUnattended: true,
+      onUnexpectedEffect: 'fail',
+    },
+    createdAt: '2026-08-04T01:00:00.000Z',
+    expiresAt: '2026-08-04T02:00:00.000Z',
+  });
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe('GS8-B workflow runner worker', () => {
+  it('is default-off and requires a closed valid startup configuration', () => {
+    expect(() => loadWorkflowRunnerWorkerConfig({})).toThrow(WorkflowRunnerWorkerConfigError);
+    expect(() =>
+      loadWorkflowRunnerWorkerConfig({ OPENSLACK_WORKFLOW_RUNNER_ENABLED: 'true' }),
+    ).toThrowError(/explicit enablement/u);
+  });
+
+  it('reads and hashes the sealed source during prepare without dynamically importing it', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    const sourcePath = join(sourceDirectory, 'sealed-test.js');
+    await mkdir(sourceDirectory, { recursive: true });
+    await writeFile(sourcePath, sourceBytes);
+
+    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
+    const prepared = await loader.prepare(descriptor());
+
+    expect(prepared).toMatchObject({
+      path: await realpath(sourcePath),
+      bytes: sourceBytes,
+    });
+  });
+
+  it('accepts a Windows 8.3 alias for the same non-reparse workflow catalog', async () => {
+    if (process.platform !== 'win32') return;
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-long-worker-root-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    await mkdir(sourceDirectory, { recursive: true });
+    await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
+    const shortRoot = shortWindowsPath(workspaceRoot);
+    if (shortRoot.toUpperCase() === workspaceRoot.toUpperCase()) return;
+
+    const prepared = await createSealedWorkflowRunnerSourceLoader(shortRoot).prepare(descriptor());
+    expect(prepared).toMatchObject({
+      path: join(await realpath(workspaceRoot), '.openslack', 'workflows', 'sealed-test.js'),
+      bytes: sourceBytes,
+    });
+  }, 30_000);
+
+  it.each([
+    ['static import', 'import value from "./unbound.js";'],
+    ['side-effect import', 'import "./unbound.js";'],
+    ['type import', 'import type { Value } from "./unbound.js";'],
+    ['dynamic import', 'const value = import("./unbound.js");'],
+    ['comment-separated dynamic import', 'const value = import/* gap */("./unbound.js");'],
+    ['require call', 'const value = require("./unbound.cjs");'],
+    ['escaped require call', 'const value = requ\\u0069re("./unbound.cjs");'],
+    ['export-from', 'export { value } from "./unbound.js";'],
+    ['comment-separated export-from', 'export/* gap */{ value }/* gap */from "./unbound.js";'],
+    ['star export-from', 'export * as values from "./unbound.js";'],
+    ['template-expression import', 'const value = `${import("./unbound.js")}`;'],
+    ['eval import string', 'eval("import(\\\"./unbound.js\\\")");'],
+    ['Function import string', 'Function("return import(\\\"./unbound.js\\\")")();'],
+    ['eval require string', 'eval("require(\\\"./unbound.cjs\\\")");'],
+    ['Node builtin module loader', 'const fs = process.getBuiltinModule("node:fs");'],
+    [
+      'global Node builtin module loader',
+      'const childProcess = globalThis.process.getBuiltinModule("node:child_process");',
+    ],
+    ['escaped Node builtin module loader', 'const fs = pro\\u0063ess.getBuiltinModule("node:fs");'],
+  ])('rejects %s during prepare before lease acceptance', async (_name, source) => {
+    const sourceBytes = Buffer.from(source, 'utf8');
+    const { loader } = await sealedSourceLoader(sourceBytes);
+
+    await expect(loader.prepare(descriptor(sourceBytes))).rejects.toThrow(
+      /may not (?:contain static or dynamic imports|dynamically evaluate|reference (?:Node process or global module-loader surfaces|require)|re-export)/u,
+    );
+  });
+
+  it('does not mistake comments, string/template bodies, regexes, or import.meta for imports', async () => {
+    const inert = Buffer.from(
+      [
+        '// import value from "./comment.js"; require("./comment.cjs")',
+        '/* export { value } from "./comment.js"; */',
+        'const quoted = "import(\\\"./string.js\\\") require(\\\"./string.cjs\\\")";',
+        'const templated = `export { value } from "./template.js"; import("./template.js")`;',
+        'const pattern = /import\\(require\\(export from/gu;',
+        'const location = import.meta.url;',
+        `export const meta = ${JSON.stringify(manifest)};`,
+        'export async function run() { return { status: "completed" }; }',
+      ].join('\n'),
+      'utf8',
+    );
+    const { loader, sourcePath } = await sealedSourceLoader(inert);
+
+    await expect(loader.prepare(descriptor(inert))).resolves.toMatchObject({
+      path: sourcePath,
+      bytes: inert,
+    });
+  });
+
+  it('rejects an ordinary workflow catalog below an ancestor reparse or symlink', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-ancestor-'));
+    roots.push(parent);
+    const target = join(parent, 'target');
+    const targetWorkspace = join(target, 'workspace');
+    const sourceDirectory = join(targetWorkspace, '.openslack', 'workflows');
+    const alias = join(parent, 'alias');
+    await mkdir(sourceDirectory, { recursive: true });
+    await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
+    await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+
+    const loader = createSealedWorkflowRunnerSourceLoader(join(alias, 'workspace'));
+    await expect(loader.prepare(descriptor())).rejects.toThrow(
+      /(?:reparse component|canonical and non-symlinked)/u,
+    );
+  });
+
+  it('rejects a source replacement between prepare and post-receipt load', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    const sourcePath = join(sourceDirectory, 'sealed-test.js');
+    await mkdir(sourceDirectory, { recursive: true });
+    const first = workflowSource(1);
+    await writeFile(sourcePath, first);
+
+    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
+    const prepared = await loader.prepare(descriptor(first));
+    await writeFile(sourcePath, workflowSource(2));
+
+    await expect(loader.load(descriptor(first), prepared)).rejects.toThrow(
+      'changed after lease acceptance',
+    );
+  });
+
+  it('cache-busts ESM by full source hash across sequential source revisions', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    const sourcePath = join(sourceDirectory, 'sealed-test.js');
+    await mkdir(sourceDirectory, { recursive: true });
+    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
+
+    const first = workflowSource(1);
+    await writeFile(sourcePath, first);
+    const firstDescriptor = descriptor(first);
+    const firstWorkflow = await loader.load(firstDescriptor, await loader.prepare(firstDescriptor));
+    expect(await firstWorkflow.run!({} as never, {})).toMatchObject({ revision: 1 });
+
+    const second = workflowSource(2);
+    await writeFile(sourcePath, second);
+    const secondDescriptor = descriptor(second);
+    const secondWorkflow = await loader.load(
+      secondDescriptor,
+      await loader.prepare(secondDescriptor),
+    );
+    expect(await secondWorkflow.run!({} as never, {})).toMatchObject({ revision: 2 });
+  }, 15_000);
+});
+
+async function sealedSourceLoader(source: Uint8Array) {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
+  roots.push(workspaceRoot);
+  const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+  const sourcePath = join(sourceDirectory, 'sealed-test.js');
+  await mkdir(sourceDirectory, { recursive: true });
+  await writeFile(sourcePath, source);
+  return {
+    loader: createSealedWorkflowRunnerSourceLoader(workspaceRoot),
+    sourcePath: await realpath(sourcePath),
+  };
+}
+
+function workflowSource(revision: number): Buffer {
+  return Buffer.from(
+    `export const meta = ${JSON.stringify(manifest)};\n` +
+      `export async function run() { return { status: "completed", revision: ${revision} }; }\n`,
+    'utf8',
+  );
+}

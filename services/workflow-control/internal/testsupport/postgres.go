@@ -20,13 +20,17 @@ import (
 )
 
 const (
-	WorkspaceID = "workspace-test"
-	RunID       = "run-test"
+	WorkspaceID                       = "workspace-test"
+	RunID                             = "run-test"
+	persistentSchemaReadinessTimeout  = 30 * time.Second
+	persistentSchemaReadinessInterval = 100 * time.Millisecond
+	persistentSchemaPingTimeout       = 3 * time.Second
 )
 
 var schemaPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
-// OpenPostgres creates an isolated schema, applies the GS7-B migration, and
+// OpenPostgres creates an isolated schema, applies the complete GS8-B migration
+// chain, and
 // returns a pool whose search path is pinned to that schema. Tests that need a
 // live database skip explicitly when DATABASE_URL is absent.
 func OpenPostgres(t testing.TB) *pgxpool.Pool {
@@ -67,12 +71,14 @@ func OpenPostgres(t testing.TB) *pgxpool.Pool {
 		admin.Close()
 	})
 
-	migration, err := os.ReadFile(migrationPath(t))
-	if err != nil {
-		t.Fatalf("read GS7-B migration: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		t.Fatalf("apply GS7-B migration: %v", err)
+	for _, migrationPath := range migrationPaths(t) {
+		migration, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", filepath.Base(migrationPath), err)
+		}
+		if _, err := pool.Exec(ctx, string(migration)); err != nil {
+			t.Fatalf("apply migration %s: %v", filepath.Base(migrationPath), err)
+		}
 	}
 	return pool
 }
@@ -106,22 +112,20 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 	}
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	config.ConnConfig.RuntimeParams["search_path"] = schema
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		admin.Close()
-		t.Fatal(err)
-	}
+	pool := openReadyPersistentPool(t, config, "persistent PostgreSQL schema")
 	if migrate {
-		migration, err := os.ReadFile(migrationPath(t))
-		if err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, string(migration)); err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatalf("apply persistent GS7-B migration: %v", err)
+		for _, migrationPath := range migrationPaths(t) {
+			migration, err := os.ReadFile(migrationPath)
+			if err != nil {
+				pool.Close()
+				admin.Close()
+				t.Fatalf("read persistent migration %s: %v", filepath.Base(migrationPath), err)
+			}
+			if _, err := pool.Exec(ctx, string(migration)); err != nil {
+				pool.Close()
+				admin.Close()
+				t.Fatalf("apply persistent migration %s: %v", filepath.Base(migrationPath), err)
+			}
 		}
 	}
 	t.Cleanup(func() {
@@ -129,6 +133,45 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 		admin.Close()
 	})
 	return pool
+}
+
+func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string) *pgxpool.Pool {
+	t.Helper()
+	deadline := time.Now().Add(persistentSchemaReadinessTimeout)
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt-1, lastErr)
+		}
+		pingTimeout := persistentSchemaPingTimeout
+		if pingTimeout > remaining {
+			pingTimeout = remaining
+		}
+		pingCtx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		pool, err := pgxpool.NewWithConfig(pingCtx, config.Copy())
+		if err == nil {
+			err = pool.Ping(pingCtx)
+		}
+		cancel()
+		if err == nil {
+			return pool
+		}
+		lastErr = err
+		if pool != nil {
+			pool.Close()
+		}
+		remaining = time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt, lastErr)
+		}
+		delay := persistentSchemaReadinessInterval
+		if delay > remaining {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
+		<-timer.C
+	}
 }
 
 func DropSchema(t testing.TB, schema string) {
@@ -198,13 +241,17 @@ func ObserveInput(t testing.TB, envelope workflowcontrol.ShadowEnvelope) shadows
 	}
 }
 
-func migrationPath(t testing.TB) string {
+func migrationPaths(t testing.TB) []string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve test support source path")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000001_create_workflow_control_shadow.up.sql"))
+	migrationRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+	return []string{
+		filepath.Join(migrationRoot, "000001_create_workflow_control_shadow.up.sql"),
+		filepath.Join(migrationRoot, "000002_create_workflow_runner_runtime.up.sql"),
+	}
 }
 
 func randomSchema(t testing.TB) string {
