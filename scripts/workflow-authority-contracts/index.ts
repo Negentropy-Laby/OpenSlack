@@ -678,6 +678,8 @@ function goldenVectors(): JsonRecord {
   jsonRecord(invalidDecimalMessage.payload, 'budget reserve payload').requestedTokens = '01';
   const futureCheckpoint = structuredClone(state) as unknown as JsonRecord;
   jsonRecord(futureCheckpoint.checkpointHead, 'checkpoint head').resumeGeneration = 2;
+  const invalidTimestamp = structuredClone(state) as unknown as JsonRecord;
+  invalidTimestamp.updatedAt = '2026-13-01T00:00:00.000Z';
   const rejectedBudgetAuthorization = structuredClone(
     messages.find((entry) => entry.kind === 'budget_authorization')!,
   ) as unknown as JsonRecord;
@@ -747,6 +749,12 @@ function goldenVectors(): JsonRecord {
         operation: 'validate_state',
         input: futureCheckpoint,
         expectedError: errorOf(() => validateWorkflowControlAuthorityState(futureCheckpoint)),
+      },
+      {
+        id: 'calendar-invalid-timestamp',
+        operation: 'validate_state',
+        input: invalidTimestamp,
+        expectedError: errorOf(() => validateWorkflowControlAuthorityState(invalidTimestamp)),
       },
       {
         id: 'rejected-budget-cannot-authorize-spend',

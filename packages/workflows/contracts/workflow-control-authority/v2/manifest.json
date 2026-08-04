@@ -220,8 +220,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 41361,
-      "sha256": "a7f3e5c75cbd7d14b3825964814502d3d4dc1ea837b33be3e75a6bfe8cac4f57"
+      "byteLength": 44447,
+      "sha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe"
     }
   },
   "bundleFiles": [

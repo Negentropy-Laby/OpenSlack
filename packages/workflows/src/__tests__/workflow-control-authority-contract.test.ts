@@ -223,6 +223,19 @@ describe('Workflow Control authority v2 contract', () => {
     );
   });
 
+  it('rejects calendar-invalid timestamps through the frozen contract error surface', () => {
+    const invalid = structuredClone(state()) as unknown as { updatedAt: string };
+    invalid.updatedAt = '2026-13-01T00:00:00.000Z';
+    expect(() => validateWorkflowControlAuthorityState(invalid)).toThrowError(
+      expect.objectContaining({
+        name: 'WorkflowControlAuthorityContractError',
+        code: 'WORKFLOW_CONTROL_AUTHORITY_INVALID',
+        path: '$/updatedAt',
+        message: '$/updatedAt is not a valid timestamp.',
+      }),
+    );
+  });
+
   it('freezes revisioned run transitions including reconciliation terminality', () => {
     expect(() => validateWorkflowControlAuthorityTransition('running', 'completed')).not.toThrow();
     expect(() => validateWorkflowControlAuthorityTransition('completed', 'running')).toThrowError(

@@ -62,7 +62,7 @@ func requireTimestamp(value any, path string) (string, error) {
 	}
 	parsed, err := time.Parse("2006-01-02T15:04:05.000Z", text)
 	if err != nil || parsed.Format("2006-01-02T15:04:05.000Z") != text {
-		return "", failure(ErrorInvalid, path, "timestamp is invalid")
+		return "", failure(ErrorInvalid, path, path+" is not a valid timestamp.")
 	}
 	return text, nil
 }

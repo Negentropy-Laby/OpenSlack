@@ -430,7 +430,8 @@ function hash(value: unknown, path: string): string {
 
 function timestamp(value: unknown, path: string): string {
   const result = text(value, path, TIMESTAMP, 24);
-  if (new Date(result).toISOString() !== result) {
+  const parsed = new Date(result);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== result) {
     return fail('WORKFLOW_CONTROL_AUTHORITY_INVALID', path, `${path} is not a valid timestamp.`);
   }
   return result;

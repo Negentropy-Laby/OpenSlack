@@ -674,6 +674,82 @@
       }
     },
     {
+      "id": "calendar-invalid-timestamp",
+      "operation": "validate_state",
+      "input": {
+        "schema": "openslack.workflow_control_authority_state.v2",
+        "contractVersion": "v2",
+        "contractAuthority": "typescript",
+        "goRole": "validator-only",
+        "authorityClaim": "NO_AUTHORITY",
+        "workspaceId": "workspace-gs9",
+        "runId": "run-gs9-001",
+        "workflowId": "contract-delivery-lite",
+        "workflowVersion": "1.0.0",
+        "workflowSourceHash": "41cf6794ba4200b839c53531555f0f3998df4cbb01a4d5cb0b94e3ca5e23947d",
+        "manifestHash": "05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f",
+        "inputHash": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+        "route": {
+          "backend": "ts-local",
+          "authority": "typescript",
+          "routingEpoch": 1,
+          "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66"
+        },
+        "state": "running",
+        "revision": 4,
+        "resumeGeneration": 1,
+        "currentPhaseId": "verify",
+        "currentPhaseIndex": 1,
+        "checkpointHead": {
+          "checkpointId": "checkpoint-discover-1",
+          "phaseId": "discover",
+          "phaseIndex": 0,
+          "commitPoint": "after_phase_work",
+          "artifactRef": "artifact/checkpoint-discover-1",
+          "artifactHash": "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c",
+          "resultHash": "f6a214f7a5fcda0c2cee9660b7fc29f5649e3c68aad48e20e950137c98913a68",
+          "cacheKeyHash": "5e1ecee06a7fc06f305ae5c12acfe7a7f67b8ece7af76932ed3afab00c3c6921",
+          "committedRevision": 3,
+          "resumeGeneration": 1
+        },
+        "approvals": {
+          "legacyRunGate": {
+            "plane": "legacy_run_gate",
+            "status": "pending",
+            "revision": 0,
+            "effectDecisionAuthority": false
+          },
+          "effectV2": {
+            "plane": "workflow_effect_v2",
+            "schema": "openslack.workflow_effect_approval.v2",
+            "status": "approved",
+            "revision": 2,
+            "approvalHash": "9deb65b8788f41ff94a217842017db2f843954fc0eb46110835903908e5a265f"
+          }
+        },
+        "budget": {
+          "policyHash": "823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+          "tokenLimit": "9223372036854775807",
+          "costLimitNanoUsd": "1000000000",
+          "callLimit": "100",
+          "reservedTokens": "9007199254740993",
+          "settledTokens": "9007199254740992",
+          "reservedCostNanoUsd": "125000001",
+          "settledCostNanoUsd": "125000000",
+          "reservedCalls": "3",
+          "settledCalls": "2"
+        },
+        "reconciliationRequired": false,
+        "updatedAt": "2026-13-01T00:00:00.000Z"
+      },
+      "expectedError": {
+        "name": "WorkflowControlAuthorityContractError",
+        "code": "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+        "path": "$/updatedAt",
+        "message": "$/updatedAt is not a valid timestamp."
+      }
+    },
+    {
       "id": "rejected-budget-cannot-authorize-spend",
       "operation": "validate_message",
       "input": {
