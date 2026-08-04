@@ -15,6 +15,15 @@ protocol events, receipts, and runner reconciliation records. TypeScript is the 
 RunStore, checkpoint/resume, effect-approval, effect-execution, agent/provider, and budget writer.
 Those tables and responsibilities are deliberately separate from the GS7-B observation namespace.
 
+GS9-A freezes the future Workflow Control authority record but does not change this division. Its
+run revision/CAS is independent from this runner attempt's lease and fencing token; neither can
+substitute for the other. See
+[`workflow-authority-contract-v2.md`](workflow-authority-contract-v2.md). GS9-A additionally
+freezes an 18-kind `openslack.workflow_runner.v2` vocabulary containing all 12 v1 kinds plus six
+added authority kinds. Its `hello` / `hello_ack` negotiation is contract-only; this runtime still
+negotiates and executes only the GS8 v1 lifecycle. All Workflow Control writes remain
+TypeScript-owned.
+
 The scheduler allows one outstanding worker event. JavaScript starts only after the exact
 `lease_accept` receipt is durable. A later fence rejects the old process. An expired unstarted
 attempt can return to the queue only through durable exponential dispatch backoff, starting at

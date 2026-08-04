@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-03
+updated: 2026-08-04
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -18,10 +18,10 @@ sources:
 # Workflow Control Contract
 
 Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
-shadow. TypeScript remains the sole workflow writer, runner, approval, budget, effect, resume, and
-user-visible read authority. The Go service owns only an isolated credential-free observation
-journal and matched projection index; its hosted PostgreSQL/container evidence does not transfer
-runtime authority.
+shadow, GS8 runner lifecycle, and the GS9-A Workflow Control authority v2 contract freeze.
+TypeScript remains the sole workflow writer, runner, approval, budget, effect, resume, and
+user-visible read authority. GS9-A adds only exact-byte TypeScript/Go contract parity and reports
+`LOCAL_PASS`; Go Workflow Control authority remains `NOT_CLAIMED`.
 
 ## Authority boundary
 
@@ -146,10 +146,69 @@ OpenAPI, Prometheus, distribution, image-smoke, cross-language, review-thread, a
 human-approval gates and is merged. It remains an observational shadow and does not gain runtime
 authority from those results.
 
-GS8-A separately freezes the versioned JS runner worker protocol and exact-byte TypeScript/Go
-parity without adding runtime behavior. GS8-B owns any default-off scheduler/lease/cancellation
-implementation. GS9 is the separate PostgreSQL authority cutover for checkpoint, approval, and
-budget state. Its complete new-record scope also includes revisioned RunStatus/control transitions
-and the checkpoint-backed resume cursor; legacy run-gate approval remains TypeScript compatibility
-state. None of those later stages is implied by a GS7 local pass, shadow receipt, or GS8 protocol
-validation.
+## GS9-A Workflow Control authority v2 freeze
+
+The independently versioned GS9-A source bundle is under:
+
+```text
+packages/workflows/contracts/workflow-control-authority/v2/
+```
+
+It contains closed authority-state, authority-message, prepared-message, and durable-receipt
+schemas, a locked manifest, and positive/negative golden vectors. The generated Go mirror is under
+`services/workflow-control/authoritycontract/generated/v2/`. GS9-A references the existing
+Workflow Control v1 and workflow-effect approval v2 semantics; it changes neither bundle.
+
+The v2 contract freezes these independent dimensions:
+
+- run `revision` and its expected value provide semantic RunStatus/control/checkpoint CAS;
+- the GS8 runner attempt, lease, and fencing token reject stale processes but do not satisfy the
+  run CAS, and a valid run revision does not authorize a runner process;
+- the immutable per-record authority route binds backend, authority owner, positive routing epoch,
+  and service build before record creation; a higher epoch may route only future records;
+- legacy run-gate state and `openslack.workflow_effect_approval.v2` are separate approval planes;
+- a checkpoint with exact `commitPoint: after_phase_work` commits only when its canonical mutation
+  has a durable accepted or duplicate authority receipt, never when a callback, file write, or
+  runner event merely occurs;
+- monotonic `resumeGeneration` is distinct from run revision and runner attempt ordinal and binds
+  the last committed checkpoint plus manifest/source/input/route/build identities; and
+- every durable budget quantity is a canonical non-negative decimal string bounded by signed
+  64-bit `BIGINT`; money is integer `nano_usd` at scale 9 and non-negative decimal conversion uses
+  `half_up_nonnegative`, never binary floating point.
+
+Same idempotency key and fingerprint replay the exact original receipt. Same key with a different
+fingerprint conflicts without mutation. An outcome that remains unknown after bounded exact
+receipt lookup becomes `reconciliation_required`; it is not permission to retry with a new
+identity. These are future authority rules represented and differentially validated by GS9-A, not
+implemented PostgreSQL behavior.
+
+TypeScript remains the sole writer for every current and new workflow record. GS9-A adds no
+PostgreSQL authority migration, HTTP mutation or user-visible read route, v2 runtime negotiation or
+delivery, effect execution, budget enforcement, checkpoint/resume runtime, active routing epoch,
+canary, rollback, old-record migration, or TypeScript writer deletion. It does freeze an 18-kind
+`openslack.workflow_runner.v2` vocabulary: all 12 v1 kinds remain, six authority kinds are added,
+and v1 bytes remain unchanged. The detailed service boundary and qualification ceiling are
+recorded in
+`services/workflow-control/docs/architecture/workflow-authority-contract-v2.md` and
+`services/workflow-control/docs/testing/gs9a-qualification.md`.
+
+Organization Graph normalization and dynamic Scenario graph loading remain independent work and
+are not evidence for GS9-A.
+
+The six added v2 kinds are exactly `checkpoint_commit`, `budget_reserve_request`,
+`budget_usage_report`, `budget_authorization`, `effect_authorization`, and `resume_offer`. Their leased identity binds
+`routingEpoch`, `runRevision`, `resumeGeneration`, `attemptId`, `leaseId`, and `fencingToken` under the
+kind-specific closed schema. A message is not its own durable receipt and cannot claim that the
+future mutation, authorization, or resume action occurred. The v2 `hello` advertises the exact
+ordered `[v1, v2]` pair, and a v2-required `hello_ack` selects v2 without downgrade; no runtime
+negotiates or delivers v2. The independent receipt
+operations are `run_transition`, `checkpoint_commit`, `budget_reserve`, `budget_settle`,
+`effect_authorize`, and `resume_advance`.
+
+GS8-A separately freezes runner protocol v1 and GS8-B owns its default-off
+scheduler/lease/cancellation implementation. GS9-A freezes, but does not activate, the separate
+Workflow Control authority contract and runner protocol v2 extension. GS9-B and later stages must
+still add shadow/differential, reads, immutable new-record routing, PostgreSQL durable acceptance,
+v2 runtime delivery, recovery, canary, and explicit higher-epoch rollback.
+None of those later stages is implied by a GS7 shadow receipt, GS8 protocol validation, or the
+GS9-A local contract pass.

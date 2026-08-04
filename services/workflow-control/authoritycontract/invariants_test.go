@@ -1,0 +1,182 @@
+package authoritycontract
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestClosedDecodersRejectUnknownFields(t *testing.T) {
+	vectors := loadGoldenVectors(t)
+	state := mustStrictObject(t, vectors.Positive.State)
+	state["futureAuthority"] = true
+	assertContractFailure(t, func() error {
+		_, err := ValidateState(state)
+		return err
+	}(), ErrorUnknownField, "$/futureAuthority")
+
+	message := goldenMessageObject(t, KindHeartbeat)
+	message["futureAuthority"] = true
+	assertContractFailure(t, func() error {
+		_, err := ValidateMessage(message)
+		return err
+	}(), ErrorUnknownField, "$/futureAuthority")
+
+	var receiptObject map[string]any
+	receiptObject = mustStrictObject(t, vectors.Positive.Receipts[0])
+	receiptObject["futureAuthority"] = true
+	assertContractFailure(t, func() error {
+		_, err := ValidateReceipt(receiptObject)
+		return err
+	}(), ErrorUnknownField, "$/futureAuthority")
+}
+
+func TestHandshakeBoundsAndClosedCapabilityVocabulary(t *testing.T) {
+	base := goldenMessageObject(t, KindHello)
+	tests := []struct {
+		name string
+		edit func(map[string]any)
+		code ErrorCode
+		path string
+	}{
+		{"runtime", func(message map[string]any) { message["payload"].(map[string]any)["runtimeName"] = "python" }, ErrorInvalid, "$/payload/runtimeName"},
+		{"semver", func(message map[string]any) { message["payload"].(map[string]any)["runtimeVersion"] = "latest" }, ErrorInvalid, "$/payload/runtimeVersion"},
+		{"capability-unknown", func(message map[string]any) { message["payload"].(map[string]any)["capabilities"] = []any{"shell"} }, ErrorInvalid, "$/payload/capabilities"},
+		{"capability-duplicate", func(message map[string]any) {
+			message["payload"].(map[string]any)["capabilities"] = []any{"cancel_ack", "cancel_ack"}
+		}, ErrorInvalid, "$/payload/capabilities"},
+		{"concurrency", func(message map[string]any) { message["payload"].(map[string]any)["maxConcurrentJobs"] = int64(1_025) }, ErrorLimitExceeded, "$/payload/maxConcurrentJobs"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message := cloneObject(t, base)
+			test.edit(message)
+			_, err := ValidateMessage(message)
+			assertContractFailure(t, err, test.code, test.path)
+		})
+	}
+
+	helloAck := cloneObject(t, base)
+	helloAck["kind"] = string(KindHelloAck)
+	helloAck["eventId"] = "event-hello_ack"
+	helloAck["payload"] = map[string]any{
+		"controlBuildHash":        "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+		"selectedProtocolVersion": ProtocolVersion,
+		"heartbeatIntervalMs":     int64(250),
+		"leaseOfferTimeoutMs":     int64(1),
+	}
+	if _, err := ValidateMessage(helloAck); err != nil {
+		t.Fatalf("minimum handshake timing should pass: %v", err)
+	}
+	for _, test := range []struct {
+		field string
+		value int64
+		code  ErrorCode
+		path  string
+	}{
+		{"heartbeatIntervalMs", 249, ErrorInvalid, "$/payload/heartbeatIntervalMs"},
+		{"heartbeatIntervalMs", 300_001, ErrorLimitExceeded, "$/payload"},
+		{"leaseOfferTimeoutMs", 0, ErrorInvalid, "$/payload/leaseOfferTimeoutMs"},
+		{"leaseOfferTimeoutMs", 86_400_001, ErrorLimitExceeded, "$/payload"},
+	} {
+		message := cloneObject(t, helloAck)
+		message["payload"].(map[string]any)[test.field] = test.value
+		_, err := ValidateMessage(message)
+		assertContractFailure(t, err, test.code, test.path)
+	}
+}
+
+func TestCrossFieldAuthorityBindingsFailClosed(t *testing.T) {
+	state := mustStrictObject(t, loadGoldenVectors(t).Positive.State)
+	state["resumeGeneration"] = int64(2)
+	if _, err := ValidateState(state); err != nil {
+		t.Fatalf("a resumed run must retain the last checkpoint from an older generation: %v", err)
+	}
+	state["checkpointHead"].(map[string]any)["resumeGeneration"] = int64(3)
+	_, err := ValidateState(state)
+	assertContractFailure(t, err, ErrorStaleRevision, "$/checkpointHead")
+
+	effect := goldenMessageObject(t, KindEffectAuthorization)
+	effect["payload"].(map[string]any)["expiresAt"] = effect["sentAt"]
+	_, err = ValidateMessage(effect)
+	assertContractFailure(t, err, ErrorInvalid, "$/payload/expiresAt")
+
+	resume := goldenMessageObject(t, KindResumeOffer)
+	resume["payload"].(map[string]any)["newResumeGeneration"] = resume["resumeGeneration"]
+	_, err = ValidateMessage(resume)
+	assertContractFailure(t, err, ErrorStaleResumeGeneration, "$/payload/newResumeGeneration")
+
+	budget := goldenMessageObject(t, KindBudgetAuthorization)
+	budget["payload"].(map[string]any)["committedRunRevision"] = budget["runRevision"].(int64) + 1
+	_, err = ValidateMessage(budget)
+	assertContractFailure(t, err, ErrorStaleRevision, "$/payload/committedRunRevision")
+
+	budget = goldenMessageObject(t, KindBudgetAuthorization)
+	budget["payload"].(map[string]any)["status"] = "rejected"
+	_, err = ValidateMessage(budget)
+	assertContractFailure(t, err, ErrorInvalid, "$/payload")
+
+	receipt := goldenMessageObject(t, KindHeartbeat)
+	receipt["kind"] = string(KindEventReceipt)
+	receipt["eventId"] = "event-receipt"
+	receipt["payload"] = map[string]any{
+		"receivedEventId":        "event-heartbeat",
+		"receivedKind":           string(KindHeartbeat),
+		"receivedSequence":       int64(11),
+		"receivedDigest":         "219289a2a39de6ab43b74a2a4d5861a7fcee67ea711a0651769313f4b1c97578",
+		"receivedIdempotencyKey": IdempotencyPrefix + "219289a2a39de6ab43b74a2a4d5861a7fcee67ea711a0651769313f4b1c97578",
+		"receivedFingerprint":    "sha256:c055200844e9bde1e065e4a1a05e83cc37ec34fb52b6544d7ed02b691a040a2f",
+		"status":                 string(ReceiptAccepted),
+		"controlBuildHash":       "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+		"committedAt":            "2026-08-04T03:01:01.000Z",
+		"errorCode":              nil,
+	}
+	_, err = ValidateMessage(receipt)
+	assertContractFailure(t, err, ErrorIdentityMismatch, "$/payload/committedAt")
+}
+
+func goldenMessageObject(t *testing.T, kind Kind) map[string]any {
+	t.Helper()
+	for _, vector := range loadGoldenVectors(t).Positive.Messages {
+		if vector.Kind == string(kind) {
+			return mustStrictObject(t, vector.Input)
+		}
+	}
+	t.Fatalf("missing golden message %s", kind)
+	return nil
+}
+
+func mustStrictObject(t *testing.T, input []byte) map[string]any {
+	t.Helper()
+	value, err := parseStrictJSON(input, MaxJSONDepth, MaxJSONNodes, MaxStringBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatal("value is not an object")
+	}
+	return object
+}
+
+func cloneObject(t *testing.T, value map[string]any) map[string]any {
+	t.Helper()
+	encoded, err := CanonicalJSON(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mustStrictObject(t, encoded)
+}
+
+func assertContractFailure(t *testing.T, err error, code ErrorCode, path string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected %s at %s", code, path)
+	}
+	var contractError *ContractError
+	if !errors.As(err, &contractError) {
+		t.Fatalf("expected ContractError, got %T %v", err, err)
+	}
+	if contractError.Code != code || contractError.Path != path {
+		t.Fatalf("unexpected failure: got %s at %s, want %s at %s", contractError.Code, contractError.Path, code, path)
+	}
+}

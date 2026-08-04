@@ -313,9 +313,20 @@ execution boundary, effect reconciliation, owner-only descriptor behavior, Windo
 sealed worker command selection, and exact TypeScript/Go parity. Repository tests may report only
 `LOCAL_PASS`; hosted exact-head checks, review state and independent approval remain separate.
 
-GS9 is a distinct cutover. It alone may move the new-record Workflow Control record: revisioned
-RunStatus/control transitions, checkpoint and resume cursor, effect-approval v2 state, and durable
-budget accounting. Legacy run-gate approvals remain TypeScript compatibility state and never
-become effect approval. The cutover requires revision/CAS, differential, recovery, concurrency,
-fencing, rollback, and durable-acceptance evidence. GS8-A and GS8-B cannot be used as evidence that
-GS9 is complete.
+GS9-A is a distinct contract freeze, not a cutover. It freezes the future new-record Workflow
+Control state: revisioned RunStatus/control transitions, checkpoint commit, resume generation,
+effect-approval v2, legacy run-gate separation, cumulative budget arithmetic, and immutable
+authority epoch. Its run revision/CAS is independent from this GS8 protocol's attempt, lease, and
+fencing token. The frozen runner v1 messages remain unchanged and still carry no approval or budget
+decision. GS9-A freezes a complete 18-kind `openslack.workflow_runner.v2` vocabulary containing
+the 12 retained v1 kinds plus six added kinds: `checkpoint_commit`, `budget_reserve_request`,
+`budget_usage_report`, `budget_authorization`, `effect_authorization`, and `resume_offer`. Their
+closed leased identity includes `routingEpoch`, `runRevision`, `resumeGeneration`, `attemptId`,
+`leaseId`, and `fencingToken`. The v2 `hello` advertises the exact ordered `[v1, v2]` pair, and a
+v2-required `hello_ack` selects v2 without downgrade, but there is no v2 scheduler negotiation,
+delivery, or execution path.
+
+GS9-B and later work must separately qualify shadow/differential, reads, routing, durable
+acceptance, response loss, restart, duplicate/conflict, recovery, canary, and higher-epoch rollback
+before any new record can move. GS8-A/GS8-B and `GS9-A LOCAL_PASS` cannot be used as evidence that
+Go Workflow Control authority exists.

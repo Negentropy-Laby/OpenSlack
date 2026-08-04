@@ -1,0 +1,1474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-control-authority/v2/workflow-control-authority-message.v2.schema.json",
+  "title": "OpenSlack GS9-A complete closed Workflow Runner protocol v2 message",
+  "$comment": "The 12 v1 kinds retain their payload semantics and six authority kinds are added. Runtime negotiation and delivery are not implemented in GS9-A.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "hello" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "null" },
+        "workflowRunId": { "type": "null" },
+        "attemptId": { "type": "null" },
+        "leaseId": { "type": "null" },
+        "fencingToken": { "type": "null" },
+        "sequence": { "type": "null" },
+        "authorityBackend": { "type": "null" },
+        "authority": { "type": "null" },
+        "routingEpoch": { "type": "null" },
+        "authorityBuildHash": { "type": "null" },
+        "runRevision": { "type": "null" },
+        "resumeGeneration": { "type": "null" },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "runtimeName": { "const": "node" },
+            "runtimeVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            },
+            "runnerBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "supportedProtocolVersions": {
+              "type": "array",
+              "prefixItems": [
+                { "const": "openslack.workflow_runner.v1" },
+                { "const": "openslack.workflow_runner.v2" }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "capabilities": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 64,
+              "items": { "enum": ["cancel_ack", "effect_receipts", "lease_heartbeat"] }
+            },
+            "maxConcurrentJobs": { "type": "integer", "minimum": 1, "maximum": 1024 }
+          },
+          "required": [
+            "runtimeName",
+            "runtimeVersion",
+            "runnerBuildHash",
+            "supportedProtocolVersions",
+            "capabilities",
+            "maxConcurrentJobs"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "hello_ack" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "null" },
+        "workflowRunId": { "type": "null" },
+        "attemptId": { "type": "null" },
+        "leaseId": { "type": "null" },
+        "fencingToken": { "type": "null" },
+        "sequence": { "type": "null" },
+        "authorityBackend": { "type": "null" },
+        "authority": { "type": "null" },
+        "routingEpoch": { "type": "null" },
+        "authorityBuildHash": { "type": "null" },
+        "runRevision": { "type": "null" },
+        "resumeGeneration": { "type": "null" },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "controlBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "selectedProtocolVersion": { "const": "openslack.workflow_runner.v2" },
+            "heartbeatIntervalMs": { "type": "integer", "minimum": 250, "maximum": 300000 },
+            "leaseOfferTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+          },
+          "required": [
+            "controlBuildHash",
+            "selectedProtocolVersion",
+            "heartbeatIntervalMs",
+            "leaseOfferTimeoutMs"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "lease_offer" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "executionDescriptorRef": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "executionDescriptorHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "jobSpecHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "workflowId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "workflowVersion": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "workflowSourceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "offeredAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+          },
+          "required": [
+            "executionDescriptorRef",
+            "executionDescriptorHash",
+            "jobSpecHash",
+            "workflowId",
+            "workflowVersion",
+            "workflowSourceHash",
+            "manifestHash",
+            "inputHash",
+            "offeredAt",
+            "expiresAt"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "lease_accept" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "acceptedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "leaseExpiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+          },
+          "required": ["acceptedAt", "leaseExpiresAt"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "lease_reject" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rejectedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "reason": { "enum": ["busy", "unsupported", "stale", "shutting_down"] }
+          },
+          "required": ["rejectedAt", "reason"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "heartbeat" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "observedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "leaseExpiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "state": { "enum": ["running", "waiting_effect", "cancelling"] },
+            "lastReceiptSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          },
+          "required": ["observedAt", "leaseExpiresAt", "state", "lastReceiptSequence"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "effect_intent" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "effectId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "effectKind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$" },
+            "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "capabilityHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "requiresHumanDecision": { "type": "boolean" }
+          },
+          "required": [
+            "effectId",
+            "effectKind",
+            "effectHash",
+            "capabilityHash",
+            "requiresHumanDecision"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "effect_outcome" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "effectId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "status": { "enum": ["rejected", "executed", "failed", "reconciliation_required"] },
+            "outcomeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "required": ["effectId", "status", "outcomeHash"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "cancel_request" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cancelId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "requestedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "reason": { "enum": ["operator", "lease_expired", "shutdown", "superseded", "timeout"] }
+          },
+          "required": ["cancelId", "requestedAt", "expiresAt", "reason"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "cancel_ack" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cancelId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "acknowledgedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "status": { "enum": ["cancelling", "cancelled", "already_terminal"] }
+          },
+          "required": ["cancelId", "acknowledgedAt", "status"]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "terminal" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": ["completed", "failed", "cancelled", "timed_out", "reconciliation_required"]
+            },
+            "finishedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "resultHash": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
+            "terminalReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "workflow_failed",
+                    "process_crash",
+                    "cancelled_by_control",
+                    "timeout",
+                    "commit_outcome_unknown"
+                  ]
+                },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": ["status", "finishedAt", "resultHash", "terminalReason"],
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "const": "completed" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": {
+                  "resultHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "terminalReason": { "type": "null" }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+              "then": {
+                "properties": {
+                  "resultHash": { "type": "null" },
+                  "terminalReason": { "enum": ["workflow_failed", "process_crash"] }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "cancelled" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": {
+                  "resultHash": { "type": "null" },
+                  "terminalReason": { "const": "cancelled_by_control" }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "timed_out" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": {
+                  "resultHash": { "type": "null" },
+                  "terminalReason": { "const": "timeout" }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "reconciliation_required" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": {
+                  "resultHash": { "type": "null" },
+                  "terminalReason": { "const": "commit_outcome_unknown" }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "event_receipt" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "receivedEventId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "receivedKind": {
+              "enum": [
+                "lease_accept",
+                "lease_reject",
+                "heartbeat",
+                "effect_intent",
+                "effect_outcome",
+                "cancel_ack",
+                "terminal",
+                "checkpoint_commit",
+                "budget_reserve_request",
+                "budget_usage_report"
+              ]
+            },
+            "receivedSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "receivedDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "receivedIdempotencyKey": {
+              "type": "string",
+              "pattern": "^openslack\\.workflow-control-authority\\.v2\\.[0-9a-f]{64}$"
+            },
+            "receivedFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+            "status": { "enum": ["accepted", "duplicate", "reconciliation_required"] },
+            "controlBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "committedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            },
+            "errorCode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "WORKFLOW_CONTROL_AUTHORITY_RECONCILIATION_REQUIRED",
+                    "WORKFLOW_CONTROL_AUTHORITY_STALE_REVISION",
+                    "WORKFLOW_CONTROL_AUTHORITY_STALE_RESUME_GENERATION",
+                    "WORKFLOW_CONTROL_AUTHORITY_STALE_FENCE"
+                  ]
+                },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": [
+            "receivedEventId",
+            "receivedKind",
+            "receivedSequence",
+            "receivedDigest",
+            "receivedIdempotencyKey",
+            "receivedFingerprint",
+            "status",
+            "controlBuildHash",
+            "committedAt",
+            "errorCode"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "const": "reconciliation_required" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": {
+                  "errorCode": {
+                    "enum": [
+                      "WORKFLOW_RUNNER_COMMIT_OUTCOME_UNKNOWN",
+                      "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"
+                    ]
+                  }
+                }
+              },
+              "else": { "properties": { "errorCode": { "type": "null" } } }
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "checkpoint_commit" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpointId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "phaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "phaseIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "commitPoint": { "const": "after_phase_work" },
+            "artifactRef": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$" },
+            "artifactHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "resultHash": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
+            "cacheKeyHash": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
+            "workflowSourceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "required": [
+            "checkpointId",
+            "phaseId",
+            "phaseIndex",
+            "commitPoint",
+            "artifactRef",
+            "artifactHash",
+            "resultHash",
+            "cacheKeyHash",
+            "workflowSourceHash",
+            "manifestHash",
+            "inputHash"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "budget_reserve_request" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reservationId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "callId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "policyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "requestedTokens": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "requestedCostNanoUsd": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "requestedCalls": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            }
+          },
+          "required": [
+            "reservationId",
+            "callId",
+            "policyHash",
+            "requestedTokens",
+            "requestedCostNanoUsd",
+            "requestedCalls"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "budget_usage_report" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reservationId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "callId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "providerReceiptHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "actualTokens": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "actualCostNanoUsd": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "actualCalls": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "settlementStatus": { "enum": ["settled", "reconciliation_required"] }
+          },
+          "required": [
+            "reservationId",
+            "callId",
+            "providerReceiptHash",
+            "actualTokens",
+            "actualCostNanoUsd",
+            "actualCalls",
+            "settlementStatus"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "budget_authorization" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reservationId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+            },
+            "status": { "enum": ["reserved", "rejected", "reconciliation_required"] },
+            "authorizedTokens": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "authorizedCostNanoUsd": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "authorizedCalls": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "authorityReceiptHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "committedRunRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          },
+          "required": [
+            "reservationId",
+            "status",
+            "authorizedTokens",
+            "authorizedCostNanoUsd",
+            "authorizedCalls",
+            "authorityReceiptHash",
+            "committedRunRevision"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "effect_authorization" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "effectId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "approvalStatus": { "enum": ["approved", "rejected", "expired"] },
+            "decisionRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "grantHash": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
+            "authorityReceiptHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+          },
+          "required": [
+            "effectId",
+            "effectHash",
+            "approvalId",
+            "approvalStatus",
+            "decisionRevision",
+            "grantHash",
+            "authorityReceiptHash",
+            "expiresAt"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_control_authority_message.v2" },
+        "protocolVersion": { "const": "openslack.workflow_runner.v2" },
+        "kind": { "const": "resume_offer" },
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBackend": { "enum": ["ts-local", "go"] },
+        "authority": { "enum": ["typescript", "workflow-control"] },
+        "routingEpoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "authorityBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "eventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "sentAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpointId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "checkpointHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "nextPhaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "nextPhaseIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "newResumeGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "newAttemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+            "authorityReceiptHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+          },
+          "required": [
+            "checkpointId",
+            "checkpointHash",
+            "nextPhaseId",
+            "nextPhaseIndex",
+            "newResumeGeneration",
+            "newAttemptId",
+            "authorityReceiptHash",
+            "expiresAt"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "protocolVersion",
+        "kind",
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "sequence",
+        "authorityBackend",
+        "authority",
+        "routingEpoch",
+        "authorityBuildHash",
+        "runRevision",
+        "resumeGeneration",
+        "eventId",
+        "correlationId",
+        "sentAt",
+        "payload"
+      ]
+    }
+  ]
+}

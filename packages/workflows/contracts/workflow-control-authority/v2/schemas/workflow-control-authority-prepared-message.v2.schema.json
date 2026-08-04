@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-control-authority/v2/workflow-control-authority-prepared-message.v2.schema.json",
+  "title": "OpenSlack GS9-A prepared exact-byte Workflow Runner v2 message",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_control_authority_prepared_message.v2" },
+    "direction": { "enum": ["runner-to-control", "control-to-runner"] },
+    "body": { "type": "string", "minLength": 2, "maxLength": 262144 },
+    "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^openslack\\.workflow-control-authority\\.v2\\.[0-9a-f]{64}$"
+    },
+    "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "required": [
+    "schema",
+    "direction",
+    "body",
+    "messageDigest",
+    "idempotencyKey",
+    "requestFingerprint"
+  ]
+}
