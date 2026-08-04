@@ -1358,7 +1358,11 @@ run_workflow_runner_test_container() {
   local resource_owner="$5"
   local package="$6"
   local test_name="$7"
-  shift 7
+  local count="$8"
+  shift 8
+  case "${count}" in
+    '' | *[!0-9]* | 0) fail "Workflow Control runner test count must be a positive integer" ;;
+  esac
   local container="${resource_prefix}-qualification-${label}"
   local repository_mount
   repository_mount="$(docker_path "${staged_repository_dir}")"
@@ -1382,7 +1386,7 @@ run_workflow_runner_test_container() {
     run_args+=(--env "$1")
     shift
   done
-  local -a command=(go test -race "${package}" -count=1)
+  local -a command=(go test -race "${package}" "-count=${count}")
   if [[ -n "${test_name}" ]]; then
     command+=(-run "^${test_name}$")
   fi
@@ -1402,12 +1406,18 @@ run_workflow_runner_qualification() {
   log "qualifying Workflow Control GS8-B PostgreSQL runner lifecycle bounds"
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-bounds "${network}" "${database_name}" "${resource_owner}" \
-    ./internal/runnerstore/postgres ""
+    ./internal/runnerstore/postgres "" 1
+
+  log "qualifying Workflow Control GS8-B cancel acknowledgement stability"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-cancel-ack-stability "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres \
+    'Test(CancelAckMustBindPersistedCancel|LateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal)' 100
 
   log "seeding Workflow Control GS8-B Go/PostgreSQL restart qualification"
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-restart-seed "${network}" "${database_name}" "${resource_owner}" \
-    ./cmd/runner-server TestGS8BRestartQualification \
+    ./cmd/runner-server TestGS8BRestartQualification 1 \
     WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed \
     "WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=${restart_schema}"
 
@@ -1418,7 +1428,7 @@ run_workflow_runner_qualification() {
   log "verifying Workflow Control GS8-B durable runner state after PostgreSQL restart"
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-restart-verify "${network}" "${database_name}" "${resource_owner}" \
-    ./cmd/runner-server TestGS8BRestartQualification \
+    ./cmd/runner-server TestGS8BRestartQualification 1 \
     WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify \
     "WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=${restart_schema}"
 }
@@ -1568,7 +1578,7 @@ run_http_smoke() {
       log "verifying Workflow Control GS8-B default image keeps runner disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
-        ./cmd/runner-server TestGS8BImageDefaultOff \
+        ./cmd/runner-server TestGS8BImageDefaultOff 1 \
         "WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://${app_network_alias}:8080"
     fi
   fi

@@ -358,12 +358,27 @@ replayed automatically. Pre-execution launch, crash, and lease-rejection failure
 bounded backoff and a five-failure dead/reconciliation ceiling; an unproven process termination is
 also reconciliation evidence, not permission to requeue.
 
-GS9 alone may transfer the new-record Workflow Control record: revisioned RunStatus/control
-transitions, checkpoint and resume cursor, exact effect-approval v2 state, and durable budget
-accounting. It does so only after revision/CAS, recovery, response-loss, restart, duplicate,
-concurrency, fencing, and rollback qualification. Legacy run-gate approvals remain TypeScript
-compatibility state and stay distinct from the exact `openslack.workflow_effect_approval.v2`
-decision contract throughout. A runner message or durable receipt is never an approval decision.
+GS9-A first freezes a separate Workflow Control authority v2 contract and exact-byte TypeScript/Go
+mirror. Run-record revision/CAS remains independent from GS8 runner attempt/lease/fencing;
+authority routing epoch remains independent from both. The freeze also keeps legacy run-gate and
+`openslack.workflow_effect_approval.v2` as separate approval planes, defines the durable receipt as
+the checkpoint commit point, introduces a monotonic resume generation, and locks cumulative budget
+decimal/rounding semantics without using binary floating point as authority input. The exact-byte
+freeze includes an 18-kind `openslack.workflow_runner.v2` vocabulary: all 12 v1 kinds remain and
+the six additions are `checkpoint_commit`, `budget_reserve_request`,
+`budget_usage_report`, `budget_authorization`, `effect_authorization`, and `resume_offer`. Durable
+budget quantities are canonical non-negative decimal strings bounded by signed 64-bit `BIGINT`;
+money is integer `nano_usd` at scale 9 with `half_up_nonnegative` conversion. The v2 `hello` /
+`hello_ack` negotiation contract is frozen, but no runtime negotiation or delivery exists.
+TypeScript remains the sole writer, so `GS9-A LOCAL_PASS` does not claim Go authority.
+
+GS9-B and later stages may transfer only new Workflow Control records after isolated shadow and
+differential qualification, read canary, immutable routing, durable acceptance, recovery, and
+explicit higher-epoch rollback. Existing TypeScript records continue to drain under TypeScript;
+an existing record never changes writer and there is no per-request fallback. The full cutover must
+still qualify response loss, restart, duplicate, fingerprint conflict, concurrency, checkpoint,
+resume, approval/effect, cumulative budget, fencing, and audit-outbox behavior against real
+PostgreSQL. A runner message or durable receipt is never itself an approval decision.
 
 ### GS10–GS13 — Platform Runtime
 

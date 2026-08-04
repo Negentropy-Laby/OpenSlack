@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-03
+updated: 2026-08-04
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -781,6 +781,30 @@ GS8-B remains off by default and does not change the CLI `run` or `resume` paths
 or receive an arbitrary workflow command, module path, raw argument, URL, prompt, or credential and
 does not embed another JavaScript runtime. TypeScript continues to own RunStore, checkpoint,
 resume, approval, effect execution, agent/provider calls, and budget state until GS9.
+
+### GS9-A Workflow Control authority contract
+
+GS9-A freezes the future authority record under
+`packages/workflows/contracts/workflow-control-authority/v2/` and mirrors it in the pure Go
+`authoritycontract` package. It keeps run revision/CAS separate from GS8 attempt/lease/fencing,
+keeps legacy run-gate and workflow-effect approval v2 separate, defines the durable receipt as the
+checkpoint commit point, and freezes resume generation plus cumulative budget decimal/rounding
+rules. It also freezes an 18-kind `openslack.workflow_runner.v2` vocabulary with 12 retained v1
+kinds and six additions without changing v1 bytes. The immutable authority epoch may select a
+writer only before a future record is created.
+
+The six added v2 kinds are `checkpoint_commit`, `budget_reserve_request`, `budget_usage_report`,
+`budget_authorization`, `effect_authorization`, and `resume_offer`. Durable budget quantities are
+canonical non-negative decimal strings within signed 64-bit `BIGINT`; money uses integer
+`nano_usd`, scale 9, and `half_up_nonnegative` conversion. The schemas and vectors freeze these
+rules plus the v2 `hello` / `hello_ack` negotiation contract, but GS9-A does not negotiate,
+deliver, or apply them to a running workflow.
+
+This is contract-only `LOCAL_PASS`: existing CLI/TUI/MCP paths and every current or new workflow
+record remain TypeScript-authoritative. There is no Go Workflow Control PostgreSQL authority,
+active route, user-visible read cutover, v2 runtime negotiation/delivery, checkpoint/resume runtime,
+approval/effect execution, budget enforcement, canary, or rollback in GS9-A. Organization Graph is
+unrelated to this boundary.
 
 ### Operator Module
 

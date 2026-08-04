@@ -132,12 +132,15 @@ const triggerPaths = [
   'packages/operator/contracts/governed-plan-authority/**',
   'packages/operator/src/governed-plan*.ts',
   'packages/workflows/contracts/workflow-control/**',
+  'packages/workflows/contracts/workflow-control-authority/**',
   'packages/workflows/contracts/workflow-control-shadow/**',
   'packages/workflows/contracts/workflow-runner/**',
   'packages/workflows/src/workflow-control-contract.ts',
+  'packages/workflows/src/workflow-control-authority-contract.ts',
   'packages/workflows/src/workflow-control-observation.ts',
   'packages/workflows/src/workflow-control-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
+  'packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
   'packages/workflows/src/workflow-runner-contract.ts',
   'packages/workflows/src/workflow-runner*.ts',
@@ -181,6 +184,7 @@ const triggerPaths = [
   'scripts/organization-graph-contracts/**',
   'scripts/governance-control-contracts/**',
   'scripts/workflow-control-contracts/**',
+  'scripts/workflow-authority-contracts/**',
   'scripts/workflow-control-shadow-contracts/**',
   'scripts/workflow-runner-contracts/**',
   'scripts/release/stage-schema-assets.ts',
@@ -321,6 +325,11 @@ describe('notification delivery service workflow', () => {
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
     const governanceGoldenIndex = stepIndex('Verify Governance Control golden contracts');
     const workflowGoldenIndex = stepIndex('Verify Workflow Control golden contracts');
+    const workflowAuthorityGoldenIndex = stepIndex(
+      'Verify Workflow Control authority golden contracts',
+    );
+    const workflowAuthorityTsIndex = stepIndex('Qualify GS9-A TypeScript authority contract');
+    const workflowAuthorityGoIndex = stepIndex('Qualify GS9-A Go authority contract mirror');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
     const workflowRunnerLinuxIndex = stepIndex(
@@ -350,7 +359,10 @@ describe('notification delivery service workflow', () => {
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(governanceGoldenIndex).toBe(graphGoldenIndex + 1);
     expect(workflowGoldenIndex).toBe(governanceGoldenIndex + 1);
-    expect(workflowShadowGoldenIndex).toBe(workflowGoldenIndex + 1);
+    expect(workflowAuthorityGoldenIndex).toBe(workflowGoldenIndex + 1);
+    expect(workflowAuthorityTsIndex).toBe(workflowAuthorityGoldenIndex + 1);
+    expect(workflowAuthorityGoIndex).toBe(workflowAuthorityTsIndex + 1);
+    expect(workflowShadowGoldenIndex).toBe(workflowAuthorityGoIndex + 1);
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
     expect(workflowRunnerLinuxIndex).toBe(workflowRunnerGoldenIndex + 1);
     expect(graphDistIndex).toBe(workflowRunnerLinuxIndex + 1);
@@ -423,6 +435,21 @@ describe('notification delivery service workflow', () => {
       name: 'Verify Workflow Control golden contracts',
       'working-directory': '.',
       run: 'bun run workflow:golden -- --check',
+    });
+    expect(job.steps[workflowAuthorityGoldenIndex]).toEqual({
+      name: 'Verify Workflow Control authority golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:authority-golden -- --check',
+    });
+    expect(job.steps[workflowAuthorityTsIndex]).toEqual({
+      name: 'Qualify GS9-A TypeScript authority contract',
+      'working-directory': '.',
+      run: 'bunx vitest run packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
+    });
+    expect(job.steps[workflowAuthorityGoIndex]).toEqual({
+      name: 'Qualify GS9-A Go authority contract mirror',
+      'working-directory': 'services/workflow-control',
+      run: 'go test -race ./authoritycontract -count=1',
     });
     expect(job.steps[workflowShadowGoldenIndex]).toEqual({
       name: 'Verify Workflow Control shadow golden contracts',
@@ -522,6 +549,9 @@ describe('notification delivery service workflow', () => {
       'Verify Organization Graph golden contracts',
       'Verify Governance Control golden contracts',
       'Verify Workflow Control golden contracts',
+      'Verify Workflow Control authority golden contracts',
+      'Qualify GS9-A TypeScript authority contract',
+      'Qualify GS9-A Go authority contract mirror',
       'Verify Workflow Control shadow golden contracts',
       'Verify Workflow Runner golden contracts',
       'Qualify the sealed TypeScript Workflow Runner on Linux',
@@ -568,6 +598,11 @@ describe('notification delivery service workflow', () => {
       'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
       'Verify Governance Control golden contracts': 'bun run governance:golden -- --check',
       'Verify Workflow Control golden contracts': 'bun run workflow:golden -- --check',
+      'Verify Workflow Control authority golden contracts':
+        'bun run workflow:authority-golden -- --check',
+      'Qualify GS9-A TypeScript authority contract':
+        'bunx vitest run packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
+      'Qualify GS9-A Go authority contract mirror': 'go test -race ./authoritycontract -count=1',
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
@@ -636,6 +671,12 @@ describe('notification delivery service workflow', () => {
     );
     expect(rootPackage.scripts.typecheck).toContain(
       'tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts['workflow:authority-golden']).toBe(
+      'bun scripts/workflow-authority-contracts/index.ts',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json',
     );
   });
 

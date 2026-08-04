@@ -1,0 +1,235 @@
+{
+  "schema": "openslack.workflow_control_authority_contract_manifest.v2",
+  "contractVersion": "v2",
+  "contractAuthority": "typescript",
+  "authorityBoundary": {
+    "currentWriter": "@openslack/workflows",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "validator-only",
+    "authorityClaim": "NO_AUTHORITY",
+    "authorityEligible": false,
+    "postgresAuthorityImplemented": false,
+    "routingActivated": false
+  },
+  "protocol": {
+    "version": "openslack.workflow_runner.v2",
+    "baseVersion": "openslack.workflow_runner.v1",
+    "retainedKinds": [
+      "hello",
+      "hello_ack",
+      "lease_offer",
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_request",
+      "cancel_ack",
+      "terminal",
+      "event_receipt"
+    ],
+    "addedKinds": [
+      "checkpoint_commit",
+      "budget_reserve_request",
+      "budget_usage_report",
+      "budget_authorization",
+      "effect_authorization",
+      "resume_offer"
+    ],
+    "kinds": [
+      "hello",
+      "hello_ack",
+      "lease_offer",
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_request",
+      "cancel_ack",
+      "terminal",
+      "event_receipt",
+      "checkpoint_commit",
+      "budget_reserve_request",
+      "budget_usage_report",
+      "budget_authorization",
+      "effect_authorization",
+      "resume_offer"
+    ],
+    "directions": {
+      "runnerToControl": [
+        "hello",
+        "lease_accept",
+        "lease_reject",
+        "heartbeat",
+        "effect_intent",
+        "effect_outcome",
+        "cancel_ack",
+        "terminal",
+        "checkpoint_commit",
+        "budget_reserve_request",
+        "budget_usage_report"
+      ],
+      "controlToRunner": [
+        "hello_ack",
+        "lease_offer",
+        "cancel_request",
+        "event_receipt",
+        "budget_authorization",
+        "effect_authorization",
+        "resume_offer"
+      ]
+    },
+    "receiptableKinds": [
+      "lease_accept",
+      "lease_reject",
+      "heartbeat",
+      "effect_intent",
+      "effect_outcome",
+      "cancel_ack",
+      "terminal",
+      "checkpoint_commit",
+      "budget_reserve_request",
+      "budget_usage_report"
+    ],
+    "helloAdvertises": ["openslack.workflow_runner.v1", "openslack.workflow_runner.v2"],
+    "helloAckSelects": "openslack.workflow_runner.v2",
+    "oldWorkerDisposition": "fail_closed_for_v2_required_run",
+    "runtimeNegotiationImplemented": false,
+    "runtimeDeliveryImplemented": false
+  },
+  "concurrency": {
+    "workflowCAS": [
+      "expected_run_revision",
+      "authority_route",
+      "expected_state",
+      "expected_phase",
+      "resume_generation"
+    ],
+    "runnerFencing": ["job_id", "attempt_id", "lease_id", "fencing_token"],
+    "interchangeable": false
+  },
+  "checkpoint": {
+    "commitPoint": "durable_authority_receipt_after_phase_work",
+    "acceptedReceiptStatuses": ["accepted", "duplicate"],
+    "rawResultAllowed": false,
+    "unknownOutcome": "reconciliation_required"
+  },
+  "approvals": {
+    "planes": ["legacy_run_gate", "workflow_effect_v2"],
+    "interchangeable": false,
+    "legacyRunGateEffectDecisionAuthority": false,
+    "effectAuthorizationCarriesHumanAttestation": false
+  },
+  "budget": {
+    "quantityEncoding": "canonical_nonnegative_int64_decimal_string",
+    "max": "9223372036854775807",
+    "moneyUnit": "nano_usd",
+    "moneyScale": 9,
+    "rounding": "half_up_nonnegative",
+    "binaryFloatingPointAuthority": false,
+    "flow": ["reserve_before_provider_call", "settle_by_exact_provider_receipt"],
+    "nonReservedAuthorization": "zero_tokens_cost_and_calls",
+    "unknownSettlement": "reconciliation_required"
+  },
+  "receipts": {
+    "operations": [
+      "run_transition",
+      "checkpoint_commit",
+      "budget_reserve",
+      "budget_settle",
+      "effect_authorize",
+      "resume_advance"
+    ],
+    "statuses": ["accepted", "duplicate", "reconciliation_required"],
+    "idempotencyPrefix": "openslack.workflow-control-authority.v2.",
+    "sameKeySameFingerprint": "exact_original_receipt",
+    "sameKeyDifferentFingerprint": "conflict"
+  },
+  "canonicalization": {
+    "encoding": "utf-8",
+    "objectKeys": "lexicographic-ecmascript-code-unit",
+    "messageBody": "canonical-json-plus-one-lf",
+    "hash": "sha256",
+    "duplicateKeys": "rejected"
+  },
+  "limits": {
+    "maxMessageBytes": 262144,
+    "maxReceiptBytes": 262144,
+    "maxStateBytes": 524288,
+    "maxJsonDepth": 16,
+    "maxJsonNodes": 4096,
+    "maxStringBytes": 4096,
+    "maxIdentifierBytes": 256,
+    "maxSafeInteger": 9007199254740991
+  },
+  "errorCodes": [
+    "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+    "WORKFLOW_CONTROL_AUTHORITY_UNKNOWN_FIELD",
+    "WORKFLOW_CONTROL_AUTHORITY_LIMIT_EXCEEDED",
+    "WORKFLOW_CONTROL_AUTHORITY_UNSUPPORTED_VERSION",
+    "WORKFLOW_CONTROL_AUTHORITY_INVALID_TRANSITION",
+    "WORKFLOW_CONTROL_AUTHORITY_APPROVAL_PLANE_MISMATCH",
+    "WORKFLOW_CONTROL_AUTHORITY_INVALID_DECIMAL",
+    "WORKFLOW_CONTROL_AUTHORITY_DECIMAL_OVERFLOW",
+    "WORKFLOW_CONTROL_AUTHORITY_IDENTITY_MISMATCH",
+    "WORKFLOW_CONTROL_AUTHORITY_HASH_MISMATCH",
+    "WORKFLOW_CONTROL_AUTHORITY_IDEMPOTENCY_CONFLICT",
+    "WORKFLOW_CONTROL_AUTHORITY_STALE_REVISION",
+    "WORKFLOW_CONTROL_AUTHORITY_STALE_RESUME_GENERATION",
+    "WORKFLOW_CONTROL_AUTHORITY_STALE_FENCE",
+    "WORKFLOW_CONTROL_AUTHORITY_RECONCILIATION_REQUIRED"
+  ],
+  "v1Locks": {
+    "workflowControlManifest": "3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86",
+    "workflowControlGolden": "342c877a46adc5f533d9c9c8b25d1c30c5809d8f219115af3f4e97260f9da023",
+    "workflowRunnerManifest": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6",
+    "workflowRunnerGolden": "b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844"
+  },
+  "qualification": {
+    "localStatus": "LOCAL_PASS_when_all_exact_byte_and_parity_gates_pass",
+    "goAuthority": "NOT_CLAIMED",
+    "deferred": [
+      "postgres_authority",
+      "runtime_protocol_v2",
+      "routing",
+      "canary",
+      "typescript_writer_removal"
+    ]
+  },
+  "artifacts": {
+    "schemas/workflow-control-authority-state.v2.schema.json": {
+      "path": "schemas/workflow-control-authority-state.v2.schema.json",
+      "byteLength": 8390,
+      "sha256": "dbc1b6454c033b31e950c8b2e35ded16b0c065f147eae9f0c25efaaf46d8b8ac"
+    },
+    "schemas/workflow-control-authority-message.v2.schema.json": {
+      "path": "schemas/workflow-control-authority-message.v2.schema.json",
+      "byteLength": 61575,
+      "sha256": "c9c372bf78f87a924e419347ef1cfae5360e4db296f2cd76e6c352d614f86ec0"
+    },
+    "schemas/workflow-control-authority-prepared-message.v2.schema.json": {
+      "path": "schemas/workflow-control-authority-prepared-message.v2.schema.json",
+      "byteLength": 1003,
+      "sha256": "045a15892aa6b6175f5fa4dc922fe44566a14c91f2a35101b94a52057f9e4637"
+    },
+    "schemas/workflow-control-authority-receipt.v2.schema.json": {
+      "path": "schemas/workflow-control-authority-receipt.v2.schema.json",
+      "byteLength": 5533,
+      "sha256": "ef11b374aa72a012defc1ced3694553c2c2a9dca5015eab3c0a65873a1cc58a6"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 44447,
+      "sha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-control-authority-state.v2.schema.json",
+    "schemas/workflow-control-authority-message.v2.schema.json",
+    "schemas/workflow-control-authority-prepared-message.v2.schema.json",
+    "schemas/workflow-control-authority-receipt.v2.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}
