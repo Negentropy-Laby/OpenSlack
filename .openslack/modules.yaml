@@ -416,6 +416,18 @@ modules:
       - repo:scripts/workflow-authority-contracts
       - repo:services/workflow-control/docs/architecture/workflow-authority-contract-v2.md
       - repo:services/workflow-control/docs/testing/gs9a-qualification.md
+      - commit:de3cb7eceb52ee38e5c707716fdbccb99a9159f3
+      - test:services/workflow-control/internal/authoritystore/request_test.go
+      - test:services/workflow-control/internal/authoritystore/postgres/repository_test.go
+      - test:services/workflow-control/internal/authorityapp/server_test.go
+      - test:services/workflow-control/internal/config/authority_test.go
+      - test:services/workflow-control/cmd/authority-server/qualification_test.go
+      - test:services/workflow-control/tests/contracts/authority_openapi_contract_test.go
+      - test:services/workflow-control/tests/integration/migration_test.go
+      - repo:services/workflow-control/migrations/000003_create_workflow_control_authority.up.sql
+      - repo:services/workflow-control/docs/api/authority-openapi.yaml
+      - repo:services/workflow-control/docs/testing/gs9b-qualification.md
+      - repo:services/workflow-control/cmd/authority-server
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
