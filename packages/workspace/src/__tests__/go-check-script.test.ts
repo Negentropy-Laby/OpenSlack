@@ -476,9 +476,20 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
     expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify');
     expect(log).toContain('./internal/runnerstore/postgres');
+    expect(log).toContain('-qualification-runner-cancel-ack-stability');
+    expect(log).toContain(
+      '-run \\^Test\\(CancelAckMustBindPersistedCancel\\|LateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal\\)\\$',
+    );
+    expect(log).toContain('-count=100');
     expect(log).toContain('-run \\^TestGS8BRestartQualification\\$');
     expect(log).toContain('-run \\^TestGS8BImageDefaultOff\\$');
     expect(log).toContain('WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://application:8080');
+    const runnerBoundsIndex = log.indexOf('-qualification-runner-bounds');
+    const cancelAckStabilityIndex = log.indexOf('-qualification-runner-cancel-ack-stability');
+    const runnerRestartSeedIndex = log.indexOf('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(runnerBoundsIndex).toBeGreaterThan(-1);
+    expect(cancelAckStabilityIndex).toBeGreaterThan(runnerBoundsIndex);
+    expect(runnerRestartSeedIndex).toBeGreaterThan(cancelAckStabilityIndex);
     const restartSchemas = [
       ...log.matchAll(
         /WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=(workflow_control_gs8b_restart_[a-z0-9]+)/gu,
@@ -489,6 +500,26 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log.match(/ restart /gu)).toHaveLength(2);
     expect(log).not.toContain('WORKFLOW_RUNNER_GS8B_QUALIFICATION=1');
     expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-runner-v1',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS8B_FAIL_PHASE: 'runner-cancel-ack-stability',
+      FAKE_GS8B_FAIL_STATUS: '47',
+    });
+    expect(failure.status).toBe(47);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-runner-cancel-ack-stability');
+    expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
   }, 15_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
@@ -1404,6 +1435,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS7B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS7B_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS7B_FAIL_STATUS:-46}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS8B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS8B_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS8B_FAIL_STATUS:-47}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

@@ -470,7 +470,26 @@ func TestDispatchFailuresBackOffAndBecomeDeadReconciliation(t *testing.T) {
 	}
 }
 
-func TestAlreadyTerminalCancelAckMustBindPersistedCancel(t *testing.T) {
+func TestCancelAckInputBindsAcknowledgedAtToEnvelopeTime(t *testing.T) {
+	lease := runnerstore.AttemptLease{
+		WorkspaceID: "workspace.fixture", JobID: "job.fixture", WorkflowRunID: "run.fixture",
+		CorrelationID: "correlation.fixture", AttemptID: "attempt.fixture",
+		LeaseID: "lease.fixture", FencingToken: 1,
+	}
+	input := cancelAckInput(t, lease, 1, "cancel-ack-fixture", "cancel.fixture", "cancelling")
+	acknowledgedAt, ok := input.Message.Payload["acknowledgedAt"].(string)
+	if !ok {
+		t.Fatalf("cancel acknowledgement fixture has non-string acknowledgedAt: %T", input.Message.Payload["acknowledgedAt"])
+	}
+	if acknowledgedAt != input.Message.SentAt {
+		t.Fatalf("cancel acknowledgement fixture time mismatch: payload=%s envelope=%s", acknowledgedAt, input.Message.SentAt)
+	}
+	if _, err := runnerstore.ValidateRecordEventInput(input); err != nil {
+		t.Fatalf("cancel acknowledgement fixture is invalid: %v", err)
+	}
+}
+
+func TestCancelAckMustBindPersistedCancel(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := t.Context()
 	repository := New(pool)
@@ -481,9 +500,9 @@ func TestAlreadyTerminalCancelAckMustBindPersistedCancel(t *testing.T) {
 	if _, err := repository.RequestCancel(ctx, input); err != nil {
 		t.Fatal(err)
 	}
-	ack := leasedEventInput(t, lease, runnerprotocol.KindCancelAck, 1, "cancel-ack-wrong", map[string]any{"cancelId": "cancel.not-the-control", "acknowledgedAt": canonicalNow(), "status": "cancelling"})
+	ack := cancelAckInput(t, lease, 1, "cancel-ack-wrong", "cancel.not-the-control", "cancelling")
 	if _, err := repository.RecordEvent(ctx, ack); !runnerstore.IsCode(err, runnerstore.ErrorIdentityMismatch) {
-		t.Fatalf("unbound already_terminal cancel ack was accepted: %v", err)
+		t.Fatalf("unbound cancel acknowledgement was accepted: %v", err)
 	}
 }
 
@@ -507,11 +526,11 @@ func TestLateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal(t *testing.T
 	if _, err := repository.RecordEvent(ctx, terminal); err != nil {
 		t.Fatal(err)
 	}
-	wrongStatus := leasedEventInput(t, lease, runnerprotocol.KindCancelAck, 3, "late-cancel-ack-wrong-status", map[string]any{"cancelId": control.CancelID, "acknowledgedAt": canonicalNow(), "status": "cancelling"})
+	wrongStatus := cancelAckInput(t, lease, 3, "late-cancel-ack-wrong-status", control.CancelID, "cancelling")
 	if _, err := repository.RecordEvent(ctx, wrongStatus); !runnerstore.IsCode(err, runnerstore.ErrorConflict) {
 		t.Fatalf("terminal cancel ack with nonterminal status was accepted: %v", err)
 	}
-	ack := leasedEventInput(t, lease, runnerprotocol.KindCancelAck, 3, "late-cancel-ack-valid", map[string]any{"cancelId": control.CancelID, "acknowledgedAt": canonicalNow(), "status": "already_terminal"})
+	ack := cancelAckInput(t, lease, 3, "late-cancel-ack-valid", control.CancelID, "already_terminal")
 	if _, err := repository.RecordEvent(ctx, ack); err != nil {
 		t.Fatalf("receipt-proven terminal rejected bound already_terminal ack: %v", err)
 	}
@@ -639,6 +658,14 @@ func leaseAcceptInput(t testing.TB, lease runnerstore.AttemptLease, eventID stri
 	})
 }
 
+func cancelAckInput(t testing.TB, lease runnerstore.AttemptLease, sequence int64, eventID, cancelID, status string) runnerstore.RecordEventInput {
+	t.Helper()
+	sentAt := canonicalNow()
+	return leasedEventInputAt(t, lease, runnerprotocol.KindCancelAck, sequence, eventID, sentAt, map[string]any{
+		"cancelId": cancelID, "acknowledgedAt": sentAt, "status": status,
+	})
+}
+
 func leasedEventInput(t testing.TB, lease runnerstore.AttemptLease, kind runnerprotocol.Kind, sequence int64, eventID string, payload map[string]any) runnerstore.RecordEventInput {
 	t.Helper()
 	return leasedEventInputAt(t, lease, kind, sequence, eventID, canonicalNow(), payload)
@@ -653,10 +680,14 @@ func leasedEventInputAt(t testing.TB, lease runnerstore.AttemptLease, kind runne
 		FencingToken: &fence, Sequence: &sequence, EventID: eventID,
 		CorrelationID: lease.CorrelationID, SentAt: sentAt, Payload: payload,
 	}
-	return runnerstore.RecordEventInput{
+	input := runnerstore.RecordEventInput{
 		Message: message, ExactBytes: canonicalEnvelope(t, message),
 		ControlBuildHash: strings.Repeat("f", 64), Now: time.Now().UTC(),
 	}
+	if _, err := runnerstore.ValidateRecordEventInput(input); err != nil {
+		t.Fatalf("leased event fixture is invalid: %v", err)
+	}
+	return input
 }
 
 func helloEnvelope(workspaceID, correlationID string, capabilities []any, maxConcurrentJobs int64) runnerprotocol.Envelope {
