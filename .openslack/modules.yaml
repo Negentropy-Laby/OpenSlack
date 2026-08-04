@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 5543
+vitest_tests: 5549
 vitest_files: 451
 modules:
   - id: self_evolution
@@ -470,7 +470,7 @@ modules:
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
       - github.com/Negentropy-Laby/OpenSlack/services/workflow-control
-    tests: 2546
+    tests: 2552
     test_files: 211
     components:
       - id: agent_runtime

@@ -36,7 +36,10 @@ const (
 	gs8bQualificationToken     = "0123456789abcdef0123456789abcdef"
 )
 
-var errGS8BUnknownEffectOutcome = errors.New("GS8-B qualification: simulated true unknown effect outcome")
+var (
+	errGS8BTerminationUncertain = errors.New("GS8-B qualification: simulated unproven process termination")
+	errGS8BUnknownEffectOutcome = errors.New("GS8-B qualification: simulated true unknown effect outcome")
+)
 
 // TestGS8BQualification is deliberately environment-gated. When enabled it
 // uses a real PostgreSQL schema, the externally anchored sealed worker bundle,
@@ -121,6 +124,72 @@ export async function run(runtime) {
 		t.Fatalf("real worker cancellation was not receipt-proven: %+v", cancelled)
 	}
 	stop()
+
+	uncertain := createQualificationJob(t, workspaceRoot, descriptorRoot, "termination-uncertain", `
+export async function run(runtime) {
+  runtime.phase("Run");
+  return { status: "completed" };
+}
+`)
+	if response := submitQualificationJob(t, service.Handler(), uncertain); response.Code != http.StatusCreated {
+		t.Fatalf("submit termination-uncertain job: %d %s", response.Code, response.Body.String())
+	}
+	uncertainBootID, err := newBootInstanceID("runner.qualification.termination", bytes.NewReader(bytes.Repeat([]byte{3}, 16)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncertainLease, err := repository.ClaimNext(t.Context(), runnerstore.ClaimInput{
+		WorkspaceID: gs8bQualificationWorkspace, SupervisorInstanceID: uncertainBootID,
+		LeaseOfferTimeout: 5 * time.Second, LeaseDuration: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncertainSession, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
+		Store: repository, Launcher: gs8bUncertainLauncher{},
+		ControlBuildHash: gs8bQualificationBuild, HeartbeatInterval: 250 * time.Millisecond,
+		LeaseOfferTimeout: 5 * time.Second, CancelWindow: 30 * time.Second,
+		CancelGrace: 10 * time.Millisecond, TerminalExitGrace: 10 * time.Millisecond,
+		PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runErr := uncertainSession.Run(t.Context(), uncertainLease); !errors.Is(runErr, errGS8BTerminationUncertain) {
+		t.Fatalf("unproven termination did not surface the injected failure: %v", runErr)
+	}
+	uncertainView, err := repository.ReadJob(t.Context(), gs8bQualificationWorkspace, uncertain.Spec.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uncertainView.State != runnerstore.JobReconciliationRequired || uncertainView.ReconciliationID == nil ||
+		uncertainView.TerminalStatus == nil || *uncertainView.TerminalStatus != "reconciliation_required" {
+		t.Fatalf("unproven termination did not settle the durable job for reconciliation: %+v", uncertainView)
+	}
+	var attemptState, leaseState, dispatchState, dispatchError, reconciliationID, reconciliationCode string
+	var dispatchFailures int64
+	if err := pool.QueryRow(t.Context(), `
+SELECT a.state,l.state,j.dispatch_state,j.dispatch_failures,j.last_dispatch_error,
+       r.reconciliation_id,r.code
+FROM workflow_runner_jobs j
+JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id
+JOIN workflow_runner_leases l ON l.attempt_id=a.attempt_id
+JOIN workflow_runner_reconciliations r ON r.reconciliation_id=j.reconciliation_id
+WHERE j.workspace_id=$1 AND j.job_id=$2`, gs8bQualificationWorkspace, uncertain.Spec.JobID).Scan(
+		&attemptState, &leaseState, &dispatchState, &dispatchFailures, &dispatchError,
+		&reconciliationID, &reconciliationCode,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if attemptState != string(runnerstore.AttemptReconciliationRequired) || leaseState != "cancelling" ||
+		dispatchState != "dead" || dispatchFailures != runnerstore.MaxDispatchFailures ||
+		dispatchError != string(runnerstore.AttemptTerminationUncertain) ||
+		reconciliationID != *uncertainView.ReconciliationID ||
+		reconciliationCode != "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED" {
+		t.Fatalf("unproven termination durable evidence drift: attempt=%q lease=%q dispatch=%q/%d/%q reconciliation=%q/%q view=%+v",
+			attemptState, leaseState, dispatchState, dispatchFailures, dispatchError,
+			reconciliationID, reconciliationCode, uncertainView)
+	}
 
 	ambiguous := createQualificationJob(t, workspaceRoot, descriptorRoot, "effect-ambiguity", `
 export async function run(runtime) {
@@ -346,6 +415,39 @@ type qualificationPreparedJob struct {
 	runnerstore.SubmitInput
 	Spec runnerstore.JobSpec
 }
+
+type gs8bUncertainLauncher struct{}
+
+func (gs8bUncertainLauncher) Start(context.Context) (runnerscheduler.WorkerProcess, error) {
+	return gs8bUncertainProcess{
+		stdin:  gs8bDiscardWriteCloser{Writer: io.Discard},
+		stdout: io.NopCloser(strings.NewReader("")),
+		done:   make(chan struct{}),
+	}, nil
+}
+
+type gs8bUncertainProcess struct {
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	done   chan struct{}
+}
+
+func (process gs8bUncertainProcess) Stdin() io.WriteCloser { return process.stdin }
+func (process gs8bUncertainProcess) Stdout() io.ReadCloser { return process.stdout }
+func (process gs8bUncertainProcess) Done() <-chan struct{} { return process.done }
+func (gs8bUncertainProcess) Wait(context.Context) (processsupervisor.Result, error) {
+	return processsupervisor.Result{}, errGS8BTerminationUncertain
+}
+func (gs8bUncertainProcess) Terminate(context.Context, time.Duration) error {
+	return errGS8BTerminationUncertain
+}
+func (gs8bUncertainProcess) ForceKill(context.Context) error {
+	return errGS8BTerminationUncertain
+}
+
+type gs8bDiscardWriteCloser struct{ io.Writer }
+
+func (gs8bDiscardWriteCloser) Close() error { return nil }
 
 func qualificationRunnerApp(t *testing.T, store runnerstore.Store) *runnerapp.Service {
 	t.Helper()

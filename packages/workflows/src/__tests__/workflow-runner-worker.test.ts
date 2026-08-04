@@ -122,12 +122,18 @@ describe('GS8-B workflow runner worker', () => {
     ['eval import string', 'eval("import(\\\"./unbound.js\\\")");'],
     ['Function import string', 'Function("return import(\\\"./unbound.js\\\")")();'],
     ['eval require string', 'eval("require(\\\"./unbound.cjs\\\")");'],
+    ['Node builtin module loader', 'const fs = process.getBuiltinModule("node:fs");'],
+    [
+      'global Node builtin module loader',
+      'const childProcess = globalThis.process.getBuiltinModule("node:child_process");',
+    ],
+    ['escaped Node builtin module loader', 'const fs = pro\\u0063ess.getBuiltinModule("node:fs");'],
   ])('rejects %s during prepare before lease acceptance', async (_name, source) => {
     const sourceBytes = Buffer.from(source, 'utf8');
     const { loader } = await sealedSourceLoader(sourceBytes);
 
     await expect(loader.prepare(descriptor(sourceBytes))).rejects.toThrow(
-      /may not (?:contain static or dynamic imports|dynamically evaluate|reference require|re-export)/u,
+      /may not (?:contain static or dynamic imports|dynamically evaluate|reference (?:Node process or global module-loader surfaces|require)|re-export)/u,
     );
   });
 

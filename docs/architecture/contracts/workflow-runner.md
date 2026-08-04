@@ -118,9 +118,10 @@ The lease offer carries an opaque safe-ID `executionDescriptorRef`, never a path
 hashes bind the execution descriptor, job specification, workflow source, workflow manifest, and
 input. The TypeScript worker resolves that reference only through its sealed, owner-only descriptor
 catalog; neither Go nor a wire field supplies raw arguments or selects executable code. GS8-B
-treats the bound workflow source as the full executable workflow-code closure and rejects runtime
-imports, re-exports, dynamic imports, and `require()` before lease acceptance. The established CLI
-loader is outside this restriction and remains unchanged.
+rejects runtime imports, re-exports, dynamic imports, `require()`, and direct Node `process`/global
+module-loader references before lease acceptance. This dependency-closure check supplements the
+reviewed, hash-bound source and sealed process environment; it is not an independent JavaScript
+sandbox. The established CLI loader is outside this restriction and remains unchanged.
 
 Sequences are monotonic within the direction and attempt defined by the generated schemas and
 vectors. An event ID is allocated and durably retained before first transmission. A retry reuses

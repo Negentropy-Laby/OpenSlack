@@ -14,10 +14,11 @@
   reparse points.
 - Workflow source is bounded, canonical-path checked and hash verified before lease acceptance,
   immediately before import and immediately after import. The full source hash separates ESM cache
-  entries. The GS8 worker additionally rejects runtime `import`, re-export, dynamic `import()` and
-  `require()` syntax in workflow source, so an accepted source file is the complete executable
-  workflow-code closure. This restriction applies only to the default-off GS8 worker; the existing
-  CLI loader remains unchanged.
+  entries. The GS8 worker additionally rejects runtime `import`, re-export, dynamic `import()`,
+  `require()`, and direct Node `process`/global module-loader references in workflow source. This
+  dependency-closure check supplements the reviewed, hash-bound source and sealed process
+  environment; it is not an independent JavaScript sandbox. The restriction applies only to the
+  default-off GS8 worker; the existing CLI loader remains unchanged.
 - Protocol stdout contains canonical JSONL only. Diagnostics are bounded and never become workflow
   evidence. Prompts, credentials, transcripts, commands, raw arguments and provider payloads are
   absent from the wire and API.

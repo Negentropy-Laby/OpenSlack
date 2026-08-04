@@ -20,6 +20,7 @@ const DYNAMIC_SOURCE_EVALUATORS = new Set([
   'GeneratorFunction',
   'eval',
 ]);
+const NODE_MODULE_LOADER_GLOBALS = new Set(['getBuiltinModule', 'global', 'globalThis', 'process']);
 const REGEX_PREFIX_IDENTIFIERS = new Set([
   'await',
   'case',
@@ -455,8 +456,9 @@ function assertNoExportFrom(tokens: readonly SourceToken[], exportIndex: number)
 }
 
 /**
- * Enforces source closure only for the default-off GS8 worker path. The legacy
- * CLI loader intentionally does not call this policy.
+ * Applies the bounded GS8 dependency-closure policy before lease acceptance.
+ * This supplements the sealed runner boundary; it is not a JavaScript sandbox.
+ * The legacy CLI loader intentionally does not call this policy.
  */
 export function assertWorkflowRunnerSourceIsSelfContained(bytes: Uint8Array): void {
   if (bytes.byteLength > MAX_POLICY_SOURCE_BYTES) {
@@ -484,6 +486,12 @@ export function assertWorkflowRunnerSourceIsSelfContained(bytes: Uint8Array): vo
     if (DYNAMIC_SOURCE_EVALUATORS.has(token.value)) {
       throw new WorkflowRunnerSourcePolicyError(
         'GS8 sealed workflow source may not dynamically evaluate source text',
+        token.offset,
+      );
+    }
+    if (NODE_MODULE_LOADER_GLOBALS.has(token.value)) {
+      throw new WorkflowRunnerSourcePolicyError(
+        'GS8 sealed workflow source may not reference Node process or global module-loader surfaces',
         token.offset,
       );
     }

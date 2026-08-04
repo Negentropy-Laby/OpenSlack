@@ -9,7 +9,8 @@ Repository qualification has four independent layers:
 3. Real PostgreSQL tests and a two-process seed/verify harness with a PostgreSQL restart.
 4. A hosted cross-language harness that bundles the worker into one self-contained
    `workflow-runner-worker.js`, seals it beside a copied Node executable and exact manifest,
-   proves completion/cancellation receipts, and injects an unknown effect-outcome commit.
+   proves completion/cancellation receipts, persists an unproven-termination reconciliation
+   through the real PostgreSQL store, and injects an unknown effect-outcome commit.
 
 The default image smoke additionally proves `mode=shadow-only` and a `404` runner route. Native
 Windows CI exercises the Job Object process tree and descriptor ACL/reparse boundary. The reviewed
