@@ -76,7 +76,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-runner-v1',
+        'runtime_profile=workflow-control-authority-v2',
         '',
       ].join('\n'),
     );
@@ -98,6 +98,13 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       "'!governancecontrol.go'",
     ]) {
       expect(goCheckSource).toContain(reviewedGovernanceSource);
+    }
+    for (const reviewedWorkflowAuthoritySource of [
+      "'!authoritycontract/'",
+      "'!authoritycontract/*.go'",
+      "'!authoritycontract/generated/v2/schemas/*.json'",
+    ]) {
+      expect(goCheckSource).toContain(reviewedWorkflowAuthoritySource);
     }
   });
 
@@ -388,6 +395,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         '',
         'import "testing"',
         '',
+        'func TestObservationProjectionAndClosedRouteSurface(t *testing.T) {}',
         'func TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}',
         '',
       ].join('\n'),
@@ -522,6 +530,92 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
   }, 15_000);
 
+  it('runs the Workflow Control GS9-B authority profile as a GS7/GS8 superset with durable default-off gates', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    addWorkflowAuthorityEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-authority-v2',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('-qualification-runner-bounds');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1');
+    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082');
+    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
+    expect(log).toContain('-run \\^TestGS9BQualification\\$');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS9BRestartQualification\\$');
+    expect(log).toContain('--entrypoint /authority-server');
+    expect(log).toContain('--network container:');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_DEFAULT_ORIGIN=http://127.0.0.1:8082');
+    expect(log).toContain('-run \\^TestGS9BImageDefaultOff\\$');
+    const authorityDefaultOffRun = log
+      .split('\n')
+      .find((line) => line.includes('--entrypoint /authority-server'));
+    expect(authorityDefaultOffRun).toContain('--network none');
+    expect(authorityDefaultOffRun).toContain('--health-cmd kill\\ -0\\ 1');
+    expect(authorityDefaultOffRun).not.toContain('DATABASE_URL=');
+    expect(authorityDefaultOffRun).not.toContain('WORKFLOW_CONTROL_AUTHORITY_MODE=');
+    for (const requiredStoreTest of [
+      'TestGS9BAuthorityAcceptAndByteIdenticalReplay',
+      'TestGS9BAuthoritySameKeyDifferentFingerprintConflicts',
+      'TestGS9BAuthorityTransitionCASAndOutboxAtomicity',
+      'TestGS9BAuthorityRouteDriftConflicts',
+      'TestGS9BAuthorityConcurrentCASHasOneWinner',
+      'TestGS9BAuthorityCommittedResponseLossRecoversExactReceipt',
+      'TestGS9BAuthorityUnknownCommitPersistsReconciliationWithoutHead',
+      'TestGS9BAuthorityDoubleUnknownFailsClosed',
+      'TestPrepareRequestRejectsNonCanonicalAndInvalidTransition',
+      'TestServiceMapsCommitUnknownToStableNon2xx',
+      'TestMigrationCreatesIsolatedShadowRunnerAndAuthorityNamespacesWithImmutableEvidence',
+      'TestAuthorityDownMigrationIsIsolatedAndRefusesRegisteredEpochs',
+    ]) {
+      expect(goCheckSource).toContain(requiredStoreTest);
+    }
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA=(workflow_control_gs9b_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(3);
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    addWorkflowAuthorityEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-authority-v2',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9B_FAIL_PHASE: 'authority-bounds',
+      FAKE_GS9B_FAIL_STATUS: '48',
+    });
+    expect(failure.status).toBe(48);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-authority-bounds');
+    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed');
+  }, 15_000);
+
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
     'propagates a Workflow Control GS7-B %s qualification failure before completion',
     (phase) => {
@@ -533,7 +627,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       });
       writeFileSync(
         join(fixture.root, 'services/pure/internal/app/handlers_test.go'),
-        'package app\n\nimport "testing"\n\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
+        'package app\n\nimport "testing"\n\nfunc TestObservationProjectionAndClosedRouteSurface(t *testing.T) {}\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
         'utf8',
       );
       writeFileSync(
@@ -1272,7 +1366,7 @@ function addWorkflowRunnerEvidence(moduleRoot: string): void {
   );
   writeFileSync(
     join(moduleRoot, 'internal/app/handlers_test.go'),
-    'package app\n\nimport "testing"\n\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
+    'package app\n\nimport "testing"\n\nfunc TestObservationProjectionAndClosedRouteSurface(t *testing.T) {}\nfunc TestObservationRejectsStoreReceiptStateDrift(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
@@ -1291,6 +1385,88 @@ function addWorkflowRunnerEvidence(moduleRoot: string): void {
     'utf8',
   );
   writeFileSync(join(moduleRoot, 'docs/api/runner-openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
+}
+
+function addWorkflowAuthorityEvidence(moduleRoot: string): void {
+  for (const directory of [
+    'cmd/authority-server',
+    'internal/authorityapp',
+    'internal/authoritystore/postgres',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(join(moduleRoot, 'cmd/authority-server/main.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/authority-server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9BQualification(t *testing.T) {}',
+      'func TestGS9BRestartQualification(t *testing.T) {}',
+      'func TestGS9BImageDefaultOff(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/authorityapp/server_test.go'),
+    [
+      'package authorityapp',
+      '',
+      'import "testing"',
+      '',
+      'func TestServiceDefaultsToHealthOnly(t *testing.T) {}',
+      'func TestServiceMapsCommitUnknownToStableNon2xx(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/authoritystore/postgres/repository_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9BAuthorityAcceptAndByteIdenticalReplay(t *testing.T) {}',
+      'func TestGS9BAuthoritySameKeyDifferentFingerprintConflicts(t *testing.T) {}',
+      'func TestGS9BAuthorityTransitionCASAndOutboxAtomicity(t *testing.T) {}',
+      'func TestGS9BAuthorityRouteDriftConflicts(t *testing.T) {}',
+      'func TestGS9BAuthorityConcurrentCASHasOneWinner(t *testing.T) {}',
+      'func TestGS9BAuthorityCommittedResponseLossRecoversExactReceipt(t *testing.T) {}',
+      'func TestGS9BAuthorityUnknownCommitPersistsReconciliationWithoutHead(t *testing.T) {}',
+      'func TestGS9BAuthorityDoubleUnknownFailsClosed(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/authoritystore/request_test.go'),
+    'package authoritystore\n\nimport "testing"\n\nfunc TestPrepareRequestRejectsNonCanonicalAndInvalidTransition(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/integration/migration_test.go'),
+    [
+      'package integration',
+      '',
+      'import "testing"',
+      '',
+      'func TestMigrationCreatesIsolatedShadowRunnerAndAuthorityNamespacesWithImmutableEvidence(t *testing.T) {}',
+      'func TestAuthorityMigrationDoesNotClaimLaterGS9OrRunnerLifecycle(t *testing.T) {}',
+      'func TestAuthorityDownMigrationIsIsolatedAndRefusesRegisteredEpochs(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/authority_openapi_contract_test.go'),
+    'package contracts\n\nimport "testing"\n\nfunc TestAuthorityOpenAPIContract(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(join(moduleRoot, 'docs/api/authority-openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
 }
 
 function createFullServiceFixture(): Fixture {
@@ -1438,6 +1614,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS8B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS8B_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS8B_FAIL_STATUS:-47}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS9B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9B_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS9B_FAIL_STATUS:-48}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

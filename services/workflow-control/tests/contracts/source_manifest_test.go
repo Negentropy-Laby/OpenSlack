@@ -49,7 +49,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS8BInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -70,8 +70,8 @@ func TestSourceManifestBindsOnlyUnreleasedGS8BInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS8-B" ||
-		manifest.Service.Authority != "GO_RUNNER_LIFECYCLE_TYPESCRIPT_WORKFLOW_AUTHORITY" ||
+		manifest.Service.MigrationPhase != "GS9-B" ||
+		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
 			"WORKFLOW_RUNNER_ATTEMPT_LEASE_FENCING",
@@ -79,18 +79,23 @@ func TestSourceManifestBindsOnlyUnreleasedGS8BInputs(t *testing.T) {
 			"WORKFLOW_RUNNER_JOB_LIFECYCLE_CONTROL",
 			"WORKFLOW_RUNNER_PROCESS_SUPERVISION",
 			"WORKFLOW_RUNNER_PROTOCOL_RECEIPT",
+			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RUN_SPINE",
+			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
+			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_OUTBOX",
+			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RECONCILIATION",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 5 {
+		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 7 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantNonClaims := []string{
 		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",
 		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "REMOTE_CONNECTOR",
 		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_AUTHORITY",
-		"WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY", "WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
+		"WORKFLOW_CONTROL_AUTHORITY_CUTOVER", "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
+		"WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
 		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)

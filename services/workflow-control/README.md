@@ -1,9 +1,9 @@
 # Workflow Control
 
 This module contains the GS7-A pure Go consumer of the TypeScript-owned Workflow Control v1
-contract, the GS7-B PostgreSQL shadow observation service, and the explicit GS8-B runner-lifecycle
-control plane. The two servers are separate entry points and have separate configuration and
-authority boundaries.
+contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B runner-lifecycle
+control plane, and the GS9-B default-off PostgreSQL authority qualification spine. The three
+servers are separate entry points and have separate configuration and authority boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -73,3 +73,19 @@ The runner API is private, bearer-authenticated, single-workspace, canonical JSO
 in `docs/api/runner-openapi.yaml`. It is an admission and inspection surface; workflow source,
 arguments, prompts, credentials, arbitrary paths, arbitrary URLs, approval decisions, and budget
 decisions are not accepted.
+
+## Explicit GS9-B authority qualification mode
+
+The image contains `/authority-server`, but its default entry point remains the observational
+`/server`. Without `WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1`, the authority binary
+exposes only health, version, and metrics; mutation routes are not registered. The explicit mode
+also requires an exact loopback bind, database, service-build SHA-256, bearer-token SHA-256,
+workspace, caller, and positive routing epoch.
+
+The qualification store owns only immutable route registration and the Workflow run
+state/revision/phase/resume-generation spine. It commits the run head, append-only transition
+event, byte-exact receipt, and outbox in one PostgreSQL transaction. It remains separate from the
+GS8 runner job/attempt/lease/fence namespace and does not own checkpoints, approvals, effects,
+budgets, active routing, CLI/MCP/Qoder reads, or TypeScript RunStore records. Its API is frozen in
+`docs/api/authority-openapi.yaml`; its evidence ceiling is documented in
+`docs/testing/gs9b-qualification.md`.

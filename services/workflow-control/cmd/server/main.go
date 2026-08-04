@@ -17,7 +17,7 @@ import (
 	shadowpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore/postgres"
 )
 
-const requiredSchemaVersion int64 = 2
+const requiredSchemaVersion int64 = 3
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))

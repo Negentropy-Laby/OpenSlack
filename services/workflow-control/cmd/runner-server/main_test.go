@@ -41,8 +41,8 @@ func TestRunCancelsHTTPWhenSchedulerFails(t *testing.T) {
 	}
 }
 
-func TestRunnerServerRequiresSchemaVersionTwo(t *testing.T) {
-	if requiredSchemaVersion != 2 {
+func TestRunnerServerRequiresSchemaVersionThree(t *testing.T) {
+	if requiredSchemaVersion != 3 {
 		t.Fatalf("schema version=%d", requiredSchemaVersion)
 	}
 }

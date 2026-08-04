@@ -1,0 +1,525 @@
+openapi: 3.1.0
+info:
+  title: OpenSlack Workflow Control Authority Qualification API
+  version: 2.0.0-gs9b
+  description: >-
+    Private, loopback-only GS9-B qualification surface for the isolated Go run
+    authority spine. The process is health-only by default. Enabling local
+    qualification does not activate production routing, accept new production
+    records, or change the declared TypeScript workflow authority.
+servers:
+  - url: http://127.0.0.1:8082
+security: []
+x-openslack-default-off: true
+x-openslack-mode: local-qualification-v1
+x-openslack-network-modes: [loopback]
+x-openslack-workflow-authority: typescript
+x-openslack-routing-activated: false
+x-openslack-accept-new-records: false
+x-openslack-go-authority: [qualification-run-spine, transition-receipt, transactional-outbox]
+x-openslack-excluded-authority: [checkpoint, approval, budget, runner-v2, effect, canary-routing]
+x-openslack-max-request-bytes: 524288
+paths:
+  /v1/workflow-control/runs:accept:
+    post:
+      operationId: acceptQualificationWorkflowRun
+      description: Atomically accept revision one of one explicitly Go-routed qualification run.
+      x-openslack-canonical-json: exact-plus-lf
+      x-openslack-replay-response: exact-original
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorityRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Accepted' }
+        '200': { $ref: '#/components/responses/Replay' }
+        '202': { $ref: '#/components/responses/Reconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/workflow-control/runs/{runId}:transition:
+    post:
+      operationId: transitionQualificationWorkflowRun
+      description: Apply one exact expected-head CAS transition and emit receipt, event, and outbox atomically.
+      x-openslack-canonical-json: exact-plus-lf
+      x-openslack-replay-response: exact-original
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorityRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Accepted' }
+        '200': { $ref: '#/components/responses/Replay' }
+        '202': { $ref: '#/components/responses/Reconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/workflow-control/runs/{runId}:
+    get:
+      operationId: readQualificationWorkflowRun
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Current immutable qualification run head and canonical target record.
+          content: { application/json: { schema: { $ref: '#/components/schemas/RunRead' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/workflow-control/receipts/{idempotencyKey}:
+    get:
+      operationId: readQualificationWorkflowReceipt
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReceiptKey'
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Exact immutable receipt bytes recorded for the idempotency key.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/workflow-control/runs/{runId}/outbox/{revision}:pending:
+    get:
+      operationId: readPendingQualificationWorkflowOutbox
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/Revision'
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Pending transactional outbox record for the exact run revision.
+          content: { application/json: { schema: { $ref: '#/components/schemas/OutboxRead' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /health/live:
+    get:
+      operationId: workflowControlAuthorityLive
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+  /health/ready:
+    get:
+      operationId: workflowControlAuthorityReady
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Health' }
+  /health/version:
+    get:
+      operationId: workflowControlAuthorityVersion
+      security: []
+      responses:
+        '200':
+          description: Negative production authority declaration and qualification build.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Version' } } }
+  /metrics:
+    get:
+      operationId: workflowControlAuthorityMetrics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Low-cardinality authority qualification metrics.
+          content: { text/plain: { schema: { type: string } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-random-token
+  parameters:
+    CallerHeader:
+      name: X-OpenSlack-Workflow-Control-Caller-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    WorkspaceHeader:
+      name: X-OpenSlack-Workflow-Control-Workspace-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    EpochHeader:
+      name: X-OpenSlack-Workflow-Control-Routing-Epoch
+      in: header
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    BuildHeader:
+      name: X-OpenSlack-Workflow-Control-Expected-Build-SHA
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Hash' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/IdempotencyKey' }
+    RequestFingerprint:
+      name: X-OpenSlack-Request-Fingerprint
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/Fingerprint' }
+    RunID:
+      name: runId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    Revision:
+      name: revision
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+    ReceiptKey:
+      name: idempotencyKey
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/IdempotencyKey' }
+  responses:
+    Accepted:
+      description: Run transition and original accepted receipt committed atomically.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } }
+    Replay:
+      description: Byte-identical original receipt returned for exact replay.
+      headers:
+        X-OpenSlack-Idempotent-Replay:
+          schema: { type: string, const: 'true' }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } }
+    Reconciliation:
+      description: Durable reconciliation receipt; no committed run revision is claimed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Receipt' } } }
+    Health:
+      description: Process or repository health.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } }
+    Unauthorized:
+      description: Bearer identity is invalid.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Bound authority record was not found.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Idempotency, route, expected head, or immutable identity conflicted.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TooLarge:
+      description: Request body exceeds the frozen maximum.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnsupportedMediaType:
+      description: Content-Type is not exactly application/json.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unprocessable:
+      description: Request syntax, canonical bytes, identity, or host binding is invalid.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Internal:
+      description: Internal failure or unresolved commit outcome.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unavailable:
+      description: PostgreSQL authority repository is unavailable.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Identifier:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$'
+    Hash:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    Fingerprint:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    IdempotencyKey:
+      type: string
+      pattern: '^openslack\.workflow-control-authority\.v2\.[0-9a-f]{64}$'
+    Route:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [backend, authority, routingEpoch, authorityBuildHash]
+      properties:
+        backend: { type: string, const: go }
+        authority: { type: string, const: workflow-control }
+        routingEpoch: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+    Expected:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [revision, state, currentPhaseId, currentPhaseIndex, resumeGeneration]
+      properties:
+        revision: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+        state: { type: [string, 'null'] }
+        currentPhaseId: { anyOf: [{ $ref: '#/components/schemas/Identifier' }, { type: 'null' }] }
+        currentPhaseIndex:
+          { type: [integer, 'null'], format: int64, minimum: 0, maximum: 9007199254740991 }
+        resumeGeneration: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+    RunRecord:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          runId,
+          workflowId,
+          workflowVersion,
+          workflowSourceHash,
+          manifestHash,
+          inputHash,
+          route,
+          state,
+          revision,
+          currentPhaseId,
+          currentPhaseIndex,
+          resumeGeneration,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_run_record.v2 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        workflowId: { $ref: '#/components/schemas/Identifier' }
+        workflowVersion: { $ref: '#/components/schemas/Identifier' }
+        workflowSourceHash: { $ref: '#/components/schemas/Hash' }
+        manifestHash: { $ref: '#/components/schemas/Hash' }
+        inputHash: { $ref: '#/components/schemas/Hash' }
+        route: { $ref: '#/components/schemas/Route' }
+        state: { type: string }
+        revision: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        currentPhaseId: { anyOf: [{ $ref: '#/components/schemas/Identifier' }, { type: 'null' }] }
+        currentPhaseIndex:
+          { type: [integer, 'null'], format: int64, minimum: 0, maximum: 9007199254740991 }
+        resumeGeneration: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+    AuthorityRequest:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [schema, operation, workspaceId, runId, expected, route, record, correlationId]
+      properties:
+        schema:
+          {
+            type: string,
+            enum:
+              [
+                openslack.workflow_control_authority_accept.v2,
+                openslack.workflow_control_authority_transition.v2,
+              ],
+          }
+        operation: { type: string, enum: [accept, transition] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        expected: { $ref: '#/components/schemas/Expected' }
+        route: { $ref: '#/components/schemas/Route' }
+        record: { $ref: '#/components/schemas/RunRecord' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+    Receipt:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          operation,
+          status,
+          workspaceId,
+          runId,
+          expectedRevision,
+          acceptedRevision,
+          resumeGeneration,
+          route,
+          idempotencyKey,
+          requestFingerprint,
+          requestHash,
+          recordHash,
+          correlationId,
+          serviceBuildHash,
+          committedAt,
+          reconciliationToken,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_receipt.v2 }
+        operation: { type: string, const: run_transition }
+        status: { type: string, enum: [accepted, reconciliation_required] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        acceptedRevision: { type: [integer, 'null'], format: int64, minimum: 1 }
+        resumeGeneration: { type: integer, format: int64, minimum: 0 }
+        route: { $ref: '#/components/schemas/Route' }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        requestFingerprint: { $ref: '#/components/schemas/Fingerprint' }
+        requestHash: { $ref: '#/components/schemas/Hash' }
+        recordHash: { anyOf: [{ $ref: '#/components/schemas/Hash' }, { type: 'null' }] }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        serviceBuildHash: { $ref: '#/components/schemas/Hash' }
+        committedAt: { type: [string, 'null'], format: date-time }
+        reconciliationToken: { type: [string, 'null'] }
+    RunRead:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          runId,
+          workflowId,
+          workflowVersion,
+          workflowSourceHash,
+          manifestHash,
+          inputHash,
+          route,
+          state,
+          revision,
+          currentPhaseId,
+          currentPhaseIndex,
+          resumeGeneration,
+          recordHash,
+          record,
+          updatedAt,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_read.v2 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        workflowId: { $ref: '#/components/schemas/Identifier' }
+        workflowVersion: { $ref: '#/components/schemas/Identifier' }
+        workflowSourceHash: { $ref: '#/components/schemas/Hash' }
+        manifestHash: { $ref: '#/components/schemas/Hash' }
+        inputHash: { $ref: '#/components/schemas/Hash' }
+        route: { $ref: '#/components/schemas/Route' }
+        state: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        currentPhaseId: { anyOf: [{ $ref: '#/components/schemas/Identifier' }, { type: 'null' }] }
+        currentPhaseIndex: { type: [integer, 'null'], format: int64, minimum: 0 }
+        resumeGeneration: { type: integer, format: int64, minimum: 0 }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        record: { $ref: '#/components/schemas/RunRecord' }
+        updatedAt: { type: string, format: date-time }
+    OutboxRead:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          outboxId,
+          eventId,
+          workspaceId,
+          runId,
+          runRevision,
+          eventType,
+          status,
+          idempotencyKey,
+          payloadHash,
+          payload,
+          attemptCount,
+          createdAt,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_outbox.v2 }
+        outboxId: { type: string }
+        eventId: { type: string }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        runRevision: { type: integer, format: int64, minimum: 1 }
+        eventType: { type: string, const: workflow_control.run_transitioned }
+        status: { type: string, const: pending }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        payloadHash: { $ref: '#/components/schemas/Hash' }
+        payload: {}
+        attemptCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+    Version:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          contractVersion,
+          buildSha,
+          mode,
+          qualificationMode,
+          authority,
+          routingActivated,
+          acceptNewRecords,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_service_version.v1 }
+        contractVersion: { type: string, const: v2 }
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        mode: { type: string, enum: [disabled, local-qualification-v1] }
+        qualificationMode: { type: boolean }
+        authority: { type: string, const: typescript }
+        routingActivated: { type: boolean, const: false }
+        acceptNewRecords: { type: boolean, const: false }
+    Health:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [live, ready, not_ready] }
+        qualificationMode: { type: boolean }
+    Error:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_error.v1 }
+        code: { type: string }
+        message: { type: string }

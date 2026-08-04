@@ -372,13 +372,21 @@ money is integer `nano_usd` at scale 9 with `half_up_nonnegative` conversion. Th
 `hello_ack` negotiation contract is frozen, but no runtime negotiation or delivery exists.
 TypeScript remains the sole writer, so `GS9-A LOCAL_PASS` does not claim Go authority.
 
-GS9-B and later stages may transfer only new Workflow Control records after isolated shadow and
-differential qualification, read canary, immutable routing, durable acceptance, recovery, and
-explicit higher-epoch rollback. Existing TypeScript records continue to drain under TypeScript;
-an existing record never changes writer and there is no per-request fallback. The full cutover must
-still qualify response loss, restart, duplicate, fingerprint conflict, concurrency, checkpoint,
-resume, approval/effect, cumulative budget, fencing, and audit-outbox behavior against real
-PostgreSQL. A runner message or durable receipt is never itself an approval decision.
+GS9-B adds the default-off PostgreSQL authority spine but does not transfer a real record. The
+qualification-only service fixes one loopback workspace, caller, epoch, build, and bearer; its
+immutable epoch/run route, expected-head CAS, append-only event and exact receipt, transactional
+outbox, response-loss lookup, and reconciliation record are isolated from `workflow_runner_*`.
+Same-key replay preserves the original receipt bytes. Unknown commit cannot advance the head, and
+an unprovable reconciliation commit fails with a stable non-2xx error. The normal image remains on
+the observational server and reports TypeScript authority with routing and new-record acceptance
+disabled.
+
+GS9-C and later stages may transfer only new Workflow Control records after checkpoint/resume
+shadow and differential qualification, approval/effect and budget-plane migration, runner-v2
+delivery, read canary, immutable routing, durable acceptance, recovery, and explicit higher-epoch
+rollback. Existing TypeScript records continue to drain under TypeScript; an existing record never
+changes writer and there is no per-request fallback. A runner message or durable receipt is never
+itself an approval decision. GS9-B evidence is capped at `LOCAL_PASS / Go authority NOT_CLAIMED`.
 
 ### GS10–GS13 — Platform Runtime
 

@@ -24,6 +24,12 @@ import (
 
 const qualificationBuildSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+func TestShadowServerRequiresSchemaVersionThree(t *testing.T) {
+	if requiredSchemaVersion != 3 {
+		t.Fatalf("schema version=%d", requiredSchemaVersion)
+	}
+}
+
 func TestGS7BQualification(t *testing.T) {
 	if os.Getenv("WORKFLOW_CONTROL_GS7B_QUALIFICATION") != "1" {
 		t.Skip("GS7-B PostgreSQL qualification is not enabled")
