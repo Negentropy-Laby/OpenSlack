@@ -404,6 +404,7 @@ modules:
       - repo:services/workflow-control/docs/api/runner-openapi.yaml
       - repo:services/workflow-control/migrations/000002_create_workflow_runner_runtime.up.sql
       - repo:services/workflow-control/cmd/runner-server
+      - commit:e7d573297eedf9414763d2e1821f51a109f13b16
       - test:packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts
       - repo:packages/workflows/contracts/workflow-control-authority/v2/manifest.json
       - test:services/workflow-control/authoritycontract/bundle_test.go
