@@ -286,6 +286,36 @@ describe('governance shadow observation journal', () => {
     await waitFor(async () => expect(await readdir(join(root, 'entries'))).toHaveLength(0));
   });
 
+  it('flushes currently scheduled journal work before qualification cleanup', async () => {
+    const root = await journalRoot();
+    let releasePublisher: (() => void) | undefined;
+    let publisherStarted = false;
+    const port = await createGovernedPlanShadowObservationPort({
+      journalRoot: root,
+      publisher: createGovernanceShadowPublisherPort(
+        (value) =>
+          new Promise<GovernanceShadowReceipt>((resolve) => {
+            publisherStarted = true;
+            releasePublisher = () => resolve(accepted(value));
+          }),
+      ),
+    });
+
+    port.observeRecord(record());
+    let flushed = false;
+    const flush = port.flush().then(() => {
+      flushed = true;
+    });
+
+    await waitFor(() => expect(publisherStarted).toBe(true));
+    expect(flushed).toBe(false);
+    releasePublisher!();
+    await flush;
+
+    expect(await readdir(join(root, 'entries'))).toHaveLength(0);
+    expect(await readdir(join(root, 'locks'))).toHaveLength(0);
+  });
+
   it('orders a newer record before dependent observations and coalesces its later replay', async () => {
     const root = await journalRoot();
     const calls: GovernanceShadowEnvelope[] = [];

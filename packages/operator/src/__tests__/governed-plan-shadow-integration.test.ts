@@ -237,6 +237,7 @@ describe('governance shadow authority integration', () => {
           { actorId: 'agent.test', workspaceId: 'workspace.test' },
         ),
       ).resolves.toMatchObject({ state: 'succeeded' });
+      await observer.flush();
     }
   });
 });

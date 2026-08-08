@@ -177,6 +177,7 @@ export type GovernanceShadowDiagnosticSink = (
 ) => void | Promise<void>;
 
 export interface GovernedPlanShadowObservationPort {
+  /** Fire-and-forget and fail-open relative to the TypeScript authority. */
   observeRecord(record: GovernedPlanRecord): void;
   observeConfirmation(
     record: GovernedPlanRecord,
@@ -184,6 +185,8 @@ export interface GovernedPlanShadowObservationPort {
   ): void;
   observeAudit(record: GovernedPlanRecord, event: GovernedPlanAuditEvent): void;
   reconcile(records: readonly GovernedPlanRecord[]): void;
+  /** Test/qualification seam; waits for currently scheduled shadow work only. */
+  flush(): Promise<void>;
 }
 
 export interface CreateGovernedPlanShadowObservationPortOptions {
@@ -934,6 +937,7 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
   readonly #directories: JournalDirectories;
   readonly #publisher: GovernanceShadowPublisherPort;
   readonly #diagnosticSink: GovernanceShadowDiagnosticSink | undefined;
+  readonly #scheduled = new Set<Promise<void>>();
 
   constructor(
     directories: JournalDirectories,
@@ -1022,7 +1026,7 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
     try {
       for (const value of records) {
         const record = validateGovernedPlanRecord(value);
-        void this.#reconcileRecord(record).catch(() => undefined);
+        this.#track(this.#reconcileRecord(record).catch(() => undefined));
       }
     } catch {
       // Reconciliation is shadow-only and cannot affect the caller.
@@ -1033,14 +1037,25 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
     return this.#replayAll();
   }
 
+  async flush(): Promise<void> {
+    await Promise.allSettled([...this.#scheduled]);
+  }
+
   #schedule(pending: PendingObservation): void {
     const hashValue = streamHash(pending.workspaceId, pending.planId);
-    void this.#enqueueStream(hashValue, async () => {
-      await this.#append(pending, hashValue);
-      await this.#drain(pending.workspaceId, pending.planId, hashValue);
-    }).catch(() => {
-      this.#diagnose('journal_invalid', pending.workspaceId, pending.planId, undefined, 'append');
-    });
+    this.#track(
+      this.#enqueueStream(hashValue, async () => {
+        await this.#append(pending, hashValue);
+        await this.#drain(pending.workspaceId, pending.planId, hashValue);
+      }).catch(() => {
+        this.#diagnose('journal_invalid', pending.workspaceId, pending.planId, undefined, 'append');
+      }),
+    );
+  }
+
+  #track(promise: Promise<void>): void {
+    this.#scheduled.add(promise);
+    void promise.finally(() => this.#scheduled.delete(promise)).catch(() => undefined);
   }
 
   #enqueueStream(hashValue: string, operation: () => Promise<void>): Promise<void> {
@@ -1142,8 +1157,10 @@ class GovernedPlanShadowObservationPortImpl implements GovernedPlanShadowObserva
   }
 
   #scheduleDrain(workspaceId: string, planId: string, hashValue: string): void {
-    void this.#enqueueStream(hashValue, () => this.#drain(workspaceId, planId, hashValue)).catch(
-      () => undefined,
+    this.#track(
+      this.#enqueueStream(hashValue, () => this.#drain(workspaceId, planId, hashValue)).catch(
+        () => undefined,
+      ),
     );
   }
 
