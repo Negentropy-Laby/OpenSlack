@@ -110,8 +110,7 @@ SELECT workflow_id, workflow_version, encode(workflow_source_hash,'hex'),
        encode(manifest_hash,'hex'), encode(input_hash,'hex'), backend, authority,
        routing_epoch, encode(authority_build_hash,'hex'), state, revision,
        current_phase_id, current_phase_index, resume_generation,
-       encode(record_hash,'hex'), canonical_record_bytes,
-       encode(authority_build_hash,'hex'), updated_at
+       encode(record_hash,'hex'), canonical_record_bytes, updated_at
 FROM workflow_control_runs
 WHERE workspace_id=$1 AND run_id=$2`
 

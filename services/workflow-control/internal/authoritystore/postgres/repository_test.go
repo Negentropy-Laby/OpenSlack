@@ -49,6 +49,27 @@ func TestGS9BAuthorityAcceptAndByteIdenticalReplay(t *testing.T) {
 	}
 }
 
+func TestGS9BAuthorityReadRejectsTamperedCanonicalRecordBytes(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	repository := New(pool)
+	input := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
+	if _, err := repository.Mutate(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		UPDATE workflow_control_runs
+		SET revision=revision+1,
+		    canonical_record_bytes=canonical_record_bytes || decode('20','hex')
+		WHERE workspace_id=$1 AND run_id=$2`,
+		input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID,
+	); err != nil {
+		t.Fatalf("tamper canonical record bytes: %v", err)
+	}
+	if _, err := repository.Read(context.Background(), input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID); !authoritystore.IsCode(err, authoritystore.ErrorContentInvalid) {
+		t.Fatalf("tampered canonical record bytes err=%v, want %s", err, authoritystore.ErrorContentInvalid)
+	}
+}
+
 func TestGS9BAuthoritySameKeyDifferentFingerprintConflicts(t *testing.T) {
 	pool := openAuthorityPostgres(t)
 	repository := New(pool)

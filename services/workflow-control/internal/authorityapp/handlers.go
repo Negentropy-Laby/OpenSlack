@@ -301,7 +301,7 @@ func validRunHead(head authoritystore.RunHead, workspaceID, runID string, routin
 	digest := sha256.Sum256(head.RecordBytes)
 	valid := head.Schema == authoritystore.ReadSchema && head.WorkspaceID == workspaceID && head.RunID == runID && head.RecordHash == hex.EncodeToString(digest[:]) &&
 		head.Route.Backend == authoritystore.Backend && head.Route.Authority == authoritystore.Authority &&
-		head.Route.RoutingEpoch == routingEpoch && head.Route.AuthorityBuildHash == buildSHA && head.ServiceBuildHash == buildSHA &&
+		head.Route.RoutingEpoch == routingEpoch && head.Route.AuthorityBuildHash == buildSHA &&
 		record.Schema == authoritystore.RunRecordSchema && record.WorkspaceID == head.WorkspaceID && record.RunID == head.RunID && record.WorkflowID == head.WorkflowID &&
 		record.WorkflowVersion == head.WorkflowVersion && record.WorkflowSourceHash == head.WorkflowSourceHash &&
 		record.ManifestHash == head.ManifestHash && record.InputHash == head.InputHash && record.Route == head.Route &&

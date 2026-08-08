@@ -56,7 +56,7 @@
     },
     "authorityOpenapi": {
       "path": "services/workflow-control/docs/api/authority-openapi.yaml",
-      "sha256": "0a237bfc14c0e429e5645d915a311dabecf260245ba1ba4f1af372a3722bb059"
+      "sha256": "8c1bf057b0ea0e3c005e70e1ed440f585429f66eacbaa923574e0728e0430935"
     }
   },
   "legalInputs": {

@@ -283,6 +283,9 @@ components:
     IdempotencyKey:
       type: string
       pattern: '^openslack\.workflow-control-authority\.v2\.[0-9a-f]{64}$'
+    OutboxIdempotencyKey:
+      type: string
+      pattern: '^openslack\.workflow-control-authority-outbox\.v2\.[0-9a-f]{64}$'
     Route:
       type: object
       additionalProperties: false
@@ -448,6 +451,22 @@ components:
         recordHash: { $ref: '#/components/schemas/Hash' }
         record: { $ref: '#/components/schemas/RunRecord' }
         updatedAt: { type: string, format: date-time }
+    OutboxPayload:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [schema, eventId, receiptId, workspaceId, runId, expected, record, recordHash, correlationId]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_outbox.v2 }
+        eventId: { $ref: '#/components/schemas/Identifier' }
+        receiptId: { $ref: '#/components/schemas/Identifier' }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        expected: { $ref: '#/components/schemas/Expected' }
+        record: { $ref: '#/components/schemas/RunRecord' }
+        recordHash: { $ref: '#/components/schemas/Hash' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
     OutboxRead:
       type: object
       additionalProperties: false
@@ -477,9 +496,9 @@ components:
         runRevision: { type: integer, format: int64, minimum: 1 }
         eventType: { type: string, const: workflow_control.run_transitioned }
         status: { type: string, const: pending }
-        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        idempotencyKey: { $ref: '#/components/schemas/OutboxIdempotencyKey' }
         payloadHash: { $ref: '#/components/schemas/Hash' }
-        payload: {}
+        payload: { $ref: '#/components/schemas/OutboxPayload' }
         attemptCount: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
     Version:

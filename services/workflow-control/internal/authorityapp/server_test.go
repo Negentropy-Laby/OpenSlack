@@ -5,10 +5,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
@@ -25,7 +31,8 @@ const (
 )
 
 type fakeRepository struct {
-	mutate func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error)
+	mutate     func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error)
+	readOutbox func(context.Context, string, string, int64) (authoritystore.OutboxRecord, error)
 }
 
 func (repository *fakeRepository) Mutate(ctx context.Context, input authoritystore.MutateInput) (authoritystore.Receipt, error) {
@@ -37,7 +44,11 @@ func (*fakeRepository) Read(context.Context, string, string) (authoritystore.Run
 func (*fakeRepository) ReadReceipt(context.Context, string, string) (authoritystore.Receipt, error) {
 	return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorNotFound, "read receipt", nil)
 }
-func (*fakeRepository) ReadOutbox(context.Context, string, string, int64) (authoritystore.OutboxRecord, error) {
+
+func (repository *fakeRepository) ReadOutbox(ctx context.Context, workspaceID, runID string, revision int64) (authoritystore.OutboxRecord, error) {
+	if repository.readOutbox != nil {
+		return repository.readOutbox(ctx, workspaceID, runID, revision)
+	}
 	return authoritystore.OutboxRecord{}, authoritystore.Failure(authoritystore.ErrorNotFound, "read outbox", nil)
 }
 func (*fakeRepository) Statistics(context.Context) (authoritystore.Statistics, error) {
@@ -120,6 +131,76 @@ func TestServiceReturnsExactOriginalReceiptOnReplay(t *testing.T) {
 	}
 }
 
+func TestOutboxReadResponseMatchesOpenAPI(t *testing.T) {
+	route := authoritystore.Route{
+		Backend: authoritystore.Backend, Authority: authoritystore.Authority,
+		RoutingEpoch: testRoutingEpoch, AuthorityBuildHash: testBuildSHA,
+	}
+	record := authoritystore.RunRecord{
+		Schema: authoritystore.RunRecordSchema, WorkspaceID: testWorkspace, RunID: testRunID,
+		WorkflowID: "workflow.demo", WorkflowVersion: "v1", WorkflowSourceHash: testBuildSHA,
+		ManifestHash: testBuildSHA, InputHash: testBuildSHA, Route: route,
+		State: authoritycontract.RunCreated, Revision: 1,
+	}
+	recordBytes, err := canonicaljson.Encode(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordDigest := sha256.Sum256(append(recordBytes, '\n'))
+	payload := outboxPayload{
+		Schema: authoritystore.OutboxSchema, EventID: "wca-event-contract", ReceiptID: "wca-receipt-contract",
+		WorkspaceID: testWorkspace, RunID: testRunID,
+		Expected: authoritystore.ExpectedBinding{Revision: 0, ResumeGeneration: 0},
+		Record:   record, RecordHash: hex.EncodeToString(recordDigest[:]), CorrelationID: "correlation-contract",
+	}
+	payloadBytes, err := canonicaljson.Encode(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadBytes = append(payloadBytes, '\n')
+	payloadDigest := sha256.Sum256(payloadBytes)
+	payloadHash := hex.EncodeToString(payloadDigest[:])
+	repository := &fakeRepository{
+		mutate: func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error) {
+			t.Fatal("outbox read must not mutate")
+			return authoritystore.Receipt{}, nil
+		},
+		readOutbox: func(_ context.Context, workspaceID, runID string, revision int64) (authoritystore.OutboxRecord, error) {
+			if workspaceID != testWorkspace || runID != testRunID || revision != 1 {
+				t.Fatalf("unexpected outbox identity: %s %s %d", workspaceID, runID, revision)
+			}
+			return authoritystore.OutboxRecord{
+				Schema: authoritystore.OutboxSchema, OutboxID: "wca-outbox-contract",
+				EventID: payload.EventID, WorkspaceID: workspaceID, RunID: runID, RunRevision: revision,
+				EventType: authoritystore.OutboxEventType, Status: "pending",
+				IdempotencyKey: authoritystore.OutboxKeyPrefix + payloadHash,
+				PayloadHash:    payloadHash, PayloadBytes: payloadBytes, AttemptCount: 0,
+				CreatedAt: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	}
+	service := newQualificationService(t, repository)
+	path := "/v1/workflow-control/runs/" + testRunID + "/outbox/1:pending"
+	headers := qualificationReadHeaders()
+	response := perform(t, service.Handler(), http.MethodGet, path, nil, headers)
+	if response.Code != http.StatusOK {
+		t.Fatalf("outbox read status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	_, filename, _, _ := runtime.Caller(0)
+	document, err := openapi3.NewLoader().LoadFromFile(filepath.Join(filepath.Dir(filename), "..", "..", "docs", "api", "authority-openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var instance any
+	if err := json.Unmarshal(response.Body.Bytes(), &instance); err != nil {
+		t.Fatalf("decode outbox response: %v", err)
+	}
+	if err := document.Components.Schemas["OutboxRead"].Value.VisitJSON(instance); err != nil {
+		t.Fatalf("outbox response failed OpenAPI validation: %v\n%s", err, response.Body.String())
+	}
+}
+
 func TestServiceMapsCommitUnknownToStableNon2xx(t *testing.T) {
 	repository := &fakeRepository{mutate: func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error) {
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorCommitUnknown, "qualification commit outcome is unknown", nil)
@@ -186,6 +267,14 @@ func qualificationHeaders(t *testing.T, body []byte, bearer bool) map[string]str
 		headers["Authorization"] = "Bearer " + testBearer
 	}
 	return headers
+}
+
+func qualificationReadHeaders() map[string]string {
+	return map[string]string{
+		"Authorization": "Bearer " + testBearer, HeaderCallerID: testCaller,
+		HeaderWorkspaceID: testWorkspace, HeaderRoutingEpoch: "9",
+		HeaderExpectedBuildSHA: testBuildSHA,
+	}
 }
 
 func perform(t *testing.T, handler http.Handler, method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {

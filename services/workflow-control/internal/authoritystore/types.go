@@ -118,7 +118,6 @@ type RunHead struct {
 	ResumeGeneration   int64
 	RecordHash         string
 	RecordBytes        []byte
-	ServiceBuildHash   string
 	UpdatedAt          time.Time
 }
 
@@ -153,6 +152,3 @@ type Repository interface {
 	ReadOutbox(context.Context, string, string, int64) (OutboxRecord, error)
 	Statistics(context.Context) (Statistics, error)
 }
-
-// Store is retained as a concise compatibility name for internal callers.
-type Store = Repository

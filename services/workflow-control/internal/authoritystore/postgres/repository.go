@@ -346,7 +346,7 @@ func (repository *Repository) Read(ctx context.Context, workspaceID, runID strin
 		&result.WorkflowID, &result.WorkflowVersion, &result.WorkflowSourceHash, &result.ManifestHash, &result.InputHash,
 		&result.Route.Backend, &result.Route.Authority, &result.Route.RoutingEpoch, &result.Route.AuthorityBuildHash,
 		&result.State, &result.Revision, &phaseID, &phaseIndex, &result.ResumeGeneration,
-		&result.RecordHash, &result.RecordBytes, &result.ServiceBuildHash, &result.UpdatedAt,
+		&result.RecordHash, &result.RecordBytes, &result.UpdatedAt,
 	); errors.Is(err, pgx.ErrNoRows) {
 		return authoritystore.RunHead{}, authoritystore.Failure(authoritystore.ErrorNotFound, "workflow authority run not found", err)
 	} else if err != nil {
@@ -361,7 +361,7 @@ func (repository *Repository) Read(ctx context.Context, workspaceID, runID strin
 		result.CurrentPhaseIndex = &value
 	}
 	digest := sha256.Sum256(result.RecordBytes)
-	if result.RecordHash != hex.EncodeToString(digest[:]) || result.ServiceBuildHash != result.Route.AuthorityBuildHash {
+	if result.RecordHash != hex.EncodeToString(digest[:]) {
 		return authoritystore.RunHead{}, authoritystore.Failure(authoritystore.ErrorContentInvalid, "stored workflow authority run integrity check failed", nil)
 	}
 	return result, nil
