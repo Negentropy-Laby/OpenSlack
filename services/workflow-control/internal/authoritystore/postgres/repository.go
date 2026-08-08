@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"reflect"
 	"strconv"
 	"time"
@@ -39,13 +38,18 @@ type Repository struct {
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 // NewWithCommitter injects the commit boundary so qualification can prove
-// response-loss recovery and ambiguous uncommitted reconciliation.
+// response-loss recovery and ambiguous uncommitted reconciliation. The
+// callback must end the transaction before returning: nil means Commit
+// succeeded, while a non-nil error may follow Commit to model response loss or
+// Rollback to model an unknown outcome. Returning with an open transaction is
+// invalid because recovery would remain blocked on its locks.
 func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) error) *Repository {
 	return &Repository{pool: pool, commitTransaction: commit}
 }
 
-// NewWithCommitters additionally injects the reconciliation commit boundary.
-// It is limited to qualification of the second unknown-outcome failure.
+// NewWithCommitters additionally applies the same callback contract to the
+// reconciliation commit boundary. It is limited to qualification of the
+// second unknown-outcome failure.
 func NewWithCommitters(
 	pool *pgxpool.Pool,
 	mutationCommit func(context.Context, pgx.Tx) error,
@@ -97,7 +101,7 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 		existing.Replay = true
 		return existing, nil
 	case !errors.Is(err, pgx.ErrNoRows):
-		return authoritystore.Receipt{}, databaseFailure("read workflow authority receipt", err)
+		return authoritystore.Receipt{}, mapReceiptReadFailure("read workflow authority receipt", err)
 	}
 	if err := validateExactBindings(input); err != nil {
 		return authoritystore.Receipt{}, err
@@ -362,7 +366,7 @@ func (repository *Repository) Read(ctx context.Context, workspaceID, runID strin
 	}
 	digest := sha256.Sum256(result.RecordBytes)
 	if result.RecordHash != hex.EncodeToString(digest[:]) {
-		return authoritystore.RunHead{}, authoritystore.Failure(authoritystore.ErrorContentInvalid, "stored workflow authority run integrity check failed", nil)
+		return authoritystore.RunHead{}, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored workflow authority run integrity check failed", nil)
 	}
 	return result, nil
 }
@@ -376,7 +380,7 @@ func (repository *Repository) ReadReceipt(ctx context.Context, workspaceID, key 
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorNotFound, "workflow authority receipt not found", err)
 	}
 	if err != nil {
-		return authoritystore.Receipt{}, databaseFailure("read workflow authority receipt", err)
+		return authoritystore.Receipt{}, mapReceiptReadFailure("read workflow authority receipt", err)
 	}
 	return result, nil
 }
@@ -397,9 +401,20 @@ func (repository *Repository) ReadOutbox(ctx context.Context, workspaceID, runID
 	}
 	digest := sha256.Sum256(result.PayloadBytes)
 	if result.PayloadHash != hex.EncodeToString(digest[:]) {
-		return authoritystore.OutboxRecord{}, authoritystore.Failure(authoritystore.ErrorContentInvalid, "stored workflow authority outbox integrity check failed", nil)
+		return authoritystore.OutboxRecord{}, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored workflow authority outbox integrity check failed", nil)
 	}
 	return result, nil
+}
+
+func (repository *Repository) Ready(ctx context.Context) error {
+	var result int
+	if err := repository.pool.QueryRow(ctx, readinessSQL).Scan(&result); err != nil {
+		return databaseFailure("check workflow authority readiness", err)
+	}
+	if result != 1 {
+		return authoritystore.Failure(authoritystore.ErrorIntegrity, "workflow authority readiness probe returned an invalid result", nil)
+	}
+	return nil
 }
 
 func (repository *Repository) Statistics(ctx context.Context) (authoritystore.Statistics, error) {
@@ -421,6 +436,9 @@ func (repository *Repository) resolveCommitOutcome(input authoritystore.MutateIn
 			return existing, nil
 		}
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorIdempotencyConflict, "commit recovery found another request fingerprint", commitErr)
+	}
+	if authoritystore.IsCode(err, authoritystore.ErrorIntegrity) {
+		return authoritystore.Receipt{}, err
 	}
 	if !authoritystore.IsCode(err, authoritystore.ErrorNotFound) {
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorCommitUnknown, "commit outcome could not be read", errors.Join(commitErr, err))
@@ -484,6 +502,9 @@ func (repository *Repository) persistReconciliation(ctx context.Context, input a
 	}
 	persisted, raw, err := readReceipt(tx.QueryRow(ctx, receiptByKeySQL, input.IdempotencyKey))
 	if err != nil {
+		if authoritystore.IsCode(err, authoritystore.ErrorIntegrity) {
+			return authoritystore.Receipt{}, err
+		}
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorCommitUnknown, "read reconciliation receipt", errors.Join(commitErr, err))
 	}
 	if subtle.ConstantTimeCompare(raw, fingerprint[:]) != 1 {
@@ -501,6 +522,9 @@ func (repository *Repository) persistReconciliation(ctx context.Context, input a
 			verified.Value.Status == authoritycontract.ReceiptReconciliationRequired {
 			return verified, nil
 		}
+		if authoritystore.IsCode(readErr, authoritystore.ErrorIntegrity) {
+			return authoritystore.Receipt{}, readErr
+		}
 		return authoritystore.Receipt{}, authoritystore.Failure(
 			authoritystore.ErrorCommitUnknown, "reconciliation commit outcome is unknown",
 			errors.Join(commitErr, reconciliationErr, readErr),
@@ -515,7 +539,7 @@ func (repository *Repository) readReceiptByKey(ctx context.Context, key string) 
 		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorNotFound, "workflow authority receipt not found", err)
 	}
 	if err != nil {
-		return authoritystore.Receipt{}, nil, databaseFailure("read workflow authority receipt", err)
+		return authoritystore.Receipt{}, nil, mapReceiptReadFailure("read workflow authority receipt", err)
 	}
 	return result, raw, nil
 }
@@ -541,11 +565,11 @@ func readReceipt(row pgx.Row) (authoritystore.Receipt, []byte, error) {
 		return authoritystore.Receipt{}, nil, err
 	}
 	if len(fingerprint) != sha256.Size || len(requestHash) != sha256.Size || len(routeBuildHash) != sha256.Size || len(serviceBuildHash) != sha256.Size {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored workflow authority receipt digest length is invalid")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored workflow authority receipt digest length is invalid", nil)
 	}
 	value, err := authoritycontract.DecodeReceiptJSON(result.ExactBytes)
 	if err != nil {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored workflow authority receipt is invalid: %w", err)
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored workflow authority receipt is invalid", err)
 	}
 	wantFingerprint := "sha256:" + hex.EncodeToString(fingerprint)
 	wantRequestHash := hex.EncodeToString(requestHash)
@@ -556,49 +580,37 @@ func readReceipt(row pgx.Row) (authoritystore.Receipt, []byte, error) {
 		resumeGeneration != value.ResumeGeneration || backend != value.Route.Backend || authority != value.Route.Authority ||
 		routingEpoch != value.Route.RoutingEpoch || wantBuildHash != value.Route.AuthorityBuildHash || wantServiceBuildHash != value.ServiceBuildHash ||
 		wantFingerprint != value.RequestFingerprint || wantRequestHash != value.RequestHash || correlationID != value.CorrelationID {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored workflow authority receipt columns do not match exact bytes")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored workflow authority receipt columns do not match exact bytes", nil)
 	}
 	if acceptedRevision.Valid {
 		if value.AcceptedRevision == nil || *value.AcceptedRevision != acceptedRevision.Int64 {
-			return authoritystore.Receipt{}, nil, fmt.Errorf("stored accepted revision does not match exact receipt")
+			return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored accepted revision does not match exact receipt", nil)
 		}
 	} else if value.AcceptedRevision != nil {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored reconciliation receipt claims an accepted revision")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored reconciliation receipt claims an accepted revision", nil)
 	}
 	if len(recordHash) == sha256.Size {
 		if value.RecordHash == nil || *value.RecordHash != hex.EncodeToString(recordHash) {
-			return authoritystore.Receipt{}, nil, fmt.Errorf("stored record hash does not match exact receipt")
+			return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored record hash does not match exact receipt", nil)
 		}
 	} else if len(recordHash) != 0 || value.RecordHash != nil {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored reconciliation record hash is invalid")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored reconciliation record hash is invalid", nil)
 	}
 	if committed.Valid != (value.CommittedAt != nil) || reconciliation.Valid != (value.ReconciliationToken != nil) {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored receipt outcome shape does not match exact bytes")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored receipt outcome shape does not match exact bytes", nil)
 	}
 	if committed.Valid && canonicalTimestamp(committed.Time) != *value.CommittedAt {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored committed timestamp does not match exact receipt")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored committed timestamp does not match exact receipt", nil)
 	}
 	if reconciliation.Valid && reconciliation.String != *value.ReconciliationToken {
-		return authoritystore.Receipt{}, nil, fmt.Errorf("stored reconciliation token does not match exact receipt")
+		return authoritystore.Receipt{}, nil, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored reconciliation token does not match exact receipt", nil)
 	}
 	result.Value = value
 	return result, append([]byte(nil), fingerprint...), nil
 }
 
-type outboxPayload struct {
-	Schema        string                         `json:"schema"`
-	EventID       string                         `json:"eventId"`
-	ReceiptID     string                         `json:"receiptId"`
-	WorkspaceID   string                         `json:"workspaceId"`
-	RunID         string                         `json:"runId"`
-	Expected      authoritystore.ExpectedBinding `json:"expected"`
-	Record        authoritystore.RunRecord       `json:"record"`
-	RecordHash    string                         `json:"recordHash"`
-	CorrelationID string                         `json:"correlationId"`
-}
-
 func prepareOutbox(eventID, receiptID string, prepared authoritystore.PreparedRequest) ([]byte, string, string, error) {
-	payload := outboxPayload{
+	payload := authoritystore.OutboxPayload{
 		Schema: authoritystore.OutboxSchema, EventID: eventID, ReceiptID: receiptID,
 		WorkspaceID: prepared.Envelope.WorkspaceID, RunID: prepared.Envelope.RunID,
 		Expected: prepared.Envelope.Expected, Record: prepared.Envelope.Record,
@@ -699,6 +711,13 @@ func canonicalTimestamp(value time.Time) string {
 
 func databaseFailure(operation string, err error) error {
 	return authoritystore.Failure(authoritystore.ErrorDatabase, operation, err)
+}
+
+func mapReceiptReadFailure(operation string, err error) error {
+	if authoritystore.IsCode(err, authoritystore.ErrorIntegrity) {
+		return err
+	}
+	return databaseFailure(operation, err)
 }
 
 func mapWriteFailure(operation string, err error) error {

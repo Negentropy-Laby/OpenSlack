@@ -381,10 +381,12 @@ an unprovable reconciliation commit fails with a stable non-2xx error. The norma
 the observational server and reports TypeScript authority with routing and new-record acceptance
 disabled.
 
-GS9-C and later stages may transfer only new Workflow Control records after checkpoint/resume
-shadow and differential qualification, approval/effect and budget-plane migration, runner-v2
-delivery, read canary, immutable routing, durable acceptance, recovery, and explicit higher-epoch
-rollback. Existing TypeScript records continue to drain under TypeScript; an existing record never
+GS9-C and later stages may transfer only new Workflow Control records after shadow and differential
+qualification explicitly covers response loss, restart, duplicate replay, fingerprint conflict,
+concurrency, checkpoint, resume, approval/effect, cumulative budget, fencing, and audit-outbox
+behavior. Runner-v2 delivery, read canary, immutable routing, durable acceptance, and explicit
+higher-epoch rollback remain separate required gates. Existing TypeScript records continue to
+drain under TypeScript; an existing record never
 changes writer and there is no per-request fallback. A runner message or durable receipt is never
 itself an approval decision. GS9-B evidence is capped at `LOCAL_PASS / Go authority NOT_CLAIMED`.
 

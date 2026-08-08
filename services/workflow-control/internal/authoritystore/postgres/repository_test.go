@@ -65,8 +65,55 @@ func TestGS9BAuthorityReadRejectsTamperedCanonicalRecordBytes(t *testing.T) {
 	); err != nil {
 		t.Fatalf("tamper canonical record bytes: %v", err)
 	}
-	if _, err := repository.Read(context.Background(), input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID); !authoritystore.IsCode(err, authoritystore.ErrorContentInvalid) {
-		t.Fatalf("tampered canonical record bytes err=%v, want %s", err, authoritystore.ErrorContentInvalid)
+	if _, err := repository.Read(context.Background(), input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID); !authoritystore.IsCode(err, authoritystore.ErrorIntegrity) {
+		t.Fatalf("tampered canonical record bytes err=%v, want %s", err, authoritystore.ErrorIntegrity)
+	}
+}
+
+func TestGS9BAuthorityReadRejectsTamperedCanonicalOutboxBytes(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	repository := New(pool)
+	input := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
+	if _, err := repository.Mutate(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	tamperAuthorityRow(t, pool,
+		`ALTER TABLE workflow_control_outbox DISABLE TRIGGER workflow_control_outbox_transition`,
+		`UPDATE workflow_control_outbox SET canonical_payload_bytes=canonical_payload_bytes || decode('20','hex') WHERE workspace_id=$1 AND run_id=$2 AND run_revision=1`,
+		`ALTER TABLE workflow_control_outbox ENABLE TRIGGER workflow_control_outbox_transition`,
+		input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID,
+	)
+	if _, err := repository.ReadOutbox(context.Background(), input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID, 1); !authoritystore.IsCode(err, authoritystore.ErrorIntegrity) {
+		t.Fatalf("tampered canonical outbox bytes err=%v, want %s", err, authoritystore.ErrorIntegrity)
+	}
+}
+
+func TestGS9BAuthorityRejectsCorruptStoredReceiptAsIntegrityFailure(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	repository := New(pool)
+	input := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
+	if _, err := repository.Mutate(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	tamperAuthorityRow(t, pool,
+		`ALTER TABLE workflow_control_transition_receipts DISABLE TRIGGER workflow_control_transition_receipts_immutable`,
+		`UPDATE workflow_control_transition_receipts SET exact_receipt_bytes=convert_to(replace(convert_from(exact_receipt_bytes, 'UTF8'), '"correlationId":"correlation-test"', '"correlationId":"correlation-corrupt"'), 'UTF8') WHERE idempotency_key=$1`,
+		`ALTER TABLE workflow_control_transition_receipts ENABLE TRIGGER workflow_control_transition_receipts_immutable`,
+		input.IdempotencyKey,
+	)
+	for label, err := range map[string]error{
+		"get":    receiptReadError(repository, input),
+		"replay": receiptReplayError(repository, input),
+	} {
+		if !authoritystore.IsCode(err, authoritystore.ErrorIntegrity) || authoritystore.IsCode(err, authoritystore.ErrorDatabase) {
+			t.Fatalf("corrupt receipt %s err=%v, want %s and not %s", label, err, authoritystore.ErrorIntegrity, authoritystore.ErrorDatabase)
+		}
+	}
+}
+
+func TestGS9BAuthorityReadyUsesLightweightProbe(t *testing.T) {
+	if err := New(openAuthorityPostgres(t)).Ready(context.Background()); err != nil {
+		t.Fatalf("lightweight readiness probe: %v", err)
 	}
 }
 
@@ -280,6 +327,36 @@ func rollbackWithError(message string) func(context.Context, pgx.Tx) error {
 		}
 		return errors.New(message)
 	}
+}
+
+func receiptReadError(repository *Repository, input authoritystore.MutateInput) error {
+	_, err := repository.ReadReceipt(context.Background(), input.Prepared.Envelope.WorkspaceID, input.IdempotencyKey)
+	return err
+}
+
+func receiptReplayError(repository *Repository, input authoritystore.MutateInput) error {
+	_, err := repository.Mutate(context.Background(), input)
+	return err
+}
+
+func tamperAuthorityRow(t *testing.T, pool *pgxpool.Pool, disableTrigger, update, enableTrigger string, arguments ...any) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), disableTrigger); err != nil {
+		t.Fatalf("disable immutable trigger: %v", err)
+	}
+	triggerEnabled := false
+	t.Cleanup(func() {
+		if !triggerEnabled {
+			_, _ = pool.Exec(context.Background(), enableTrigger)
+		}
+	})
+	if _, err := pool.Exec(context.Background(), update, arguments...); err != nil {
+		t.Fatalf("tamper stored authority row: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), enableTrigger); err != nil {
+		t.Fatalf("restore immutable trigger: %v", err)
+	}
+	triggerEnabled = true
 }
 
 func openAuthorityPostgres(t testing.TB) *pgxpool.Pool {

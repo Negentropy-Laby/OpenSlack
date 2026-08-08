@@ -121,6 +121,8 @@ SELECT outbox_id, event_id, workspace_id, run_id, run_revision, event_type,
 FROM workflow_control_outbox
 WHERE workspace_id=$1 AND run_id=$2 AND run_revision=$3`
 
+	readinessSQL = `SELECT 1`
+
 	statisticsSQL = `
 SELECT
     (SELECT count(*) FROM workflow_control_runs),

@@ -214,7 +214,7 @@ func (service *Service) handleReady(w http.ResponseWriter, request *http.Request
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
 	defer cancel()
-	if _, err := service.repository.Statistics(ctx); err != nil {
+	if err := service.repository.Ready(ctx); err != nil {
 		writeCanonical(w, http.StatusServiceUnavailable, canonicaljson.Object{"status": "not_ready"})
 		return
 	}
@@ -253,12 +253,19 @@ func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Reque
 	lines := []string{
 		"# TYPE openslack_workflow_control_authority_http_requests_total counter",
 		"openslack_workflow_control_authority_http_requests_total " + strconv.FormatInt(service.requests.Load(), 10),
+		"# TYPE openslack_workflow_control_authority_http_unauthorized_total counter",
 		"openslack_workflow_control_authority_http_unauthorized_total " + strconv.FormatInt(service.unauthorized.Load(), 10),
+		"# TYPE openslack_workflow_control_authority_accepts_total counter",
 		"openslack_workflow_control_authority_accepts_total " + strconv.FormatInt(service.accepted.Load(), 10),
+		"# TYPE openslack_workflow_control_authority_replays_total counter",
 		"openslack_workflow_control_authority_replays_total " + strconv.FormatInt(service.replays.Load(), 10),
+		"# TYPE openslack_workflow_control_authority_reconciliation_total counter",
 		"openslack_workflow_control_authority_reconciliation_total " + strconv.FormatInt(service.reconciliation.Load(), 10),
+		"# TYPE openslack_workflow_control_authority_runs gauge",
 		"openslack_workflow_control_authority_runs " + strconv.FormatInt(statistics.Runs, 10),
+		"# TYPE openslack_workflow_control_authority_receipts gauge",
 		"openslack_workflow_control_authority_receipts " + strconv.FormatInt(statistics.Receipts, 10),
+		"# TYPE openslack_workflow_control_authority_outbox_pending gauge",
 		"openslack_workflow_control_authority_outbox_pending " + strconv.FormatInt(statistics.OutboxPending, 10),
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -311,20 +318,8 @@ func validRunHead(head authoritystore.RunHead, workspaceID, runID string, routin
 	return record, valid
 }
 
-type outboxPayload struct {
-	Schema        string                         `json:"schema"`
-	EventID       string                         `json:"eventId"`
-	ReceiptID     string                         `json:"receiptId"`
-	WorkspaceID   string                         `json:"workspaceId"`
-	RunID         string                         `json:"runId"`
-	Expected      authoritystore.ExpectedBinding `json:"expected"`
-	Record        authoritystore.RunRecord       `json:"record"`
-	RecordHash    string                         `json:"recordHash"`
-	CorrelationID string                         `json:"correlationId"`
-}
-
 func validOutbox(outbox authoritystore.OutboxRecord, workspaceID, runID string, revision, routingEpoch int64, buildSHA string) (any, bool) {
-	var payload outboxPayload
+	var payload authoritystore.OutboxPayload
 	if err := decodeExactCanonical(outbox.PayloadBytes, &payload); err != nil {
 		return nil, false
 	}
@@ -417,6 +412,9 @@ func (service *Service) writeStoreError(w http.ResponseWriter, err error) {
 		writeFailure(w, http.StatusConflict, string(failure.Code), "authority precondition conflicted")
 	case authoritystore.ErrorNotFound:
 		writeFailure(w, http.StatusNotFound, string(failure.Code), "authority record was not found")
+	case authoritystore.ErrorIntegrity:
+		service.logger.Error("workflow_control_authority_integrity_failure")
+		writeFailure(w, http.StatusInternalServerError, string(failure.Code), "stored authority integrity check failed")
 	case authoritystore.ErrorDatabase:
 		writeFailure(w, http.StatusServiceUnavailable, string(failure.Code), "authority repository is unavailable")
 	case authoritystore.ErrorCommitUnknown:

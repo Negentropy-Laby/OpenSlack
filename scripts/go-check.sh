@@ -802,6 +802,10 @@ detect_capabilities() {
     local workflow_authority_store_test
     for workflow_authority_store_test in \
       TestGS9BAuthorityAcceptAndByteIdenticalReplay \
+      TestGS9BAuthorityReadRejectsTamperedCanonicalRecordBytes \
+      TestGS9BAuthorityReadRejectsTamperedCanonicalOutboxBytes \
+      TestGS9BAuthorityRejectsCorruptStoredReceiptAsIntegrityFailure \
+      TestGS9BAuthorityReadyUsesLightweightProbe \
       TestGS9BAuthoritySameKeyDifferentFingerprintConflicts \
       TestGS9BAuthorityTransitionCASAndOutboxAtomicity \
       TestGS9BAuthorityRouteDriftConflicts \
@@ -818,6 +822,10 @@ detect_capabilities() {
       'internal/authoritystore/request_test.go:TestPrepareRequestRejectsNonCanonicalAndInvalidTransition' \
       'internal/authorityapp/server_test.go:TestServiceDefaultsToHealthOnly' \
       'internal/authorityapp/server_test.go:TestServiceMapsCommitUnknownToStableNon2xx' \
+      'internal/authorityapp/server_test.go:TestServiceMapsStoredIntegrityFailureTo500' \
+      'internal/authorityapp/server_test.go:TestQualificationReadinessUsesLightweightProbe' \
+      'internal/authorityapp/server_test.go:TestQualificationReadinessFailureIsNotReady' \
+      'internal/authorityapp/server_test.go:TestAuthorityTimeoutBudgetsLeaveWriteSlack' \
       'tests/integration/migration_test.go:TestMigrationCreatesIsolatedShadowRunnerAndAuthorityNamespacesWithImmutableEvidence' \
       'tests/integration/migration_test.go:TestAuthorityMigrationDoesNotClaimLaterGS9OrRunnerLifecycle' \
       'tests/integration/migration_test.go:TestAuthorityDownMigrationIsIsolatedAndRefusesRegisteredEpochs'; do

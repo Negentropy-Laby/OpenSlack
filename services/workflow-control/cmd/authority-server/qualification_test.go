@@ -156,7 +156,7 @@ func TestGS9BImageDefaultOff(t *testing.T) {
 
 func validDefaultOffMetrics(body []byte) bool {
 	lines := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
-	if len(lines) != 9 || lines[0] != "# TYPE openslack_workflow_control_authority_http_requests_total counter" {
+	if len(lines) != 16 || lines[0] != "# TYPE openslack_workflow_control_authority_http_requests_total counter" {
 		return false
 	}
 	const requestPrefix = "openslack_workflow_control_authority_http_requests_total "
@@ -168,12 +168,19 @@ func validDefaultOffMetrics(body []byte) bool {
 		return false
 	}
 	expected := []string{
+		"# TYPE openslack_workflow_control_authority_http_unauthorized_total counter",
 		"openslack_workflow_control_authority_http_unauthorized_total 0",
+		"# TYPE openslack_workflow_control_authority_accepts_total counter",
 		"openslack_workflow_control_authority_accepts_total 0",
+		"# TYPE openslack_workflow_control_authority_replays_total counter",
 		"openslack_workflow_control_authority_replays_total 0",
+		"# TYPE openslack_workflow_control_authority_reconciliation_total counter",
 		"openslack_workflow_control_authority_reconciliation_total 0",
+		"# TYPE openslack_workflow_control_authority_runs gauge",
 		"openslack_workflow_control_authority_runs 0",
+		"# TYPE openslack_workflow_control_authority_receipts gauge",
 		"openslack_workflow_control_authority_receipts 0",
+		"# TYPE openslack_workflow_control_authority_outbox_pending gauge",
 		"openslack_workflow_control_authority_outbox_pending 0",
 	}
 	return strings.Join(lines[2:], "\n") == strings.Join(expected, "\n")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -87,8 +88,33 @@ func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 3 || len(manifest.ContractInputs) != 7 {
+		len(manifest.ContractInputs) != 7 {
 		t.Fatal("source manifest input inventory drifted")
+	}
+	wantSourceInputs := map[string]manifestReference{
+		"dockerfile": {
+			Path:   "services/workflow-control/Dockerfile",
+			SHA256: "03e86dc01165b8eb556bb8a0dfbe2c627f2f0206f19effcf1b71569fc255b203",
+		},
+		"goMod": {
+			Path:   "services/workflow-control/go.mod",
+			SHA256: "443b57d7f5516a1cbea8288ddd58cfaaa1640cac9d2c93f6c445e7a094e21852",
+		},
+		"goSum": {
+			Path:   "services/workflow-control/go.sum",
+			SHA256: "5928913791b8b595ecdc0a084e9a822a62b0231fb77441185525d30da287ef64",
+		},
+		"authorityMigrationUp": {
+			Path:   "services/workflow-control/migrations/000003_create_workflow_control_authority.up.sql",
+			SHA256: "12562719aece57a06f28fed839aea2c343e63536b47612980b747d15d1a368f8",
+		},
+		"authorityMigrationDown": {
+			Path:   "services/workflow-control/migrations/000003_create_workflow_control_authority.down.sql",
+			SHA256: "fc04888e19b4c22c3885b5025501084b977e312e5205a62270958195b1edb9a9",
+		},
+	}
+	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
+		t.Fatalf("source manifest source inputs drifted: %#v", manifest.SourceInputs)
 	}
 	wantNonClaims := []string{
 		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",

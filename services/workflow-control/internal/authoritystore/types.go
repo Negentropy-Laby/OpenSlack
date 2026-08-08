@@ -62,6 +62,20 @@ type RunRecord struct {
 	ResumeGeneration   int64    `json:"resumeGeneration"`
 }
 
+// OutboxPayload is the canonical transaction-outbox event body shared by the
+// PostgreSQL writer and the HTTP read-path verifier.
+type OutboxPayload struct {
+	Schema        string          `json:"schema"`
+	EventID       string          `json:"eventId"`
+	ReceiptID     string          `json:"receiptId"`
+	WorkspaceID   string          `json:"workspaceId"`
+	RunID         string          `json:"runId"`
+	Expected      ExpectedBinding `json:"expected"`
+	Record        RunRecord       `json:"record"`
+	RecordHash    string          `json:"recordHash"`
+	CorrelationID string          `json:"correlationId"`
+}
+
 type RequestEnvelope struct {
 	Schema        string          `json:"schema"`
 	Operation     Operation       `json:"operation"`
@@ -150,5 +164,6 @@ type Repository interface {
 	Read(context.Context, string, string) (RunHead, error)
 	ReadReceipt(context.Context, string, string) (Receipt, error)
 	ReadOutbox(context.Context, string, string, int64) (OutboxRecord, error)
+	Ready(context.Context) error
 	Statistics(context.Context) (Statistics, error)
 }

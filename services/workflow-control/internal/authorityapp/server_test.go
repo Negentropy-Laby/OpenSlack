@@ -33,6 +33,8 @@ const (
 type fakeRepository struct {
 	mutate     func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error)
 	readOutbox func(context.Context, string, string, int64) (authoritystore.OutboxRecord, error)
+	ready      func(context.Context) error
+	statistics func(context.Context) (authoritystore.Statistics, error)
 }
 
 func (repository *fakeRepository) Mutate(ctx context.Context, input authoritystore.MutateInput) (authoritystore.Receipt, error) {
@@ -51,7 +53,16 @@ func (repository *fakeRepository) ReadOutbox(ctx context.Context, workspaceID, r
 	}
 	return authoritystore.OutboxRecord{}, authoritystore.Failure(authoritystore.ErrorNotFound, "read outbox", nil)
 }
-func (*fakeRepository) Statistics(context.Context) (authoritystore.Statistics, error) {
+func (repository *fakeRepository) Ready(ctx context.Context) error {
+	if repository.ready != nil {
+		return repository.ready(ctx)
+	}
+	return nil
+}
+func (repository *fakeRepository) Statistics(ctx context.Context) (authoritystore.Statistics, error) {
+	if repository.statistics != nil {
+		return repository.statistics(ctx)
+	}
 	return authoritystore.Statistics{}, nil
 }
 
@@ -147,7 +158,7 @@ func TestOutboxReadResponseMatchesOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordDigest := sha256.Sum256(append(recordBytes, '\n'))
-	payload := outboxPayload{
+	payload := authoritystore.OutboxPayload{
 		Schema: authoritystore.OutboxSchema, EventID: "wca-event-contract", ReceiptID: "wca-receipt-contract",
 		WorkspaceID: testWorkspace, RunID: testRunID,
 		Expected: authoritystore.ExpectedBinding{Revision: 0, ResumeGeneration: 0},
@@ -213,6 +224,57 @@ func TestServiceMapsCommitUnknownToStableNon2xx(t *testing.T) {
 	if first.Code != http.StatusInternalServerError || second.Code != http.StatusInternalServerError ||
 		first.Body.String() != second.Body.String() || !strings.Contains(first.Body.String(), `"code":"WORKFLOW_CONTROL_AUTHORITY_COMMIT_OUTCOME_UNKNOWN"`) {
 		t.Fatalf("commit-unknown mapping drifted: first=%d %s second=%d %s", first.Code, first.Body.String(), second.Code, second.Body.String())
+	}
+}
+
+func TestServiceMapsStoredIntegrityFailureTo500(t *testing.T) {
+	repository := &fakeRepository{mutate: func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error) {
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorIntegrity, "stored receipt is corrupt", nil)
+	}}
+	service := newQualificationService(t, repository)
+	body := acceptBody(t)
+	response := perform(t, service.Handler(), http.MethodPost, RouteAccept, body, qualificationHeaders(t, body, true))
+	if response.Code != http.StatusInternalServerError ||
+		!strings.Contains(response.Body.String(), `"code":"WORKFLOW_CONTROL_AUTHORITY_INTEGRITY_ERROR"`) ||
+		strings.Contains(response.Body.String(), string(authoritystore.ErrorDatabase)) {
+		t.Fatalf("integrity mapping drifted: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestQualificationReadinessUsesLightweightProbe(t *testing.T) {
+	readyCalls := 0
+	repository := &fakeRepository{
+		ready: func(context.Context) error {
+			readyCalls++
+			return nil
+		},
+		statistics: func(context.Context) (authoritystore.Statistics, error) {
+			t.Fatal("readiness must not scan authority statistics")
+			return authoritystore.Statistics{}, nil
+		},
+	}
+	response := perform(t, newQualificationService(t, repository).Handler(), http.MethodGet, RouteReady, nil, nil)
+	if response.Code != http.StatusOK || response.Body.String() != "{\"status\":\"ready\"}\n" || readyCalls != 1 {
+		t.Fatalf("qualification readiness drifted: status=%d body=%s calls=%d", response.Code, response.Body.String(), readyCalls)
+	}
+}
+
+func TestQualificationReadinessFailureIsNotReady(t *testing.T) {
+	repository := &fakeRepository{ready: func(context.Context) error {
+		return authoritystore.Failure(authoritystore.ErrorDatabase, "probe failed", nil)
+	}}
+	response := perform(t, newQualificationService(t, repository).Handler(), http.MethodGet, RouteReady, nil, nil)
+	if response.Code != http.StatusServiceUnavailable || response.Body.String() != "{\"status\":\"not_ready\"}\n" {
+		t.Fatalf("failed readiness drifted: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthorityTimeoutBudgetsLeaveWriteSlack(t *testing.T) {
+	if serverReadTimeout != 30*time.Second || serverWriteTimeout != 45*time.Second {
+		t.Fatalf("authority server timeout constants drifted: read=%s write=%s", serverReadTimeout, serverWriteTimeout)
+	}
+	if serverWriteTimeout <= requestDeadline+10*time.Second {
+		t.Fatalf("write timeout has no response slack after two verification windows: request=%s write=%s", requestDeadline, serverWriteTimeout)
 	}
 }
 

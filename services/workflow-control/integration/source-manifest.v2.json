@@ -27,6 +27,14 @@
     "goSum": {
       "path": "services/workflow-control/go.sum",
       "sha256": "5928913791b8b595ecdc0a084e9a822a62b0231fb77441185525d30da287ef64"
+    },
+    "authorityMigrationUp": {
+      "path": "services/workflow-control/migrations/000003_create_workflow_control_authority.up.sql",
+      "sha256": "12562719aece57a06f28fed839aea2c343e63536b47612980b747d15d1a368f8"
+    },
+    "authorityMigrationDown": {
+      "path": "services/workflow-control/migrations/000003_create_workflow_control_authority.down.sql",
+      "sha256": "fc04888e19b4c22c3885b5025501084b977e312e5205a62270958195b1edb9a9"
     }
   },
   "contractInputs": {

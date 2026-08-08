@@ -43,6 +43,8 @@ const (
 	MaxResponseBodyBytes   = 2 * 1024 * 1024
 	requestDeadline        = 30 * time.Second
 	readDeadline           = 5 * time.Second
+	serverReadTimeout      = 30 * time.Second
+	serverWriteTimeout     = 45 * time.Second
 )
 
 var (
@@ -180,7 +182,7 @@ func (service *Service) Run(ctx context.Context, bind string, shutdownDeadline t
 	defer listener.Close()
 	server := &http.Server{
 		Addr: bind, Handler: service.Handler(), ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second,
+		ReadTimeout: serverReadTimeout, WriteTimeout: serverWriteTimeout,
 		IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024,
 	}
 	done := make(chan error, 1)

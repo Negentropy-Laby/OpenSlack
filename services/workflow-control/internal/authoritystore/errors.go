@@ -13,6 +13,7 @@ const (
 	ErrorConflict            ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_CONFLICT"
 	ErrorIdempotencyConflict ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_IDEMPOTENCY_CONFLICT"
 	ErrorNotFound            ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_NOT_FOUND"
+	ErrorIntegrity           ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_INTEGRITY_ERROR"
 	ErrorDatabase            ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_DATABASE_ERROR"
 	ErrorCommitUnknown       ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_COMMIT_OUTCOME_UNKNOWN"
 )
