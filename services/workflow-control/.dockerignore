@@ -20,6 +20,13 @@
 !internal/**/*.go
 internal/testsupport/
 internal/testsupport/**
+!authoritycontract/
+!authoritycontract/*.go
+!authoritycontract/generated/
+!authoritycontract/generated/v2/
+!authoritycontract/generated/v2/*.json
+!authoritycontract/generated/v2/schemas/
+!authoritycontract/generated/v2/schemas/*.json
 !runnerprotocol/
 !runnerprotocol/*.go
 !migrations/

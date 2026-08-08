@@ -3,6 +3,9 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -10,7 +13,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 )
 
-func TestMigrationCreatesIsolatedShadowAndRunnerNamespacesWithImmutableEvidence(t *testing.T) {
+func TestMigrationCreatesIsolatedShadowRunnerAndAuthorityNamespacesWithImmutableEvidence(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := context.Background()
 
@@ -35,9 +38,15 @@ ORDER BY table_name`)
 		t.Fatalf("iterate migrated tables: %v", err)
 	}
 	want := []string{
+		"workflow_control_authority_epochs",
+		"workflow_control_outbox",
+		"workflow_control_reconciliations",
+		"workflow_control_runs",
 		"workflow_control_shadow_heads",
 		"workflow_control_shadow_observations",
 		"workflow_control_shadow_receipts",
+		"workflow_control_transition_events",
+		"workflow_control_transition_receipts",
 		"workflow_runner_attempts",
 		"workflow_runner_cancel_controls",
 		"workflow_runner_control_messages",
@@ -65,6 +74,10 @@ SELECT count(*)
 FROM information_schema.triggers
 WHERE trigger_schema = current_schema()
 	  AND event_object_table IN (
+	      'workflow_control_authority_epochs',
+	      'workflow_control_transition_events',
+	      'workflow_control_transition_receipts',
+	      'workflow_control_reconciliations',
 	      'workflow_control_shadow_observations',
 	      'workflow_control_shadow_receipts',
 	      'workflow_runner_job_receipts',
@@ -77,8 +90,8 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 13 {
-		t.Fatalf("immutable trigger coverage = %d, want 13 event rows", triggerEvents)
+	if triggerEvents != 21 {
+		t.Fatalf("immutable trigger coverage = %d, want 21 event rows", triggerEvents)
 	}
 }
 
@@ -117,6 +130,120 @@ ORDER BY table_name, column_name`)
 	if len(forbidden) != 0 {
 		t.Fatalf("GS8-B runner schema claimed GS9 authority: %v", forbidden)
 	}
+}
+
+func TestAuthorityMigrationDoesNotClaimLaterGS9OrRunnerLifecycle(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+
+	rows, err := pool.Query(ctx, `
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+  AND table_name IN (
+      'workflow_control_authority_epochs',
+      'workflow_control_runs',
+      'workflow_control_transition_events',
+      'workflow_control_transition_receipts',
+      'workflow_control_outbox',
+      'workflow_control_reconciliations'
+  )
+  AND (
+      column_name IN (
+          'checkpoint', 'approval', 'approval_decision', 'budget', 'budget_used',
+          'job_id', 'attempt_id', 'lease_id', 'fencing_token', 'effect_id'
+      )
+      OR column_name LIKE 'checkpoint_%'
+      OR column_name LIKE 'approval_%'
+      OR column_name LIKE 'budget_%'
+      OR column_name LIKE 'effect_%'
+  )
+ORDER BY table_name, column_name`)
+	if err != nil {
+		t.Fatalf("query forbidden later-stage columns: %v", err)
+	}
+	defer rows.Close()
+	var forbidden []string
+	for rows.Next() {
+		var table, column string
+		if err := rows.Scan(&table, &column); err != nil {
+			t.Fatalf("scan forbidden later-stage column: %v", err)
+		}
+		forbidden = append(forbidden, table+"."+column)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate forbidden later-stage columns: %v", err)
+	}
+	if len(forbidden) != 0 {
+		t.Fatalf("GS9-B authority schema claimed a later GS9/runner lifecycle plane: %v", forbidden)
+	}
+}
+
+func TestAuthorityDownMigrationIsIsolatedAndRefusesRegisteredEpochs(t *testing.T) {
+	t.Run("empty namespace can be removed without touching earlier slices", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		ctx := context.Background()
+		if _, err := pool.Exec(ctx, authorityDownMigration(t)); err != nil {
+			t.Fatalf("apply empty GS9-B down migration: %v", err)
+		}
+
+		var authorityTables int
+		if err := pool.QueryRow(ctx, `
+SELECT count(*)
+FROM information_schema.tables
+WHERE table_schema = current_schema()
+  AND table_name IN (
+      'workflow_control_authority_epochs',
+      'workflow_control_runs',
+      'workflow_control_transition_events',
+      'workflow_control_transition_receipts',
+      'workflow_control_outbox',
+      'workflow_control_reconciliations'
+  )`).Scan(&authorityTables); err != nil {
+			t.Fatalf("count authority tables after down migration: %v", err)
+		}
+		if authorityTables != 0 {
+			t.Fatalf("authority tables after down migration = %d, want 0", authorityTables)
+		}
+
+		var priorTables int
+		if err := pool.QueryRow(ctx, `
+SELECT count(*)
+FROM information_schema.tables
+WHERE table_schema = current_schema()
+  AND table_name IN ('workflow_control_shadow_heads', 'workflow_runner_jobs')`).Scan(&priorTables); err != nil {
+			t.Fatalf("count prior-slice tables after down migration: %v", err)
+		}
+		if priorTables != 2 {
+			t.Fatalf("prior-slice tables after down migration = %d, want 2", priorTables)
+		}
+	})
+
+	t.Run("registered epoch prevents destructive rollback", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		ctx := context.Background()
+		if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_authority_epochs (
+    workspace_id, routing_epoch, backend, authority, authority_build_hash
+) VALUES ('workspace-down-guard', 1, 'go', 'workflow-control', decode(repeat('ab',32),'hex'))`); err != nil {
+			t.Fatalf("seed registered authority epoch: %v", err)
+		}
+		if _, err := pool.Exec(ctx, authorityDownMigration(t)); err == nil {
+			t.Fatal("GS9-B down migration unexpectedly removed a registered authority epoch")
+		} else {
+			requireSQLState(t, err, "P0001")
+		}
+
+		var epochs int
+		if err := pool.QueryRow(ctx, `
+SELECT count(*) FROM workflow_control_authority_epochs
+WHERE workspace_id = 'workspace-down-guard'`).Scan(&epochs); err != nil {
+			t.Fatalf("read registered epoch after refused rollback: %v", err)
+		}
+		if epochs != 1 {
+			t.Fatalf("registered epochs after refused rollback = %d, want 1", epochs)
+		}
+	})
 }
 
 func TestMigrationRejectsPartialMatchedHeadAndInvalidReceiptStates(t *testing.T) {
@@ -182,4 +309,21 @@ func requireSQLState(t *testing.T, err error, want string) {
 	if !errors.As(err, &postgresError) || postgresError.Code != want {
 		t.Fatalf("PostgreSQL error = %v, want SQLSTATE %s", err, want)
 	}
+}
+
+func authorityDownMigration(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve migration test source path")
+	}
+	path := filepath.Clean(filepath.Join(
+		filepath.Dir(file), "..", "..", "migrations",
+		"000003_create_workflow_control_authority.down.sql",
+	))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read GS9-B down migration: %v", err)
+	}
+	return string(body)
 }

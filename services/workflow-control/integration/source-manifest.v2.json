@@ -4,8 +4,8 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
     "targetPath": "services/workflow-control",
-    "migrationPhase": "GS8-B",
-    "authority": "GO_RUNNER_LIFECYCLE_TYPESCRIPT_WORKFLOW_AUTHORITY"
+    "migrationPhase": "GS9-B",
+    "authority": "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY"
   },
   "containerInputs": {
     "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
@@ -18,7 +18,7 @@
   "sourceInputs": {
     "dockerfile": {
       "path": "services/workflow-control/Dockerfile",
-      "sha256": "59b0d90c7c2bc589a8d2824ddc35617cb79baf51282fb95e3ebc40e57923ff06"
+      "sha256": "03e86dc01165b8eb556bb8a0dfbe2c627f2f0206f19effcf1b71569fc255b203"
     },
     "goMod": {
       "path": "services/workflow-control/go.mod",
@@ -27,6 +27,14 @@
     "goSum": {
       "path": "services/workflow-control/go.sum",
       "sha256": "5928913791b8b595ecdc0a084e9a822a62b0231fb77441185525d30da287ef64"
+    },
+    "authorityMigrationUp": {
+      "path": "services/workflow-control/migrations/000003_create_workflow_control_authority.up.sql",
+      "sha256": "12562719aece57a06f28fed839aea2c343e63536b47612980b747d15d1a368f8"
+    },
+    "authorityMigrationDown": {
+      "path": "services/workflow-control/migrations/000003_create_workflow_control_authority.down.sql",
+      "sha256": "fc04888e19b4c22c3885b5025501084b977e312e5205a62270958195b1edb9a9"
     }
   },
   "contractInputs": {
@@ -42,6 +50,10 @@
       "path": "packages/workflows/contracts/workflow-runner/v1/manifest.json",
       "sha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6"
     },
+    "workflowControlAuthorityContractManifest": {
+      "path": "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
+      "sha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1"
+    },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
       "sha256": "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f"
@@ -49,6 +61,10 @@
     "runnerOpenapi": {
       "path": "services/workflow-control/docs/api/runner-openapi.yaml",
       "sha256": "8d05d7b08cb1e7a11cf76b6f10b26079e54b546c527efb6325f6bdc42ab3d632"
+    },
+    "authorityOpenapi": {
+      "path": "services/workflow-control/docs/api/authority-openapi.yaml",
+      "sha256": "8c1bf057b0ea0e3c005e70e1ed440f585429f66eacbaa923574e0728e0430935"
     }
   },
   "legalInputs": {
@@ -79,7 +95,11 @@
       "WORKFLOW_RUNNER_CANCELLATION_CONTROL",
       "WORKFLOW_RUNNER_JOB_LIFECYCLE_CONTROL",
       "WORKFLOW_RUNNER_PROCESS_SUPERVISION",
-      "WORKFLOW_RUNNER_PROTOCOL_RECEIPT"
+      "WORKFLOW_RUNNER_PROTOCOL_RECEIPT",
+      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RUN_SPINE",
+      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
+      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_OUTBOX",
+      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RECONCILIATION"
     ],
     "nonClaims": [
       "CHECKPOINT_RESUME_AUTHORITY",
@@ -93,6 +113,7 @@
       "SIGNED_PROVENANCE",
       "USER_VISIBLE_READ_AUTHORITY",
       "WORKFLOW_BUDGET_AUTHORITY",
+      "WORKFLOW_CONTROL_AUTHORITY_CUTOVER",
       "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
       "WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
       "WORKFLOW_EFFECT_EXECUTION_AUTHORITY",

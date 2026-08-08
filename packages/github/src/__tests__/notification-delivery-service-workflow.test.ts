@@ -275,6 +275,77 @@ function gs7bCrossLanguageRun(): string {
   );
 }
 
+function gs9bAuthorityRun(): string {
+  return lines(
+    'set -euo pipefail',
+    'postgres_container="openslack-gs9b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+    'cleanup() {',
+    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
+    '}',
+    'trap cleanup EXIT',
+    'cleanup',
+    'docker run --detach \\',
+    '  --name "$postgres_container" \\',
+    '  --env POSTGRES_USER=openslack \\',
+    '  --env POSTGRES_PASSWORD=openslack \\',
+    '  --env POSTGRES_DB=openslack \\',
+    '  --publish 127.0.0.1::5432 \\',
+    `  ${postgresImage} >/dev/null`,
+    'for attempt in $(seq 1 60); do',
+    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
+    '    break',
+    '  fi',
+    '  if [ "$attempt" -eq 60 ]; then',
+    '    docker logs "$postgres_container"',
+    '    exit 1',
+    '  fi',
+    '  sleep 1',
+    'done',
+    'published="$(docker port "$postgres_container" 5432/tcp)"',
+    'postgres_port="${published##*:}"',
+    'test "$postgres_port" -ge 1',
+    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
+    'export WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
+    'export WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082',
+    'export WORKFLOW_CONTROL_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    'export WORKFLOW_CONTROL_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d',
+    'export WORKFLOW_CONTROL_AUTHORITY_WORKSPACE_ID=workspace.demo',
+    'export WORKFLOW_CONTROL_AUTHORITY_CALLER_ID=typescript:workflow-control-qualification',
+    'export WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
+    'go test -race \\',
+    '  ./internal/authorityapp \\',
+    '  ./internal/authoritystore/... \\',
+    '  ./internal/config \\',
+    '  ./tests/contracts \\',
+    '  ./tests/integration \\',
+    '  -count=1',
+    'WORKFLOW_CONTROL_GS9B_QUALIFICATION=1 \\',
+    "  go test -race ./cmd/authority-server -run '^TestGS9BQualification$' -count=1",
+    'restart_schema="workflow_control_gs9b_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"',
+    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed \\',
+    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
+    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
+    'docker restart "$postgres_container" >/dev/null',
+    'for attempt in $(seq 1 60); do',
+    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
+    '    break',
+    '  fi',
+    '  if [ "$attempt" -eq 60 ]; then',
+    '    docker logs "$postgres_container"',
+    '    exit 1',
+    '  fi',
+    '  sleep 1',
+    'done',
+    'published="$(docker port "$postgres_container" 5432/tcp)"',
+    'postgres_port="${published##*:}"',
+    'test "$postgres_port" -ge 1',
+    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
+    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify \\',
+    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
+    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
+  );
+}
+
 describe('notification delivery service workflow', () => {
   it('runs only for the service contract on main and manual dispatch', () => {
     expect(workflow.name).toBe('Notification Delivery Service CI');
@@ -343,6 +414,7 @@ describe('notification delivery service workflow', () => {
     const gs6CrossLanguageIndex = stepIndex('Qualify GS6 official-SDK single-writer cutover');
     const gs7bCrossLanguageIndex = stepIndex('Qualify GS7-B TypeScript-to-Go shadow observation');
     const gs8bRunnerIndex = stepIndex('Qualify GS8-B real TypeScript runner lifecycle');
+    const gs9bAuthorityIndex = stepIndex('Qualify GS9-B Workflow Control authority');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -373,7 +445,8 @@ describe('notification delivery service workflow', () => {
     expect(gs6CrossLanguageIndex).toBe(imagePullIndex + 1);
     expect(gs7bCrossLanguageIndex).toBe(gs6CrossLanguageIndex + 1);
     expect(gs8bRunnerIndex).toBe(gs7bCrossLanguageIndex + 1);
-    expect(goCheckIndex).toBe(gs8bRunnerIndex + 1);
+    expect(gs9bAuthorityIndex).toBe(gs8bRunnerIndex + 1);
+    expect(goCheckIndex).toBe(gs9bAuthorityIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -504,6 +577,11 @@ describe('notification delivery service workflow', () => {
       name: 'Qualify GS8-B real TypeScript runner lifecycle',
       'working-directory': 'services/workflow-control',
     });
+    expect(job.steps[gs9bAuthorityIndex]).toEqual({
+      name: 'Qualify GS9-B Workflow Control authority',
+      'working-directory': 'services/workflow-control',
+      run: gs9bAuthorityRun(),
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -563,6 +641,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS6 official-SDK single-writer cutover',
       'Qualify GS7-B TypeScript-to-Go shadow observation',
       'Qualify GS8-B real TypeScript runner lifecycle',
+      'Qualify GS9-B Workflow Control authority',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -631,6 +710,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS6 official-SDK single-writer cutover': gs6CrossLanguageRun(),
       'Qualify GS7-B TypeScript-to-Go shadow observation': gs7bCrossLanguageRun(),
       'Qualify GS8-B real TypeScript runner lifecycle': gs8bRunnerRun as string,
+      'Qualify GS9-B Workflow Control authority': gs9bAuthorityRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -924,6 +1004,49 @@ describe('notification delivery service workflow', () => {
       (step) => step.name === 'Qualify native Windows Job Object process trees',
     )?.run;
     expect(processTests).toContain('go test ./internal/processsupervisor ./cmd/runner-server');
+  });
+
+  it('qualifies the GS9-B authority store and server against pinned PostgreSQL without weakening earlier gates', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS9-B Workflow Control authority',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS9-B Workflow Control authority',
+      'working-directory': 'services/workflow-control',
+      run: gs9bAuthorityRun(),
+    });
+    for (const evidence of [
+      postgresImage,
+      'trap cleanup EXIT',
+      'WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
+      'WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
+      'go test -race \\',
+      './internal/authorityapp',
+      './internal/authoritystore/...',
+      './internal/config',
+      './tests/contracts',
+      './tests/integration',
+      '-count=1',
+      'WORKFLOW_CONTROL_GS9B_QUALIFICATION=1',
+      "-run '^TestGS9BQualification$'",
+      'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed',
+      'docker restart "$postgres_container"',
+      'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify',
+    ]) {
+      expect(step?.run).toContain(evidence);
+    }
+    expect(
+      step?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
+    ).toHaveLength(2);
+    expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+
+    const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
+    expect(names.indexOf('Qualify GS8-B real TypeScript runner lifecycle')).toBeLessThan(
+      names.indexOf('Qualify GS9-B Workflow Control authority'),
+    );
+    expect(names.indexOf('Qualify GS9-B Workflow Control authority')).toBeLessThan(
+      names.indexOf('Run reviewed Go workspace verifier'),
+    );
   });
 
   it('does not expand into deployment, external-input, or broad repository authority', () => {

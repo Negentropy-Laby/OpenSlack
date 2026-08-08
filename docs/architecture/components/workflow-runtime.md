@@ -806,6 +806,27 @@ active route, user-visible read cutover, v2 runtime negotiation/delivery, checkp
 approval/effect execution, budget enforcement, canary, or rollback in GS9-A. Organization Graph is
 unrelated to this boundary.
 
+### GS9-B default-off authority spine
+
+GS9-B adds a third, isolated PostgreSQL namespace for qualification-only Workflow run heads. Its
+six tables own immutable epoch registration, run revision/state/phase/resume CAS, append-only
+transition events and exact receipts, same-transaction outbox records, and unresolved
+reconciliation evidence. They do not modify or reuse the GS8 runner job/attempt/lease/fence
+tables, and they do not persist checkpoint, approval, effect, or budget subdomains.
+
+The `/authority-server` binary exposes mutation routes only in the closed
+`local-qualification-v1` mode with fixed workspace, caller, epoch, build, bearer, and loopback
+binding. Production defaults remain unregistered and `acceptNewRecords: false`; the image still
+starts the observational `/server`. Same-key/same-fingerprint requests return the original receipt
+bytes, while stale CAS, route drift, invalid transitions, and fingerprint conflicts return 409.
+Unknown commit evidence never advances the run head and a double-unknown outcome fails closed.
+
+This batch does not connect the TypeScript RunStore, JavaScript runner, CLI/TUI/MCP, or Qoder to
+Go. It does not negotiate runner protocol v2 or implement checkpoint/resume, approval/effect,
+budget, canary routing, rollback, migration, or writer retirement. The evidence ceiling is
+`GS9-B LOCAL_PASS / Go authority NOT_CLAIMED` after the reviewed real-PostgreSQL race, restart,
+atomicity, migration, OpenAPI, and default-off image gates pass.
+
 ### Operator Module
 
 The Operator module provides the CLI commands that interface with the runtime:

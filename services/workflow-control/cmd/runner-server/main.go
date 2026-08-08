@@ -30,7 +30,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
-const requiredSchemaVersion int64 = 2
+const requiredSchemaVersion int64 = 3
 
 const workspaceLockDomain = "openslack.workflow-runner.workspace-singleton.v1\x00"
 

@@ -212,3 +212,36 @@ still add shadow/differential, reads, immutable new-record routing, PostgreSQL d
 v2 runtime delivery, recovery, canary, and explicit higher-epoch rollback.
 None of those later stages is implied by a GS7 shadow receipt, GS8 protocol validation, or the
 GS9-A local contract pass.
+
+## GS9-B default-off PostgreSQL authority spine
+
+GS9-B implements only the run-status/revision spine represented by the frozen v2 contract. The
+separate `workflow_control_*` namespace stores an immutable qualification epoch, one current run
+head, append-only transition events and exact receipts, a transactional outbox, and unresolved
+reconciliation evidence. It does not add authority columns to `workflow_runner_*`; Workflow
+revision/CAS remains independent from runner job revision, attempt, lease, and fencing token.
+
+The private `/authority-server` is health-only unless
+`WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1` is set with one exact loopback workspace,
+caller, routing epoch, service build, and bearer binding. In that explicit mode, accept and
+transition use strict canonical JSON, deterministic idempotency/fingerprint bindings, ordered
+advisory locks, receipt point-read, `SELECT ... FOR UPDATE`, exact expected-head CAS, and one
+transaction for event, run head, accepted receipt bytes, and outbox. Same-key replay returns the
+original receipt bytes unchanged. A different fingerprint, stale revision, route drift, or invalid
+transition conflicts without mutation.
+
+After a lost commit response the repository first point-reads the original receipt by exact
+fingerprint. An unresolved primary outcome records `reconciliation_required` without a run head,
+accepted revision, transition event, or outbox; if that reconciliation commit also cannot be
+proved, the stable non-2xx result is
+`WORKFLOW_CONTROL_AUTHORITY_COMMIT_OUTCOME_UNKNOWN`. Outbox acknowledgement is not a synchronous
+transition precondition in this batch.
+
+The default image entry point remains the GS7-B shadow server. The authority binary is packaged
+only for explicit qualification, and `/health/version` continues to report
+`authority: typescript`, `routingActivated: false`, and `acceptNewRecords: false`. No TypeScript
+RunStore, CLI, TUI, MCP, Qoder, or runner-v2 client calls this service. Checkpoint/resume,
+approval/effect, budget, active routing, canary, rollback, old-record migration, and writer cutover
+remain GS9-C and later work. Passing the reviewed PostgreSQL, race, restart, image-default-off,
+OpenAPI, migration, and exact-replay gates supports only `GS9-B LOCAL_PASS / Go authority
+NOT_CLAIMED`.
