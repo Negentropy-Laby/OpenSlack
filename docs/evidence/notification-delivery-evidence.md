@@ -31,6 +31,9 @@ IB6 proves repository import history and the governed productization chain. The 
 receipt proves only the protected post-merge audit. Neither is live delivery evidence and neither
 can substitute for qualification, IB7, release, or production readiness.
 
+The PX2 receipt and its schema intentionally freeze the one-time audit of PR #308. A later PX2
+audit must use a new receipt identity and schema; it must not rewrite this append-only record.
+
 ## IB6 History Import
 
 | Evidence                  | Path                                                                                                                                                      | Purpose                                                                 |

@@ -117,6 +117,17 @@ describe('qualification capstone', () => {
       }),
     ).toThrow();
   });
+  it('rejects a self-declared PASS without evidence', () => {
+    const value = fixture();
+    expect(() =>
+      recordQualificationStep({
+        ...value,
+        step: 'notification_px2',
+        status: 'PASS',
+        environment: 'clean-host',
+      }),
+    ).toThrow(/requires an evidence reference or artifact/);
+  });
   it('rejects unknown fields and a concurrent lock', () => {
     const value = fixture();
     const path = qualificationRunPath(value.root, value.correlationId);
@@ -140,6 +151,7 @@ describe('qualification capstone', () => {
         status: 'PASS',
         environment: 'clean-host',
       }),
-    ).toThrow();
+    ).toThrow(/If no recorder is active, remove .*record\.lock and retry/);
+    expect(readFileSync(lock, 'utf8')).toBe('locked');
   });
 });

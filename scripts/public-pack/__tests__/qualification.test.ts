@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PUBLIC_PACKAGES, sha256File } from '../lib.js';
+import { PUBLIC_PACKAGES, PUBLIC_VERSION, sha256Canonical, sha256File } from '../lib.js';
 import { createQualificationManifest, verifyQualificationManifest } from '../qualification.js';
 
 const roots: string[] = [];
@@ -17,22 +17,43 @@ function fixture() {
   const tarballs = join(root, 'tarballs');
   mkdirSync(tarballs);
   const artifacts = PUBLIC_PACKAGES.map((definition) => {
-    const tarball = `openslack-${definition.name.replace('@openslack/', '')}-0.2.0.tgz`;
+    const tarball = `openslack-${definition.name.replace('@openslack/', '')}-${PUBLIC_VERSION}.tgz`;
     const path = join(tarballs, tarball);
     writeFileSync(path, `${definition.name}\n`);
+    const files = ['LICENSE', 'NOTICE', 'README.md', 'dist/index.js', 'package.json']
+      .map((file) => ({
+        path: file,
+        mode: '0644' as const,
+        size: 2,
+        sha256: '1'.repeat(64),
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path, 'en'));
     return {
       name: definition.name,
-      version: '0.2.0',
+      version: PUBLIC_VERSION,
       tarball: `ignored/current/${tarball}`,
       tarballSha256: sha256File(path),
-      manifestSha256: '1'.repeat(64),
-      files: [],
+      manifestSha256: sha256Canonical(files),
+      files,
     };
   });
   const report = join(root, 'report.json');
   writeFileSync(
     report,
-    `${JSON.stringify({ schema: 'openslack.public_pack_verification.v1', version: '0.2.0', platform: 'test', artifacts })}\n`,
+    `${JSON.stringify({
+      schema: 'openslack.public_pack_verification.v1',
+      version: PUBLIC_VERSION,
+      platform: 'test-host',
+      reproducibleCanonicalManifests: true,
+      cleanConsumer: {
+        installedTarballs: PUBLIC_PACKAGES.map((item) => item.name),
+        esmImports: 'PASS',
+        declarations: 'PASS',
+        typescriptConsumer: 'PASS',
+        isolatedPluginHosts: 'PASS',
+      },
+      artifacts,
+    })}\n`,
   );
   const manifestPath = join(root, 'manifest.json');
   createQualificationManifest({
@@ -45,7 +66,16 @@ function fixture() {
   const publicKeyPath = join(root, 'manifest.pub.pem');
   writeFileSync(signaturePath, sign(null, readFileSync(manifestPath), privateKey));
   writeFileSync(publicKeyPath, publicKey.export({ type: 'spki', format: 'pem' }));
-  return { root, tarballs, manifestPath, signaturePath, publicKeyPath, privateKey };
+  return {
+    root,
+    tarballs,
+    report,
+    artifacts,
+    manifestPath,
+    signaturePath,
+    publicKeyPath,
+    privateKey,
+  };
 }
 
 describe('public package qualification set', () => {
@@ -74,7 +104,7 @@ describe('public package qualification set', () => {
 
   it('rejects tarball drift and tested-commit drift', () => {
     const value = fixture();
-    writeFileSync(join(value.tarballs, 'openslack-plugin-api-0.2.0.tgz'), 'changed\n');
+    writeFileSync(join(value.tarballs, `openslack-plugin-api-${PUBLIC_VERSION}.tgz`), 'changed\n');
     expect(() => verifyQualificationManifest({ ...value, artifactRoot: value.tarballs })).toThrow(
       /hash mismatch/,
     );
@@ -86,5 +116,50 @@ describe('public package qualification set', () => {
         expectedCommit: 'b'.repeat(40),
       }),
     ).toThrow(/tested commit/);
+  });
+
+  it('requires the complete public:verify report rather than a pack-only artifact list', () => {
+    const value = fixture();
+    writeFileSync(
+      value.report,
+      `${JSON.stringify({
+        schema: 'openslack.public_pack_artifacts.v1',
+        version: PUBLIC_VERSION,
+        platform: 'test-host',
+        artifacts: value.artifacts,
+      })}\n`,
+    );
+    expect(() =>
+      createQualificationManifest({
+        artifactReportPath: value.report,
+        testedCommit: 'a'.repeat(40),
+      }),
+    ).toThrow(/public:verify/);
+  });
+
+  it('rejects canonical manifest hash drift in the verified report', () => {
+    const value = fixture();
+    const report = JSON.parse(readFileSync(value.report, 'utf8'));
+    report.artifacts[0].manifestSha256 = 'f'.repeat(64);
+    writeFileSync(value.report, `${JSON.stringify(report)}\n`);
+    expect(() =>
+      createQualificationManifest({
+        artifactReportPath: value.report,
+        testedCommit: 'a'.repeat(40),
+      }),
+    ).toThrow(/canonical package manifest hash mismatch/i);
+  });
+
+  it('binds each package identity to its current-version tarball name', () => {
+    const value = fixture();
+    const report = JSON.parse(readFileSync(value.report, 'utf8'));
+    report.artifacts[0].tarball = `ignored/current/openslack-sdk-${PUBLIC_VERSION}.tgz`;
+    writeFileSync(value.report, `${JSON.stringify(report)}\n`);
+    expect(() =>
+      createQualificationManifest({
+        artifactReportPath: value.report,
+        testedCommit: 'a'.repeat(40),
+      }),
+    ).toThrow(/artifact identity is invalid/i);
   });
 });

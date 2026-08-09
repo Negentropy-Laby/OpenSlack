@@ -1,9 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openslack.dev/schemas/integration/notification-delivery-px2-post-merge-audit.v1.json",
+  "$comment": "This schema intentionally freezes the one-time PR #308 PX2 audit. Future PX2 audits require a new receipt identity and schema instead of mutating this historical receipt.",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "$schema",
     "schema",
     "receipt_id",
     "recorded_at",
@@ -15,9 +17,12 @@
     "does_not_claim"
   ],
   "properties": {
+    "$schema": {
+      "const": "../../docs/reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json"
+    },
     "schema": { "const": "openslack.notification_delivery_px2_post_merge_audit.v1" },
     "receipt_id": { "const": "notification-delivery-px2-pr308" },
-    "recorded_at": { "type": "string", "format": "date-time" },
+    "recorded_at": { "const": "2026-08-09T07:32:40Z" },
     "gate": {
       "const": {
         "name": "IB6-MERGE-TRAIN/PX2-EXIT",
@@ -45,12 +50,9 @@
       }
     },
     "canonical_main": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["observed_head", "merge_commit_is_ancestor"],
-      "properties": {
-        "observed_head": { "pattern": "^[0-9a-f]{40}$" },
-        "merge_commit_is_ancestor": { "const": true }
+      "const": {
+        "observed_head": "fb17bf92b7508eddcb1c9d4acf286588527da697",
+        "merge_commit_is_ancestor": true
       }
     },
     "ruleset": {

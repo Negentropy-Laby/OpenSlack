@@ -1,7 +1,15 @@
 import { createPublicKey, verify as verifySignature } from 'node:crypto';
 import { lstatSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
-import { PUBLIC_PACKAGES, PUBLIC_VERSION, sha256File, writeJson } from './lib.js';
+import {
+  PUBLIC_PACKAGES,
+  PUBLIC_VERSION,
+  assertExpectedTarballFiles,
+  sha256Canonical,
+  sha256File,
+  writeJson,
+  type CanonicalFileEntry,
+} from './lib.js';
 
 export interface QualificationPackage {
   readonly name: string;
@@ -38,15 +46,42 @@ export function createQualificationManifest(options: {
     'artifacts',
   ]);
   if (
-    !['openslack.public_pack_artifacts.v1', 'openslack.public_pack_verification.v1'].includes(
-      String(report.schema),
-    ) ||
+    report.schema !== 'openslack.public_pack_verification.v1' ||
     report.version !== PUBLIC_VERSION ||
+    typeof report.platform !== 'string' ||
+    !/^[a-z0-9][a-z0-9._-]{1,63}$/u.test(report.platform) ||
+    report.reproducibleCanonicalManifests !== true ||
+    !report.cleanConsumer ||
+    typeof report.cleanConsumer !== 'object' ||
+    Array.isArray(report.cleanConsumer) ||
     !Array.isArray(report.artifacts)
   ) {
-    throw new Error('Public pack artifact report is invalid.');
+    throw new Error('Qualification requires a complete PASS report from bun run public:verify.');
   }
-  const packages = report.artifacts.map(parseArtifact).sort((a, b) => a.name.localeCompare(b.name));
+  const cleanConsumer = exactRecord(report.cleanConsumer, [
+    'installedTarballs',
+    'esmImports',
+    'declarations',
+    'typescriptConsumer',
+    'isolatedPluginHosts',
+  ]);
+  const installedTarballs = Array.isArray(cleanConsumer.installedTarballs)
+    ? cleanConsumer.installedTarballs
+    : [];
+  if (
+    cleanConsumer.esmImports !== 'PASS' ||
+    cleanConsumer.declarations !== 'PASS' ||
+    cleanConsumer.typescriptConsumer !== 'PASS' ||
+    cleanConsumer.isolatedPluginHosts !== 'PASS' ||
+    installedTarballs.length !== EXPECTED_NAMES.length ||
+    !installedTarballs.every((name) => typeof name === 'string') ||
+    JSON.stringify([...installedTarballs].sort()) !== JSON.stringify(EXPECTED_NAMES)
+  ) {
+    throw new Error('Qualification requires a complete PASS report from bun run public:verify.');
+  }
+  const packages = report.artifacts
+    .map((value) => parseArtifact(value, true))
+    .sort((a, b) => a.name.localeCompare(b.name));
   if (
     packages.length !== EXPECTED_NAMES.length ||
     JSON.stringify(packages.map((item) => item.name)) !== JSON.stringify(EXPECTED_NAMES)
@@ -100,27 +135,37 @@ export function verifyQualificationManifest(options: {
   return manifest;
 }
 
-function parseArtifact(value: unknown): QualificationPackage {
+function parseArtifact(value: unknown, includeFiles: boolean): QualificationPackage {
   const item = exactRecord(value, [
     'name',
     'version',
     'tarball',
     'tarballSha256',
     'manifestSha256',
-    'files',
+    ...(includeFiles ? ['files'] : []),
   ]);
   const tarball = typeof item.tarball === 'string' ? basename(item.tarball) : '';
+  const expectedTarball =
+    typeof item.name === 'string'
+      ? `openslack-${item.name.replace('@openslack/', '')}-${PUBLIC_VERSION}.tgz`
+      : '';
   if (
     typeof item.name !== 'string' ||
     !EXPECTED_NAME_SET.has(item.name) ||
     item.version !== PUBLIC_VERSION ||
-    !/^openslack-[a-z-]+-0\.2\.0\.tgz$/u.test(tarball) ||
+    tarball !== expectedTarball ||
     typeof item.tarballSha256 !== 'string' ||
     !HASH.test(item.tarballSha256) ||
     typeof item.manifestSha256 !== 'string' ||
     !HASH.test(item.manifestSha256)
   ) {
     throw new Error('Public pack artifact identity is invalid.');
+  }
+  if (includeFiles) {
+    const files = parseCanonicalFiles(item.files);
+    if (sha256Canonical(files) !== item.manifestSha256) {
+      throw new Error(`Canonical package manifest hash mismatch for ${item.name}.`);
+    }
   }
   return {
     name: item.name,
@@ -142,23 +187,56 @@ function parseManifest(value: unknown): PublicQualificationManifest {
   ) {
     throw new Error('Qualification manifest identity is invalid.');
   }
-  const packages = manifest.packages.map((value) => {
-    const item = exactRecord(value, [
-      'name',
-      'version',
-      'tarball',
-      'tarballSha256',
-      'manifestSha256',
-    ]);
-    return parseArtifact({ ...item, files: [] });
-  });
+  const packages = manifest.packages.map((value) => parseArtifact(value, false));
   if (
     packages.length !== EXPECTED_NAMES.length ||
     JSON.stringify(packages.map((item) => item.name)) !== JSON.stringify(EXPECTED_NAMES)
   ) {
     throw new Error('Qualification package order or set is invalid.');
   }
-  return manifest as unknown as PublicQualificationManifest;
+  return {
+    schema: 'openslack.public_package_qualification_set.v1',
+    testedCommit: manifest.testedCommit,
+    version: PUBLIC_VERSION,
+    packages,
+  };
+}
+
+function parseCanonicalFiles(value: unknown): readonly CanonicalFileEntry[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('Canonical package manifest must contain files.');
+  }
+  const files = value.map((raw) => {
+    const file = exactRecord(raw, ['path', 'mode', 'size', 'sha256']);
+    if (
+      typeof file.path !== 'string' ||
+      file.path.length === 0 ||
+      file.path.length > 240 ||
+      file.path.startsWith('/') ||
+      file.path.includes('\\') ||
+      file.path.split('/').some((part) => part === '' || part === '.' || part === '..') ||
+      (file.mode !== '0644' && file.mode !== '0755') ||
+      !Number.isSafeInteger(file.size) ||
+      Number(file.size) < 0 ||
+      typeof file.sha256 !== 'string' ||
+      !HASH.test(file.sha256)
+    ) {
+      throw new Error('Canonical package manifest file is invalid.');
+    }
+    return {
+      path: file.path,
+      mode: file.mode,
+      size: Number(file.size),
+      sha256: file.sha256,
+    } satisfies CanonicalFileEntry;
+  });
+  for (let index = 1; index < files.length; index += 1) {
+    if (files[index - 1]!.path.localeCompare(files[index]!.path, 'en') >= 0) {
+      throw new Error('Canonical package manifest files must be unique and ordered.');
+    }
+  }
+  assertExpectedTarballFiles(files);
+  return files;
 }
 
 function readJsonBounded(path: string): unknown {

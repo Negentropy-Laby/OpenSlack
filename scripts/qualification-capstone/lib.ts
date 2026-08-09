@@ -146,6 +146,9 @@ export function recordQualificationStep(options: {
     );
     if (current.testedCommit !== options.testedCommit)
       throw new Error('Qualification tested commit is immutable.');
+    if (options.status === 'PASS' && evidenceRefs.length === 0 && artifactHashes.length === 0) {
+      throw new Error('A passing qualification step requires an evidence reference or artifact.');
+    }
     const recordedAt = (options.now ?? (() => new Date()))().toISOString();
     const next: QualificationCapstoneRun = {
       ...current,
@@ -181,7 +184,8 @@ export function verifyQualification(options: {
     throw new Error('At least one unique qualification profile is required.');
   }
   const runPath = qualificationRunPath(options.workspaceRoot, options.correlationId);
-  const run = readQualificationRun(runPath);
+  const snapshot = readQualificationRunSnapshot(runPath);
+  const run = snapshot.run;
   assertNoSecrets(run);
   const failures: string[] = [];
   if (run.testedCommit !== options.testedCommit) failures.push('TESTED_COMMIT_MISMATCH');
@@ -213,7 +217,7 @@ export function verifyQualification(options: {
     verifiedAt: now.toISOString(),
     valid: failures.length === 0,
     failures,
-    runManifestSha256: createHash('sha256').update(readFileSync(runPath)).digest('hex'),
+    runManifestSha256: createHash('sha256').update(snapshot.bytes).digest('hex'),
   };
 }
 
@@ -231,11 +235,25 @@ export function qualificationRunPath(workspaceRoot: string, correlationId: strin
 }
 
 export function readQualificationRun(path: string): QualificationCapstoneRun {
+  return readQualificationRunSnapshot(path).run;
+}
+
+function readQualificationRunSnapshot(path: string): {
+  readonly run: QualificationCapstoneRun;
+  readonly bytes: Buffer;
+} {
   const info = lstatSync(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size <= 0 || info.size > 2 * 1024 * 1024) {
     throw new Error('Qualification manifest must be a bounded regular file.');
   }
-  return parseRun(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path))));
+  const bytes = readFileSync(path);
+  if (bytes.length <= 0 || bytes.length > 2 * 1024 * 1024) {
+    throw new Error('Qualification manifest must be a bounded regular file.');
+  }
+  return {
+    run: parseRun(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))),
+    bytes,
+  };
 }
 
 function parseRun(value: unknown): QualificationCapstoneRun {
@@ -282,6 +300,13 @@ function parseRun(value: unknown): QualificationCapstoneRun {
       )
     )
       throw new Error(`Qualification step result is invalid: ${step}.`);
+    if (
+      result.status === 'PASS' &&
+      result.evidenceRefs.length === 0 &&
+      result.artifactHashes.length === 0
+    ) {
+      throw new Error(`Passing qualification step has no evidence: ${step}.`);
+    }
   }
   return run as unknown as QualificationCapstoneRun;
 }
@@ -297,7 +322,7 @@ function writeRunAtomic(
   if (create && existsSync(path)) throw new Error('Qualification correlation already exists.');
   if (existsSync(path) && lstatSync(path).isSymbolicLink())
     throw new Error('Qualification run path must not be a symlink.');
-  const temporary = `${path}.${process.pid}.tmp`;
+  const temporary = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(run, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
@@ -311,13 +336,30 @@ function writeRunAtomic(
   }
   renameSync(temporary, path);
   chmodSync(path, 0o600);
+  if (process.platform !== 'win32') {
+    const directoryHandle = openSync(directory, 'r');
+    try {
+      fsyncSync(directoryHandle);
+    } finally {
+      closeSync(directoryHandle);
+    }
+  }
 }
 
 function withLock<T>(workspaceRoot: string, correlationId: string, operation: () => T): T {
   const path = join(dirname(qualificationRunPath(workspaceRoot, correlationId)), 'record.lock');
   let handle: number | undefined;
   try {
-    handle = openSync(path, 'wx', 0o600);
+    try {
+      handle = openSync(path, 'wx', 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(
+          `Qualification record is locked. If no recorder is active, remove ${path} and retry.`,
+        );
+      }
+      throw error;
+    }
     return operation();
   } finally {
     if (handle !== undefined) {
