@@ -6,7 +6,7 @@ authority: projection
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-30
+updated: 2026-08-09
 sources:
   - memory_bank/control-plane.json#/portfolio
 generated: true
@@ -18,7 +18,7 @@ generated: true
 
 - Portfolio status: **active_development**
 - Release train: **0.2.0**
-- Last verified: **2026-07-29T18:26:25.123Z**
+- Last verified: **2026-08-09T05:06:59Z**
 
 ## Product Modules
 
@@ -40,7 +40,7 @@ generated: true
 | Plugin Platform | Implementation | local_ready | external_host_qualification_pending |
 | Agent Runtime and Aby | Verification | local_ready | model_endpoint_not_configured<br>live_provider_smoke_pending |
 | Workflow Runtime | Implementation | local_ready | authenticated_host_qualification_pending |
-| Organization Graph | Implementation | local_ready | live_evidence_collection_out_of_scope |
+| Organization Graph | Implementation | local_ready | live_evidence_collection_pending |
 | Scenario Runtime | Implementation | local_ready | authenticated_host_qualification_pending |
 | Qoder Work | Verification | local_ready | None |
 | Negentropy Integration | Verification | implemented | external_signing_pending<br>administrator_registration_pending<br>live_contribution_pending |
