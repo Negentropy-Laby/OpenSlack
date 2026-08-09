@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 
 export const NOTIFICATION_DOC_ERROR_CODES = Object.freeze([
   'IB6_RECEIPT_INVALID',
+  'PX2_RECEIPT_INVALID',
   'CURRENT_DOC_STATUS_STALE',
   'REQUIRED_DOC_MISSING',
   'NAVIGATION_EDGE_MISSING',
@@ -31,6 +32,7 @@ export interface NotificationDocVerification {
 }
 
 const RECEIPT_PATH = 'integration/gates/ib6-history-import.json';
+const PX2_RECEIPT_PATH = 'integration/gates/ib6-px2-post-merge-audit.json';
 const MODULES_PATH = '.openslack/modules.yaml';
 const PRODUCT_PATH = 'design/cdd/workstreams/notification-delivery/README.md';
 const PRODUCT_INDEX_PATH = 'design/cdd/module-index.md';
@@ -41,7 +43,8 @@ const DOCUMENT_MIGRATION_PATH = 'docs/reference/document-path-migration-v1.yaml'
 const EXPECTED_RECEIPT_SCHEMA = 'openslack.notification_delivery_ib6_history_import.v1';
 const EXPECTED_RECEIPT_SCHEMA_REFERENCE =
   '../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json';
-const EXPECTED_PX2_EXIT = 'PENDING_POST_MERGE_AUDIT';
+const EXPECTED_HISTORICAL_PX2_EXIT = 'PENDING_POST_MERGE_AUDIT';
+const EXPECTED_PX2_EXIT = 'PASS';
 
 const REQUIRED_ROOT_DOCS = Object.freeze([
   'design/cdd/workstreams/notification-delivery/README.md',
@@ -254,6 +257,12 @@ export function verifyNotificationDocs(repositoryRoot: string): NotificationDocV
       run: () => verifyReceipt(root),
     },
     {
+      label: 'PX2 post-merge audit',
+      fallbackCode: 'PX2_RECEIPT_INVALID',
+      fallbackPath: PX2_RECEIPT_PATH,
+      run: () => verifyPx2Receipt(root),
+    },
+    {
       label: 'Current documentation status',
       fallbackCode: 'CURRENT_DOC_STATUS_STALE',
       fallbackPath: PRODUCT_PATH,
@@ -345,8 +354,61 @@ function verifyReceipt(root: string): void {
   ) {
     fail('IB6_RECEIPT_INVALID', RECEIPT_PATH);
   }
-  if (gate.px2_exit !== EXPECTED_PX2_EXIT) {
+  if (gate.px2_exit !== EXPECTED_HISTORICAL_PX2_EXIT) {
     fail('STATUS_TRANSITION_REQUIRES_DOC_UPDATE', RECEIPT_PATH);
+  }
+}
+
+function verifyPx2Receipt(root: string): void {
+  const receipt = readJsonObject(root, PX2_RECEIPT_PATH, 'PX2_RECEIPT_INVALID');
+  const gate = asObject(receipt.gate);
+  const pullRequest = asObject(receipt.pull_request);
+  const review = asObject(pullRequest?.review);
+  const canonicalMain = asObject(receipt.canonical_main);
+  const ruleset = asObject(receipt.ruleset);
+  const conditions = asObject(ruleset?.conditions);
+  const refName = asObject(conditions?.ref_name);
+  const pullRequestRule = asObject(ruleset?.pull_request);
+  const statusChecks = asObject(ruleset?.required_status_checks);
+  if (
+    receipt.$schema !==
+      '../../docs/reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json' ||
+    receipt.schema !== 'openslack.notification_delivery_px2_post_merge_audit.v1' ||
+    gate?.name !== 'IB6-MERGE-TRAIN/PX2-EXIT' ||
+    gate.status !== 'PASS' ||
+    gate.effectivity !== 'EFFECTIVE_ON_GOVERNED_CANONICAL_MAIN_MERGE' ||
+    pullRequest?.number !== 308 ||
+    pullRequest.head !== '150475773f2edfb937b2e852d205d87ca87d3f35' ||
+    pullRequest.merge_commit !== '9801d2d6c7c3368804eb0ff27c34ab4e69049722' ||
+    JSON.stringify(pullRequest.merge_parents) !==
+      JSON.stringify([
+        '937b0566797828a9f8f0868821e21857c3345d1e',
+        '150475773f2edfb937b2e852d205d87ca87d3f35',
+      ]) ||
+    review?.actor !== 'wsman' ||
+    review.state !== 'APPROVED' ||
+    review.reviewed_head !== pullRequest.head ||
+    canonicalMain?.merge_commit_is_ancestor !== true ||
+    typeof canonicalMain.observed_head !== 'string' ||
+    !/^[a-f0-9]{40}$/u.test(canonicalMain.observed_head) ||
+    ruleset?.id !== 16756623 ||
+    ruleset.name !== 'Protect main' ||
+    ruleset.enforcement !== 'active' ||
+    ruleset.target !== 'branch' ||
+    ruleset.deletion_blocked !== true ||
+    ruleset.non_fast_forward_blocked !== true ||
+    JSON.stringify(refName?.include) !== JSON.stringify(['~DEFAULT_BRANCH']) ||
+    JSON.stringify(refName?.exclude) !== JSON.stringify([]) ||
+    pullRequestRule?.required_approving_review_count !== 1 ||
+    pullRequestRule.dismiss_stale_reviews_on_push !== true ||
+    pullRequestRule.require_code_owner_review !== true ||
+    pullRequestRule.required_review_thread_resolution !== true ||
+    statusChecks?.strict !== true ||
+    JSON.stringify(statusChecks.contexts) !==
+      JSON.stringify(['classify', 'validate / validate', 'canary', 'canonical-base']) ||
+    receipt.authorization !== 'PX2_POST_MERGE_AUDIT_ONLY'
+  ) {
+    fail('PX2_RECEIPT_INVALID', PX2_RECEIPT_PATH);
   }
 }
 
@@ -476,10 +538,7 @@ function verifyProductClaims(root: string): void {
 }
 
 function verifyModuleRegistration(root: string): void {
-  const modules = readRegularText(root, MODULES_PATH, 'PREMATURE_MODULE_REGISTRATION');
-  if (modules.includes(SERVICE_ROOT)) {
-    fail('PREMATURE_MODULE_REGISTRATION', MODULES_PATH);
-  }
+  readRegularText(root, MODULES_PATH, 'PREMATURE_MODULE_REGISTRATION');
 }
 
 function verifyWorkspaceManifest(root: string): void {

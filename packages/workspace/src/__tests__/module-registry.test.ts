@@ -554,6 +554,9 @@ function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
   const expiresAt = options.expiresAt ?? observedAt + 24 * 60 * 60 * 1000;
   mkdirSync(join(root, '.openslack', 'evidence', 'live'), { recursive: true });
   mkdirSync(join(root, 'docs', 'status'), { recursive: true });
+  mkdirSync(join(root, 'memory_bank', 't0_core'), { recursive: true });
+  mkdirSync(join(root, 'memory_bank', 't2_execution'), { recursive: true });
+  mkdirSync(join(root, 'production'), { recursive: true });
   writeFileSync(
     join(root, '.openslack', 'evidence', 'live', 'module.json'),
     options.invalidJson
@@ -582,6 +585,14 @@ function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
     'utf-8',
   );
   writeFileSync(join(root, 'docs', 'status', 'current.md'), '# Generated status\n', 'utf-8');
+  writeFileSync(join(root, 'memory_bank', 'control-plane.json'), '{}\n', 'utf-8');
+  writeFileSync(join(root, 'memory_bank', 't0_core', 'current_state.md'), '# Current\n', 'utf-8');
+  writeFileSync(
+    join(root, 'memory_bank', 't2_execution', 'current_roadmap.md'),
+    '# Roadmap\n',
+    'utf-8',
+  );
+  writeFileSync(join(root, 'production', 'project-roadmap.md'), '# Project roadmap\n', 'utf-8');
   git(root, ['add', '.']);
   git(root, ['commit', '-m', 'record live evidence']);
   const evidenceCommit = git(root, ['rev-parse', 'HEAD']);

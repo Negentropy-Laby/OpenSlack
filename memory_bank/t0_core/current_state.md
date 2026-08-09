@@ -18,7 +18,7 @@ generated: true
 
 - Portfolio status: **active_development**
 - Release train: **0.2.0**
-- Last verified: **2026-08-09T05:06:59Z**
+- Last verified: **2026-08-09T07:32:40Z**
 
 ## Product Modules
 
@@ -36,7 +36,7 @@ generated: true
 <!-- prettier-ignore -->
 | Workstream | Stage | Maturity | Blockers |
 | --- | --- | --- | --- |
-| Notification Delivery | Verification | local_ready | px2_not_claimed<br>runtime_admission_not_claimed<br>release_not_claimed<br>live_verification_not_claimed |
+| Notification Delivery | Verification | local_ready | runtime_admission_not_claimed<br>release_not_claimed<br>live_verification_not_claimed |
 | Plugin Platform | Implementation | local_ready | external_host_qualification_pending |
 | Agent Runtime and Aby | Verification | local_ready | model_endpoint_not_configured<br>live_provider_smoke_pending |
 | Workflow Runtime | Implementation | local_ready | authenticated_host_qualification_pending |

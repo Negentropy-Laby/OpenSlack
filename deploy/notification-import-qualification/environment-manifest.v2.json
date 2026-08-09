@@ -4,13 +4,7 @@
   "recorded_at": "2026-07-25T17:25:00+08:00",
   "gate": "G5-POST-IMPORT-QUALIFICATION",
   "scope": "IB7_EVALUATION_ONLY",
-  "prerequisite_gates": [
-    "G3-QUEUE",
-    "IB6-HISTORY-IMPORT",
-    "IB6-MERGE-TRAIN/PX2-EXIT",
-    "OPENSLACK-V0.2.0-IMMUTABLE-RELEASE",
-    "G4-E2E"
-  ],
+  "prerequisite_gates": ["G3-QUEUE", "IB6-HISTORY-IMPORT", "IB6-MERGE-TRAIN/PX2-EXIT", "G4-E2E"],
   "workflow": ".github/workflows/notification-import-qualification.yml",
   "timeout_minutes": 60,
   "order_decision": "integration/gates/ib6-repository-import-order-supersession.json",

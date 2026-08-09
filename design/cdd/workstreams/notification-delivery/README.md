@@ -26,7 +26,7 @@ It is a repository service and cross-process integration, not a sixth OpenSlack 
 | ------------------- | -------------------------------- |
 | Repository import   | `PASS`                           |
 | IB6 receipt closed  | `true`                           |
-| PX2 exit            | `PENDING_POST_MERGE_AUDIT`       |
+| PX2 exit            | `PASS`                           |
 | Repository          | `services/notification-delivery` |
 | Runtime admission   | `GATED`                          |
 | IB7 default cutover | `NOT_AUTHORIZED`                 |
@@ -34,8 +34,10 @@ It is a repository service and cross-process integration, not a sixth OpenSlack 
 | LIVE_VERIFIED       | `NOT_CLAIMED`                    |
 
 The [IB6 receipt](../../../../integration/gates/ib6-history-import.json) proves repository history
-import and productization closure only. It does not prove PX2 exit, runtime admission, external
-delivery, release, production readiness, or live verification.
+import and productization closure while preserving its historical PX2-pending state. The separate
+[PX2 post-merge receipt](../../../../integration/gates/ib6-px2-post-merge-audit.json) proves only
+the governed post-merge audit. Neither receipt proves runtime admission, external delivery,
+release, production readiness, or live verification.
 
 ## Why It Exists
 
@@ -101,7 +103,7 @@ Notification Delivery does not claim:
 - automatic replay of dead records;
 - fallback from an accepted service record to direct delivery;
 - multi-region active-active operation or a Kafka-based backbone;
-- PX2 exit, IB7 cutover, release, production readiness, or `LIVE_VERIFIED`.
+- runtime admission, IB7 cutover, release, production readiness, or `LIVE_VERIFIED`.
 
 ## Where To Go Next
 

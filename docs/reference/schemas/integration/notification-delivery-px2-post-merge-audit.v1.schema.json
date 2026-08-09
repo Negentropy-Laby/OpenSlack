@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/integration/notification-delivery-px2-post-merge-audit.v1.json",
+  "$comment": "This schema intentionally freezes the one-time PR #308 PX2 audit. Future PX2 audits require a new receipt identity and schema instead of mutating this historical receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "receipt_id",
+    "recorded_at",
+    "gate",
+    "pull_request",
+    "canonical_main",
+    "ruleset",
+    "authorization",
+    "does_not_claim"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "../../docs/reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json"
+    },
+    "schema": { "const": "openslack.notification_delivery_px2_post_merge_audit.v1" },
+    "receipt_id": { "const": "notification-delivery-px2-pr308" },
+    "recorded_at": { "const": "2026-08-09T07:32:40Z" },
+    "gate": {
+      "const": {
+        "name": "IB6-MERGE-TRAIN/PX2-EXIT",
+        "status": "PASS",
+        "effectivity": "EFFECTIVE_ON_GOVERNED_CANONICAL_MAIN_MERGE"
+      }
+    },
+    "pull_request": {
+      "const": {
+        "number": 308,
+        "head": "150475773f2edfb937b2e852d205d87ca87d3f35",
+        "review": {
+          "node_id": "PRR_kwDOSeGWfM8AAAABHPrg4Q",
+          "actor": "wsman",
+          "state": "APPROVED",
+          "reviewed_head": "150475773f2edfb937b2e852d205d87ca87d3f35",
+          "submitted_at": "2026-07-26T07:05:07Z"
+        },
+        "merge_commit": "9801d2d6c7c3368804eb0ff27c34ab4e69049722",
+        "merge_parents": [
+          "937b0566797828a9f8f0868821e21857c3345d1e",
+          "150475773f2edfb937b2e852d205d87ca87d3f35"
+        ],
+        "merged_at": "2026-07-26T07:06:46Z"
+      }
+    },
+    "canonical_main": {
+      "const": {
+        "observed_head": "fb17bf92b7508eddcb1c9d4acf286588527da697",
+        "merge_commit_is_ancestor": true
+      }
+    },
+    "ruleset": {
+      "const": {
+        "id": 16756623,
+        "name": "Protect main",
+        "enforcement": "active",
+        "target": "branch",
+        "conditions": {
+          "ref_name": {
+            "include": ["~DEFAULT_BRANCH"],
+            "exclude": []
+          }
+        },
+        "deletion_blocked": true,
+        "non_fast_forward_blocked": true,
+        "pull_request": {
+          "required_approving_review_count": 1,
+          "dismiss_stale_reviews_on_push": true,
+          "require_code_owner_review": true,
+          "required_review_thread_resolution": true
+        },
+        "required_status_checks": {
+          "strict": true,
+          "contexts": ["classify", "validate / validate", "canary", "canonical-base"]
+        }
+      }
+    },
+    "authorization": { "const": "PX2_POST_MERGE_AUDIT_ONLY" },
+    "does_not_claim": {
+      "const": [
+        "EXTERNAL_CONFIGURATION",
+        "RUNTIME_ADMISSION",
+        "IB7_CUTOVER",
+        "LIVE_VERIFIED",
+        "RELEASE",
+        "PRODUCTION_READY"
+      ]
+    }
+  }
+}

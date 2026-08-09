@@ -541,13 +541,7 @@ describe('notification import qualification deployment', () => {
       status: 'PENDING_EXTERNAL',
       gate: 'G5-POST-IMPORT-QUALIFICATION',
       scope: 'IB7_EVALUATION_ONLY',
-      prerequisite_gates: [
-        'G3-QUEUE',
-        'IB6-HISTORY-IMPORT',
-        'IB6-MERGE-TRAIN/PX2-EXIT',
-        'OPENSLACK-V0.2.0-IMMUTABLE-RELEASE',
-        'G4-E2E',
-      ],
+      prerequisite_gates: ['G3-QUEUE', 'IB6-HISTORY-IMPORT', 'IB6-MERGE-TRAIN/PX2-EXIT', 'G4-E2E'],
       external_inputs_after: 'IB6-MERGE-TRAIN/PX2-EXIT',
       repository_preflight: {
         required_ref: 'refs/heads/main',
@@ -1166,6 +1160,34 @@ describe('notification import qualification deployment', () => {
       contains_receipt_merge_commit: false,
     });
   }, 30_000);
+
+  it('validates the frozen PX2 receipt against its closed JSON Schema', () => {
+    const receipt = readRepositoryJson('integration/gates/ib6-px2-post-merge-audit.json');
+    const schema = readRepositoryJson(
+      'docs/reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json',
+    );
+    const validate = new Ajv2020({
+      strict: false,
+      validateFormats: false,
+    }).compile(schema);
+
+    expect(validate(receipt), JSON.stringify(validate.errors)).toBe(true);
+    expectEveryObjectSchemaClosed(schema);
+
+    const candidate = structuredClone(receipt) as Record<string, unknown>;
+    candidate.unreviewed_authority = true;
+    expect(validate(candidate)).toBe(false);
+
+    const rewritten = structuredClone(receipt) as {
+      recorded_at: string;
+      canonical_main: { observed_head: string };
+    };
+    rewritten.recorded_at = '2026-08-10T00:00:00Z';
+    expect(validate(rewritten)).toBe(false);
+    rewritten.recorded_at = '2026-08-09T07:32:40Z';
+    rewritten.canonical_main.observed_head = '0'.repeat(40);
+    expect(validate(rewritten)).toBe(false);
+  });
 });
 
 function repositoryRoot(): string {

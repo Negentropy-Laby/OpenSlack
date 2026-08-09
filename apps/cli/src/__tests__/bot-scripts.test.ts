@@ -100,7 +100,7 @@ describe('bot-auth wrapper scripts', () => {
     });
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('permits only pr edit, pr comment, and pr ready');
+    expect(result.stderr).toContain('permits only pr edit, pr comment, pr ready, and issue edit');
   });
 
   it('allows the non-secret PR lifecycle commands needed after publication', () => {
@@ -111,6 +111,7 @@ describe('bot-auth wrapper scripts', () => {
     expect(wrapper.isAllowedCommand(['pr', 'edit', '183'])).toBe(true);
     expect(wrapper.isAllowedCommand(['pr', 'comment', '183'])).toBe(true);
     expect(wrapper.isAllowedCommand(['pr', 'ready', '183'])).toBe(true);
+    expect(wrapper.isAllowedCommand(['issue', 'edit', '369'])).toBe(true);
     expect(wrapper.isAllowedCommand(['auth', 'token'])).toBe(false);
   });
 

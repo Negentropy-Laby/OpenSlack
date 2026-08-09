@@ -12,7 +12,9 @@ const MAX_RESPONSE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function readLocalConfig() {
-  const configPath = path.resolve(__dirname, '..', '.openslack.local', 'github-app.json');
+  const configPath = process.env.OPENSLACK_GITHUB_APP_CONFIG_PATH
+    ? path.resolve(process.env.OPENSLACK_GITHUB_APP_CONFIG_PATH)
+    : path.resolve(__dirname, '..', '.openslack.local', 'github-app.json');
   if (!fs.existsSync(configPath)) return {};
   const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -136,7 +138,9 @@ async function acquireConfiguredInstallationCredentials() {
 
   let privateKey = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
   if (!privateKey) {
-    const pemPath = path.resolve(__dirname, '..', '.openslack.local', 'github-app.pem');
+    const pemPath = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH
+      ? path.resolve(process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH)
+      : path.resolve(__dirname, '..', '.openslack.local', 'github-app.pem');
     privateKey = fs.readFileSync(pemPath, 'utf8');
   }
   if (!privateKey || !privateKey.includes('PRIVATE KEY')) {

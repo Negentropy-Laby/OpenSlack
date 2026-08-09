@@ -11,7 +11,7 @@
     "@openslack/collaboration": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/qualification-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -33,7 +33,9 @@
     "release:smoke": "bun scripts/release/smoke.ts",
     "public:pack": "bun run build && bun scripts/public-pack/index.ts pack",
     "public:verify": "bun run build && bun scripts/public-pack/index.ts verify",
+    "public:qualify": "bun scripts/public-pack/qualification-cli.ts",
     "live:capstone": "bun scripts/live-capstone/index.ts",
+    "qualification:capstone": "bun scripts/qualification-capstone/index.ts",
     "demo:contract-delivery": "bun scripts/contract-delivery-rehearsal/index.ts",
     "qualification:human-attested": "bun scripts/qualification/human-attested-cli.ts",
     "qualification:qoder-desktop": "bun scripts/qualification/qoder-desktop-cli.ts",
