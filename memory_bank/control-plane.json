@@ -1424,9 +1424,9 @@
         "planned_owner": "unassigned",
         "module_or_workstream": "scenario-runtime",
         "execution": {
-          "agent_id": "qoder",
+          "agent_id": "operator",
           "claim_ref": "refs/heads/agent/qoder-openslack-qw0-qw2",
-          "started_at": null
+          "started_at": "2026-07-26T14:53:02Z"
         },
         "github_issue": {
           "number": 314,
