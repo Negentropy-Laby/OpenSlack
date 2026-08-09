@@ -541,13 +541,7 @@ describe('notification import qualification deployment', () => {
       status: 'PENDING_EXTERNAL',
       gate: 'G5-POST-IMPORT-QUALIFICATION',
       scope: 'IB7_EVALUATION_ONLY',
-      prerequisite_gates: [
-        'G3-QUEUE',
-        'IB6-HISTORY-IMPORT',
-        'IB6-MERGE-TRAIN/PX2-EXIT',
-        'OPENSLACK-V0.2.0-IMMUTABLE-RELEASE',
-        'G4-E2E',
-      ],
+      prerequisite_gates: ['G3-QUEUE', 'IB6-HISTORY-IMPORT', 'IB6-MERGE-TRAIN/PX2-EXIT', 'G4-E2E'],
       external_inputs_after: 'IB6-MERGE-TRAIN/PX2-EXIT',
       repository_preflight: {
         required_ref: 'refs/heads/main',

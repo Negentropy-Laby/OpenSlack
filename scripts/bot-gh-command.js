@@ -6,7 +6,9 @@ const { acquireConfiguredInstallationToken } = require('./bot-gh-token.js');
 
 async function main(args = process.argv.slice(2)) {
   if (!isAllowedCommand(args)) {
-    process.stderr.write('The bot gh wrapper permits only pr edit, pr comment, and pr ready.\n');
+    process.stderr.write(
+      'The bot gh wrapper permits only pr edit, pr comment, pr ready, and issue edit.\n',
+    );
     return 2;
   }
   let token;
@@ -31,7 +33,10 @@ async function main(args = process.argv.slice(2)) {
 }
 
 function isAllowedCommand(args) {
-  return args[0] === 'pr' && (args[1] === 'edit' || args[1] === 'comment' || args[1] === 'ready');
+  return (
+    (args[0] === 'pr' && (args[1] === 'edit' || args[1] === 'comment' || args[1] === 'ready')) ||
+    (args[0] === 'issue' && args[1] === 'edit')
+  );
 }
 
 function createGhEnvironment(token) {

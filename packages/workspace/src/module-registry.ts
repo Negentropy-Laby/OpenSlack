@@ -850,6 +850,10 @@ function isLiveEvidenceMetadataPath(path: string): boolean {
   return (
     path === '.openslack/modules.yaml' ||
     path === 'docs/status/current.md' ||
+    path === 'memory_bank/control-plane.json' ||
+    path === 'memory_bank/t0_core/current_state.md' ||
+    path === 'memory_bank/t2_execution/current_roadmap.md' ||
+    path === 'production/project-roadmap.md' ||
     /^\.openslack\/evidence\/live\/[^/]+\.json$/.test(path)
   );
 }

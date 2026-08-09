@@ -19,6 +19,7 @@ const SERVICE_ROOT = 'services/notification-delivery';
 const SERVICE_INDEX = `${SERVICE_ROOT}/docs/README.md`;
 const MANIFEST = `${SERVICE_ROOT}/docs/testing/workspace-manifest.sha256`;
 const RECEIPT = 'integration/gates/ib6-history-import.json';
+const PX2_RECEIPT = 'integration/gates/ib6-px2-post-merge-audit.json';
 const REQUIRED_DOCS = [
   'design/cdd/workstreams/notification-delivery/README.md',
   'docs/user/guides/notification-delivery-operations.md',
@@ -142,6 +143,64 @@ function fixture(): string {
       2,
     )}\n`,
   );
+  write(
+    root,
+    PX2_RECEIPT,
+    `${JSON.stringify(
+      {
+        $schema:
+          '../../docs/reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json',
+        schema: 'openslack.notification_delivery_px2_post_merge_audit.v1',
+        receipt_id: 'notification-delivery-px2-pr308',
+        recorded_at: '2026-08-09T00:00:00Z',
+        gate: {
+          name: 'IB6-MERGE-TRAIN/PX2-EXIT',
+          status: 'PASS',
+          effectivity: 'EFFECTIVE_ON_GOVERNED_CANONICAL_MAIN_MERGE',
+        },
+        pull_request: {
+          number: 308,
+          head: '150475773f2edfb937b2e852d205d87ca87d3f35',
+          review: {
+            actor: 'wsman',
+            state: 'APPROVED',
+            reviewed_head: '150475773f2edfb937b2e852d205d87ca87d3f35',
+          },
+          merge_commit: '9801d2d6c7c3368804eb0ff27c34ab4e69049722',
+          merge_parents: [
+            '937b0566797828a9f8f0868821e21857c3345d1e',
+            '150475773f2edfb937b2e852d205d87ca87d3f35',
+          ],
+        },
+        canonical_main: {
+          observed_head: 'fb17bf92b7508eddcb1c9d4acf286588527da697',
+          merge_commit_is_ancestor: true,
+        },
+        ruleset: {
+          id: 16756623,
+          name: 'Protect main',
+          enforcement: 'active',
+          target: 'branch',
+          conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+          deletion_blocked: true,
+          non_fast_forward_blocked: true,
+          pull_request: {
+            required_approving_review_count: 1,
+            dismiss_stale_reviews_on_push: true,
+            require_code_owner_review: true,
+            required_review_thread_resolution: true,
+          },
+          required_status_checks: {
+            strict: true,
+            contexts: ['classify', 'validate / validate', 'canary', 'canonical-base'],
+          },
+        },
+        authorization: 'PX2_POST_MERGE_AUDIT_ONLY',
+      },
+      null,
+      2,
+    )}\n`,
+  );
   write(root, '.openslack/modules.yaml', 'schema: openslack.modules.v2\nmodules: []\n');
 
   write(
@@ -244,7 +303,7 @@ function productPage(): string {
     '| --- | --- |',
     '| Repository import | `PASS` |',
     '| IB6 receipt closed | `true` |',
-    '| PX2 exit | `PENDING_POST_MERGE_AUDIT` |',
+    '| PX2 exit | `PASS` |',
     '| Repository | `services/notification-delivery` |',
     '| Runtime admission | `GATED` |',
     '| IB7 default cutover | `NOT_AUTHORIZED` |',
@@ -324,6 +383,15 @@ function mutateReceipt(root: string, mutate: (receipt: Record<string, unknown>) 
   write(root, RECEIPT, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
+function mutatePx2Receipt(root: string, mutate: (receipt: Record<string, unknown>) => void): void {
+  const receipt = JSON.parse(readFileSync(resolve(root, PX2_RECEIPT), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  mutate(receipt);
+  write(root, PX2_RECEIPT, `${JSON.stringify(receipt, null, 2)}\n`);
+}
+
 function expectFailure(root: string, code: NotificationDocErrorCode): void {
   const result = verifyNotificationDocs(root);
   expect(result.ok).toBe(false);
@@ -337,7 +405,7 @@ describe('notification documentation verifier', () => {
     const result = verifyNotificationDocs(fixture());
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
-    expect(result.checks).toHaveLength(9);
+    expect(result.checks).toHaveLength(10);
   });
 
   it.each([
@@ -387,6 +455,43 @@ describe('notification documentation verifier', () => {
     const root = fixture();
     mutateReceipt(root, mutate);
     expectFailure(root, code);
+  });
+
+  it.each([
+    [
+      'wrong PR head',
+      (receipt: Record<string, unknown>) => {
+        (receipt.pull_request as Record<string, unknown>).head = '0'.repeat(40);
+      },
+    ],
+    [
+      'wrong merge binding',
+      (receipt: Record<string, unknown>) => {
+        (receipt.pull_request as Record<string, unknown>).merge_commit = '0'.repeat(40);
+      },
+    ],
+    [
+      'wrong ruleset',
+      (receipt: Record<string, unknown>) => {
+        (receipt.ruleset as Record<string, unknown>).id = 1;
+      },
+    ],
+    [
+      'missing ancestor proof',
+      (receipt: Record<string, unknown>) => {
+        delete (receipt.canonical_main as Record<string, unknown>).merge_commit_is_ancestor;
+      },
+    ],
+  ] as const)('rejects PX2 receipt with %s', (_name, mutate) => {
+    const root = fixture();
+    mutatePx2Receipt(root, mutate);
+    expectFailure(root, 'PX2_RECEIPT_INVALID');
+  });
+
+  it('requires the independent PX2 receipt', () => {
+    const root = fixture();
+    rmSync(resolve(root, PX2_RECEIPT));
+    expectFailure(root, 'PX2_RECEIPT_INVALID');
   });
 
   it('rejects PENDING_PHASE_F when it returns to a current document', () => {
@@ -511,13 +616,13 @@ describe('notification documentation verifier', () => {
     expectFailure(root, 'PREMATURE_PRODUCT_CLAIM');
   });
 
-  it('rejects premature module registration while PX2 remains pending', () => {
+  it('allows module registration only after the independent PX2 receipt passes', () => {
     const root = fixture();
     write(
       root,
       '.openslack/modules.yaml',
       'schema: openslack.modules.v2\npath: services/notification-delivery\n',
     );
-    expectFailure(root, 'PREMATURE_MODULE_REGISTRATION');
+    expect(verifyNotificationDocs(root).ok).toBe(true);
   });
 });

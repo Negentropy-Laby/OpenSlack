@@ -33,11 +33,11 @@ generated: true
 | issue-246 | release blocker: clean_machine_end_to_end_merge_capstone_pending | blocked | unassigned | pr-review-merge | clean_machine_end_to_end_merge_capstone_pending |
 | issue-247 | release blocker: clean_machine_agent_task_capstone_pending | blocked | unassigned | collaboration | clean_machine_agent_task_capstone_pending |
 | issue-248 | release blocker: live_provider_smoke_pending | blocked | unassigned | agent-runtime-and-aby | live_provider_smoke_pending |
-| issue-369 | notification-delivery: close PX2, runtime-admission, and live-verification blockers | ready | notification-delivery | notification-delivery | px2_not_claimed<br>runtime_admission_not_claimed<br>live_verification_not_claimed |
-| issue-370 | plugin-platform: qualify the public packages in an external host | blocked | plugin-platform | plugin-platform | external_host_qualification_pending |
+| issue-369 | notification-delivery: close PX2, runtime-admission, and live-verification blockers | ready | notification-delivery | notification-delivery | runtime_admission_not_claimed<br>live_verification_not_claimed |
+| issue-370 | plugin-platform: qualify signed publish-ready packages in an external host | ready | plugin-platform | plugin-platform | external_host_qualification_pending |
 | issue-371 | workflow-runtime: qualify an authenticated Workflow host | blocked | workflow-runtime | workflow-runtime | authenticated_host_qualification_pending |
 | issue-372 | scenario-runtime: qualify authenticated Scenario execution | blocked | scenario-runtime | scenario-runtime | authenticated_host_qualification_pending |
-| issue-373 | collaboration: complete the Contract-to-Delivery live capstone | blocked | collaboration | collaboration | clean_machine_agent_task_capstone_pending |
+| issue-373 | collaboration: complete the Contract-to-Delivery qualification capstone | blocked | collaboration | collaboration | clean_machine_agent_task_capstone_pending |
 | issue-374 | negentropy-integration: complete signing, registration, and live contribution evidence | blocked | negentropy-integration | negentropy-integration | external_signing_pending<br>administrator_registration_pending<br>live_contribution_pending |
 | issue-375 | organization-graph: collect live multi-system projection evidence | blocked | organization-graph | organization-graph | live_evidence_collection_pending |
 | issue-314 | [Workflow Governance] PR #313 | done | unassigned | scenario-runtime | None |

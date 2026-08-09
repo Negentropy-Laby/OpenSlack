@@ -18,27 +18,30 @@ gate result; narrative documentation does not replace it.
 
 ## Current Gate Boundary
 
-| Gate or claim             | Current repository fact          | Authority                                                                                       |
-| ------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `IB6-HISTORY-IMPORT`      | `PASS`; `closed=true`            | [`integration/gates/ib6-history-import.json`](../../integration/gates/ib6-history-import.json)  |
-| `PX2-EXIT`                | `PENDING_POST_MERGE_AUDIT`       | Same IB6 receipt                                                                                |
-| Post-import qualification | No passing sealed receipt exists | Future protected run and sealed report; current schema/workflow are contracts, not run evidence |
-| Runtime admission         | `GATED`                          | [Cross-process integration contract](../architecture/integrations/notification-delivery.md)     |
-| IB7 default cutover       | `NOT_AUTHORIZED`                 | Same integration boundary                                                                       |
-| Release / `LIVE_VERIFIED` | `UNRELEASED` / `NOT_CLAIMED`     | Same integration boundary; requires later independent evidence and authorization                |
+| Gate or claim             | Current repository fact          | Authority                                                                                                  |
+| ------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `IB6-HISTORY-IMPORT`      | `PASS`; `closed=true`            | [`integration/gates/ib6-history-import.json`](../../integration/gates/ib6-history-import.json)             |
+| `PX2-EXIT`                | `PASS`                           | [`integration/gates/ib6-px2-post-merge-audit.json`](../../integration/gates/ib6-px2-post-merge-audit.json) |
+| Post-import qualification | No passing sealed receipt exists | Future protected run and sealed report; current schema/workflow are contracts, not run evidence            |
+| Runtime admission         | `GATED`                          | [Cross-process integration contract](../architecture/integrations/notification-delivery.md)                |
+| IB7 default cutover       | `NOT_AUTHORIZED`                 | Same integration boundary                                                                                  |
+| Release / `LIVE_VERIFIED` | `UNRELEASED` / `NOT_CLAIMED`     | Same integration boundary; requires later independent evidence and authorization                           |
 
-IB6 proves repository import history and the governed productization chain. It is not live delivery
-evidence and cannot substitute for PX2, qualification, IB7, release, or production readiness.
+IB6 proves repository import history and the governed productization chain. The independent PX2
+receipt proves only the protected post-merge audit. Neither is live delivery evidence and neither
+can substitute for qualification, IB7, release, or production readiness.
 
 ## IB6 History Import
 
-| Evidence                  | Path                                                                                                                                                  | Purpose                                                                 |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Final receipt             | [`integration/gates/ib6-history-import.json`](../../integration/gates/ib6-history-import.json)                                                        | Gate result, closure, source/history binding, authorization, non-claims |
-| Receipt schema            | [`notification-delivery-ib6-history-import.v1.schema.json`](../reference/schemas/integration/notification-delivery-ib6-history-import.v1.schema.json) | Mechanical receipt shape                                                |
-| Order explanation         | [`notification-delivery-ib6-order-supersession.md`](notification-delivery/ib6-order-supersession.md)                                                  | Prose ordering and deferred-release boundary                            |
-| Source manifest v2        | [`source-manifest.v2.json`](../../services/notification-delivery/integration/source-manifest.v2.json)                                                 | Frozen source, imported tree, history and pre-Phase-F binding           |
-| Source manifest v2 schema | [`source-manifest.v2.schema.json`](../../services/notification-delivery/integration/schemas/source-manifest.v2.schema.json)                           | Mechanical source-manifest shape                                        |
+| Evidence                  | Path                                                                                                                                                      | Purpose                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Final receipt             | [`integration/gates/ib6-history-import.json`](../../integration/gates/ib6-history-import.json)                                                            | Gate result, closure, source/history binding, authorization, non-claims |
+| PX2 audit receipt         | [`integration/gates/ib6-px2-post-merge-audit.json`](../../integration/gates/ib6-px2-post-merge-audit.json)                                                | Append-only post-merge ruleset, review, and ancestry binding            |
+| PX2 receipt schema        | [`notification-delivery-px2-post-merge-audit.v1.schema.json`](../reference/schemas/integration/notification-delivery-px2-post-merge-audit.v1.schema.json) | Mechanical PX2 receipt shape                                            |
+| Receipt schema            | [`notification-delivery-ib6-history-import.v1.schema.json`](../reference/schemas/integration/notification-delivery-ib6-history-import.v1.schema.json)     | Mechanical receipt shape                                                |
+| Order explanation         | [`notification-delivery-ib6-order-supersession.md`](notification-delivery/ib6-order-supersession.md)                                                      | Prose ordering and deferred-release boundary                            |
+| Source manifest v2        | [`source-manifest.v2.json`](../../services/notification-delivery/integration/source-manifest.v2.json)                                                     | Frozen source, imported tree, history and pre-Phase-F binding           |
+| Source manifest v2 schema | [`source-manifest.v2.schema.json`](../../services/notification-delivery/integration/schemas/source-manifest.v2.schema.json)                               | Mechanical source-manifest shape                                        |
 
 The historical pre-Phase-F pending value inside the predecessor source manifest and receipt binding
 is retained as provenance. It is not the current gate state.
