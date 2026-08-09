@@ -159,6 +159,16 @@ export function runAutoClaimGates(args: {
   }
   const manifest = parseResult.manifest!;
 
+  if (manifest.status !== 'ready') {
+    return {
+      allowed: false,
+      reason: `Task manifest status must be ready; got ${manifest.status ?? 'missing'}`,
+      manifest,
+      riskZone: riskLevelToZone(manifest.risk_level),
+      changedPaths: manifest.allowed_paths ?? [],
+    };
+  }
+
   const riskResult = filterByRisk(manifest, args.agentMaxRiskLevel);
   if (!riskResult.allowed) {
     return {

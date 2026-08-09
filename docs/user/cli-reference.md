@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - users
 owner: project-governance
-updated: 2026-08-02
+updated: 2026-08-09
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -17,32 +17,33 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 ## Start With User Goals
 
-| If you want to...                                | Start with                                                                     | Notes                                                                                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                         |
-| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                                     |
-| Attach OpenSlack to an ordinary repository       | `openslack setup attach --repo <owner/name>`                                   | Transactional preview; add `--apply`, and optionally select `--mode`.                                |
-| Inspect the installed release                    | `openslack version --format json`                                              | Shows version, commit, channel, target, runtime, and supported state/workspace schemas.              |
-| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                          |
-| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.              |
-| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                                  |
-| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Reports auth, App permissions/events, and repository scope. Use `--apply` only for explicit repairs. |
-| Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                       |
-| Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                      | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                              |
-| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.                           |
-| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.                                |
-| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                                               |
-| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                                          |
-| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                                              |
-| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.                      |
-| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
-| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
-| Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
-| Build bounded local graph evidence               | `openslack graph snapshot build --scenario <registered-id> --from <json>`      | Sealed Software Delivery or Contract-to-Delivery import with CAS; replacements require exact cursor. |
-| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Defaults to exactly 12 read-only v2 business/graph tools over local stdio.                           |
-| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
-| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
-| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                                   |
+| If you want to...                                | Start with                                                                       | Notes                                                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Verify a fresh checkout                          | `openslack setup`                                                                | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                         |
+| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                               | Preview-first; add `--apply` only after reviewing the file plan.                                     |
+| Attach OpenSlack to an ordinary repository       | `openslack setup attach --repo <owner/name>`                                     | Transactional preview; add `--apply`, and optionally select `--mode`.                                |
+| Inspect the installed release                    | `openslack version --format json`                                                | Shows version, commit, channel, target, runtime, and supported state/workspace schemas.              |
+| Get guided setup with prompts                    | `openslack setup interactive`                                                    | Walks fixable items step by step; supports `--format plain`                                          |
+| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                             | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.              |
+| Run CI-style setup checks                        | `openslack setup --strict`                                                       | Treats warnings as failures. Use this for release or PR validation.                                  |
+| Check GitHub readiness without changing anything | `openslack setup github`                                                         | Reports auth, App permissions/events, and repository scope. Use `--apply` only for explicit repairs. |
+| Preview importing an owned GitHub App key        | `openslack github app import ...`                                                | Preview does not read the PEM; `--apply` requires a writable keychain backend.                       |
+| Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                        | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                              |
+| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                   | Uses LLM-first routing when configured; otherwise uses the keyword router.                           |
+| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`                 | Preview is the safe first step. Add `--create-issue` only when ready.                                |
+| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                    | Requires a registered and bootstrapped agent identity.                                               |
+| Claim one exact ready GitHub Issue               | `openslack agent tick --agent-id <id> --source github-issues --issue-number <n>` | Fails closed without selecting another Issue if the target is ineligible.                            |
+| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                  | Checks local bridge configuration without launching a task.                                          |
+| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                        | Writes local gitignored bridge config after validation.                                              |
+| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                            | Preview-first; writes only endpoint, model, limits, and a credential reference.                      |
+| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                        | Shows blocker owner, evidence, and next action.                                                      |
+| See team state across events and PRs             | `openslack collaboration dashboard`                                              | Projection-only; does not create dashboard-specific state.                                           |
+| Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                    | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
+| Build bounded local graph evidence               | `openslack graph snapshot build --scenario <registered-id> --from <json>`        | Sealed Software Delivery or Contract-to-Delivery import with CAS; replacements require exact cursor. |
+| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                    | Defaults to exactly 12 read-only v2 business/graph tools over local stdio.                           |
+| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...`   | Creates auditable collaboration objects.                                                             |
+| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                            | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
+| Start a conversation with an agent               | `openslack conversation start --title "..."`                                     | Creates a typed thread with JSONL persistence and secret scanning.                                   |
 
 ## Common Workflows
 
@@ -205,6 +206,7 @@ Manage agent lifecycle and task claiming.
 bun run openslack agent hire --agent-id <id>    # Generate onboarding package
 bun run openslack agent bootstrap --agent-id <id>  # Verify readiness
 bun run openslack agent tick --agent-id <id> --source github-issues  # Claim work
+bun run openslack agent tick --agent-id <id> --source github-issues --issue-number <n>  # Claim one exact Issue
 bun run openslack agent-runtime doctor --provider aby  # Diagnose Aby bridge config
 bun run openslack agent-runtime doctor --provider openai-compatible  # Diagnose built-in provider
 ```
@@ -483,11 +485,12 @@ runs fail closed.
 
 ## Agent
 
-| Command                                                       | Purpose                     |
-| ------------------------------------------------------------- | --------------------------- |
-| `openslack agent hire --agent-id <id>`                        | Generate onboarding package |
-| `openslack agent bootstrap --agent-id <id>`                   | Verify agent readiness      |
-| `openslack agent tick --agent-id <id> --source github-issues` | Claim a task from GitHub    |
+| Command                                                                          | Purpose                              |
+| -------------------------------------------------------------------------------- | ------------------------------------ |
+| `openslack agent hire --agent-id <id>`                                           | Generate onboarding package          |
+| `openslack agent bootstrap --agent-id <id>`                                      | Verify agent readiness               |
+| `openslack agent tick --agent-id <id> --source github-issues`                    | Claim the first eligible GitHub task |
+| `openslack agent tick --agent-id <id> --source github-issues --issue-number <n>` | Claim one exact GitHub Issue         |
 
 ## Agent Runtime
 

@@ -7,8 +7,16 @@ export interface IssueTask {
   url: string;
   labels: string[];
   body: string;
+  state: 'open' | 'closed';
   taskManifest?: IssueTaskManifest;
 }
+
+export type IssueTaskLookupResult =
+  | { status: 'found'; task: IssueTask }
+  | { status: 'not_found' }
+  | { status: 'pull_request' };
+
+type IssueTaskClientFactory = typeof getClient;
 
 export interface IssueTaskManifest {
   taskId?: string;
@@ -53,8 +61,9 @@ export async function queryReadyIssueTasks(
     capabilities?: string[];
     maxRisk?: string;
   } = {},
+  getClientFn: IssueTaskClientFactory = getClient,
 ): Promise<IssueTask[]> {
-  const client = await getClient();
+  const client = await getClientFn();
   if (client.isDryRun) {
     console.log('[DRY RUN] Would query ready issue tasks');
     return [];
@@ -85,6 +94,7 @@ export async function queryReadyIssueTasks(
       typeof l === 'string' ? l : l.name || '',
     ),
     body: item.body || '',
+    state: item.state === 'closed' ? 'closed' : 'open',
   }));
 
   // Local filter: agent type, capabilities, risk level
@@ -104,6 +114,48 @@ export async function queryReadyIssueTasks(
     }
     return true;
   });
+}
+
+export async function getIssueTaskByNumber(
+  issueNumber: number,
+  getClientFn: IssueTaskClientFactory = getClient,
+): Promise<IssueTaskLookupResult> {
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error('Issue number must be a positive integer.');
+  }
+
+  const client = await getClientFn({ requireLive: true });
+  if (client.isDryRun)
+    throw new Error('Live GitHub credentials are required for exact Issue lookup.');
+
+  let data;
+  try {
+    ({ data } = await client.octokit.issues.get({
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: issueNumber,
+    }));
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return { status: 'not_found' };
+    throw error;
+  }
+
+  if (data.pull_request) return { status: 'pull_request' };
+
+  return {
+    status: 'found',
+    task: {
+      issueNumber: data.number,
+      issueNodeId: data.node_id,
+      title: data.title,
+      url: data.html_url,
+      labels: data.labels.map((label: string | { name?: string }) =>
+        typeof label === 'string' ? label : label.name || '',
+      ),
+      body: data.body || '',
+      state: data.state === 'closed' ? 'closed' : 'open',
+    },
+  };
 }
 
 export function parseTaskManifest(body: string): IssueTaskManifest | undefined {

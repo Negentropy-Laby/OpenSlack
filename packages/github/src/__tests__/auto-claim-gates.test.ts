@@ -6,6 +6,7 @@ function makeBody(overrides: Record<string, unknown> = {}): string {
     schema: 'openslack.github_issue_task.v1',
     task_id: 'TASK-2026-000001',
     title: 'Test task',
+    status: 'ready',
     agent_type: 'codex',
     risk_level: 'low',
     ...overrides,
@@ -57,6 +58,26 @@ describe('runAutoClaimGates', () => {
     });
     expect(result.allowed).toBe(false);
     expect(result.manifest).toBeNull();
+  });
+
+  it('blocks when manifest status is missing', () => {
+    const result = runAutoClaimGates({
+      body: makeBody({ status: undefined }),
+      agentCapabilities: defaultCapabilities,
+      agentMaxRiskLevel: defaultMaxRisk,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('status must be ready');
+  });
+
+  it('blocks when manifest status is not ready', () => {
+    const result = runAutoClaimGates({
+      body: makeBody({ status: 'blocked' }),
+      agentCapabilities: defaultCapabilities,
+      agentMaxRiskLevel: defaultMaxRisk,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('got blocked');
   });
 
   it('blocks when risk exceeds agent max', () => {

@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 
 import { join } from 'node:path';
 import { bootstrapAgent, resolveAgentPrincipal } from '@openslack/runtime';
 import { tickAgent } from '@openslack/runtime';
+import type { TickOptions, TickResult } from '@openslack/runtime';
 import { migrateRegistry } from '@openslack/workspace';
+
+export interface AgentCommandDependencies {
+  tickAgent?: (agentId: string, options?: TickOptions) => Promise<TickResult>;
+}
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -16,7 +21,7 @@ function findRepoRoot(): string {
   return process.cwd();
 }
 
-export function agentCommands(): Command {
+export function agentCommands(dependencies: AgentCommandDependencies = {}): Command {
   const cmd = new Command('agent').description('Agent lifecycle commands');
 
   cmd
@@ -226,20 +231,38 @@ approval_rules:
     .description('Run one agent work cycle')
     .requiredOption('--agent-id <id>', 'Agent ID')
     .option('--source <source>', 'Task source: local, github-issues', 'local')
+    .option('--issue-number <n>', 'Claim one exact GitHub Issue number')
     .action(async (options) => {
       const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as
         | 'local'
         | 'github-issues';
-      const result = await tickAgent(options.agentId, { source });
+      const issueNumberText = options.issueNumber as string | undefined;
+      const issueNumber = issueNumberText === undefined ? undefined : Number(issueNumberText);
+      if (
+        issueNumberText !== undefined &&
+        (!/^[1-9]\d*$/.test(issueNumberText) || !Number.isSafeInteger(issueNumber))
+      ) {
+        console.error('TARGET_ISSUE_NOT_CLAIMABLE: issue number must be a positive integer');
+        process.exitCode = 1;
+        return;
+      }
+      if (issueNumber !== undefined && source !== 'github-issues') {
+        console.error('TARGET_ISSUE_NOT_CLAIMABLE: --issue-number requires --source github-issues');
+        process.exitCode = 1;
+        return;
+      }
+      const runTick = dependencies.tickAgent ?? tickAgent;
+      const result = await runTick(options.agentId, { source, issueNumber });
       console.log(`Agent tick: ${result.agentId}`);
       console.log(`  Source: ${source}`);
+      if (issueNumber !== undefined) console.log(`  Target Issue: #${issueNumber}`);
       console.log(`  Action: ${result.action}`);
       if (result.principal)
         console.log(`  Principal: ${result.principal.registry_id} run=${result.principal.run_id}`);
       if (result.taskId) console.log(`  Task: ${result.taskId}`);
       if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
       console.log(`  ${result.message}`);
-      if (result.action === 'error') process.exit(1);
+      if (result.action === 'error') process.exitCode = 1;
     });
 
   cmd

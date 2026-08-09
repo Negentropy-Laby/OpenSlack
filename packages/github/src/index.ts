@@ -105,8 +105,8 @@ export type {
   GitHubAppManifestResult,
   GitHubAppManifestSession,
 } from './app-manifest.js';
-export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
-export type { IssueTask } from './issue-tasks.js';
+export { createTaskIssue, getIssueTaskByNumber, queryReadyIssueTasks } from './issue-tasks.js';
+export type { IssueTask, IssueTaskLookupResult } from './issue-tasks.js';
 export { claimIssueTask, expireIssueClaim } from './claims.js';
 export type { IssueClaimResult } from './claims.js';
 export {

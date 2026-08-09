@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-08-09
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -15,7 +15,7 @@ sources:
 
 > Status: ACTIVE (Phase 1.7 — Productized)
 > Sources: `packages/github/src/{issue-tasks,claims,manifest,lifecycle,task-filter,repair}.ts`
-> CLI: `openslack agent tick --source github-issues`
+> CLI: `openslack agent tick --source github-issues [--issue-number <n>]`
 
 ## Overview
 
@@ -32,9 +32,10 @@ The GitHub Issues-First Autonomous Task Loop enables OpenSlack agents to discove
 │  createTaskIssue(title, body, [openslack:task, openslack:ready]) │
 │  ↓                                                               │
 │  AGENT TICK                                                      │
-│  tickAgent(id, { source: 'github-issues' })                     │
-│  → queryReadyIssueTasks() → GitHub Search API                    │
-│  → claimIssueTask() → git ref atomic lock                        │
+│  tickAgent(id, { source: 'github-issues', issueNumber? })         │
+│  → targeted: getIssueTaskByNumber() → GitHub Issues API          │
+│  → unscoped: queryReadyIssueTasks() → GitHub Search API          │
+│  → manifest/risk/path authorization → git ref atomic lock        │
 │  ↓                                                               │
 │  WORK IN WORKTREE                                                │
 │  openslack task checkout → git worktree add -b HEAD             │
@@ -62,12 +63,17 @@ ref: refs/heads/openslack/claims/issue-{issueNumber}
 
 **Protocol:**
 
-1. Agent queries ready issues via GitHub Search API (`label:openslack:task label:openslack:ready`)
-2. For each candidate, agent gets main branch HEAD SHA
-3. Agent attempts `POST /repos/{owner}/{repo}/git/refs` with the claim ref pointing to HEAD SHA
-4. **If ref created (HTTP 201):** claim granted — return lease
-5. **If ref already exists (HTTP 422):** claim denied — task already claimed by another agent
-6. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment
+1. Agent either queries ready issues through GitHub Search or reads one exact Issue with
+   `--issue-number`.
+2. Open state, task/ready labels, manifest status, capability, risk, allowed paths, forbidden paths,
+   and candidate-specific authorization must all pass before a claim request.
+3. Targeted selection never falls back to another Issue; any mismatch returns
+   `TARGET_ISSUE_NOT_CLAIMABLE`.
+4. For an eligible candidate, the agent gets main branch HEAD SHA.
+5. Agent attempts `POST /repos/{owner}/{repo}/git/refs` with the claim ref pointing to HEAD SHA.
+6. **If ref created (HTTP 201):** claim granted — return lease.
+7. **If ref already exists (HTTP 422):** claim denied — task already claimed by another agent.
+8. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment.
 
 **Why git refs and not labels?**
 
@@ -161,6 +167,21 @@ const tasks = await queryReadyIssueTasks({
 // → [{ issueNumber: 42, title: '...', labels: [...], body: '...' }]
 ```
 
+### `getIssueTaskByNumber(issueNumber)`
+
+Reads exactly one GitHub Issue without invoking Search. The discriminated result is `found`,
+`not_found`, or `pull_request`; a found Issue retains its open/closed state so runtime gates can
+fail closed before atomic claim creation.
+
+```ts
+import { getIssueTaskByNumber } from '@openslack/github';
+
+const result = await getIssueTaskByNumber(42);
+if (result.status === 'found') {
+  console.log(result.task.state, result.task.labels);
+}
+```
+
 ### `claimIssueTask({ issueNumber, agentId, ttlMinutes })`
 
 Creates atomic git ref claim. Returns `{ claimStatus, claimRef, lease }`.
@@ -190,6 +211,12 @@ errors are replaced with fixed, non-secret error codes.
 ```bash
 # Agent discovers and claims issues
 openslack agent tick --agent-id codex_developer --source github-issues
+
+# Agent claims only Issue #42; any mismatch fails without selecting another Issue
+openslack agent tick \
+  --agent-id codex_developer \
+  --source github-issues \
+  --issue-number 42
 
 # Self-observe creates issues from EVOL tasks
 openslack self triage --create-issues
