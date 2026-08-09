@@ -398,7 +398,7 @@ function verifyPx2Receipt(root: string): void {
     ruleset.deletion_blocked !== true ||
     ruleset.non_fast_forward_blocked !== true ||
     JSON.stringify(refName?.include) !== JSON.stringify(['~DEFAULT_BRANCH']) ||
-    JSON.stringify(refName.exclude) !== JSON.stringify([]) ||
+    JSON.stringify(refName?.exclude) !== JSON.stringify([]) ||
     pullRequestRule?.required_approving_review_count !== 1 ||
     pullRequestRule.dismiss_stale_reviews_on_push !== true ||
     pullRequestRule.require_code_owner_review !== true ||
