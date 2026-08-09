@@ -928,8 +928,8 @@
   ],
   "portfolio": {
     "schema": "openslack.project_state.v1",
-    "updated": "2026-07-30",
-    "last_verified": "2026-07-29T18:26:25.123Z",
+    "updated": "2026-08-09",
+    "last_verified": "2026-08-09T05:06:59Z",
     "portfolio_status": "active_development",
     "release_train": "0.2.0",
     "modules": [
@@ -1036,7 +1036,7 @@
         "name": "Organization Graph",
         "stage": "Implementation",
         "maturity": "local_ready",
-        "blockers": ["live_evidence_collection_out_of_scope"],
+        "blockers": ["live_evidence_collection_pending"],
         "evidence": ["repo:packages/organization-graph", "repo:services/organization-graph"]
       },
       {
@@ -1416,6 +1416,211 @@
         "blockers": ["live_provider_smoke_pending"],
         "evidence": ["github:issue-248:open"],
         "last_verified_at": "2026-08-08T19:31:50Z"
+      },
+      {
+        "id": "issue-369",
+        "title": "notification-delivery: close PX2, runtime-admission, and live-verification blockers",
+        "status": "ready",
+        "planned_owner": "notification-delivery",
+        "module_or_workstream": "notification-delivery",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 369,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/369"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "PX2 post-merge audit is recorded against canonical main with exact predecessor, merge, and protected-branch evidence",
+          "Runtime admission remains default-off until an exact human authorization and all admission prerequisites are recorded",
+          "Live verification uses payload-blind vendor receipt and reconciliation evidence and fails closed on missing or conflicting observations",
+          "release_not_claimed remains governed only by the 0.2.0 release task"
+        ],
+        "dependencies": ["issue-240"],
+        "blockers": [
+          "px2_not_claimed",
+          "runtime_admission_not_claimed",
+          "live_verification_not_claimed"
+        ],
+        "evidence": ["github:issue-369:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-370",
+        "title": "plugin-platform: qualify the public packages in an external host",
+        "status": "blocked",
+        "planned_owner": "plugin-platform",
+        "module_or_workstream": "plugin-platform",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 370,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/370"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "A pinned external host installs the public packages rather than workspace-private package paths",
+          "Manifest, capability, trust-transition, and isolation behavior pass in the external host",
+          "ENFORCE remains disabled unless separate activation evidence is approved",
+          "Secret-free reproducible qualification evidence is recorded"
+        ],
+        "dependencies": ["issue-242"],
+        "blockers": ["external_host_qualification_pending"],
+        "evidence": ["github:issue-370:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-371",
+        "title": "workflow-runtime: qualify an authenticated Workflow host",
+        "status": "blocked",
+        "planned_owner": "workflow-runtime",
+        "module_or_workstream": "workflow-runtime",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 371,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/371"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "An authenticated host binds the exact workspace, principal, provider, build, and workflow definition",
+          "Checkpoint, resume, approval/effect, budget, fencing, and audit success and fail-closed paths are evidenced",
+          "TypeScript remains the authoritative production Workflow writer and read source",
+          "No Go authority cutover or production claim is inferred from qualification"
+        ],
+        "dependencies": ["issue-244"],
+        "blockers": ["authenticated_host_qualification_pending"],
+        "evidence": ["github:issue-371:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-372",
+        "title": "scenario-runtime: qualify authenticated Scenario execution",
+        "status": "blocked",
+        "planned_owner": "scenario-runtime",
+        "module_or_workstream": "scenario-runtime",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 372,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/372"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "The locked Scenario Packs and exact 12, 16, and 17 tool catalogs are verified in an authenticated host",
+          "Agent-bound Scenario instantiation and the registered Contract-to-Delivery Workflow complete with durable readback",
+          "Human-attested decisions bind the exact run and remain separate from GitHub approval",
+          "Unknown or unregistered Workflow targets fail closed without creating a pending plan"
+        ],
+        "dependencies": ["issue-371", "issue-244"],
+        "blockers": ["authenticated_host_qualification_pending"],
+        "evidence": ["github:issue-372:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-373",
+        "title": "collaboration: complete the Contract-to-Delivery live capstone",
+        "status": "blocked",
+        "planned_owner": "collaboration",
+        "module_or_workstream": "collaboration",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 373,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/373"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "A real Issue, claim, isolated worker, bot-authored pull request, webhook observation, and PRMS diagnosis are recorded",
+          "An independent human approves the current head before governed merge",
+          "Live GitHub evidence replaces every demo_fixture and not_run placeholder in scope",
+          "No agent, GitHub App, or bot originates the approval"
+        ],
+        "dependencies": [
+          "issue-371",
+          "issue-372",
+          "issue-243",
+          "issue-244",
+          "issue-246",
+          "issue-247",
+          "issue-248"
+        ],
+        "blockers": ["clean_machine_agent_task_capstone_pending"],
+        "evidence": ["github:issue-373:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-374",
+        "title": "negentropy-integration: complete signing, registration, and live contribution evidence",
+        "status": "blocked",
+        "planned_owner": "negentropy-integration",
+        "module_or_workstream": "negentropy-integration",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 374,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/374"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "An external signer signs the canonical contribution without private-key exposure",
+          "An administrator registers the contribution and returns a bounded receipt",
+          "The saved receipt, live HTTPS contribution, and diagnostics agree exactly",
+          "The integration remains SHADOW and no ENFORCE claim is made"
+        ],
+        "dependencies": [],
+        "blockers": [
+          "external_signing_pending",
+          "administrator_registration_pending",
+          "live_contribution_pending"
+        ],
+        "evidence": ["github:issue-374:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
+      },
+      {
+        "id": "issue-375",
+        "title": "organization-graph: collect live multi-system projection evidence",
+        "status": "blocked",
+        "planned_owner": "organization-graph",
+        "module_or_workstream": "organization-graph",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 375,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/375"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "The projection is built from a real Contract-to-Delivery source rather than a demo fixture",
+          "Rebuild, query, and explanation results are deterministic, read-only, and reproducible",
+          "Missing, stale, conflicting, or incomplete inputs fail closed",
+          "No source system is mutated and no authority is transferred to the graph"
+        ],
+        "dependencies": ["issue-373"],
+        "blockers": ["live_evidence_collection_pending"],
+        "evidence": ["github:issue-375:open"],
+        "last_verified_at": "2026-08-09T05:06:59Z"
       },
       {
         "id": "issue-314",
