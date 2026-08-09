@@ -44,6 +44,7 @@ export function normalizePollIssue(
     url: issue.html_url ?? '',
     labels,
     body: issue.body ?? '',
+    state: issue.state === 'open' || issue.state === 'closed' ? issue.state : 'unknown',
     senderLogin: issue.user?.login ?? '',
     deliveryId: '',
     updatedAt: issue.updated_at,

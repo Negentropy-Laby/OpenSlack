@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  filterByCapability,
-  filterByRisk,
-  filterByPath,
-  filterRedZonePaths,
-} from '../task-filter.js';
+import { filterByCapability, filterByRisk, filterByPath } from '../task-filter.js';
 import type { IssueTaskManifest } from '../manifest.js';
 
 function makeManifest(overrides: Partial<IssueTaskManifest> = {}): IssueTaskManifest {
@@ -70,6 +65,12 @@ describe('filterByRisk', () => {
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('critical');
   });
+
+  it('fails closed on an unsupported agent ceiling', () => {
+    const result = filterByRisk(makeManifest(), 'loww');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('unsupported');
+  });
 });
 
 describe('filterByPath', () => {
@@ -105,6 +106,11 @@ describe('filterByPath', () => {
     expect(filterByPath(makeManifest(), ['secrets/prod.key']).allowed).toBe(false);
   });
 
+  it('uses canonical Black Zone paths beyond the former local regex list', () => {
+    expect(filterByPath(makeManifest(), ['private/token.txt']).allowed).toBe(false);
+    expect(filterByPath(makeManifest(), ['production-tokens/live.txt']).allowed).toBe(false);
+  });
+
   it('handles ** glob correctly for nested directories', () => {
     const result = filterByPath(makeManifest({ forbidden_paths: ['packages/secret/**'] }), [
       'packages/secret/deep/nested/file.ts',
@@ -132,30 +138,5 @@ describe('filterByPath', () => {
     expect(filterByPath(manifest, ['secret.txt']).allowed).toBe(false);
     expect(filterByPath(manifest, ['deep/nested/secret.txt']).allowed).toBe(false);
     expect(filterByPath(manifest, ['deep/nested/not-secret.txt']).allowed).toBe(true);
-  });
-});
-
-describe('filterRedZonePaths', () => {
-  it('identifies .github/ paths as red zone', () => {
-    const red = filterRedZonePaths([
-      'docs/test.md',
-      '.github/workflows/test.yml',
-      'packages/core/src/foo.ts',
-    ]);
-    expect(red).toEqual(['.github/workflows/test.yml']);
-  });
-
-  it('identifies policies/ paths as red zone', () => {
-    const red = filterRedZonePaths(['.openslack/policies/risk.yaml']);
-    expect(red).toHaveLength(1);
-  });
-
-  it('identifies kernel/src/ paths as red zone', () => {
-    const red = filterRedZonePaths(['packages/kernel/src/zones.ts']);
-    expect(red).toHaveLength(1);
-  });
-
-  it('returns empty for all-green paths', () => {
-    expect(filterRedZonePaths(['docs/test.md', 'packages/core/src/foo.ts'])).toHaveLength(0);
   });
 });

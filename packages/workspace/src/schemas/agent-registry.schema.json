@@ -121,7 +121,10 @@
         "project_node_id": { "type": "string" },
         "allowed_statuses": { "type": "array", "items": { "type": "string" } },
         "excluded_labels": { "type": "array", "items": { "type": "string" } },
-        "max_risk_level": { "type": "string" }
+        "max_risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        }
       }
     },
     "scheduler": {

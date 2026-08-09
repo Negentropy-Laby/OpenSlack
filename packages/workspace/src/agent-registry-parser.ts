@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { AgentRegistryEntry, AgentPermissions, RiskZone } from '@openslack/kernel';
+import {
+  isTaskRiskLevel,
+  type AgentRegistryEntry,
+  type AgentPermissions,
+  type RiskZone,
+} from '@openslack/kernel';
 
 const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -35,6 +40,19 @@ export function parseAgentRegistryText(
   const schema = data.schema as string | undefined;
   if (!schema) {
     throw new Error(`Agent registry "${agentId}" missing required "schema" field`);
+  }
+
+  const taskMatching = data.task_matching;
+  if (taskMatching !== undefined) {
+    if (!taskMatching || typeof taskMatching !== 'object' || Array.isArray(taskMatching)) {
+      throw new Error(`Agent registry "${agentId}" has invalid task_matching configuration`);
+    }
+    const maxRiskLevel = (taskMatching as Record<string, unknown>).max_risk_level;
+    if (maxRiskLevel !== undefined && !isTaskRiskLevel(maxRiskLevel)) {
+      throw new Error(
+        `Agent registry "${agentId}" has unsupported task_matching.max_risk_level "${String(maxRiskLevel)}"`,
+      );
+    }
   }
 
   if (schema === 'openslack.agent_registry.v2') {

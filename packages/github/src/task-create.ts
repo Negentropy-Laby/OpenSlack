@@ -1,4 +1,4 @@
-import { classifyPaths, type RiskZone } from '@openslack/kernel';
+import { classifyPaths, RISK_ZONES, taskRiskLevelToZone, type RiskZone } from '@openslack/kernel';
 import { createTaskIssue } from './issue-tasks.js';
 import {
   parseIssueTaskManifest,
@@ -218,6 +218,10 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
     lease: { ttl_minutes: 120, heartbeat_minutes: 15 },
     idempotency_key: `${input.template}:${input.title.toLowerCase().trim()}`,
   };
+  const declaredRiskZone = taskRiskLevelToZone(manifest.risk_level);
+  if (RISK_ZONES.indexOf(declaredRiskZone) < RISK_ZONES.indexOf(riskZone)) {
+    errors.push(`Task risk ${manifest.risk_level} understates declared path scope ${riskZone}.`);
+  }
 
   const renderedManifest = renderIssueTaskManifest(manifest);
   const parseResult = parseIssueTaskManifest(renderedManifest);

@@ -848,6 +848,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
           url: `https://github.com/${options.owner}/${options.repo}/issues/${options.issueNumber}`,
           labels: [],
           body: '',
+          state: options.action === 'closed' ? 'closed' : 'open',
           senderLogin: 'cli',
           deliveryId: '',
           updatedAt: new Date().toISOString(),

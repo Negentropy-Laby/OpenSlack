@@ -47,7 +47,7 @@ function allowedGate(ttlMinutes: number | null = 120) {
       ...(ttlMinutes === null ? {} : { lease: { ttl_minutes: ttlMinutes, heartbeat_minutes: 15 } }),
     },
     riskZone: 'green',
-    changedPaths: ['docs/**'],
+    declaredScope: ['docs/**'],
   };
 }
 
@@ -81,7 +81,30 @@ beforeEach(() => {
     capabilities: { primary: ['documentation'], secondary: ['git'] },
     task_matching: { max_risk_level: 'medium' },
   });
-  mocks.runGates.mockReturnValue(allowedGate());
+  mocks.runGates.mockImplementation(({ candidate }) => {
+    if (candidate.state !== 'open') {
+      return {
+        allowed: false,
+        reason: 'Issue is not open',
+        manifest: null,
+        riskZone: 'green',
+        declaredScope: [],
+      };
+    }
+    if (
+      !candidate.labels.includes('openslack:task') ||
+      !candidate.labels.includes('openslack:ready')
+    ) {
+      return {
+        allowed: false,
+        reason: 'Issue must have openslack:task and openslack:ready labels',
+        manifest: null,
+        riskZone: 'green',
+        declaredScope: [],
+      };
+    }
+    return allowedGate();
+  });
   mocks.claim.mockResolvedValue({
     claimStatus: 'granted',
     issueNumber: 42,
@@ -143,7 +166,7 @@ describe('tickAgent targeted GitHub issue claims', () => {
     expect(mocks.authorize).toHaveBeenLastCalledWith({
       snapshot,
       action: 'task.claim',
-      changedPaths: ['docs/**'],
+      declaredScope: ['docs/**'],
       riskZone: 'green',
     });
   });
@@ -209,7 +232,7 @@ describe('tickAgent targeted GitHub issue claims', () => {
       reason: 'Agent lacks required capabilities: authenticated-host',
       manifest: null,
       riskZone: 'green',
-      changedPaths: [],
+      declaredScope: [],
     });
 
     const result = await runTick({
@@ -306,7 +329,7 @@ describe('tickAgent unscoped GitHub issue claims', () => {
         reason: 'risk exceeds agent maximum',
         manifest: null,
         riskZone: 'red',
-        changedPaths: [],
+        declaredScope: [],
       })
       .mockReturnValueOnce(allowedGate(90));
     mocks.claim.mockResolvedValueOnce({
@@ -345,22 +368,18 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     expect(mocks.claim).toHaveBeenCalledTimes(2);
   });
 
-  it('isolates one throwing manifest gate and claims the next candidate', async () => {
+  it('fails fast on an unexpected manifest gate exception', async () => {
     mocks.queryReady.mockResolvedValue([task(369), task(370)]);
     mocks.runGates
       .mockImplementationOnce(() => {
         throw new SyntaxError('bad manifest');
       })
       .mockReturnValueOnce(allowedGate());
-    mocks.claim.mockResolvedValueOnce({
-      claimStatus: 'granted',
-      issueNumber: 370,
-      claimRef: 'refs/heads/openslack/claims/issue-370',
-    });
 
     const result = await runTick({ source: 'github-issues' });
-    expect(result).toMatchObject({ action: 'claimed', taskId: '#370' });
-    expect(mocks.claim).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('bad manifest');
+    expect(mocks.claim).not.toHaveBeenCalled();
   });
 
   it('skips a candidate authorization denial and claims the next candidate', async () => {
@@ -426,6 +445,33 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     expect(result).toMatchObject({ action: 'error' });
     expect(result.message).toContain('API_ERROR');
     expect(mocks.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed after a claim denial without a reason', async () => {
+    mocks.queryReady.mockResolvedValue([task(369), task(370)]);
+    mocks.claim.mockResolvedValueOnce({
+      claimStatus: 'denied',
+      issueNumber: 369,
+      claimRef: 'refs/heads/openslack/claims/issue-369',
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('claim was denied');
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails before GitHub discovery when the registry risk ceiling is invalid', async () => {
+    mocks.parseRegistry.mockReturnValue({
+      capabilities: { primary: [], secondary: [] },
+      task_matching: { max_risk_level: 'hig' },
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('max_risk_level');
+    expect(mocks.queryReady).not.toHaveBeenCalled();
+    expect(mocks.getIssue).not.toHaveBeenCalled();
   });
 
   it('keeps the legacy empty search result as idle', async () => {

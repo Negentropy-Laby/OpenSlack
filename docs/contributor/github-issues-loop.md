@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-08-09
+updated: 2026-08-10
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -72,8 +72,11 @@ ref: refs/heads/openslack/claims/issue-{issueNumber}
 4. For an eligible candidate, the agent gets main branch HEAD SHA.
 5. Agent attempts `POST /repos/{owner}/{repo}/git/refs` with the claim ref pointing to HEAD SHA.
 6. **If ref created (HTTP 201):** claim granted — return lease.
-7. **If ref already exists (HTTP 422):** claim denied — task already claimed by another agent.
-8. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment.
+7. **If creation returns HTTP 422:** re-read the exact claim ref. Only an observed ref is
+   `ALREADY_CLAIMED`; an absent/unreadable ref is `API_ERROR`.
+8. Unscoped discovery may continue after candidate rejection or `ALREADY_CLAIMED`, but transport,
+   authentication, rate-limit, missing-reason, and unexpected gate failures stop the batch.
+9. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment.
 
 **Why git refs and not labels?**
 
@@ -121,7 +124,7 @@ task_id: TASK-2026-000123
 title: Fix failing workspace validation
 status: ready
 agent_type: codex
-risk_level: low
+risk_level: medium
 required_capabilities:
   - typescript
   - ci-fix
@@ -135,7 +138,15 @@ output_contract:
   - workspace_run_record
 ```
 
-`parseIssueTaskManifest(body)` extracts and validates this block. `renderIssueTaskManifest(manifest)` generates the canonical YAML string for issue creation.
+`parseIssueTaskManifest(body)` extracts and validates this block. `status` is required. An entirely
+missing `lease` uses the runtime default, while an explicit lease must contain valid
+`ttl_minutes` and `heartbeat_minutes`. `renderIssueTaskManifest(manifest)` generates the canonical
+YAML string for issue creation.
+
+Before an atomic claim, OpenSlack reclassifies `allowed_paths` with the Kernel's canonical risk
+policy. A manifest cannot lower that derived risk, Black Zone scope is never auto-claimable, and
+Red Zone scope must declare `red_zone_change` human approval. The paths remain the task's declared
+scope; actual changed files are independently rechecked during execution and PR governance.
 
 ## API Reference
 

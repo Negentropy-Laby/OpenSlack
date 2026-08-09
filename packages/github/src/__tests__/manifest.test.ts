@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from '../manifest.js';
+import { TASK_RISK_LEVELS } from '@openslack/kernel';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -63,12 +64,33 @@ describe('parseIssueTaskManifest', () => {
     expect(result.errors.some((e) => e.includes('Red Zone'))).toBe(true);
   });
 
+  it.each([
+    ['AGENTS.md', 'Red Zone'],
+    ['.openslack/plugins/demo/plugin.json', 'Red Zone'],
+    ['packages/plugin-host/src/index.ts', 'Red Zone'],
+    ['private/token.txt', 'Black Zone'],
+    ['production-tokens/live.txt', 'Black Zone'],
+  ])('uses canonical zone policy for %s', (path, zone) => {
+    const body = `\`\`\`openslack-task\nschema: openslack.github_issue_task.v1\ntask_id: TASK-2026-000099\ntitle: Canonical zone\nstatus: ready\nagent_type: codex\nrisk_level: low\nallowed_paths:\n  - ${path}\n\`\`\``;
+    const result = parseIssueTaskManifest(body);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes(zone))).toBe(true);
+  });
+
   it('rejects conflicting allowed/forbidden paths', () => {
     const body =
       '```openslack-task\nschema: openslack.github_issue_task.v1\ntask_id: TASK-2026-000004\ntitle: Conflict\nstatus: ready\nagent_type: codex\nrisk_level: low\nallowed_paths:\n  - packages/core/**\nforbidden_paths:\n  - packages/core/**\n```';
     const result = parseIssueTaskManifest(body);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes('conflict'))).toBe(true);
+  });
+
+  it('detects single-star forbidden path conflicts', () => {
+    const body =
+      '```openslack-task\nschema: openslack.github_issue_task.v1\ntask_id: TASK-2026-000004\ntitle: Conflict\nstatus: ready\nagent_type: codex\nrisk_level: medium\nallowed_paths:\n  - packages/core\nforbidden_paths:\n  - packages/*\n```';
+    const result = parseIssueTaskManifest(body);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('conflict'))).toBe(true);
   });
 
   it('rejects missing openslack-task block', () => {
@@ -145,8 +167,12 @@ describe('parseIssueTaskManifest', () => {
   it('keeps the schema and checked documentation examples aligned', () => {
     const schema = JSON.parse(
       readFileSync(resolve(repoRoot, 'packages/github/src/task-manifest.schema.json'), 'utf8'),
-    ) as { required: string[]; properties: { lease: { required: string[] } } };
+    ) as {
+      required: string[];
+      properties: { risk_level: { enum: string[] }; lease: { required: string[] } };
+    };
     expect(schema.required).toContain('status');
+    expect(schema.properties.risk_level.enum).toEqual([...TASK_RISK_LEVELS]);
     expect(schema.properties.lease.required).toEqual(['ttl_minutes', 'heartbeat_minutes']);
 
     for (const relativePath of ['README.md', 'docs/contributor/github-issues-loop.md']) {
@@ -168,6 +194,13 @@ describe('renderIssueTaskManifest', () => {
     expect(rendered).toContain('status: ready');
     expect(rendered).toContain('allowed_paths:');
     expect(rendered).toContain('forbidden_paths:');
+  });
+
+  it('preserves linked_pr zero symmetrically', () => {
+    const manifest = parseIssueTaskManifest(validBlock).manifest!;
+    const rendered = renderIssueTaskManifest({ ...manifest, linked_pr: 0 });
+    expect(rendered).toContain('linked_pr: 0');
+    expect(parseIssueTaskManifest(rendered).manifest?.linked_pr).toBe(0);
   });
 });
 

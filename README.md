@@ -386,7 +386,7 @@ task_id: TASK-2026-000123
 title: Fix failing workspace validation
 status: ready
 agent_type: codex
-risk_level: low
+risk_level: medium
 required_capabilities:
   - typescript
   - workspace

@@ -16,6 +16,7 @@ export interface NormalizedIssueEvent {
   url: string;
   labels: string[];
   body: string;
+  state?: 'open' | 'closed' | 'unknown';
   senderLogin: string;
   deliveryId: string;
   updatedAt: string;
@@ -53,6 +54,7 @@ export function normalizeIssueEvent(
   const title = typeof i.title === 'string' && i.title.length > 0 ? i.title : null;
   const url = typeof i.html_url === 'string' && i.html_url.length > 0 ? i.html_url : null;
   const body = typeof i.body === 'string' ? i.body : '';
+  const state = i.state === 'open' || i.state === 'closed' ? i.state : 'unknown';
   const updatedAt =
     typeof i.updated_at === 'string' && Number.isFinite(Date.parse(i.updated_at))
       ? i.updated_at
@@ -99,6 +101,7 @@ export function normalizeIssueEvent(
     url,
     labels,
     body,
+    state,
     senderLogin,
     deliveryId,
     updatedAt,

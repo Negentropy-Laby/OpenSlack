@@ -28,6 +28,7 @@ describe('normalizePollIssue', () => {
     expect(result.deliveryId).toBe('');
     expect(result.updatedAt).toBe('2026-05-25T10:00:00Z');
     expect(result.source).toBe('poll');
+    expect(result.state).toBe('open');
     expect(result.eventKey).toBe('issues.opened');
     expect(result.repository.canonicalFullName).toBe('owner/repo');
   });

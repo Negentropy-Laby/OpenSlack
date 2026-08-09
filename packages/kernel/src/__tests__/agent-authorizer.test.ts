@@ -65,10 +65,11 @@ describe('authorizeAgentAction', () => {
   });
 
   it('denies when path matches deny glob', () => {
+    const snapshot = makeSnapshot({ paths: { allow: ['**'], deny: ['docs/private/**'] } });
     const result = authorizeAgentAction({
-      snapshot: makeSnapshot(),
+      snapshot,
       action: 'task.claim',
-      changedPaths: ['.env'],
+      changedPaths: ['docs/private/notes.md'],
     });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_denied');
@@ -138,12 +139,65 @@ describe('authorizeAgentAction', () => {
     expect(result.decision).toBe('allow');
   });
 
+  it('derives canonical risk and cannot be downgraded by the caller', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      declaredScope: ['AGENTS.md'],
+      riskZone: 'green',
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('risk_ceiling');
+    expect(result.evidence.risk_zone).toBe('red');
+  });
+
+  it('preserves a caller-supplied risk that is higher than path-derived risk', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot({ max_risk_zone: 'red' }),
+      action: 'task.claim',
+      declaredScope: ['docs/readme.md'],
+      riskZone: 'red',
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.evidence.risk_zone).toBe('red');
+  });
+
+  it('denies Black Zone paths even when the caller declares green', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot({ max_risk_zone: 'black' }),
+      action: 'task.claim',
+      declaredScope: ['private/token.txt'],
+      riskZone: 'green',
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('black_zone');
+  });
+
+  it('rejects ambiguous path bindings', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      changedPaths: ['docs/actual.md'],
+      declaredScope: ['docs/**'],
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('ambiguous_path_scope');
+  });
+
+  it('fails closed on an invalid permission risk zone', () => {
+    const snapshot = makeSnapshot();
+    snapshot.permissions.max_risk_zone = 'yelow' as never;
+    const result = authorizeAgentAction({ snapshot, action: 'task.claim' });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('invalid_permission_risk_zone');
+  });
+
   it('deny overrides allow for path globs', () => {
-    const snapshot = makeSnapshot({ paths: { allow: ['**'], deny: ['secrets/**'] } });
+    const snapshot = makeSnapshot({ paths: { allow: ['**'], deny: ['docs/private/**'] } });
     const result = authorizeAgentAction({
       snapshot,
       action: 'task.claim',
-      changedPaths: ['secrets/key.pem'],
+      changedPaths: ['docs/private/notes.md'],
     });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_denied');

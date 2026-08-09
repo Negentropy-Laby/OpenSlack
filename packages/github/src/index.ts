@@ -40,6 +40,7 @@ export {
   GitHubAuthRequiredError,
   GitHubRepoRequiredError,
 } from './client.js';
+export { normalizeErrorMessage } from './error-message.js';
 export type {
   AuthMode,
   GitHubAuthPreference,
@@ -134,11 +135,10 @@ export {
   filterByCapability,
   filterByRisk,
   filterByPath,
-  filterRedZonePaths,
   riskLevelToZone,
   runAutoClaimGates,
 } from './task-filter.js';
-export type { FilterResult, AutoClaimGateResult } from './task-filter.js';
+export type { FilterResult, AutoClaimCandidate, AutoClaimGateResult } from './task-filter.js';
 export { repairExpiredClaims, repairLabels, REQUIRED_OPENSLACK_LABELS } from './repair.js';
 export type { RepairOptions, RepairResult } from './repair.js';
 export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';

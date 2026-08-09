@@ -1,18 +1,10 @@
 import type { RiskZone } from './types.js';
 import { DEFAULT_RISK_ZONE, ZONE_PATTERNS } from './zone-policy.js';
+import { compilePathGlob } from './path-glob.js';
 
-function matchesGlob(path: string, glob: string): boolean {
-  // Simple glob matching: ** matches any depth, * matches within a segment
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '<<GLOBSTAR_SLASH>>')
-    .replace(/\*\*/g, '<<GLOBSTAR>>')
-    .replace(/\*/g, '[^/]*')
-    .replace(/<<GLOBSTAR_SLASH>>/g, '(.*/)?')
-    .replace(/<<GLOBSTAR>>/g, '.*');
-  const regex = new RegExp(`^${escaped}$`);
-  return regex.test(path);
-}
+const COMPILED_ZONE_PATTERNS = ZONE_PATTERNS.flatMap(({ zone, globs }) =>
+  globs.map((glob) => ({ zone, matches: compilePathGlob(glob) })),
+);
 
 export function classifyPaths(changedPaths: string[]): RiskZone {
   if (changedPaths.length === 0) return 'yellow';
@@ -23,13 +15,9 @@ export function classifyPaths(changedPaths: string[]): RiskZone {
   for (const path of changedPaths) {
     let pathZone: RiskZone | undefined;
 
-    for (const { zone, globs } of ZONE_PATTERNS) {
-      for (const glob of globs) {
-        if (matchesGlob(path, glob)) {
-          if (!pathZone || zoneOrder.indexOf(zone) > zoneOrder.indexOf(pathZone)) {
-            pathZone = zone;
-          }
-        }
+    for (const { zone, matches } of COMPILED_ZONE_PATTERNS) {
+      if (matches(path) && (!pathZone || zoneOrder.indexOf(zone) > zoneOrder.indexOf(pathZone))) {
+        pathZone = zone;
       }
     }
 

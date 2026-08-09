@@ -1,6 +1,7 @@
 import { getClient } from './client.js';
 import type { GitHubClientOptions } from './client.js';
 import { assertCanonicalPRBase } from './pr-base-policy.js';
+import { normalizeErrorMessage } from './error-message.js';
 
 const RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 75;
@@ -82,10 +83,6 @@ function errorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isNotFound(error: unknown): boolean {
   return errorStatus(error) === 404;
 }
@@ -94,7 +91,7 @@ function isRetryableEvidenceError(error: unknown): boolean {
   if (error instanceof Error && error.name === 'AbortError') return false;
   const status = errorStatus(error);
   if (status !== undefined) return status >= 500 || status === 429;
-  const message = errorMessage(error);
+  const message = normalizeErrorMessage(error);
   return /ECONNRESET|ETIMEDOUT|timeout|network|socket hang up/i.test(message);
 }
 
@@ -102,7 +99,7 @@ function isEvidenceBoundaryError(error: unknown): boolean {
   return (
     (error instanceof Error && error.name === 'AbortError') ||
     /GITHUB_EVIDENCE_(?:ABORTED|LIMIT_INVALID|CODEOWNERS_INVALID|(?:PAGES|FILES|REVIEWS|CHECKS|PATCHES|TREE|CODEOWNERS_BYTES)_LIMIT_EXCEEDED)/.test(
-      errorMessage(error),
+      normalizeErrorMessage(error),
     )
   );
 }
@@ -183,7 +180,7 @@ function strictEvidenceUnavailable(
     repo: client.repo,
     prNumber,
     status: errorStatus(error),
-    causeMessage: errorMessage(error),
+    causeMessage: normalizeErrorMessage(error),
   });
 }
 

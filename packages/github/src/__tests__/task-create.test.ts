@@ -57,4 +57,16 @@ describe('previewTaskCreation', () => {
     expect(preview.errors).toEqual([]);
     expect(preview.manifest.human_approval_required_for).toEqual(['red_zone_change']);
   });
+
+  it('rejects an explicitly understated risk level', () => {
+    const preview = previewTaskCreation({
+      template: 'bugfix',
+      title: 'Understated workflow task',
+      allowedPaths: ['.github/workflows/ci.yml'],
+      riskLevel: 'low',
+      humanApprovalRequiredFor: ['red_zone_change'],
+    });
+
+    expect(preview.errors.some((error) => error.includes('understates'))).toBe(true);
+  });
 });

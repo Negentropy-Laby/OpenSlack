@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-08-10
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -162,7 +162,7 @@ sources:
 
 ### CLOSED: FilterByPath glob-to-regex bug
 
-**Resolution:** The placeholder ordering fix in commit 29fe79c restored `**` depth matching but still interpolated manifest text into a regular expression. PR #378 replaces that conversion with a memoized literal glob matcher for `*`, `**`, and `**/`, so regex metacharacters have no special meaning and one malformed candidate cannot abort unscoped discovery.
+**Resolution:** The placeholder ordering fix in commit 29fe79c restored `**` depth matching but still interpolated manifest text into a regular expression. PR #378 replaces that conversion with one Kernel-owned literal glob matcher for `*`, `**`, and `**/`. Callers compile patterns once per operation without an unbounded process cache, regex metacharacters have no special meaning, malformed Issue data becomes a candidate rejection, and unexpected gate faults remain visible.
 **Closed:** 2026-08-09.
 
 ### CLOSED: CLI alias crash

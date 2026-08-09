@@ -1,17 +1,25 @@
+import {
+  classifyPaths,
+  compilePathGlob,
+  highestRiskZone,
+  isTaskRiskLevel,
+  RISK_ZONES,
+  taskRiskLevelToZone,
+  type RiskZone,
+  type TaskRiskLevel,
+} from '@openslack/kernel';
 import type { IssueTaskManifest } from './manifest.js';
-import { extractTaskBlock, parseIssueTaskManifest } from './manifest.js';
-import type { RiskZone } from '@openslack/kernel';
+import { parseIssueTaskManifest } from './manifest.js';
 
 interface AgentCapabilities {
   primary?: string[];
   secondary?: string[];
 }
 
-interface AgentRegistry {
-  agent_id: string;
-  capabilities?: { primary?: string[]; secondary?: string[] };
-  employment?: { status?: string };
-  task_matching?: { max_risk_level?: string };
+export interface AutoClaimCandidate {
+  body: string;
+  labels: readonly string[];
+  state?: 'open' | 'closed' | 'unknown';
 }
 
 export interface FilterResult {
@@ -23,197 +31,77 @@ export function filterByCapability(
   manifest: IssueTaskManifest,
   agentCapabilities: AgentCapabilities,
 ): FilterResult {
-  const required = manifest.required_capabilities || [];
+  const required = manifest.required_capabilities ?? [];
   if (required.length === 0) return { allowed: true };
 
   const agentCaps = new Set([
-    ...(agentCapabilities.primary || []),
-    ...(agentCapabilities.secondary || []),
+    ...(agentCapabilities.primary ?? []),
+    ...(agentCapabilities.secondary ?? []),
   ]);
-
-  const missing = required.filter((c) => !agentCaps.has(c));
-  if (missing.length > 0) {
-    return { allowed: false, reason: `Agent lacks required capabilities: ${missing.join(', ')}` };
-  }
-  return { allowed: true };
+  const missing = required.filter((capability) => !agentCaps.has(capability));
+  return missing.length > 0
+    ? { allowed: false, reason: `Agent lacks required capabilities: ${missing.join(', ')}` }
+    : { allowed: true };
 }
-
-const RISK_ORDER: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 export function filterByRisk(
   manifest: IssueTaskManifest,
-  maxRiskLevel: string = 'medium',
+  maxRiskLevel: unknown = 'medium',
+  effectiveRiskZone?: RiskZone,
 ): FilterResult {
-  const taskRisk = RISK_ORDER[manifest.risk_level] ?? 0;
-  const maxRisk = RISK_ORDER[maxRiskLevel] ?? 1;
-
-  if (taskRisk > maxRisk) {
+  if (!isTaskRiskLevel(maxRiskLevel)) {
     return {
       allowed: false,
-      reason: `Task risk ${manifest.risk_level} exceeds agent max ${maxRiskLevel}`,
+      reason: `Agent max risk level is unsupported: ${String(maxRiskLevel)}`,
+    };
+  }
+  if (!isTaskRiskLevel(manifest.risk_level)) {
+    return {
+      allowed: false,
+      reason: `Task risk level is unsupported: ${String(manifest.risk_level)}`,
     };
   }
 
-  if (manifest.risk_level === 'critical') {
+  const taskZone = effectiveRiskZone ?? taskRiskLevelToZone(manifest.risk_level);
+  const maxZone = taskRiskLevelToZone(maxRiskLevel);
+  if (RISK_ZONES.indexOf(taskZone) > RISK_ZONES.indexOf(maxZone)) {
     return {
       allowed: false,
-      reason: 'Critical risk tasks require human assignment — not auto-claimable',
+      reason: `Task risk ${manifest.risk_level} (${taskZone}) exceeds agent max ${maxRiskLevel}`,
     };
   }
-
+  if (taskZone === 'black') {
+    return {
+      allowed: false,
+      reason: 'Critical or Black Zone tasks require human assignment — not auto-claimable',
+    };
+  }
   return { allowed: true };
 }
 
-type PathGlobToken =
-  | { readonly kind: 'literal'; readonly value: string }
-  | { readonly kind: 'star' }
-  | { readonly kind: 'globstar' }
-  | { readonly kind: 'globstar-directories' };
-
-function tokenizePathGlob(pattern: string): PathGlobToken[] {
-  const tokens: PathGlobToken[] = [];
-  for (let index = 0; index < pattern.length; ) {
-    if (pattern[index] !== '*') {
-      tokens.push({ kind: 'literal', value: pattern[index]! });
-      index += 1;
-      continue;
-    }
-
-    let end = index;
-    while (pattern[end] === '*') end += 1;
-    if (end - index === 1) {
-      tokens.push({ kind: 'star' });
-      index = end;
-      continue;
-    }
-
-    if (pattern[end] === '/') {
-      tokens.push({ kind: 'globstar-directories' });
-      index = end + 1;
-      continue;
-    }
-
-    tokens.push({ kind: 'globstar' });
-    index = end;
-  }
-  return tokens;
-}
-
-function matchesPathGlob(pattern: string, path: string): boolean {
-  const tokens = tokenizePathGlob(pattern);
-  type MatchState = {
-    readonly tokenIndex: number;
-    readonly pathIndex: number;
-    readonly scanningDirectory: boolean;
-  };
-  const pending: MatchState[] = [{ tokenIndex: 0, pathIndex: 0, scanningDirectory: false }];
-  const visited = new Set<string>();
-
-  while (pending.length > 0) {
-    const state = pending.pop()!;
-    const key = `${state.tokenIndex}:${state.pathIndex}:${state.scanningDirectory ? 1 : 0}`;
-    if (visited.has(key)) continue;
-    visited.add(key);
-
-    if (state.scanningDirectory) {
-      if (state.pathIndex >= path.length) continue;
-      if (path[state.pathIndex] === '/') {
-        pending.push({
-          tokenIndex: state.tokenIndex,
-          pathIndex: state.pathIndex + 1,
-          scanningDirectory: false,
-        });
-      } else {
-        pending.push({ ...state, pathIndex: state.pathIndex + 1 });
-      }
-      continue;
-    }
-
-    const token = tokens[state.tokenIndex];
-    if (!token) {
-      if (state.pathIndex === path.length) return true;
-      continue;
-    }
-
-    if (token.kind === 'literal') {
-      if (path[state.pathIndex] === token.value) {
-        pending.push({
-          tokenIndex: state.tokenIndex + 1,
-          pathIndex: state.pathIndex + 1,
-          scanningDirectory: false,
-        });
-      }
-      continue;
-    }
-
-    pending.push({
-      tokenIndex: state.tokenIndex + 1,
-      pathIndex: state.pathIndex,
-      scanningDirectory: false,
-    });
-    if (token.kind === 'globstar-directories') {
-      pending.push({ ...state, scanningDirectory: true });
-    } else if (
-      state.pathIndex < path.length &&
-      (token.kind === 'globstar' || path[state.pathIndex] !== '/')
-    ) {
-      pending.push({ ...state, pathIndex: state.pathIndex + 1 });
-    }
-  }
-
-  return false;
-}
-
-export function filterByPath(manifest: IssueTaskManifest, changedPaths: string[]): FilterResult {
-  const forbidden = manifest.forbidden_paths || [];
-
-  for (const path of changedPaths) {
-    for (const fp of forbidden) {
-      if (matchesPathGlob(fp, path)) {
-        return { allowed: false, reason: `Path "${path}" matches forbidden pattern "${fp}"` };
+export function filterByPath(manifest: IssueTaskManifest, declaredScope: string[]): FilterResult {
+  const forbidden = (manifest.forbidden_paths ?? []).map((pattern) => ({
+    pattern,
+    matches: compilePathGlob(pattern),
+  }));
+  for (const path of declaredScope) {
+    for (const { pattern, matches } of forbidden) {
+      if (matches(path)) {
+        return { allowed: false, reason: `Path "${path}" matches forbidden pattern "${pattern}"` };
       }
     }
-  }
-
-  // Check Black Zone (always forbidden regardless of manifest)
-  const blackPatterns = [/^\.env$/, /\.pem$/, /\.key$/, /^secrets\//, /^credentials\//];
-  for (const path of changedPaths) {
-    for (const bp of blackPatterns) {
-      if (bp.test(path)) {
-        return {
-          allowed: false,
-          reason: `Path "${path}" is in Black Zone — rejected unconditionally`,
-        };
-      }
+    if (classifyPaths([path]) === 'black') {
+      return {
+        allowed: false,
+        reason: `Path "${path}" is in Black Zone — rejected unconditionally`,
+      };
     }
   }
-
   return { allowed: true };
 }
 
-export function filterRedZonePaths(changedPaths: string[]): string[] {
-  const redPatterns = [
-    /^\.github\//,
-    /^\.openslack\/policies\//,
-    /^\.openslack\/agents\/registry\//,
-    /^\.openslack\/agents\/prompts\//,
-    /^\.openslack\/self\/constitution/,
-    /^\.openslack\/self\/invariants/,
-    /^packages\/kernel\/src\//,
-    /^packages\/self-evolution\/src\/core\//,
-  ];
-  return changedPaths.filter((p) => redPatterns.some((rp) => rp.test(p)));
-}
-
-const RISK_LEVEL_TO_ZONE: Record<IssueTaskManifest['risk_level'], RiskZone> = {
-  low: 'green',
-  medium: 'yellow',
-  high: 'red',
-  critical: 'black',
-};
-
-export function riskLevelToZone(level: IssueTaskManifest['risk_level']): RiskZone {
-  return RISK_LEVEL_TO_ZONE[level] ?? 'green';
+export function riskLevelToZone(level: TaskRiskLevel): RiskZone {
+  return taskRiskLevelToZone(level);
 }
 
 export interface AutoClaimGateResult {
@@ -221,86 +109,95 @@ export interface AutoClaimGateResult {
   reason: string;
   manifest: IssueTaskManifest | null;
   riskZone: RiskZone;
-  changedPaths: string[];
+  declaredScope: string[];
+}
+
+function rejectedGate(
+  reason: string,
+  options: {
+    manifest?: IssueTaskManifest | null;
+    riskZone?: RiskZone;
+    declaredScope?: string[];
+  } = {},
+): AutoClaimGateResult {
+  return {
+    allowed: false,
+    reason,
+    manifest: options.manifest ?? null,
+    riskZone: options.riskZone ?? 'green',
+    declaredScope: options.declaredScope ?? [],
+  };
 }
 
 export function runAutoClaimGates(args: {
-  body: string;
-  agentCapabilities: { primary?: string[]; secondary?: string[] };
-  agentMaxRiskLevel: string;
+  candidate: AutoClaimCandidate;
+  agentCapabilities: AgentCapabilities;
+  agentMaxRiskLevel: unknown;
 }): AutoClaimGateResult {
-  const block = extractTaskBlock(args.body);
-  if (!block) {
-    return {
-      allowed: false,
-      reason: 'No openslack-task block found in issue body',
-      manifest: null,
-      riskZone: 'green',
-      changedPaths: [],
-    };
+  if (args.candidate.state !== 'open') {
+    return rejectedGate('Issue is not open');
+  }
+  if (
+    !args.candidate.labels.includes('openslack:task') ||
+    !args.candidate.labels.includes('openslack:ready')
+  ) {
+    return rejectedGate('Issue must have openslack:task and openslack:ready labels');
   }
 
-  const parseResult = parseIssueTaskManifest(args.body);
-  if (!parseResult.valid) {
-    return {
-      allowed: false,
-      reason: parseResult.errors.join('; '),
-      manifest: null,
-      riskZone: 'green',
-      changedPaths: [],
-    };
+  const parseResult = parseIssueTaskManifest(args.candidate.body);
+  if (!parseResult.valid || !parseResult.manifest) {
+    return rejectedGate(parseResult.errors.join('; ') || 'Task manifest is invalid');
   }
-  const manifest = parseResult.manifest!;
+  const manifest = parseResult.manifest;
+  const declaredScope = [...(manifest.allowed_paths ?? [])];
+  const declaredRiskZone = taskRiskLevelToZone(manifest.risk_level);
+  const pathRiskZone = declaredScope.length > 0 ? classifyPaths(declaredScope) : undefined;
+  const effectiveRiskZone = highestRiskZone(declaredRiskZone, pathRiskZone)!;
 
   if (manifest.status !== 'ready') {
-    return {
-      allowed: false,
-      reason: `Task manifest status must be ready; got ${manifest.status ?? 'missing'}`,
+    return rejectedGate(`Task manifest status must be ready; got ${manifest.status}`, {
       manifest,
-      riskZone: riskLevelToZone(manifest.risk_level),
-      changedPaths: manifest.allowed_paths ?? [],
-    };
+      riskZone: effectiveRiskZone,
+      declaredScope,
+    });
+  }
+  if (pathRiskZone && RISK_ZONES.indexOf(pathRiskZone) > RISK_ZONES.indexOf(declaredRiskZone)) {
+    return rejectedGate(
+      `Task risk ${manifest.risk_level} understates declared path scope ${pathRiskZone}`,
+      { manifest, riskZone: effectiveRiskZone, declaredScope },
+    );
   }
 
-  const riskResult = filterByRisk(manifest, args.agentMaxRiskLevel);
+  const riskResult = filterByRisk(manifest, args.agentMaxRiskLevel, effectiveRiskZone);
   if (!riskResult.allowed) {
-    return {
-      allowed: false,
-      reason: riskResult.reason!,
+    return rejectedGate(riskResult.reason ?? 'Task risk gate rejected the issue', {
       manifest,
-      riskZone: riskLevelToZone(manifest.risk_level),
-      changedPaths: [],
-    };
+      riskZone: effectiveRiskZone,
+      declaredScope,
+    });
   }
-
-  const capResult = filterByCapability(manifest, args.agentCapabilities);
-  if (!capResult.allowed) {
-    return {
-      allowed: false,
-      reason: capResult.reason!,
+  const capabilityResult = filterByCapability(manifest, args.agentCapabilities);
+  if (!capabilityResult.allowed) {
+    return rejectedGate(capabilityResult.reason ?? 'Task capability gate rejected the issue', {
       manifest,
-      riskZone: riskLevelToZone(manifest.risk_level),
-      changedPaths: [],
-    };
+      riskZone: effectiveRiskZone,
+      declaredScope,
+    });
   }
-
-  const changedPaths = manifest.allowed_paths ?? [];
-  const pathResult = filterByPath(manifest, changedPaths);
+  const pathResult = filterByPath(manifest, declaredScope);
   if (!pathResult.allowed) {
-    return {
-      allowed: false,
-      reason: pathResult.reason!,
+    return rejectedGate(pathResult.reason ?? 'Task path gate rejected the issue', {
       manifest,
-      riskZone: riskLevelToZone(manifest.risk_level),
-      changedPaths,
-    };
+      riskZone: effectiveRiskZone,
+      declaredScope,
+    });
   }
 
   return {
     allowed: true,
     reason: '',
     manifest,
-    riskZone: riskLevelToZone(manifest.risk_level),
-    changedPaths,
+    riskZone: effectiveRiskZone,
+    declaredScope,
   };
 }

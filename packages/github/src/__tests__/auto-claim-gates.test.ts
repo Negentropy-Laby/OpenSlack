@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { riskLevelToZone, runAutoClaimGates } from '../task-filter.js';
 
 function makeBody(overrides: Record<string, unknown> = {}): string {
@@ -11,145 +11,122 @@ function makeBody(overrides: Record<string, unknown> = {}): string {
     risk_level: 'low',
     ...overrides,
   };
-  return (
-    'Some issue description\n\n```openslack-task\n' + JSON.stringify(manifest, null, 2) + '\n```\n'
-  );
+  return `Some issue description\n\n\`\`\`openslack-task\n${JSON.stringify(manifest, null, 2)}\n\`\`\`\n`;
+}
+
+function runGate(
+  body: string,
+  overrides: {
+    state?: 'open' | 'closed' | 'unknown';
+    labels?: string[];
+    maxRisk?: unknown;
+    capabilities?: { primary?: string[]; secondary?: string[] };
+  } = {},
+) {
+  return runAutoClaimGates({
+    candidate: {
+      body,
+      state: overrides.state ?? 'open',
+      labels: overrides.labels ?? ['openslack:task', 'openslack:ready'],
+    },
+    agentCapabilities: overrides.capabilities ?? { primary: ['typescript'], secondary: [] },
+    agentMaxRiskLevel: overrides.maxRisk ?? 'high',
+  });
 }
 
 describe('riskLevelToZone', () => {
-  it('maps low to green', () => {
-    expect(riskLevelToZone('low')).toBe('green');
-  });
-
-  it('maps medium to yellow', () => {
-    expect(riskLevelToZone('medium')).toBe('yellow');
-  });
-
-  it('maps high to red', () => {
-    expect(riskLevelToZone('high')).toBe('red');
-  });
-
-  it('maps critical to black', () => {
-    expect(riskLevelToZone('critical')).toBe('black');
+  it.each([
+    ['low', 'green'],
+    ['medium', 'yellow'],
+    ['high', 'red'],
+    ['critical', 'black'],
+  ] as const)('maps %s to %s', (level, zone) => {
+    expect(riskLevelToZone(level)).toBe(zone);
   });
 });
 
 describe('runAutoClaimGates', () => {
-  const defaultCapabilities = { primary: ['typescript'], secondary: [] };
-  const defaultMaxRisk = 'high';
+  it('binds open state and both ready labels into the shared gate', () => {
+    expect(runGate(makeBody(), { state: 'closed' }).reason).toContain('not open');
+    expect(runGate(makeBody(), { state: 'unknown' }).reason).toContain('not open');
+    expect(runGate(makeBody(), { labels: ['openslack:task'] }).reason).toContain('openslack:ready');
+  });
 
   it('blocks when body has no manifest block', () => {
-    const result = runAutoClaimGates({
-      body: 'Just a plain issue body',
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: defaultMaxRisk,
-    });
+    const result = runGate('Just a plain issue body');
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('No openslack-task block');
     expect(result.manifest).toBeNull();
   });
 
-  it('blocks when manifest is invalid', () => {
-    const body = '```openslack-task\ninvalid: yaml\nschema: wrong\n```\n';
-    const result = runAutoClaimGates({
-      body,
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: defaultMaxRisk,
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.manifest).toBeNull();
+  it('blocks invalid, missing-status, and non-ready manifests', () => {
+    expect(runGate('```openslack-task\ninvalid: yaml\nschema: wrong\n```').allowed).toBe(false);
+    expect(runGate(makeBody({ status: undefined })).reason).toContain('status');
+    expect(runGate(makeBody({ status: 'blocked' })).reason).toContain('got blocked');
   });
 
-  it('blocks when manifest status is missing', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ status: undefined }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: defaultMaxRisk,
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('status must be one of');
-    expect(result.manifest).toBeNull();
-  });
-
-  it('blocks when manifest status is not ready', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ status: 'blocked' }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: defaultMaxRisk,
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('got blocked');
-  });
-
-  it('blocks when risk exceeds agent max', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ risk_level: 'high' }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: 'low',
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('exceeds');
+  it('blocks when risk exceeds the agent ceiling or the ceiling is invalid', () => {
+    expect(runGate(makeBody({ risk_level: 'high' }), { maxRisk: 'low' }).reason).toContain(
+      'exceeds',
+    );
+    expect(runGate(makeBody(), { maxRisk: 'hig' }).reason).toContain('unsupported');
   });
 
   it('always blocks critical risk', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ risk_level: 'critical' }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: 'critical',
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Critical');
+    expect(runGate(makeBody({ risk_level: 'critical' }), { maxRisk: 'critical' }).reason).toContain(
+      'Critical',
+    );
   });
 
-  it('blocks when agent lacks required capabilities', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ required_capabilities: ['python', 'ml'] }),
-      agentCapabilities: { primary: ['typescript'], secondary: ['nodejs'] },
-      agentMaxRiskLevel: defaultMaxRisk,
+  it('blocks when the agent lacks required capabilities', () => {
+    const result = runGate(makeBody({ required_capabilities: ['python', 'ml'] }), {
+      capabilities: { primary: ['typescript'], secondary: ['nodejs'] },
     });
-    expect(result.allowed).toBe(false);
     expect(result.reason).toContain('python');
   });
 
-  it('blocks when allowed_paths contain black zone paths', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ allowed_paths: ['.env', 'docs/test.md'] }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: defaultMaxRisk,
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Black Zone');
+  it('uses canonical path risk and rejects declared-risk understatements', () => {
+    const red = runGate(
+      makeBody({
+        allowed_paths: ['AGENTS.md'],
+        human_approval_required_for: ['red_zone_change'],
+      }),
+    );
+    expect(red.allowed).toBe(false);
+    expect(red.reason).toContain('understates declared path scope red');
+
+    const plugin = runGate(
+      makeBody({
+        allowed_paths: ['.openslack/plugins/demo/plugin.json'],
+        human_approval_required_for: ['red_zone_change'],
+      }),
+    );
+    expect(plugin.reason).toContain('understates declared path scope red');
   });
 
-  it('allows valid manifest with matching capabilities and acceptable risk', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ risk_level: 'medium', allowed_paths: ['docs/**'] }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: 'high',
-    });
+  it('blocks canonical Black Zone paths', () => {
+    for (const path of ['.env', 'private/token.txt', 'production-tokens/live.txt']) {
+      const result = runGate(makeBody({ risk_level: 'critical', allowed_paths: [path] }), {
+        maxRisk: 'critical',
+      });
+      expect(result.allowed, path).toBe(false);
+      expect(result.reason, path).toContain('Black Zone');
+    }
+  });
+
+  it('allows a valid manifest and returns its declared scope and effective risk', () => {
+    const result = runGate(makeBody({ risk_level: 'medium', allowed_paths: ['docs/**'] }));
     expect(result.allowed).toBe(true);
     expect(result.manifest).not.toBeNull();
     expect(result.riskZone).toBe('yellow');
-    expect(result.changedPaths).toEqual(['docs/**']);
+    expect(result.declaredScope).toEqual(['docs/**']);
   });
 
-  it('defaults changedPaths to manifest allowed_paths', () => {
-    const result = runAutoClaimGates({
-      body: makeBody({ allowed_paths: ['packages/runtime/**', 'docs/**'] }),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: 'high',
-    });
-    expect(result.allowed).toBe(true);
-    expect(result.changedPaths).toEqual(['packages/runtime/**', 'docs/**']);
-  });
-
-  it('returns empty changedPaths when manifest has no allowed_paths', () => {
-    const result = runAutoClaimGates({
-      body: makeBody(),
-      agentCapabilities: defaultCapabilities,
-      agentMaxRiskLevel: 'high',
-    });
-    expect(result.allowed).toBe(true);
-    expect(result.changedPaths).toEqual([]);
+  it('returns all declared paths and preserves an empty scope', () => {
+    expect(
+      runGate(makeBody({ risk_level: 'medium', allowed_paths: ['packages/runtime/**', 'docs/**'] }))
+        .declaredScope,
+    ).toEqual(['packages/runtime/**', 'docs/**']);
+    expect(runGate(makeBody()).declaredScope).toEqual([]);
   });
 });

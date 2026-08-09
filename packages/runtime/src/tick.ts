@@ -2,8 +2,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FileClaimBroker } from '@openslack/core';
 import type { ClaimResult } from '@openslack/core';
-import type { IssueTask } from '@openslack/github';
-import { authorizeAgentAction } from '@openslack/kernel';
+import { normalizeErrorMessage, type IssueTask } from '@openslack/github';
+import { authorizeAgentAction, isTaskRiskLevel } from '@openslack/kernel';
 import type { AgentPrincipal } from '@openslack/kernel';
 import { resolveAgentPrincipal } from './identity.js';
 
@@ -103,12 +103,6 @@ function targetFailure(issueNumber: number, reason: string): string {
   return `TARGET_ISSUE_NOT_CLAIMABLE: issue #${issueNumber}: ${reason.trim() || 'claim was denied'}`;
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
-  return 'unknown error';
-}
-
 export async function tickAgent(
   agentId: string,
   options: TickOptions = {},
@@ -156,10 +150,34 @@ export async function tickAgent(
   // Extract typed capabilities from the parsed registry
   const parseAgentRegistry =
     dependencies.parseAgentRegistry ?? (await import('@openslack/workspace')).parseAgentRegistry;
-  const registry = parseAgentRegistry(root, agentId);
+  let registry: ReturnType<typeof parseAgentRegistry>;
+  try {
+    registry = parseAgentRegistry(root, agentId);
+  } catch (error) {
+    return {
+      agentId,
+      action: 'error',
+      principal,
+      message: `Agent registry is invalid: ${normalizeErrorMessage(error)}`,
+    };
+  }
   const typedCapabilities = registry
     ? [...registry.capabilities.primary, ...registry.capabilities.secondary]
     : [];
+  const configuredMaxRiskLevel = registry?.task_matching?.max_risk_level;
+  if (
+    source === 'github-issues' &&
+    configuredMaxRiskLevel !== undefined &&
+    !isTaskRiskLevel(configuredMaxRiskLevel)
+  ) {
+    return {
+      agentId,
+      action: 'error',
+      principal,
+      message: `Agent registry is invalid: unsupported task_matching.max_risk_level "${String(configuredMaxRiskLevel)}"`,
+    };
+  }
+  const agentMaxRiskLevel = configuredMaxRiskLevel ?? 'medium';
 
   // --- GitHub Issues path ---
   if (source === 'github-issues') {
@@ -200,59 +218,49 @@ export async function tickAgent(
       }
 
       for (const task of tasks) {
-        const reject = (reason: string): TickResult | undefined => {
-          if (issueNumber === undefined) return undefined;
-          return {
-            agentId,
-            action: 'error',
-            principal,
-            message: targetFailure(task.issueNumber, reason),
-          };
-        };
-
-        if (task.state !== 'open') {
-          const result = reject('issue is not open');
-          if (result) return result;
-          continue;
-        }
-        if (!task.labels.includes('openslack:task') || !task.labels.includes('openslack:ready')) {
-          const result = reject('issue must have openslack:task and openslack:ready labels');
-          if (result) return result;
-          continue;
-        }
-
-        let gate: ReturnType<typeof runAutoClaimGates>;
-        try {
-          gate = runAutoClaimGates({
-            body: task.body,
-            agentCapabilities: registry
-              ? {
-                  primary: registry.capabilities.primary,
-                  secondary: registry.capabilities.secondary,
-                }
-              : {},
-            agentMaxRiskLevel: registry?.task_matching?.max_risk_level ?? 'medium',
-          });
-        } catch (error) {
-          const result = reject(`task manifest gate failed: ${errorMessage(error)}`);
-          if (result) return result;
-          continue;
-        }
+        const gate = runAutoClaimGates({
+          candidate: task,
+          agentCapabilities: registry
+            ? {
+                primary: registry.capabilities.primary,
+                secondary: registry.capabilities.secondary,
+              }
+            : {},
+          agentMaxRiskLevel,
+        });
         if (!gate.allowed || !gate.manifest) {
-          const result = reject(gate.reason || 'task manifest gate rejected the issue');
-          if (result) return result;
+          if (issueNumber !== undefined) {
+            return {
+              agentId,
+              action: 'error',
+              principal,
+              message: targetFailure(
+                task.issueNumber,
+                gate.reason || 'task manifest gate rejected the issue',
+              ),
+            };
+          }
           continue;
         }
 
         const candidateAuth = authorize({
           snapshot,
           action: 'task.claim',
-          changedPaths: gate.changedPaths,
+          declaredScope: gate.declaredScope,
           riskZone: gate.riskZone,
         });
         if (candidateAuth.decision !== 'allow') {
-          const result = reject(`authorization denied: ${candidateAuth.evidence.reason}`);
-          if (result) return result;
+          if (issueNumber !== undefined) {
+            return {
+              agentId,
+              action: 'error',
+              principal,
+              message: targetFailure(
+                task.issueNumber,
+                `authorization denied: ${candidateAuth.evidence.reason}`,
+              ),
+            };
+          }
           continue;
         }
 
@@ -304,8 +312,8 @@ export async function tickAgent(
         principal,
         message:
           issueNumber === undefined
-            ? `GitHub claim failed: ${errorMessage(e)}`
-            : targetFailure(issueNumber, errorMessage(e)),
+            ? `GitHub claim failed: ${normalizeErrorMessage(e)}`
+            : targetFailure(issueNumber, normalizeErrorMessage(e)),
       };
     }
   }
