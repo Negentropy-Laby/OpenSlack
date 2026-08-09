@@ -118,6 +118,8 @@ Task issues embed structured metadata in YAML frontmatter within the issue body:
 ```yaml
 schema: openslack.github_issue_task.v1
 task_id: TASK-2026-000123
+title: Fix failing workspace validation
+status: ready
 agent_type: codex
 risk_level: low
 required_capabilities:
@@ -133,7 +135,7 @@ output_contract:
   - workspace_run_record
 ```
 
-`parseTaskManifest(body)` extracts this from the issue body. `buildTaskManifestYaml(manifest)` generates the YAML string for issue creation.
+`parseIssueTaskManifest(body)` extracts and validates this block. `renderIssueTaskManifest(manifest)` generates the canonical YAML string for issue creation.
 
 ## API Reference
 
@@ -284,14 +286,12 @@ Created once (idempotent) via REST API:
 # 1. Check readiness
 openslack github doctor
 
-# 2. Create test issue
-node --import tsx -e "
-import { createTaskIssue } from './packages/github/src/issue-tasks.js';
-const r = await createTaskIssue('E2E Smoke Test', '## Task', [
-  'openslack:task', 'openslack:ready', 'risk:low', 'agent-type:codex'
-]);
-console.log('Issue #' + r.issueNumber);
-"
+# 2. Create a schema-valid ready test issue through the canonical task creator
+openslack task create \
+  --template docs \
+  --title "E2E Smoke Test" \
+  --path "docs/**" \
+  --create-issue
 
 # 3. Agent discovers and claims
 openslack agent tick --agent-id anthropic_architect_aby --source github-issues

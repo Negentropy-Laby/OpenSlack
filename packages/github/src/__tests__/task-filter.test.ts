@@ -12,6 +12,7 @@ function makeManifest(overrides: Partial<IssueTaskManifest> = {}): IssueTaskMani
     schema: 'openslack.github_issue_task.v1',
     task_id: 'TASK-2026-000001',
     title: 'Test',
+    status: 'ready',
     agent_type: 'codex',
     risk_level: 'low',
     ...overrides,
@@ -109,6 +110,28 @@ describe('filterByPath', () => {
       'packages/secret/deep/nested/file.ts',
     ]);
     expect(result.allowed).toBe(false);
+  });
+
+  it('treats regex metacharacters as literal path text', () => {
+    const manifest = makeManifest({ forbidden_paths: ['packages/(test/foo', '(a+)+', '[abc].ts'] });
+    expect(() => filterByPath(manifest, ['packages/test/foo'])).not.toThrow();
+    expect(filterByPath(manifest, ['a'.repeat(20_000) + '!']).allowed).toBe(true);
+    expect(filterByPath(manifest, ['(a+)+']).allowed).toBe(false);
+    expect(filterByPath(manifest, ['[abc].ts']).allowed).toBe(false);
+    expect(filterByPath(manifest, ['a.ts']).allowed).toBe(true);
+  });
+
+  it('keeps single-star matching within one directory segment', () => {
+    const manifest = makeManifest({ forbidden_paths: ['packages/*/file.ts'] });
+    expect(filterByPath(manifest, ['packages/core/file.ts']).allowed).toBe(false);
+    expect(filterByPath(manifest, ['packages/core/nested/file.ts']).allowed).toBe(true);
+  });
+
+  it('lets **/ match zero or more complete directory segments', () => {
+    const manifest = makeManifest({ forbidden_paths: ['**/secret.txt'] });
+    expect(filterByPath(manifest, ['secret.txt']).allowed).toBe(false);
+    expect(filterByPath(manifest, ['deep/nested/secret.txt']).allowed).toBe(false);
+    expect(filterByPath(manifest, ['deep/nested/not-secret.txt']).allowed).toBe(true);
   });
 });
 

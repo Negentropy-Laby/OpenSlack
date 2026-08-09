@@ -58,8 +58,55 @@ export interface TickOptions {
   issueNumber?: number;
 }
 
+export interface TickTargetOptionsInput {
+  source?: TickOptions['source'];
+  issueNumber?: string | number;
+}
+
+export type TickTargetOptionsValidation =
+  | { readonly valid: true; readonly issueNumber?: number }
+  | { readonly valid: false; readonly message: string };
+
+export function validateTickTargetOptions(
+  input: TickTargetOptionsInput,
+): TickTargetOptionsValidation {
+  if (input.issueNumber === undefined) return { valid: true };
+
+  let issueNumber: number;
+  if (typeof input.issueNumber === 'string') {
+    if (!/^[1-9]\d*$/u.test(input.issueNumber)) {
+      return {
+        valid: false,
+        message: 'TARGET_ISSUE_NOT_CLAIMABLE: issue number must be a positive integer',
+      };
+    }
+    issueNumber = Number(input.issueNumber);
+  } else {
+    issueNumber = input.issueNumber;
+  }
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    return {
+      valid: false,
+      message: 'TARGET_ISSUE_NOT_CLAIMABLE: issue number must be a positive integer',
+    };
+  }
+  if ((input.source ?? 'local') !== 'github-issues') {
+    return {
+      valid: false,
+      message: 'TARGET_ISSUE_NOT_CLAIMABLE: --issue-number requires --source github-issues',
+    };
+  }
+  return { valid: true, issueNumber };
+}
+
 function targetFailure(issueNumber: number, reason: string): string {
-  return `TARGET_ISSUE_NOT_CLAIMABLE: issue #${issueNumber}: ${reason}`;
+  return `TARGET_ISSUE_NOT_CLAIMABLE: issue #${issueNumber}: ${reason.trim() || 'claim was denied'}`;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return 'unknown error';
 }
 
 export async function tickAgent(
@@ -69,24 +116,15 @@ export async function tickAgent(
 ): Promise<TickResult> {
   const root = findRepoRoot();
   const source = options.source || 'local';
-
-  if (
-    options.issueNumber !== undefined &&
-    (!Number.isSafeInteger(options.issueNumber) || options.issueNumber <= 0)
-  ) {
+  const targetOptions = validateTickTargetOptions({ source, issueNumber: options.issueNumber });
+  if (!targetOptions.valid) {
     return {
       agentId,
       action: 'error',
-      message: 'TARGET_ISSUE_NOT_CLAIMABLE: issue number must be a positive integer',
+      message: targetOptions.message,
     };
   }
-  if (options.issueNumber !== undefined && source !== 'github-issues') {
-    return {
-      agentId,
-      action: 'error',
-      message: 'TARGET_ISSUE_NOT_CLAIMABLE: --issue-number requires --source github-issues',
-    };
-  }
+  const issueNumber = targetOptions.issueNumber;
 
   // Resolve agent principal and permission snapshot
   const resolved = (dependencies.resolveAgentPrincipal ?? resolveAgentPrincipal)({
@@ -130,14 +168,14 @@ export async function tickAgent(
         dependencies.github ?? (await import('@openslack/github'));
 
       let tasks: IssueTask[];
-      if (options.issueNumber !== undefined) {
-        const lookup = await getIssueTaskByNumber(options.issueNumber);
+      if (issueNumber !== undefined) {
+        const lookup = await getIssueTaskByNumber(issueNumber);
         if (lookup.status === 'not_found') {
           return {
             agentId,
             action: 'error',
             principal,
-            message: targetFailure(options.issueNumber, 'issue was not found'),
+            message: targetFailure(issueNumber, 'issue was not found'),
           };
         }
         if (lookup.status === 'pull_request') {
@@ -145,7 +183,7 @@ export async function tickAgent(
             agentId,
             action: 'error',
             principal,
-            message: targetFailure(options.issueNumber, 'number refers to a pull request'),
+            message: targetFailure(issueNumber, 'number refers to a pull request'),
           };
         }
         tasks = [lookup.task];
@@ -163,7 +201,7 @@ export async function tickAgent(
 
       for (const task of tasks) {
         const reject = (reason: string): TickResult | undefined => {
-          if (options.issueNumber === undefined) return undefined;
+          if (issueNumber === undefined) return undefined;
           return {
             agentId,
             action: 'error',
@@ -183,16 +221,23 @@ export async function tickAgent(
           continue;
         }
 
-        const gate = runAutoClaimGates({
-          body: task.body,
-          agentCapabilities: registry
-            ? {
-                primary: registry.capabilities.primary,
-                secondary: registry.capabilities.secondary,
-              }
-            : {},
-          agentMaxRiskLevel: registry?.task_matching?.max_risk_level ?? 'medium',
-        });
+        let gate: ReturnType<typeof runAutoClaimGates>;
+        try {
+          gate = runAutoClaimGates({
+            body: task.body,
+            agentCapabilities: registry
+              ? {
+                  primary: registry.capabilities.primary,
+                  secondary: registry.capabilities.secondary,
+                }
+              : {},
+            agentMaxRiskLevel: registry?.task_matching?.max_risk_level ?? 'medium',
+          });
+        } catch (error) {
+          const result = reject(`task manifest gate failed: ${errorMessage(error)}`);
+          if (result) return result;
+          continue;
+        }
         if (!gate.allowed || !gate.manifest) {
           const result = reject(gate.reason || 'task manifest gate rejected the issue');
           if (result) return result;
@@ -228,12 +273,12 @@ export async function tickAgent(
             message: `Claimed issue #${task.issueNumber} via ref ${result.claimRef}`,
           };
         }
-        if (options.issueNumber !== undefined) {
+        if (issueNumber !== undefined) {
           return {
             agentId,
             action: 'error',
             principal,
-            message: targetFailure(task.issueNumber, result.reason ?? 'claim was denied'),
+            message: targetFailure(task.issueNumber, result.reason || 'claim was denied'),
           };
         }
         if (result.reason !== 'ALREADY_CLAIMED') {
@@ -258,9 +303,9 @@ export async function tickAgent(
         action: 'error',
         principal,
         message:
-          options.issueNumber === undefined
-            ? `GitHub claim failed: ${(e as Error).message}`
-            : targetFailure(options.issueNumber, (e as Error).message),
+          issueNumber === undefined
+            ? `GitHub claim failed: ${errorMessage(e)}`
+            : targetFailure(issueNumber, errorMessage(e)),
       };
     }
   }

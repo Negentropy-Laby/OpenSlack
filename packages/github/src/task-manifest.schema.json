@@ -3,7 +3,7 @@
   "$id": "https://openslack.dev/schemas/github-issue-task.schema.json",
   "title": "OpenSlack GitHub Issue Task Manifest",
   "type": "object",
-  "required": ["schema", "task_id", "title", "agent_type", "risk_level"],
+  "required": ["schema", "task_id", "title", "status", "agent_type", "risk_level"],
   "properties": {
     "schema": { "type": "string", "const": "openslack.github_issue_task.v1" },
     "task_id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
@@ -52,6 +52,8 @@
     },
     "lease": {
       "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_minutes", "heartbeat_minutes"],
       "properties": {
         "ttl_minutes": { "type": "integer", "minimum": 1, "maximum": 480 },
         "heartbeat_minutes": { "type": "integer", "minimum": 1, "maximum": 120 }

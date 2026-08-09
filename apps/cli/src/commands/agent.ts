@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { bootstrapAgent, resolveAgentPrincipal } from '@openslack/runtime';
-import { tickAgent } from '@openslack/runtime';
+import { tickAgent, validateTickTargetOptions } from '@openslack/runtime';
 import type { TickOptions, TickResult } from '@openslack/runtime';
 import { migrateRegistry } from '@openslack/workspace';
 
@@ -236,21 +236,16 @@ approval_rules:
       const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as
         | 'local'
         | 'github-issues';
-      const issueNumberText = options.issueNumber as string | undefined;
-      const issueNumber = issueNumberText === undefined ? undefined : Number(issueNumberText);
-      if (
-        issueNumberText !== undefined &&
-        (!/^[1-9]\d*$/.test(issueNumberText) || !Number.isSafeInteger(issueNumber))
-      ) {
-        console.error('TARGET_ISSUE_NOT_CLAIMABLE: issue number must be a positive integer');
+      const targetOptions = validateTickTargetOptions({
+        source,
+        issueNumber: options.issueNumber as string | undefined,
+      });
+      if (!targetOptions.valid) {
+        console.error(targetOptions.message);
         process.exitCode = 1;
         return;
       }
-      if (issueNumber !== undefined && source !== 'github-issues') {
-        console.error('TARGET_ISSUE_NOT_CLAIMABLE: --issue-number requires --source github-issues');
-        process.exitCode = 1;
-        return;
-      }
+      const issueNumber = targetOptions.issueNumber;
       const runTick = dependencies.tickAgent ?? tickAgent;
       const result = await runTick(options.agentId, { source, issueNumber });
       console.log(`Agent tick: ${result.agentId}`);

@@ -170,6 +170,7 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
         schema: 'openslack.github_issue_task.v1',
         task_id: generateTaskId(),
         title: input.title || 'Invalid task',
+        status: 'ready',
         agent_type: input.agentType || 'codex',
         risk_level: 'low',
       },

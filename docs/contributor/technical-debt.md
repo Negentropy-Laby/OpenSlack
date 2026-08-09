@@ -162,8 +162,8 @@ sources:
 
 ### CLOSED: FilterByPath glob-to-regex bug
 
-**Resolution:** Fixed placeholder-based replacement ordering (commit 29fe79c). `**` patterns now correctly match arbitrary directory depth.
-**Closed:** 2026-05-16.
+**Resolution:** The placeholder ordering fix in commit 29fe79c restored `**` depth matching but still interpolated manifest text into a regular expression. PR #378 replaces that conversion with a memoized literal glob matcher for `*`, `**`, and `**/`, so regex metacharacters have no special meaning and one malformed candidate cannot abort unscoped discovery.
+**Closed:** 2026-08-09.
 
 ### CLOSED: CLI alias crash
 

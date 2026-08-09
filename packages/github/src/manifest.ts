@@ -1,11 +1,10 @@
 import { parse as parseYaml } from 'yaml';
-import taskManifestSchema from './task-manifest.schema.json' with { type: 'json' };
 
 export interface IssueTaskManifest {
   schema: string;
   task_id: string;
   title: string;
-  status?: 'ready' | 'claimed' | 'running' | 'review' | 'done' | 'blocked';
+  status: 'ready' | 'claimed' | 'running' | 'review' | 'done' | 'blocked';
   task_type?: string;
   agent_type: string;
   risk_level: 'low' | 'medium' | 'high' | 'critical';
@@ -29,6 +28,95 @@ export interface ManifestParseResult {
   valid: boolean;
   manifest?: IssueTaskManifest;
   errors: string[];
+}
+
+const VALID_STATUSES = ['ready', 'claimed', 'running', 'review', 'done', 'blocked'] as const;
+const VALID_RISKS = ['low', 'medium', 'high', 'critical'] as const;
+const VALID_PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
+const VALID_OUTPUTS = [
+  'draft_pr',
+  'issue_comment_summary',
+  'workspace_run_record',
+  'no_change',
+] as const;
+const VALID_APPROVALS = [
+  'red_zone_change',
+  'merge_main',
+  'external_message',
+  'policy_change',
+] as const;
+
+function readStringArray(
+  record: Record<string, unknown>,
+  field: string,
+  errors: string[],
+  options: { readonly allowed?: readonly string[]; readonly unique?: boolean } = {},
+): string[] {
+  const value = record[field];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${field} must be an array of strings`);
+    return [];
+  }
+
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      errors.push(`${field} must contain only strings`);
+      continue;
+    }
+    if (options.allowed && !options.allowed.includes(entry)) {
+      errors.push(`${field} contains unsupported value: "${entry}"`);
+      continue;
+    }
+    result.push(entry);
+  }
+  if (options.unique && new Set(result).size !== result.length) {
+    errors.push(`${field} must not contain duplicate values`);
+  }
+  return result;
+}
+
+function readLease(
+  record: Record<string, unknown>,
+  errors: string[],
+): IssueTaskManifest['lease'] | undefined {
+  if (record.lease === undefined) return undefined;
+  if (!record.lease || typeof record.lease !== 'object' || Array.isArray(record.lease)) {
+    errors.push('lease must be an object');
+    return undefined;
+  }
+
+  const lease = record.lease as Record<string, unknown>;
+  const unexpectedKeys = Object.keys(lease).filter(
+    (key) => key !== 'ttl_minutes' && key !== 'heartbeat_minutes',
+  );
+  if (unexpectedKeys.length > 0) {
+    errors.push(`lease contains unsupported properties: ${unexpectedKeys.join(', ')}`);
+  }
+  const ttlMinutes = lease.ttl_minutes;
+  const heartbeatMinutes = lease.heartbeat_minutes;
+  if (!Number.isInteger(ttlMinutes) || (ttlMinutes as number) < 1 || (ttlMinutes as number) > 480) {
+    errors.push('lease.ttl_minutes must be an integer between 1 and 480');
+  }
+  if (
+    !Number.isInteger(heartbeatMinutes) ||
+    (heartbeatMinutes as number) < 1 ||
+    (heartbeatMinutes as number) > 120
+  ) {
+    errors.push('lease.heartbeat_minutes must be an integer between 1 and 120');
+  }
+  if (
+    !Number.isInteger(ttlMinutes) ||
+    !Number.isInteger(heartbeatMinutes) ||
+    (ttlMinutes as number) < 1 ||
+    (ttlMinutes as number) > 480 ||
+    (heartbeatMinutes as number) < 1 ||
+    (heartbeatMinutes as number) > 120
+  ) {
+    return undefined;
+  }
+  return { ttl_minutes: ttlMinutes as number, heartbeat_minutes: heartbeatMinutes as number };
 }
 
 export function extractTaskBlock(body: string): string | null {
@@ -79,16 +167,43 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
   if (typeof m.agent_type !== 'string' || m.agent_type.length === 0) {
     errors.push('agent_type is required and must be a non-empty string');
   }
-  const validRisks = ['low', 'medium', 'high', 'critical'];
-  if (typeof m.risk_level !== 'string' || !validRisks.includes(m.risk_level)) {
+  if (typeof m.status !== 'string' || !VALID_STATUSES.includes(m.status as never)) {
+    errors.push(`status must be one of: ${VALID_STATUSES.join(', ')}. Got: "${String(m.status)}"`);
+  }
+  if (m.task_type !== undefined && typeof m.task_type !== 'string') {
+    errors.push('task_type must be a string');
+  }
+  if (typeof m.risk_level !== 'string' || !VALID_RISKS.includes(m.risk_level as never)) {
     errors.push(
-      `risk_level must be one of: ${validRisks.join(', ')}. Got: "${String(m.risk_level)}"`,
+      `risk_level must be one of: ${VALID_RISKS.join(', ')}. Got: "${String(m.risk_level)}"`,
     );
+  }
+  if (m.priority !== undefined && !VALID_PRIORITIES.includes(m.priority as never)) {
+    errors.push(`priority must be one of: ${VALID_PRIORITIES.join(', ')}`);
+  }
+
+  const requiredCapabilities = readStringArray(m, 'required_capabilities', errors, {
+    unique: true,
+  });
+  const allowed = readStringArray(m, 'allowed_paths', errors, { unique: true });
+  const forbidden = readStringArray(m, 'forbidden_paths', errors, { unique: true });
+  const outputContract = readStringArray(m, 'output_contract', errors, {
+    allowed: VALID_OUTPUTS,
+    unique: true,
+  }) as IssueTaskManifest['output_contract'];
+  const successCriteria = readStringArray(m, 'success_criteria', errors);
+  const humanApprovalRequiredFor = readStringArray(m, 'human_approval_required_for', errors, {
+    allowed: VALID_APPROVALS,
+  }) as IssueTaskManifest['human_approval_required_for'];
+  const lease = readLease(m, errors);
+  if (m.idempotency_key !== undefined && typeof m.idempotency_key !== 'string') {
+    errors.push('idempotency_key must be a string');
+  }
+  if (m.linked_pr !== undefined && !Number.isInteger(m.linked_pr)) {
+    errors.push('linked_pr must be an integer');
   }
 
   // Path conflict check
-  const allowed = (Array.isArray(m.allowed_paths) ? m.allowed_paths : []) as string[];
-  const forbidden = (Array.isArray(m.forbidden_paths) ? m.forbidden_paths : []) as string[];
   for (const ap of allowed) {
     for (const fp of forbidden) {
       if (
@@ -114,9 +229,7 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
   for (const ap of allowed) {
     for (const rz of redZonePrefixes) {
       if (ap.startsWith(rz.replace(/\/\*\*$/, '')) || ap === rz) {
-        const hasRedZoneApproval =
-          Array.isArray(m.human_approval_required_for) &&
-          m.human_approval_required_for.includes('red_zone_change');
+        const hasRedZoneApproval = humanApprovalRequiredFor?.includes('red_zone_change') === true;
         if (!hasRedZoneApproval) {
           errors.push(
             `Red Zone path "${ap}" requires human_approval_required_for: [red_zone_change]`,
@@ -141,19 +254,16 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
       agent_type: m.agent_type as string,
       risk_level: m.risk_level as IssueTaskManifest['risk_level'],
       priority: m.priority as IssueTaskManifest['priority'],
-      required_capabilities: Array.isArray(m.required_capabilities)
-        ? m.required_capabilities
-        : undefined,
+      required_capabilities: requiredCapabilities.length > 0 ? requiredCapabilities : undefined,
       allowed_paths: allowed.length > 0 ? allowed : undefined,
       forbidden_paths: forbidden.length > 0 ? forbidden : undefined,
-      output_contract: Array.isArray(m.output_contract)
-        ? (m.output_contract as IssueTaskManifest['output_contract'])
-        : undefined,
-      success_criteria: Array.isArray(m.success_criteria) ? m.success_criteria : undefined,
-      human_approval_required_for: Array.isArray(m.human_approval_required_for)
-        ? (m.human_approval_required_for as IssueTaskManifest['human_approval_required_for'])
-        : undefined,
-      lease: m.lease as IssueTaskManifest['lease'],
+      output_contract: outputContract && outputContract.length > 0 ? outputContract : undefined,
+      success_criteria: successCriteria.length > 0 ? successCriteria : undefined,
+      human_approval_required_for:
+        humanApprovalRequiredFor && humanApprovalRequiredFor.length > 0
+          ? humanApprovalRequiredFor
+          : undefined,
+      lease,
       idempotency_key: m.idempotency_key as string | undefined,
       linked_pr: m.linked_pr as number | undefined,
     },
@@ -168,7 +278,7 @@ export function renderIssueTaskManifest(manifest: IssueTaskManifest): string {
   lines.push(`schema: ${scalar(manifest.schema)}`);
   lines.push(`task_id: ${scalar(manifest.task_id)}`);
   lines.push(`title: ${scalar(manifest.title)}`);
-  if (manifest.status) lines.push(`status: ${manifest.status}`);
+  lines.push(`status: ${manifest.status}`);
   if (manifest.task_type) lines.push(`task_type: ${scalar(manifest.task_type)}`);
   lines.push(`agent_type: ${scalar(manifest.agent_type)}`);
   lines.push(`risk_level: ${manifest.risk_level}`);

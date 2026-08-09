@@ -1,4 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { productionTickAgent } = vi.hoisted(() => ({ productionTickAgent: vi.fn() }));
+
+vi.mock('@openslack/runtime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@openslack/runtime')>();
+  return { ...actual, tickAgent: productionTickAgent };
+});
+
 import { agentCommands } from '../commands/agent.js';
 
 const tickAgent = vi.fn();
@@ -15,6 +23,11 @@ beforeEach(() => {
     leaseId: 'refs/heads/openslack/claims/issue-42',
     message: 'claimed',
   });
+  productionTickAgent.mockResolvedValue({
+    agentId: 'test-agent',
+    action: 'idle',
+    message: 'idle',
+  });
 });
 
 afterEach(() => {
@@ -24,6 +37,10 @@ afterEach(() => {
 
 async function run(args: string[]) {
   await agentCommands({ tickAgent }).parseAsync(['node', 'openslack', ...args]);
+}
+
+async function runProduction(args: string[]) {
+  await agentCommands().parseAsync(['node', 'openslack', ...args]);
 }
 
 describe('agent tick --issue-number', () => {
@@ -73,6 +90,23 @@ describe('agent tick --issue-number', () => {
     expect(tickAgent).toHaveBeenCalledWith('test-agent', {
       source: 'github-issues',
       issueNumber: undefined,
+    });
+  });
+
+  it('uses the production runtime dependency when no test override is supplied', async () => {
+    await runProduction([
+      'tick',
+      '--agent-id',
+      'test-agent',
+      '--source',
+      'github-issues',
+      '--issue-number',
+      '42',
+    ]);
+
+    expect(productionTickAgent).toHaveBeenCalledWith('test-agent', {
+      source: 'github-issues',
+      issueNumber: 42,
     });
   });
 

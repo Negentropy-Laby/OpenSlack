@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   runGates: vi.fn(),
 }));
 
-import { tickAgent } from '../tick.js';
+import { tickAgent, validateTickTargetOptions } from '../tick.js';
 
 const principal = {
   registry_id: 'test-agent',
@@ -32,7 +32,7 @@ function task(issueNumber = 42) {
   };
 }
 
-function allowedGate(ttlMinutes = 120) {
+function allowedGate(ttlMinutes: number | null = 120) {
   return {
     allowed: true,
     reason: '',
@@ -44,7 +44,7 @@ function allowedGate(ttlMinutes = 120) {
       agent_type: 'codex',
       risk_level: 'low',
       allowed_paths: ['docs/**'],
-      lease: { ttl_minutes: ttlMinutes, heartbeat_minutes: 15 },
+      ...(ttlMinutes === null ? {} : { lease: { ttl_minutes: ttlMinutes, heartbeat_minutes: 15 } }),
     },
     riskZone: 'green',
     changedPaths: ['docs/**'],
@@ -92,6 +92,22 @@ beforeEach(() => {
 });
 
 describe('tickAgent targeted GitHub issue claims', () => {
+  it('shares one target option validator across string and runtime inputs', () => {
+    expect(validateTickTargetOptions({ source: 'github-issues', issueNumber: '42' })).toEqual({
+      valid: true,
+      issueNumber: 42,
+    });
+    expect(validateTickTargetOptions({ source: 'github-issues', issueNumber: '01' })).toMatchObject(
+      {
+        valid: false,
+      },
+    );
+    expect(validateTickTargetOptions({ source: 'github-issues', issueNumber: 42 })).toEqual({
+      valid: true,
+      issueNumber: 42,
+    });
+  });
+
   it('rejects invalid target options before identity or network work', async () => {
     const invalid = await runTick({
       source: 'github-issues',
@@ -174,6 +190,18 @@ describe('tickAgent targeted GitHub issue claims', () => {
     expect(mocks.claim).not.toHaveBeenCalled();
   });
 
+  it('rejects missing or unknown Issue states instead of coercing them open', async () => {
+    for (const state of [undefined, 'unknown'] as const) {
+      mocks.getIssue.mockResolvedValue({
+        status: 'found',
+        task: { ...task(), state },
+      });
+      const result = await runTick({ source: 'github-issues', issueNumber: 42 });
+      expect(result.message).toContain('not open');
+    }
+    expect(mocks.claim).not.toHaveBeenCalled();
+  });
+
   it('preserves a manifest gate rejection and never falls back', async () => {
     mocks.getIssue.mockResolvedValue({ status: 'found', task: task() });
     mocks.runGates.mockReturnValue({
@@ -190,6 +218,19 @@ describe('tickAgent targeted GitHub issue claims', () => {
     });
     expect(result.message).toContain('authenticated-host');
     expect(mocks.queryReady).not.toHaveBeenCalled();
+    expect(mocks.claim).not.toHaveBeenCalled();
+  });
+
+  it('wraps a targeted manifest gate exception with stable Issue context', async () => {
+    mocks.getIssue.mockResolvedValue({ status: 'found', task: task() });
+    mocks.runGates.mockImplementation(() => {
+      throw 'malformed candidate';
+    });
+
+    const result = await runTick({ source: 'github-issues', issueNumber: 42 });
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('TARGET_ISSUE_NOT_CLAIMABLE: issue #42');
+    expect(result.message).toContain('malformed candidate');
     expect(mocks.claim).not.toHaveBeenCalled();
   });
 
@@ -241,6 +282,19 @@ describe('tickAgent targeted GitHub issue claims', () => {
     expect(result.action).toBe('error');
     expect(result.message).toContain('ALREADY_CLAIMED');
   });
+
+  it('uses a stable fallback for an empty exact-target claim denial', async () => {
+    mocks.getIssue.mockResolvedValue({ status: 'found', task: task() });
+    mocks.claim.mockResolvedValue({
+      claimStatus: 'denied',
+      issueNumber: 42,
+      claimRef: 'refs/heads/openslack/claims/issue-42',
+    });
+
+    const result = await runTick({ source: 'github-issues', issueNumber: 42 });
+    expect(result.message).toContain('claim was denied');
+    expect(result.message).not.toContain('undefined');
+  });
 });
 
 describe('tickAgent unscoped GitHub issue claims', () => {
@@ -291,6 +345,74 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     expect(mocks.claim).toHaveBeenCalledTimes(2);
   });
 
+  it('isolates one throwing manifest gate and claims the next candidate', async () => {
+    mocks.queryReady.mockResolvedValue([task(369), task(370)]);
+    mocks.runGates
+      .mockImplementationOnce(() => {
+        throw new SyntaxError('bad manifest');
+      })
+      .mockReturnValueOnce(allowedGate());
+    mocks.claim.mockResolvedValueOnce({
+      claimStatus: 'granted',
+      issueNumber: 370,
+      claimRef: 'refs/heads/openslack/claims/issue-370',
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'claimed', taskId: '#370' });
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a candidate authorization denial and claims the next candidate', async () => {
+    mocks.queryReady.mockResolvedValue([task(369), task(370)]);
+    mocks.authorize
+      .mockReturnValueOnce({
+        decision: 'allow',
+        diagnostics: [],
+        evidence: { reason: 'coarse grant' },
+      })
+      .mockReturnValueOnce({
+        decision: 'deny',
+        diagnostics: [],
+        evidence: { reason: 'candidate denied' },
+      })
+      .mockReturnValueOnce({
+        decision: 'allow',
+        diagnostics: [],
+        evidence: { reason: 'candidate allowed' },
+      });
+    mocks.claim.mockResolvedValueOnce({
+      claimStatus: 'granted',
+      issueNumber: 370,
+      claimRef: 'refs/heads/openslack/claims/issue-370',
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'claimed', taskId: '#370' });
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses empty capabilities and the default risk when the registry is absent', async () => {
+    mocks.parseRegistry.mockReturnValue(null);
+    mocks.queryReady.mockResolvedValue([task()]);
+
+    await runTick({ source: 'github-issues' });
+    expect(mocks.runGates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentCapabilities: {},
+        agentMaxRiskLevel: 'medium',
+      }),
+    );
+  });
+
+  it('uses the 60-minute runtime fallback only when lease is absent', async () => {
+    mocks.queryReady.mockResolvedValue([task()]);
+    mocks.runGates.mockReturnValue(allowedGate(null));
+
+    await runTick({ source: 'github-issues' });
+    expect(mocks.claim).toHaveBeenCalledWith(expect.objectContaining({ ttlMinutes: 60 }));
+  });
+
   it('fails closed after a claim API error instead of selecting another issue', async () => {
     mocks.queryReady.mockResolvedValue([task(369), task(370)]);
     mocks.claim.mockResolvedValueOnce({
@@ -310,5 +432,27 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     const result = await runTick({ source: 'github-issues' });
     expect(result).toMatchObject({ action: 'idle' });
     expect(result.message).toContain('No ready issues');
+  });
+
+  it('normalizes a non-Error transport throw', async () => {
+    mocks.queryReady.mockRejectedValue(null);
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('unknown error');
+    expect(result.message).not.toContain('undefined');
+  });
+});
+
+describe('tickAgent local default', () => {
+  it('defaults to local without loading GitHub task discovery', async () => {
+    mocks.authorize.mockReturnValue({
+      decision: 'deny',
+      diagnostics: [],
+      evidence: { reason: 'local denied' },
+    });
+    const result = await runTick({});
+    expect(result).toMatchObject({ action: 'error' });
+    expect(mocks.queryReady).not.toHaveBeenCalled();
+    expect(mocks.getIssue).not.toHaveBeenCalled();
   });
 });

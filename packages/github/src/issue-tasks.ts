@@ -7,8 +7,7 @@ export interface IssueTask {
   url: string;
   labels: string[];
   body: string;
-  state: 'open' | 'closed';
-  taskManifest?: IssueTaskManifest;
+  state?: 'open' | 'closed' | 'unknown';
 }
 
 export type IssueTaskLookupResult =
@@ -18,14 +17,9 @@ export type IssueTaskLookupResult =
 
 type IssueTaskClientFactory = typeof getClient;
 
-export interface IssueTaskManifest {
-  taskId?: string;
-  agentType?: string;
-  riskLevel?: string;
-  requiredCapabilities?: string[];
-  allowedPaths?: string[];
-  forbiddenPaths?: string[];
-  outputContract?: string[];
+function normalizeIssueState(state: unknown): NonNullable<IssueTask['state']> {
+  if (state === 'open' || state === 'closed') return state;
+  return 'unknown';
 }
 
 export async function createTaskIssue(
@@ -94,7 +88,7 @@ export async function queryReadyIssueTasks(
       typeof l === 'string' ? l : l.name || '',
     ),
     body: item.body || '',
-    state: item.state === 'closed' ? 'closed' : 'open',
+    state: normalizeIssueState(item.state),
   }));
 
   // Local filter: agent type, capabilities, risk level
@@ -153,77 +147,7 @@ export async function getIssueTaskByNumber(
         typeof label === 'string' ? label : label.name || '',
       ),
       body: data.body || '',
-      state: data.state === 'closed' ? 'closed' : 'open',
+      state: normalizeIssueState(data.state),
     },
   };
-}
-
-export function parseTaskManifest(body: string): IssueTaskManifest | undefined {
-  const match = body.match(/^```yaml\s*\n\s*([\s\S]*?)\s*\n```/m);
-  if (!match) return undefined;
-  try {
-    const lines = match[1].split('\n');
-    const manifest: Record<string, unknown> = {};
-    let currentList: string[] | null = null;
-    let currentListKey = '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('- ')) {
-        if (currentList !== null) currentList.push(trimmed.slice(2).trim());
-        continue;
-      }
-      currentList = null;
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
-      const key = trimmed.slice(0, colonIdx).trim();
-      const value = trimmed
-        .slice(colonIdx + 1)
-        .trim()
-        .replace(/^["']|["']$/g, '');
-      if (value === '') {
-        currentList = [];
-        currentListKey = key;
-        manifest[key] = currentList;
-      } else {
-        manifest[key] = value;
-      }
-    }
-
-    return {
-      taskId: manifest.task_id as string | undefined,
-      agentType: manifest.agent_type as string | undefined,
-      riskLevel: manifest.risk_level as string | undefined,
-      requiredCapabilities: manifest.required_capabilities as string[] | undefined,
-      allowedPaths: manifest.allowed_paths as string[] | undefined,
-      forbiddenPaths: manifest.forbidden_paths as string[] | undefined,
-      outputContract: manifest.output_contract as string[] | undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-export function buildTaskManifestYaml(manifest: IssueTaskManifest): string {
-  const lines: string[] = [];
-  if (manifest.taskId) lines.push(`task_id: ${manifest.taskId}`);
-  if (manifest.agentType) lines.push(`agent_type: ${manifest.agentType}`);
-  if (manifest.riskLevel) lines.push(`risk_level: ${manifest.riskLevel}`);
-  if (manifest.requiredCapabilities?.length) {
-    lines.push('required_capabilities:');
-    for (const c of manifest.requiredCapabilities) lines.push(`  - ${c}`);
-  }
-  if (manifest.allowedPaths?.length) {
-    lines.push('allowed_paths:');
-    for (const p of manifest.allowedPaths) lines.push(`  - ${p}`);
-  }
-  if (manifest.forbiddenPaths?.length) {
-    lines.push('forbidden_paths:');
-    for (const p of manifest.forbiddenPaths) lines.push(`  - ${p}`);
-  }
-  if (manifest.outputContract?.length) {
-    lines.push('output_contract:');
-    for (const o of manifest.outputContract) lines.push(`  - ${o}`);
-  }
-  return lines.join('\n');
 }

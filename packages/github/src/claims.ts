@@ -1,6 +1,8 @@
 import { getClient } from './client.js';
 import type { AgentPrincipal } from '@openslack/kernel';
 
+type ClaimClientFactory = typeof getClient;
+
 export interface IssueClaimResult {
   claimStatus: 'granted' | 'denied';
   issueNumber: number;
@@ -82,19 +84,29 @@ export function resolveClaimOwnerFromComments(
   return null;
 }
 
-export async function claimIssueTask(args: {
-  issueNumber: number;
-  agentId: string;
-  ttlMinutes?: number;
-  capabilities?: string[];
-  principal: AgentPrincipal;
-  owner?: string;
-  repo?: string;
-}): Promise<IssueClaimResult> {
-  const client = await getClient();
+export async function claimIssueTask(
+  args: {
+    issueNumber: number;
+    agentId: string;
+    ttlMinutes?: number;
+    capabilities?: string[];
+    principal: AgentPrincipal;
+    owner?: string;
+    repo?: string;
+  },
+  getClientFn: ClaimClientFactory = getClient,
+): Promise<IssueClaimResult> {
+  if (!Number.isSafeInteger(args.issueNumber) || args.issueNumber <= 0) {
+    throw new Error('Issue number must be a positive integer.');
+  }
+  const ttlMinutes = args.ttlMinutes ?? 60;
+  if (!Number.isInteger(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 480) {
+    throw new Error('Claim TTL must be an integer between 1 and 480 minutes.');
+  }
+
+  const client = await getClientFn();
   const _owner = args.owner ?? client.owner;
   const _repo = args.repo ?? client.repo;
-  const ttlMinutes = args.ttlMinutes || 60;
   const ref = `refs/heads/openslack/claims/issue-${args.issueNumber}`;
 
   if (client.isDryRun) {
@@ -126,7 +138,20 @@ export async function claimIssueTask(args: {
   } catch (err) {
     const status = (err as { status?: number }).status;
     if (status === 422) {
-      // Ref already exists — task already claimed
+      try {
+        await client.octokit.git.getRef({
+          owner: _owner,
+          repo: _repo,
+          ref: ref.replace(/^refs\//u, ''),
+        });
+      } catch {
+        return {
+          claimStatus: 'denied',
+          issueNumber: args.issueNumber,
+          claimRef: ref,
+          reason: 'API_ERROR',
+        };
+      }
       return {
         claimStatus: 'denied',
         issueNumber: args.issueNumber,

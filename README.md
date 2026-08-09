@@ -384,6 +384,7 @@ Tasks are GitHub Issues with structured YAML in an `openslack-task` code fence:
 schema: openslack.github_issue_task.v1
 task_id: TASK-2026-000123
 title: Fix failing workspace validation
+status: ready
 agent_type: codex
 risk_level: low
 required_capabilities:

@@ -64,19 +64,112 @@ export function filterByRisk(
   return { allowed: true };
 }
 
+type PathGlobToken =
+  | { readonly kind: 'literal'; readonly value: string }
+  | { readonly kind: 'star' }
+  | { readonly kind: 'globstar' }
+  | { readonly kind: 'globstar-directories' };
+
+function tokenizePathGlob(pattern: string): PathGlobToken[] {
+  const tokens: PathGlobToken[] = [];
+  for (let index = 0; index < pattern.length; ) {
+    if (pattern[index] !== '*') {
+      tokens.push({ kind: 'literal', value: pattern[index]! });
+      index += 1;
+      continue;
+    }
+
+    let end = index;
+    while (pattern[end] === '*') end += 1;
+    if (end - index === 1) {
+      tokens.push({ kind: 'star' });
+      index = end;
+      continue;
+    }
+
+    if (pattern[end] === '/') {
+      tokens.push({ kind: 'globstar-directories' });
+      index = end + 1;
+      continue;
+    }
+
+    tokens.push({ kind: 'globstar' });
+    index = end;
+  }
+  return tokens;
+}
+
+function matchesPathGlob(pattern: string, path: string): boolean {
+  const tokens = tokenizePathGlob(pattern);
+  type MatchState = {
+    readonly tokenIndex: number;
+    readonly pathIndex: number;
+    readonly scanningDirectory: boolean;
+  };
+  const pending: MatchState[] = [{ tokenIndex: 0, pathIndex: 0, scanningDirectory: false }];
+  const visited = new Set<string>();
+
+  while (pending.length > 0) {
+    const state = pending.pop()!;
+    const key = `${state.tokenIndex}:${state.pathIndex}:${state.scanningDirectory ? 1 : 0}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    if (state.scanningDirectory) {
+      if (state.pathIndex >= path.length) continue;
+      if (path[state.pathIndex] === '/') {
+        pending.push({
+          tokenIndex: state.tokenIndex,
+          pathIndex: state.pathIndex + 1,
+          scanningDirectory: false,
+        });
+      } else {
+        pending.push({ ...state, pathIndex: state.pathIndex + 1 });
+      }
+      continue;
+    }
+
+    const token = tokens[state.tokenIndex];
+    if (!token) {
+      if (state.pathIndex === path.length) return true;
+      continue;
+    }
+
+    if (token.kind === 'literal') {
+      if (path[state.pathIndex] === token.value) {
+        pending.push({
+          tokenIndex: state.tokenIndex + 1,
+          pathIndex: state.pathIndex + 1,
+          scanningDirectory: false,
+        });
+      }
+      continue;
+    }
+
+    pending.push({
+      tokenIndex: state.tokenIndex + 1,
+      pathIndex: state.pathIndex,
+      scanningDirectory: false,
+    });
+    if (token.kind === 'globstar-directories') {
+      pending.push({ ...state, scanningDirectory: true });
+    } else if (
+      state.pathIndex < path.length &&
+      (token.kind === 'globstar' || path[state.pathIndex] !== '/')
+    ) {
+      pending.push({ ...state, pathIndex: state.pathIndex + 1 });
+    }
+  }
+
+  return false;
+}
+
 export function filterByPath(manifest: IssueTaskManifest, changedPaths: string[]): FilterResult {
   const forbidden = manifest.forbidden_paths || [];
 
   for (const path of changedPaths) {
     for (const fp of forbidden) {
-      // Use placeholder to avoid *** replacement corrupting .*
-      const pattern = fp
-        .replace(/\*\*\//g, '__GLOBSTAR_SLASH__')
-        .replace(/\*\*/g, '__GLOBSTAR__')
-        .replace(/\*/g, '[^/]*')
-        .replace(/__GLOBSTAR_SLASH__/g, '(.*/)?') // **/ matches zero or more directories
-        .replace(/__GLOBSTAR__/g, '.*'); // ** matches any depth
-      if (new RegExp(`^${pattern}$`).test(path)) {
+      if (matchesPathGlob(fp, path)) {
         return { allowed: false, reason: `Path "${path}" matches forbidden pattern "${fp}"` };
       }
     }

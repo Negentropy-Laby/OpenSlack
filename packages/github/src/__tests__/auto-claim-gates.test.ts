@@ -67,7 +67,8 @@ describe('runAutoClaimGates', () => {
       agentMaxRiskLevel: defaultMaxRisk,
     });
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('status must be ready');
+    expect(result.reason).toContain('status must be one of');
+    expect(result.manifest).toBeNull();
   });
 
   it('blocks when manifest status is not ready', () => {

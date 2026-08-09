@@ -68,6 +68,13 @@ describe('getIssueTaskByNumber', () => {
     if (result.status === 'found') expect(result.task.state).toBe('closed');
   });
 
+  it('maps an unknown API state to an explicit fail-closed value', async () => {
+    mocks.getIssue.mockResolvedValue({ data: issue({ state: 'queued' }) });
+    const result = await getIssueTaskByNumber(42, getClient);
+    expect(result.status).toBe('found');
+    if (result.status === 'found') expect(result.task.state).toBe('unknown');
+  });
+
   it('distinguishes pull requests from issues', async () => {
     mocks.getIssue.mockResolvedValue({ data: issue({ pull_request: { url: 'pr-api' } }) });
     await expect(getIssueTaskByNumber(42, getClient)).resolves.toEqual({
@@ -104,5 +111,11 @@ describe('queryReadyIssueTasks', () => {
     const result = await queryReadyIssueTasks({}, getClient);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ issueNumber: 42, state: 'open' });
+  });
+
+  it('does not coerce an unknown search state to open', async () => {
+    mocks.searchIssues.mockResolvedValue({ data: { items: [issue({ state: 'queued' })] } });
+    const result = await queryReadyIssueTasks({}, getClient);
+    expect(result[0]).toMatchObject({ issueNumber: 42, state: 'unknown' });
   });
 });

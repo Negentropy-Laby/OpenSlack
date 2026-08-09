@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
+  claimIssueTask,
   parseClaimMetadata,
   renderClaimComment,
   resolveClaimOwnerFromComments,
@@ -31,6 +32,43 @@ function makeMetadata(): ClaimMetadata {
       run_id: 'RUN-001',
       provider: 'cli',
     },
+  };
+}
+
+const principal = {
+  registry_id: 'test_agent',
+  runtime_uid: 'agt_test',
+  run_id: 'RUN-001',
+  provider: 'cli' as const,
+};
+
+function liveClient(options: { createError?: unknown; claimRefExists?: boolean } = {}) {
+  const getRef = vi.fn(async ({ ref }: { ref: string }) => {
+    if (ref === 'heads/main') return { data: { object: { sha: 'a'.repeat(40) } } };
+    if (ref === 'heads/openslack/claims/issue-42' && options.claimRefExists) {
+      return { data: { object: { sha: 'b'.repeat(40) } } };
+    }
+    throw { status: 404 };
+  });
+  const createRef = vi.fn(async () => {
+    if (options.createError !== undefined) throw options.createError;
+  });
+  return {
+    getRef,
+    createRef,
+    factory: async () => ({
+      isDryRun: false,
+      owner: 'example',
+      repo: 'repo',
+      octokit: {
+        git: { getRef, createRef },
+        issues: {
+          removeLabel: vi.fn(),
+          addLabels: vi.fn(),
+          createComment: vi.fn(),
+        },
+      },
+    }),
   };
 }
 
@@ -93,5 +131,55 @@ describe('claimIssueTask owner/repo override', () => {
       principal: { registry_id: 'test', runtime_uid: 'agt_test', run_id: 'R1', provider: 'cli' },
     });
     expect(result.claimStatus).toBe('granted');
+    expect(result.lease?.ttlMinutes).toBe(60);
   });
+});
+
+describe('claimIssueTask atomic denial classification', () => {
+  it('classifies 422 as already claimed only after reading the exact claim ref', async () => {
+    const client = liveClient({ createError: { status: 422 }, claimRefExists: true });
+    const result = await claimIssueTask(
+      { issueNumber: 42, agentId: 'test_agent', principal },
+      client.factory as never,
+    );
+    expect(result).toMatchObject({ claimStatus: 'denied', reason: 'ALREADY_CLAIMED' });
+    expect(client.getRef).toHaveBeenLastCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      ref: 'heads/openslack/claims/issue-42',
+    });
+  });
+
+  it('keeps a 422 without an observable claim ref as API_ERROR', async () => {
+    const client = liveClient({ createError: { status: 422 }, claimRefExists: false });
+    const result = await claimIssueTask(
+      { issueNumber: 42, agentId: 'test_agent', principal },
+      client.factory as never,
+    );
+    expect(result).toMatchObject({ claimStatus: 'denied', reason: 'API_ERROR' });
+  });
+
+  it('keeps ordinary create-ref failures as API_ERROR without a claim-ref read', async () => {
+    const client = liveClient({ createError: { status: 500 } });
+    const result = await claimIssueTask(
+      { issueNumber: 42, agentId: 'test_agent', principal },
+      client.factory as never,
+    );
+    expect(result).toMatchObject({ claimStatus: 'denied', reason: 'API_ERROR' });
+    expect(client.getRef).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, -1, 1.5, 481])(
+    'rejects invalid explicit TTL %s before client access',
+    async (ttl) => {
+      const factory = vi.fn();
+      await expect(
+        claimIssueTask(
+          { issueNumber: 42, agentId: 'test_agent', principal, ttlMinutes: ttl },
+          factory as never,
+        ),
+      ).rejects.toThrow('between 1 and 480');
+      expect(factory).not.toHaveBeenCalled();
+    },
+  );
 });
