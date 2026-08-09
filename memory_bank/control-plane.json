@@ -1181,7 +1181,7 @@
   },
   "assignments": {
     "schema": "openslack.work_assignments.v1",
-    "updated": "2026-07-29",
+    "updated": "2026-08-09",
     "assignments": [
       {
         "id": "issue-239",
@@ -1213,7 +1213,7 @@
         ],
         "blockers": [],
         "evidence": ["github:issue-239:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-240",
@@ -1235,7 +1235,7 @@
         "dependencies": [],
         "blockers": ["signed_v0_2_0_release_pending"],
         "evidence": ["github:issue-240:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-241",
@@ -1257,7 +1257,7 @@
         "dependencies": [],
         "blockers": ["clean_machine_release_capstone_pending"],
         "evidence": ["github:issue-241:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-242",
@@ -1279,7 +1279,7 @@
         "dependencies": [],
         "blockers": ["npm_publication_pending"],
         "evidence": ["github:issue-242:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-243",
@@ -1301,7 +1301,7 @@
         "dependencies": [],
         "blockers": ["clean_machine_bot_delivery_smoke_pending"],
         "evidence": ["github:issue-243:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-244",
@@ -1325,7 +1325,7 @@
         "dependencies": [],
         "blockers": ["model_endpoint_not_configured"],
         "evidence": ["github:issue-244:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-245",
@@ -1347,7 +1347,7 @@
         "dependencies": [],
         "blockers": ["clean_machine_onboarding_smoke_pending"],
         "evidence": ["github:issue-245:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-246",
@@ -1369,7 +1369,7 @@
         "dependencies": [],
         "blockers": ["clean_machine_end_to_end_merge_capstone_pending"],
         "evidence": ["github:issue-246:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-247",
@@ -1391,7 +1391,7 @@
         "dependencies": [],
         "blockers": ["clean_machine_agent_task_capstone_pending"],
         "evidence": ["github:issue-247:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-248",
@@ -1415,18 +1415,18 @@
         "dependencies": ["issue-244"],
         "blockers": ["live_provider_smoke_pending"],
         "evidence": ["github:issue-248:open"],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-314",
         "title": "[Workflow Governance] PR #313",
-        "status": "reconciliation_required",
+        "status": "done",
         "planned_owner": "unassigned",
         "module_or_workstream": "scenario-runtime",
         "execution": {
-          "agent_id": null,
-          "claim_ref": null,
-          "started_at": null
+          "agent_id": "operator",
+          "claim_ref": "refs/heads/agent/qoder-openslack-qw0-qw2",
+          "started_at": "2026-07-26T14:53:02Z"
         },
         "github_issue": {
           "number": 314,
@@ -1440,12 +1440,13 @@
           "Reconcile the open governance Issue with the merged PR and record the final state."
         ],
         "dependencies": [],
-        "blockers": ["issue_open_after_associated_pr_merged"],
+        "blockers": [],
         "evidence": [
-          "github:pr-313:merged:8bf81fb994ce3a09c97894363f29c7eb047174b9",
-          "github:issue-314:open"
+          "github:pr-313:approval:4783307343:8bf81fb994ce3a09c97894363f29c7eb047174b9",
+          "github:pr-313:merged:64dcb684732fedc78ce488cc787174651ec06c57",
+          "github:issue-314:closed"
         ],
-        "last_verified_at": "2026-07-28T13:55:03Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       },
       {
         "id": "issue-331",
@@ -1559,7 +1560,7 @@
       {
         "id": "t2-standards-migration",
         "title": "Move project execution standards into the root T2 Memory Bank",
-        "status": "review",
+        "status": "done",
         "planned_owner": "project-governance",
         "module_or_workstream": "self-evolution",
         "execution": {
@@ -1579,16 +1580,14 @@
           "Documentation, migration, status, and Notification Delivery validation pass."
         ],
         "dependencies": ["single-root-memory-bank"],
-        "blockers": [
-          "hosted_checks_pending",
-          "independent_human_approval_pending",
-          "merge_pending"
-        ],
+        "blockers": [],
         "evidence": [
           "commit:74a5394c60b2080cf048f01a6a4ad8e9f07b062f",
-          "github:pr-334:created:a9c2f4e8deee331010cefecde2b4f149d5f4b1ef"
+          "github:pr-334:created:a9c2f4e8deee331010cefecde2b4f149d5f4b1ef",
+          "github:pr-334:approval:4805113953:db79a609d6290253fac4b59a46e0761317d7e90f",
+          "github:pr-334:merged:9aee5d384776ddd47c3fc6e847ab1ac8b6f773b8"
         ],
-        "last_verified_at": "2026-07-29T05:44:40Z"
+        "last_verified_at": "2026-08-08T19:31:50Z"
       }
     ]
   },
