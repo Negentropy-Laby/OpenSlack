@@ -4,6 +4,7 @@ import type { GitHubApiIssue } from '../watch-poller.js';
 
 const baseIssue: GitHubApiIssue = {
   number: 42,
+  node_id: 'I_kwDO42',
   title: 'Fix failing setup',
   html_url: 'https://github.com/owner/repo/issues/42',
   body: 'Test body',
@@ -21,6 +22,7 @@ describe('normalizePollIssue', () => {
     expect(result.owner).toBe('owner');
     expect(result.repo).toBe('repo');
     expect(result.issueNumber).toBe(42);
+    expect(result.issueNodeId).toBe('I_kwDO42');
     expect(result.title).toBe('Fix failing setup');
     expect(result.url).toBe('https://github.com/owner/repo/issues/42');
     expect(result.labels).toEqual(['openslack:task', 'bug']);

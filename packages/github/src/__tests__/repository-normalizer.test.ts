@@ -226,6 +226,7 @@ describe('repository event dispatcher', () => {
         sender: { login: 'reporter' },
         issue: {
           number: 10,
+          node_id: 'I_kwDO10',
           title: 'Issue title',
           html_url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/10',
           body: 'Issue body',

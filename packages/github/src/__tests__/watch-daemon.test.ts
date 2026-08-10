@@ -127,6 +127,7 @@ function makeIssuePayload(overrides: Record<string, unknown> = {}): string {
     action: 'opened',
     issue: {
       number: 42,
+      node_id: 'I_kwDO42',
       title: 'Fix failing setup',
       html_url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/42',
       body: 'Test',
@@ -1474,7 +1475,7 @@ describe('WatchDaemon auto-claim', () => {
     expect(claimFn).not.toHaveBeenCalled();
   });
 
-  it('continues after autoClaimFn throws', async () => {
+  it('fails an awaited watch cycle when autoClaimFn throws', async () => {
     const claimFn = vi.fn().mockRejectedValue(new Error('identity not found'));
     const autoClaimConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
@@ -1511,8 +1512,7 @@ describe('WatchDaemon auto-claim', () => {
       updatedAt: '2026-05-25T17:00:00Z',
     };
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await daemon.once(event);
-    expect(result).not.toBeNull();
+    await expect(daemon.once(event)).rejects.toThrow('identity not found');
     expect(claimFn).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('identity not found'));
     errorSpy.mockRestore();

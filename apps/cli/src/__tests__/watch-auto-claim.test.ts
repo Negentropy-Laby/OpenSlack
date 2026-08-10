@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   isTaskRiskLevel: vi.fn(),
   recordEvent: vi.fn(),
   claimIssueTask: vi.fn(),
+  createIssueTaskSnapshot: vi.fn(),
   normalizeErrorMessage: vi.fn(),
   runAutoClaimGates: vi.fn(),
   parseAgentRegistry: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('@openslack/collaboration', () => ({
 
 vi.mock('@openslack/github', () => ({
   claimIssueTask: mocks.claimIssueTask,
+  createIssueTaskSnapshot: mocks.createIssueTaskSnapshot,
   normalizeErrorMessage: mocks.normalizeErrorMessage,
   runAutoClaimGates: mocks.runAutoClaimGates,
 }));
@@ -57,9 +59,10 @@ const event: NormalizedIssueRepositoryEvent = {
   owner: 'Negentropy-Laby',
   repo: 'OpenSlack',
   issueNumber: 42,
+  issueNodeId: 'I_kwDO42',
   title: 'Canonical issue task',
   url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/42',
-  labels: ['openslack:task', 'openslack:ready'],
+  labels: ['openslack:task', 'openslack:ready', 'agent-type:codex'],
   body: '```openslack-task\nmanifest\n```',
   state: 'open',
   senderLogin: 'operator',
@@ -84,7 +87,17 @@ describe('watch auto-claim', () => {
       evidence: { reason: 'allowed' },
       diagnostics: [],
     });
-    mocks.claimIssueTask.mockResolvedValue({ claimStatus: 'granted' });
+    mocks.createIssueTaskSnapshot.mockReturnValue({
+      schema: 'openslack.issue_task_snapshot.v1',
+      issueNumber: 42,
+      issueNodeId: 'I_kwDO42',
+      updatedAt: event.updatedAt,
+      sha256: 'a'.repeat(64),
+    });
+    mocks.claimIssueTask.mockResolvedValue({
+      claimStatus: 'granted',
+      projection: { status: 'synchronized' },
+    });
   });
 
   afterEach(() => {
@@ -98,6 +111,7 @@ describe('watch auto-claim', () => {
   ])('passes the complete %s candidate through the shared gate', async (_name, candidate) => {
     mocks.runAutoClaimGates.mockReturnValue({
       allowed: false,
+      code: 'ISSUE_NOT_OPEN',
       reason: 'candidate rejected',
       manifest: null,
       riskZone: 'green',
@@ -117,8 +131,12 @@ describe('watch auto-claim', () => {
   it('authorizes the declared scope and uses the manifest lease', async () => {
     mocks.runAutoClaimGates.mockReturnValue({
       allowed: true,
+      code: 'ALLOWED',
       reason: '',
-      manifest: { lease: { ttl_minutes: 75, heartbeat_minutes: 15 } },
+      manifest: {
+        task_id: 'TASK-2026-000042',
+        lease: { ttl_minutes: 75, heartbeat_minutes: 15 },
+      },
       riskZone: 'red',
       declaredScope: ['packages/kernel/src/**'],
     });
@@ -132,7 +150,71 @@ describe('watch auto-claim', () => {
       riskZone: 'red',
     });
     expect(mocks.claimIssueTask).toHaveBeenCalledWith(
-      expect.objectContaining({ issueNumber: 42, ttlMinutes: 75 }),
+      expect.objectContaining({
+        issueNumber: 42,
+        taskId: 'TASK-2026-000042',
+        taskSnapshot: expect.objectContaining({ sha256: 'a'.repeat(64) }),
+        riskZone: 'red',
+        ttlMinutes: 75,
+        heartbeatMinutes: 15,
+      }),
+    );
+  });
+
+  it.each(['API_ERROR', 'RECONCILIATION_REQUIRED'] as const)(
+    'fails the watch delivery fast on %s',
+    async (reason) => {
+      mocks.runAutoClaimGates.mockReturnValue({
+        allowed: true,
+        code: 'ALLOWED',
+        reason: '',
+        manifest: { task_id: 'TASK-2026-000042' },
+        riskZone: 'green',
+        declaredScope: ['docs/**'],
+      });
+      mocks.claimIssueTask.mockResolvedValue({
+        claimStatus: 'denied',
+        issueNumber: 42,
+        claimRef: 'refs/heads/openslack/claims/issue-42',
+        reason,
+      });
+
+      await expect(buildAutoClaimFn('D:/repo')(event, ['operator'])).rejects.toThrow(reason);
+    },
+  );
+
+  it('treats an already-claimed race as a normal candidate denial', async () => {
+    mocks.runAutoClaimGates.mockReturnValue({
+      allowed: true,
+      code: 'ALLOWED',
+      reason: '',
+      manifest: { task_id: 'TASK-2026-000042' },
+      riskZone: 'green',
+      declaredScope: ['docs/**'],
+    });
+    mocks.claimIssueTask.mockResolvedValue({
+      claimStatus: 'denied',
+      issueNumber: 42,
+      claimRef: 'refs/heads/openslack/claims/issue-42',
+      reason: 'ALREADY_CLAIMED',
+    });
+
+    await expect(buildAutoClaimFn('D:/repo')(event, ['operator'])).resolves.toBeUndefined();
+  });
+
+  it('fails the watch delivery fast on an unexpected claim exception', async () => {
+    mocks.runAutoClaimGates.mockReturnValue({
+      allowed: true,
+      code: 'ALLOWED',
+      reason: '',
+      manifest: { task_id: 'TASK-2026-000042' },
+      riskZone: 'green',
+      declaredScope: ['docs/**'],
+    });
+    mocks.claimIssueTask.mockRejectedValue('claim transport failed');
+
+    await expect(buildAutoClaimFn('D:/repo')(event, ['operator'])).rejects.toBe(
+      'claim transport failed',
     );
   });
 

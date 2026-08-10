@@ -1,6 +1,13 @@
 export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
 export type { ReadyTask, ProjectItemResult } from './issues.js';
 export {
+  createIssueTaskSnapshot,
+  issueTaskSnapshotMatches,
+  type CanonicalIssueState,
+  type IssueTaskSnapshot,
+  type IssueTaskSnapshotInput,
+} from './issue-task-snapshot.js';
+export {
   createDraftPR,
   commentOnPR,
   updatePRBody,
@@ -138,10 +145,17 @@ export {
   riskLevelToZone,
   runAutoClaimGates,
 } from './task-filter.js';
-export type { FilterResult, AutoClaimCandidate, AutoClaimGateResult } from './task-filter.js';
+export type {
+  FilterResult,
+  AutoClaimCandidate,
+  AutoClaimGateResult,
+  AutoClaimGateRejectionCode,
+} from './task-filter.js';
 export { repairExpiredClaims, repairLabels, REQUIRED_OPENSLACK_LABELS } from './repair.js';
 export type { RepairOptions, RepairResult } from './repair.js';
 export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';
+export { GITHUB_AGENT_TYPES, isGitHubAgentType } from './manifest.js';
+export type { GitHubAgentType } from './manifest.js';
 export type { IssueTaskManifest, ManifestParseResult } from './manifest.js';
 export { previewTaskCreation, createTaskFromPreview } from './task-create.js';
 export type {

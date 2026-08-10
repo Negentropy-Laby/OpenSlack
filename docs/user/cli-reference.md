@@ -599,8 +599,8 @@ The table below remains the authoritative command and flag reference.
 | `openslack github doctor`                                                                                    | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
 | `openslack github repair labels`                                                                             | Preview required label repair                                                                 |
 | `openslack github repair labels --apply`                                                                     | Apply required label repair                                                                   |
-| `openslack github repair claims`                                                                             | Preview stale claim repair                                                                    |
-| `openslack github repair claims --apply`                                                                     | Apply stale claim repair                                                                      |
+| `openslack github repair claims`                                                                             | Preview owner-evidence, active-label, and latest-heartbeat claim repair                       |
+| `openslack github repair claims --apply`                                                                     | Apply verified active-label or expired-claim repair without inventing owners                  |
 | `openslack github repair all`                                                                                | Preview all GitHub repairs                                                                    |
 | `openslack github repair all --apply`                                                                        | Apply all GitHub repairs                                                                      |
 | `openslack github repair-labels`                                                                             | Compatibility alias for label repair; default is dry-run                                      |
@@ -618,7 +618,7 @@ The table below remains the authoritative command and flag reference.
 | `openslack github notifications canary status\|report`                                                       | Read a sealed, whitelisted local Canary artifact                                              |
 | `openslack github notifications qualification status`                                                        | Read the sealed metadata-only post-import qualification status                                |
 | `openslack github notifications qualification report`                                                        | Read the complete sealed metadata-only post-import qualification report                       |
-| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>`                 | Extend and verify a claim lease                                                               |
+| `openslack github claim heartbeat --issue-number <n> --agent-id <id> [--ttl-minutes <1..480>]`               | Extend and verify a claim lease; omitted TTL inherits the original claim                      |
 | `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`                            | Verify the owner and move a claimed Issue to review                                           |
 | `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`                          | Complete a merged Issue and verify claim-ref removal                                          |
 | `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>`                              | Deprecated strict alias for `claim complete`                                                  |

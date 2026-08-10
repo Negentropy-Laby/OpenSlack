@@ -6,6 +6,9 @@ type PathGlobToken =
 
 export type PathGlobMatcher = (path: string) => boolean;
 
+const MAX_GLOB_ANALYSIS_LENGTH = 4096;
+const MAX_GLOB_ANALYSIS_STATES = 65_536;
+
 function tokenizePathGlob(pattern: string): readonly PathGlobToken[] {
   const tokens: PathGlobToken[] = [];
   for (let index = 0; index < pattern.length; ) {
@@ -107,4 +110,149 @@ export function compilePathGlob(pattern: string): PathGlobMatcher {
 
 export function matchesPathGlob(pattern: string, path: string): boolean {
   return compilePathGlob(pattern)(path);
+}
+
+type GlobState = number;
+
+function normalState(tokenIndex: number): GlobState {
+  return tokenIndex * 2;
+}
+
+function scanningState(tokenIndex: number): GlobState {
+  return tokenIndex * 2 + 1;
+}
+
+function stateTokenIndex(state: GlobState): number {
+  return Math.floor(state / 2);
+}
+
+function isScanningState(state: GlobState): boolean {
+  return state % 2 === 1;
+}
+
+function epsilonClosure(
+  tokens: readonly PathGlobToken[],
+  initial: Iterable<GlobState>,
+): GlobState[] {
+  const pending = [...initial];
+  const closure = new Set<GlobState>();
+  while (pending.length > 0) {
+    const state = pending.pop()!;
+    if (closure.has(state)) continue;
+    closure.add(state);
+    if (isScanningState(state)) continue;
+    const tokenIndex = stateTokenIndex(state);
+    const token = tokens[tokenIndex];
+    if (!token || token.kind === 'literal') continue;
+    pending.push(normalState(tokenIndex + 1));
+    if (token.kind === 'globstar-directories') pending.push(scanningState(tokenIndex));
+  }
+  return [...closure].sort((left, right) => left - right);
+}
+
+function moveGlobStates(
+  tokens: readonly PathGlobToken[],
+  states: readonly GlobState[],
+  character: string,
+): GlobState[] {
+  const moved = new Set<GlobState>();
+  for (const state of states) {
+    const tokenIndex = stateTokenIndex(state);
+    if (isScanningState(state)) {
+      moved.add(character === '/' ? normalState(tokenIndex) : scanningState(tokenIndex));
+      continue;
+    }
+    const token = tokens[tokenIndex];
+    if (!token) continue;
+    if (token.kind === 'literal') {
+      if (token.value === character) moved.add(normalState(tokenIndex + 1));
+    } else if (token.kind === 'star') {
+      if (character !== '/') moved.add(normalState(tokenIndex));
+    } else if (token.kind === 'globstar') {
+      moved.add(normalState(tokenIndex));
+    }
+  }
+  return epsilonClosure(tokens, moved);
+}
+
+function stateKey(states: readonly GlobState[]): string {
+  return states.join(',');
+}
+
+function pairKey(left: readonly GlobState[], right: readonly GlobState[]): string {
+  return `${stateKey(left)}|${stateKey(right)}`;
+}
+
+function accepts(tokens: readonly PathGlobToken[], states: readonly GlobState[]): boolean {
+  return states.includes(normalState(tokens.length));
+}
+
+function representativeCharacters(
+  left: readonly PathGlobToken[],
+  right: readonly PathGlobToken[],
+): string[] {
+  const characters = new Set<string>(['/']);
+  for (const token of [...left, ...right]) {
+    if (token.kind === 'literal') characters.add(token.value);
+  }
+  for (let code = 0; code <= 0xffff; code += 1) {
+    const candidate = String.fromCharCode(code);
+    if (candidate !== '/' && !characters.has(candidate)) {
+      characters.add(candidate);
+      break;
+    }
+  }
+  return [...characters];
+}
+
+function analyzeGlobPair(
+  leftPattern: string,
+  rightPattern: string,
+  mode: 'intersects' | 'left-subset-of-right',
+): boolean {
+  if (
+    leftPattern.length > MAX_GLOB_ANALYSIS_LENGTH ||
+    rightPattern.length > MAX_GLOB_ANALYSIS_LENGTH
+  ) {
+    return mode === 'intersects';
+  }
+  const left = tokenizePathGlob(leftPattern);
+  const right = tokenizePathGlob(rightPattern);
+  const characters = representativeCharacters(left, right);
+  const startLeft = epsilonClosure(left, [normalState(0)]);
+  const startRight = epsilonClosure(right, [normalState(0)]);
+  const pending: Array<[GlobState[], GlobState[]]> = [[startLeft, startRight]];
+  const visited = new Set<string>();
+
+  while (pending.length > 0) {
+    const [leftStates, rightStates] = pending.pop()!;
+    const key = pairKey(leftStates, rightStates);
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (visited.size > MAX_GLOB_ANALYSIS_STATES) return mode === 'intersects';
+
+    const leftAccepts = accepts(left, leftStates);
+    const rightAccepts = accepts(right, rightStates);
+    if (mode === 'intersects' && leftAccepts && rightAccepts) return true;
+    if (mode === 'left-subset-of-right' && leftAccepts && !rightAccepts) return false;
+
+    for (const character of characters) {
+      const nextLeft = moveGlobStates(left, leftStates, character);
+      if (nextLeft.length === 0) continue;
+      const nextRight = moveGlobStates(right, rightStates, character);
+      if (mode === 'intersects' && nextRight.length === 0) continue;
+      pending.push([nextLeft, nextRight]);
+    }
+  }
+  return mode === 'left-subset-of-right';
+}
+
+/** Return whether the two documented path-glob languages share any path. */
+export function pathGlobsIntersect(leftPattern: string, rightPattern: string): boolean {
+  return analyzeGlobPair(leftPattern, rightPattern, 'intersects');
+}
+
+/** Return whether every path matched by candidatePattern is allowed by coveringPattern. */
+export function pathGlobCovers(coveringPattern: string, candidatePattern: string): boolean {
+  return analyzeGlobPair(candidatePattern, coveringPattern, 'left-subset-of-right');
 }

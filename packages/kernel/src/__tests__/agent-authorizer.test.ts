@@ -151,6 +151,28 @@ describe('authorizeAgentAction', () => {
     expect(result.evidence.risk_zone).toBe('red');
   });
 
+  it('derives the maximum risk reachable through a declared glob', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      declaredScope: ['packages/**'],
+      riskZone: 'yellow',
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('risk_ceiling');
+    expect(result.evidence.risk_zone).toBe('red');
+  });
+
+  it('denies a universal declared glob because it reaches Black Zone paths', () => {
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot({ max_risk_zone: 'black' }),
+      action: 'task.claim',
+      declaredScope: ['**'],
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('black_zone');
+  });
+
   it('preserves a caller-supplied risk that is higher than path-derived risk', () => {
     const result = authorizeAgentAction({
       snapshot: makeSnapshot({ max_risk_zone: 'red' }),
@@ -201,6 +223,40 @@ describe('authorizeAgentAction', () => {
     });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_denied');
+  });
+
+  it('rejects a declared scope that intersects a denied subtree', () => {
+    const snapshot = makeSnapshot({
+      paths: { allow: ['packages/**'], deny: ['packages/kernel/**'] },
+      max_risk_zone: 'red',
+    });
+    const result = authorizeAgentAction({
+      snapshot,
+      action: 'task.claim',
+      declaredScope: ['packages/**'],
+    });
+    expect(result.decision).toBe('deny');
+    expect(result.evidence.rule).toBe('path_denied');
+  });
+
+  it('requires the allow glob to cover the entire declared scope', () => {
+    const snapshot = makeSnapshot({
+      paths: { allow: ['docs/**'], deny: [] },
+      max_risk_zone: 'red',
+    });
+    expect(
+      authorizeAgentAction({
+        snapshot,
+        action: 'task.claim',
+        declaredScope: ['docs/evidence/**'],
+      }).decision,
+    ).toBe('allow');
+    const denied = authorizeAgentAction({
+      snapshot,
+      action: 'task.claim',
+      declaredScope: ['**'],
+    });
+    expect(denied.decision).toBe('deny');
   });
 
   it('always includes diagnostics', () => {

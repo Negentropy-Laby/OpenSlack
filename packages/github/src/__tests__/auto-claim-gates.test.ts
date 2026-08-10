@@ -27,7 +27,7 @@ function runGate(
     candidate: {
       body,
       state: overrides.state ?? 'open',
-      labels: overrides.labels ?? ['openslack:task', 'openslack:ready'],
+      labels: overrides.labels ?? ['openslack:task', 'openslack:ready', 'agent-type:codex'],
     },
     agentCapabilities: overrides.capabilities ?? { primary: ['typescript'], secondary: [] },
     agentMaxRiskLevel: overrides.maxRisk ?? 'high',
@@ -52,6 +52,24 @@ describe('runAutoClaimGates', () => {
     expect(runGate(makeBody(), { labels: ['openslack:task'] }).reason).toContain('openslack:ready');
   });
 
+  it('binds the manifest agent type to exactly one canonical routing label', () => {
+    expect(runGate(makeBody(), { labels: ['openslack:task', 'openslack:ready'] })).toMatchObject({
+      allowed: false,
+      code: 'AGENT_TYPE_LABEL_INVALID',
+      manifest: null,
+    });
+    expect(
+      runGate(makeBody(), {
+        labels: ['openslack:task', 'openslack:ready', 'agent-type:reviewer'],
+      }),
+    ).toMatchObject({ allowed: false, code: 'AGENT_TYPE_LABEL_INVALID', manifest: null });
+    expect(
+      runGate(makeBody(), {
+        labels: ['openslack:task', 'openslack:ready', 'agent-type:codex', 'agent-type:reviewer'],
+      }),
+    ).toMatchObject({ allowed: false, code: 'AGENT_TYPE_LABEL_INVALID', manifest: null });
+  });
+
   it('blocks when body has no manifest block', () => {
     const result = runGate('Just a plain issue body');
     expect(result.allowed).toBe(false);
@@ -63,6 +81,25 @@ describe('runAutoClaimGates', () => {
     expect(runGate('```openslack-task\ninvalid: yaml\nschema: wrong\n```').allowed).toBe(false);
     expect(runGate(makeBody({ status: undefined })).reason).toContain('status');
     expect(runGate(makeBody({ status: 'blocked' })).reason).toContain('got blocked');
+  });
+
+  it('never exposes a parsed manifest on a rejected result', () => {
+    for (const result of [
+      runGate(makeBody({ status: 'blocked' })),
+      runGate(makeBody({ risk_level: 'high' }), { maxRisk: 'low' }),
+      runGate(makeBody({ required_capabilities: ['python'] })),
+      runGate(
+        makeBody({
+          risk_level: 'critical',
+          allowed_paths: ['.env'],
+        }),
+        { maxRisk: 'critical' },
+      ),
+    ]) {
+      expect(result.allowed).toBe(false);
+      expect(result.manifest).toBeNull();
+      expect(result.code).not.toBe('ALLOWED');
+    }
   });
 
   it('blocks when risk exceeds the agent ceiling or the ceiling is invalid', () => {
@@ -102,6 +139,15 @@ describe('runAutoClaimGates', () => {
       }),
     );
     expect(plugin.reason).toContain('understates declared path scope red');
+
+    const broadPackage = runGate(
+      makeBody({
+        risk_level: 'medium',
+        allowed_paths: ['packages/**'],
+        human_approval_required_for: ['red_zone_change'],
+      }),
+    );
+    expect(broadPackage.reason).toContain('understates declared path scope red');
   });
 
   it('blocks canonical Black Zone paths', () => {

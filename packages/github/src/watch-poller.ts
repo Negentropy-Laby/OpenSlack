@@ -3,6 +3,7 @@ import type { RepoCursor } from './watch-cursor.js';
 
 export interface GitHubApiIssue {
   number: number;
+  node_id?: string;
   title: string;
   html_url: string;
   body: string | null;

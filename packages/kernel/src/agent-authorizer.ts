@@ -9,8 +9,8 @@ import type {
   AuthorizationEvidence,
 } from './types.js';
 
-import { classifyPaths } from './zones.js';
-import { compilePathGlob } from './path-glob.js';
+import { classifyDeclaredScopes, classifyPaths } from './zones.js';
+import { compilePathGlob, pathGlobCovers, pathGlobsIntersect } from './path-glob.js';
 import { highestRiskZone, isRiskZone, RISK_ZONES } from './risk.js';
 
 function riskRank(zone: RiskZone): number {
@@ -158,7 +158,12 @@ export function authorizeAgentAction(args: {
   }
 
   const authorizedPaths = args.declaredScope ?? args.changedPaths ?? [];
-  const derivedRiskZone = authorizedPaths.length > 0 ? classifyPaths(authorizedPaths) : undefined;
+  const derivedRiskZone =
+    authorizedPaths.length > 0
+      ? args.declaredScope
+        ? classifyDeclaredScopes(authorizedPaths)
+        : classifyPaths(authorizedPaths)
+      : undefined;
   const effectiveRiskZone = highestRiskZone(riskZone, derivedRiskZone);
   if (derivedRiskZone) {
     diagnostics.push(
@@ -209,10 +214,13 @@ export function authorizeAgentAction(args: {
       glob,
       matches: compilePathGlob(glob),
     }));
-    const allowMatchers = permissions.paths.allow.map(compilePathGlob);
+    const allowMatchers = permissions.paths.allow.map((glob) => ({
+      glob,
+      matches: compilePathGlob(glob),
+    }));
     for (const p of authorizedPaths) {
       for (const { glob: denyGlob, matches } of denyMatchers) {
-        if (matches(p)) {
+        if (args.declaredScope ? pathGlobsIntersect(p, denyGlob) : matches(p)) {
           diagnostics.push(`DENY: path "${p}" matches deny glob "${denyGlob}"`);
           return {
             decision: 'deny',
@@ -231,7 +239,9 @@ export function authorizeAgentAction(args: {
 
     // 6. Path allow check
     for (const p of authorizedPaths) {
-      const allowed = allowMatchers.some((matches) => matches(p));
+      const allowed = allowMatchers.some(({ glob, matches }) =>
+        args.declaredScope ? pathGlobCovers(glob, p) : matches(p),
+      );
       if (!allowed) {
         diagnostics.push(`DENY: path "${p}" not in allow list`);
         return {

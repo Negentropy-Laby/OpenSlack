@@ -19,6 +19,7 @@ function issue(overrides: Record<string, unknown> = {}) {
     labels: ['openslack:task', { name: 'openslack:ready' }],
     body: 'task body',
     state: 'open',
+    updated_at: '2026-08-09T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -50,6 +51,14 @@ describe('getIssueTaskByNumber', () => {
         labels: ['openslack:task', 'openslack:ready'],
         body: 'task body',
         state: 'open',
+        updatedAt: '2026-08-09T00:00:00.000Z',
+        snapshot: expect.objectContaining({
+          schema: 'openslack.issue_task_snapshot.v1',
+          issueNumber: 42,
+          issueNodeId: 'ISSUE_NODE_42',
+          updatedAt: '2026-08-09T00:00:00.000Z',
+          sha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        }),
       },
     });
     expect(mocks.getIssue).toHaveBeenCalledWith({

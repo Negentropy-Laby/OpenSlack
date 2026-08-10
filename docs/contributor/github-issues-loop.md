@@ -71,12 +71,21 @@ ref: refs/heads/openslack/claims/issue-{issueNumber}
    `TARGET_ISSUE_NOT_CLAIMABLE`.
 4. For an eligible candidate, the agent gets main branch HEAD SHA.
 5. Agent attempts `POST /repos/{owner}/{repo}/git/refs` with the claim ref pointing to HEAD SHA.
-6. **If ref created (HTTP 201):** claim granted — return lease.
-7. **If creation returns HTTP 422:** re-read the exact claim ref. Only an observed ref is
+6. **If ref created (HTTP 201):** re-read the exact Issue and compare its state, labels, body,
+   node identity, update timestamp, and canonical SHA-256 snapshot with the gated candidate.
+7. If the Issue changed, delete the tentative ref and prove it is absent. A proven cleanup returns
+   `STALE_CANDIDATE`; uncertain cleanup returns `RECONCILIATION_REQUIRED`.
+8. For an unchanged Issue, write and read back `openslack.claim.v1` owner evidence containing a
+   unique claim ID, task snapshot digest, task ID, effective risk, TTL, heartbeat interval, and next
+   heartbeat. Missing owner evidence rolls the ref back before any lease is returned.
+9. **If creation returns HTTP 422:** re-read the exact claim ref. Only an observed ref is
    `ALREADY_CLAIMED`; an absent/unreadable ref is `API_ERROR`.
-8. Unscoped discovery may continue after candidate rejection or `ALREADY_CLAIMED`, but transport,
-   authentication, rate-limit, missing-reason, and unexpected gate failures stop the batch.
-9. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment.
+10. Unscoped discovery may continue after candidate rejection, a proven stale snapshot, or
+    `ALREADY_CLAIMED`, but transport,
+    authentication, rate-limit, missing-reason, and unexpected gate failures stop the batch.
+11. Finally project labels by removing `openslack:ready` and adding `openslack:claimed`. A label-only
+    failure preserves the authoritative ref plus owner evidence and returns
+    `projection: repair_required` with `openslack github repair claims --apply`.
 
 **Why git refs and not labels?**
 
@@ -106,7 +115,9 @@ the final Issue state is already complete.
 | `openslack:done`    | Completed                | Claim ref deleted                       | Set and verified by `completeClaim()`         |
 | `openslack:blocked` | Needs human              | Claim ref may exist                     | Set manually when agent cannot proceed        |
 
-Initial claim labels remain a repairable projection of the atomic claim ref.
+Initial claim labels remain a repairable projection of the atomic claim ref plus its verified owner
+evidence. Repair never invents a missing owner. It synchronizes ready/claimed labels for active
+claims and expires a claim from the latest valid heartbeat rather than the initial deadline.
 Heartbeat, review, and completion commands are stricter: they never report
 success until their required ref, owner, comment, label, and PR postconditions
 have been re-read from GitHub. Partial mutations return a fixed error code and
@@ -129,7 +140,7 @@ required_capabilities:
   - typescript
   - ci-fix
 allowed_paths:
-  - packages/**
+  - packages/workspace/**
   - .openslack/tasks/**
 forbidden_paths:
   - .github/**
@@ -142,6 +153,10 @@ output_contract:
 missing `lease` uses the runtime default, while an explicit lease must contain valid
 `ttl_minutes` and `heartbeat_minutes`. `renderIssueTaskManifest(manifest)` generates the canonical
 YAML string for issue creation.
+
+`agent_type` is a closed routing category (`codex`, `reviewer`, `sync`, or `memory`). The Issue must
+carry exactly one `agent-type:*` label and it must match the manifest. That label does not grant
+execution authority: registry capabilities, canonical risk, and path permissions remain decisive.
 
 Before an atomic claim, OpenSlack reclassifies `allowed_paths` with the Kernel's canonical risk
 policy. A manifest cannot lower that derived risk, Black Zone scope is never auto-claimable, and
@@ -195,9 +210,10 @@ if (result.status === 'found') {
 }
 ```
 
-### `claimIssueTask({ issueNumber, agentId, ttlMinutes })`
+### `claimIssueTask({ issueNumber, agentId, taskId, taskSnapshot, riskZone, ... })`
 
-Creates atomic git ref claim. Returns `{ claimStatus, claimRef, lease }`.
+Creates a tentative atomic ref, revalidates the current Issue snapshot, persists owner evidence,
+and then returns `{ claimStatus, claimRef, lease, projection }`.
 
 ```
 import { claimIssueTask } from '@openslack/github';
@@ -205,10 +221,16 @@ import { claimIssueTask } from '@openslack/github';
 const result = await claimIssueTask({
   issueNumber: 42,
   agentId: 'codex_developer_ci-bot',
+  taskId: manifest.task_id,
+  taskSnapshot: task.snapshot,
+  riskZone: 'yellow',
   ttlMinutes: 60,
+  heartbeatMinutes: 15,
+  principal,
 });
 if (result.claimStatus === 'granted') {
   console.log('Claimed:', result.claimRef);  // refs/heads/openslack/claims/issue-42
+  console.log('Next heartbeat:', result.lease.nextHeartbeatAt);
 }
 ```
 
@@ -218,6 +240,9 @@ if (result.claimStatus === 'granted') {
 `openslack.claim_lifecycle.v1`. They require a live GitHub client, structured
 claim/heartbeat ownership, and verified remote postconditions. Raw transport
 errors are replaced with fixed, non-secret error codes.
+If heartbeat omits `ttlMinutes`, it inherits the original claim TTL. Explicit TTL overrides accept
+`1..480`; every successful result reports the heartbeat interval and next heartbeat time. A
+one-shot `agent tick` reports this schedule but does not start a background scheduler.
 
 ## CLI Usage
 
@@ -247,6 +272,9 @@ openslack github claim review \
   --issue-number 1 \
   --agent-id codex_developer \
   --pr-url https://github.com/owner/repo/pull/42
+
+# Repair active ready/claimed projections and expire leases from latest heartbeat evidence
+openslack github repair claims --apply
 
 # Complete only after merge/review evidence exists
 openslack github claim complete \
@@ -331,14 +359,14 @@ openslack github claim complete \
 node -e "parseIssueTaskManifest(body)"  # uses openslack-task code fence + JSON Schema
 ```
 
-- Required fields: `task_id` (TASK-YYYY-NNNNNN), `agent_type`, `risk_level` (low/medium/high/critical)
+- Required fields: `task_id` (TASK-YYYY-NNNNNN), `status`, closed `agent_type`, and `risk_level` (low/medium/high/critical)
 - Red Zone detection: `allowed_paths` hitting `.github/`, `.openslack/policies/`, etc. requires `human_approval_required_for: [red_zone_change]`
 - Path conflict detection: intersecting allowed/forbidden paths
 
 ### Heartbeat + Expiry (`claim-lifecycle.ts`, `claims.ts`)
 
 ```bash
-heartbeatClaim({ issueNumber: 42, agentId: 'agent-x', ttlMinutes: 60 })
+heartbeatClaim({ issueNumber: 42, agentId: 'agent-x' })  # inherits the original claim TTL
 reviewClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
 completeClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
 expireIssueClaim(42)  # deletes ref, resets to ready
@@ -357,5 +385,5 @@ filterRedZonePaths(changedPaths)  # identifies Red Zone crossing (.github/, kern
 
 ```bash
 repairLabels()  # idempotently creates 7 openslack:state labels
-repairExpiredClaims()  # lists refs, checks expiry, deletes stale, resets labels
+repairExpiredClaims()  # verifies owner, uses latest heartbeat, and repairs active/expired labels
 ```

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { parse } from 'yaml';
 import type { RiskZone } from '../types.js';
 import { DEFAULT_RISK_ZONE, PLUGIN_TRUST_RED_PATHS, ZONE_PATTERNS } from '../zone-policy.js';
-import { classifyPaths } from '../zones.js';
+import { classifyDeclaredScopes, classifyPaths } from '../zones.js';
 
 interface SelfEvolutionPolicyFile {
   zones: {
@@ -173,6 +173,25 @@ describe('classifyPaths', () => {
 
   it('fails safe to yellow for an empty path set', () => {
     expect(classifyPaths([])).toBe('yellow');
+  });
+});
+
+describe('classifyDeclaredScopes', () => {
+  it('keeps rooted scopes at their canonical maximum risk', () => {
+    expect(classifyDeclaredScopes(['docs/**'])).toBe('green');
+    expect(classifyDeclaredScopes(['packages/core/**'])).toBe('yellow');
+    expect(classifyDeclaredScopes(['packages/**'])).toBe('red');
+  });
+
+  it('fails universal and explicit credential scopes closed', () => {
+    expect(classifyDeclaredScopes(['**'])).toBe('black');
+    expect(classifyDeclaredScopes(['docs/**/*.pem'])).toBe('black');
+    expect(classifyDeclaredScopes(['secrets/release/**'])).toBe('black');
+  });
+
+  it('keeps unmatched rooted scopes at the default review zone', () => {
+    expect(classifyDeclaredScopes(['integration/**'])).toBe('yellow');
+    expect(classifyDeclaredScopes([])).toBe('yellow');
   });
 });
 

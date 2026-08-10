@@ -69,4 +69,24 @@ describe('previewTaskCreation', () => {
 
     expect(preview.errors.some((error) => error.includes('understates'))).toBe(true);
   });
+
+  it('rejects an unsupported agent routing type', () => {
+    const preview = previewTaskCreation({
+      template: 'docs',
+      title: 'Unsupported route',
+      agentType: 'qoder',
+    });
+    expect(preview.errors).toContain('Agent type is unsupported: qoder');
+  });
+
+  it('classifies a broad package scope as Red because it reaches protected packages', () => {
+    const preview = previewTaskCreation({
+      template: 'bugfix',
+      title: 'Broad package task',
+      allowedPaths: ['packages/**'],
+      humanApprovalRequiredFor: ['red_zone_change'],
+    });
+    expect(preview.riskZone).toBe('red');
+    expect(preview.manifest.risk_level).toBe('high');
+  });
 });

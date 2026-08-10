@@ -127,4 +127,23 @@ describe('agent tick --issue-number', () => {
     ]);
     expect(process.exitCode).toBe(1);
   });
+
+  it('clears a prior tick failure when a later action succeeds in the same process', async () => {
+    tickAgent
+      .mockResolvedValueOnce({
+        agentId: 'test-agent',
+        action: 'error',
+        message: 'first tick failed',
+      })
+      .mockResolvedValueOnce({
+        agentId: 'test-agent',
+        action: 'idle',
+        message: 'second tick succeeded',
+      });
+
+    await run(['tick', '--agent-id', 'test-agent']);
+    expect(process.exitCode).toBe(1);
+    await run(['tick', '--agent-id', 'test-agent']);
+    expect(process.exitCode).toBeUndefined();
+  });
 });

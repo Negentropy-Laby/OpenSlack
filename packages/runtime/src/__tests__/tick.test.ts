@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 import { tickAgent, validateTickTargetOptions } from '../tick.js';
+import { createIssueTaskSnapshot } from '@openslack/github';
 
 const principal = {
   registry_id: 'test-agent',
@@ -21,20 +22,23 @@ const principal = {
 const snapshot = { source: 'test-snapshot' };
 
 function task(issueNumber = 42) {
-  return {
+  const candidate = {
     issueNumber,
     issueNodeId: `NODE_${issueNumber}`,
     title: `Task ${issueNumber}`,
     url: `https://github.com/example/repo/issues/${issueNumber}`,
-    labels: ['openslack:task', 'openslack:ready'],
+    labels: ['openslack:task', 'openslack:ready', 'agent-type:codex'],
     body: 'manifest body',
     state: 'open' as const,
+    updatedAt: '2026-08-09T00:00:00.000Z',
   };
+  return { ...candidate, snapshot: createIssueTaskSnapshot(candidate) };
 }
 
 function allowedGate(ttlMinutes: number | null = 120) {
   return {
     allowed: true,
+    code: 'ALLOWED',
     reason: '',
     manifest: {
       schema: 'openslack.github_issue_task.v1',
@@ -85,6 +89,7 @@ beforeEach(() => {
     if (candidate.state !== 'open') {
       return {
         allowed: false,
+        code: 'ISSUE_NOT_OPEN',
         reason: 'Issue is not open',
         manifest: null,
         riskZone: 'green',
@@ -97,6 +102,7 @@ beforeEach(() => {
     ) {
       return {
         allowed: false,
+        code: 'ISSUE_NOT_READY',
         reason: 'Issue must have openslack:task and openslack:ready labels',
         manifest: null,
         riskZone: 'green',
@@ -109,7 +115,13 @@ beforeEach(() => {
     claimStatus: 'granted',
     issueNumber: 42,
     claimRef: 'refs/heads/openslack/claims/issue-42',
-    lease: { ttlMinutes: 120, expiresAt: '2026-08-09T12:00:00.000Z' },
+    lease: {
+      ttlMinutes: 120,
+      heartbeatMinutes: 15,
+      expiresAt: '2026-08-09T12:00:00.000Z',
+      nextHeartbeatAt: '2026-08-09T10:15:00.000Z',
+    },
+    projection: { status: 'synchronized' },
   });
   mocks.queryReady.mockResolvedValue([]);
 });
@@ -229,6 +241,7 @@ describe('tickAgent targeted GitHub issue claims', () => {
     mocks.getIssue.mockResolvedValue({ status: 'found', task: task() });
     mocks.runGates.mockReturnValue({
       allowed: false,
+      code: 'CAPABILITY_DENIED',
       reason: 'Agent lacks required capabilities: authenticated-host',
       manifest: null,
       riskZone: 'green',
@@ -326,6 +339,7 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     mocks.runGates
       .mockReturnValueOnce({
         allowed: false,
+        code: 'RISK_DENIED',
         reason: 'risk exceeds agent maximum',
         manifest: null,
         riskZone: 'red',
@@ -336,15 +350,52 @@ describe('tickAgent unscoped GitHub issue claims', () => {
       claimStatus: 'granted',
       issueNumber: 370,
       claimRef: 'refs/heads/openslack/claims/issue-370',
-      lease: { ttlMinutes: 90, expiresAt: '2026-08-09T12:00:00.000Z' },
+      lease: {
+        ttlMinutes: 90,
+        heartbeatMinutes: 15,
+        expiresAt: '2026-08-09T12:00:00.000Z',
+        nextHeartbeatAt: '2026-08-09T10:15:00.000Z',
+      },
+      projection: { status: 'synchronized' },
     });
 
     const result = await runTick({ source: 'github-issues' });
     expect(result).toMatchObject({ action: 'claimed', taskId: '#370' });
+    expect(result.candidateRejections).toEqual([
+      {
+        issueNumber: 369,
+        code: 'RISK_DENIED',
+        reason: 'risk exceeds agent maximum',
+      },
+    ]);
     expect(mocks.claim).toHaveBeenCalledTimes(1);
     expect(mocks.claim).toHaveBeenCalledWith(
       expect.objectContaining({ issueNumber: 370, ttlMinutes: 90 }),
     );
+  });
+
+  it('bounds and normalizes candidate rejection diagnostics', async () => {
+    mocks.queryReady.mockResolvedValue(Array.from({ length: 12 }, (_, index) => task(400 + index)));
+    mocks.runGates.mockReturnValue({
+      allowed: false,
+      code: 'MANIFEST_INVALID',
+      reason: `  ${'invalid\n'.repeat(80)}  `,
+      manifest: null,
+      riskZone: 'green',
+      declaredScope: [],
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+
+    expect(result).toMatchObject({ action: 'idle' });
+    expect(result.candidateRejections).toHaveLength(10);
+    expect(result.candidateRejections?.[0]).toMatchObject({
+      issueNumber: 400,
+      code: 'MANIFEST_INVALID',
+    });
+    expect(result.candidateRejections?.[0]?.reason.length).toBeLessThanOrEqual(240);
+    expect(result.candidateRejections?.[0]?.reason).not.toMatch(/\s{2,}/u);
+    expect(result.message).toContain('10 candidate(s) rejected');
   });
 
   it('continues after an atomic claim race', async () => {
@@ -360,11 +411,47 @@ describe('tickAgent unscoped GitHub issue claims', () => {
         claimStatus: 'granted',
         issueNumber: 370,
         claimRef: 'refs/heads/openslack/claims/issue-370',
-        lease: { ttlMinutes: 120, expiresAt: '2026-08-09T12:00:00.000Z' },
+        lease: {
+          ttlMinutes: 120,
+          heartbeatMinutes: 15,
+          expiresAt: '2026-08-09T12:00:00.000Z',
+          nextHeartbeatAt: '2026-08-09T10:15:00.000Z',
+        },
+        projection: { status: 'synchronized' },
       });
 
     const result = await runTick({ source: 'github-issues' });
     expect(result).toMatchObject({ action: 'claimed', taskId: '#370' });
+    expect(mocks.claim).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues after a snapshot race was rolled back', async () => {
+    mocks.queryReady.mockResolvedValue([task(369), task(370)]);
+    mocks.claim
+      .mockResolvedValueOnce({
+        claimStatus: 'denied',
+        issueNumber: 369,
+        claimRef: 'refs/heads/openslack/claims/issue-369',
+        reason: 'STALE_CANDIDATE',
+      })
+      .mockResolvedValueOnce({
+        claimStatus: 'granted',
+        issueNumber: 370,
+        claimRef: 'refs/heads/openslack/claims/issue-370',
+        lease: {
+          ttlMinutes: 120,
+          heartbeatMinutes: 15,
+          expiresAt: '2026-08-09T12:00:00.000Z',
+          nextHeartbeatAt: '2026-08-09T10:15:00.000Z',
+        },
+        projection: { status: 'synchronized' },
+      });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({
+      action: 'claimed',
+      candidateRejections: [expect.objectContaining({ code: 'STALE_CANDIDATE' })],
+    });
     expect(mocks.claim).toHaveBeenCalledTimes(2);
   });
 
@@ -404,6 +491,13 @@ describe('tickAgent unscoped GitHub issue claims', () => {
       claimStatus: 'granted',
       issueNumber: 370,
       claimRef: 'refs/heads/openslack/claims/issue-370',
+      lease: {
+        ttlMinutes: 120,
+        heartbeatMinutes: 15,
+        expiresAt: '2026-08-09T12:00:00.000Z',
+        nextHeartbeatAt: '2026-08-09T10:15:00.000Z',
+      },
+      projection: { status: 'synchronized' },
     });
 
     const result = await runTick({ source: 'github-issues' });
@@ -444,6 +538,21 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     const result = await runTick({ source: 'github-issues' });
     expect(result).toMatchObject({ action: 'error' });
     expect(result.message).toContain('API_ERROR');
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when tentative-ref cleanup requires reconciliation', async () => {
+    mocks.queryReady.mockResolvedValue([task(369), task(370)]);
+    mocks.claim.mockResolvedValueOnce({
+      claimStatus: 'denied',
+      issueNumber: 369,
+      claimRef: 'refs/heads/openslack/claims/issue-369',
+      reason: 'RECONCILIATION_REQUIRED',
+    });
+
+    const result = await runTick({ source: 'github-issues' });
+    expect(result).toMatchObject({ action: 'error' });
+    expect(result.message).toContain('RECONCILIATION_REQUIRED');
     expect(mocks.claim).toHaveBeenCalledTimes(1);
   });
 

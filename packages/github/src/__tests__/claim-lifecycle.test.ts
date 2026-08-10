@@ -143,14 +143,36 @@ describe('strict claim lifecycle', () => {
       outcome: 'completed',
       owner: 'agent-one',
       expiresAt: '2026-07-14T01:30:00.000Z',
+      ttlMinutes: 60,
+      heartbeatMinutes: 15,
+      nextHeartbeatAt: '2026-07-14T00:45:00.000Z',
     });
     expect(parseHeartbeatMetadata(harness.comments.at(-1)?.body)).toMatchObject({
       agent_id: 'agent-one',
       claim_ref: 'refs/heads/openslack/claims/issue-42',
+      ttl_minutes: 60,
+      heartbeat_minutes: 15,
+      next_heartbeat_at: '2026-07-14T00:45:00.000Z',
     });
   });
 
-  it.each([0, 121, 1.5])(
+  it('inherits the original claim TTL when the heartbeat omits an override', async () => {
+    const harness = createHarness();
+    const result = await heartbeatClaim(
+      { issueNumber: 42, agentId: 'agent-one' },
+      harness.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      outcome: 'completed',
+      ttlMinutes: 60,
+      heartbeatMinutes: 15,
+      expiresAt: '2026-07-14T01:30:00.000Z',
+      nextHeartbeatAt: '2026-07-14T00:45:00.000Z',
+    });
+  });
+
+  it.each([0, 481, 1.5])(
     'rejects invalid heartbeat TTL %s before GitHub access',
     async (ttlMinutes) => {
       const harness = createHarness();
@@ -199,6 +221,19 @@ describe('strict claim lifecycle', () => {
     await expect(
       heartbeatClaim({ issueNumber: 42, agentId: 'agent-one' }, harness.dependencies),
     ).resolves.toMatchObject({ outcome: 'failed', errorCode: 'CLAIM_OWNER_MISMATCH' });
+  });
+
+  it('uses the newest claim marker without letting historical ownership block renewal', async () => {
+    const harness = createHarness({ owner: 'agent-one' });
+    const oldClaim = claimComment('agent-two').replace(
+      '2026-07-14T00:00:00.000Z',
+      '2026-07-13T00:00:00.000Z',
+    );
+    harness.comments.unshift({ id: 0, body: oldClaim });
+
+    await expect(
+      heartbeatClaim({ issueNumber: 42, agentId: 'agent-one' }, harness.dependencies),
+    ).resolves.toMatchObject({ outcome: 'completed', owner: 'agent-one' });
   });
 
   it('returns a retryable partial result when heartbeat persistence cannot be verified', async () => {

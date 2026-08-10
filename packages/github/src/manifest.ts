@@ -1,6 +1,6 @@
 import { Ajv2020, type ErrorObject } from 'ajv/dist/2020.js';
 import { parse as parseYaml } from 'yaml';
-import { classifyPaths, matchesPathGlob, type TaskRiskLevel } from '@openslack/kernel';
+import { classifyDeclaredScopes, pathGlobCovers, type TaskRiskLevel } from '@openslack/kernel';
 import taskManifestSchema from './task-manifest.schema.json' with { type: 'json' };
 
 export interface IssueTaskManifest {
@@ -9,7 +9,7 @@ export interface IssueTaskManifest {
   title: string;
   status: 'ready' | 'claimed' | 'running' | 'review' | 'done' | 'blocked';
   task_type?: string;
-  agent_type: string;
+  agent_type: GitHubAgentType;
   risk_level: TaskRiskLevel;
   priority?: 'p0' | 'p1' | 'p2' | 'p3';
   required_capabilities?: string[];
@@ -25,6 +25,13 @@ export interface IssueTaskManifest {
   lease?: { ttl_minutes: number; heartbeat_minutes: number };
   idempotency_key?: string;
   linked_pr?: number;
+}
+
+export const GITHUB_AGENT_TYPES = ['codex', 'reviewer', 'sync', 'memory'] as const;
+export type GitHubAgentType = (typeof GITHUB_AGENT_TYPES)[number];
+
+export function isGitHubAgentType(value: unknown): value is GitHubAgentType {
+  return typeof value === 'string' && (GITHUB_AGENT_TYPES as readonly string[]).includes(value);
 }
 
 export interface ManifestParseResult {
@@ -127,11 +134,7 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
 
   for (const allowedPath of allowedPaths) {
     for (const forbiddenPath of forbiddenPaths) {
-      if (
-        allowedPath === forbiddenPath ||
-        matchesPathGlob(forbiddenPath, allowedPath) ||
-        matchesPathGlob(allowedPath, forbiddenPath)
-      ) {
+      if (pathGlobCovers(forbiddenPath, allowedPath)) {
         errors.push(
           `Path conflict: allowed_path "${allowedPath}" conflicts with forbidden_path "${forbiddenPath}"`,
         );
@@ -140,7 +143,7 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
   }
 
   for (const allowedPath of allowedPaths) {
-    const zone = classifyPaths([allowedPath]);
+    const zone = classifyDeclaredScopes([allowedPath]);
     if (zone === 'black') {
       errors.push(`Black Zone path "${allowedPath}" is prohibited`);
     } else if (

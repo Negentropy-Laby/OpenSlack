@@ -91,9 +91,39 @@ describe('github claim lifecycle commands', () => {
       ],
       { from: 'node' },
     );
+    expect(mocks.heartbeatClaim).toHaveBeenCalledWith({
+      issueNumber: 42,
+      agentId: 'agent-one',
+    });
     expect(process.exitCode).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining('CLAIM_PARTIAL_STATE'));
     expect(JSON.stringify(error.mock.calls)).not.toContain('secret-canary');
+  });
+
+  it('accepts the shared 480-minute heartbeat TTL ceiling', async () => {
+    mocks.heartbeatClaim.mockResolvedValue(result('heartbeat'));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await githubCommands().parseAsync(
+      [
+        'node',
+        'openslack',
+        'claim',
+        'heartbeat',
+        '--issue-number',
+        '42',
+        '--agent-id',
+        'agent-one',
+        '--ttl-minutes',
+        '480',
+      ],
+      { from: 'node' },
+    );
+    expect(mocks.heartbeatClaim).toHaveBeenCalledWith({
+      issueNumber: 42,
+      agentId: 'agent-one',
+      ttlMinutes: 480,
+    });
+    expect(process.exitCode).toBeUndefined();
   });
 
   it('keeps issue-done as a strict deprecated alias requiring owner and PR evidence', async () => {

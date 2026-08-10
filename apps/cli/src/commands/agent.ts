@@ -233,6 +233,7 @@ approval_rules:
     .option('--source <source>', 'Task source: local, github-issues', 'local')
     .option('--issue-number <n>', 'Claim one exact GitHub Issue number')
     .action(async (options) => {
+      process.exitCode = undefined;
       const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as
         | 'local'
         | 'github-issues';
@@ -256,6 +257,21 @@ approval_rules:
         console.log(`  Principal: ${result.principal.registry_id} run=${result.principal.run_id}`);
       if (result.taskId) console.log(`  Task: ${result.taskId}`);
       if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
+      if (result.lease) {
+        console.log(`  Expires: ${result.lease.expiresAt}`);
+        console.log(`  Heartbeat: every ${result.lease.heartbeatMinutes} minutes`);
+        console.log(`  Next heartbeat: ${result.lease.nextHeartbeatAt}`);
+      }
+      for (const rejection of result.candidateRejections ?? []) {
+        console.warn(
+          `  Rejected #${rejection.issueNumber} [${rejection.code}]: ${rejection.reason}`,
+        );
+      }
+      if (result.projection?.status === 'repair_required') {
+        console.warn(
+          `  Claim label projection requires repair: ${result.projection.recoveryCommand}`,
+        );
+      }
       console.log(`  ${result.message}`);
       if (result.action === 'error') process.exitCode = 1;
     });

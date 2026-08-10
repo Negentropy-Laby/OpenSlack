@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from '../manifest.js';
+import {
+  GITHUB_AGENT_TYPES,
+  parseIssueTaskManifest,
+  renderIssueTaskManifest,
+  extractTaskBlock,
+} from '../manifest.js';
 import { TASK_RISK_LEVELS } from '@openslack/kernel';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -18,7 +23,7 @@ const validBlock = [
   'required_capabilities:',
   '  - typescript',
   'allowed_paths:',
-  '  - packages/**',
+  '  - docs/**',
   'forbidden_paths:',
   '  - .github/**',
   'output_contract:',
@@ -36,7 +41,7 @@ describe('parseIssueTaskManifest', () => {
     expect(result.manifest?.agent_type).toBe('codex');
     expect(result.manifest?.risk_level).toBe('low');
     expect(result.manifest?.required_capabilities).toEqual(['typescript']);
-    expect(result.manifest?.allowed_paths).toEqual(['packages/**']);
+    expect(result.manifest?.allowed_paths).toEqual(['docs/**']);
     expect(result.manifest?.forbidden_paths).toEqual(['.github/**']);
   });
 
@@ -54,6 +59,13 @@ describe('parseIssueTaskManifest', () => {
     const result = parseIssueTaskManifest(body);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes('risk_level'))).toBe(true);
+  });
+
+  it('rejects an unsupported agent_type', () => {
+    const body = validBlock.replace('agent_type: codex', 'agent_type: qoder');
+    const result = parseIssueTaskManifest(body);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('agent_type'))).toBe(true);
   });
 
   it('rejects Red Zone allowed_paths without human_approval', () => {
@@ -169,9 +181,14 @@ describe('parseIssueTaskManifest', () => {
       readFileSync(resolve(repoRoot, 'packages/github/src/task-manifest.schema.json'), 'utf8'),
     ) as {
       required: string[];
-      properties: { risk_level: { enum: string[] }; lease: { required: string[] } };
+      properties: {
+        agent_type: { enum: string[] };
+        risk_level: { enum: string[] };
+        lease: { required: string[] };
+      };
     };
     expect(schema.required).toContain('status');
+    expect(schema.properties.agent_type.enum).toEqual([...GITHUB_AGENT_TYPES]);
     expect(schema.properties.risk_level.enum).toEqual([...TASK_RISK_LEVELS]);
     expect(schema.properties.lease.required).toEqual(['ttl_minutes', 'heartbeat_minutes']);
 

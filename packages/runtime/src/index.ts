@@ -3,6 +3,7 @@ export { bootstrapAgent } from './bootstrap.js';
 export type { BootstrapCheck, BootstrapResult } from './bootstrap.js';
 export { tickAgent, validateTickTargetOptions } from './tick.js';
 export type {
+  CandidateRejectionDiagnostic,
   TickDependencies,
   TickOptions,
   TickResult,

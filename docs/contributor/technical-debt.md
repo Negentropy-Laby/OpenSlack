@@ -162,7 +162,7 @@ sources:
 
 ### CLOSED: FilterByPath glob-to-regex bug
 
-**Resolution:** The placeholder ordering fix in commit 29fe79c restored `**` depth matching but still interpolated manifest text into a regular expression. PR #378 replaces that conversion with one Kernel-owned literal glob matcher for `*`, `**`, and `**/`. Callers compile patterns once per operation without an unbounded process cache, regex metacharacters have no special meaning, malformed Issue data becomes a candidate rejection, and unexpected gate faults remain visible.
+**Resolution:** The placeholder ordering fix in commit 29fe79c restored `**` depth matching but still interpolated manifest text into a regular expression. PR #378 replaces that conversion with one Kernel-owned literal glob matcher for `*`, `**`, and `**/`. Callers compile patterns once per operation without an unbounded process cache; the same bounded glob-language analysis handles declared-scope intersection and coverage. Regex metacharacters have no special meaning, malformed Issue data becomes a candidate rejection, and unexpected gate faults remain visible.
 **Closed:** 2026-08-09.
 
 ### CLOSED: CLI alias crash

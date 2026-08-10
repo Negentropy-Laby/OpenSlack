@@ -1,4 +1,9 @@
 import { getClient } from './client.js';
+import {
+  createIssueTaskSnapshot,
+  type CanonicalIssueState,
+  type IssueTaskSnapshot,
+} from './issue-task-snapshot.js';
 
 export interface IssueTask {
   issueNumber: number;
@@ -7,7 +12,9 @@ export interface IssueTask {
   url: string;
   labels: string[];
   body: string;
-  state?: 'open' | 'closed' | 'unknown';
+  state?: CanonicalIssueState;
+  updatedAt: string;
+  snapshot: IssueTaskSnapshot;
 }
 
 export type IssueTaskLookupResult =
@@ -17,9 +24,37 @@ export type IssueTaskLookupResult =
 
 type IssueTaskClientFactory = typeof getClient;
 
-function normalizeIssueState(state: unknown): NonNullable<IssueTask['state']> {
+function normalizeIssueState(state: unknown): CanonicalIssueState {
   if (state === 'open' || state === 'closed') return state;
   return 'unknown';
+}
+
+function normalizeIssueTask(data: {
+  number: number;
+  node_id: string;
+  title: string;
+  html_url: string;
+  labels: Array<string | { name?: string | null }>;
+  body?: string | null;
+  state?: unknown;
+  updated_at?: unknown;
+}): IssueTask {
+  if (typeof data.updated_at !== 'string' || !Number.isFinite(Date.parse(data.updated_at))) {
+    throw new Error(`Issue #${data.number} is missing a valid updated_at timestamp.`);
+  }
+  const labels = data.labels.map((label) => (typeof label === 'string' ? label : label.name || ''));
+  const state = normalizeIssueState(data.state);
+  const task = {
+    issueNumber: data.number,
+    issueNodeId: data.node_id,
+    title: data.title,
+    url: data.html_url,
+    labels,
+    body: data.body || '',
+    state,
+    updatedAt: data.updated_at,
+  };
+  return { ...task, snapshot: createIssueTaskSnapshot(task) };
 }
 
 export async function createTaskIssue(
@@ -79,17 +114,7 @@ export async function queryReadyIssueTasks(
     order: 'asc',
   });
 
-  const tasks: IssueTask[] = data.items.map((item) => ({
-    issueNumber: item.number,
-    issueNodeId: item.node_id,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((l: string | { name?: string }) =>
-      typeof l === 'string' ? l : l.name || '',
-    ),
-    body: item.body || '',
-    state: normalizeIssueState(item.state),
-  }));
+  const tasks: IssueTask[] = data.items.map((item) => normalizeIssueTask(item));
 
   // Local filter: agent type, capabilities, risk level
   return tasks.filter((t) => {
@@ -138,16 +163,6 @@ export async function getIssueTaskByNumber(
 
   return {
     status: 'found',
-    task: {
-      issueNumber: data.number,
-      issueNodeId: data.node_id,
-      title: data.title,
-      url: data.html_url,
-      labels: data.labels.map((label: string | { name?: string }) =>
-        typeof label === 'string' ? label : label.name || '',
-      ),
-      body: data.body || '',
-      state: normalizeIssueState(data.state),
-    },
+    task: normalizeIssueTask(data),
   };
 }

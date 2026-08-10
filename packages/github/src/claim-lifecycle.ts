@@ -40,6 +40,9 @@ export interface ClaimLifecycleResult {
   owner?: string;
   prUrl?: string;
   expiresAt?: string;
+  ttlMinutes?: number;
+  heartbeatMinutes?: number;
+  nextHeartbeatAt?: string;
   postconditions: ClaimLifecyclePostcondition[];
   errorCode?: ClaimLifecycleErrorCode;
   recoveryCommand?: string;
@@ -64,13 +67,16 @@ export interface ClaimLifecycleDependencies {
   now(): Date;
 }
 
-interface HeartbeatMetadata {
+export interface HeartbeatMetadata {
   schema: 'openslack.heartbeat.v1';
   issue_number: number;
   agent_id: string;
   heartbeat_at: string;
   expires_at: string;
   claim_ref: string;
+  ttl_minutes?: number;
+  heartbeat_minutes?: number;
+  next_heartbeat_at?: string;
 }
 
 export interface ClaimReviewMetadata {
@@ -160,7 +166,10 @@ export function parseHeartbeatMetadata(body: string | null | undefined): Heartbe
     typeof parsed.agent_id !== 'string' ||
     typeof parsed.heartbeat_at !== 'string' ||
     typeof parsed.expires_at !== 'string' ||
-    typeof parsed.claim_ref !== 'string'
+    typeof parsed.claim_ref !== 'string' ||
+    (parsed.ttl_minutes !== undefined && !Number.isSafeInteger(parsed.ttl_minutes)) ||
+    (parsed.heartbeat_minutes !== undefined && !Number.isSafeInteger(parsed.heartbeat_minutes)) ||
+    (parsed.next_heartbeat_at !== undefined && typeof parsed.next_heartbeat_at !== 'string')
   ) {
     return null;
   }
@@ -227,8 +236,7 @@ function resolveStrictOwner(
   issueNumber: number,
   claimRef: string,
 ): string {
-  const claimOwners = new Set<string>();
-  const heartbeatOwners = new Set<string>();
+  const claims = [];
   for (const comment of comments) {
     const claim = parseClaimMetadata(comment.body);
     if (
@@ -236,24 +244,49 @@ function resolveStrictOwner(
       claim.claim_ref === claimRef &&
       AGENT_ID_PATTERN.test(claim.agent_id)
     ) {
-      claimOwners.add(claim.agent_id);
-    }
-    const heartbeat = parseHeartbeatMetadata(comment.body);
-    if (
-      heartbeat?.issue_number === issueNumber &&
-      heartbeat.claim_ref === claimRef &&
-      AGENT_ID_PATTERN.test(heartbeat.agent_id)
-    ) {
-      heartbeatOwners.add(heartbeat.agent_id);
+      claims.push(claim);
     }
   }
-  // The original claim marker is authoritative. Heartbeats preserve owner
-  // continuity only for legacy/truncated histories where no claim marker is
-  // available; a conflicting heartbeat cannot override a real claim.
-  const owners = claimOwners.size > 0 ? claimOwners : heartbeatOwners;
-  if (owners.size === 0) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
+  if (claims.length === 0) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
+  claims.sort((left, right) => Date.parse(right.claimed_at) - Date.parse(left.claimed_at));
+  const newestTimestamp = claims[0].claimed_at;
+  const owners = new Set(
+    claims.filter((claim) => claim.claimed_at === newestTimestamp).map((claim) => claim.agent_id),
+  );
   if (owners.size !== 1) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISMATCH');
   return [...owners][0];
+}
+
+function claimLease(
+  comments: Array<{ body?: string | null }>,
+  issueNumber: number,
+  claimRef: string,
+): { ttlMinutes: number; heartbeatMinutes: number } {
+  const claims = comments
+    .map((comment) => parseClaimMetadata(comment.body))
+    .filter(
+      (claim): claim is NonNullable<typeof claim> =>
+        claim?.issue_number === issueNumber && claim.claim_ref === claimRef,
+    )
+    .sort((left, right) => Date.parse(right.claimed_at) - Date.parse(left.claimed_at));
+  const claim = claims[0];
+  if (claim) {
+    let ttlMinutes = claim.ttl_minutes;
+    if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes! < 1 || ttlMinutes! > 480) {
+      const duration = (Date.parse(claim.expires_at) - Date.parse(claim.claimed_at)) / 60_000;
+      ttlMinutes =
+        Number.isSafeInteger(duration) && duration >= 1 && duration <= 480 ? duration : 60;
+    }
+    const effectiveTtlMinutes = ttlMinutes ?? 60;
+    const heartbeatMinutes =
+      Number.isSafeInteger(claim.heartbeat_minutes) &&
+      claim.heartbeat_minutes! >= 1 &&
+      claim.heartbeat_minutes! <= 120
+        ? claim.heartbeat_minutes!
+        : Math.min(15, effectiveTtlMinutes);
+    return { ttlMinutes: effectiveTtlMinutes, heartbeatMinutes };
+  }
+  throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
 }
 
 function requireMatchingOwner(owner: string, agentId: string): void {
@@ -342,6 +375,7 @@ function findRecentMatchingHeartbeat(
       Number.isFinite(expiresMs) &&
       nowMs >= heartbeatMs &&
       nowMs - heartbeatMs <= HEARTBEAT_RETRY_DEDUP_WINDOW_MS &&
+      (metadata.ttl_minutes === undefined || metadata.ttl_minutes === ttlMinutes) &&
       expiresMs - heartbeatMs === expectedLeaseMs &&
       expiresMs > nowMs
     ) {
@@ -368,6 +402,9 @@ function failedResult(
     owner?: string;
     prUrl?: string;
     expiresAt?: string;
+    ttlMinutes?: number;
+    heartbeatMinutes?: number;
+    nextHeartbeatAt?: string;
     postconditions?: ClaimLifecyclePostcondition[];
     recoveryCommand?: string;
   } = {},
@@ -382,6 +419,9 @@ function failedResult(
     ...(options.owner ? { owner: options.owner } : {}),
     ...(options.prUrl ? { prUrl: options.prUrl } : {}),
     ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
+    ...(options.ttlMinutes ? { ttlMinutes: options.ttlMinutes } : {}),
+    ...(options.heartbeatMinutes ? { heartbeatMinutes: options.heartbeatMinutes } : {}),
+    ...(options.nextHeartbeatAt ? { nextHeartbeatAt: options.nextHeartbeatAt } : {}),
     postconditions: options.postconditions ?? [],
     errorCode: code,
     ...(options.recoveryCommand ? { recoveryCommand: options.recoveryCommand } : {}),
@@ -396,12 +436,14 @@ export async function heartbeatClaim(
   input: HeartbeatClaimInput,
   dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<ClaimLifecycleResult> {
-  const ttlMinutes = input.ttlMinutes ?? 60;
   const claimRef = canonicalClaimRef(input.issueNumber);
   let owner: string | undefined;
   try {
     validateCommonInput(input.issueNumber, input.agentId);
-    if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 120) {
+    if (
+      input.ttlMinutes !== undefined &&
+      (!Number.isSafeInteger(input.ttlMinutes) || input.ttlMinutes < 1 || input.ttlMinutes > 480)
+    ) {
       throw new ClaimLifecycleFailure('CLAIM_INVALID_INPUT');
     }
     const client = await requireLiveClient(dependencies);
@@ -409,6 +451,9 @@ export async function heartbeatClaim(
     const comments = await listClaimComments(client, input.issueNumber);
     owner = resolveStrictOwner(comments, input.issueNumber, claimRef);
     requireMatchingOwner(owner, input.agentId);
+    const originalLease = claimLease(comments, input.issueNumber, claimRef);
+    const ttlMinutes = input.ttlMinutes ?? originalLease.ttlMinutes;
+    const heartbeatMinutes = originalLease.heartbeatMinutes;
 
     const now = dependencies.now();
     const existingHeartbeat = findRecentMatchingHeartbeat(
@@ -419,6 +464,14 @@ export async function heartbeatClaim(
       now,
     );
     if (existingHeartbeat) {
+      const nextHeartbeatAt =
+        existingHeartbeat.next_heartbeat_at ??
+        new Date(
+          Math.min(
+            Date.parse(existingHeartbeat.heartbeat_at) + heartbeatMinutes * 60_000,
+            Date.parse(existingHeartbeat.expires_at),
+          ),
+        ).toISOString();
       return {
         schema: 'openslack.claim_lifecycle.v1',
         operation: 'heartbeat',
@@ -428,6 +481,9 @@ export async function heartbeatClaim(
         agentId: input.agentId,
         owner,
         expiresAt: existingHeartbeat.expires_at,
+        ttlMinutes,
+        heartbeatMinutes,
+        nextHeartbeatAt,
         postconditions: [
           { name: 'claim_ref_present', satisfied: true },
           { name: 'owner_matches', satisfied: true },
@@ -436,6 +492,9 @@ export async function heartbeatClaim(
       };
     }
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60_000).toISOString();
+    const nextHeartbeatAt = new Date(
+      Math.min(now.getTime() + heartbeatMinutes * 60_000, Date.parse(expiresAt)),
+    ).toISOString();
     const body = renderHeartbeatMetadata({
       schema: 'openslack.heartbeat.v1',
       issue_number: input.issueNumber,
@@ -443,6 +502,9 @@ export async function heartbeatClaim(
       heartbeat_at: now.toISOString(),
       expires_at: expiresAt,
       claim_ref: claimRef,
+      ttl_minutes: ttlMinutes,
+      heartbeat_minutes: heartbeatMinutes,
+      next_heartbeat_at: nextHeartbeatAt,
     });
     let commentId: number;
     try {
@@ -458,6 +520,9 @@ export async function heartbeatClaim(
         outcome: 'partial',
         owner,
         expiresAt,
+        ttlMinutes,
+        heartbeatMinutes,
+        nextHeartbeatAt,
         postconditions: [
           { name: 'claim_ref_present', satisfied: true },
           { name: 'owner_matches', satisfied: true },
@@ -477,7 +542,10 @@ export async function heartbeatClaim(
         metadata?.issue_number !== input.issueNumber ||
         metadata.agent_id !== input.agentId ||
         metadata.claim_ref !== claimRef ||
-        metadata.expires_at !== expiresAt
+        metadata.expires_at !== expiresAt ||
+        metadata.ttl_minutes !== ttlMinutes ||
+        metadata.heartbeat_minutes !== heartbeatMinutes ||
+        metadata.next_heartbeat_at !== nextHeartbeatAt
       ) {
         throw new ClaimLifecycleFailure('CLAIM_POSTCONDITION_FAILED');
       }
@@ -486,6 +554,9 @@ export async function heartbeatClaim(
         outcome: 'partial',
         owner,
         expiresAt,
+        ttlMinutes,
+        heartbeatMinutes,
+        nextHeartbeatAt,
         postconditions: [
           { name: 'claim_ref_present', satisfied: true },
           { name: 'owner_matches', satisfied: true },
@@ -503,6 +574,9 @@ export async function heartbeatClaim(
       agentId: input.agentId,
       owner,
       expiresAt,
+      ttlMinutes,
+      heartbeatMinutes,
+      nextHeartbeatAt,
       postconditions: [
         { name: 'claim_ref_present', satisfied: true },
         { name: 'owner_matches', satisfied: true },
@@ -779,6 +853,9 @@ export function renderClaimLifecycleResult(result: ClaimLifecycleResult): string
   if (result.owner) lines.push(`Owner: ${result.owner}`);
   if (result.prUrl) lines.push(`PR: ${result.prUrl}`);
   if (result.expiresAt) lines.push(`Expires: ${result.expiresAt}`);
+  if (result.ttlMinutes) lines.push(`TTL: ${result.ttlMinutes} minutes`);
+  if (result.heartbeatMinutes) lines.push(`Heartbeat interval: ${result.heartbeatMinutes} minutes`);
+  if (result.nextHeartbeatAt) lines.push(`Next heartbeat: ${result.nextHeartbeatAt}`);
   for (const postcondition of result.postconditions) {
     lines.push(`- ${postcondition.satisfied ? 'PASS' : 'FAIL'} ${postcondition.name}`);
   }

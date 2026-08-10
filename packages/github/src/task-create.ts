@@ -1,8 +1,14 @@
-import { classifyPaths, RISK_ZONES, taskRiskLevelToZone, type RiskZone } from '@openslack/kernel';
+import {
+  classifyDeclaredScopes,
+  RISK_ZONES,
+  taskRiskLevelToZone,
+  type RiskZone,
+} from '@openslack/kernel';
 import { createTaskIssue } from './issue-tasks.js';
 import {
   parseIssueTaskManifest,
   renderIssueTaskManifest,
+  isGitHubAgentType,
   type IssueTaskManifest,
 } from './manifest.js';
 
@@ -46,7 +52,21 @@ export interface TaskCreationResult extends TaskCreationPreview {
   nodeId?: string;
 }
 
-const DEFAULT_FORBIDDEN_PATHS = ['.env', '*.pem', '*.key', 'secrets/**', 'credentials/**'];
+const DEFAULT_FORBIDDEN_PATHS = ['.env', '**/*.pem', '**/*.key', 'secrets/**', 'credentials/**'];
+const YELLOW_PRODUCT_PATHS = [
+  'apps/**',
+  'packages/core/**',
+  'packages/workspace/**',
+  'packages/runtime/**',
+  'packages/github/**',
+  'packages/pr/**',
+  'packages/operator/**',
+  'packages/chat-gateway/**',
+  'packages/collaboration/**',
+  'packages/agent-runtime/**',
+  'packages/tui/**',
+  'packages/workflows/**',
+];
 
 interface TaskTemplateDefaults {
   template: TaskTemplateKind;
@@ -67,7 +87,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p1',
     riskLevel: 'medium',
-    allowedPaths: ['apps/**', 'packages/**', 'docs/**'],
+    allowedPaths: [...YELLOW_PRODUCT_PATHS, 'docs/**'],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['typescript', 'testing'],
     outputContract: ['draft_pr', 'workspace_run_record'],
@@ -78,7 +98,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p2',
     riskLevel: 'low',
-    allowedPaths: ['docs/**', 'README.md'],
+    allowedPaths: ['docs/**'],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['documentation'],
     outputContract: ['draft_pr'],
@@ -89,7 +109,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p1',
     riskLevel: 'medium',
-    allowedPaths: ['apps/**', 'packages/**'],
+    allowedPaths: [...YELLOW_PRODUCT_PATHS],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['typescript', 'testing'],
     outputContract: ['draft_pr', 'workspace_run_record'],
@@ -100,7 +120,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p2',
     riskLevel: 'medium',
-    allowedPaths: ['apps/**', 'packages/**'],
+    allowedPaths: [...YELLOW_PRODUCT_PATHS],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['typescript', 'architecture'],
     outputContract: ['draft_pr', 'workspace_run_record'],
@@ -111,7 +131,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p2',
     riskLevel: 'low',
-    allowedPaths: ['docs/**', 'packages/**', 'apps/**'],
+    allowedPaths: ['docs/**', ...YELLOW_PRODUCT_PATHS],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['code-review'],
     outputContract: ['issue_comment_summary', 'no_change'],
@@ -122,7 +142,7 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     agentType: 'codex',
     priority: 'p2',
     riskLevel: 'low',
-    allowedPaths: ['docs/**', 'packages/**', 'apps/**'],
+    allowedPaths: ['docs/**', ...YELLOW_PRODUCT_PATHS],
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['investigation'],
     outputContract: ['issue_comment_summary', 'no_change'],
@@ -171,7 +191,7 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
         task_id: generateTaskId(),
         title: input.title || 'Invalid task',
         status: 'ready',
-        agent_type: input.agentType || 'codex',
+        agent_type: isGitHubAgentType(input.agentType) ? input.agentType : 'codex',
         risk_level: 'low',
       },
       riskZone: 'green',
@@ -187,7 +207,7 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
   const allowedPaths = unique(input.allowedPaths ?? defaults.allowedPaths);
   const forbiddenPaths = unique(input.forbiddenPaths ?? defaults.forbiddenPaths);
   const requiredCapabilities = unique(input.requiredCapabilities ?? defaults.requiredCapabilities);
-  const riskZone = classifyPaths(allowedPaths.length > 0 ? allowedPaths : ['docs/**']);
+  const riskZone = classifyDeclaredScopes(allowedPaths.length > 0 ? allowedPaths : ['docs/**']);
   const humanApprovalRequiredFor =
     input.humanApprovalRequiredFor ?? defaults.humanApprovalRequiredFor;
 
@@ -200,13 +220,16 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
   }
 
   const agentType = input.agentType ?? defaults.agentType;
+  if (!isGitHubAgentType(agentType)) {
+    errors.push(`Agent type is unsupported: ${agentType}`);
+  }
   const manifest: IssueTaskManifest = {
     schema: 'openslack.github_issue_task.v1',
     task_id: generateTaskId(),
     title: input.title,
     status: 'ready',
     task_type: input.template,
-    agent_type: agentType,
+    agent_type: isGitHubAgentType(agentType) ? agentType : 'codex',
     risk_level: input.riskLevel ?? zoneToRiskLevel(riskZone),
     priority: input.priority ?? defaults.priority,
     required_capabilities: requiredCapabilities,

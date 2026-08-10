@@ -1,5 +1,10 @@
-export { classifyPaths } from './zones.js';
-export { compilePathGlob, matchesPathGlob } from './path-glob.js';
+export { classifyDeclaredScopes, classifyPaths } from './zones.js';
+export {
+  compilePathGlob,
+  matchesPathGlob,
+  pathGlobCovers,
+  pathGlobsIntersect,
+} from './path-glob.js';
 export type { PathGlobMatcher } from './path-glob.js';
 export {
   highestRiskZone,

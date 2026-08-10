@@ -522,18 +522,29 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .description('Extend a claim lease after verifying the ref and owner')
     .requiredOption('--issue-number <n>', 'Issue number')
     .requiredOption('--agent-id <id>', 'Claim owner agent ID')
-    .option('--ttl-minutes <n>', 'Lease extension in minutes (1-120)', '60')
-    .action(async (options: { issueNumber: string; agentId: string; ttlMinutes: string }) => {
+    .option(
+      '--ttl-minutes <n>',
+      'Lease extension in minutes (1-480); defaults to original claim TTL',
+    )
+    .action(async (options: { issueNumber: string; agentId: string; ttlMinutes?: string }) => {
       const issueNumber = positiveInteger(options.issueNumber);
-      const ttlMinutes = positiveInteger(options.ttlMinutes);
-      if (!issueNumber || !ttlMinutes || ttlMinutes > 120) {
-        console.error('CLAIM_INVALID_INPUT: issue number and TTL must be valid positive integers.');
+      const ttlMinutes =
+        options.ttlMinutes === undefined ? undefined : positiveInteger(options.ttlMinutes);
+      if (!issueNumber || (options.ttlMinutes !== undefined && (!ttlMinutes || ttlMinutes > 480))) {
+        console.error(
+          'CLAIM_INVALID_INPUT: issue number and TTL must be valid positive integers (TTL 1-480).',
+        );
         process.exitCode = 1;
         return;
       }
+      const validatedTtlMinutes = ttlMinutes ?? undefined;
       try {
         printClaimLifecycleResult(
-          await heartbeatClaim({ issueNumber, agentId: options.agentId, ttlMinutes }),
+          await heartbeatClaim({
+            issueNumber,
+            agentId: options.agentId,
+            ...(validatedTtlMinutes === undefined ? {} : { ttlMinutes: validatedTtlMinutes }),
+          }),
         );
       } catch {
         console.error('CLAIM_API_UNAVAILABLE: claim heartbeat failed safely.');

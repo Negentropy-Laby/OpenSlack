@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compilePathGlob, matchesPathGlob } from '../path-glob.js';
+import {
+  compilePathGlob,
+  matchesPathGlob,
+  pathGlobCovers,
+  pathGlobsIntersect,
+} from '../path-glob.js';
 
 describe('path glob matcher', () => {
   it('keeps regex metacharacters literal without throwing', () => {
@@ -23,5 +28,20 @@ describe('path glob matcher', () => {
     expect(matchesPathGlob('packages/**', 'packages/core/nested/file.ts')).toBe(true);
     expect(matchesPathGlob('**/secret.txt', 'secret.txt')).toBe(true);
     expect(matchesPathGlob('**/secret.txt', 'deep/nested/secret.txt')).toBe(true);
+  });
+
+  it('decides glob intersections without interpreting regex metacharacters', () => {
+    expect(pathGlobsIntersect('packages/**', 'packages/kernel/src/**')).toBe(true);
+    expect(pathGlobsIntersect('packages/core/**', 'packages/kernel/src/**')).toBe(false);
+    expect(pathGlobsIntersect('docs/[abc].ts', 'docs/a.ts')).toBe(false);
+    expect(pathGlobsIntersect('**', 'secrets/**')).toBe(true);
+  });
+
+  it('proves declared scopes are covered by permission globs', () => {
+    expect(pathGlobCovers('**', 'packages/core/**')).toBe(true);
+    expect(pathGlobCovers('docs/**', 'docs/evidence/**')).toBe(true);
+    expect(pathGlobCovers('packages/core/**', 'packages/**')).toBe(false);
+    expect(pathGlobCovers('**/*.pem', 'docs/**/*.pem')).toBe(true);
+    expect(pathGlobCovers('**/*.pem', 'docs/**')).toBe(false);
   });
 });

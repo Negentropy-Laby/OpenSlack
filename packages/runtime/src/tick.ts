@@ -2,7 +2,11 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FileClaimBroker } from '@openslack/core';
 import type { ClaimResult } from '@openslack/core';
-import { normalizeErrorMessage, type IssueTask } from '@openslack/github';
+import {
+  normalizeErrorMessage,
+  type AutoClaimGateRejectionCode,
+  type IssueTask,
+} from '@openslack/github';
 import { authorizeAgentAction, isTaskRiskLevel } from '@openslack/kernel';
 import type { AgentPrincipal } from '@openslack/kernel';
 import { resolveAgentPrincipal } from './identity.js';
@@ -51,6 +55,20 @@ export interface TickResult {
   claimResult?: ClaimResult;
   message: string;
   principal?: AgentPrincipal;
+  candidateRejections?: CandidateRejectionDiagnostic[];
+  lease?: {
+    expiresAt: string;
+    ttlMinutes: number;
+    heartbeatMinutes: number;
+    nextHeartbeatAt: string;
+  };
+  projection?: { status: 'synchronized' | 'repair_required'; recoveryCommand?: string };
+}
+
+export interface CandidateRejectionDiagnostic {
+  issueNumber: number;
+  code: AutoClaimGateRejectionCode | 'AUTHORIZATION_DENIED' | 'STALE_CANDIDATE';
+  reason: string;
 }
 
 export interface TickOptions {
@@ -101,6 +119,27 @@ export function validateTickTargetOptions(
 
 function targetFailure(issueNumber: number, reason: string): string {
   return `TARGET_ISSUE_NOT_CLAIMABLE: issue #${issueNumber}: ${reason.trim() || 'claim was denied'}`;
+}
+
+const MAX_CANDIDATE_DIAGNOSTICS = 10;
+const MAX_CANDIDATE_REASON_LENGTH = 240;
+
+function addCandidateRejection(
+  diagnostics: CandidateRejectionDiagnostic[],
+  issueNumber: number,
+  code: CandidateRejectionDiagnostic['code'],
+  reason: string,
+): void {
+  if (diagnostics.length >= MAX_CANDIDATE_DIAGNOSTICS) return;
+  const normalized = reason.replace(/\s+/gu, ' ').trim() || 'candidate was rejected';
+  diagnostics.push({
+    issueNumber,
+    code,
+    reason:
+      normalized.length <= MAX_CANDIDATE_REASON_LENGTH
+        ? normalized
+        : `${normalized.slice(0, MAX_CANDIDATE_REASON_LENGTH - 1)}…`,
+  });
 }
 
 export async function tickAgent(
@@ -186,6 +225,7 @@ export async function tickAgent(
         dependencies.github ?? (await import('@openslack/github'));
 
       let tasks: IssueTask[];
+      const candidateRejections: CandidateRejectionDiagnostic[] = [];
       if (issueNumber !== undefined) {
         const lookup = await getIssueTaskByNumber(issueNumber);
         if (lookup.status === 'not_found') {
@@ -240,6 +280,7 @@ export async function tickAgent(
               ),
             };
           }
+          addCandidateRejection(candidateRejections, task.issueNumber, gate.code, gate.reason);
           continue;
         }
 
@@ -261,13 +302,23 @@ export async function tickAgent(
               ),
             };
           }
+          addCandidateRejection(
+            candidateRejections,
+            task.issueNumber,
+            'AUTHORIZATION_DENIED',
+            candidateAuth.evidence.reason,
+          );
           continue;
         }
 
         const result = await claimIssueTask({
           issueNumber: task.issueNumber,
           agentId,
+          taskId: gate.manifest.task_id,
+          taskSnapshot: task.snapshot,
+          riskZone: gate.riskZone,
           ttlMinutes: gate.manifest.lease?.ttl_minutes ?? 60,
+          heartbeatMinutes: gate.manifest.lease?.heartbeat_minutes ?? 15,
           capabilities: typedCapabilities,
           principal,
         });
@@ -278,7 +329,10 @@ export async function tickAgent(
             taskId: `#${task.issueNumber}`,
             leaseId: result.claimRef,
             principal,
-            message: `Claimed issue #${task.issueNumber} via ref ${result.claimRef}`,
+            candidateRejections,
+            lease: result.lease,
+            projection: result.projection,
+            message: `Claimed issue #${task.issueNumber} via ref ${result.claimRef}; next heartbeat ${result.lease.nextHeartbeatAt}`,
           };
         }
         if (issueNumber !== undefined) {
@@ -288,6 +342,15 @@ export async function tickAgent(
             principal,
             message: targetFailure(task.issueNumber, result.reason || 'claim was denied'),
           };
+        }
+        if (result.reason === 'STALE_CANDIDATE') {
+          addCandidateRejection(
+            candidateRejections,
+            task.issueNumber,
+            'STALE_CANDIDATE',
+            'Issue changed after selection; tentative claim was rolled back',
+          );
+          continue;
         }
         if (result.reason !== 'ALREADY_CLAIMED') {
           return {
@@ -303,7 +366,11 @@ export async function tickAgent(
         agentId,
         action: 'idle',
         principal,
-        message: 'No eligible unclaimed ready issues on GitHub. Idle exit.',
+        candidateRejections,
+        message:
+          candidateRejections.length === 0
+            ? 'No eligible unclaimed ready issues on GitHub. Idle exit.'
+            : `No eligible unclaimed ready issues on GitHub; ${candidateRejections.length} candidate(s) rejected.`,
       };
     } catch (e) {
       return {

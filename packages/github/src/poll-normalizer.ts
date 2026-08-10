@@ -40,6 +40,7 @@ export function normalizePollIssue(
     owner,
     repo,
     issueNumber: issue.number,
+    ...(issue.node_id ? { issueNodeId: issue.node_id } : {}),
     title: issue.title ?? '',
     url: issue.html_url ?? '',
     labels,
