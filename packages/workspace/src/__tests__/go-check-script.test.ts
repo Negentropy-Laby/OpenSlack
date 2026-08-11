@@ -489,6 +489,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       '-run \\^Test\\(CancelAckMustBindPersistedCancel\\|LateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal\\)\\$',
     );
     expect(log).toContain('-count=100');
+    expect(
+      readFileSync(join(moduleRoot, 'cmd/runner-server/qualification_test.go'), 'utf8'),
+    ).toContain('TestGS8BQualificationProcessIdentityIsStableWithinOneProcess');
     expect(log).toContain('-run \\^TestGS8BRestartQualification\\$');
     expect(log).toContain('-run \\^TestGS8BImageDefaultOff\\$');
     expect(log).toContain('WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://application:8080');
@@ -1421,6 +1424,7 @@ function addWorkflowRunnerEvidence(moduleRoot: string): void {
       'import "testing"',
       '',
       'func TestGS8BQualification(t *testing.T) {}',
+      'func TestGS8BQualificationProcessIdentityIsStableWithinOneProcess(t *testing.T) {}',
       'func TestGS8BRestartQualification(t *testing.T) {}',
       'func TestGS8BImageDefaultOff(t *testing.T) {}',
       '',

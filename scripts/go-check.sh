@@ -770,6 +770,7 @@ detect_capabilities() {
     local workflow_runner_test
     for workflow_runner_test in \
       TestGS8BQualification \
+      TestGS8BQualificationProcessIdentityIsStableWithinOneProcess \
       TestGS8BRestartQualification \
       TestGS8BImageDefaultOff; do
       grep -Eq "^func[[:space:]]+${workflow_runner_test}\\(" "${module_dir}"/cmd/runner-server/*_test.go ||
