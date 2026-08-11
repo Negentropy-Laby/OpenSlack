@@ -1,8 +1,15 @@
 // Re-exports from agent-runtime (backward compat)
 export { bootstrapAgent } from './bootstrap.js';
 export type { BootstrapCheck, BootstrapResult } from './bootstrap.js';
-export { tickAgent } from './tick.js';
-export type { TickResult } from './tick.js';
+export { tickAgent, validateTickTargetOptions } from './tick.js';
+export type {
+  CandidateRejectionDiagnostic,
+  TickDependencies,
+  TickOptions,
+  TickResult,
+  TickTargetOptionsInput,
+  TickTargetOptionsValidation,
+} from './tick.js';
 
 // Agent Identity
 export {

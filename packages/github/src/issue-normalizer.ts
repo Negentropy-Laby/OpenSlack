@@ -12,10 +12,12 @@ export interface NormalizedIssueEvent {
   owner: string;
   repo: string;
   issueNumber: number;
+  issueNodeId?: string;
   title: string;
   url: string;
   labels: string[];
   body: string;
+  state?: 'open' | 'closed' | 'unknown';
   senderLogin: string;
   deliveryId: string;
   updatedAt: string;
@@ -51,13 +53,15 @@ export function normalizeIssueEvent(
       ? i.number
       : null;
   const title = typeof i.title === 'string' && i.title.length > 0 ? i.title : null;
+  const issueNodeId = typeof i.node_id === 'string' && i.node_id.length > 0 ? i.node_id : null;
   const url = typeof i.html_url === 'string' && i.html_url.length > 0 ? i.html_url : null;
   const body = typeof i.body === 'string' ? i.body : '';
+  const state = i.state === 'open' || i.state === 'closed' ? i.state : 'unknown';
   const updatedAt =
     typeof i.updated_at === 'string' && Number.isFinite(Date.parse(i.updated_at))
       ? i.updated_at
       : null;
-  if (issueNumber === null || !title || !url || !updatedAt) return null;
+  if (issueNumber === null || !issueNodeId || !title || !url || !updatedAt) return null;
 
   const labels: string[] = [];
   if (Array.isArray(i.labels)) {
@@ -95,10 +99,12 @@ export function normalizeIssueEvent(
     owner: ownerLogin,
     repo: repoName,
     issueNumber,
+    issueNodeId,
     title,
     url,
     labels,
     body,
+    state,
     senderLogin,
     deliveryId,
     updatedAt,

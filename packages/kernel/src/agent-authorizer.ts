@@ -9,24 +9,12 @@ import type {
   AuthorizationEvidence,
 } from './types.js';
 
-import { classifyPaths } from './zones.js';
-
-const RISK_ZONE_ORDER: RiskZone[] = ['green', 'yellow', 'red', 'black'];
+import { classifyDeclaredScopes, classifyPaths } from './zones.js';
+import { compilePathGlob, pathGlobCovers, pathGlobsIntersect } from './path-glob.js';
+import { highestRiskZone, isRiskZone, RISK_ZONES } from './risk.js';
 
 function riskRank(zone: RiskZone): number {
-  return RISK_ZONE_ORDER.indexOf(zone);
-}
-
-function matchesGlob(path: string, glob: string): boolean {
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '<<GLOBSTAR_SLASH>>')
-    .replace(/\*\*/g, '<<GLOBSTAR>>')
-    .replace(/\*/g, '[^/]*')
-    .replace(/<<GLOBSTAR_SLASH>>/g, '(.*/)?')
-    .replace(/<<GLOBSTAR>>/g, '.*');
-  const regex = new RegExp(`^${escaped}$`);
-  return regex.test(path);
+  return RISK_ZONES.indexOf(zone);
 }
 
 function denyEvidence(
@@ -97,9 +85,10 @@ export function authorizeAgentAction(args: {
   snapshot: AgentPermissionSnapshot | null;
   action: string;
   changedPaths?: string[];
+  declaredScope?: string[];
   riskZone?: RiskZone;
 }): AuthorizationResult {
-  const { snapshot, action, changedPaths = [], riskZone } = args;
+  const { snapshot, action, riskZone } = args;
   const diagnostics: string[] = [`Authorizing action="${action}"`];
 
   // 1. Unknown principal
@@ -121,11 +110,72 @@ export function authorizeAgentAction(args: {
   const agentId = principal.registry_id;
   const baseEvidence = { identity_verified: true, registry_active: true };
 
+  if (args.changedPaths !== undefined && args.declaredScope !== undefined) {
+    diagnostics.push('DENY: changedPaths and declaredScope cannot both be supplied');
+    return {
+      decision: 'deny',
+      evidence: denyEvidence(
+        'ambiguous_path_scope',
+        'Authorization input cannot contain both changed paths and a declared scope',
+        agentId,
+        action,
+        baseEvidence,
+      ),
+      diagnostics,
+    };
+  }
+
+  if (riskZone !== undefined && !isRiskZone(riskZone)) {
+    diagnostics.push(`DENY: invalid requested risk zone "${String(riskZone)}"`);
+    return {
+      decision: 'deny',
+      evidence: denyEvidence(
+        'invalid_risk_zone',
+        `Authorization input has unsupported risk zone "${String(riskZone)}"`,
+        agentId,
+        action,
+        baseEvidence,
+      ),
+      diagnostics,
+    };
+  }
+
+  if (!isRiskZone(permissions.max_risk_zone)) {
+    diagnostics.push(
+      `DENY: invalid permission max_risk_zone "${String(permissions.max_risk_zone)}"`,
+    );
+    return {
+      decision: 'deny',
+      evidence: denyEvidence(
+        'invalid_permission_risk_zone',
+        `Agent "${agentId}" has unsupported max_risk_zone "${String(permissions.max_risk_zone)}"`,
+        agentId,
+        action,
+        baseEvidence,
+      ),
+      diagnostics,
+    };
+  }
+
+  const authorizedPaths = args.declaredScope ?? args.changedPaths ?? [];
+  const derivedRiskZone =
+    authorizedPaths.length > 0
+      ? args.declaredScope
+        ? classifyDeclaredScopes(authorizedPaths)
+        : classifyPaths(authorizedPaths)
+      : undefined;
+  const effectiveRiskZone = highestRiskZone(riskZone, derivedRiskZone);
+  if (derivedRiskZone) {
+    diagnostics.push(
+      `Derived risk zone "${derivedRiskZone}" from ${args.declaredScope ? 'declared scope' : 'changed paths'}`,
+    );
+  }
+
   // 2. Suspended/retired identity — checked via registry employment status passed through
   //    (the identity.status is set during registry parse from employment.status)
 
   // 3. Black zone
-  if (riskZone === 'black') {
+  if (effectiveRiskZone === 'black') {
     diagnostics.push('DENY: black zone — unconditional');
     return {
       decision: 'deny',
@@ -141,28 +191,36 @@ export function authorizeAgentAction(args: {
   }
 
   // 4. Risk ceiling
-  if (riskZone && riskRank(riskZone) > riskRank(permissions.max_risk_zone)) {
+  if (effectiveRiskZone && riskRank(effectiveRiskZone) > riskRank(permissions.max_risk_zone)) {
     diagnostics.push(
-      `DENY: risk zone "${riskZone}" exceeds max_risk_zone "${permissions.max_risk_zone}"`,
+      `DENY: risk zone "${effectiveRiskZone}" exceeds max_risk_zone "${permissions.max_risk_zone}"`,
     );
     return {
       decision: 'deny',
       evidence: denyEvidence(
         'risk_ceiling',
-        `Action requires "${riskZone}" zone but agent "${agentId}" ceiling is "${permissions.max_risk_zone}"`,
+        `Action requires "${effectiveRiskZone}" zone but agent "${agentId}" ceiling is "${permissions.max_risk_zone}"`,
         agentId,
         action,
-        { ...baseEvidence, risk_zone: riskZone },
+        { ...baseEvidence, risk_zone: effectiveRiskZone },
       ),
       diagnostics,
     };
   }
 
   // 5. Path deny (deny overrides allow)
-  if (changedPaths.length > 0) {
-    for (const p of changedPaths) {
-      for (const denyGlob of permissions.paths.deny) {
-        if (matchesGlob(p, denyGlob)) {
+  if (authorizedPaths.length > 0) {
+    const denyMatchers = permissions.paths.deny.map((glob) => ({
+      glob,
+      matches: compilePathGlob(glob),
+    }));
+    const allowMatchers = permissions.paths.allow.map((glob) => ({
+      glob,
+      matches: compilePathGlob(glob),
+    }));
+    for (const p of authorizedPaths) {
+      for (const { glob: denyGlob, matches } of denyMatchers) {
+        if (args.declaredScope ? pathGlobsIntersect(p, denyGlob) : matches(p)) {
           diagnostics.push(`DENY: path "${p}" matches deny glob "${denyGlob}"`);
           return {
             decision: 'deny',
@@ -171,7 +229,7 @@ export function authorizeAgentAction(args: {
               `Path "${p}" is denied by pattern "${denyGlob}" for agent "${agentId}"`,
               agentId,
               action,
-              { ...baseEvidence, risk_zone: riskZone },
+              { ...baseEvidence, risk_zone: effectiveRiskZone },
             ),
             diagnostics,
           };
@@ -180,8 +238,10 @@ export function authorizeAgentAction(args: {
     }
 
     // 6. Path allow check
-    for (const p of changedPaths) {
-      const allowed = permissions.paths.allow.some((glob) => matchesGlob(p, glob));
+    for (const p of authorizedPaths) {
+      const allowed = allowMatchers.some(({ glob, matches }) =>
+        args.declaredScope ? pathGlobCovers(glob, p) : matches(p),
+      );
       if (!allowed) {
         diagnostics.push(`DENY: path "${p}" not in allow list`);
         return {
@@ -191,7 +251,7 @@ export function authorizeAgentAction(args: {
             `Path "${p}" is outside allowed paths for agent "${agentId}"`,
             agentId,
             action,
-            { ...baseEvidence, risk_zone: riskZone },
+            { ...baseEvidence, risk_zone: effectiveRiskZone },
           ),
           diagnostics,
         };
@@ -242,7 +302,7 @@ export function authorizeAgentAction(args: {
         `Action "${action}" is denied for agent "${agentId}"`,
         agentId,
         action,
-        { ...baseEvidence, risk_zone: riskZone },
+        { ...baseEvidence, risk_zone: effectiveRiskZone },
       ),
       diagnostics,
     };
@@ -257,7 +317,7 @@ export function authorizeAgentAction(args: {
         agent_id: agentId,
         action,
         ...baseEvidence,
-        risk_zone: riskZone,
+        risk_zone: effectiveRiskZone,
       },
       prompt_message: `Agent "${agentId}" requests permission to execute "${action}". Allow?`,
       diagnostics,
@@ -273,7 +333,7 @@ export function authorizeAgentAction(args: {
         agent_id: agentId,
         action,
         ...baseEvidence,
-        risk_zone: riskZone,
+        risk_zone: effectiveRiskZone,
       },
       diagnostics,
     };
@@ -288,7 +348,7 @@ export function authorizeAgentAction(args: {
       `Action "${action}" is not in the permissions list for agent "${agentId}"`,
       agentId,
       action,
-      { ...baseEvidence, risk_zone: riskZone },
+      { ...baseEvidence, risk_zone: effectiveRiskZone },
     ),
     diagnostics,
   };

@@ -216,7 +216,8 @@ The autonomous execution core. Agents discover, claim, and complete tasks throug
 - **Observe:** `github watch start` durably routes configured Issue, push, PR,
   review, and check observations with repository-scoped live refresh
 - **Discover:** `agent tick --source github-issues` queries GitHub for ready issues
-- **Claim:** Atomic `refs/heads/openslack/claims/issue-{n}` git refs prevent duplicate claims
+- **Claim:** Atomic refs prevent duplicate claims; the lease is granted only after an exact Issue
+  snapshot re-read and structured owner evidence are both verified
 - **Execute:** Worktree isolation → git commit → governed delivery → synchronized draft PR
 - **Complete:** PR merged → claim ref deleted → issue → done
 
@@ -369,7 +370,8 @@ CREATE → READY → CLAIMED → RUNNING → REVIEW → DONE
 ```
 
 - **READY:** Issue has `openslack:ready` label. Agent can attempt claim.
-- **CLAIMED:** `refs/heads/openslack/claims/issue-{n}` exists. Atomic lock prevents duplicates.
+- **CLAIMED:** The claim ref exists and its structured owner/snapshot evidence is verified. Labels
+  are a repairable projection.
 - **RUNNING:** Agent created worktree. Heartbeat extends lease.
 - **REVIEW:** Draft PR submitted. Issue label updated.
 - **DONE:** PR merged. Claim ref deleted. Issue closed.
@@ -384,8 +386,9 @@ Tasks are GitHub Issues with structured YAML in an `openslack-task` code fence:
 schema: openslack.github_issue_task.v1
 task_id: TASK-2026-000123
 title: Fix failing workspace validation
+status: ready
 agent_type: codex
-risk_level: low
+risk_level: medium
 required_capabilities:
   - typescript
   - workspace

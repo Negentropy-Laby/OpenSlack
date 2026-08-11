@@ -29,9 +29,10 @@ function recordBlockedEvent(
 export function buildAutoClaimFn(root: string): AutoClaimFn {
   return async (event: NormalizedIssueEvent, agentIds: string[]) => {
     const { resolveAgentPrincipal } = await import('@openslack/runtime');
-    const { authorizeAgentAction } = await import('@openslack/kernel');
+    const { authorizeAgentAction, isTaskRiskLevel } = await import('@openslack/kernel');
     const { recordEvent: recEvt } = await import('@openslack/collaboration');
-    const { claimIssueTask, runAutoClaimGates } = await import('@openslack/github');
+    const { claimIssueTask, createIssueTaskSnapshot, normalizeErrorMessage, runAutoClaimGates } =
+      await import('@openslack/github');
     const { parseAgentRegistry } = await import('@openslack/workspace');
 
     for (const agentId of agentIds) {
@@ -49,15 +50,30 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
       }
 
       // 2. Parse agent registry for capabilities and max risk
-      const registry = parseAgentRegistry(root, agentId);
+      let registry: ReturnType<typeof parseAgentRegistry>;
+      try {
+        registry = parseAgentRegistry(root, agentId);
+      } catch (error) {
+        const reason = `agent registry is invalid: ${normalizeErrorMessage(error)}`;
+        console.warn(`[Auto-Claim] ${agentId}: ${reason}`);
+        recordBlockedEvent(recEvt, event, agentId, reason);
+        continue;
+      }
       const agentCapabilities = registry
         ? { primary: registry.capabilities.primary, secondary: registry.capabilities.secondary }
         : { primary: [] as string[], secondary: [] as string[] };
-      const agentMaxRiskLevel = registry?.task_matching?.max_risk_level ?? 'medium';
+      const configuredMaxRiskLevel = registry?.task_matching?.max_risk_level;
+      if (configuredMaxRiskLevel !== undefined && !isTaskRiskLevel(configuredMaxRiskLevel)) {
+        const reason = `agent registry is invalid: unsupported task_matching.max_risk_level "${String(configuredMaxRiskLevel)}"`;
+        console.warn(`[Auto-Claim] ${agentId}: ${reason}`);
+        recordBlockedEvent(recEvt, event, agentId, reason);
+        continue;
+      }
+      const agentMaxRiskLevel = configuredMaxRiskLevel ?? 'medium';
 
       // 3. Run manifest gates (extract + validate + filter)
       const gateResult = runAutoClaimGates({
-        body: event.body,
+        candidate: event,
         agentCapabilities,
         agentMaxRiskLevel,
       });
@@ -66,12 +82,26 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
         recordBlockedEvent(recEvt, event, agentId, gateResult.reason);
         continue;
       }
+      if (!event.issueNodeId) {
+        const reason = 'candidate is missing the canonical GitHub Issue node identity';
+        console.warn(`[Auto-Claim] ${agentId}: ${reason}`);
+        recordBlockedEvent(recEvt, event, agentId, reason);
+        continue;
+      }
+      const taskSnapshot = createIssueTaskSnapshot({
+        issueNumber: event.issueNumber,
+        issueNodeId: event.issueNodeId,
+        state: event.state ?? 'unknown',
+        labels: event.labels,
+        body: event.body,
+        updatedAt: event.updatedAt,
+      });
 
       // 4. Authorize with changedPaths and riskZone
       const auth = authorizeAgentAction({
         snapshot: resolved.snapshot,
         action: 'task.claim',
-        changedPaths: gateResult.changedPaths,
+        declaredScope: gateResult.declaredScope,
         riskZone: gateResult.riskZone,
       });
       if (auth.decision !== 'allow') {
@@ -85,15 +115,24 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
         const claimResult = await claimIssueTask({
           issueNumber: event.issueNumber,
           agentId,
+          taskId: gateResult.manifest.task_id,
+          taskSnapshot,
+          riskZone: gateResult.riskZone,
           owner: event.owner,
           repo: event.repo,
-          ttlMinutes: 60,
+          ttlMinutes: gateResult.manifest.lease?.ttl_minutes ?? 60,
+          heartbeatMinutes: gateResult.manifest.lease?.heartbeat_minutes ?? 15,
           principal: resolved.principal,
         });
         if (claimResult.claimStatus === 'granted') {
           console.log(
             `[Auto-Claim] ${agentId} claimed ${event.owner}/${event.repo}#${event.issueNumber}`,
           );
+          if (claimResult.projection.status === 'repair_required') {
+            console.warn(
+              `[Auto-Claim] claim label projection requires repair: ${claimResult.projection.recoveryCommand}`,
+            );
+          }
           try {
             recEvt({
               type: 'task.claimed',
@@ -113,6 +152,12 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
             // best-effort event recording
           }
         } else {
+          if (
+            claimResult.reason === 'API_ERROR' ||
+            claimResult.reason === 'RECONCILIATION_REQUIRED'
+          ) {
+            throw new Error(claimResult.reason);
+          }
           console.warn(
             `[Auto-Claim] ${agentId}: claim denied — ${claimResult.reason ?? 'unknown'}`,
           );
@@ -124,8 +169,13 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
           );
         }
       } catch (err) {
-        console.warn(`[Auto-Claim] ${agentId}: claim failed — ${(err as Error).message}`);
-        recordBlockedEvent(recEvt, event, agentId, `claim error: ${(err as Error).message}`);
+        const message = normalizeErrorMessage(err);
+        console.warn(`[Auto-Claim] ${agentId}: claim failed — ${message}`);
+        recordBlockedEvent(recEvt, event, agentId, `claim error: ${message}`);
+        // Once the authoritative claim operation starts, any thrown failure is
+        // delivery-fatal. Retrying another agent could amplify an ambiguous API
+        // outcome or race the same Issue snapshot.
+        throw err;
       }
     }
   };

@@ -7,9 +7,11 @@ const basePayload = {
   action: 'opened',
   issue: {
     number: 42,
+    node_id: 'I_kwDO42',
     title: 'Fix failing setup',
     html_url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/42',
     body: 'The setup command fails on Windows.',
+    state: 'open',
     updated_at: '2026-05-25T10:00:00Z',
     labels: [
       { name: 'openslack:task', id: 1 },
@@ -36,7 +38,9 @@ describe('normalizeIssueEvent', () => {
     expect(result!.owner).toBe('Negentropy-Laby');
     expect(result!.repo).toBe('OpenSlack');
     expect(result!.issueNumber).toBe(42);
+    expect(result!.issueNodeId).toBe('I_kwDO42');
     expect(result!.title).toBe('Fix failing setup');
+    expect(result!.state).toBe('open');
     expect(result!.labels).toEqual(['openslack:task', 'openslack:ready']);
     expect(result!.deliveryId).toBe('abc-123-def');
     expect(result).toMatchObject({

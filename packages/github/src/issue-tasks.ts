@@ -1,4 +1,9 @@
 import { getClient } from './client.js';
+import {
+  createIssueTaskSnapshot,
+  type CanonicalIssueState,
+  type IssueTaskSnapshot,
+} from './issue-task-snapshot.js';
 
 export interface IssueTask {
   issueNumber: number;
@@ -7,17 +12,49 @@ export interface IssueTask {
   url: string;
   labels: string[];
   body: string;
-  taskManifest?: IssueTaskManifest;
+  state?: CanonicalIssueState;
+  updatedAt: string;
+  snapshot: IssueTaskSnapshot;
 }
 
-export interface IssueTaskManifest {
-  taskId?: string;
-  agentType?: string;
-  riskLevel?: string;
-  requiredCapabilities?: string[];
-  allowedPaths?: string[];
-  forbiddenPaths?: string[];
-  outputContract?: string[];
+export type IssueTaskLookupResult =
+  | { status: 'found'; task: IssueTask }
+  | { status: 'not_found' }
+  | { status: 'pull_request' };
+
+type IssueTaskClientFactory = typeof getClient;
+
+function normalizeIssueState(state: unknown): CanonicalIssueState {
+  if (state === 'open' || state === 'closed') return state;
+  return 'unknown';
+}
+
+function normalizeIssueTask(data: {
+  number: number;
+  node_id: string;
+  title: string;
+  html_url: string;
+  labels: Array<string | { name?: string | null }>;
+  body?: string | null;
+  state?: unknown;
+  updated_at?: unknown;
+}): IssueTask {
+  if (typeof data.updated_at !== 'string' || !Number.isFinite(Date.parse(data.updated_at))) {
+    throw new Error(`Issue #${data.number} is missing a valid updated_at timestamp.`);
+  }
+  const labels = data.labels.map((label) => (typeof label === 'string' ? label : label.name || ''));
+  const state = normalizeIssueState(data.state);
+  const task = {
+    issueNumber: data.number,
+    issueNodeId: data.node_id,
+    title: data.title,
+    url: data.html_url,
+    labels,
+    body: data.body || '',
+    state,
+    updatedAt: data.updated_at,
+  };
+  return { ...task, snapshot: createIssueTaskSnapshot(task) };
 }
 
 export async function createTaskIssue(
@@ -53,8 +90,9 @@ export async function queryReadyIssueTasks(
     capabilities?: string[];
     maxRisk?: string;
   } = {},
+  getClientFn: IssueTaskClientFactory = getClient,
 ): Promise<IssueTask[]> {
-  const client = await getClient();
+  const client = await getClientFn();
   if (client.isDryRun) {
     console.log('[DRY RUN] Would query ready issue tasks');
     return [];
@@ -76,16 +114,7 @@ export async function queryReadyIssueTasks(
     order: 'asc',
   });
 
-  const tasks: IssueTask[] = data.items.map((item) => ({
-    issueNumber: item.number,
-    issueNodeId: item.node_id,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((l: string | { name?: string }) =>
-      typeof l === 'string' ? l : l.name || '',
-    ),
-    body: item.body || '',
-  }));
+  const tasks: IssueTask[] = data.items.map((item) => normalizeIssueTask(item));
 
   // Local filter: agent type, capabilities, risk level
   return tasks.filter((t) => {
@@ -106,72 +135,34 @@ export async function queryReadyIssueTasks(
   });
 }
 
-export function parseTaskManifest(body: string): IssueTaskManifest | undefined {
-  const match = body.match(/^```yaml\s*\n\s*([\s\S]*?)\s*\n```/m);
-  if (!match) return undefined;
+export async function getIssueTaskByNumber(
+  issueNumber: number,
+  getClientFn: IssueTaskClientFactory = getClient,
+): Promise<IssueTaskLookupResult> {
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error('Issue number must be a positive integer.');
+  }
+
+  const client = await getClientFn({ requireLive: true });
+  if (client.isDryRun)
+    throw new Error('Live GitHub credentials are required for exact Issue lookup.');
+
+  let data;
   try {
-    const lines = match[1].split('\n');
-    const manifest: Record<string, unknown> = {};
-    let currentList: string[] | null = null;
-    let currentListKey = '';
+    ({ data } = await client.octokit.issues.get({
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: issueNumber,
+    }));
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return { status: 'not_found' };
+    throw error;
+  }
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('- ')) {
-        if (currentList !== null) currentList.push(trimmed.slice(2).trim());
-        continue;
-      }
-      currentList = null;
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
-      const key = trimmed.slice(0, colonIdx).trim();
-      const value = trimmed
-        .slice(colonIdx + 1)
-        .trim()
-        .replace(/^["']|["']$/g, '');
-      if (value === '') {
-        currentList = [];
-        currentListKey = key;
-        manifest[key] = currentList;
-      } else {
-        manifest[key] = value;
-      }
-    }
+  if (data.pull_request) return { status: 'pull_request' };
 
-    return {
-      taskId: manifest.task_id as string | undefined,
-      agentType: manifest.agent_type as string | undefined,
-      riskLevel: manifest.risk_level as string | undefined,
-      requiredCapabilities: manifest.required_capabilities as string[] | undefined,
-      allowedPaths: manifest.allowed_paths as string[] | undefined,
-      forbiddenPaths: manifest.forbidden_paths as string[] | undefined,
-      outputContract: manifest.output_contract as string[] | undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-export function buildTaskManifestYaml(manifest: IssueTaskManifest): string {
-  const lines: string[] = [];
-  if (manifest.taskId) lines.push(`task_id: ${manifest.taskId}`);
-  if (manifest.agentType) lines.push(`agent_type: ${manifest.agentType}`);
-  if (manifest.riskLevel) lines.push(`risk_level: ${manifest.riskLevel}`);
-  if (manifest.requiredCapabilities?.length) {
-    lines.push('required_capabilities:');
-    for (const c of manifest.requiredCapabilities) lines.push(`  - ${c}`);
-  }
-  if (manifest.allowedPaths?.length) {
-    lines.push('allowed_paths:');
-    for (const p of manifest.allowedPaths) lines.push(`  - ${p}`);
-  }
-  if (manifest.forbiddenPaths?.length) {
-    lines.push('forbidden_paths:');
-    for (const p of manifest.forbiddenPaths) lines.push(`  - ${p}`);
-  }
-  if (manifest.outputContract?.length) {
-    lines.push('output_contract:');
-    for (const o of manifest.outputContract) lines.push(`  - ${o}`);
-  }
-  return lines.join('\n');
+  return {
+    status: 'found',
+    task: normalizeIssueTask(data),
+  };
 }

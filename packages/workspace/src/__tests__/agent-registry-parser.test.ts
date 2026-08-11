@@ -166,4 +166,18 @@ approval_rules:
     expect(result!.permissions.actions['pr.review']).toBe('allow');
     expect(result!.permissions.actions['*']).toBeUndefined();
   });
+
+  it('fails closed on an unsupported task-matching risk ceiling', () => {
+    writeRegistry(
+      'reviewer',
+      `
+schema: openslack.agent_registry.v2
+task_matching:
+  max_risk_level: hig
+`,
+    );
+    expect(() => parseAgentRegistry(fixtureRoot, 'reviewer')).toThrow(
+      'unsupported task_matching.max_risk_level "hig"',
+    );
+  });
 });

@@ -146,6 +146,7 @@
         "@octokit/rest": "^21.0.0",
         "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
+        "ajv": "8.17.1",
         "yaml": "^2.7.0",
       },
     },

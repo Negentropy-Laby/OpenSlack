@@ -375,8 +375,9 @@ export class WatchDaemon {
             await this.autoClaimFn!(repositoryEvent, agentIds);
           } catch (err) {
             console.error(
-              `[Auto-Claim] Error for ${event.owner}/${event.repo}#${event.issueNumber}: ${(err as Error).message}`,
+              `[Auto-Claim] Error for ${event.owner}/${event.repo}#${event.issueNumber}: ${err instanceof Error ? err.message : 'unknown error'}`,
             );
+            if (awaitDelivery) throw err;
           }
         };
         if (awaitDelivery) await autoClaim();

@@ -1,4 +1,5 @@
 export type RiskZone = 'green' | 'yellow' | 'red' | 'black';
+export type TaskRiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
 export interface ZoneDefinition {
   zone: RiskZone;
@@ -124,7 +125,7 @@ export interface AgentRegistryEntry {
   task_matching?: {
     github_owner?: string;
     github_project_number?: number;
-    max_risk_level?: string;
+    max_risk_level?: TaskRiskLevel;
   };
   scheduler?: {
     preferred_mode?: string;

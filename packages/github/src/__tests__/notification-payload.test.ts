@@ -60,6 +60,7 @@ describe('notification projections', () => {
         action: 'opened',
         issue: {
           number: 7,
+          node_id: 'I_kwDO7',
           title: 'Issue title',
           html_url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/7',
           updated_at: '2026-07-15T10:00:00Z',

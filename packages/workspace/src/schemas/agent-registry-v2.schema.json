@@ -160,7 +160,10 @@
       "properties": {
         "github_owner": { "type": "string" },
         "github_project_number": { "type": "integer" },
-        "max_risk_level": { "type": "string" }
+        "max_risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        }
       }
     },
     "scheduler": {

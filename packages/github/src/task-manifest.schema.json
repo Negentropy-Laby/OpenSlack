@@ -3,7 +3,7 @@
   "$id": "https://openslack.dev/schemas/github-issue-task.schema.json",
   "title": "OpenSlack GitHub Issue Task Manifest",
   "type": "object",
-  "required": ["schema", "task_id", "title", "agent_type", "risk_level"],
+  "required": ["schema", "task_id", "title", "status", "agent_type", "risk_level"],
   "properties": {
     "schema": { "type": "string", "const": "openslack.github_issue_task.v1" },
     "task_id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
@@ -13,7 +13,7 @@
       "enum": ["ready", "claimed", "running", "review", "done", "blocked"]
     },
     "task_type": { "type": "string" },
-    "agent_type": { "type": "string" },
+    "agent_type": { "type": "string", "enum": ["codex", "reviewer", "sync", "memory"] },
     "risk_level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
     "priority": { "type": "string", "enum": ["p0", "p1", "p2", "p3"] },
     "required_capabilities": {
@@ -52,6 +52,8 @@
     },
     "lease": {
       "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_minutes", "heartbeat_minutes"],
       "properties": {
         "ttl_minutes": { "type": "integer", "minimum": 1, "maximum": 480 },
         "heartbeat_minutes": { "type": "integer", "minimum": 1, "maximum": 120 }
