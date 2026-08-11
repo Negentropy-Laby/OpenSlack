@@ -40,7 +40,9 @@ export function hashWorkflowSource(source: string | Uint8Array): string {
   return sha256(source);
 }
 
-function functionSource(value: Function | undefined): string | null {
+function functionSource(
+  value: WorkflowIdentitySource['preview'] | WorkflowIdentitySource['run'],
+): string | null {
   return value === undefined ? null : Function.prototype.toString.call(value);
 }
 

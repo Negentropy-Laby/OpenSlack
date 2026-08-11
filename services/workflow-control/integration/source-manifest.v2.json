@@ -40,7 +40,7 @@
   "contractInputs": {
     "workflowControlContractManifest": {
       "path": "packages/workflows/contracts/workflow-control/v1/manifest.json",
-      "sha256": "aeff2b9afc459c7df646378f6be4bd37884c772838688bbdf01bf3379638b813"
+      "sha256": "3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86"
     },
     "workflowControlShadowContractManifest": {
       "path": "packages/workflows/contracts/workflow-control-shadow/v1/manifest.json",
@@ -52,7 +52,7 @@
     },
     "workflowControlAuthorityContractManifest": {
       "path": "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
-      "sha256": "0aa312cc35126a51d0d6fe448c357c14cd5cbd13fd6cda8745603852f6cc5c27"
+      "sha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1"
     },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
