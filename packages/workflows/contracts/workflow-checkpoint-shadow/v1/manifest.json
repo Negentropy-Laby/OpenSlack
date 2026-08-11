@@ -1,0 +1,127 @@
+{
+  "schema": "openslack.workflow_checkpoint_shadow_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "observer_only",
+    "authorityEligible": false,
+    "shadowDefault": "disabled",
+    "goParticipatesInResume": false,
+    "journalIndependentFromRunStore": true
+  },
+  "operations": ["checkpoint_commit", "resume_advance"],
+  "transport": {
+    "method": "POST",
+    "path": "/v1/shadow/workflow-control/checkpoints",
+    "networkMode": "loopback-ip-literal",
+    "replayHeader": "Idempotency-Replayed: true",
+    "acceptedStatuses": [200, 201],
+    "reconciliationStatus": 202
+  },
+  "algorithms": {
+    "body": "ecmascript_canonical_json_utf8",
+    "hash": "sha256",
+    "idempotencyKey": "openslack.workflow-checkpoint-shadow.v1.{observationHash}",
+    "sourceSequence": "independent_monotonic_per_run_event_stream_starting_at_1",
+    "phaseId": "phase-{zero_based_manifest_index}",
+    "checkpointCommitPoint": "after_phase_work",
+    "duplicateReceipt": "exact_stored_bytes_transport_header_only"
+  },
+  "variants": {
+    "observation": ["checkpoint_commit", "resume_advance"],
+    "receipt": ["accepted_matched", "accepted_mismatched", "reconciliation_required"]
+  },
+  "limits": {
+    "maxSafeInteger": 9007199254740991,
+    "maxSourceSequence": 9007199254740990,
+    "maxReceiptBytes": 65536,
+    "maxArtifactBytes": 4194304,
+    "maxJournalFileBytes": 1048576,
+    "maxJournalEntries": 16384,
+    "maxJournalBytes": 536870912,
+    "maxPendingObservations": 1024
+  },
+  "localOnlySchemas": [
+    "schemas/workflow-checkpoint-artifact.v1.schema.json",
+    "schemas/workflow-checkpoint-control.v1.schema.json"
+  ],
+  "crossLanguageSchemas": [
+    "schemas/workflow-checkpoint-shadow-observation.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-accepted-receipt.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-reconciliation-receipt.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-receipt.v1.schema.json"
+  ],
+  "rawDataForbidden": [
+    "prompt",
+    "providerRequest",
+    "providerResponse",
+    "workflowInput",
+    "cacheKey",
+    "cacheValue",
+    "artifactBytes",
+    "resultBytes",
+    "credentials",
+    "bearerToken",
+    "endpoint",
+    "environment",
+    "absolutePath",
+    "transcript",
+    "stack"
+  ],
+  "artifacts": {
+    "schemas/workflow-checkpoint-artifact.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-artifact.v1.schema.json",
+      "byteLength": 832,
+      "sha256": "aaef0187bc743d2cce66298ab2b6df3d2e6aff792caa2067287fb82178f56bcd"
+    },
+    "schemas/workflow-checkpoint-control.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-control.v1.schema.json",
+      "byteLength": 4730,
+      "sha256": "a9cfc1964ad7e07ae4465c1d6ebc45894a1de783feb11f0b74a89c52e5a768a3"
+    },
+    "schemas/workflow-checkpoint-shadow-observation.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-shadow-observation.v1.schema.json",
+      "byteLength": 5776,
+      "sha256": "ff897bdb0fbbb67dbfc34b18c0e806b2b4355aed7a9e6cf2c60b4e1282acb61b"
+    },
+    "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json",
+      "byteLength": 1853,
+      "sha256": "cdd342fc1a46d02e2f62864c4fdbf7dfcc200ea92f4b057fd67c986d8c7553d2"
+    },
+    "schemas/workflow-checkpoint-shadow-accepted-receipt.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-shadow-accepted-receipt.v1.schema.json",
+      "byteLength": 2440,
+      "sha256": "c3e79f67463bd5034095661b12d72aacfe57dfc2e80542b67266624cf796bbdf"
+    },
+    "schemas/workflow-checkpoint-shadow-reconciliation-receipt.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-shadow-reconciliation-receipt.v1.schema.json",
+      "byteLength": 1869,
+      "sha256": "9636788c37b7dc975f6678f6d75d707c4998bb7b5f74756a0cfdb3f65ee4c289"
+    },
+    "schemas/workflow-checkpoint-shadow-receipt.v1.schema.json": {
+      "path": "schemas/workflow-checkpoint-shadow-receipt.v1.schema.json",
+      "byteLength": 437,
+      "sha256": "10eafa8f93a075c6eacade4a73e7065cc96628572431778e419c84b137ac231d"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 11948,
+      "sha256": "4cad9d491a30c8d15e70320163448d9fe6bbed01ba019ee441bcd301f67b92a8"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-checkpoint-artifact.v1.schema.json",
+    "schemas/workflow-checkpoint-control.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-observation.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-accepted-receipt.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-reconciliation-receipt.v1.schema.json",
+    "schemas/workflow-checkpoint-shadow-receipt.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

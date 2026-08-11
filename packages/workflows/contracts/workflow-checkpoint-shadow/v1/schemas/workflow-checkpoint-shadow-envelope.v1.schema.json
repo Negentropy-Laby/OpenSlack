@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-checkpoint-shadow/v1/schemas/workflow-checkpoint-shadow-envelope.v1.schema.json",
+  "title": "OpenSlack Workflow checkpoint shadow envelope v1",
+  "$comment": "Runtime validation additionally requires revision = sourceSequence + 1 and observationHash = sha256(canonical observation bytes).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_checkpoint_shadow_envelope.v1" },
+    "goRole": { "const": "observer_only" },
+    "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740990 },
+    "operation": { "enum": ["checkpoint_commit", "resume_advance"] },
+    "observation": { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" },
+    "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "required": ["schema", "goRole", "sourceSequence", "operation", "observation", "observationHash"],
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": { "const": "checkpoint_commit" },
+        "observation": {
+          "allOf": [
+            { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" },
+            {
+              "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json#/$defs/checkpointCommitVariant"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": { "const": "resume_advance" },
+        "observation": {
+          "allOf": [
+            { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" },
+            {
+              "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json#/$defs/resumeAdvanceVariant"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

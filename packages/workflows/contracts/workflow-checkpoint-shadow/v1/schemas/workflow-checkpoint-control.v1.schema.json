@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-checkpoint-shadow/v1/schemas/workflow-checkpoint-control.v1.schema.json",
+  "title": "OpenSlack local TypeScript Workflow checkpoint control v1",
+  "$comment": "Local-only authority state. Runtime validation additionally enforces revision, ordered checkpoint prefix, binding lineage, and pending-observation sequence relationships.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_checkpoint_control.v1" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "resumeGeneration": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "sourceSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740990 },
+    "shadowEnabled": { "type": "boolean" },
+    "shadowOverflowed": { "type": "boolean" },
+    "activeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "workflowRunId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "attemptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "correlationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        "runnerBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "workflowSourceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "required": [
+        "workspaceId",
+        "jobId",
+        "workflowRunId",
+        "attemptId",
+        "leaseId",
+        "fencingToken",
+        "correlationId",
+        "runnerBuildHash",
+        "workflowSourceHash",
+        "manifestHash",
+        "inputHash"
+      ]
+    },
+    "seenBindingHashes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "checkpoints": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json#/$defs/checkpoint" }
+    },
+    "pendingObservations": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740990 },
+          "operation": { "enum": ["checkpoint_commit", "resume_advance"] },
+          "observation": { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" }
+        },
+        "required": ["sourceSequence", "operation", "observation"],
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "operation": { "const": "checkpoint_commit" },
+              "observation": {
+                "allOf": [
+                  { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" },
+                  {
+                    "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json#/$defs/checkpointCommitVariant"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "operation": { "const": "resume_advance" },
+              "observation": {
+                "allOf": [
+                  { "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json" },
+                  {
+                    "$ref": "workflow-checkpoint-shadow-observation.v1.schema.json#/$defs/resumeAdvanceVariant"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    }
+  },
+  "required": [
+    "schema",
+    "runId",
+    "revision",
+    "resumeGeneration",
+    "sourceSequence",
+    "shadowEnabled",
+    "shadowOverflowed",
+    "activeBinding",
+    "seenBindingHashes",
+    "checkpoints",
+    "pendingObservations",
+    "updatedAt"
+  ]
+}

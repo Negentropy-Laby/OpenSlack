@@ -13,7 +13,9 @@ the runner listener.
 
 Only one runner-server may own a workspace. A dedicated PostgreSQL advisory lock enforces this for
 the process lifetime. Each boot derives a new supervisor identity, allowing startup recovery to
-distinguish old attempts. Readiness requires database access and exact schema version 2.
+distinguish old attempts. Readiness requires database access and a clean supported schema version
+from 2 through 4. Version 4 adds the isolated GS9-C checkpoint-shadow namespace; it does not add
+checkpoint authority to the runner tables.
 
 Operational handling is fail closed:
 
@@ -30,3 +32,18 @@ The metrics endpoint is authenticated and workspace-bound. When runner control i
 as a separate Prometheus target and load the supplied runner alerts. Logs must use bounded IDs and
 codes; never log the bearer token, descriptor content, workflow input, prompt, transcript, or
 provider payload.
+
+## Optional checkpoint observation
+
+Checkpoint observation remains disabled unless the runner host is explicitly configured with the
+closed `WORKFLOW_CONTROL_CHECKPOINT_SHADOW_*` settings. These names are reserved and cannot be
+supplied by the sealed bundle manifest. The trusted runner host injects them into the child only
+after accepting an advancing lease receipt; this is the only production composition path that can
+mint the opaque attempt/lease/fence binding consumed by the TypeScript checkpoint store.
+
+The child first persists artifact bytes and the TypeScript control head, then durably appends the
+hash-only observation to `.openslack.local`. Remote delivery is asynchronous and fail-open. An
+operator may inspect or explicitly flush the bounded local journal during qualification, but must
+never copy its bearer, provider payload, workflow input, artifact bytes, prompts, results, or
+absolute paths into evidence. A journal integrity error blocks only creation of false shadow
+evidence; a Go transport outage cannot undo the authoritative TypeScript checkpoint.

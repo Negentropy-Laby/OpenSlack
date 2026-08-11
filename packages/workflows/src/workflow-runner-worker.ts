@@ -21,6 +21,11 @@ import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-sou
 import type { RunResult, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
+import {
+  createWorkflowCheckpointObservationPort,
+  createWorkflowCheckpointShadowHttpPublisher,
+  type WorkflowCheckpointObservationPort,
+} from './workflow-checkpoint-shadow.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -30,6 +35,12 @@ export interface WorkflowRunnerWorkerConfig {
   readonly workspaceRoot: string;
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
+  readonly checkpointShadow?: {
+    readonly endpoint: string;
+    readonly bearerToken: string;
+    readonly callerId: string;
+    readonly journalRoot: string;
+  };
 }
 
 export class WorkflowRunnerWorkerConfigError extends Error {
@@ -156,18 +167,78 @@ export function loadWorkflowRunnerWorkerConfig(
   if (!runnerBuildHash || !HASH.test(runnerBuildHash)) {
     throw new WorkflowRunnerWorkerConfigError('Worker build hash is invalid.');
   }
+  const workspaceRoot = absolutePath(
+    environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
+    'Worker workspace root',
+  );
+  const checkpointKeys = [
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT',
+  ] as const;
+  const enabledValue = environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED;
+  if (enabledValue !== undefined && enabledValue !== '0' && enabledValue !== '1') {
+    throw new WorkflowRunnerWorkerConfigError('Workflow checkpoint shadow enablement is invalid.');
+  }
+  const checkpointEnabled = enabledValue === '1';
+  if (!checkpointEnabled && checkpointKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled Workflow checkpoint shadow configuration must be empty.',
+    );
+  }
+  const checkpointShadow = checkpointEnabled
+    ? {
+        endpoint: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT ?? '',
+        bearerToken: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN ?? '',
+        callerId: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID ?? '',
+        journalRoot: absolutePath(
+          environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT,
+          'Workflow checkpoint shadow journal root',
+        ),
+      }
+    : undefined;
+  if (
+    checkpointEnabled &&
+    (!checkpointShadow?.endpoint ||
+      checkpointShadow.bearerToken.length < 32 ||
+      !SAFE_ID.test(checkpointShadow.callerId))
+  ) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Workflow checkpoint shadow configuration is invalid.',
+    );
+  }
+  if (checkpointShadow) {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(checkpointShadow.endpoint);
+    } catch {
+      throw new WorkflowRunnerWorkerConfigError('Workflow checkpoint shadow endpoint is invalid.');
+    }
+    const localRoot = join(workspaceRoot, '.openslack.local');
+    const journalRelative = relative(localRoot, checkpointShadow.journalRoot);
+    if (
+      endpoint.protocol !== 'http:' ||
+      !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
+      journalRelative.length === 0 ||
+      journalRelative.startsWith('..') ||
+      isAbsolute(journalRelative)
+    ) {
+      throw new WorkflowRunnerWorkerConfigError(
+        'Workflow checkpoint shadow must use loopback and a workspace-local journal.',
+      );
+    }
+  }
   return Object.freeze({
     enabled: true,
     workspaceId,
-    workspaceRoot: absolutePath(
-      environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
-      'Worker workspace root',
-    ),
+    workspaceRoot,
     descriptorRoot: absolutePath(
       environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT,
       'Worker descriptor root',
     ),
     runnerBuildHash,
+    ...(checkpointShadow ? { checkpointShadow: Object.freeze(checkpointShadow) } : {}),
   });
 }
 
@@ -327,8 +398,12 @@ async function executeWorkflowRunnerJob(
   descriptor: WorkflowRunnerExecutionDescriptor,
   context: WorkflowRunnerExecutionContext,
   workspaceRoot: string,
+  checkpointObservationPort?: WorkflowCheckpointObservationPort,
 ): Promise<RunResult> {
-  const store = new RunStore({ baseDir: join(workspaceRoot, '.openslack.local', 'workflows') });
+  const store = new RunStore({
+    baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+    checkpointObservationPort,
+  });
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
   const disposition = classifyWorkflowRunnerRunState(
@@ -352,14 +427,28 @@ async function executeWorkflowRunnerJob(
   };
 
   return disposition === 'initialize'
-    ? executeRunWithStore(workflow, common, store)
-    : executeResumeWithStore(workflow, common, store);
+    ? executeRunWithStore(workflow, common, store, context.checkpointAuthority)
+    : executeResumeWithStore(workflow, common, store, context.checkpointAuthority);
 }
 
 export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
+  checkpointObservationPort?: WorkflowCheckpointObservationPort,
 ): Promise<void> {
   installProtocolOnlyStreams();
+  const effectiveCheckpointObservationPort =
+    checkpointObservationPort ??
+    (config.checkpointShadow
+      ? await createWorkflowCheckpointObservationPort({
+          enabled: true,
+          journalRoot: config.checkpointShadow.journalRoot,
+          publisher: createWorkflowCheckpointShadowHttpPublisher({
+            endpoint: config.checkpointShadow.endpoint,
+            bearerToken: config.checkpointShadow.bearerToken,
+            callerId: config.checkpointShadow.callerId,
+          }),
+        })
+      : undefined);
   const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
   await descriptorStore.initialize();
   let closed = false;
@@ -388,7 +477,13 @@ export async function runWorkflowRunnerWorker(
       descriptor: WorkflowRunnerExecutionDescriptor,
       context: WorkflowRunnerExecutionContext,
     ): Promise<RunResult> => {
-      return executeWorkflowRunnerJob(workflow, descriptor, context, config.workspaceRoot);
+      return executeWorkflowRunnerJob(
+        workflow,
+        descriptor,
+        context,
+        config.workspaceRoot,
+        effectiveCheckpointObservationPort,
+      );
     },
   });
 

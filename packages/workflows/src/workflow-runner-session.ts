@@ -29,6 +29,10 @@ import {
   type WorkflowEffectBoundaryHandle,
   type WorkflowRunnerEffectEventPort,
 } from './workflow-runner-effect-boundary.js';
+import {
+  createWorkflowCheckpointLeaseAuthority,
+  type WorkflowCheckpointLeaseAuthority,
+} from './internal/workflow-checkpoint-lease-authority.js';
 
 export type WorkflowRunnerSessionState =
   | 'created'
@@ -73,6 +77,8 @@ export interface WorkflowRunnerSourceLoader<TPrepared = unknown> {
 export interface WorkflowRunnerExecutionContext {
   readonly signal: AbortSignal;
   readonly effectBoundary: WorkflowEffectBoundary;
+  /** Constructed only after lease_accept has an advancing receipt. */
+  readonly checkpointAuthority: WorkflowCheckpointLeaseAuthority;
 }
 
 export interface WorkflowRunnerSessionOptions<TPrepared = unknown> {
@@ -361,6 +367,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
 
   async #executeLease(): Promise<void> {
     const descriptor = this.#descriptor!;
+    const lease = this.#lease!;
     if (this.#abortController?.signal.aborted) {
       return this.#sendTerminalForError(this.#abortController.signal.reason);
     }
@@ -381,6 +388,19 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       const result = await this.#options.execute(workflow, descriptor, {
         signal: this.#abortController!.signal,
         effectBoundary: boundary,
+        checkpointAuthority: createWorkflowCheckpointLeaseAuthority({
+          workspaceId: lease.workspaceId,
+          jobId: lease.jobId,
+          workflowRunId: lease.workflowRunId,
+          attemptId: lease.attemptId,
+          leaseId: lease.leaseId,
+          fencingToken: lease.fencingToken,
+          correlationId: lease.correlationId,
+          runnerBuildHash: this.#options.runnerBuildHash,
+          workflowSourceHash: descriptor.workflowSourceHash,
+          manifestHash: descriptor.manifestHash,
+          inputHash: descriptor.inputHash,
+        }),
       });
       if (this.#effectAmbiguous) return this.#sendReconciliationTerminal();
       await this.#sendTerminal({

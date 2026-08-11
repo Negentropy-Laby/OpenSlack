@@ -29,7 +29,7 @@ const (
 
 var schemaPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
-// OpenPostgres creates an isolated schema, applies the complete GS9-B migration
+// OpenPostgres creates an isolated schema, applies the complete migration
 // chain, and
 // returns a pool whose search path is pinned to that schema. Tests that need a
 // live database skip explicitly when DATABASE_URL is absent.
@@ -252,6 +252,7 @@ func migrationPaths(t testing.TB) []string {
 		filepath.Join(migrationRoot, "000001_create_workflow_control_shadow.up.sql"),
 		filepath.Join(migrationRoot, "000002_create_workflow_runner_runtime.up.sql"),
 		filepath.Join(migrationRoot, "000003_create_workflow_control_authority.up.sql"),
+		filepath.Join(migrationRoot, "000004_create_workflow_control_checkpoint_shadow.up.sql"),
 	}
 }
 

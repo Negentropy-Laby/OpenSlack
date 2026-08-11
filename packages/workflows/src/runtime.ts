@@ -10,6 +10,7 @@ import type {
   PhaseCheckpoint,
   PrmsDoctorResult,
   WorkflowCall,
+  WorkflowCheckpointCommitInput,
 } from './types.js';
 import { resolvePermissions } from './permission-checker.js';
 import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js';
@@ -27,6 +28,11 @@ import type {
 import { canonicalJson, CanonicalJsonError } from './internal/canonical-json.js';
 import { cloneWorkflowArguments } from './internal/workflow-arguments.js';
 import { loadWorkflowCostConfig, type WorkflowCostConfig } from './cost.js';
+import {
+  workflowCheckpointBindingFromAuthority,
+  type WorkflowCheckpointLeaseAuthority,
+} from './internal/workflow-checkpoint-lease-authority.js';
+import { workflowCheckpointError } from './workflow-checkpoint-shadow-contract.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -207,7 +213,25 @@ function canonicalAuditDetail(value: unknown): string {
 }
 
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
+  return createRuntimeInternal(options);
+}
+
+/** @internal Accepted worker path; intentionally not exported from the package root. */
+export function createRuntimeWithCheckpointAuthority(
+  options: RuntimeOptions,
+  authority: WorkflowCheckpointLeaseAuthority,
+): WorkflowRuntime {
+  return createRuntimeInternal(options, authority);
+}
+
+function createRuntimeInternal(
+  options: RuntimeOptions,
+  checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
+): WorkflowRuntime {
   const { runId, mode, manifest, nestingDepth = 0, onWorkflowCall, onConfirm } = options;
+  const checkpointBinding = checkpointAuthority
+    ? workflowCheckpointBindingFromAuthority(checkpointAuthority)
+    : undefined;
   const runtimeArgs = cloneWorkflowArguments(options.args ?? {});
   let costConfigPromise: Promise<WorkflowCostConfig | null> | undefined;
   const getCostConfig = (): Promise<WorkflowCostConfig | null> => {
@@ -515,6 +539,30 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     get args() {
       return cloneWorkflowArguments(runtimeArgs);
     },
+    checkpoint: Object.freeze({
+      async commit(input: WorkflowCheckpointCommitInput) {
+        throwIfAborted('runtime_api');
+        if (!options.runStore || !checkpointBinding) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+            'Workflow checkpoint commit requires an accepted runner binding.',
+          );
+        }
+        if (currentPhaseIndex < 0 || currentPhase === undefined) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+            'Workflow checkpoint commit requires an active phase.',
+          );
+        }
+        return options.runStore.commitWorkflowCheckpoint(
+          runId,
+          checkpointBinding,
+          `phase-${currentPhaseIndex}`,
+          currentPhaseIndex,
+          input,
+        );
+      },
+    }),
 
     phase(name: string): void {
       throwIfAborted('runtime_api');

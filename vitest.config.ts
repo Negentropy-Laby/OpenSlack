@@ -18,6 +18,9 @@ export default defineConfig({
       'scripts/notification-docs',
       'scripts/documentation',
     ],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
+    // Project roots are already closed above. Excluding every absolute path
+    // containing `.worktrees` silently skips all tests when this repository is
+    // developed from its required isolated worktree.
+    exclude: ['**/node_modules/**', '**/dist/**'],
   },
 });

@@ -19,7 +19,8 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 )
 
-const requiredSchemaVersion int64 = 3
+const minimumSchemaVersion int64 = 3
+const maximumSchemaVersion int64 = 4
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -89,8 +90,8 @@ func checkDatabaseReady(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate schema_migrations: %w", err)
 	}
-	if count != 1 || version != requiredSchemaVersion || dirty {
-		return fmt.Errorf("database schema version is not exactly %d clean", requiredSchemaVersion)
+	if count != 1 || version < minimumSchemaVersion || version > maximumSchemaVersion || dirty {
+		return fmt.Errorf("database schema version must be clean and between %d and %d", minimumSchemaVersion, maximumSchemaVersion)
 	}
 	return nil
 }

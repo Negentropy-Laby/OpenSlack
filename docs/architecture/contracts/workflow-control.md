@@ -245,3 +245,40 @@ approval/effect, budget, active routing, canary, rollback, old-record migration,
 remain GS9-C and later work. Passing the reviewed PostgreSQL, race, restart, image-default-off,
 OpenAPI, migration, and exact-replay gates supports only `GS9-B LOCAL_PASS / Go authority
 NOT_CLAIMED`.
+
+## GS9-C checkpoint and resume differential
+
+GS9-C adds a separate TypeScript-owned checkpoint control head rather than promoting the legacy
+`ctx.phase()` entry marker. A workflow commits phase evidence only through an awaited
+`ctx.checkpoint.commit(...)` after phase work. The bounded artifact is persisted and verified
+locally; only its reference and SHA-256 cross the shadow boundary. The control head binds exact
+workflow-source, manifest, input, job, attempt, lease, fence, correlation, and runner-build
+identities.
+
+Resume advances a monotonic generation under the same TypeScript control lock and emits an
+explicit `resume_advance` observation. The opaque execution binding can be created only by the
+runner session after an advancing GS8 `lease_accept` receipt. It is not accepted by public execute
+or resume options. A new attempt and lease with a higher fence may resume; reuse, drift, missing
+artifact, corrupt control, and phase gaps fail closed before new evidence is committed.
+
+The credential-free shadow contract is frozen under:
+
+```text
+packages/workflows/contracts/workflow-checkpoint-shadow/
+```
+
+It contains closed observation, envelope, control, artifact, accepted receipt, reconciliation
+receipt, and golden-vector schemas. `checkpoint_commit` and `resume_advance` are discriminated
+operations with an independent per-run source sequence. Runner protocol v1 bytes remain unchanged;
+the observation is delivered through a separate default-off loopback HTTP port.
+
+The Go service writes only `workflow_control_checkpoint_shadow_*`. It validates the canonical
+envelope, recomputes parity, advances only a contiguous matched prefix, returns byte-identical
+accepted receipt replay, and persists ambiguous outcomes as reconciliation. Mismatch, outage, and
+reconciliation cannot change TypeScript state or authorize resume. GS9-B
+`workflow_control_runs` and GS8 `workflow_runner_*` remain separate namespaces.
+
+The reviewed contract, PostgreSQL race/restart/response-loss, OpenAPI, image-default-off, and
+cross-language gates cap the result at `GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`. Approval and
+budget authority, runner-v2 delivery, routing, canary, rollback, old-record migration, and
+TypeScript writer retirement remain GS9-D and later work.

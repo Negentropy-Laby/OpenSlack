@@ -200,11 +200,35 @@ export interface PrmsDoctorResult {
   gates: Record<string, { passed: boolean; detail: string }>;
 }
 
+export interface WorkflowCheckpointCommitInput {
+  /** Bounded bytes persisted locally before the authoritative checkpoint head advances. */
+  readonly artifact: Uint8Array;
+  /** Precomputed hashes only; raw result/cache data never crosses this API. */
+  readonly resultHash?: string;
+  readonly cacheKeyHash?: string;
+}
+
+export interface WorkflowCheckpointCommitResult {
+  readonly checkpointId: string;
+  readonly revision: number;
+  readonly resumeGeneration: number;
+  readonly duplicate: boolean;
+}
+
+export interface WorkflowCheckpointAPI {
+  /**
+   * Commit the current phase only after its work and artifact persistence have completed.
+   * Unlike legacy phase(), this is awaited and is the TS-authoritative commit point.
+   */
+  commit(input: WorkflowCheckpointCommitInput): Promise<WorkflowCheckpointCommitResult>;
+}
+
 export interface WorkflowRuntime {
   readonly runId: string;
   readonly mode: ExecutionMode;
   readonly budget: BudgetState & ClaudeBudgetAPI;
   readonly args: Record<string, unknown>;
+  readonly checkpoint: WorkflowCheckpointAPI;
 
   phase(name: string): void;
   log(message: string): void;

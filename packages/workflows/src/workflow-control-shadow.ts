@@ -524,7 +524,7 @@ function assertOwnerOnlyPath(
   }
 }
 
-function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
+export function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
   const currentWindowsSid = () => {
     if (productionWindowsSid !== undefined) return productionWindowsSid;
     const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
@@ -623,7 +623,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
   });
 }
 
-async function ensureOwnerDirectory(
+export async function ensureOwnerDirectory(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
   parent?: string,
@@ -680,7 +680,7 @@ async function initializeJournal(
   return Object.freeze({ root, entries, locks, states, security });
 }
 
-async function syncDirectory(path: string): Promise<void> {
+export async function syncDirectory(path: string): Promise<void> {
   if (process.platform === 'win32') return;
   const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
   try {
@@ -690,7 +690,7 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
-async function assertOwnerFile(
+export async function assertOwnerFile(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<BigIntStats> {
@@ -710,7 +710,45 @@ async function assertOwnerFile(
   return after;
 }
 
-async function writeExclusive(
+/**
+ * Read an owner-only regular file through a no-follow handle while proving the
+ * path and opened handle retain one identity for the complete bounded read.
+ */
+export async function readOwnerFile(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  maxBytes: number,
+): Promise<string> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new TypeError('Owner-only file read bound is invalid.');
+  }
+  const before = await assertOwnerFile(path, security);
+  if (before.size > BigInt(maxBytes)) {
+    throw new TypeError('Owner-only file exceeds its byte limit.');
+  }
+  const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || !sameIdentity(before, opened)) {
+      throw new TypeError('Owner-only file identity changed before read.');
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    const repeated = await lstat(path, { bigint: true });
+    if (
+      bytes.byteLength > maxBytes ||
+      !sameIdentity(opened, after) ||
+      !sameIdentity(after, repeated)
+    ) {
+      throw new TypeError('Owner-only file changed during read.');
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function writeExclusive(
   path: string,
   body: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -737,7 +775,7 @@ async function writeExclusive(
   }
 }
 
-async function atomicWrite(
+export async function atomicWrite(
   path: string,
   body: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -757,29 +795,16 @@ async function readCanonical(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<unknown> {
-  const before = await assertOwnerFile(path, security);
-  if (before.size > BigInt(WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes)) {
-    throw new TypeError('Workflow Control shadow journal file is unsafe.');
+  const text = await readOwnerFile(
+    path,
+    security,
+    WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes,
+  );
+  const value = JSON.parse(text) as unknown;
+  if (`${canonicalWorkflowControlJson(value)}\n` !== text) {
+    throw new TypeError('Journal bytes are not exact canonical JSON.');
   }
-  const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
-  try {
-    const opened = await handle.stat({ bigint: true });
-    if (!sameIdentity(before, opened)) throw new TypeError('Journal file identity changed.');
-    const bytes = await handle.readFile();
-    const after = await handle.stat({ bigint: true });
-    const repeated = await lstat(path, { bigint: true });
-    if (!sameIdentity(opened, after) || !sameIdentity(after, repeated)) {
-      throw new TypeError('Journal file changed during read.');
-    }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    const value = JSON.parse(text) as unknown;
-    if (`${canonicalWorkflowControlJson(value)}\n` !== text) {
-      throw new TypeError('Journal bytes are not exact canonical JSON.');
-    }
-    return value;
-  } finally {
-    await handle.close();
-  }
+  return value;
 }
 
 function streamHash(workspaceId: string, runId: string): string {
@@ -934,6 +959,24 @@ async function acquireStreamLock(
     }
   }
   throw new TypeError('Workflow Control shadow journal lock deadline exceeded.');
+}
+
+/** Shared owner-safe crash-recovering lock primitive for sibling local journals. */
+export async function acquireOwnerJournalLock(
+  locksDirectory: string,
+  lockHash: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<() => Promise<void>> {
+  return acquireStreamLock(
+    {
+      root: locksDirectory,
+      entries: locksDirectory,
+      states: locksDirectory,
+      locks: locksDirectory,
+      security,
+    },
+    lockHash,
+  );
 }
 
 async function streamEntries(directories: JournalDirectories, hashValue: string) {

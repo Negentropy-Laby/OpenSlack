@@ -1,0 +1,147 @@
+{
+  "schema": "openslack.workflow_checkpoint_shadow_golden_vectors.v1",
+  "authority": "typescript",
+  "goRole": "observer_only",
+  "vectors": {
+    "checkpointCommit": {
+      "value": {
+        "schema": "openslack.workflow_checkpoint_shadow_envelope.v1",
+        "goRole": "observer_only",
+        "sourceSequence": 1,
+        "operation": "checkpoint_commit",
+        "observation": {
+          "schema": "openslack.workflow_checkpoint_shadow_observation.v1",
+          "authority": "typescript",
+          "goRole": "observer_only",
+          "runId": "run.gs9c.1",
+          "revision": 2,
+          "resumeGeneration": 0,
+          "checkpoint": {
+            "checkpointId": "checkpoint-2222222222222222222222222222222222222222222222222222222222222222",
+            "phaseId": "phase-0",
+            "phaseIndex": 0,
+            "commitPoint": "after_phase_work",
+            "artifactRef": "checkpoint-control/artifacts/2222222222222222222222222222222222222222222222222222222222222222.json",
+            "artifactHash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "resultHash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cacheKeyHash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "committedRevision": 2,
+            "resumeGeneration": 0,
+            "committedAt": "2026-08-12T00:00:00.000Z"
+          },
+          "priorCheckpoint": null,
+          "nextPhaseId": null,
+          "nextPhaseIndex": null,
+          "workflowSourceHash": "5555555555555555555555555555555555555555555555555555555555555555",
+          "manifestHash": "6666666666666666666666666666666666666666666666666666666666666666",
+          "inputHash": "7777777777777777777777777777777777777777777777777777777777777777",
+          "runner": {
+            "workspaceId": "workspace.test",
+            "jobId": "job.1",
+            "attemptId": "attempt.1",
+            "leaseId": "lease.1",
+            "fencingToken": 1,
+            "correlationId": "correlation.gs9c.1",
+            "runnerBuildHash": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        },
+        "observationHash": "3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0"
+      },
+      "canonicalBytes": "{\"goRole\":\"observer_only\",\"observation\":{\"authority\":\"typescript\",\"checkpoint\":{\"artifactHash\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"artifactRef\":\"checkpoint-control/artifacts/2222222222222222222222222222222222222222222222222222222222222222.json\",\"cacheKeyHash\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"checkpointId\":\"checkpoint-2222222222222222222222222222222222222222222222222222222222222222\",\"commitPoint\":\"after_phase_work\",\"committedAt\":\"2026-08-12T00:00:00.000Z\",\"committedRevision\":2,\"phaseId\":\"phase-0\",\"phaseIndex\":0,\"resultHash\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"resumeGeneration\":0},\"goRole\":\"observer_only\",\"inputHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"manifestHash\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"nextPhaseId\":null,\"nextPhaseIndex\":null,\"priorCheckpoint\":null,\"resumeGeneration\":0,\"revision\":2,\"runId\":\"run.gs9c.1\",\"runner\":{\"attemptId\":\"attempt.1\",\"correlationId\":\"correlation.gs9c.1\",\"fencingToken\":1,\"jobId\":\"job.1\",\"leaseId\":\"lease.1\",\"runnerBuildHash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"workspaceId\":\"workspace.test\"},\"schema\":\"openslack.workflow_checkpoint_shadow_observation.v1\",\"workflowSourceHash\":\"5555555555555555555555555555555555555555555555555555555555555555\"},\"observationHash\":\"3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0\",\"operation\":\"checkpoint_commit\",\"schema\":\"openslack.workflow_checkpoint_shadow_envelope.v1\",\"sourceSequence\":1}",
+      "sha256": "7c0565b760c9a0a0e48b05e8cc78729b98cb8092470aa715c84878c59f239ef5"
+    },
+    "resumeAdvance": {
+      "value": {
+        "schema": "openslack.workflow_checkpoint_shadow_envelope.v1",
+        "goRole": "observer_only",
+        "sourceSequence": 2,
+        "operation": "resume_advance",
+        "observation": {
+          "schema": "openslack.workflow_checkpoint_shadow_observation.v1",
+          "authority": "typescript",
+          "goRole": "observer_only",
+          "runId": "run.gs9c.1",
+          "revision": 3,
+          "resumeGeneration": 1,
+          "checkpoint": null,
+          "priorCheckpoint": {
+            "checkpointId": "checkpoint-2222222222222222222222222222222222222222222222222222222222222222",
+            "phaseId": "phase-0",
+            "phaseIndex": 0,
+            "commitPoint": "after_phase_work",
+            "artifactRef": "checkpoint-control/artifacts/2222222222222222222222222222222222222222222222222222222222222222.json",
+            "artifactHash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "resultHash": "3333333333333333333333333333333333333333333333333333333333333333",
+            "cacheKeyHash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "committedRevision": 2,
+            "resumeGeneration": 0,
+            "committedAt": "2026-08-12T00:00:00.000Z"
+          },
+          "nextPhaseId": "phase-1",
+          "nextPhaseIndex": 1,
+          "workflowSourceHash": "5555555555555555555555555555555555555555555555555555555555555555",
+          "manifestHash": "6666666666666666666666666666666666666666666666666666666666666666",
+          "inputHash": "7777777777777777777777777777777777777777777777777777777777777777",
+          "runner": {
+            "workspaceId": "workspace.test",
+            "jobId": "job.2",
+            "attemptId": "attempt.2",
+            "leaseId": "lease.2",
+            "fencingToken": 2,
+            "correlationId": "correlation.gs9c.1",
+            "runnerBuildHash": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        },
+        "observationHash": "6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb"
+      },
+      "canonicalBytes": "{\"goRole\":\"observer_only\",\"observation\":{\"authority\":\"typescript\",\"checkpoint\":null,\"goRole\":\"observer_only\",\"inputHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"manifestHash\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"nextPhaseId\":\"phase-1\",\"nextPhaseIndex\":1,\"priorCheckpoint\":{\"artifactHash\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"artifactRef\":\"checkpoint-control/artifacts/2222222222222222222222222222222222222222222222222222222222222222.json\",\"cacheKeyHash\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"checkpointId\":\"checkpoint-2222222222222222222222222222222222222222222222222222222222222222\",\"commitPoint\":\"after_phase_work\",\"committedAt\":\"2026-08-12T00:00:00.000Z\",\"committedRevision\":2,\"phaseId\":\"phase-0\",\"phaseIndex\":0,\"resultHash\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"resumeGeneration\":0},\"resumeGeneration\":1,\"revision\":3,\"runId\":\"run.gs9c.1\",\"runner\":{\"attemptId\":\"attempt.2\",\"correlationId\":\"correlation.gs9c.1\",\"fencingToken\":2,\"jobId\":\"job.2\",\"leaseId\":\"lease.2\",\"runnerBuildHash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"workspaceId\":\"workspace.test\"},\"schema\":\"openslack.workflow_checkpoint_shadow_observation.v1\",\"workflowSourceHash\":\"5555555555555555555555555555555555555555555555555555555555555555\"},\"observationHash\":\"6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb\",\"operation\":\"resume_advance\",\"schema\":\"openslack.workflow_checkpoint_shadow_envelope.v1\",\"sourceSequence\":2}",
+      "sha256": "87fd6de37656fff243d258819d05e78fd7fe5a228ba2a21fd2eb726878332d0e"
+    },
+    "acceptedReplay": {
+      "transport": { "httpStatus": 200, "idempotencyReplayed": true },
+      "value": {
+        "schema": "openslack.workflow_checkpoint_shadow_receipt.v1",
+        "status": "accepted",
+        "idempotencyKey": "openslack.workflow-checkpoint-shadow.v1.3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0",
+        "receiptId": "receipt.gs9c.accepted.1",
+        "observationId": "observation.gs9c.1",
+        "workspaceId": "workspace.test",
+        "runId": "run.gs9c.1",
+        "sourceSequence": 1,
+        "operation": "checkpoint_commit",
+        "parity": "matched",
+        "mismatchCode": null,
+        "reconciliationToken": null,
+        "envelopeHash": "7c0565b760c9a0a0e48b05e8cc78729b98cb8092470aa715c84878c59f239ef5",
+        "observationHash": "3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0",
+        "serviceBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "committedAt": "2026-08-12T00:00:01.000Z"
+      },
+      "canonicalBytes": "{\"committedAt\":\"2026-08-12T00:00:01.000Z\",\"envelopeHash\":\"7c0565b760c9a0a0e48b05e8cc78729b98cb8092470aa715c84878c59f239ef5\",\"idempotencyKey\":\"openslack.workflow-checkpoint-shadow.v1.3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0\",\"mismatchCode\":null,\"observationHash\":\"3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0\",\"observationId\":\"observation.gs9c.1\",\"operation\":\"checkpoint_commit\",\"parity\":\"matched\",\"receiptId\":\"receipt.gs9c.accepted.1\",\"reconciliationToken\":null,\"runId\":\"run.gs9c.1\",\"schema\":\"openslack.workflow_checkpoint_shadow_receipt.v1\",\"serviceBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"sourceSequence\":1,\"status\":\"accepted\",\"workspaceId\":\"workspace.test\"}",
+      "sha256": "7607cb4b386e102223df2062034cfadc199ae1c57ea6e10c9dfae5c54daaa937"
+    },
+    "reconciliation": {
+      "transport": { "httpStatus": 202, "idempotencyReplayed": false },
+      "value": {
+        "schema": "openslack.workflow_checkpoint_shadow_receipt.v1",
+        "status": "reconciliation_required",
+        "idempotencyKey": "openslack.workflow-checkpoint-shadow.v1.6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb",
+        "receiptId": "receipt.gs9c.reconciliation.1",
+        "observationId": null,
+        "workspaceId": "workspace.test",
+        "runId": "run.gs9c.1",
+        "sourceSequence": 2,
+        "operation": "resume_advance",
+        "parity": "unknown",
+        "mismatchCode": null,
+        "reconciliationToken": "reconciliation.gs9c.1",
+        "envelopeHash": "87fd6de37656fff243d258819d05e78fd7fe5a228ba2a21fd2eb726878332d0e",
+        "observationHash": "6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb",
+        "serviceBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "committedAt": null
+      },
+      "canonicalBytes": "{\"committedAt\":null,\"envelopeHash\":\"87fd6de37656fff243d258819d05e78fd7fe5a228ba2a21fd2eb726878332d0e\",\"idempotencyKey\":\"openslack.workflow-checkpoint-shadow.v1.6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb\",\"mismatchCode\":null,\"observationHash\":\"6640b83e8d2c303b82b7ba2c6d85f278395b11defef7701d0d9d14b6af4aeedb\",\"observationId\":null,\"operation\":\"resume_advance\",\"parity\":\"unknown\",\"receiptId\":\"receipt.gs9c.reconciliation.1\",\"reconciliationToken\":\"reconciliation.gs9c.1\",\"runId\":\"run.gs9c.1\",\"schema\":\"openslack.workflow_checkpoint_shadow_receipt.v1\",\"serviceBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"sourceSequence\":2,\"status\":\"reconciliation_required\",\"workspaceId\":\"workspace.test\"}",
+      "sha256": "241c57f34fc014de7a4b9505625834ebe0b2a6a6fbe1fc1e3239497d6443a067"
+    }
+  }
+}

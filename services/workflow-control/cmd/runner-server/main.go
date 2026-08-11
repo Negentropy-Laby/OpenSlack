@@ -30,7 +30,8 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
-const requiredSchemaVersion int64 = 3
+const minimumSchemaVersion int64 = 2
+const maximumSchemaVersion int64 = 4
 
 const workspaceLockDomain = "openslack.workflow-runner.workspace-singleton.v1\x00"
 
@@ -80,7 +81,12 @@ func main() {
 	}
 	registry, err := workerregistry.Load(config.BundleRoot, config.BundleManifestSHA256, workerregistry.Runtime{
 		WorkspaceID: config.WorkspaceID, WorkspaceRoot: config.WorkspaceRoot,
-		DescriptorRoot: config.DescriptorRoot,
+		DescriptorRoot:              config.DescriptorRoot,
+		CheckpointShadowEnabled:     config.CheckpointShadowEnabled,
+		CheckpointShadowEndpoint:    config.CheckpointShadowEndpoint,
+		CheckpointShadowBearerToken: config.CheckpointShadowBearerToken,
+		CheckpointShadowCallerID:    config.CheckpointShadowCallerID,
+		CheckpointShadowJournalRoot: config.CheckpointShadowJournalRoot,
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")
@@ -258,8 +264,8 @@ func checkDatabaseReady(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate schema_migrations: %w", err)
 	}
-	if count != 1 || version != requiredSchemaVersion || dirty {
-		return fmt.Errorf("database schema version is not exactly %d clean", requiredSchemaVersion)
+	if count != 1 || version < minimumSchemaVersion || version > maximumSchemaVersion || dirty {
+		return fmt.Errorf("database schema version must be clean and between %d and %d", minimumSchemaVersion, maximumSchemaVersion)
 	}
 	return nil
 }

@@ -76,7 +76,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-authority-v2',
+        'runtime_profile=workflow-control-checkpoint-shadow-v1',
         '',
       ].join('\n'),
     );
@@ -624,6 +624,75 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(failureLog).toContain('-qualification-authority-bounds');
     expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed');
   }, 15_000);
+
+  it('runs the Workflow Control GS9-C checkpoint profile as a strict GS7/GS8/GS9-B superset', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    addWorkflowAuthorityEvidence(moduleRoot);
+    addWorkflowCheckpointShadowEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-checkpoint-shadow-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1');
+    expect(log).toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
+    expect(log).toContain('-run \\^TestGS9CQualification\\$');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS9CRestartQualification\\$');
+    expect(log).toContain('--entrypoint /checkpoint-shadow-server');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_DEFAULT_ORIGIN=http://127.0.0.1:8083');
+    expect(log).toContain('-run \\^TestGS9CImageDefaultOff\\$');
+    const checkpointDefaultOffRun = log
+      .split('\n')
+      .find((line) => line.includes('--entrypoint /checkpoint-shadow-server'));
+    expect(checkpointDefaultOffRun).toContain('--network none');
+    expect(checkpointDefaultOffRun).not.toContain('DATABASE_URL=');
+    expect(checkpointDefaultOffRun).not.toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA=(workflow_control_gs9c_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(4);
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    addWorkflowAuthorityEvidence(failureModuleRoot);
+    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-checkpoint-shadow-v1',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9C_FAIL_PHASE: 'checkpoint-bounds',
+      FAKE_GS9C_FAIL_STATUS: '49',
+    });
+    expect(failure.status).toBe(49);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-checkpoint-bounds');
+    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed');
+  }, 30_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
     'propagates a Workflow Control GS7-B %s qualification failure before completion',
@@ -1486,6 +1555,91 @@ function addWorkflowAuthorityEvidence(moduleRoot: string): void {
   writeFileSync(join(moduleRoot, 'docs/api/authority-openapi.yaml'), 'openapi: 3.1.0\n', 'utf8');
 }
 
+function addWorkflowCheckpointShadowEvidence(moduleRoot: string): void {
+  const fixtureRoot = resolve(moduleRoot, '../..');
+  for (const directory of [
+    'scripts/workflow-checkpoint-shadow-contracts',
+    'packages/workflows/contracts/workflow-checkpoint-shadow/v1',
+  ]) {
+    mkdirSync(join(fixtureRoot, directory), { recursive: true });
+  }
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-checkpoint-shadow-contracts/index.ts'),
+    'export {};\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-checkpoint-shadow-contracts/tsconfig.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(
+      fixtureRoot,
+      'packages/workflows/contracts/workflow-checkpoint-shadow/v1/golden-vectors.json',
+    ),
+    '{}\n',
+    'utf8',
+  );
+  for (const directory of [
+    'cmd/checkpoint-shadow-server',
+    'internal/checkpointshadowapp',
+    'internal/checkpointshadowstore/postgres',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(join(moduleRoot, 'cmd/checkpoint-shadow-server/main.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/checkpoint-shadow-server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9CQualification(t *testing.T) {}',
+      'func TestGS9CRestartQualification(t *testing.T) {}',
+      'func TestGS9CImageDefaultOff(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/checkpointshadowapp/server_test.go'),
+    'package checkpointshadowapp\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/checkpointshadowstore/postgres/repository_test.go'),
+    'package postgres\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000004_create_workflow_control_checkpoint_shadow.up.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000004_create_workflow_control_checkpoint_shadow.down.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/checkpoint_shadow_openapi_contract_test.go'),
+    'package contracts\n\nimport "testing"\n\nfunc TestCheckpointShadowOpenAPIIsClosedAndValid(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'docs/api/checkpoint-shadow-openapi.yaml'),
+    'openapi: 3.1.0\n',
+    'utf8',
+  );
+}
+
 function createFullServiceFixture(): Fixture {
   const fixture = createFixture();
   addFullServiceCapabilities(join(fixture.root, 'services/pure'));
@@ -1634,6 +1788,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS9B_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9B_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS9B_FAIL_STATUS:-48}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS9C_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9C_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS9C_FAIL_STATUS:-49}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',
