@@ -254,6 +254,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          bun run build
           bunx vitest run \
             packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \
             packages/workflows/src/__tests__/workflow-runner-session.test.ts \

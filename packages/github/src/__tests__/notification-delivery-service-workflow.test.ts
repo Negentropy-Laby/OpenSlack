@@ -626,6 +626,7 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: lines(
         'set -euo pipefail',
+        'bun run build',
         'bunx vitest run \\',
         '  packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \\',
         '  packages/workflows/src/__tests__/workflow-runner-session.test.ts \\',
@@ -796,6 +797,7 @@ describe('notification delivery service workflow', () => {
         'bun run workflow:checkpoint-shadow-golden -- --check',
       'Qualify GS9-C TypeScript checkpoint shadow': lines(
         'set -euo pipefail',
+        'bun run build',
         'bunx vitest run \\',
         '  packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \\',
         '  packages/workflows/src/__tests__/workflow-runner-session.test.ts \\',
