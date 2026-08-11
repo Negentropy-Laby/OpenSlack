@@ -14,7 +14,6 @@ import type {
   PhaseCheckpoint,
   ExecutionMode,
 } from '../../types.js';
-import { computeManifestHash } from '../../manifest.js';
 
 // ── In-memory filesystem ────────────────────────────────────────────────────
 
@@ -59,12 +58,20 @@ const TEST_MANIFEST: WorkflowMeta = {
   risk: 'low',
 };
 
+const TEST_HASH = 'a'.repeat(64);
+const identity = (manifest: WorkflowMeta = TEST_MANIFEST, hash = TEST_HASH) => ({
+  meta: manifest,
+  format: 'openslack-native' as const,
+  hash,
+  run: async () => ({ status: 'completed' }),
+});
+
 function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): RunMeta {
   return {
     runId: 'run-resume-001',
     workflowName: manifest.name,
     mode: 'execute' as ExecutionMode,
-    manifestHash: computeManifestHash(manifest),
+    manifestHash: TEST_HASH,
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,
@@ -104,7 +111,7 @@ async function initPausedExecutionRun(
     runId,
     makeMeta(TEST_MANIFEST, {
       runId,
-      manifestHash: `${TEST_MANIFEST.name}:${TEST_MANIFEST.version ?? 'unversioned'}`,
+      manifestHash: TEST_HASH,
       args,
       budget,
     }),
@@ -130,7 +137,7 @@ describe('executeResume integration', () => {
       ctx.phase('Report');
       return { status: 'complete' };
     });
-    const workflow = { meta: TEST_MANIFEST, run: runFn };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
@@ -144,7 +151,7 @@ describe('executeResume integration', () => {
   });
 
   it('throws when workflow has no run function', async () => {
-    const workflow = { meta: TEST_MANIFEST };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH };
     await initPausedExecutionRun(executionRoot, 'run-001');
     await expect(
       executeResume(workflow, {
@@ -160,7 +167,7 @@ describe('executeResume integration', () => {
     const runFn = vi.fn(async (ctx: WorkflowRuntime, args: Record<string, unknown>) => {
       return { status: 'complete', receivedArgs: args };
     });
-    const workflow = { meta: TEST_MANIFEST, run: runFn };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001', { key: 'value' });
 
     const result = await executeResume(workflow, {
@@ -183,7 +190,7 @@ describe('executeResume integration', () => {
       const agentResult = await ctx.agent('test', { label: 'test', phase: 'Scan' });
       return { status: 'complete', agentResult };
     });
-    const workflow = { meta: TEST_MANIFEST, run: runFn };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
@@ -204,7 +211,7 @@ describe('executeResume integration', () => {
       await ctx.openslack.task.createIssue({ title: 'Bug' });
       return { status: 'complete' };
     });
-    const workflow = { meta: TEST_MANIFEST, run: runFn };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
@@ -224,7 +231,7 @@ describe('executeResume integration', () => {
       await ctx.openslack.task.createIssue({ title: 'Bug' });
       return { status: 'complete' };
     });
-    const workflow = { meta: TEST_MANIFEST, run: runFn };
+    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     await expect(
@@ -243,7 +250,7 @@ describe('resume with run store integration', () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan']);
 
-    const result = await checkResumable(store, 'run-resume-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-resume-001', identity());
     expect(result.canResume).toBe(true);
     expect(result.manifestMatch).toBe(true);
   });
@@ -252,7 +259,7 @@ describe('resume with run store integration', () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan', 'Verify']);
 
-    const state = await prepareResume(store, 'run-resume-001', TEST_MANIFEST);
+    const state = await prepareResume(store, 'run-resume-001', identity());
     expect(state.completedPhases).toHaveLength(2);
     expect(state.completedPhases[0].phase).toBe('Scan');
     expect(state.completedPhases[1].phase).toBe('Verify');
@@ -340,7 +347,11 @@ describe('resume with run store integration', () => {
       description: 'Modified description',
     };
 
-    const result = await checkResumable(store, 'run-resume-001', modifiedManifest);
+    const result = await checkResumable(
+      store,
+      'run-resume-001',
+      identity(modifiedManifest, 'b'.repeat(64)),
+    );
     expect(result.canResume).toBe(false);
     expect(result.reason).toContain('Manifest hash mismatch');
   });

@@ -68,6 +68,7 @@ import {
   WorkflowBudgetPausedError,
   WorkflowPausedError,
   RunStore,
+  decodeRunMetaArguments,
   checkResumable,
   prepareResume,
   renderRunHtml,
@@ -2096,7 +2097,7 @@ export function collaborationCommands(): Command {
         }
 
         // Check resumability
-        const check = await checkResumable(store, runId, mod.meta);
+        const check = await checkResumable(store, runId, mod);
         if (!check.canResume) {
           console.log(`Cannot resume run ${runId}: ${check.reason}`);
           if (
@@ -2106,13 +2107,15 @@ export function collaborationCommands(): Command {
           ) {
             console.log(`  Stored hash: ${check.storedManifestHash}`);
             console.log(`  Current hash: ${check.currentManifestHash}`);
-            console.log('  Use --force to override (not recommended).');
+            console.log(
+              '  Automatic resume is fail-closed; inspect or repair the durable run state.',
+            );
           }
           process.exit(1);
         }
 
         // Prepare resume state
-        const resumeState = await prepareResume(store, runId, mod.meta);
+        const resumeState = await prepareResume(store, runId, mod);
 
         console.log(`Resuming: ${mod.meta.name}`);
         console.log(`  Run ID: ${runId}`);
@@ -2146,7 +2149,7 @@ export function collaborationCommands(): Command {
         const result = await executeResume(mod, {
           runId,
           manifest: mod.meta,
-          args: meta.args,
+          args: decodeRunMetaArguments(meta),
           onConfirm,
           allowUnattended: options.yes,
           agentEventEmitter: createCollaborationEventEmitter(),

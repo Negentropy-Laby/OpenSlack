@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   SchemaValidationError,
+  WorkflowBudgetExceededError,
   WorkflowBudgetPausedError,
   executeAgentCall,
   computeAgentCacheKey,
@@ -641,6 +642,123 @@ describe('executeAgentCall', () => {
     expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
       cacheError,
     ]);
+  });
+
+  it('makes pause policy primary over a charged schema failure after durable settlement', async () => {
+    const savePendingApproval = vi.fn(async () => undefined);
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => ({ data: { ok: 42 }, tokenUsage: 5 }),
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      {
+        label: 'test',
+        phase: 'Scan',
+        schema: { type: 'object', properties: { ok: { type: 'string' } } },
+      },
+      {
+        ...config,
+        runStore: {
+          ...budgetApprovalStore('pending'),
+          savePendingApproval,
+        } as unknown as RunStore,
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'pause' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(WorkflowBudgetPausedError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      expect.any(SchemaValidationError),
+    ]);
+    expect(savePendingApproval).toHaveBeenCalledOnce();
+  });
+
+  it('makes fail policy primary over the charged provider error', async () => {
+    const providerError = Object.assign(new Error('provider failed'), { tokenUsage: 5 });
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => {
+        throw providerError;
+      },
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        runStore: budgetApprovalStore('pending'),
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'fail' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(WorkflowBudgetExceededError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      providerError,
+    ]);
+  });
+
+  it('fails instead of reporting a pause when approval persistence fails', async () => {
+    const approvalError = new Error('approval persistence failed');
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 5 }),
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        runStore: {
+          ...budgetApprovalStore('pending'),
+          async savePendingApproval() {
+            throw approvalError;
+          },
+        } as unknown as RunStore,
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'pause' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBe(approvalError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      expect.any(WorkflowBudgetPausedError),
+    ]);
+  });
+
+  it('uses a stable AggregateError when a frozen primary cannot receive suppressed errors', async () => {
+    const providerError = Object.freeze(
+      Object.assign(new Error('frozen provider failure'), { tokenUsage: 1 }),
+    );
+    const persistenceError = new Error('budget persistence failed');
+    const { config } = makeConfig({
+      launcher: async () => {
+        throw providerError;
+      },
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange: async () => {
+          throw persistenceError;
+        },
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect((caught as AggregateError).cause).toBe(providerError);
+    expect(
+      (caught as AggregateError & { suppressedErrors: readonly unknown[] }).suppressedErrors,
+    ).toEqual([persistenceError]);
+    expect(
+      Object.isFrozen(
+        (caught as AggregateError & { suppressedErrors: readonly unknown[] }).suppressedErrors,
+      ),
+    ).toBe(true);
   });
 
   it('does not emit completed lifecycle evidence for an invalid result schema', async () => {

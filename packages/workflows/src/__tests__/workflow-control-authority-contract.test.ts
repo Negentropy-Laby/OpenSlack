@@ -446,7 +446,7 @@ describe('Workflow Control authority v2 contract', () => {
     const root = resolve(import.meta.dirname, '../../../..');
     const expected = {
       'packages/workflows/contracts/workflow-control/v1/manifest.json':
-        'aeff2b9afc459c7df646378f6be4bd37884c772838688bbdf01bf3379638b813',
+        '3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86',
       'packages/workflows/contracts/workflow-control/v1/golden-vectors.json':
         '342c877a46adc5f533d9c9c8b25d1c30c5809d8f219115af3f4e97260f9da023',
       'packages/workflows/contracts/workflow-runner/v1/manifest.json':

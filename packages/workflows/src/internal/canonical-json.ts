@@ -1,3 +1,5 @@
+import { types as nodeTypes } from 'node:util';
+
 export interface CanonicalJsonOptions {
   readonly allowNullPrototype?: boolean;
 }
@@ -27,14 +29,13 @@ function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSe
     if (!Number.isFinite(value)) throw new CanonicalJsonError();
     return JSON.stringify(value);
   }
-  if (typeof value !== 'object') throw new CanonicalJsonError();
+  if (typeof value !== 'object' || nodeTypes.isProxy(value)) throw new CanonicalJsonError();
   if (ancestors.has(value)) throw new CanonicalJsonError('Value contains a circular reference.');
 
   const prototype = Object.getPrototypeOf(value);
   if (
-    Array.isArray(value)
-      ? prototype !== Array.prototype
-      : prototype !== Object.prototype && !(options.allowNullPrototype && prototype === null)
+    !Array.isArray(value) &&
+    !isPlainObjectPrototype(prototype, options.allowNullPrototype === true)
   ) {
     throw new CanonicalJsonError();
   }
@@ -43,8 +44,14 @@ function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSe
   try {
     if (Array.isArray(value)) {
       const keys = Reflect.ownKeys(value);
-      const expected = new Set(['length', ...value.map((_item, index) => String(index))]);
-      if (keys.length !== expected.size || keys.some((key) => !expected.has(String(key)))) {
+      if (
+        keys.length !== value.length + 1 ||
+        keys.some(
+          (key) =>
+            key !== 'length' &&
+            (typeof key !== 'string' || !isCanonicalArrayIndex(key, value.length)),
+        )
+      ) {
         throw new CanonicalJsonError();
       }
       const encoded: string[] = [];
@@ -73,4 +80,23 @@ function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSe
   } finally {
     ancestors.delete(value);
   }
+}
+
+const nativeObjectSource = Function.prototype.toString.call(Object);
+
+function isPlainObjectPrototype(prototype: object | null, allowNullPrototype: boolean): boolean {
+  if (prototype === null) return allowNullPrototype;
+  if (Object.getPrototypeOf(prototype) !== null) return false;
+  const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value;
+  return (
+    typeof constructor === 'function' &&
+    Function.prototype.toString.call(constructor) === nativeObjectSource &&
+    constructor.prototype === prototype
+  );
+}
+
+function isCanonicalArrayIndex(key: string, length: number): boolean {
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(key)) return false;
+  const index = Number(key);
+  return Number.isSafeInteger(index) && index < length && String(index) === key;
 }

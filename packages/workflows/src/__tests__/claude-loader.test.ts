@@ -218,7 +218,7 @@ export const meta: WorkflowMeta = {
       const filePath = join(FIXTURES_DIR, 'ambient-basic.js');
       const mod = await loadWorkflow(filePath);
       expect(mod.hash).toBeDefined();
-      expect(mod.hash).toHaveLength(16); // SHA-256 truncated to 16 hex chars
+      expect(mod.hash).toMatch(/^[0-9a-f]{64}$/u);
     });
 
     it('returns sourceBody for ambient-full-lifecycle fixture', async () => {

@@ -35,7 +35,7 @@ log('Results: ' + JSON.stringify(results))
 const ambientModule: WorkflowModule = {
   meta: ambientManifest,
   format: 'claude-ambient',
-  hash: 'test-hash-1234',
+  hash: 'a'.repeat(64),
   sourceBody: ambientSource,
 };
 
@@ -105,7 +105,7 @@ describe('ambient integration — executePreview', () => {
         phases: [{ title: 'Scan', detail: 'Scan phase' }],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: ambientWithAgentSource,
     };
 
@@ -132,7 +132,7 @@ describe('ambient integration — executePreview', () => {
         phases: [{ title: 'Scan', detail: 'Scan phase' }],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: ambientWithParallelSource,
     };
 
@@ -167,7 +167,7 @@ describe('ambient integration — executeDryRun', () => {
         sideEffects: ['openslack.task.createIssue'],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: `
 export const meta = {
   name: 'ambient-sideeffect-test',
@@ -217,7 +217,7 @@ describe('ambient integration — executeRun', () => {
         phases: [{ title: 'Scan', detail: 'Scan phase' }],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: ambientWithAgentSource,
     };
 
@@ -240,7 +240,7 @@ describe('ambient integration — executeRun', () => {
         phases: [{ title: 'Scan', detail: 'Scan phase' }],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: ambientWithBudgetSource,
     };
 
@@ -286,7 +286,7 @@ const results = await pipeline([1, 2, 3],
         phases: [{ title: 'Scan', detail: 'Scan phase' }],
       },
       format: 'claude-ambient',
-      hash: 'test-hash',
+      hash: 'a'.repeat(64),
       sourceBody: source,
     };
 

@@ -17,12 +17,20 @@ import type { ConfirmCallback } from './runtime.js';
 import { validateEffectAgainstManifest } from './manifest-validator.js';
 import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
-import { RunStore } from './run-store.js';
+import { RunStore, encodeRunMetaArguments } from './run-store.js';
 import type { RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
 import { join } from 'node:path';
 import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
-import { canonicalJson, canonicalJsonRoundTrip } from './internal/canonical-json.js';
+import {
+  WORKFLOW_ARGUMENTS_SCHEMA,
+  decodeValidatedWorkflowArguments,
+  encodeWorkflowArguments,
+  type EncodedWorkflowArguments,
+  type WorkflowArgumentsEnvelope,
+} from './internal/workflow-arguments.js';
+import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -43,8 +51,9 @@ export class WorkflowResumeRecoveryRequiredError extends Error {
   constructor(
     readonly runId: string,
     reason: string,
+    options?: ErrorOptions,
   ) {
-    super(`Workflow run ${runId} requires operator recovery: ${reason}`);
+    super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
     this.name = 'WorkflowResumeRecoveryRequiredError';
   }
 }
@@ -53,7 +62,7 @@ export class WorkflowRunInputInvalidError extends TypeError {
   readonly code = 'WORKFLOW_RUN_INPUT_INVALID' as const;
 
   constructor(cause?: unknown) {
-    super('Workflow arguments must contain only canonical JSON data.', { cause });
+    super('Workflow arguments contain unsupported or out-of-bounds data.', { cause });
     this.name = 'WorkflowRunInputInvalidError';
   }
 }
@@ -175,19 +184,12 @@ function workflowRunStore(rootDir: string): RunStore {
   return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
 }
 
-function canonicalArguments(value: Record<string, unknown>): Record<string, unknown> {
+function canonicalArguments(value: Record<string, unknown>): EncodedWorkflowArguments {
   try {
-    return canonicalJsonRoundTrip(value);
+    return encodeWorkflowArguments(value);
   } catch (error) {
     throw new WorkflowRunInputInvalidError(error);
   }
-}
-
-function workflowHash(
-  workflow: { meta: WorkflowMeta; hash?: string },
-  manifest: WorkflowMeta,
-): string {
-  return workflow.hash ?? `${manifest.name}:${manifest.version ?? 'unversioned'}`;
 }
 
 function createRunStoreAgentCache(store: RunStore, delegate?: AgentCacheStore): AgentCacheStore {
@@ -240,7 +242,7 @@ async function initializeRun(options: {
   runId: string;
   manifest: WorkflowMeta;
   mode: ExecutionMode;
-  args: Record<string, unknown>;
+  args: WorkflowArgumentsEnvelope;
   startedAt?: string;
   manifestHash: string;
   budget?: { tokens: number; costUsd: number };
@@ -254,6 +256,7 @@ async function initializeRun(options: {
     workflowName: options.manifest.name,
     mode: options.mode,
     manifestHash: options.manifestHash,
+    argsEncoding: WORKFLOW_ARGUMENTS_SCHEMA,
     args: options.args,
     startedAt,
     budget: options.budget,
@@ -311,13 +314,17 @@ function createDryRunAgentLauncher(): AgentLauncher {
 export async function executeDryRun(
   workflow: {
     meta: WorkflowMeta;
+    hash?: string;
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
     format?: WorkflowFormat;
     sourceBody?: string;
   },
   options: DryRunOptions,
 ): Promise<DryRunResult> {
-  const { manifest, args = {}, budget } = options;
+  const { manifest, budget } = options;
+  const encodedArgs = canonicalArguments(options.args ?? {});
+  const runtimeArgs = decodeValidatedWorkflowArguments(encodedArgs.envelope);
+  const positionalArgs = decodeValidatedWorkflowArguments(encodedArgs.envelope);
 
   const runId = `dryrun-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const simulatedEffects: SimulatedEffect[] = [];
@@ -345,6 +352,7 @@ export async function executeDryRun(
     runId,
     mode: 'dry-run' as ExecutionMode,
     manifest,
+    args: runtimeArgs,
     budget: budget ?? { tokens: 50000, costUsd: 0 },
     permissions: {
       declared: manifest.permissions ?? {},
@@ -362,7 +370,11 @@ export async function executeDryRun(
   if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
     try {
       const { executeAmbientWorkflow } = await import('./ambient-runner.js');
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
+      const ambientResult = await executeAmbientWorkflow(
+        workflow.sourceBody,
+        runtime,
+        positionalArgs,
+      );
       result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
@@ -378,7 +390,7 @@ export async function executeDryRun(
     }
   } else if (workflow.run) {
     try {
-      result = await workflow.run(runtime, args);
+      result = await workflow.run(runtime, positionalArgs);
     } catch (err) {
       if (err instanceof ExecuteDeniedError) {
         // Should not happen in dry-run mode, but handle gracefully
@@ -439,6 +451,7 @@ export function createOnConfirmFromPolicy(policy: ConfirmationPolicy): ConfirmCa
 export async function executeRun(
   workflow: {
     meta: WorkflowMeta;
+    hash?: string;
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
     format?: WorkflowFormat;
     sourceBody?: string;
@@ -455,7 +468,9 @@ export async function executeRunWithStore(
   storeOverride?: RunStore,
 ): Promise<RunResult> {
   const { manifest, budget } = options;
-  const args = canonicalArguments(options.args ?? {});
+  const encodedArgs = canonicalArguments(options.args ?? {});
+  const runtimeArgs = decodeValidatedWorkflowArguments(encodedArgs.envelope);
+  const positionalArgs = decodeValidatedWorkflowArguments(encodedArgs.envelope);
 
   if (
     options.runId !== undefined &&
@@ -478,8 +493,8 @@ export async function executeRunWithStore(
     runId,
     manifest,
     mode: 'execute',
-    args,
-    manifestHash: workflowHash(workflow, manifest),
+    args: encodedArgs.envelope,
+    manifestHash: resolveWorkflowIdentityHash(workflow, manifest),
     budget: effectiveBudget,
   });
 
@@ -505,7 +520,7 @@ export async function executeRunWithStore(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
-    args,
+    args: runtimeArgs,
     budget: effectiveBudget,
     permissions: {
       declared: manifest.permissions ?? {},
@@ -531,7 +546,11 @@ export async function executeRunWithStore(
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
       const { executeAmbientWorkflow } = await import('./ambient-runner.js');
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
+      const ambientResult = await executeAmbientWorkflow(
+        workflow.sourceBody,
+        runtime,
+        positionalArgs,
+      );
       const result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
@@ -551,7 +570,7 @@ export async function executeRunWithStore(
       throw new Error(`Workflow "${manifest.name}" has no run function`);
     }
 
-    const result = await workflow.run(runtime, args);
+    const result = await workflow.run(runtime, positionalArgs);
     const output = { ...result, runId };
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);
@@ -639,37 +658,70 @@ export async function executeResumeWithStore(
   if (!(await store.runExists(runId))) {
     throw new WorkflowResumeRecoveryRequiredError(runId, 'durable run state is missing');
   }
-  const [meta, status, snapshot] = await Promise.all([
-    store.loadMeta(runId),
-    store.loadStatus(runId),
-    store.loadBudgetSnapshot(runId),
-  ]);
+  let meta: Awaited<ReturnType<RunStore['loadMeta']>>;
+  let status: Awaited<ReturnType<RunStore['loadStatus']>>;
+  let snapshot: Awaited<ReturnType<RunStore['loadBudgetSnapshot']>>;
+  try {
+    [meta, status, snapshot] = await Promise.all([
+      store.loadMeta(runId),
+      store.loadStatus(runId),
+      store.loadBudgetSnapshot(runId),
+    ]);
+  } catch (error) {
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable resume state is invalid', {
+      cause: error,
+    });
+  }
   if (meta === null || status === null || snapshot === null) {
     throw new WorkflowResumeRecoveryRequiredError(runId, 'durable resume state is incomplete');
   }
-  if (!['paused', 'paused_waiting_approval', 'resuming'].includes(status.status)) {
+  if (!isWorkflowResumeStatus(status.status)) {
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
       `status "${status.status}" cannot be replayed automatically`,
+    );
+  }
+  let currentWorkflowHash: string;
+  try {
+    currentWorkflowHash = resolveWorkflowIdentityHash(workflow, manifest);
+  } catch (error) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'strong workflow identity is unavailable',
+      {
+        cause: error,
+      },
     );
   }
   if (
     meta.runId !== runId ||
     meta.workflowName !== manifest.name ||
     meta.mode !== 'execute' ||
-    meta.manifestHash !== workflowHash(workflow, manifest)
+    meta.manifestHash !== currentWorkflowHash
   ) {
     throw new WorkflowResumeRecoveryRequiredError(runId, 'identity or workflow hash has drifted');
   }
-  const persistedArgs = canonicalArguments(meta.args);
+  let persistedEncodedArgs: EncodedWorkflowArguments;
+  let persistedArgsCanonical: string;
+  try {
+    persistedEncodedArgs = encodeRunMetaArguments(meta);
+    persistedArgsCanonical = persistedEncodedArgs.canonical;
+  } catch (error) {
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable workflow arguments are invalid', {
+      cause: error,
+    });
+  }
   if (
     options.args !== undefined &&
-    canonicalJson(canonicalArguments(options.args)) !== canonicalJson(persistedArgs)
+    canonicalArguments(options.args).canonical !== persistedArgsCanonical
   ) {
     throw new Error(`Workflow run ${runId} resume arguments do not match the original run.`);
   }
   if (meta.budget === undefined) {
-    throw new Error(`Workflow run ${runId} original budget is missing.`);
+    const cause = new Error(`Workflow run ${runId} original budget is missing.`);
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable budget metadata is missing', {
+      cause,
+    });
   }
   const effectiveBudget = {
     tokens: meta.budget.tokens,
@@ -686,9 +738,15 @@ export async function executeResumeWithStore(
     snapshot.budget.tokens !== effectiveBudget.tokens ||
     snapshot.budget.costUsd !== effectiveBudget.costUsd
   ) {
-    throw new Error(`Workflow run ${runId} budget snapshot has drifted from metadata.`);
+    const cause = new Error(`Workflow run ${runId} budget snapshot has drifted from metadata.`);
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'durable budget snapshot has drifted from metadata',
+      { cause },
+    );
   }
-  const args = persistedArgs;
+  const runtimeArgs = decodeValidatedWorkflowArguments(persistedEncodedArgs.envelope);
+  const positionalArgs = decodeValidatedWorkflowArguments(persistedEncodedArgs.envelope);
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined;
@@ -711,7 +769,7 @@ export async function executeResumeWithStore(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
-    args,
+    args: runtimeArgs,
     budget: effectiveBudget,
     initialBudgetState: snapshot.usage,
     permissions: {
@@ -737,14 +795,18 @@ export async function executeResumeWithStore(
     if (status.status === 'paused_waiting_approval') {
       await store.transitionStatus(runId, 'resuming');
       await store.transitionStatus(runId, 'running');
-    } else if (status.status !== 'running') {
+    } else {
       await store.transitionStatus(runId, 'running');
     }
     throwIfExecutionAborted(options.signal, runId);
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
       const { executeAmbientWorkflow } = await import('./ambient-runner.js');
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
+      const ambientResult = await executeAmbientWorkflow(
+        workflow.sourceBody,
+        runtime,
+        positionalArgs,
+      );
       const result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
@@ -764,7 +826,7 @@ export async function executeResumeWithStore(
       throw new Error(`Workflow "${manifest.name}" has no run function`);
     }
 
-    const result = await workflow.run(runtime, args);
+    const result = await workflow.run(runtime, positionalArgs);
     const output = { ...result, runId };
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);

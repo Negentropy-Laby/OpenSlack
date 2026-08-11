@@ -1,3 +1,5 @@
+import type { WorkflowArgumentsEnvelope } from './internal/workflow-arguments.js';
+
 // ── JSON Schema type (lightweight inline to avoid external dep) ────────────────
 
 /**
@@ -126,7 +128,8 @@ export interface RunStatus {
   updatedAt: string;
   currentPhase?: string;
   phases: PhaseCheckpoint[];
-  args: Record<string, unknown>;
+  argsEncoding: 'openslack.workflow_arguments.v1';
+  args: WorkflowArgumentsEnvelope;
   pendingApprovals?: PendingApproval[];
 }
 
@@ -570,7 +573,8 @@ export interface WorkflowRunProgress {
   updatedAt?: string;
   elapsedMs?: number;
   currentPhase?: string;
-  args: Record<string, unknown>;
+  argsEncoding: 'openslack.workflow_arguments.v1';
+  args: WorkflowArgumentsEnvelope;
   phaseCount: number;
   agentCount: number;
   pendingApprovalCount: number;

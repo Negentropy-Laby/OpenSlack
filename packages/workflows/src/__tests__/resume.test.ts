@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { checkResumable, prepareResume, forceResume, replayCachedPhases } from '../resume.js';
-import type { ResumeState } from '../resume.js';
+import type { ResumeState, WorkflowResumeIdentity } from '../resume.js';
 import { RunStore } from '../run-store.js';
 import type { RunStoreFs, RunMeta } from '../run-store.js';
 import type { PhaseCheckpoint, WorkflowMeta, ExecutionMode } from '../types.js';
-import { computeManifestHash } from '../manifest.js';
 
 // ── In-memory filesystem ────────────────────────────────────────────────────
 
@@ -47,12 +46,26 @@ const TEST_MANIFEST: WorkflowMeta = {
   ],
 };
 
+const TEST_HASH = 'a'.repeat(64);
+
+function identity(
+  manifest: WorkflowMeta = TEST_MANIFEST,
+  hash: string = TEST_HASH,
+): WorkflowResumeIdentity {
+  return {
+    meta: manifest,
+    format: 'openslack-native',
+    hash,
+    run: async () => ({ status: 'completed' }),
+  };
+}
+
 function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): RunMeta {
   return {
     runId: 'run-001',
     workflowName: manifest.name,
     mode: 'execute' as ExecutionMode,
-    manifestHash: computeManifestHash(manifest),
+    manifestHash: TEST_HASH,
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,
@@ -97,7 +110,7 @@ describe('checkResumable', () => {
     await store.initRun('run-001', meta);
     // Run is in "running" state by default
 
-    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-001', identity());
     expect(result.canResume).toBe(false);
     expect(result.reason).toContain('running');
   });
@@ -117,10 +130,22 @@ describe('checkResumable', () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan']);
 
-    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-001', identity());
     expect(result.canResume).toBe(true);
     expect(result.manifestMatch).toBe(true);
     expect(result.reason).toBeUndefined();
+  });
+
+  it('keeps the manifest-only compatibility entrypoint fail-closed', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+
+    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    expect(result.canResume).toBe(false);
+    expect(result.reason).toContain('full executable SHA-256 identity');
+    await expect(prepareResume(store, 'run-001', TEST_MANIFEST)).rejects.toMatchObject({
+      code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED',
+    });
   });
 
   it('returns false for paused run with mismatched manifest hash', async () => {
@@ -132,7 +157,11 @@ describe('checkResumable', () => {
       description: 'Modified description',
     };
 
-    const result = await checkResumable(store, 'run-001', modifiedManifest);
+    const result = await checkResumable(
+      store,
+      'run-001',
+      identity(modifiedManifest, 'b'.repeat(64)),
+    );
     expect(result.canResume).toBe(false);
     expect(result.manifestMatch).toBe(false);
     expect(result.reason).toContain('Manifest hash mismatch');
@@ -145,7 +174,7 @@ describe('checkResumable', () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan']);
 
-    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-001', identity());
     expect(result.status).not.toBeNull();
     expect(result.status!.status).toBe('paused');
   });
@@ -156,7 +185,7 @@ describe('prepareResume', () => {
     const { store } = makeStore();
     const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
 
-    const state = await prepareResume(store, runId, TEST_MANIFEST);
+    const state = await prepareResume(store, runId, identity());
     expect(state.runId).toBe('run-001');
     expect(state.completedPhases).toHaveLength(1);
     expect(state.completedPhases[0].phase).toBe('Scan');
@@ -167,7 +196,7 @@ describe('prepareResume', () => {
     const { store } = makeStore();
     const runId = await initPausedRun(store, TEST_MANIFEST, []);
 
-    const state = await prepareResume(store, runId, TEST_MANIFEST);
+    const state = await prepareResume(store, runId, identity());
     expect(state.completedPhases).toHaveLength(0);
     expect(state.nextPhaseIndex).toBe(0);
   });
@@ -176,7 +205,7 @@ describe('prepareResume', () => {
     const { store } = makeStore();
     const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan', 'Verify', 'Report']);
 
-    const state = await prepareResume(store, runId, TEST_MANIFEST);
+    const state = await prepareResume(store, runId, identity());
     expect(state.completedPhases).toHaveLength(3);
     expect(state.nextPhaseIndex).toBe(3);
   });
@@ -191,7 +220,7 @@ describe('prepareResume', () => {
       status: 'failed',
     });
 
-    const state = await prepareResume(store, runId, TEST_MANIFEST);
+    const state = await prepareResume(store, runId, identity());
     // Only Scan is completed; Verify is failed so we stop there
     expect(state.completedPhases).toHaveLength(1);
     expect(state.nextPhaseIndex).toBe(1);
@@ -216,19 +245,19 @@ describe('prepareResume', () => {
       ...TEST_MANIFEST,
       description: 'Changed!',
     };
-    await expect(prepareResume(store, runId, modifiedManifest)).rejects.toThrow(
-      'Manifest hash mismatch',
-    );
+    await expect(
+      prepareResume(store, runId, identity(modifiedManifest, 'b'.repeat(64))),
+    ).rejects.toThrow('Manifest hash mismatch');
   });
 
   it('includes meta in resume state', async () => {
     const { store } = makeStore();
     const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
 
-    const state = await prepareResume(store, runId, TEST_MANIFEST);
+    const state = await prepareResume(store, runId, identity());
     expect(state.meta.runId).toBe('run-001');
     expect(state.meta.workflowName).toBe('test-scan');
-    expect(state.meta.manifestHash).toBe(computeManifestHash(TEST_MANIFEST));
+    expect(state.meta.manifestHash).toBe(TEST_HASH);
   });
 });
 

@@ -7,6 +7,10 @@ import {
   renderRunMarkdown,
 } from '../html-renderer.js';
 import type { RunStatus, PhaseCheckpoint } from '../types.js';
+import {
+  WORKFLOW_ARGUMENTS_SCHEMA,
+  encodeWorkflowArguments,
+} from '../internal/workflow-arguments.js';
 
 // ── Helper factories ─────────────────────────────────────────────────────────
 
@@ -19,7 +23,8 @@ function makeRunStatus(overrides: Partial<RunStatus> = {}): RunStatus {
     startedAt: '2026-05-28T10:00:00.000Z',
     updatedAt: '2026-05-28T10:05:00.000Z',
     phases: [],
-    args: {},
+    argsEncoding: WORKFLOW_ARGUMENTS_SCHEMA,
+    args: encodeWorkflowArguments({}).envelope,
     ...overrides,
   };
 }

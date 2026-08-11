@@ -1,4 +1,5 @@
 import { sanitizeTerminalText } from '../sanitize.js';
+import type { WorkflowArgumentsEnvelope } from '@openslack/workflows';
 
 export interface WorkflowToolEvidenceViewModel {
   type: 'tool_call' | 'tool_result' | 'progress';
@@ -55,7 +56,8 @@ export interface WorkflowRunProgressItem {
   updatedAt?: string;
   elapsedMs?: number;
   currentPhase?: string;
-  args: Record<string, unknown>;
+  argsEncoding: 'openslack.workflow_arguments.v1';
+  args: WorkflowArgumentsEnvelope;
   phaseCount: number;
   agentCount: number;
   pendingApprovalCount: number;

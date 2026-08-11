@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -7,6 +7,7 @@ import {
   WORKFLOW_AUDIT_MAX_BYTES,
   WORKFLOW_AUDIT_RECORD_SCHEMA,
   WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+  decodeRunMetaArguments,
   isRunStatusTransitionAllowed,
 } from '../run-store.js';
 import type { RunStoreFs, RunMeta, LogEntry } from '../run-store.js';
@@ -16,6 +17,7 @@ import {
   WORKFLOW_CONTROL_STATE_TRANSITIONS,
   validateWorkflowControlTransition,
 } from '../workflow-control-contract.js';
+import { encodeWorkflowArguments } from '../internal/workflow-arguments.js';
 
 // ── In-memory filesystem for tests ──────────────────────────────────────────
 
@@ -51,12 +53,57 @@ function makeStore(): { store: RunStore; fs: ReturnType<typeof createMemFs> } {
   return { store, fs };
 }
 
+function createIdentityFs(): ReturnType<typeof createMemFs> & {
+  reads: Map<string, number>;
+  externalWrite(path: string, content: string): void;
+} {
+  const base = createMemFs();
+  const reads = new Map<string, number>();
+  const versions = new Map<string, number>();
+  const touch = (path: string) => versions.set(path, (versions.get(path) ?? 0) + 1);
+  const readFile = base.readFile.bind(base);
+  const writeFile = base.writeFile.bind(base);
+  const appendFile = base.appendFile.bind(base);
+  return {
+    ...base,
+    reads,
+    async readFile(path: string) {
+      reads.set(path, (reads.get(path) ?? 0) + 1);
+      return readFile(path);
+    },
+    async writeFile(path: string, content: string) {
+      await writeFile(path, content);
+      touch(path);
+    },
+    async appendFile(path: string, content: string) {
+      await appendFile(path, content);
+      touch(path);
+    },
+    async fileIdentity(path: string) {
+      const content = base.files.get(path);
+      if (content === undefined) return null;
+      const version = String(versions.get(path) ?? 0);
+      return {
+        dev: '1',
+        ino: '1',
+        size: String(Buffer.byteLength(content, 'utf8')),
+        mtimeNs: version,
+        ctimeNs: version,
+      };
+    },
+    externalWrite(path: string, content: string) {
+      base.files.set(path, content);
+      touch(path);
+    },
+  };
+}
+
 function makeMeta(overrides: Partial<RunMeta> = {}): RunMeta {
   return {
     runId: 'run-001',
     workflowName: 'test-scan',
     mode: 'execute' as ExecutionMode,
-    manifestHash: 'abc123',
+    manifestHash: 'a'.repeat(64),
     args: {},
     startedAt: '2026-05-28T12:00:00.000Z',
     ...overrides,
@@ -125,7 +172,11 @@ describe('RunStore', () => {
       // Check meta.json
       const metaContent = fs.files.get('/test/workflows/runs/run-001/meta.json');
       expect(metaContent).toBeDefined();
-      expect(JSON.parse(metaContent!)).toEqual(meta);
+      expect(JSON.parse(metaContent!)).toEqual({
+        ...meta,
+        argsEncoding: 'openslack.workflow_arguments.v1',
+        args: encodeWorkflowArguments(meta.args as Record<string, unknown>).envelope,
+      });
 
       // Check status.json
       const statusContent = fs.files.get('/test/workflows/runs/run-001/status.json');
@@ -299,7 +350,7 @@ describe('RunStore', () => {
     });
 
     it('keeps local-only contract schemas aligned with durable TypeScript records', async () => {
-      const [budgetSchema, auditSchema] = await Promise.all([
+      const [budgetSchema, auditSchema, argumentsSchema] = await Promise.all([
         readFile(
           resolve(
             process.cwd(),
@@ -314,22 +365,33 @@ describe('RunStore', () => {
           ),
           'utf8',
         ).then((raw) => JSON.parse(raw)),
+        readFile(
+          resolve(
+            process.cwd(),
+            'packages/workflows/contracts/local-state/v1/workflow-arguments.schema.json',
+          ),
+          'utf8',
+        ).then((raw) => JSON.parse(raw)),
       ]);
       expect(budgetSchema.$id).toBe(WORKFLOW_BUDGET_SNAPSHOT_SCHEMA);
       expect(budgetSchema.additionalProperties).toBe(false);
       expect(auditSchema.$id).toBe(WORKFLOW_AUDIT_RECORD_SCHEMA);
       expect(auditSchema.additionalProperties).toBe(false);
+      expect(argumentsSchema.$id).toBe('openslack.workflow_arguments.v1');
+      expect(argumentsSchema.additionalProperties).toBe(false);
 
       const { store } = makeStore();
       await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
       await store.appendAuditRecord('run-001', 'qualification.audit', '{"ok":true}');
-      const [snapshot, records] = await Promise.all([
+      const [snapshot, records, status] = await Promise.all([
         store.loadBudgetSnapshot('run-001'),
         store.readAuditRecords('run-001'),
+        store.getRunStatus('run-001'),
       ]);
       const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
       expect(ajv.compile(budgetSchema)(snapshot)).toBe(true);
       expect(ajv.compile(auditSchema)(records[0])).toBe(true);
+      expect(ajv.compile(argumentsSchema)(status?.args)).toBe(true);
     });
   });
 
@@ -625,7 +687,11 @@ describe('RunStore', () => {
       const input = makeMeta();
       await store.initRun('run-001', input);
       const meta = await store.loadMeta('run-001');
-      expect(meta).toEqual(input);
+      expect(meta).toEqual({
+        ...input,
+        argsEncoding: 'openslack.workflow_arguments.v1',
+        args: encodeWorkflowArguments(input.args as Record<string, unknown>).envelope,
+      });
     });
   });
 
@@ -665,7 +731,193 @@ describe('RunStore', () => {
       expect(status!.mode).toBe('execute');
       expect(status!.status).toBe('running');
       expect(status!.startedAt).toBe(meta.startedAt);
-      expect(status!.args).toEqual({});
+      expect(status!.argsEncoding).toBe('openslack.workflow_arguments.v1');
+      expect(status!.args).toEqual(encodeWorkflowArguments({}).envelope);
+    });
+
+    it('normalizes legacy JSON arguments into the tagged external view', async () => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', makeMeta());
+      const legacy = makeMeta({ args: { nested: { value: 1 } } });
+      fs.files.set(store.metaPath('run-001'), JSON.stringify(legacy, null, 2));
+
+      const status = await store.getRunStatus('run-001');
+      expect(status?.args).toEqual(encodeWorkflowArguments({ nested: { value: 1 } }).envelope);
+    });
+
+    it('rejects weak identities and always persists new arguments as tagged envelopes', async () => {
+      const { store } = makeStore();
+      await expect(
+        store.initRun('run-001', makeMeta({ manifestHash: '0123456789abcdef' })),
+      ).rejects.toThrow('full SHA-256');
+    });
+
+    it('normalizes rich new arguments before strict persisted-meta validation', async () => {
+      const { store } = makeStore();
+      const args = Object.assign(Object.create(null) as Record<string, unknown>, {
+        count: 9n,
+        when: new Date('2026-08-11T00:00:00.000Z'),
+      });
+      await store.initRun('run-001', makeMeta({ args }));
+
+      const meta = await store.loadMeta('run-001');
+      expect(meta?.argsEncoding).toBe('openslack.workflow_arguments.v1');
+      expect(decodeRunMetaArguments(meta!)).toEqual(args);
+      expect(Object.getPrototypeOf(decodeRunMetaArguments(meta!))).toBeNull();
+    });
+  });
+
+  describe('durable run file validation', () => {
+    it('rejects missing, unknown, misbound, and malformed metadata fields', async () => {
+      const cases: Array<[string, (value: Record<string, unknown>) => void]> = [
+        ['missing field', (value) => delete value.startedAt],
+        ['unknown field', (value) => (value.unexpected = true)],
+        ['path binding', (value) => (value.runId = 'other-run')],
+        ['mode', (value) => (value.mode = 'unknown')],
+        ['timestamp', (value) => (value.startedAt = 'yesterday')],
+        ['hash', (value) => (value.manifestHash = '')],
+      ];
+      for (const [label, mutate] of cases) {
+        const { store, fs } = makeStore();
+        await store.initRun('run-001', makeMeta());
+        const path = store.metaPath('run-001');
+        const value = JSON.parse(fs.files.get(path)!) as Record<string, unknown>;
+        mutate(value);
+        fs.files.set(path, JSON.stringify(value));
+        await expect(store.loadMeta('run-001'), label).rejects.toThrow();
+      }
+    });
+
+    it('rejects missing, unknown, misbound, and malformed status fields', async () => {
+      const cases: Array<[string, (value: Record<string, unknown>) => void]> = [
+        ['missing field', (value) => delete value.phases],
+        ['unknown field', (value) => (value.unexpected = true)],
+        ['path binding', (value) => (value.runId = 'other-run')],
+        ['state', (value) => (value.status = 'unknown')],
+        ['timestamp', (value) => (value.updatedAt = 'tomorrow')],
+        ['phase', (value) => (value.phases = [{ phase: 'Scan' }])],
+        [
+          'control event',
+          (value) =>
+            (value.controlEvents = [
+              {
+                action: 'pause',
+                timestamp: '2026-08-11T00:00:00.000Z',
+                status: 'applied',
+                message: 'pause',
+                unexpected: true,
+              },
+            ]),
+        ],
+        [
+          'control target',
+          (value) =>
+            (value.pendingAgentControls = [
+              {
+                action: 'stopAgent',
+                timestamp: '2026-08-11T00:00:00.000Z',
+                status: 'recorded',
+                message: 'stop',
+                target: { agentRunId: 'agent-1' },
+              },
+            ]),
+        ],
+      ];
+      for (const [label, mutate] of cases) {
+        const { store, fs } = makeStore();
+        await store.initRun('run-001', makeMeta());
+        const path = store.statusPath('run-001');
+        const value = JSON.parse(fs.files.get(path)!) as Record<string, unknown>;
+        mutate(value);
+        fs.files.set(path, JSON.stringify(value));
+        await expect(store.loadStatus('run-001'), label).rejects.toThrow();
+      }
+    });
+
+    it('bounds metadata and status bytes before parsing', async () => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', makeMeta());
+      fs.files.set(store.metaPath('run-001'), ' '.repeat(256 * 1024 + 1));
+      fs.files.set(store.statusPath('run-001'), ' '.repeat(256 * 1024 + 1));
+      await expect(store.loadMeta('run-001')).rejects.toThrow('byte limit');
+      await expect(store.loadStatus('run-001')).rejects.toThrow('byte limit');
+    });
+  });
+
+  describe('run-scoped budget and audit writers', () => {
+    it('reuses validated budget and audit state while file identity is stable', async () => {
+      const fs = createIdentityFs();
+      const store = new RunStore({ baseDir: '/test/workflows', fs });
+      await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+      const budgetPath = store.budgetSnapshotPath('run-001');
+      const auditPath = store.auditPath('run-001');
+
+      await store.persistBudgetState('run-001', {
+        tokensUsed: 1,
+        tokensRemaining: 99,
+        costUsd: 1,
+        agentCalls: 1,
+      });
+      await store.persistBudgetState('run-001', {
+        tokensUsed: 2,
+        tokensRemaining: 98,
+        costUsd: 1,
+        agentCalls: 2,
+      });
+      await store.appendAuditRecord('run-001', 'first', '{}');
+      await store.appendAuditRecord('run-001', 'second', '{}');
+
+      expect(fs.reads.get(budgetPath)).toBe(1);
+      expect(fs.reads.get(auditPath)).toBe(1);
+    });
+
+    it('reloads identity drift and conservatively rereads without identity support', async () => {
+      const identityFs = createIdentityFs();
+      const identityStore = new RunStore({ baseDir: '/test/workflows', fs: identityFs });
+      await identityStore.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+      await identityStore.persistBudgetState('run-001', {
+        tokensUsed: 1,
+        tokensRemaining: 99,
+        costUsd: 1,
+        agentCalls: 1,
+      });
+      const path = identityStore.budgetSnapshotPath('run-001');
+      const external = JSON.parse(identityFs.files.get(path)!) as Record<string, unknown>;
+      external.revision = 2;
+      external.usage = {
+        tokensUsed: 2,
+        tokensRemaining: 98,
+        costUsd: 1,
+        agentCalls: 2,
+      };
+      identityFs.externalWrite(path, JSON.stringify(external, null, 2));
+      await identityStore.persistBudgetState('run-001', {
+        tokensUsed: 3,
+        tokensRemaining: 97,
+        costUsd: 1,
+        agentCalls: 3,
+      });
+      expect(identityFs.reads.get(path)).toBe(2);
+      await expect(identityStore.loadBudgetSnapshot('run-001')).resolves.toMatchObject({
+        revision: 3,
+      });
+
+      const fallbackFs = createMemFs();
+      const read = vi.spyOn(fallbackFs, 'readFile');
+      const fallbackStore = new RunStore({ baseDir: '/test/workflows', fs: fallbackFs });
+      await fallbackStore.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+      for (const used of [1, 2]) {
+        await fallbackStore.persistBudgetState('run-001', {
+          tokensUsed: used,
+          tokensRemaining: 100 - used,
+          costUsd: 1,
+          agentCalls: used,
+        });
+      }
+      const budgetReads = read.mock.calls.filter(
+        ([file]) => file === fallbackStore.budgetSnapshotPath('run-001'),
+      );
+      expect(budgetReads).toHaveLength(2);
     });
   });
 
@@ -732,6 +984,13 @@ describe('RunStore', () => {
   // ── Pause/Resume State Machine ─────────────────────────────────────────
 
   describe('pause/resume state machine', () => {
+    it('preserves the frozen running → resuming transition', async () => {
+      const { store } = makeStore();
+      await store.initRun('run-001', makeMeta());
+      await store.transitionStatus('run-001', 'resuming');
+      await expect(store.loadStatus('run-001')).resolves.toMatchObject({ status: 'resuming' });
+    });
+
     it('transitions running → paused_waiting_approval → resuming → running', async () => {
       const { store } = makeStore();
       await store.initRun('run-001', makeMeta());

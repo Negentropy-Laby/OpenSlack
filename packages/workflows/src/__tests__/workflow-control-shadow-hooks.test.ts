@@ -150,8 +150,10 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     await writeFile(
       join(runRoot, 'status.json'),
       JSON.stringify({
+        runId: 'run-shadow-test',
         status: 'running',
         updatedAt: '2026-08-03T00:00:00.000Z',
+        phases: [],
         controlEvents: [],
       }),
     );

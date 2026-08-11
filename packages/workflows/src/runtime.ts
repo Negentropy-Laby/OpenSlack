@@ -25,6 +25,8 @@ import type {
   WorkflowEffectBoundaryHandle,
 } from './workflow-runner-effect-boundary.js';
 import { canonicalJson, CanonicalJsonError } from './internal/canonical-json.js';
+import { cloneWorkflowArguments } from './internal/workflow-arguments.js';
+import { loadWorkflowCostConfig, type WorkflowCostConfig } from './cost.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -206,6 +208,12 @@ function canonicalAuditDetail(value: unknown): string {
 
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const { runId, mode, manifest, nestingDepth = 0, onWorkflowCall, onConfirm } = options;
+  const runtimeArgs = cloneWorkflowArguments(options.args ?? {});
+  let costConfigPromise: Promise<WorkflowCostConfig | null> | undefined;
+  const getCostConfig = (): Promise<WorkflowCostConfig | null> => {
+    costConfigPromise ??= loadWorkflowCostConfig(options.rootDir).catch(() => null);
+    return costConfigPromise;
+  };
 
   // --- State ---
   let currentPhase: string | undefined;
@@ -505,7 +513,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       return readonlyBudget;
     },
     get args() {
-      return options.args ?? {};
+      return cloneWorkflowArguments(runtimeArgs);
     },
 
     phase(name: string): void {
@@ -597,6 +605,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         runStore: options.runStore,
         budgetPolicy: manifest.budgetPolicy,
         onBudgetChange: options.onBudgetChange,
+        loadCostConfig: getCostConfig,
         signal: options.signal,
       });
     },

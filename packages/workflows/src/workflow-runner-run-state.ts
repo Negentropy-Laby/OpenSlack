@@ -1,4 +1,5 @@
 import type { RunStatusState } from './types.js';
+import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 
 export type WorkflowRunnerRunDisposition = 'initialize' | 'resume';
 
@@ -23,7 +24,7 @@ export function classifyWorkflowRunnerRunState(
       `Workflow run ${runId} exists without readable status and requires operator recovery.`,
     );
   }
-  if (['paused', 'paused_waiting_approval', 'resuming'].includes(status)) return 'resume';
+  if (isWorkflowResumeStatus(status)) return 'resume';
   throw new WorkflowRunnerRunStateError(
     `Workflow run ${runId} cannot resume from status "${status}" and requires operator recovery.`,
   );

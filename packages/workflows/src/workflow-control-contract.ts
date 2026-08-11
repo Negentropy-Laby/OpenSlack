@@ -30,6 +30,7 @@ export const WORKFLOW_CONTROL_STATE_TRANSITIONS = Object.freeze({
   running: Object.freeze([
     'paused',
     'paused_waiting_approval',
+    'resuming',
     'completed',
     'failed',
     'cancelled',

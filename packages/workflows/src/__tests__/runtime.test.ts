@@ -67,6 +67,32 @@ describe('createRuntime', () => {
       const rt = makeRuntime();
       expect(rt.args).toEqual({});
     });
+
+    it('returns a deep independent rich-value snapshot for every args read', () => {
+      const original = {
+        nested: { count: 1 },
+        values: [1, { label: 'stable' }],
+        large: 9n,
+        when: new Date('2026-08-11T00:00:00.000Z'),
+      };
+      const rt = makeRuntime({ args: original });
+      original.nested.count = 99;
+
+      const first = rt.args as typeof original;
+      first.nested.count = 2;
+      first.values[1] = { label: 'mutated' };
+      first.when.setUTCFullYear(2030);
+
+      const second = rt.args as typeof original;
+      expect(second).toEqual({
+        nested: { count: 1 },
+        values: [1, { label: 'stable' }],
+        large: 9n,
+        when: new Date('2026-08-11T00:00:00.000Z'),
+      });
+      expect(second).not.toBe(first);
+      expect(second.nested).not.toBe(first.nested);
+    });
   });
 
   describe('phase tracking', () => {
