@@ -3,10 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { computeAgentCacheKey } from '../agent-shim.js';
-import { executeResume, executeRun } from '../execute.js';
+import {
+  executeResume,
+  executeResumeWithStore,
+  executeRun,
+  WorkflowRunInputInvalidError,
+} from '../execute.js';
 import { WorkflowPausedError } from '../runtime.js';
 import { RunStore } from '../run-store.js';
 import type { WorkflowMeta, WorkflowModule, WorkflowRuntime } from '../types.js';
+import type { WorkflowEffectBoundaryHandle } from '../workflow-runner-effect-boundary.js';
 
 const roots: string[] = [];
 const manifest: WorkflowMeta = {
@@ -32,7 +38,14 @@ async function setupRun(
     budget?: { tokens: number; costUsd: number };
     usage?: { tokensUsed: number; tokensRemaining: number; costUsd: number; agentCalls: number };
     manifestHash?: string;
-    status?: 'paused' | 'completed' | 'failed' | 'cancelled';
+    status?:
+      | 'running'
+      | 'paused'
+      | 'paused_waiting_approval'
+      | 'resuming'
+      | 'completed'
+      | 'failed'
+      | 'cancelled';
   } = {},
 ) {
   const rootDir = await mkdtemp(join(tmpdir(), 'openslack-resume-budget-'));
@@ -50,7 +63,8 @@ async function setupRun(
     budget,
   });
   if (options.usage) await store.persistBudgetState(runId, options.usage);
-  await store.transitionStatus(runId, options.status ?? 'paused');
+  const status = options.status ?? 'paused';
+  if (status !== 'running') await store.transitionStatus(runId, status);
   return { rootDir, runId, budget, store };
 }
 
@@ -68,9 +82,20 @@ describe('strict cumulative workflow resume', () => {
       data: { label: options.label },
       tokenUsage: options.label === 'call-a' ? 10 : 20,
     }));
+    const effectBoundary = {
+      intent: vi.fn(async (input: { operation: string }) => ({
+        effectId: `effect:${input.operation}`,
+        effectKind: input.operation,
+        effectHash: 'a'.repeat(64),
+        capabilityHash: 'b'.repeat(64),
+        requiresHumanDecision: true,
+      })),
+      outcome: vi.fn(async (_handle: WorkflowEffectBoundaryHandle) => undefined),
+    };
     const workflow = makeWorkflow(async (ctx: WorkflowRuntime) => {
       ctx.phase('Run');
       await ctx.agent('prompt-a', { label: 'call-a', phase: 'Run' });
+      await ctx.openslack.governance.audit('pre-approval', { phase: 'Run' });
       await ctx.openslack.task.createIssue({ title: 'bounded audit effect' });
       await ctx.agent('prompt-b', { label: 'call-b', phase: 'Run' });
       return { status: 'completed' };
@@ -84,8 +109,10 @@ describe('strict cumulative workflow resume', () => {
         budget,
         agentLauncher: launcher,
         onConfirm: async (operation, detail) => {
+          if (operation === 'openslack.governance.audit') return true;
           throw new WorkflowPausedError(operation, detail, runId);
         },
+        effectBoundary,
         rootDir,
       }),
     ).rejects.toBeInstanceOf(WorkflowPausedError);
@@ -94,6 +121,21 @@ describe('strict cumulative workflow resume', () => {
     await expect(store.loadStatus(runId)).resolves.toMatchObject({
       status: 'paused_waiting_approval',
     });
+    await expect(
+      executeResume(workflow, {
+        runId,
+        manifest,
+        args: { qualification: true },
+        budget,
+        agentLauncher: launcher,
+        onConfirm: async (operation, detail) => {
+          if (operation === 'openslack.governance.audit') return true;
+          throw new WorkflowPausedError(operation, detail, runId);
+        },
+        effectBoundary,
+        rootDir,
+      }),
+    ).rejects.toBeInstanceOf(WorkflowPausedError);
     await executeResume(workflow, {
       runId,
       manifest,
@@ -101,6 +143,7 @@ describe('strict cumulative workflow resume', () => {
       budget,
       agentLauncher: launcher,
       onConfirm: async () => true,
+      effectBoundary,
       rootDir,
     });
 
@@ -108,6 +151,19 @@ describe('strict cumulative workflow resume', () => {
     await expect(store.loadBudgetSnapshot(runId)).resolves.toMatchObject({
       usage: { tokensUsed: 30, tokensRemaining: 70, agentCalls: 2 },
     });
+    await expect(store.readAuditRecords(runId)).resolves.toMatchObject([
+      { sequence: 1, operation: 'pre-approval' },
+    ]);
+    expect(
+      effectBoundary.intent.mock.calls.filter(
+        ([input]) => input.operation === 'openslack.governance.audit',
+      ),
+    ).toHaveLength(3);
+    expect(
+      effectBoundary.outcome.mock.calls.filter(
+        ([handle]) => handle.effectKind === 'openslack.governance.audit',
+      ),
+    ).toHaveLength(3);
   });
 
   it('reuses cached calls without charging and charges new calls against prior usage', async () => {
@@ -210,7 +266,7 @@ describe('strict cumulative workflow resume', () => {
         allowUnattended: true,
         rootDir,
       }),
-    ).rejects.toThrow('does not exist');
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED' });
 
     const terminal = await setupRun({ runId: 'terminal', status: 'completed' });
     await expect(
@@ -220,7 +276,7 @@ describe('strict cumulative workflow resume', () => {
         allowUnattended: true,
         rootDir: terminal.rootDir,
       }),
-    ).rejects.toThrow('non-resumable status "completed"');
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED' });
   });
 
   it('rejects argument, budget, workflow hash, and snapshot drift', async () => {
@@ -257,7 +313,7 @@ describe('strict cumulative workflow resume', () => {
         allowUnattended: true,
         rootDir: hashDrift.rootDir,
       }),
-    ).rejects.toThrow('workflow hash has drifted');
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED' });
 
     const snapshotDrift = await setupRun({ runId: 'snapshot-drift' });
     const path = snapshotDrift.store.budgetSnapshotPath(snapshotDrift.runId);
@@ -272,6 +328,77 @@ describe('strict cumulative workflow resume', () => {
         rootDir: snapshotDrift.rootDir,
       }),
     ).rejects.toThrow('tokensUsed');
+  });
+
+  it('compares canonical argument values and rejects non-JSON input before initialization', async () => {
+    const reordered = await setupRun({
+      runId: 'args-reordered',
+      args: { z: 2, a: 1 },
+    });
+    const workflow = makeWorkflow(async (_ctx, args) => ({ status: 'completed', args }));
+    await expect(
+      executeResume(workflow, {
+        runId: reordered.runId,
+        manifest,
+        args: { a: 1, z: 2 },
+        allowUnattended: true,
+        rootDir: reordered.rootDir,
+      }),
+    ).resolves.toMatchObject({ status: 'completed', args: { a: 1, z: 2 } });
+
+    const rootDir = await mkdtemp(join(tmpdir(), 'openslack-invalid-args-'));
+    roots.push(rootDir);
+    await expect(
+      executeRun(workflow, {
+        runId: 'run.invalid.args',
+        manifest,
+        args: { unsupported: undefined },
+        allowUnattended: true,
+        rootDir,
+      }),
+    ).rejects.toBeInstanceOf(WorkflowRunInputInvalidError);
+    const store = new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
+    await expect(store.runExists('run.invalid.args')).resolves.toBe(false);
+  });
+
+  it('keeps crashed running state fail-closed with a stable recovery error', async () => {
+    const running = await setupRun({ runId: 'crashed-running', status: 'running' });
+    await expect(
+      executeResume(
+        makeWorkflow(async () => ({ status: 'completed' })),
+        {
+          runId: running.runId,
+          manifest,
+          allowUnattended: true,
+          rootDir: running.rootDir,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED' });
+  });
+
+  it('routes resume transition failures through the main failure boundary', async () => {
+    const resumed = await setupRun({ runId: 'transition-failure' });
+    const transitionError = new Error('transition persistence failed');
+    const transition = resumed.store.transitionStatus.bind(resumed.store);
+    vi.spyOn(resumed.store, 'transitionStatus').mockImplementation(async (runId, status) => {
+      if (status === 'running') throw transitionError;
+      await transition(runId, status);
+    });
+    await expect(
+      executeResumeWithStore(
+        makeWorkflow(async () => ({ status: 'completed' })),
+        {
+          runId: resumed.runId,
+          manifest,
+          allowUnattended: true,
+          rootDir: resumed.rootDir,
+        },
+        resumed.store,
+      ),
+    ).rejects.toBe(transitionError);
+    await expect(resumed.store.loadStatus(resumed.runId)).resolves.toMatchObject({
+      status: 'paused',
+    });
   });
 
   it('does not grant a fresh allowance when the persisted budget is exhausted', async () => {

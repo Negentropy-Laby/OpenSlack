@@ -21,8 +21,8 @@ import { RunStore } from './run-store.js';
 import type { RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
 import { join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
+import { canonicalJson, canonicalJsonRoundTrip } from './internal/canonical-json.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -34,6 +34,27 @@ export class DryRunError extends Error {
     super(`Dry-run validation failed: ${violations.join('; ')}`);
     this.name = 'DryRunError';
     this.violations = violations;
+  }
+}
+
+export class WorkflowResumeRecoveryRequiredError extends Error {
+  readonly code = 'WORKFLOW_RESUME_RECOVERY_REQUIRED' as const;
+
+  constructor(
+    readonly runId: string,
+    reason: string,
+  ) {
+    super(`Workflow run ${runId} requires operator recovery: ${reason}`);
+    this.name = 'WorkflowResumeRecoveryRequiredError';
+  }
+}
+
+export class WorkflowRunInputInvalidError extends TypeError {
+  readonly code = 'WORKFLOW_RUN_INPUT_INVALID' as const;
+
+  constructor(cause?: unknown) {
+    super('Workflow arguments must contain only canonical JSON data.', { cause });
+    this.name = 'WorkflowRunInputInvalidError';
   }
 }
 
@@ -152,6 +173,14 @@ function throwIfExecutionAborted(
 
 function workflowRunStore(rootDir: string): RunStore {
   return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
+}
+
+function canonicalArguments(value: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return canonicalJsonRoundTrip(value);
+  } catch (error) {
+    throw new WorkflowRunInputInvalidError(error);
+  }
 }
 
 function workflowHash(
@@ -416,7 +445,17 @@ export async function executeRun(
   },
   options: ExecuteRunOptions,
 ): Promise<RunResult> {
-  const { manifest, args = {}, budget } = options;
+  return executeRunWithStore(workflow, options);
+}
+
+/** @internal Worker authority path; not exported from the package root. */
+export async function executeRunWithStore(
+  workflow: Parameters<typeof executeRun>[0],
+  options: ExecuteRunOptions,
+  storeOverride?: RunStore,
+): Promise<RunResult> {
+  const { manifest, budget } = options;
+  const args = canonicalArguments(options.args ?? {});
 
   if (
     options.runId !== undefined &&
@@ -430,7 +469,7 @@ export async function executeRun(
     options.confirmationPolicy?.runId ??
     `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const rootDir = options.rootDir ?? process.cwd();
-  const store = workflowRunStore(rootDir);
+  const store = storeOverride ?? workflowRunStore(rootDir);
   const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
   throwIfExecutionAborted(options.signal, runId);
 
@@ -579,9 +618,18 @@ export async function executeResume(
     effectBoundary?: WorkflowEffectBoundary;
   },
 ): Promise<RunResult> {
+  return executeResumeWithStore(workflow, options);
+}
+
+/** @internal Worker authority path; not exported from the package root. */
+export async function executeResumeWithStore(
+  workflow: Parameters<typeof executeResume>[0],
+  options: Parameters<typeof executeResume>[1],
+  storeOverride?: RunStore,
+): Promise<RunResult> {
   const { runId, manifest } = options;
   const rootDir = options.rootDir ?? process.cwd();
-  const store = workflowRunStore(rootDir);
+  const store = storeOverride ?? workflowRunStore(rootDir);
   throwIfExecutionAborted(options.signal, runId);
 
   if (options.confirmationPolicy !== undefined && options.confirmationPolicy.runId !== runId) {
@@ -589,16 +637,21 @@ export async function executeResume(
   }
 
   if (!(await store.runExists(runId))) {
-    throw new Error(`Workflow run ${runId} does not exist; resume cannot initialize a new run.`);
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable run state is missing');
   }
-  const meta = await store.loadMeta(runId);
-  const status = await store.loadStatus(runId);
-  const snapshot = await store.loadBudgetSnapshot(runId);
+  const [meta, status, snapshot] = await Promise.all([
+    store.loadMeta(runId),
+    store.loadStatus(runId),
+    store.loadBudgetSnapshot(runId),
+  ]);
   if (meta === null || status === null || snapshot === null) {
-    throw new Error(`Workflow run ${runId} has incomplete resume state.`);
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable resume state is incomplete');
   }
   if (!['paused', 'paused_waiting_approval', 'resuming'].includes(status.status)) {
-    throw new Error(`Workflow run ${runId} has non-resumable status "${status.status}".`);
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      `status "${status.status}" cannot be replayed automatically`,
+    );
   }
   if (
     meta.runId !== runId ||
@@ -606,9 +659,13 @@ export async function executeResume(
     meta.mode !== 'execute' ||
     meta.manifestHash !== workflowHash(workflow, manifest)
   ) {
-    throw new Error(`Workflow run ${runId} identity or workflow hash has drifted.`);
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'identity or workflow hash has drifted');
   }
-  if (options.args !== undefined && !isDeepStrictEqual(options.args, meta.args)) {
+  const persistedArgs = canonicalArguments(meta.args);
+  if (
+    options.args !== undefined &&
+    canonicalJson(canonicalArguments(options.args)) !== canonicalJson(persistedArgs)
+  ) {
     throw new Error(`Workflow run ${runId} resume arguments do not match the original run.`);
   }
   if (meta.budget === undefined) {
@@ -618,13 +675,20 @@ export async function executeResume(
     tokens: meta.budget.tokens,
     costUsd: meta.budget.costUsd ?? 0,
   };
-  if (options.budget !== undefined && !isDeepStrictEqual(options.budget, effectiveBudget)) {
+  if (
+    options.budget !== undefined &&
+    (options.budget.tokens !== effectiveBudget.tokens ||
+      options.budget.costUsd !== effectiveBudget.costUsd)
+  ) {
     throw new Error(`Workflow run ${runId} resume budget does not match the original run.`);
   }
-  if (!isDeepStrictEqual(snapshot.budget, effectiveBudget)) {
+  if (
+    snapshot.budget.tokens !== effectiveBudget.tokens ||
+    snapshot.budget.costUsd !== effectiveBudget.costUsd
+  ) {
     throw new Error(`Workflow run ${runId} budget snapshot has drifted from metadata.`);
   }
-  const args = meta.args;
+  const args = persistedArgs;
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined;
@@ -669,14 +733,13 @@ export async function executeResume(
     },
   });
 
-  if (status.status === 'paused_waiting_approval') {
-    await store.transitionStatus(runId, 'resuming');
-    await store.transitionStatus(runId, 'running');
-  } else {
-    await store.transitionStatus(runId, 'running');
-  }
-
   try {
+    if (status.status === 'paused_waiting_approval') {
+      await store.transitionStatus(runId, 'resuming');
+      await store.transitionStatus(runId, 'running');
+    } else if (status.status !== 'running') {
+      await store.transitionStatus(runId, 'running');
+    }
     throwIfExecutionAborted(options.signal, runId);
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {

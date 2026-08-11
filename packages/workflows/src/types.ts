@@ -58,6 +58,7 @@ export interface BudgetState {
   tokensUsed: number;
   tokensRemaining: number | null; // null = unlimited
   costUsd: number;
+  /** Count of real provider attempts, including attempts that fail. Cache hits are excluded. */
   agentCalls: number;
 }
 

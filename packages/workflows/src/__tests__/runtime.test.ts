@@ -2,11 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRuntime } from '../runtime.js';
+import { createRuntime, WorkflowAuditDetailInvalidError } from '../runtime.js';
 import type { RuntimeOptions } from '../runtime.js';
 import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
 import type { PipelineCacheStore } from '../pipeline-runner.js';
 import type { WorkflowMeta, BudgetState } from '../types.js';
+import type { RunStore } from '../run-store.js';
 
 const testManifest: WorkflowMeta = {
   name: 'test-workflow',
@@ -19,6 +20,10 @@ const testManifest: WorkflowMeta = {
 };
 
 const autoConfirm = async () => true;
+
+function auditStore(appendAuditRecord = vi.fn(async () => undefined)): RunStore {
+  return { appendAuditRecord, appendLog: vi.fn(async () => undefined) } as unknown as RunStore;
+}
 
 function makeRuntime(overrides: Partial<RuntimeOptions> = {}): ReturnType<typeof createRuntime> {
   return createRuntime({
@@ -389,8 +394,55 @@ describe('createRuntime', () => {
     });
 
     it('governance.audit does not throw', async () => {
-      const rt = makeRuntime();
+      const rt = makeRuntime({ runStore: auditStore() });
       await expect(rt.openslack.governance.audit('test-action')).resolves.toBeUndefined();
+    });
+
+    it('fails closed when execute-mode audit has no durable run store', async () => {
+      const rt = makeRuntime();
+      await expect(rt.openslack.governance.audit('test-action')).rejects.toThrow(
+        'requires a durable run store',
+      );
+    });
+
+    it.each([
+      ['Date', new Date('2026-08-11T00:00:00.000Z')],
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+      ['undefined field', { invalid: undefined }],
+      ['BigInt', { invalid: 1n }],
+      ['Symbol', Symbol('invalid')],
+      ['function', () => undefined],
+      ['class instance', new (class AuditDetail {})()],
+      ['null prototype', Object.create(null)],
+      ['sparse array', Array(1)],
+    ])('rejects non-canonical %s audit details before confirmation', async (_name, details) => {
+      const onConfirm = vi.fn(async () => true);
+      const appendAuditRecord = vi.fn(async () => undefined);
+      const effectBoundary = {
+        intent: vi.fn(),
+        outcome: vi.fn(),
+      };
+      const rt = makeRuntime({
+        onConfirm,
+        runStore: auditStore(appendAuditRecord),
+        effectBoundary: effectBoundary as never,
+      });
+      await expect(rt.openslack.governance.audit('test-action', details)).rejects.toMatchObject({
+        code: 'WORKFLOW_AUDIT_DETAIL_INVALID',
+      });
+      expect(onConfirm).not.toHaveBeenCalled();
+      expect(effectBoundary.intent).not.toHaveBeenCalled();
+      expect(appendAuditRecord).not.toHaveBeenCalled();
+    });
+
+    it('rejects circular audit details with the stable typed error', async () => {
+      const details: Record<string, unknown> = {};
+      details.self = details;
+      const rt = makeRuntime({ runStore: auditStore() });
+      await expect(rt.openslack.governance.audit('test-action', details)).rejects.toBeInstanceOf(
+        WorkflowAuditDetailInvalidError,
+      );
     });
   });
 
@@ -654,7 +706,7 @@ describe('createRuntime', () => {
 
     it('calls onConfirm before governance.audit', async () => {
       const onConfirm = vi.fn(async () => true);
-      const rt = makeRuntime({ mode: 'execute', onConfirm });
+      const rt = makeRuntime({ mode: 'execute', onConfirm, runStore: auditStore() });
       await rt.openslack.governance.audit('test');
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });

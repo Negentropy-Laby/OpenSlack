@@ -166,6 +166,7 @@ export {
   createRuntime,
   ExecuteDeniedError,
   WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES,
+  WorkflowAuditDetailInvalidError,
   WorkflowExecutionCancelledError,
   WorkflowPausedError,
 } from './runtime.js';
@@ -236,6 +237,7 @@ export type { PipelineCacheStore } from './pipeline-runner.js';
 export {
   RunStore,
   WORKFLOW_AUDIT_RECORD_SCHEMA,
+  WORKFLOW_AUDIT_MAX_BYTES,
   WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
 } from './run-store.js';
 export type {
@@ -249,6 +251,7 @@ export type {
   AgentReplayInputPersistenceResult,
   BudgetWarning,
   WorkflowAuditRecord,
+  AppendWorkflowAuditResult,
   WorkflowBudgetSnapshot,
 } from './run-store.js';
 
@@ -300,6 +303,8 @@ export {
   executeResume,
   DryRunError,
   createOnConfirmFromPolicy,
+  WorkflowResumeRecoveryRequiredError,
+  WorkflowRunInputInvalidError,
 } from './execute.js';
 export type { DryRunOptions, DryRunResult, ExecuteRunOptions, SimulatedEffect } from './execute.js';
 

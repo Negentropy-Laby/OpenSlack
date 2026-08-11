@@ -77,6 +77,7 @@ describe('GS8-B source and authority invariants', () => {
     expect(worker.indexOf("await import('./execute.js')")).toBeGreaterThan(
       worker.indexOf('execute: async'),
     );
+    expect(worker).not.toContain('export async function executeWorkflowRunnerJob');
   });
 
   it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {

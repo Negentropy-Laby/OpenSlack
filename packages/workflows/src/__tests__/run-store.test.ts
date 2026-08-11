@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { RunStore, isRunStatusTransitionAllowed } from '../run-store.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import {
+  RunStore,
+  WORKFLOW_AUDIT_MAX_BYTES,
+  WORKFLOW_AUDIT_RECORD_SCHEMA,
+  WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+  isRunStatusTransitionAllowed,
+} from '../run-store.js';
 import type { RunStoreFs, RunMeta, LogEntry } from '../run-store.js';
 import type { PhaseCheckpoint, ExecutionMode } from '../types.js';
 import {
@@ -229,6 +238,98 @@ describe('RunStore', () => {
       });
       expect(records[0].detailHash).toMatch(/^[0-9a-f]{64}$/u);
       expect(fs.files.get(store.auditPath('run-001'))).not.toContain('secret detail');
+    });
+
+    it('deduplicates sequential and concurrent replay while preserving distinct events', async () => {
+      const { store } = makeStore();
+      await store.initRun('run-001', makeMeta());
+
+      const first = await store.appendAuditRecord('run-001', 'qualification.audit', '{"a":1}');
+      const replay = await store.appendAuditRecord('run-001', 'qualification.audit', '{"a":1}');
+      const concurrent = await Promise.all([
+        store.appendAuditRecord('run-001', 'qualification.audit', '{"occurrenceId":"2"}'),
+        store.appendAuditRecord('run-001', 'qualification.audit', '{"occurrenceId":"2"}'),
+      ]);
+      await store.appendAuditRecord('run-001', 'qualification.other', '{"a":1}');
+
+      expect(first.duplicate).toBe(false);
+      expect(replay).toEqual({ record: first.record, duplicate: true });
+      expect(concurrent.filter((result) => result.duplicate)).toHaveLength(1);
+      await expect(store.readAuditRecords('run-001')).resolves.toHaveLength(3);
+    });
+
+    it('accepts an empty audit file but rejects malformed, drifting, and oversized chains', async () => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', makeMeta());
+      const path = store.auditPath('run-001');
+      fs.files.set(path, '');
+      await expect(store.readAuditRecords('run-001')).resolves.toEqual([]);
+
+      fs.files.set(path, '{"truncated":true}');
+      await expect(store.readAuditRecords('run-001')).rejects.toThrow('canonical JSONL framing');
+
+      fs.files.set(
+        path,
+        `${JSON.stringify({
+          runId: 'run-001',
+          schema: WORKFLOW_AUDIT_RECORD_SCHEMA,
+          sequence: 1,
+          operation: 'qualification.audit',
+          detailHash: 'a'.repeat(64),
+          recordedAt: '2026-08-11T00:00:00.000Z',
+        })}\n`,
+      );
+      await expect(store.readAuditRecords('run-001')).rejects.toThrow('not canonical JSON');
+
+      fs.files.set(
+        path,
+        `${JSON.stringify({
+          schema: WORKFLOW_AUDIT_RECORD_SCHEMA,
+          runId: 'run-001',
+          sequence: 2,
+          operation: 'qualification.audit',
+          detailHash: 'a'.repeat(64),
+          recordedAt: '2026-08-11T00:00:00.000Z',
+        })}\n`,
+      );
+      await expect(store.readAuditRecords('run-001')).rejects.toThrow('sequence is invalid');
+
+      fs.files.set(path, 'x'.repeat(WORKFLOW_AUDIT_MAX_BYTES + 1));
+      await expect(store.readAuditRecords('run-001')).rejects.toThrow('byte limit');
+    });
+
+    it('keeps local-only contract schemas aligned with durable TypeScript records', async () => {
+      const [budgetSchema, auditSchema] = await Promise.all([
+        readFile(
+          resolve(
+            process.cwd(),
+            'packages/workflows/contracts/local-state/v1/workflow-budget-snapshot.schema.json',
+          ),
+          'utf8',
+        ).then((raw) => JSON.parse(raw)),
+        readFile(
+          resolve(
+            process.cwd(),
+            'packages/workflows/contracts/local-state/v1/workflow-audit-record.schema.json',
+          ),
+          'utf8',
+        ).then((raw) => JSON.parse(raw)),
+      ]);
+      expect(budgetSchema.$id).toBe(WORKFLOW_BUDGET_SNAPSHOT_SCHEMA);
+      expect(budgetSchema.additionalProperties).toBe(false);
+      expect(auditSchema.$id).toBe(WORKFLOW_AUDIT_RECORD_SCHEMA);
+      expect(auditSchema.additionalProperties).toBe(false);
+
+      const { store } = makeStore();
+      await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+      await store.appendAuditRecord('run-001', 'qualification.audit', '{"ok":true}');
+      const [snapshot, records] = await Promise.all([
+        store.loadBudgetSnapshot('run-001'),
+        store.readAuditRecords('run-001'),
+      ]);
+      const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
+      expect(ajv.compile(budgetSchema)(snapshot)).toBe(true);
+      expect(ajv.compile(auditSchema)(records[0])).toBe(true);
     });
   });
 

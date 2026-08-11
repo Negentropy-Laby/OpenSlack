@@ -23,6 +23,7 @@ import {
   getBudgetWarningThreshold,
   loadWorkflowCostConfig,
 } from './cost.js';
+import { captureFailure, throwWithSuppressed } from './internal/suppressed-errors.js';
 
 /**
  * Error thrown when agent result fails schema validation.
@@ -242,9 +243,10 @@ async function applyCostAndBudgetPolicy(options: {
 
   if (!exceeded) return;
 
+  if (await hasApprovedBudgetOverride(options.runStore, options.runId)) return;
+
   const onExceeded = policy?.onExceeded ?? 'fail';
   if (onExceeded === 'pause') {
-    if (await hasApprovedBudgetOverride(options.runStore, options.runId)) return;
     const detail = `Token budget exceeded: ${options.budget.tokensUsed}/${tokenBudget} tokens.`;
     await options.runStore?.savePendingApproval(options.runId, {
       operation: 'workflow.budget.exceeded',
@@ -379,8 +381,18 @@ export async function executeAgentCall<T>(
     // agent phase matches allowed phases.
   }
 
-  // 3. Budget check
-  if (config.budget.tokensRemaining !== null && config.budget.tokensRemaining <= 0) {
+  // 3. Budget check. An independently approved pause override permits a new
+  // attempt to overdraw the original limit; an unapproved exhausted run still
+  // fails before provider preflight or cache lookup.
+  const approvedBudgetOverride =
+    config.budget.tokensRemaining !== null && config.budget.tokensRemaining <= 0
+      ? await hasApprovedBudgetOverride(config.runStore, config.runId)
+      : false;
+  if (
+    config.budget.tokensRemaining !== null &&
+    config.budget.tokensRemaining <= 0 &&
+    !approvedBudgetOverride
+  ) {
     throw new AgentBudgetExceededError();
   }
 
@@ -390,7 +402,11 @@ export async function executeAgentCall<T>(
   let agentRunId = config.agentRunId ?? generateRunId();
   let launchOptions: AgentOptions = {
     ...options,
-    budget: resolveLaunchBudget(options.budget, config.budget.tokensRemaining),
+    budget: resolveLaunchBudget(
+      options.budget,
+      config.budget.tokensRemaining,
+      approvedBudgetOverride,
+    ),
     agentRunId,
   };
   const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
@@ -513,7 +529,7 @@ export async function executeAgentCall<T>(
         };
         continue;
       }
-      chargeFailedAgentUsage(config.budget, err);
+      const failedUsage = chargeFailedAgentUsage(config.budget, err);
       if (shouldEmit) {
         config.eventEmitter!({
           type: 'agent.conversation.failed',
@@ -526,8 +542,25 @@ export async function executeAgentCall<T>(
           error: getAgentRunFailureSummary(err),
         });
       }
-      await config.onBudgetChange?.(config.budget);
-      throw err;
+      const suppressed: unknown[] = [];
+      const policyError = await captureFailure(() =>
+        applyCostAndBudgetPolicy({
+          runId: config.runId,
+          rootDir: config.rootDir,
+          runStore: config.runStore,
+          budget: config.budget,
+          budgetPolicy: config.budgetPolicy,
+          tokensUsedThisCall: failedUsage,
+          provider: config.resolvedAgent?.provider,
+          model: config.resolvedAgent?.model ?? options.model,
+        }),
+      );
+      if (policyError !== undefined) suppressed.push(policyError);
+      const persistenceError = await captureFailure(async () => {
+        await config.onBudgetChange?.(config.budget);
+      });
+      if (persistenceError !== undefined) suppressed.push(persistenceError);
+      throwWithSuppressed(err, suppressed);
     }
   }
 
@@ -563,8 +596,9 @@ export async function executeAgentCall<T>(
           error: getAgentRunFailureSummary(error),
         });
       }
-      try {
-        await applyCostAndBudgetPolicy({
+      const suppressed: unknown[] = [];
+      const policyError = await captureFailure(() =>
+        applyCostAndBudgetPolicy({
           runId: config.runId,
           rootDir: config.rootDir,
           runStore: config.runStore,
@@ -573,11 +607,14 @@ export async function executeAgentCall<T>(
           tokensUsedThisCall: usage,
           provider: config.resolvedAgent?.provider,
           model: config.resolvedAgent?.model ?? options.model,
-        });
-      } finally {
+        }),
+      );
+      if (policyError !== undefined) suppressed.push(policyError);
+      const persistenceError = await captureFailure(async () => {
         await config.onBudgetChange?.(config.budget);
-      }
-      throw error;
+      });
+      if (persistenceError !== undefined) suppressed.push(persistenceError);
+      throwWithSuppressed(error, suppressed);
     }
   }
 
@@ -617,9 +654,8 @@ export async function executeAgentCall<T>(
   // Persist cumulative usage before making the result cache-visible. If the
   // budget write fails, a later resume may re-run and over-count this call,
   // but it can never use a cached result whose usage was not durably charged.
-  let budgetPolicyError: unknown;
-  try {
-    await applyCostAndBudgetPolicy({
+  const budgetPolicyError = await captureFailure(() =>
+    applyCostAndBudgetPolicy({
       runId: config.runId,
       rootDir: config.rootDir,
       runStore: config.runStore,
@@ -628,16 +664,27 @@ export async function executeAgentCall<T>(
       tokensUsedThisCall: usage,
       provider: config.resolvedAgent?.provider,
       model: config.resolvedAgent?.model ?? options.model,
-    });
-  } catch (error) {
-    budgetPolicyError = error;
+    }),
+  );
+  const persistenceError = await captureFailure(async () => {
+    await config.onBudgetChange?.(config.budget);
+  });
+  if (persistenceError !== undefined) {
+    if (budgetPolicyError !== undefined) {
+      throwWithSuppressed(budgetPolicyError, [persistenceError]);
+    }
+    throw persistenceError;
   }
-  await config.onBudgetChange?.(config.budget);
 
   // Re-save with runtime evidence after durable budget accounting. Older
   // cache entries without workflowEvidence remain readable by the progress model.
-  await config.cache.save(config.runId, config.cacheKey, evidenceResult as AgentResult);
-  if (budgetPolicyError !== undefined) throw budgetPolicyError;
+  const cacheError = await captureFailure(() =>
+    config.cache.save(config.runId, config.cacheKey, evidenceResult as AgentResult),
+  );
+  if (budgetPolicyError !== undefined) {
+    throwWithSuppressed(budgetPolicyError, cacheError === undefined ? [] : [cacheError]);
+  }
+  if (cacheError !== undefined) throw cacheError;
 
   return result.data as T;
 }
@@ -666,10 +713,11 @@ export { validateAgainstSchema };
 function resolveLaunchBudget(
   requested: AgentOptions['budget'],
   workflowRemaining: number | null,
+  approvedOverdraw = false,
 ): AgentOptions['budget'] {
   const requestedTokens = requested?.tokens;
   const tokens =
-    workflowRemaining === null
+    workflowRemaining === null || approvedOverdraw
       ? requestedTokens
       : requestedTokens === undefined
         ? workflowRemaining
@@ -677,7 +725,7 @@ function resolveLaunchBudget(
   return tokens === undefined ? undefined : { tokens, costUsd: requested?.costUsd };
 }
 
-function chargeFailedAgentUsage(budget: BudgetState, error: unknown): void {
+function chargeFailedAgentUsage(budget: BudgetState, error: unknown): number {
   const usage =
     error && typeof error === 'object' && 'tokenUsage' in error
       ? (error as { tokenUsage?: unknown }).tokenUsage
@@ -687,4 +735,5 @@ function chargeFailedAgentUsage(budget: BudgetState, error: unknown): void {
     if (budget.tokensRemaining !== null) budget.tokensRemaining -= usage;
   }
   budget.agentCalls += 1;
+  return typeof usage === 'number' && Number.isInteger(usage) && usage > 0 ? usage : 0;
 }

@@ -22,6 +22,13 @@ import {
   isWorkflowControlObservationPort,
   type WorkflowControlObservationPort,
 } from './workflow-control-shadow.js';
+import { enqueueByKey } from './internal/keyed-serial-queue.js';
+import {
+  canonicalTimestamp,
+  closedDataRecord,
+  finiteNumber,
+  safeInteger,
+} from './internal/strict-data.js';
 
 // ── Directory layout ──────────────────────────────────────────────────────────
 //
@@ -52,14 +59,7 @@ const VALID_TRANSITIONS: Record<string, Set<string>> = {
   created: new Set(['previewed', 'confirmed', 'running']),
   previewed: new Set(['confirmed', 'running']),
   confirmed: new Set(['running']),
-  running: new Set([
-    'paused',
-    'paused_waiting_approval',
-    'resuming',
-    'completed',
-    'failed',
-    'cancelled',
-  ]),
+  running: new Set(['paused', 'paused_waiting_approval', 'completed', 'failed', 'cancelled']),
   paused: new Set(['running']),
   paused_waiting_approval: new Set(['resuming', 'cancelled']),
   resuming: new Set(['running', 'failed', 'cancelled']),
@@ -110,6 +110,7 @@ export interface WorkflowBudgetSnapshot {
 }
 
 export const WORKFLOW_AUDIT_RECORD_SCHEMA = 'openslack.workflow_audit_record.v1' as const;
+export const WORKFLOW_AUDIT_MAX_BYTES = 2 * 1024 * 1024;
 
 /** Hash-only local audit evidence. Raw effect details are never persisted. */
 export interface WorkflowAuditRecord {
@@ -119,6 +120,11 @@ export interface WorkflowAuditRecord {
   operation: string;
   detailHash: string;
   recordedAt: string;
+}
+
+export interface AppendWorkflowAuditResult {
+  readonly record: WorkflowAuditRecord;
+  readonly duplicate: boolean;
 }
 
 /**
@@ -355,8 +361,7 @@ export class RunStore {
     };
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
     if (normalizedBudget !== undefined) {
-      const snapshot: WorkflowBudgetSnapshot = {
-        schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+      const snapshot = createBudgetSnapshot({
         runId,
         budget: normalizedBudget,
         revision: 0,
@@ -367,8 +372,7 @@ export class RunStore {
           agentCalls: 0,
         },
         updatedAt: meta.startedAt,
-      };
-      validateBudgetSnapshot(snapshot, runId);
+      });
       await this.fs.writeFile(this.budgetSnapshotPath(runId), JSON.stringify(snapshot, null, 2));
     }
     // The empty file is authoritative evidence that the legacy run-gate plane
@@ -407,7 +411,7 @@ export class RunStore {
    */
   async persistBudgetState(runId: string, usage: BudgetState): Promise<WorkflowBudgetSnapshot> {
     const candidate = cloneBudgetState(usage);
-    return this.enqueue(this.budgetQueues, runId, async () => {
+    return enqueueByKey(this.budgetQueues, runId, async () => {
       const current = await this.loadBudgetSnapshot(runId);
       if (current === null) {
         throw new Error(`Workflow budget snapshot for ${runId} is missing.`);
@@ -423,15 +427,13 @@ export class RunStore {
       ) {
         throw new Error(`Workflow budget snapshot for ${runId} cannot move backwards.`);
       }
-      const next: WorkflowBudgetSnapshot = {
-        schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+      const next = createBudgetSnapshot({
         runId,
-        budget: { ...current.budget },
+        budget: current.budget,
         revision: current.revision + 1,
         usage: candidate,
         updatedAt: new Date().toISOString(),
-      };
-      validateBudgetSnapshot(next, runId);
+      });
       await this.fs.writeFile(this.budgetSnapshotPath(runId), JSON.stringify(next, null, 2));
       this.observeRun(runId);
       return next;
@@ -440,27 +442,52 @@ export class RunStore {
 
   // ── Strict local audit ───────────────────────────────────────────────────
 
-  /** Append a serial, hash-only audit record. A write failure is propagated. */
-  async appendAuditRecord(runId: string, operation: string, detail: string): Promise<void> {
+  /**
+   * Append a serial, hash-only audit record.
+   *
+   * Re-entered workflows deduplicate the durable record by operation and
+   * detail hash. A caller that needs two intentional occurrences must include
+   * a unique `occurrenceId` in its canonical details. Effect intent, approval,
+   * and outcome remain per-attempt concerns outside this store.
+   */
+  async appendAuditRecord(
+    runId: string,
+    operation: string,
+    detail: string,
+  ): Promise<AppendWorkflowAuditResult> {
     if (!operation || operation.length > 256 || /[\r\n]/u.test(operation)) {
       throw new Error('Workflow audit operation is invalid.');
     }
-    await this.enqueue(this.auditQueues, runId, async () => {
+    return enqueueByKey(this.auditQueues, runId, async () => {
       if (!(await this.runExists(runId))) {
         throw new Error(`Workflow run ${runId} does not exist for audit persistence.`);
       }
       const records = await this.readAuditRecords(runId);
+      const detailHash = createHash('sha256').update(detail, 'utf8').digest('hex');
+      const duplicate = records.find(
+        (record) => record.operation === operation && record.detailHash === detailHash,
+      );
+      if (duplicate) return { record: duplicate, duplicate: true };
       const record: WorkflowAuditRecord = {
         schema: WORKFLOW_AUDIT_RECORD_SCHEMA,
         runId,
         sequence: records.length + 1,
         operation,
-        detailHash: createHash('sha256').update(detail, 'utf8').digest('hex'),
+        detailHash,
         recordedAt: new Date().toISOString(),
       };
       validateAuditRecord(record, runId, records.length + 1);
-      await this.fs.appendFile(this.auditPath(runId), `${JSON.stringify(record)}\n`);
+      const line = `${JSON.stringify(record)}\n`;
+      const currentBytes = records.reduce(
+        (total, existing) => total + Buffer.byteLength(`${JSON.stringify(existing)}\n`, 'utf8'),
+        0,
+      );
+      if (currentBytes + Buffer.byteLength(line, 'utf8') > WORKFLOW_AUDIT_MAX_BYTES) {
+        throw new Error(`Workflow audit records for ${runId} exceed their byte limit.`);
+      }
+      await this.fs.appendFile(this.auditPath(runId), line);
       this.observeRun(runId);
+      return { record, duplicate: false };
     });
   }
 
@@ -468,6 +495,10 @@ export class RunStore {
   async readAuditRecords(runId: string): Promise<WorkflowAuditRecord[]> {
     const raw = await this.fs.readFile(this.auditPath(runId));
     if (raw === null) return [];
+    if (raw === '') return [];
+    if (Buffer.byteLength(raw, 'utf8') > WORKFLOW_AUDIT_MAX_BYTES) {
+      throw new Error(`Workflow audit records for ${runId} exceed their byte limit.`);
+    }
     if (!raw.endsWith('\n') || raw.includes('\r')) {
       throw new Error(`Workflow audit records for ${runId} do not use canonical JSONL framing.`);
     }
@@ -484,23 +515,12 @@ export class RunStore {
           cause: error,
         });
       }
-      return validateAuditRecord(value, runId, index + 1);
+      const record = validateAuditRecord(value, runId, index + 1);
+      if (line !== JSON.stringify(record)) {
+        throw new Error(`Workflow audit record ${index + 1} for ${runId} is not canonical JSON.`);
+      }
+      return record;
     });
-  }
-
-  private async enqueue<T>(
-    queues: Map<string, Promise<unknown>>,
-    runId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const previous = queues.get(runId) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(operation);
-    queues.set(runId, current);
-    try {
-      return await current;
-    } finally {
-      if (queues.get(runId) === current) queues.delete(runId);
-    }
   }
 
   // ── Status management ─────────────────────────────────────────────────────
@@ -903,46 +923,6 @@ function safeFileName(value: string): string {
   return encodeURIComponent(value).replace(/\*/g, '%2A');
 }
 
-function closedRecord(
-  value: unknown,
-  keys: readonly string[],
-  name: string,
-): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${name} must be an object.`);
-  }
-  const record = value as Record<string, unknown>;
-  const actual = Object.keys(record).sort();
-  const expected = [...keys].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    throw new Error(`${name} has unexpected or missing fields.`);
-  }
-  return record;
-}
-
-function safeInteger(value: unknown, name: string, minimum = 0): number {
-  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
-    throw new Error(`${name} must be a safe integer greater than or equal to ${minimum}.`);
-  }
-  return value as number;
-}
-
-function finiteNumber(value: unknown, name: string, minimum = 0): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum) {
-    throw new Error(`${name} must be a finite number greater than or equal to ${minimum}.`);
-  }
-  return value;
-}
-
-function canonicalTimestamp(value: unknown, name: string): string {
-  if (typeof value !== 'string') throw new Error(`${name} must be a timestamp.`);
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
-    throw new Error(`${name} must be a canonical ISO timestamp.`);
-  }
-  return value;
-}
-
 function validateBudgetLimit(value: unknown, name: string): { tokens: number; costUsd: number } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${name} must be an object.`);
@@ -977,7 +957,7 @@ function validateBudgetUsage(
   budget: { tokens: number; costUsd: number },
   name: string,
 ): BudgetState {
-  const record = closedRecord(
+  const record = closedDataRecord(
     value,
     ['tokensUsed', 'tokensRemaining', 'costUsd', 'agentCalls'],
     name,
@@ -999,7 +979,7 @@ function validateBudgetUsage(
 }
 
 function validateBudgetSnapshot(value: unknown, expectedRunId: string): WorkflowBudgetSnapshot {
-  const record = closedRecord(
+  const record = closedDataRecord(
     value,
     ['schema', 'runId', 'budget', 'revision', 'usage', 'updatedAt'],
     'workflow budget snapshot',
@@ -1010,7 +990,7 @@ function validateBudgetSnapshot(value: unknown, expectedRunId: string): Workflow
   if (record.runId !== expectedRunId) {
     throw new Error('Workflow budget snapshot run ID does not match its path.');
   }
-  const budgetRecord = closedRecord(
+  const budgetRecord = closedDataRecord(
     record.budget,
     ['tokens', 'costUsd'],
     'workflow budget snapshot budget',
@@ -1029,12 +1009,28 @@ function validateBudgetSnapshot(value: unknown, expectedRunId: string): Workflow
   };
 }
 
+function createBudgetSnapshot(
+  input: Omit<WorkflowBudgetSnapshot, 'schema'>,
+): WorkflowBudgetSnapshot {
+  return validateBudgetSnapshot(
+    {
+      schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+      runId: input.runId,
+      budget: { ...input.budget },
+      revision: input.revision,
+      usage: cloneBudgetState(input.usage),
+      updatedAt: input.updatedAt,
+    },
+    input.runId,
+  );
+}
+
 function validateAuditRecord(
   value: unknown,
   expectedRunId: string,
   expectedSequence: number,
 ): WorkflowAuditRecord {
-  const record = closedRecord(
+  const record = closedDataRecord(
     value,
     ['schema', 'runId', 'sequence', 'operation', 'detailHash', 'recordedAt'],
     'workflow audit record',

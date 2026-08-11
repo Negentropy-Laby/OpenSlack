@@ -28,14 +28,7 @@
       "created": ["previewed", "confirmed", "running"],
       "previewed": ["confirmed", "running"],
       "confirmed": ["running"],
-      "running": [
-        "paused",
-        "paused_waiting_approval",
-        "resuming",
-        "completed",
-        "failed",
-        "cancelled"
-      ],
+      "running": ["paused", "paused_waiting_approval", "completed", "failed", "cancelled"],
       "paused": ["running"],
       "paused_waiting_approval": ["resuming", "cancelled"],
       "resuming": ["running", "failed", "cancelled"],

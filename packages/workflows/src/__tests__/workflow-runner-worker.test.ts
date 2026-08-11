@@ -6,13 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
 import {
   createSealedWorkflowRunnerSourceLoader,
-  executeWorkflowRunnerJob,
   loadWorkflowRunnerWorkerConfig,
   WorkflowRunnerWorkerConfigError,
 } from '../workflow-runner-worker.js';
-import { RunStore } from '../run-store.js';
-import type { WorkflowRunnerExecutionContext } from '../workflow-runner-session.js';
-import type { WorkflowMeta, WorkflowModule } from '../types.js';
+import {
+  classifyWorkflowRunnerRunState,
+  WorkflowRunnerRunStateError,
+} from '../workflow-runner-run-state.js';
+import type { WorkflowMeta } from '../types.js';
 
 const roots: string[] = [];
 const sourceBytes = Buffer.from('this is deliberately not valid JavaScript', 'utf8');
@@ -64,28 +65,6 @@ function descriptor(workflowSourceBytes: Uint8Array = sourceBytes, workflowRunId
   });
 }
 
-function descriptorForRun(workflowRunId: string) {
-  return descriptor(sourceBytes, workflowRunId);
-}
-
-function runnerContext(): WorkflowRunnerExecutionContext {
-  return {
-    signal: new AbortController().signal,
-    effectBoundary: {
-      async intent(input) {
-        return {
-          effectId: `workflow-effect:sha256:${'a'.repeat(64)}`,
-          effectKind: input.operation,
-          effectHash: 'a'.repeat(64),
-          capabilityHash: 'b'.repeat(64),
-          requiresHumanDecision: false,
-        };
-      },
-      async outcome() {},
-    },
-  };
-}
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -115,46 +94,19 @@ describe('GS8-B workflow runner worker', () => {
     });
   });
 
-  it('starts a missing run, resumes only paused state, and rejects a terminal replay', async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-dispatch-'));
-    roots.push(workspaceRoot);
-    const value = descriptor();
-    const workflow: WorkflowModule = {
-      meta: manifest,
-      format: 'openslack-native',
-      hash: value.workflowSourceHash,
-      async run(ctx) {
-        ctx.phase('Run');
-        return { status: 'completed' };
-      },
-    };
-    const context = runnerContext();
-
-    await expect(
-      executeWorkflowRunnerJob(workflow, value, context, workspaceRoot),
-    ).resolves.toMatchObject({ status: 'completed', runId: value.workflowRunId });
-    await expect(executeWorkflowRunnerJob(workflow, value, context, workspaceRoot)).rejects.toThrow(
-      'cannot resume from status "completed"',
+  it('initializes only missing runs, resumes paused states, and rejects automatic replay', () => {
+    expect(classifyWorkflowRunnerRunState('run.worker.1', false, null)).toBe('initialize');
+    for (const status of ['paused', 'paused_waiting_approval', 'resuming'] as const) {
+      expect(classifyWorkflowRunnerRunState('run.worker.1', true, status)).toBe('resume');
+    }
+    for (const status of ['running', 'completed', 'failed', 'cancelled'] as const) {
+      expect(() => classifyWorkflowRunnerRunState('run.worker.1', true, status)).toThrowError(
+        WorkflowRunnerRunStateError,
+      );
+    }
+    expect(() => classifyWorkflowRunnerRunState('run.worker.1', true, null)).toThrow(
+      /operator recovery/u,
     );
-
-    const pausedDescriptor = descriptorForRun('run.worker.paused');
-    const pausedWorkflow = { ...workflow, hash: pausedDescriptor.workflowSourceHash };
-    const store = new RunStore({
-      baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
-    });
-    await store.initRun(pausedDescriptor.workflowRunId, {
-      runId: pausedDescriptor.workflowRunId,
-      workflowName: manifest.name,
-      mode: 'execute',
-      manifestHash: pausedDescriptor.workflowSourceHash,
-      args: {},
-      startedAt: '2026-08-11T00:00:00.000Z',
-      budget: pausedDescriptor.budget,
-    });
-    await store.transitionStatus(pausedDescriptor.workflowRunId, 'paused');
-    await expect(
-      executeWorkflowRunnerJob(pausedWorkflow, pausedDescriptor, context, workspaceRoot),
-    ).resolves.toMatchObject({ status: 'completed', runId: pausedDescriptor.workflowRunId });
   });
 
   it('accepts a Windows 8.3 alias for the same non-reparse workflow catalog', async () => {

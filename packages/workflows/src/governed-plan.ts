@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import { canonicalJson as encodeCanonicalJson } from './internal/canonical-json.js';
 
 // This module owns the workflow-specific WorkflowStartPlan and sealed resolver contract.
 // Generic persisted execution lives in packages/operator/src/governed-plan.ts.
@@ -374,18 +375,11 @@ function cloneInertInput(
 }
 
 function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
-    return JSON.stringify(value);
+  try {
+    return encodeCanonicalJson(value, { allowNullPrototype: true });
+  } catch {
+    return fail('WORKFLOW_PLAN_INPUT_INVALID', 'Value is not canonical JSON data.');
   }
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (typeof value === 'object' && value !== null) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as DataRecord)[key])}`)
-      .join(',')}}`;
-  }
-  return fail('WORKFLOW_PLAN_INPUT_INVALID', 'Value is not canonical JSON data.');
 }
 
 function hash(value: unknown): string {

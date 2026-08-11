@@ -24,6 +24,7 @@ import type {
   WorkflowEffectBoundary,
   WorkflowEffectBoundaryHandle,
 } from './workflow-runner-effect-boundary.js';
+import { canonicalJson, CanonicalJsonError } from './internal/canonical-json.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -184,24 +185,23 @@ function initialBudgetState(options: RuntimeOptions): BudgetState {
   return state;
 }
 
+export class WorkflowAuditDetailInvalidError extends TypeError {
+  readonly code = 'WORKFLOW_AUDIT_DETAIL_INVALID' as const;
+
+  constructor(cause?: unknown) {
+    super('Workflow audit details must contain only plain canonical JSON data.', { cause });
+    this.name = 'WorkflowAuditDetailInvalidError';
+  }
+}
+
 function canonicalAuditDetail(value: unknown): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
-    return JSON.stringify(value);
+  try {
+    return canonicalJson(value);
+  } catch (error) {
+    throw new WorkflowAuditDetailInvalidError(
+      error instanceof CanonicalJsonError ? error : undefined,
+    );
   }
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalAuditDetail).join(',')}]`;
-  if (typeof value === 'object') {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new Error('Workflow audit details must be canonical JSON data.');
-    }
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalAuditDetail(record[key])}`)
-      .join(',')}}`;
-  }
-  throw new Error('Workflow audit details must be canonical JSON data.');
 }
 
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
@@ -815,7 +815,10 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
           }
           const detail = details !== undefined ? canonicalAuditDetail(details) : action;
           await executeConfirmedEffect('openslack.governance.audit', detail, async () => {
-            await options.runStore?.appendAuditRecord(runId, action, detail);
+            if (!options.runStore) {
+              throw new Error('Workflow governance audit requires a durable run store.');
+            }
+            await options.runStore.appendAuditRecord(runId, action, detail);
             runtime.log(`openslack.governance.audit: ${action}`);
           });
         },

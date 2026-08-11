@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openslack.workflow_budget_snapshot.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runId", "budget", "revision", "usage", "updatedAt"],
+  "properties": {
+    "schema": { "const": "openslack.workflow_budget_snapshot.v1" },
+    "runId": { "type": "string", "minLength": 1 },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "costUsd"],
+      "properties": {
+        "tokens": { "type": "integer", "minimum": 1 },
+        "costUsd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "revision": { "type": "integer", "minimum": 0 },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokensUsed", "tokensRemaining", "costUsd", "agentCalls"],
+      "properties": {
+        "tokensUsed": { "type": "integer", "minimum": 0 },
+        "tokensRemaining": { "type": "integer" },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "agentCalls": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

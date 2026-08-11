@@ -78,7 +78,7 @@ const DECIMAL_PATTERN = '^(?:0|[1-9][0-9]{0,18})$';
 const IDEMPOTENCY_PATTERN = '^openslack\\.workflow-control-authority\\.v2\\.[0-9a-f]{64}$';
 const FINGERPRINT_PATTERN = '^sha256:[0-9a-f]{64}$';
 const V1_LOCKS = Object.freeze({
-  workflowControlManifest: '3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86',
+  workflowControlManifest: 'aeff2b9afc459c7df646378f6be4bd37884c772838688bbdf01bf3379638b813',
   workflowControlGolden: '342c877a46adc5f533d9c9c8b25d1c30c5809d8f219115af3f4e97260f9da023',
   workflowRunnerManifest: '908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6',
   workflowRunnerGolden: 'b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844',
