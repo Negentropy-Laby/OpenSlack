@@ -93,6 +93,25 @@ async function initPausedRun(
   return runId;
 }
 
+async function initPausedExecutionRun(
+  rootDir: string,
+  runId: string,
+  args: Record<string, unknown> = {},
+  budget: { tokens: number; costUsd: number } = { tokens: 100_000, costUsd: 1 },
+): Promise<void> {
+  const store = new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
+  await store.initRun(
+    runId,
+    makeMeta(TEST_MANIFEST, {
+      runId,
+      manifestHash: `${TEST_MANIFEST.name}:${TEST_MANIFEST.version ?? 'unversioned'}`,
+      args,
+      budget,
+    }),
+  );
+  await store.transitionStatus(runId, 'paused');
+}
+
 describe('executeResume integration', () => {
   let executionRoot: string;
 
@@ -112,6 +131,7 @@ describe('executeResume integration', () => {
       return { status: 'complete' };
     });
     const workflow = { meta: TEST_MANIFEST, run: runFn };
+    await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
       runId: 'run-resume-001',
@@ -125,6 +145,7 @@ describe('executeResume integration', () => {
 
   it('throws when workflow has no run function', async () => {
     const workflow = { meta: TEST_MANIFEST };
+    await initPausedExecutionRun(executionRoot, 'run-001');
     await expect(
       executeResume(workflow, {
         runId: 'run-001',
@@ -140,6 +161,7 @@ describe('executeResume integration', () => {
       return { status: 'complete', receivedArgs: args };
     });
     const workflow = { meta: TEST_MANIFEST, run: runFn };
+    await initPausedExecutionRun(executionRoot, 'run-resume-001', { key: 'value' });
 
     const result = await executeResume(workflow, {
       runId: 'run-resume-001',
@@ -162,6 +184,7 @@ describe('executeResume integration', () => {
       return { status: 'complete', agentResult };
     });
     const workflow = { meta: TEST_MANIFEST, run: runFn };
+    await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
       runId: 'run-resume-001',
@@ -182,6 +205,7 @@ describe('executeResume integration', () => {
       return { status: 'complete' };
     });
     const workflow = { meta: TEST_MANIFEST, run: runFn };
+    await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     const result = await executeResume(workflow, {
       runId: 'run-resume-001',
@@ -201,6 +225,7 @@ describe('executeResume integration', () => {
       return { status: 'complete' };
     });
     const workflow = { meta: TEST_MANIFEST, run: runFn };
+    await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
     await expect(
       executeResume(workflow, {

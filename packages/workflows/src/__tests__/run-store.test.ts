@@ -140,6 +140,96 @@ describe('RunStore', () => {
       const status = JSON.parse(fs.files.get('/test/workflows/runs/run-001/status.json')!);
       expect(status.updatedAt).toBe('2026-01-01T00:00:00.000Z');
     });
+
+    it('initializes a closed cumulative budget snapshot with the original limits', async () => {
+      const { store } = makeStore();
+      await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 2 } }));
+
+      await expect(store.loadBudgetSnapshot('run-001')).resolves.toMatchObject({
+        schema: 'openslack.workflow_budget_snapshot.v1',
+        runId: 'run-001',
+        budget: { tokens: 100, costUsd: 2 },
+        revision: 0,
+        usage: { tokensUsed: 0, tokensRemaining: 100, costUsd: 2, agentCalls: 0 },
+      });
+    });
+  });
+
+  describe('cumulative budget snapshots', () => {
+    it('serializes parallel monotonic updates without losing usage', async () => {
+      const { store } = makeStore();
+      await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+
+      const first = store.persistBudgetState('run-001', {
+        tokensUsed: 25,
+        tokensRemaining: 75,
+        costUsd: 1,
+        agentCalls: 1,
+      });
+      const second = store.persistBudgetState('run-001', {
+        tokensUsed: 60,
+        tokensRemaining: 40,
+        costUsd: 1.25,
+        agentCalls: 2,
+      });
+      await Promise.all([first, second]);
+
+      await expect(store.loadBudgetSnapshot('run-001')).resolves.toMatchObject({
+        revision: 2,
+        usage: {
+          tokensUsed: 60,
+          tokensRemaining: 40,
+          costUsd: 1.25,
+          agentCalls: 2,
+        },
+      });
+    });
+
+    it('fails closed on regression, field drift, and non-finite usage', async () => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
+      await store.persistBudgetState('run-001', {
+        tokensUsed: 20,
+        tokensRemaining: 80,
+        costUsd: 1,
+        agentCalls: 1,
+      });
+      await expect(
+        store.persistBudgetState('run-001', {
+          tokensUsed: 10,
+          tokensRemaining: 90,
+          costUsd: 1,
+          agentCalls: 1,
+        }),
+      ).rejects.toThrow('cannot move backwards');
+
+      const path = store.budgetSnapshotPath('run-001');
+      const tampered = JSON.parse(fs.files.get(path)!);
+      tampered.unexpected = true;
+      fs.files.set(path, JSON.stringify(tampered, null, 2));
+      await expect(store.loadBudgetSnapshot('run-001')).rejects.toThrow(
+        'unexpected or missing fields',
+      );
+    });
+  });
+
+  describe('strict local audit', () => {
+    it('persists only a hash of effect details and validates the sequence', async () => {
+      const { store, fs } = makeStore();
+      await store.initRun('run-001', makeMeta());
+
+      await store.appendAuditRecord('run-001', 'qualification.audit', 'secret detail');
+      const records = await store.readAuditRecords('run-001');
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        schema: 'openslack.workflow_audit_record.v1',
+        runId: 'run-001',
+        sequence: 1,
+        operation: 'qualification.audit',
+      });
+      expect(records[0].detailHash).toMatch(/^[0-9a-f]{64}$/u);
+      expect(fs.files.get(store.auditPath('run-001'))).not.toContain('secret detail');
+    });
   });
 
   // ── Status management ───────────────────────────────────────────────────

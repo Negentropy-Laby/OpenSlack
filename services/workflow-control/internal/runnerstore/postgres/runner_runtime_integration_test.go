@@ -155,6 +155,108 @@ WHERE j.workspace_id=$1 AND j.job_id=$2`, first.WorkspaceID, first.JobID).Scan(&
 	}
 }
 
+func TestResumeAcrossJobsRejectsOldAttemptEffect(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := t.Context()
+	repository := New(pool)
+	workspaceID := "workspace-resume-across-jobs"
+	workflowRunID := "run-resume-across-jobs"
+
+	firstInput := jobInputForRun(t, "resume-first", workspaceID, "job-resume-first", workflowRunID)
+	if _, err := repository.Submit(ctx, firstInput); err != nil {
+		t.Fatal(err)
+	}
+	first, err := repository.ClaimNext(ctx, claimInput(workspaceID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.RecordEvent(ctx, leaseAcceptInput(t, first, "accept-resume-first")); err != nil {
+		t.Fatal(err)
+	}
+	finishedAt := canonicalNow()
+	pausedTerminal := leasedEventInputAt(t, first, runnerprotocol.KindTerminal, 2, "terminal-resume-paused", finishedAt, map[string]any{
+		"status": string(runnerprotocol.TerminalFailed), "finishedAt": finishedAt,
+		"resultHash": nil, "terminalReason": "workflow_failed",
+	})
+	if _, err := repository.RecordEvent(ctx, pausedTerminal); err != nil {
+		t.Fatal(err)
+	}
+
+	secondInput := jobInputForRun(t, "resume-second", workspaceID, "job-resume-second", workflowRunID)
+	if _, err := repository.Submit(ctx, secondInput); err != nil {
+		t.Fatal(err)
+	}
+	oldAttempt, err := repository.ClaimNext(ctx, claimInput(workspaceID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expireLeaseAtDatabase(t, pool, oldAttempt.LeaseID)
+	recovered, err := repository.RecoverExpired(ctx, runnerstore.RecoverExpiredInput{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 1 || !recovered[0].SafeForNewAttempt {
+		t.Fatalf("unstarted resume attempt was not safely recoverable: %+v", recovered)
+	}
+	currentAttempt, err := repository.ClaimNext(ctx, claimInput(workspaceID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentAttempt.FencingToken != oldAttempt.FencingToken+1 {
+		t.Fatalf("resume fence did not advance: old=%d current=%d", oldAttempt.FencingToken, currentAttempt.FencingToken)
+	}
+
+	oldEffect := leasedEventInput(t, oldAttempt, runnerprotocol.KindEffectIntent, 1, "old-resume-effect", map[string]any{
+		"effectId": "effect-resume-old", "effectKind": "openslack.governance.audit",
+		"effectHash": strings.Repeat("1", 64), "capabilityHash": strings.Repeat("2", 64),
+		"requiresHumanDecision": true,
+	})
+	if _, err := repository.RecordEvent(ctx, oldEffect); !runnerstore.IsCode(err, runnerstore.ErrorStaleFence) {
+		t.Fatalf("old resume attempt effect was not fenced: %v", err)
+	}
+	if _, err := repository.RecordEvent(ctx, leaseAcceptInput(t, currentAttempt, "accept-resume-current")); err != nil {
+		t.Fatal(err)
+	}
+	currentEffect := leasedEventInput(t, currentAttempt, runnerprotocol.KindEffectIntent, 2, "current-resume-effect", map[string]any{
+		"effectId": "effect-resume-current", "effectKind": "openslack.governance.audit",
+		"effectHash": strings.Repeat("3", 64), "capabilityHash": strings.Repeat("4", 64),
+		"requiresHumanDecision": true,
+	})
+	if _, err := repository.RecordEvent(ctx, currentEffect); err != nil {
+		t.Fatalf("current resume attempt could not open its effect boundary: %v", err)
+	}
+	currentOutcome := leasedEventInput(t, currentAttempt, runnerprotocol.KindEffectOutcome, 3, "current-resume-outcome", map[string]any{
+		"effectId": "effect-resume-current", "status": "executed", "outcomeHash": strings.Repeat("5", 64),
+	})
+	if _, err := repository.RecordEvent(ctx, currentOutcome); err != nil {
+		t.Fatalf("current resume attempt could not close its effect boundary: %v", err)
+	}
+	completedAt := canonicalNow()
+	completed := leasedEventInputAt(t, currentAttempt, runnerprotocol.KindTerminal, 4, "terminal-resume-completed", completedAt, map[string]any{
+		"status": string(runnerprotocol.TerminalCompleted), "finishedAt": completedAt,
+		"resultHash": strings.Repeat("6", 64), "terminalReason": nil,
+	})
+	if _, err := repository.RecordEvent(ctx, completed); err != nil {
+		t.Fatalf("current resume attempt did not complete: %v", err)
+	}
+
+	var jobs, pausedEffects, oldEffects, currentEffects, completedJobs int
+	if err := pool.QueryRow(ctx, `
+SELECT
+    (SELECT count(*) FROM workflow_runner_jobs WHERE workspace_id=$1 AND workflow_run_id=$2),
+    (SELECT count(*) FROM workflow_runner_effect_boundaries WHERE attempt_id=$3),
+    (SELECT count(*) FROM workflow_runner_effect_boundaries WHERE attempt_id=$4),
+    (SELECT count(*) FROM workflow_runner_effect_boundaries WHERE attempt_id=$5 AND outcome_status='executed'),
+    (SELECT count(*) FROM workflow_runner_jobs WHERE workspace_id=$1 AND job_id=$6 AND state='terminal' AND terminal_status='completed')`,
+		workspaceID, workflowRunID, first.AttemptID, oldAttempt.AttemptID, currentAttempt.AttemptID, secondInput.Prepared.Spec.JobID,
+	).Scan(&jobs, &pausedEffects, &oldEffects, &currentEffects, &completedJobs); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 2 || pausedEffects != 0 || oldEffects != 0 || currentEffects != 1 || completedJobs != 1 {
+		t.Fatalf("resume job/effect cardinality = jobs:%d paused:%d old:%d current:%d completed:%d", jobs, pausedEffects, oldEffects, currentEffects, completedJobs)
+	}
+}
+
 func TestRecoverExpiredUsesDatabaseClockDespiteHostSkew(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := t.Context()
@@ -606,6 +708,26 @@ func jobInputAt(t testing.TB, suffix string, submittedAt time.Time, wholeTimeout
 		WorkflowSourceHash: strings.Repeat("b", 64), ManifestHash: strings.Repeat("c", 64),
 		InputHash: strings.Repeat("d", 64), WholeTimeoutMS: wholeTimeout.Milliseconds(),
 		SubmittedAt: runnerstore.CanonicalTimestamp(submittedAt),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, fingerprint := runnerstore.SubmissionBindings(prepared)
+	return runnerstore.SubmitInput{Prepared: prepared, IdempotencyKey: key, RequestFingerprint: fingerprint}
+}
+
+func jobInputForRun(t testing.TB, suffix, workspaceID, jobID, workflowRunID string) runnerstore.SubmitInput {
+	t.Helper()
+	prepared, err := runnerstore.PrepareJobSpec(runnerstore.JobSpec{
+		Schema: runnerstore.JobSpecSchema, WorkspaceID: workspaceID,
+		JobID: jobID, WorkflowRunID: workflowRunID,
+		CorrelationID:           "correlation-" + suffix,
+		ExecutionDescriptorRef:  "descriptor-" + suffix,
+		ExecutionDescriptorHash: strings.Repeat("a", 64),
+		WorkflowID:              "workflow-resume", WorkflowVersion: "1.0.0",
+		WorkflowSourceHash: strings.Repeat("b", 64), ManifestHash: strings.Repeat("c", 64),
+		InputHash: strings.Repeat("d", 64), WholeTimeoutMS: time.Hour.Milliseconds(),
+		SubmittedAt: runnerstore.CanonicalTimestamp(time.Now().UTC()),
 	})
 	if err != nil {
 		t.Fatal(err)

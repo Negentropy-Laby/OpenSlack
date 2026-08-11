@@ -55,7 +55,13 @@ export interface RuntimeOptions {
   runId: string;
   mode: ExecutionMode;
   manifest: WorkflowMeta;
+  /** Exact run arguments exposed through ctx.args. */
+  args?: Record<string, unknown>;
   budget?: { tokens: number; costUsd: number };
+  /** Previously persisted cumulative state used only by strict resume paths. */
+  initialBudgetState?: BudgetState;
+  /** Awaited after every non-cached provider call, including charged failures. */
+  onBudgetChange?: (budget: BudgetState) => Promise<void>;
   permissions?: {
     declared: WorkflowMeta['permissions'];
     granted: WorkflowMeta['permissions'];
@@ -148,6 +154,56 @@ export const WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES = Object.freeze([
 export type WorkflowRunnerCancellationBoundary =
   (typeof WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES)[number];
 
+function initialBudgetState(options: RuntimeOptions): BudgetState {
+  const state: BudgetState = options.initialBudgetState
+    ? { ...options.initialBudgetState }
+    : {
+        tokensUsed: 0,
+        tokensRemaining: options.budget?.tokens ?? null,
+        costUsd: options.budget?.costUsd ?? 0,
+        agentCalls: 0,
+      };
+  if (
+    !Number.isSafeInteger(state.tokensUsed) ||
+    state.tokensUsed < 0 ||
+    (state.tokensRemaining !== null && !Number.isSafeInteger(state.tokensRemaining)) ||
+    !Number.isFinite(state.costUsd) ||
+    state.costUsd < 0 ||
+    !Number.isSafeInteger(state.agentCalls) ||
+    state.agentCalls < 0
+  ) {
+    throw new Error('Workflow initial budget state is invalid.');
+  }
+  if (
+    options.initialBudgetState !== undefined &&
+    options.budget !== undefined &&
+    state.tokensRemaining !== options.budget.tokens - state.tokensUsed
+  ) {
+    throw new Error('Workflow initial budget state does not match its original token limit.');
+  }
+  return state;
+}
+
+function canonicalAuditDetail(value: unknown): string {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalAuditDetail).join(',')}]`;
+  if (typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error('Workflow audit details must be canonical JSON data.');
+    }
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalAuditDetail(record[key])}`)
+      .join(',')}}`;
+  }
+  throw new Error('Workflow audit details must be canonical JSON data.');
+}
+
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const { runId, mode, manifest, nestingDepth = 0, onWorkflowCall, onConfirm } = options;
 
@@ -231,12 +287,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   }
 
   // --- Budget ---
-  const budget: BudgetState = {
-    tokensUsed: 0,
-    tokensRemaining: options.budget?.tokens ?? null,
-    costUsd: options.budget?.costUsd ?? 0,
-    agentCalls: 0,
-  };
+  const budget = initialBudgetState(options);
 
   // --- Permissions ---
   const declaredPerms = options.permissions?.declared ?? {};
@@ -454,7 +505,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       return readonlyBudget;
     },
     get args() {
-      return {};
+      return options.args ?? {};
     },
 
     phase(name: string): void {
@@ -545,6 +596,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         rootDir: options.rootDir,
         runStore: options.runStore,
         budgetPolicy: manifest.budgetPolicy,
+        onBudgetChange: options.onBudgetChange,
         signal: options.signal,
       });
     },
@@ -761,8 +813,9 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.governance.audit: ${action}`);
             return;
           }
-          const detail = details !== undefined ? String(details) : action;
-          await executeConfirmedEffect('openslack.governance.audit', detail, () => {
+          const detail = details !== undefined ? canonicalAuditDetail(details) : action;
+          await executeConfirmedEffect('openslack.governance.audit', detail, async () => {
+            await options.runStore?.appendAuditRecord(runId, action, detail);
             runtime.log(`openslack.governance.audit: ${action}`);
           });
         },

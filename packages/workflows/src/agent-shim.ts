@@ -355,6 +355,7 @@ export async function executeAgentCall<T>(
     rootDir?: string;
     runStore?: RunStore;
     budgetPolicy?: WorkflowBudgetPolicy;
+    onBudgetChange?: (budget: BudgetState) => Promise<void>;
     signal?: AbortSignal;
   },
 ): Promise<T> {
@@ -525,6 +526,7 @@ export async function executeAgentCall<T>(
           error: getAgentRunFailureSummary(err),
         });
       }
+      await config.onBudgetChange?.(config.budget);
       throw err;
     }
   }
@@ -532,6 +534,16 @@ export async function executeAgentCall<T>(
   if (!result) {
     throw new Error('Agent launcher did not produce a result.');
   }
+
+  // Every real provider response consumes the cumulative budget, even when
+  // its payload subsequently fails schema validation. Cache hits returned
+  // above never enter this accounting path.
+  const usage = result.tokenUsage ?? 0;
+  config.budget.tokensUsed += usage;
+  if (config.budget.tokensRemaining !== null) {
+    config.budget.tokensRemaining -= usage;
+  }
+  config.budget.agentCalls += 1;
 
   // 6. Schema validation
   if (options.schema) {
@@ -551,6 +563,20 @@ export async function executeAgentCall<T>(
           error: getAgentRunFailureSummary(error),
         });
       }
+      try {
+        await applyCostAndBudgetPolicy({
+          runId: config.runId,
+          rootDir: config.rootDir,
+          runStore: config.runStore,
+          budget: config.budget,
+          budgetPolicy: config.budgetPolicy,
+          tokensUsedThisCall: usage,
+          provider: config.resolvedAgent?.provider,
+          model: config.resolvedAgent?.model ?? options.model,
+        });
+      } finally {
+        await config.onBudgetChange?.(config.budget);
+      }
       throw error;
     }
   }
@@ -568,7 +594,6 @@ export async function executeAgentCall<T>(
   }
 
   // 7. Update budget and persist result evidence
-  const usage = result.tokenUsage ?? 0;
   const evidenceResult: AgentResult<T> = {
     ...result,
     workflowEvidence: {
@@ -589,26 +614,30 @@ export async function executeAgentCall<T>(
     },
   };
 
-  config.budget.tokensUsed += usage;
-  if (config.budget.tokensRemaining !== null) {
-    config.budget.tokensRemaining -= usage;
+  // Persist cumulative usage before making the result cache-visible. If the
+  // budget write fails, a later resume may re-run and over-count this call,
+  // but it can never use a cached result whose usage was not durably charged.
+  let budgetPolicyError: unknown;
+  try {
+    await applyCostAndBudgetPolicy({
+      runId: config.runId,
+      rootDir: config.rootDir,
+      runStore: config.runStore,
+      budget: config.budget,
+      budgetPolicy: config.budgetPolicy,
+      tokensUsedThisCall: usage,
+      provider: config.resolvedAgent?.provider,
+      model: config.resolvedAgent?.model ?? options.model,
+    });
+  } catch (error) {
+    budgetPolicyError = error;
   }
-  config.budget.agentCalls += 1;
+  await config.onBudgetChange?.(config.budget);
 
-  // Re-save with runtime evidence after budget accounting. Older cache
-  // entries without workflowEvidence remain readable by the progress model.
+  // Re-save with runtime evidence after durable budget accounting. Older
+  // cache entries without workflowEvidence remain readable by the progress model.
   await config.cache.save(config.runId, config.cacheKey, evidenceResult as AgentResult);
-
-  await applyCostAndBudgetPolicy({
-    runId: config.runId,
-    rootDir: config.rootDir,
-    runStore: config.runStore,
-    budget: config.budget,
-    budgetPolicy: config.budgetPolicy,
-    tokensUsedThisCall: usage,
-    provider: config.resolvedAgent?.provider,
-    model: config.resolvedAgent?.model ?? options.model,
-  });
+  if (budgetPolicyError !== undefined) throw budgetPolicyError;
 
   return result.data as T;
 }
@@ -653,8 +682,9 @@ function chargeFailedAgentUsage(budget: BudgetState, error: unknown): void {
     error && typeof error === 'object' && 'tokenUsage' in error
       ? (error as { tokenUsage?: unknown }).tokenUsage
       : undefined;
-  if (typeof usage !== 'number' || !Number.isInteger(usage) || usage <= 0) return;
-  budget.tokensUsed += usage;
-  if (budget.tokensRemaining !== null) budget.tokensRemaining -= usage;
+  if (typeof usage === 'number' && Number.isInteger(usage) && usage > 0) {
+    budget.tokensUsed += usage;
+    if (budget.tokensRemaining !== null) budget.tokensRemaining -= usage;
+  }
   budget.agentCalls += 1;
 }

@@ -1,5 +1,6 @@
 import type {
   ExecutionMode,
+  BudgetState,
   PhaseCheckpoint,
   RunStatus,
   RunStatusState,
@@ -7,7 +8,7 @@ import type {
   WorkflowBudgetPolicy,
   WorkflowRunInfo,
 } from './types.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   mkdir,
   readFile as fsReadFile,
@@ -89,6 +90,35 @@ export interface RunMeta {
   startedAt: string;
   budget?: { tokens: number; costUsd?: number };
   budgetPolicy?: WorkflowBudgetPolicy;
+}
+
+export const WORKFLOW_BUDGET_SNAPSHOT_SCHEMA = 'openslack.workflow_budget_snapshot.v1' as const;
+
+/**
+ * Closed, cumulative budget evidence for a workflow run.
+ *
+ * `budget` is immutable. `usage` is monotonic and survives pause/resume so a
+ * caller cannot obtain a fresh allowance by submitting a second runner job.
+ */
+export interface WorkflowBudgetSnapshot {
+  schema: typeof WORKFLOW_BUDGET_SNAPSHOT_SCHEMA;
+  runId: string;
+  budget: { tokens: number; costUsd: number };
+  revision: number;
+  usage: BudgetState;
+  updatedAt: string;
+}
+
+export const WORKFLOW_AUDIT_RECORD_SCHEMA = 'openslack.workflow_audit_record.v1' as const;
+
+/** Hash-only local audit evidence. Raw effect details are never persisted. */
+export interface WorkflowAuditRecord {
+  schema: typeof WORKFLOW_AUDIT_RECORD_SCHEMA;
+  runId: string;
+  sequence: number;
+  operation: string;
+  detailHash: string;
+  recordedAt: string;
 }
 
 /**
@@ -187,6 +217,8 @@ export class RunStore {
   private readonly baseDir: string;
   private readonly fs: RunStoreFs;
   private readonly observationPort: WorkflowControlObservationPort | undefined;
+  private readonly budgetQueues = new Map<string, Promise<unknown>>();
+  private readonly auditQueues = new Map<string, Promise<unknown>>();
 
   constructor(options: RunStoreOptions) {
     this.baseDir = options.baseDir;
@@ -285,12 +317,26 @@ export class RunStore {
     return `${this.runDir(runId)}/pending-approvals.json`;
   }
 
+  /** Path to the cumulative budget snapshot. */
+  budgetSnapshotPath(runId: string): string {
+    return `${this.runDir(runId)}/budget.json`;
+  }
+
+  /** Path to hash-only audit records. */
+  auditPath(runId: string): string {
+    return `${this.runDir(runId)}/audit.jsonl`;
+  }
+
   // ── Initialization ────────────────────────────────────────────────────────
 
   /**
    * Initialize a new run: create directory structure and write meta + status.
    */
   async initRun(runId: string, meta: RunMeta): Promise<void> {
+    if (meta.runId !== runId) throw new Error('Workflow run metadata ID does not match its path.');
+    canonicalTimestamp(meta.startedAt, 'workflow run startedAt');
+    const normalizedBudget =
+      meta.budget === undefined ? undefined : validateBudgetLimit(meta.budget, 'meta.budget');
     const dir = this.runDir(runId);
     await this.fs.mkdir(dir);
     await this.fs.mkdir(this.phasesDir(runId));
@@ -308,11 +354,153 @@ export class RunStore {
       phases: [],
     };
     await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2));
+    if (normalizedBudget !== undefined) {
+      const snapshot: WorkflowBudgetSnapshot = {
+        schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+        runId,
+        budget: normalizedBudget,
+        revision: 0,
+        usage: {
+          tokensUsed: 0,
+          tokensRemaining: normalizedBudget.tokens,
+          costUsd: normalizedBudget.costUsd,
+          agentCalls: 0,
+        },
+        updatedAt: meta.startedAt,
+      };
+      validateBudgetSnapshot(snapshot, runId);
+      await this.fs.writeFile(this.budgetSnapshotPath(runId), JSON.stringify(snapshot, null, 2));
+    }
     // The empty file is authoritative evidence that the legacy run-gate plane
     // was observed and currently has no approvals. Absence is not equivalent
     // to an observed zero count for the Workflow Control shadow.
     await this.fs.writeFile(this.pendingApprovalsPath(runId), JSON.stringify([], null, 2));
     this.observeRun(runId);
+  }
+
+  // ── Cumulative budget ────────────────────────────────────────────────────
+
+  /** Load and strictly validate a cumulative budget snapshot. */
+  async loadBudgetSnapshot(runId: string): Promise<WorkflowBudgetSnapshot | null> {
+    const raw = await this.fs.readFile(this.budgetSnapshotPath(runId));
+    if (raw === null) return null;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`Workflow budget snapshot for ${runId} is not valid JSON.`, {
+        cause: error,
+      });
+    }
+    if (raw !== JSON.stringify(value, null, 2)) {
+      throw new Error(`Workflow budget snapshot for ${runId} is not canonical JSON.`);
+    }
+    return validateBudgetSnapshot(value, runId);
+  }
+
+  /**
+   * Persist a monotonic usage update under a per-run serial queue.
+   *
+   * The queue prevents parallel agent completions from reading and replacing
+   * the same revision. Callers pass the full in-memory cumulative state; a
+   * regressing or internally inconsistent update fails closed.
+   */
+  async persistBudgetState(runId: string, usage: BudgetState): Promise<WorkflowBudgetSnapshot> {
+    const candidate = cloneBudgetState(usage);
+    return this.enqueue(this.budgetQueues, runId, async () => {
+      const current = await this.loadBudgetSnapshot(runId);
+      if (current === null) {
+        throw new Error(`Workflow budget snapshot for ${runId} is missing.`);
+      }
+      validateBudgetUsage(candidate, current.budget, 'budget usage');
+      if (
+        candidate.tokensUsed < current.usage.tokensUsed ||
+        candidate.agentCalls < current.usage.agentCalls ||
+        candidate.costUsd < current.usage.costUsd ||
+        (current.usage.tokensRemaining !== null &&
+          (candidate.tokensRemaining === null ||
+            candidate.tokensRemaining > current.usage.tokensRemaining))
+      ) {
+        throw new Error(`Workflow budget snapshot for ${runId} cannot move backwards.`);
+      }
+      const next: WorkflowBudgetSnapshot = {
+        schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+        runId,
+        budget: { ...current.budget },
+        revision: current.revision + 1,
+        usage: candidate,
+        updatedAt: new Date().toISOString(),
+      };
+      validateBudgetSnapshot(next, runId);
+      await this.fs.writeFile(this.budgetSnapshotPath(runId), JSON.stringify(next, null, 2));
+      this.observeRun(runId);
+      return next;
+    });
+  }
+
+  // ── Strict local audit ───────────────────────────────────────────────────
+
+  /** Append a serial, hash-only audit record. A write failure is propagated. */
+  async appendAuditRecord(runId: string, operation: string, detail: string): Promise<void> {
+    if (!operation || operation.length > 256 || /[\r\n]/u.test(operation)) {
+      throw new Error('Workflow audit operation is invalid.');
+    }
+    await this.enqueue(this.auditQueues, runId, async () => {
+      if (!(await this.runExists(runId))) {
+        throw new Error(`Workflow run ${runId} does not exist for audit persistence.`);
+      }
+      const records = await this.readAuditRecords(runId);
+      const record: WorkflowAuditRecord = {
+        schema: WORKFLOW_AUDIT_RECORD_SCHEMA,
+        runId,
+        sequence: records.length + 1,
+        operation,
+        detailHash: createHash('sha256').update(detail, 'utf8').digest('hex'),
+        recordedAt: new Date().toISOString(),
+      };
+      validateAuditRecord(record, runId, records.length + 1);
+      await this.fs.appendFile(this.auditPath(runId), `${JSON.stringify(record)}\n`);
+      this.observeRun(runId);
+    });
+  }
+
+  /** Read and strictly validate the complete audit chain. */
+  async readAuditRecords(runId: string): Promise<WorkflowAuditRecord[]> {
+    const raw = await this.fs.readFile(this.auditPath(runId));
+    if (raw === null) return [];
+    if (!raw.endsWith('\n') || raw.includes('\r')) {
+      throw new Error(`Workflow audit records for ${runId} do not use canonical JSONL framing.`);
+    }
+    const lines = raw.slice(0, -1).split('\n');
+    if (lines.some((line) => line.length === 0)) {
+      throw new Error(`Workflow audit records for ${runId} contain an empty record.`);
+    }
+    return lines.map((line, index) => {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch (error) {
+        throw new Error(`Workflow audit record ${index + 1} for ${runId} is not valid JSON.`, {
+          cause: error,
+        });
+      }
+      return validateAuditRecord(value, runId, index + 1);
+    });
+  }
+
+  private async enqueue<T>(
+    queues: Map<string, Promise<unknown>>,
+    runId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = queues.get(runId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    queues.set(runId, current);
+    try {
+      return await current;
+    } finally {
+      if (queues.get(runId) === current) queues.delete(runId);
+    }
   }
 
   // ── Status management ─────────────────────────────────────────────────────
@@ -713,4 +901,170 @@ function safeFileName(value: string): string {
   // escapes path separators and traversal dots, and the explicit '*' escape keeps
   // the segment stable across filesystems that treat glob characters specially.
   return encodeURIComponent(value).replace(/\*/g, '%2A');
+}
+
+function closedRecord(
+  value: unknown,
+  keys: readonly string[],
+  name: string,
+): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`);
+  }
+  const record = value as Record<string, unknown>;
+  const actual = Object.keys(record).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new Error(`${name} has unexpected or missing fields.`);
+  }
+  return record;
+}
+
+function safeInteger(value: unknown, name: string, minimum = 0): number {
+  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
+    throw new Error(`${name} must be a safe integer greater than or equal to ${minimum}.`);
+  }
+  return value as number;
+}
+
+function finiteNumber(value: unknown, name: string, minimum = 0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum) {
+    throw new Error(`${name} must be a finite number greater than or equal to ${minimum}.`);
+  }
+  return value;
+}
+
+function canonicalTimestamp(value: unknown, name: string): string {
+  if (typeof value !== 'string') throw new Error(`${name} must be a timestamp.`);
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+    throw new Error(`${name} must be a canonical ISO timestamp.`);
+  }
+  return value;
+}
+
+function validateBudgetLimit(value: unknown, name: string): { tokens: number; costUsd: number } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`);
+  }
+  const raw = value as Record<string, unknown>;
+  const keys = Object.keys(raw);
+  if (
+    !Object.hasOwn(raw, 'tokens') ||
+    keys.some((key) => key !== 'tokens' && key !== 'costUsd') ||
+    keys.length > 2 ||
+    keys.length < 1
+  ) {
+    throw new Error(`${name} has unexpected or missing fields.`);
+  }
+  return {
+    tokens: safeInteger(raw.tokens, `${name}.tokens`, 1),
+    costUsd: finiteNumber(raw.costUsd ?? 0, `${name}.costUsd`),
+  };
+}
+
+function cloneBudgetState(value: BudgetState): BudgetState {
+  return {
+    tokensUsed: value.tokensUsed,
+    tokensRemaining: value.tokensRemaining,
+    costUsd: value.costUsd,
+    agentCalls: value.agentCalls,
+  };
+}
+
+function validateBudgetUsage(
+  value: unknown,
+  budget: { tokens: number; costUsd: number },
+  name: string,
+): BudgetState {
+  const record = closedRecord(
+    value,
+    ['tokensUsed', 'tokensRemaining', 'costUsd', 'agentCalls'],
+    name,
+  );
+  const tokensUsed = safeInteger(record.tokensUsed, `${name}.tokensUsed`);
+  const tokensRemaining = record.tokensRemaining;
+  if (!Number.isSafeInteger(tokensRemaining)) {
+    throw new Error(`${name}.tokensRemaining must be a safe integer.`);
+  }
+  if (tokensRemaining !== budget.tokens - tokensUsed) {
+    throw new Error(`${name} is inconsistent with the original token limit.`);
+  }
+  return {
+    tokensUsed,
+    tokensRemaining: tokensRemaining as number,
+    costUsd: finiteNumber(record.costUsd, `${name}.costUsd`),
+    agentCalls: safeInteger(record.agentCalls, `${name}.agentCalls`),
+  };
+}
+
+function validateBudgetSnapshot(value: unknown, expectedRunId: string): WorkflowBudgetSnapshot {
+  const record = closedRecord(
+    value,
+    ['schema', 'runId', 'budget', 'revision', 'usage', 'updatedAt'],
+    'workflow budget snapshot',
+  );
+  if (record.schema !== WORKFLOW_BUDGET_SNAPSHOT_SCHEMA) {
+    throw new Error('Workflow budget snapshot schema is invalid.');
+  }
+  if (record.runId !== expectedRunId) {
+    throw new Error('Workflow budget snapshot run ID does not match its path.');
+  }
+  const budgetRecord = closedRecord(
+    record.budget,
+    ['tokens', 'costUsd'],
+    'workflow budget snapshot budget',
+  );
+  const budget = {
+    tokens: safeInteger(budgetRecord.tokens, 'workflow budget snapshot budget.tokens', 1),
+    costUsd: finiteNumber(budgetRecord.costUsd, 'workflow budget snapshot budget.costUsd'),
+  };
+  return {
+    schema: WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+    runId: expectedRunId,
+    budget,
+    revision: safeInteger(record.revision, 'workflow budget snapshot revision'),
+    usage: validateBudgetUsage(record.usage, budget, 'workflow budget snapshot usage'),
+    updatedAt: canonicalTimestamp(record.updatedAt, 'workflow budget snapshot updatedAt'),
+  };
+}
+
+function validateAuditRecord(
+  value: unknown,
+  expectedRunId: string,
+  expectedSequence: number,
+): WorkflowAuditRecord {
+  const record = closedRecord(
+    value,
+    ['schema', 'runId', 'sequence', 'operation', 'detailHash', 'recordedAt'],
+    'workflow audit record',
+  );
+  if (record.schema !== WORKFLOW_AUDIT_RECORD_SCHEMA) {
+    throw new Error('Workflow audit record schema is invalid.');
+  }
+  if (record.runId !== expectedRunId) {
+    throw new Error('Workflow audit record run ID does not match its path.');
+  }
+  if (safeInteger(record.sequence, 'workflow audit record sequence', 1) !== expectedSequence) {
+    throw new Error('Workflow audit record sequence is invalid.');
+  }
+  if (
+    typeof record.operation !== 'string' ||
+    record.operation.length === 0 ||
+    record.operation.length > 256 ||
+    /[\r\n]/u.test(record.operation)
+  ) {
+    throw new Error('Workflow audit record operation is invalid.');
+  }
+  if (typeof record.detailHash !== 'string' || !/^[0-9a-f]{64}$/u.test(record.detailHash)) {
+    throw new Error('Workflow audit record detail hash is invalid.');
+  }
+  return {
+    schema: WORKFLOW_AUDIT_RECORD_SCHEMA,
+    runId: expectedRunId,
+    sequence: expectedSequence,
+    operation: record.operation,
+    detailHash: record.detailHash,
+    recordedAt: canonicalTimestamp(record.recordedAt, 'workflow audit record recordedAt'),
+  };
 }

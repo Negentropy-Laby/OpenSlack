@@ -193,6 +193,27 @@ describe('executeAgentCall', () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
+  it('does not persist budget again for a cache hit', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config } = makeConfig({
+      cache: {
+        async load() {
+          return { data: { cached: true }, tokenUsage: 5 };
+        },
+        async save() {},
+      },
+    });
+    await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange,
+      },
+    );
+    expect(onBudgetChange).not.toHaveBeenCalled();
+  });
+
   it('rejects a cached result that no longer satisfies the requested schema', async () => {
     const cache: AgentCacheStore = {
       async load() {
@@ -320,6 +341,45 @@ describe('executeAgentCall', () => {
     expect(budget.agentCalls).toBe(1);
   });
 
+  it('awaits cumulative budget persistence after a successful provider call', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config } = makeConfig();
+    await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange,
+      },
+    );
+    expect(onBudgetChange).toHaveBeenCalledWith(
+      expect.objectContaining({ tokensUsed: 10, tokensRemaining: 990, agentCalls: 1 }),
+    );
+  });
+
+  it('does not expose a cache entry when cumulative budget persistence fails', async () => {
+    const cache: AgentCacheStore = {
+      async load() {
+        return null;
+      },
+      save: vi.fn(async () => {}),
+    };
+    const { config } = makeConfig({ cache });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          onBudgetChange: async () => {
+            throw new Error('budget persistence failed');
+          },
+        },
+      ),
+    ).rejects.toThrow('budget persistence failed');
+    expect(cache.save).not.toHaveBeenCalled();
+  });
+
   it('charges reported provider usage when execution fails after a response', async () => {
     const launcher: AgentLauncher = async () => {
       throw Object.assign(new Error('provider failed after usage'), { tokenUsage: 6 });
@@ -332,6 +392,27 @@ describe('executeAgentCall', () => {
       executeAgentCall('prompt', { label: 'test', phase: 'Scan' }, config),
     ).rejects.toThrow('provider failed');
     expect(budget).toMatchObject({ tokensUsed: 8, tokensRemaining: 4, agentCalls: 1 });
+  });
+
+  it('persists a failed real provider call even when no token usage is reported', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config, budget } = makeConfig({
+      launcher: async () => {
+        throw new Error('provider unavailable');
+      },
+    });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          onBudgetChange,
+        },
+      ),
+    ).rejects.toThrow('provider unavailable');
+    expect(budget.agentCalls).toBe(1);
+    expect(onBudgetChange).toHaveBeenCalledWith(expect.objectContaining({ agentCalls: 1 }));
   });
 
   it('bounds the launcher request by workflow and per-call token budgets', async () => {

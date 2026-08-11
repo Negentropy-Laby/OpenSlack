@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRuntime, WorkflowExecutionCancelledError } from '../runtime.js';
+import { RunStore } from '../run-store.js';
+import type { RunStoreFs } from '../run-store.js';
 import type { WorkflowEffectBoundary } from '../workflow-runner-effect-boundary.js';
 import type { WorkflowMeta } from '../types.js';
 
@@ -98,5 +100,49 @@ describe('GS8-B executeRun/runtime worker integration', () => {
     controller.abort(new Error('operator stop'));
     expect(() => runtime.phase('Run')).toThrow(WorkflowExecutionCancelledError);
     expect(() => runtime.log('after cancellation')).toThrow('operator stop');
+  });
+
+  it('fails the effect with reconciliation evidence when strict audit persistence fails', async () => {
+    const statuses: string[] = [];
+    const fs: RunStoreFs = {
+      async mkdir() {},
+      async writeFile() {},
+      async readFile() {
+        return null;
+      },
+      async appendFile() {
+        throw new Error('audit disk unavailable');
+      },
+      async exists() {
+        return true;
+      },
+    };
+    const boundary: WorkflowEffectBoundary = {
+      async intent(input) {
+        return {
+          effectId: `workflow-effect:sha256:${'a'.repeat(64)}`,
+          effectKind: input.operation,
+          effectHash: 'a'.repeat(64),
+          capabilityHash: 'b'.repeat(64),
+          requiresHumanDecision: true,
+        };
+      },
+      async outcome(_handle, input) {
+        statuses.push(input.status);
+      },
+    };
+    const runtime = createRuntime({
+      runId: 'run.audit.failure',
+      mode: 'execute',
+      manifest,
+      onConfirm: async () => true,
+      effectBoundary: boundary,
+      runStore: new RunStore({ baseDir: '/audit-test', fs }),
+    });
+
+    await expect(
+      runtime.openslack.governance.audit('qualification', { pass: true }),
+    ).rejects.toThrow('audit disk unavailable');
+    expect(statuses).toEqual(['reconciliation_required']);
   });
 });

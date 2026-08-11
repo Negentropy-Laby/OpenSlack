@@ -233,7 +233,11 @@ export { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';
 export type { PipelineCacheStore } from './pipeline-runner.js';
 
 // ── Run Store ─────────────────────────────────────────────────────────────────
-export { RunStore } from './run-store.js';
+export {
+  RunStore,
+  WORKFLOW_AUDIT_RECORD_SCHEMA,
+  WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+} from './run-store.js';
 export type {
   RunStoreFs,
   RunStoreOptions,
@@ -244,6 +248,8 @@ export type {
   AgentReplayInputLoadResult,
   AgentReplayInputPersistenceResult,
   BudgetWarning,
+  WorkflowAuditRecord,
+  WorkflowBudgetSnapshot,
 } from './run-store.js';
 
 // ── Cache ─────────────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import { RunStore } from './run-store.js';
 import type { RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
 
 /**
@@ -205,7 +206,7 @@ async function safeTransition(
   }
 }
 
-async function ensureRunInitialized(options: {
+async function initializeRun(options: {
   store: RunStore;
   runId: string;
   manifest: WorkflowMeta;
@@ -215,7 +216,9 @@ async function ensureRunInitialized(options: {
   manifestHash: string;
   budget?: { tokens: number; costUsd: number };
 }): Promise<void> {
-  if (await options.store.runExists(options.runId)) return;
+  if (await options.store.runExists(options.runId)) {
+    throw new Error(`Workflow run ${options.runId} already exists; use the strict resume path.`);
+  }
   const startedAt = options.startedAt ?? new Date().toISOString();
   await options.store.initRun(options.runId, {
     runId: options.runId,
@@ -431,7 +434,7 @@ export async function executeRun(
   const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
   throwIfExecutionAborted(options.signal, runId);
 
-  await ensureRunInitialized({
+  await initializeRun({
     store,
     runId,
     manifest,
@@ -463,6 +466,7 @@ export async function executeRun(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
+    args,
     budget: effectiveBudget,
     permissions: {
       declared: manifest.permissions ?? {},
@@ -478,6 +482,9 @@ export async function executeRun(
     runStore: store,
     signal: options.signal,
     effectBoundary: options.effectBoundary,
+    onBudgetChange: async (state) => {
+      await store.persistBudgetState(runId, state);
+    },
   });
 
   try {
@@ -537,9 +544,10 @@ export async function executeRun(
 /**
  * Execute a workflow in resume mode using an existing run store.
  *
- * Loads checkpoint state from the run store and re-executes from the
- * next uncompleted phase. The workflow's run function is called with
- * a runtime configured to resume from the checkpoint.
+ * Re-enters the workflow from its function boundary with the original args,
+ * immutable workflow identity, cumulative budget, and persisted caches. A
+ * workflow must place replay-safe cached work before any approval pause; this
+ * function does not claim arbitrary JavaScript can resume mid-function.
  *
  * SAFETY: Like executeRun, resume mode in execute requires either onConfirm
  * or allowUnattended to prevent unattended side effects.
@@ -571,30 +579,52 @@ export async function executeResume(
     effectBoundary?: WorkflowEffectBoundary;
   },
 ): Promise<RunResult> {
-  const { runId, manifest, args = {}, budget } = options;
+  const { runId, manifest } = options;
   const rootDir = options.rootDir ?? process.cwd();
   const store = workflowRunStore(rootDir);
-  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
   throwIfExecutionAborted(options.signal, runId);
 
-  await ensureRunInitialized({
-    store,
-    runId,
-    manifest,
-    mode: 'execute',
-    args,
-    manifestHash: workflowHash(workflow, manifest),
-    budget: effectiveBudget,
-  });
-  const status = await store.loadStatus(runId);
-  if (status?.status === 'paused_waiting_approval') {
-    await safeTransition(store, runId, 'resuming');
-    await safeTransition(store, runId, 'running');
-  } else if (status?.status === 'paused') {
-    await safeTransition(store, runId, 'running');
-  } else if (status?.status === 'resuming') {
-    await safeTransition(store, runId, 'running');
+  if (options.confirmationPolicy !== undefined && options.confirmationPolicy.runId !== runId) {
+    throw new Error('Resume runId must match confirmationPolicy.runId.');
   }
+
+  if (!(await store.runExists(runId))) {
+    throw new Error(`Workflow run ${runId} does not exist; resume cannot initialize a new run.`);
+  }
+  const meta = await store.loadMeta(runId);
+  const status = await store.loadStatus(runId);
+  const snapshot = await store.loadBudgetSnapshot(runId);
+  if (meta === null || status === null || snapshot === null) {
+    throw new Error(`Workflow run ${runId} has incomplete resume state.`);
+  }
+  if (!['paused', 'paused_waiting_approval', 'resuming'].includes(status.status)) {
+    throw new Error(`Workflow run ${runId} has non-resumable status "${status.status}".`);
+  }
+  if (
+    meta.runId !== runId ||
+    meta.workflowName !== manifest.name ||
+    meta.mode !== 'execute' ||
+    meta.manifestHash !== workflowHash(workflow, manifest)
+  ) {
+    throw new Error(`Workflow run ${runId} identity or workflow hash has drifted.`);
+  }
+  if (options.args !== undefined && !isDeepStrictEqual(options.args, meta.args)) {
+    throw new Error(`Workflow run ${runId} resume arguments do not match the original run.`);
+  }
+  if (meta.budget === undefined) {
+    throw new Error(`Workflow run ${runId} original budget is missing.`);
+  }
+  const effectiveBudget = {
+    tokens: meta.budget.tokens,
+    costUsd: meta.budget.costUsd ?? 0,
+  };
+  if (options.budget !== undefined && !isDeepStrictEqual(options.budget, effectiveBudget)) {
+    throw new Error(`Workflow run ${runId} resume budget does not match the original run.`);
+  }
+  if (!isDeepStrictEqual(snapshot.budget, effectiveBudget)) {
+    throw new Error(`Workflow run ${runId} budget snapshot has drifted from metadata.`);
+  }
+  const args = meta.args;
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined;
@@ -617,7 +647,9 @@ export async function executeResume(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
+    args,
     budget: effectiveBudget,
+    initialBudgetState: snapshot.usage,
     permissions: {
       declared: manifest.permissions ?? {},
       granted: manifest.permissions ?? {},
@@ -632,7 +664,17 @@ export async function executeResume(
     runStore: store,
     signal: options.signal,
     effectBoundary: options.effectBoundary,
+    onBudgetChange: async (state) => {
+      await store.persistBudgetState(runId, state);
+    },
   });
+
+  if (status.status === 'paused_waiting_approval') {
+    await store.transitionStatus(runId, 'resuming');
+    await store.transitionStatus(runId, 'running');
+  } else {
+    await store.transitionStatus(runId, 'running');
+  }
 
   try {
     throwIfExecutionAborted(options.signal, runId);

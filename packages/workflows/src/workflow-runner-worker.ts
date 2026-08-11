@@ -19,6 +19,7 @@ import {
 } from './workflow-runner-session.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowModule } from './types.js';
+import { RunStore } from './run-store.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -34,6 +35,13 @@ export class WorkflowRunnerWorkerConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'WorkflowRunnerWorkerConfigError';
+  }
+}
+
+export class WorkflowRunnerRunStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkflowRunnerRunStateError';
   }
 }
 
@@ -313,6 +321,49 @@ function boundedDiagnostic(error: unknown): string {
   return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
 }
 
+/**
+ * Dispatch one accepted runner job without ever treating an existing run as a
+ * fresh execution. Only paused/resuming runs enter the strict resume path;
+ * terminal, running, or incomplete local state fails closed.
+ */
+export async function executeWorkflowRunnerJob(
+  workflow: WorkflowModule,
+  descriptor: WorkflowRunnerExecutionDescriptor,
+  context: WorkflowRunnerExecutionContext,
+  workspaceRoot: string,
+): Promise<RunResult> {
+  const store = new RunStore({ baseDir: join(workspaceRoot, '.openslack.local', 'workflows') });
+  const exists = await store.runExists(descriptor.workflowRunId);
+  const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
+  const { executeResume, executeRun } = await loadWorkflowExecutionAuthority();
+  const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
+  const common = {
+    manifest: workflow.meta,
+    args: { ...descriptor.input },
+    budget: descriptor.budget,
+    runId: descriptor.workflowRunId,
+    ...(unattended
+      ? { allowUnattended: true as const }
+      : { confirmationPolicy: descriptor.confirmationPolicy }),
+    signal: context.signal,
+    effectBoundary: context.effectBoundary,
+    rootDir: workspaceRoot,
+  };
+
+  if (!exists) return executeRun(workflow, common);
+  if (status === null) {
+    throw new WorkflowRunnerRunStateError(
+      `Workflow run ${descriptor.workflowRunId} exists without readable status.`,
+    );
+  }
+  if (!['paused', 'paused_waiting_approval', 'resuming'].includes(status.status)) {
+    throw new WorkflowRunnerRunStateError(
+      `Workflow run ${descriptor.workflowRunId} cannot resume from status "${status.status}".`,
+    );
+  }
+  return executeResume(workflow, common);
+}
+
 export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
 ): Promise<void> {
@@ -345,20 +396,7 @@ export async function runWorkflowRunnerWorker(
       descriptor: WorkflowRunnerExecutionDescriptor,
       context: WorkflowRunnerExecutionContext,
     ): Promise<RunResult> => {
-      const { executeRun } = await import('./execute.js');
-      const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
-      return executeRun(workflow, {
-        manifest: workflow.meta,
-        args: { ...descriptor.input },
-        budget: descriptor.budget,
-        runId: descriptor.workflowRunId,
-        ...(unattended
-          ? { allowUnattended: true }
-          : { confirmationPolicy: descriptor.confirmationPolicy }),
-        signal: context.signal,
-        effectBoundary: context.effectBoundary,
-        rootDir: config.workspaceRoot,
-      });
+      return executeWorkflowRunnerJob(workflow, descriptor, context, config.workspaceRoot);
     },
   });
 
@@ -399,4 +437,12 @@ export async function runWorkflowRunnerWorker(
   timers.retry = setInterval(() => {
     void session.retryOutstanding().catch(fatal);
   }, 2_000);
+}
+
+async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {
+  // Keep executable authority loading behind WorkflowRunnerSession's advancing
+  // lease_accept receipt. executeWorkflowRunnerJob is only invoked by the
+  // accepted session callback in production; exporting it exists for focused
+  // state-routing tests, not as a second worker entrypoint.
+  return await import('./execute.js');
 }
