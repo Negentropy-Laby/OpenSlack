@@ -166,6 +166,7 @@ export {
   createRuntime,
   ExecuteDeniedError,
   WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES,
+  WorkflowAuditDetailInvalidError,
   WorkflowExecutionCancelledError,
   WorkflowPausedError,
 } from './runtime.js';
@@ -233,10 +234,18 @@ export { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';
 export type { PipelineCacheStore } from './pipeline-runner.js';
 
 // ── Run Store ─────────────────────────────────────────────────────────────────
-export { RunStore } from './run-store.js';
+export {
+  RunStore,
+  WORKFLOW_AUDIT_RECORD_SCHEMA,
+  WORKFLOW_AUDIT_MAX_BYTES,
+  WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+  decodeRunMetaArguments,
+  encodeRunMetaArguments,
+} from './run-store.js';
 export type {
   RunStoreFs,
   RunStoreOptions,
+  RunStoreFileIdentity,
   RunMeta,
   RunStatusFile,
   LogEntry as RunLogEntry,
@@ -244,6 +253,9 @@ export type {
   AgentReplayInputLoadResult,
   AgentReplayInputPersistenceResult,
   BudgetWarning,
+  WorkflowAuditRecord,
+  AppendWorkflowAuditResult,
+  WorkflowBudgetSnapshot,
 } from './run-store.js';
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
@@ -261,7 +273,24 @@ export type { CacheStore, CacheEntry } from './cache.js';
 
 // ── Resume ────────────────────────────────────────────────────────────────────
 export { checkResumable, prepareResume, forceResume, replayCachedPhases } from './resume.js';
-export type { ResumeCheckResult, ResumeState } from './resume.js';
+export type { ResumeCheckResult, ResumeState, WorkflowResumeIdentity } from './resume.js';
+
+// ── Workflow Arguments and Identity ──────────────────────────────────────────
+export {
+  WORKFLOW_ARGUMENTS_SCHEMA,
+  WorkflowArgumentsError,
+  encodeWorkflowArguments,
+  decodeWorkflowArguments,
+  inspectWorkflowArgumentsEnvelope,
+  validateWorkflowArgumentsEnvelope,
+  cloneWorkflowArguments,
+} from './internal/workflow-arguments.js';
+export type {
+  WorkflowArgumentNode,
+  WorkflowArgumentsEnvelope,
+  EncodedWorkflowArguments,
+} from './internal/workflow-arguments.js';
+export { resolveWorkflowIdentityHash, hashWorkflowSource } from './internal/workflow-identity.js';
 
 // ── Anthropic Compat ──────────────────────────────────────────────────────────
 export {
@@ -294,6 +323,8 @@ export {
   executeResume,
   DryRunError,
   createOnConfirmFromPolicy,
+  WorkflowResumeRecoveryRequiredError,
+  WorkflowRunInputInvalidError,
 } from './execute.js';
 export type { DryRunOptions, DryRunResult, ExecuteRunOptions, SimulatedEffect } from './execute.js';
 

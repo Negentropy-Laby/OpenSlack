@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import type { WorkflowPlanResolverEntry, WorkflowStartPlan } from './governed-plan.js';
+import { canonicalJson as encodeCanonicalJson } from './internal/canonical-json.js';
 
 export const CONTRACT_DELIVERY_LITE_WORKFLOW_ID = 'contract.delivery.lite' as const;
 export const CONTRACT_DELIVERY_LITE_WORKFLOW_VERSION = '1.0.0' as const;
@@ -82,26 +83,14 @@ function fail(code: ContractDeliveryLiteWorkflowError['code'], message: string):
 }
 
 function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
-    return JSON.stringify(value);
+  try {
+    return encodeCanonicalJson(value, { allowNullPrototype: true });
+  } catch {
+    return fail(
+      'CONTRACT_DELIVERY_WORKFLOW_PLAN_INVALID',
+      'Contract-to-Delivery receipt is not canonical JSON data.',
+    );
   }
-  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (typeof value === 'object' && value !== null) {
-    return `{${Object.keys(value)
-      .sort()
-      .map(
-        (key) =>
-          `${JSON.stringify(key)}:${canonicalJson(
-            (value as Readonly<Record<string, unknown>>)[key],
-          )}`,
-      )
-      .join(',')}}`;
-  }
-  return fail(
-    'CONTRACT_DELIVERY_WORKFLOW_PLAN_INVALID',
-    'Contract-to-Delivery receipt is not canonical JSON data.',
-  );
 }
 
 function safeRuntimeId(value: unknown, label: string): string {

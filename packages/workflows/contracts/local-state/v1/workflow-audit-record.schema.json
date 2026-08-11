@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openslack.workflow_audit_record.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runId", "sequence", "operation", "detailHash", "recordedAt"],
+  "properties": {
+    "schema": { "const": "openslack.workflow_audit_record.v1" },
+    "runId": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "operation": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\r\\n]+$" },
+    "detailHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "recordedAt": { "type": "string", "format": "date-time" }
+  }
+}

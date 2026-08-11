@@ -3,10 +3,10 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
-import { parseManifest, validateManifest, computeManifestHash } from './manifest.js';
+import { parseManifest, validateManifest } from './manifest.js';
 import { getEmbeddedBuiltin, listEmbeddedBuiltins } from './embedded-builtins.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule, WorkflowSource } from './types.js';
+import { hashWorkflowSource, resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 
 /**
  * Ordered discovery paths for workflow files.
@@ -169,13 +169,14 @@ export async function loadWorkflow(
     return {
       ...embedded,
       format: detectFormat(embedded as unknown as Record<string, unknown>),
-      hash: computeManifestHash(embedded.meta),
+      hash: resolveWorkflowIdentityHash(embedded),
     };
   }
 
   // Step 1: Read file and compute hash
-  const source = await readFile(filePath, 'utf-8');
-  const hash = computeFileHash(source);
+  const sourceBytes = await readFile(filePath);
+  const hash = hashWorkflowSource(sourceBytes);
+  const source = sourceBytes.toString('utf-8');
 
   // Step 2: Static analysis — extract meta without executing module code
   const meta = analyzeStaticMeta(source);
@@ -876,11 +877,4 @@ function parseYamlMinimal(content: string): {
     phases: Array.from({ length: phasesCount }),
     inputs: Array.from({ length: inputsCount }),
   };
-}
-
-/**
- * Compute SHA-256 hash of a file's source content.
- */
-function computeFileHash(source: string): string {
-  return createHash('sha256').update(source).digest('hex').slice(0, 16);
 }

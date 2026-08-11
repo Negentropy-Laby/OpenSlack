@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openslack.workflow_arguments.v1",
+  "title": "OpenSlack Workflow Arguments",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "root"],
+  "properties": {
+    "schema": { "const": "openslack.workflow_arguments.v1" },
+    "root": { "$ref": "#/$defs/objectNode" }
+  },
+  "$defs": {
+    "nullNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t"],
+      "properties": { "t": { "const": "null" } }
+    },
+    "undefinedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t"],
+      "properties": { "t": { "const": "undefined" } }
+    },
+    "holeNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t"],
+      "properties": { "t": { "const": "hole" } }
+    },
+    "booleanNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": { "t": { "const": "boolean" }, "v": { "type": "boolean" } }
+    },
+    "stringNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": { "t": { "const": "string" }, "v": { "type": "string" } }
+    },
+    "numberNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": { "t": { "const": "number" }, "v": { "type": "number" } }
+    },
+    "negativeZeroNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t"],
+      "properties": { "t": { "const": "negative_zero" } }
+    },
+    "bigintNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": {
+        "t": { "const": "bigint" },
+        "v": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)$" }
+      }
+    },
+    "dateNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": {
+        "t": { "const": "date" },
+        "v": { "type": "string", "format": "date-time" }
+      }
+    },
+    "arrayNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "v"],
+      "properties": {
+        "t": { "const": "array" },
+        "v": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/arrayItem" }
+        }
+      }
+    },
+    "objectNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "p", "v"],
+      "properties": {
+        "t": { "const": "object" },
+        "p": { "enum": ["object", "null"] },
+        "v": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "string", "maxLength": 256 },
+              { "$ref": "#/$defs/valueNode" }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "arrayItem": {
+      "oneOf": [{ "$ref": "#/$defs/holeNode" }, { "$ref": "#/$defs/valueNode" }]
+    },
+    "valueNode": {
+      "oneOf": [
+        { "$ref": "#/$defs/nullNode" },
+        { "$ref": "#/$defs/undefinedNode" },
+        { "$ref": "#/$defs/booleanNode" },
+        { "$ref": "#/$defs/stringNode" },
+        { "$ref": "#/$defs/numberNode" },
+        { "$ref": "#/$defs/negativeZeroNode" },
+        { "$ref": "#/$defs/bigintNode" },
+        { "$ref": "#/$defs/dateNode" },
+        { "$ref": "#/$defs/arrayNode" },
+        { "$ref": "#/$defs/objectNode" }
+      ]
+    }
+  }
+}

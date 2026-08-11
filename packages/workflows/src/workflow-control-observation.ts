@@ -303,7 +303,7 @@ function validateMeta(value: unknown, runId: string): JsonRecord {
   exactKeys(
     meta,
     ['runId', 'workflowName', 'mode', 'manifestHash', 'args', 'startedAt'],
-    ['budget', 'budgetPolicy'],
+    ['argsEncoding', 'budget', 'budgetPolicy'],
   );
   if (safeId(meta.runId, 'meta.runId') !== runId) {
     fail('WORKFLOW_CONTROL_OBSERVATION_INVALID', 'Run meta does not match the requested run.');
@@ -330,6 +330,9 @@ function validateMeta(value: unknown, runId: string): JsonRecord {
     fail('WORKFLOW_CONTROL_OBSERVATION_INVALID', 'Manifest hash must be a full SHA-256 digest.');
   }
   record(meta.args, 'meta.args');
+  if (meta.argsEncoding !== undefined && meta.argsEncoding !== 'openslack.workflow_arguments.v1') {
+    fail('WORKFLOW_CONTROL_OBSERVATION_INVALID', 'Run argument encoding is invalid.');
+  }
   return meta;
 }
 

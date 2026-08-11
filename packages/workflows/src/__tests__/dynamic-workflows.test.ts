@@ -514,7 +514,10 @@ describe('dynamic workflow drafts and policy', () => {
 
     const status = await runStore.loadStatus('run-budget-pause');
     const approvals = await runStore.loadPendingApprovals('run-budget-pause');
-    expect(status?.status).toBe('paused_waiting_approval');
+    // The agent settlement owns durable usage and approval evidence. The
+    // execution boundary performs the status transition after observing the
+    // typed pause error, so direct shim calls cannot publish a false pause.
+    expect(status?.status).toBe('running');
     expect(approvals[0]).toMatchObject({
       operation: 'workflow.budget.exceeded',
       status: 'pending',
@@ -709,6 +712,7 @@ function writeWorkflowRunStatus(root: string, runId: string, status: string): st
         runId,
         workflowName: 'test-workflow',
         mode: 'execute',
+        manifestHash: 'a'.repeat(64),
         args: {},
         startedAt: '2026-01-01T00:00:00.000Z',
       },
@@ -721,6 +725,7 @@ function writeWorkflowRunStatus(root: string, runId: string, status: string): st
     statusPath,
     JSON.stringify(
       {
+        runId,
         status,
         updatedAt: '2026-01-01T00:00:00.000Z',
         phases: [],
@@ -787,9 +792,10 @@ async function initWorkflowRunStore(
     runId,
     workflowName: 'test-workflow',
     mode: 'execute',
-    manifestHash: 'hash-test-workflow',
+    manifestHash: 'a'.repeat(64),
     args: {},
     startedAt: '2026-01-01T00:00:00.000Z',
+    budget: { tokens: budgetPolicy.tokenBudget, costUsd: 0 },
     budgetPolicy,
   });
   return runStore;

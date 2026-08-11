@@ -1,6 +1,19 @@
-import type { ExecutionMode, PhaseCheckpoint, RunStatus, WorkflowMeta } from './types.js';
-import { computeManifestHash } from './manifest.js';
+import type {
+  ExecutionMode,
+  PhaseCheckpoint,
+  RunStatus,
+  WorkflowMeta,
+  WorkflowModule,
+} from './types.js';
 import type { RunStore, RunMeta } from './run-store.js';
+import { WorkflowResumeRecoveryRequiredError } from './execute.js';
+import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
+
+export type WorkflowResumeIdentity = Pick<
+  WorkflowModule,
+  'meta' | 'hash' | 'format' | 'sourceBody' | 'preview' | 'run'
+>;
 
 /**
  * Result of a resume check: indicates whether a run can be resumed
@@ -19,6 +32,8 @@ export interface ResumeCheckResult {
   storedManifestHash?: string;
   /** The current manifest hash. */
   currentManifestHash?: string;
+  /** Original durable-state validation cause, when available. */
+  cause?: unknown;
 }
 
 /**
@@ -43,13 +58,13 @@ export interface ResumeState {
  *
  * A run is resumable if:
  * 1. It exists on disk
- * 2. Its status is "paused"
- * 3. The manifest hash matches (optional warning if not)
+ * 2. Its status is one of the strict replay states
+ * 3. Its full executable SHA-256 identity matches
  */
 export async function checkResumable(
   runStore: RunStore,
   runId: string,
-  manifest: WorkflowMeta,
+  identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeCheckResult> {
   // 1. Check run exists
   const exists = await runStore.runExists(runId);
@@ -63,7 +78,18 @@ export async function checkResumable(
   }
 
   // 2. Load current status
-  const status = await runStore.getRunStatus(runId);
+  let status: RunStatus | null;
+  try {
+    status = await runStore.getRunStatus(runId);
+  } catch (error) {
+    return {
+      canResume: false,
+      reason: `Run ${runId} durable state is invalid.`,
+      status: null,
+      manifestMatch: false,
+      cause: error,
+    };
+  }
   if (status === null) {
     return {
       canResume: false,
@@ -73,20 +99,64 @@ export async function checkResumable(
     };
   }
 
-  // 3. Check status is "paused"
-  if (status.status !== 'paused') {
+  // 3. Check status is a strict replay state.
+  if (!isWorkflowResumeStatus(status.status)) {
     return {
       canResume: false,
-      reason: `Run ${runId} has status "${status.status}", expected "paused"`,
+      reason: `Run ${runId} has status "${status.status}", expected a resumable state`,
       status,
       manifestMatch: false,
     };
   }
 
-  // 4. Check manifest hash
-  const meta = await runStore.loadMeta(runId);
+  // 4. Check full executable identity. Manifest-only callers remain source
+  // compatible but cannot establish a strong identity and therefore fail closed.
+  let meta: RunMeta | null;
+  try {
+    meta = await runStore.loadMeta(runId);
+  } catch (error) {
+    return {
+      canResume: false,
+      reason: `Run ${runId} durable metadata is invalid.`,
+      status,
+      manifestMatch: false,
+      cause: error,
+    };
+  }
   const storedHash = meta?.manifestHash;
-  const currentHash = computeManifestHash(manifest);
+  if (!isResumeIdentity(identity)) {
+    return {
+      canResume: false,
+      reason: `Run ${runId} requires a loaded workflow with a full executable SHA-256 identity.`,
+      status,
+      manifestMatch: false,
+      storedManifestHash: storedHash,
+    };
+  }
+  let currentHash: string;
+  try {
+    currentHash = resolveWorkflowIdentityHash(identity, identity.meta);
+  } catch (error) {
+    return {
+      canResume: false,
+      reason: `Run ${runId} has no usable strong workflow identity: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      status,
+      manifestMatch: false,
+      storedManifestHash: storedHash,
+    };
+  }
+  if (storedHash === undefined || !/^[0-9a-f]{64}$/u.test(storedHash)) {
+    return {
+      canResume: false,
+      reason: `Run ${runId} uses a legacy weak workflow identity and requires recovery.`,
+      status,
+      manifestMatch: false,
+      storedManifestHash: storedHash,
+      currentManifestHash: currentHash,
+    };
+  }
   const manifestMatch = storedHash === currentHash;
 
   return {
@@ -113,17 +183,30 @@ export async function checkResumable(
 export async function prepareResume(
   runStore: RunStore,
   runId: string,
-  manifest: WorkflowMeta,
+  identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeState> {
   // Validate the run is resumable
-  const check = await checkResumable(runStore, runId, manifest);
+  const check = await checkResumable(runStore, runId, identity);
   if (!check.canResume) {
-    throw new Error(check.reason ?? `Cannot resume run ${runId}`);
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      check.reason ?? `run cannot be resumed automatically`,
+      check.cause === undefined ? undefined : { cause: check.cause },
+    );
   }
 
-  const meta = await runStore.loadMeta(runId);
+  const manifest = isResumeIdentity(identity) ? identity.meta : identity;
+
+  let meta: RunMeta | null;
+  try {
+    meta = await runStore.loadMeta(runId);
+  } catch (error) {
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable metadata is invalid', {
+      cause: error,
+    });
+  }
   if (meta === null) {
-    throw new Error(`Run ${runId} metadata not found`);
+    throw new WorkflowResumeRecoveryRequiredError(runId, 'durable metadata is missing');
   }
 
   // Collect completed phase checkpoints
@@ -153,6 +236,12 @@ export async function prepareResume(
     cachedAgentResults,
     meta,
   };
+}
+
+function isResumeIdentity(
+  value: WorkflowResumeIdentity | WorkflowMeta,
+): value is WorkflowResumeIdentity {
+  return typeof value === 'object' && value !== null && 'meta' in value;
 }
 
 /**

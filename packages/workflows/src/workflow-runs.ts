@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { requestAgentRunCancellation, requestAgentRunRestart } from '@openslack/agent-runtime';
 import type {
@@ -15,21 +15,6 @@ import {
 
 const TERMINAL_RUN_STATUSES = new Set<RunStatus['status']>(['completed', 'failed', 'cancelled']);
 
-interface ControlEvent {
-  action?: WorkflowRunControlAction;
-  timestamp?: string;
-  target?: WorkflowRunControlTarget;
-  status?: 'applied' | 'recorded' | 'rejected';
-  message?: string;
-}
-
-interface RunStatusWithControls {
-  status: RunStatus['status'];
-  updatedAt: string;
-  controlEvents?: ControlEvent[];
-  pendingAgentControls?: ControlEvent[];
-}
-
 export interface ListWorkflowRunsOptions {
   rootDir?: string;
   status?: RunStatus['status'];
@@ -37,14 +22,6 @@ export interface ListWorkflowRunsOptions {
 
 function runsDir(rootDir: string): string {
   return resolve(rootDir, '.openslack.local', 'workflows', 'runs');
-}
-
-async function readJson<T>(path: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(path, 'utf-8')) as T;
-  } catch {
-    return null;
-  }
 }
 
 function nextStatusForAction(
@@ -84,34 +61,13 @@ export async function listWorkflowRuns(
   } catch {
     return [];
   }
+  const store = new RunStore({
+    baseDir: resolve(rootDir, '.openslack.local', 'workflows'),
+  });
   const runs: RunStatus[] = [];
   for (const entry of entries) {
-    const dir = join(runsDir(rootDir), entry);
-    const meta = await readJson<{
-      runId: string;
-      workflowName: string;
-      mode: RunStatus['mode'];
-      args: Record<string, unknown>;
-      startedAt: string;
-    }>(join(dir, 'meta.json'));
-    const status = await readJson<{
-      status: RunStatus['status'];
-      updatedAt: string;
-      currentPhase?: string;
-      phases: RunStatus['phases'];
-    }>(join(dir, 'status.json'));
-    if (!meta || !status) continue;
-    const run: RunStatus = {
-      runId: meta.runId,
-      workflowName: meta.workflowName,
-      mode: meta.mode,
-      status: status.status,
-      startedAt: meta.startedAt,
-      updatedAt: status.updatedAt,
-      currentPhase: status.currentPhase,
-      phases: status.phases,
-      args: meta.args,
-    };
+    const run = await store.getRunStatus(entry);
+    if (!run) continue;
     if (!options.status || run.status === options.status) runs.push(run);
   }
   return runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -143,9 +99,11 @@ export async function controlWorkflowRun(
     );
   }
   const rootDir = options.rootDir ?? process.cwd();
-  const dir = join(runsDir(rootDir), runId);
-  const statusPath = join(dir, 'status.json');
-  const status = await readJson<RunStatusWithControls>(statusPath);
+  const store = new RunStore({
+    baseDir: join(rootDir, '.openslack.local', 'workflows'),
+    observationPort: options.observationPort,
+  });
+  const status = await store.loadStatus(runId);
   if (!status) {
     return {
       runId,
@@ -204,7 +162,6 @@ export async function controlWorkflowRun(
         target,
       };
     }
-    const store = new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
     const replay = await store.loadAgentReplayInput(runId, target.agentRunId);
     if (!replay) {
       return {
@@ -241,12 +198,7 @@ export async function controlWorkflowRun(
     ...(Array.isArray(status.controlEvents) ? status.controlEvents : []),
     { action, timestamp, target: options.target, status: resultStatus, message },
   ];
-  await writeFile(statusPath, JSON.stringify(status, null, 2), 'utf-8');
-  try {
-    options.observationPort?.observeRun(runId);
-  } catch {
-    // Direct control remains TypeScript-authoritative when the Go shadow is unavailable.
-  }
+  await store.saveStatus(runId, status);
   return { runId, action, status: resultStatus, message, target: options.target };
 }
 
@@ -258,8 +210,10 @@ export async function isAgentLaunchBlockedByWorkflowControl(options: {
   agentRunId: string;
   agentType?: string;
 }): Promise<string | null> {
-  const statusPath = join(runsDir(options.rootDir ?? process.cwd()), options.runId, 'status.json');
-  const status = await readJson<RunStatusWithControls>(statusPath);
+  const store = new RunStore({
+    baseDir: join(options.rootDir ?? process.cwd(), '.openslack.local', 'workflows'),
+  });
+  const status = await store.loadStatus(options.runId);
   const pending = status?.pendingAgentControls;
   if (!Array.isArray(pending)) return null;
   const blocked = pending.find((event) => {

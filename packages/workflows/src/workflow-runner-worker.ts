@@ -19,6 +19,8 @@ import {
 } from './workflow-runner-session.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowModule } from './types.js';
+import { RunStore } from './run-store.js';
+import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -36,6 +38,8 @@ export class WorkflowRunnerWorkerConfigError extends Error {
     this.name = 'WorkflowRunnerWorkerConfigError';
   }
 }
+
+export { WorkflowRunnerRunStateError } from './workflow-runner-run-state.js';
 
 interface PreparedWorkflowSource {
   readonly path: string;
@@ -313,6 +317,45 @@ function boundedDiagnostic(error: unknown): string {
   return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
 }
 
+/**
+ * Dispatch one accepted runner job without ever treating an existing run as a
+ * fresh execution. Only paused/resuming runs enter the strict resume path;
+ * terminal, running, or incomplete local state fails closed.
+ */
+async function executeWorkflowRunnerJob(
+  workflow: WorkflowModule,
+  descriptor: WorkflowRunnerExecutionDescriptor,
+  context: WorkflowRunnerExecutionContext,
+  workspaceRoot: string,
+): Promise<RunResult> {
+  const store = new RunStore({ baseDir: join(workspaceRoot, '.openslack.local', 'workflows') });
+  const exists = await store.runExists(descriptor.workflowRunId);
+  const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
+  const disposition = classifyWorkflowRunnerRunState(
+    descriptor.workflowRunId,
+    exists,
+    status?.status ?? null,
+  );
+  const { executeResumeWithStore, executeRunWithStore } = await loadWorkflowExecutionAuthority();
+  const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
+  const common = {
+    manifest: workflow.meta,
+    args: { ...descriptor.input },
+    budget: descriptor.budget,
+    runId: descriptor.workflowRunId,
+    ...(unattended
+      ? { allowUnattended: true as const }
+      : { confirmationPolicy: descriptor.confirmationPolicy }),
+    signal: context.signal,
+    effectBoundary: context.effectBoundary,
+    rootDir: workspaceRoot,
+  };
+
+  return disposition === 'initialize'
+    ? executeRunWithStore(workflow, common, store)
+    : executeResumeWithStore(workflow, common, store);
+}
+
 export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
 ): Promise<void> {
@@ -345,20 +388,7 @@ export async function runWorkflowRunnerWorker(
       descriptor: WorkflowRunnerExecutionDescriptor,
       context: WorkflowRunnerExecutionContext,
     ): Promise<RunResult> => {
-      const { executeRun } = await import('./execute.js');
-      const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
-      return executeRun(workflow, {
-        manifest: workflow.meta,
-        args: { ...descriptor.input },
-        budget: descriptor.budget,
-        runId: descriptor.workflowRunId,
-        ...(unattended
-          ? { allowUnattended: true }
-          : { confirmationPolicy: descriptor.confirmationPolicy }),
-        signal: context.signal,
-        effectBoundary: context.effectBoundary,
-        rootDir: config.workspaceRoot,
-      });
+      return executeWorkflowRunnerJob(workflow, descriptor, context, config.workspaceRoot);
     },
   });
 
@@ -399,4 +429,12 @@ export async function runWorkflowRunnerWorker(
   timers.retry = setInterval(() => {
     void session.retryOutstanding().catch(fatal);
   }, 2_000);
+}
+
+async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {
+  // Keep executable authority loading behind WorkflowRunnerSession's advancing
+  // lease_accept receipt. The executor is module-private and is only invoked by
+  // the accepted session callback; pure status classification is tested apart
+  // from execution authority.
+  return await import('./execute.js');
 }

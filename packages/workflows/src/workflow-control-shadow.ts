@@ -16,6 +16,8 @@ import {
   WorkflowControlObservationError,
   type BuildWorkflowControlObservationOptions,
 } from './workflow-control-observation.js';
+import { enqueueByKey } from './internal/keyed-serial-queue.js';
+import { safeInteger } from './internal/strict-data.js';
 
 export const WORKFLOW_CONTROL_SHADOW_OBSERVATION_SCHEMA =
   'openslack.workflow_control_shadow_observation.v1' as const;
@@ -225,13 +227,6 @@ function identifier(value: unknown, label: string): string {
   return value;
 }
 
-function safeInteger(value: unknown, minimum: number, label: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
-    throw new TypeError(`${label} must be a safe integer no smaller than ${minimum}.`);
-  }
-  return value as number;
-}
-
 function immutable<T>(value: T): T {
   if (Array.isArray(value)) value.forEach(immutable);
   else if (typeof value === 'object' && value !== null) Object.values(value).forEach(immutable);
@@ -256,7 +251,7 @@ export function validateWorkflowControlShadowEnvelope(
   }
   const source = immutable({
     runId: identifier(sourceObject.runId, 'source.runId'),
-    sourceSequence: safeInteger(sourceObject.sourceSequence, 1, 'source.sourceSequence'),
+    sourceSequence: safeInteger(sourceObject.sourceSequence, 'source.sourceSequence', 1),
     workspaceId: identifier(sourceObject.workspaceId, 'source.workspaceId'),
   });
   const observation = validateWorkflowControlObservation(root.observation);
@@ -824,8 +819,8 @@ function validateState(value: unknown, workspaceId: string, runId: string): Jour
   ) {
     throw new TypeError('Workflow Control shadow journal state is invalid.');
   }
-  const lastSequence = safeInteger(object.lastSequence, 0, 'state.lastSequence');
-  const ackedSequence = safeInteger(object.ackedSequence, 0, 'state.ackedSequence');
+  const lastSequence = safeInteger(object.lastSequence, 'state.lastSequence');
+  const ackedSequence = safeInteger(object.ackedSequence, 'state.ackedSequence');
   if (ackedSequence > lastSequence)
     throw new TypeError('Journal acknowledgement exceeds sequence.');
   return immutable({
@@ -911,7 +906,7 @@ async function acquireStreamLock(
       ) {
         throw new TypeError('Workflow Control shadow journal lock is invalid.');
       }
-      const pid = safeInteger(lock.pid, 1, 'lock.pid');
+      const pid = safeInteger(lock.pid, 'lock.pid', 1);
       let live = true;
       try {
         process.kill(pid, 0);
@@ -1144,14 +1139,7 @@ class WorkflowControlObservationPortImpl implements WorkflowControlObservationPo
   #enqueue(runId: string, operation: () => Promise<void>): Promise<void> {
     const hashValue = streamHash(this.#workspaceId, runId);
     const key = `${this.#directories.root}\0${hashValue}`;
-    const previous = streamTails.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(operation);
-    streamTails.set(key, current);
-    void current
-      .finally(() => {
-        if (streamTails.get(key) === current) streamTails.delete(key);
-      })
-      .catch(() => undefined);
+    const current = enqueueByKey(streamTails, key, operation);
     return current.catch(() => {
       this.#diagnose('journal_invalid', runId, undefined, 'append');
     });

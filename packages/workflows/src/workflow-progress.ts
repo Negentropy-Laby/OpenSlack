@@ -24,6 +24,12 @@ import {
   type WorkflowCostConfig,
 } from './cost.js';
 import type { BudgetWarning } from './run-store.js';
+import {
+  WORKFLOW_ARGUMENTS_SCHEMA,
+  encodeWorkflowArguments,
+  validateWorkflowArgumentsEnvelope,
+  type WorkflowArgumentsEnvelope,
+} from './internal/workflow-arguments.js';
 import type {
   AgentResult,
   ExecutionMode,
@@ -50,7 +56,8 @@ interface RunMetaFile {
   workflowName: string;
   mode: ExecutionMode;
   manifestHash: string;
-  args: Record<string, unknown>;
+  argsEncoding?: typeof WORKFLOW_ARGUMENTS_SCHEMA;
+  args: Record<string, unknown> | WorkflowArgumentsEnvelope;
   startedAt: string;
 }
 
@@ -163,12 +170,25 @@ function isOptionalNonNegativeNumber(value: unknown): boolean {
 
 function validateRunMeta(value: unknown, runId: string): value is RunMetaFile {
   if (!isRecord(value)) return false;
+  const argsValid = (() => {
+    try {
+      if (value.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA) {
+        validateWorkflowArgumentsEnvelope(value.args);
+        return true;
+      }
+      if (value.argsEncoding !== undefined || !isRecord(value.args)) return false;
+      encodeWorkflowArguments(value.args);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
   return (
     value.runId === runId &&
     isNonEmptyString(value.workflowName) &&
     EXECUTION_MODES.has(value.mode as ExecutionMode) &&
     isNonEmptyString(value.manifestHash) &&
-    isRecord(value.args) &&
+    argsValid &&
     isTimestamp(value.startedAt)
   );
 }
@@ -852,6 +872,17 @@ export async function getWorkflowRunProgress(
           return null;
         });
   const budget = buildBudget(workflowMeta, agents, statusRead.value, costConfig);
+  let externalArgs = encodeWorkflowArguments({}).envelope;
+  if (metaRead.value) {
+    try {
+      externalArgs =
+        metaRead.value.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA
+          ? validateWorkflowArgumentsEnvelope(metaRead.value.args)
+          : encodeWorkflowArguments(metaRead.value.args as Record<string, unknown>).envelope;
+    } catch {
+      warnings.push('workflow arguments could not be normalized');
+    }
+  }
   if (options.strictRead && warnings.length > 0) {
     throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
   }
@@ -867,7 +898,8 @@ export async function getWorkflowRunProgress(
     updatedAt,
     elapsedMs: elapsedMs(startedAt, updatedAt),
     currentPhase: statusRead.value?.currentPhase,
-    args: metaRead.value?.args ?? {},
+    argsEncoding: WORKFLOW_ARGUMENTS_SCHEMA,
+    args: externalArgs,
     phaseCount: phases.length,
     agentCount: agents.length,
     pendingApprovalCount: (pendingRead.value ?? []).filter(

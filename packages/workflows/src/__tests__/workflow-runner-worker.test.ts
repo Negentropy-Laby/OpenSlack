@@ -9,6 +9,10 @@ import {
   loadWorkflowRunnerWorkerConfig,
   WorkflowRunnerWorkerConfigError,
 } from '../workflow-runner-worker.js';
+import {
+  classifyWorkflowRunnerRunState,
+  WorkflowRunnerRunStateError,
+} from '../workflow-runner-run-state.js';
 import type { WorkflowMeta } from '../types.js';
 
 const roots: string[] = [];
@@ -36,11 +40,11 @@ function shortWindowsPath(path: string): string {
   return resolve(windowsPaths?.sort((left, right) => right.length - left.length)[0] ?? output);
 }
 
-function descriptor(workflowSourceBytes: Uint8Array = sourceBytes) {
+function descriptor(workflowSourceBytes: Uint8Array = sourceBytes, workflowRunId = 'run.worker.1') {
   return createWorkflowRunnerExecutionDescriptor({
     descriptorRef: 'descriptor.worker.1',
     workspaceId: 'workspace.test',
-    workflowRunId: 'run.worker.1',
+    workflowRunId,
     correlationId: 'correlation.worker.1',
     workflowId: 'sealed-test',
     workflowVersion: '1.0.0',
@@ -52,7 +56,7 @@ function descriptor(workflowSourceBytes: Uint8Array = sourceBytes) {
     confirmationPolicy: {
       mode: 'unattended-explicit',
       actorId: 'test-actor',
-      runId: 'run.worker.1',
+      runId: workflowRunId,
       allowUnattended: true,
       onUnexpectedEffect: 'fail',
     },
@@ -88,6 +92,21 @@ describe('GS8-B workflow runner worker', () => {
       path: await realpath(sourcePath),
       bytes: sourceBytes,
     });
+  });
+
+  it('initializes only missing runs, resumes paused states, and rejects automatic replay', () => {
+    expect(classifyWorkflowRunnerRunState('run.worker.1', false, null)).toBe('initialize');
+    for (const status of ['paused', 'paused_waiting_approval', 'resuming'] as const) {
+      expect(classifyWorkflowRunnerRunState('run.worker.1', true, status)).toBe('resume');
+    }
+    for (const status of ['running', 'completed', 'failed', 'cancelled'] as const) {
+      expect(() => classifyWorkflowRunnerRunState('run.worker.1', true, status)).toThrowError(
+        WorkflowRunnerRunStateError,
+      );
+    }
+    expect(() => classifyWorkflowRunnerRunState('run.worker.1', true, null)).toThrow(
+      /operator recovery/u,
+    );
   });
 
   it('accepts a Windows 8.3 alias for the same non-reparse workflow catalog', async () => {

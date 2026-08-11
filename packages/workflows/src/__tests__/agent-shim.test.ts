@@ -1,12 +1,39 @@
-import { describe, it, expect, vi } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   SchemaValidationError,
+  WorkflowBudgetExceededError,
+  WorkflowBudgetPausedError,
   executeAgentCall,
   computeAgentCacheKey,
   validateAgainstSchema,
 } from '../agent-shim.js';
 import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
 import type { AgentOptions, BudgetState } from '../types.js';
+import type { RunStore } from '../run-store.js';
+
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+function budgetApprovalStore(status: 'pending' | 'approved' = 'approved'): RunStore {
+  return {
+    async loadPendingApprovals() {
+      return [{ operation: 'workflow.budget.exceeded', status }];
+    },
+    async appendBudgetWarning() {},
+    async appendLog() {},
+    async savePendingApproval() {},
+    async transitionStatus() {},
+    async saveAgentReplayInput() {
+      return { available: true, path: '/test/replay.json' };
+    },
+  } as unknown as RunStore;
+}
 
 function makeConfig(
   overrides: Partial<{
@@ -193,6 +220,74 @@ describe('executeAgentCall', () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
+  it('does not persist budget again for a cache hit', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config } = makeConfig({
+      cache: {
+        async load() {
+          return { data: { cached: true }, tokenUsage: 5 };
+        },
+        async save() {},
+      },
+    });
+    await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange,
+      },
+    );
+    expect(onBudgetChange).not.toHaveBeenCalled();
+  });
+
+  it('allows an approved exhausted run to use cache without charging it again', async () => {
+    const launcher = vi.fn();
+    const onBudgetChange = vi.fn(async () => {});
+    const { config, budget } = makeConfig({
+      budget: { tokensUsed: 100, tokensRemaining: 0, costUsd: 1, agentCalls: 1 },
+      launcher: launcher as AgentLauncher,
+      cache: {
+        async load() {
+          return { data: { cached: true }, tokenUsage: 100 };
+        },
+        async save() {},
+      },
+    });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          runStore: budgetApprovalStore(),
+          onBudgetChange,
+        },
+      ),
+    ).resolves.toEqual({ cached: true });
+    expect(launcher).not.toHaveBeenCalled();
+    expect(onBudgetChange).not.toHaveBeenCalled();
+    expect(budget).toEqual({ tokensUsed: 100, tokensRemaining: 0, costUsd: 1, agentCalls: 1 });
+  });
+
+  it('allows an approved exhausted run to overdraw without a zero-token launch clamp', async () => {
+    const launcher = vi.fn(async () => ({ data: { ok: true }, tokenUsage: 4 }));
+    const { config, budget } = makeConfig({
+      budget: { tokensUsed: 100, tokensRemaining: 0, costUsd: 1, agentCalls: 1 },
+      launcher: launcher as AgentLauncher,
+    });
+    await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan', budget: { tokens: 10 } },
+      { ...config, runStore: budgetApprovalStore(), onBudgetChange: async () => {} },
+    );
+    expect(launcher).toHaveBeenCalledWith(
+      'prompt',
+      expect.objectContaining({ budget: { tokens: 10, costUsd: undefined } }),
+    );
+    expect(budget).toMatchObject({ tokensUsed: 104, tokensRemaining: -4, agentCalls: 2 });
+  });
+
   it('rejects a cached result that no longer satisfies the requested schema', async () => {
     const cache: AgentCacheStore = {
       async load() {
@@ -320,6 +415,45 @@ describe('executeAgentCall', () => {
     expect(budget.agentCalls).toBe(1);
   });
 
+  it('awaits cumulative budget persistence after a successful provider call', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config } = makeConfig();
+    await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange,
+      },
+    );
+    expect(onBudgetChange).toHaveBeenCalledWith(
+      expect.objectContaining({ tokensUsed: 10, tokensRemaining: 990, agentCalls: 1 }),
+    );
+  });
+
+  it('does not expose a cache entry when cumulative budget persistence fails', async () => {
+    const cache: AgentCacheStore = {
+      async load() {
+        return null;
+      },
+      save: vi.fn(async () => {}),
+    };
+    const { config } = makeConfig({ cache });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          onBudgetChange: async () => {
+            throw new Error('budget persistence failed');
+          },
+        },
+      ),
+    ).rejects.toThrow('budget persistence failed');
+    expect(cache.save).not.toHaveBeenCalled();
+  });
+
   it('charges reported provider usage when execution fails after a response', async () => {
     const launcher: AgentLauncher = async () => {
       throw Object.assign(new Error('provider failed after usage'), { tokenUsage: 6 });
@@ -332,6 +466,101 @@ describe('executeAgentCall', () => {
       executeAgentCall('prompt', { label: 'test', phase: 'Scan' }, config),
     ).rejects.toThrow('provider failed');
     expect(budget).toMatchObject({ tokensUsed: 8, tokensRemaining: 4, agentCalls: 1 });
+  });
+
+  it('persists configured provider cost when a real provider attempt fails', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'openslack-failed-provider-cost-'));
+    roots.push(rootDir);
+    await mkdir(join(rootDir, '.openslack', 'workflows'), { recursive: true });
+    await writeFile(
+      join(rootDir, '.openslack', 'workflows', 'cost.yaml'),
+      [
+        'schema: openslack.workflow_cost.v1',
+        'rates:',
+        '  - provider: openai-compatible',
+        '    model: qualification-model',
+        '    total_per_1m_tokens_usd: 100',
+      ].join('\n'),
+      'utf8',
+    );
+    const providerError = Object.assign(new Error('provider failed after usage'), {
+      tokenUsage: 10_000,
+    });
+    const { config, budget } = makeConfig({
+      launcher: async () => {
+        throw providerError;
+      },
+      budget: { tokensUsed: 0, tokensRemaining: 20_000, costUsd: 0, agentCalls: 0 },
+    });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          rootDir,
+          resolvedAgent: {
+            agentId: 'qualification-agent',
+            source: 'registry',
+            provider: 'openai-compatible',
+            model: 'qualification-model',
+          } as never,
+          onBudgetChange: async () => {},
+        },
+      ),
+    ).rejects.toBe(providerError);
+    expect(budget).toMatchObject({
+      tokensUsed: 10_000,
+      tokensRemaining: 10_000,
+      costUsd: 1,
+      agentCalls: 1,
+    });
+  });
+
+  it('persists a failed real provider call even when no token usage is reported', async () => {
+    const onBudgetChange = vi.fn(async () => {});
+    const { config, budget } = makeConfig({
+      launcher: async () => {
+        throw new Error('provider unavailable');
+      },
+    });
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          onBudgetChange,
+        },
+      ),
+    ).rejects.toThrow('provider unavailable');
+    expect(budget.agentCalls).toBe(1);
+    expect(onBudgetChange).toHaveBeenCalledWith(expect.objectContaining({ agentCalls: 1 }));
+  });
+
+  it('keeps provider failures primary when budget persistence also fails', async () => {
+    const providerError = Object.assign(new Error('provider primary'), { tokenUsage: 2 });
+    const persistenceError = new Error('budget persistence secondary');
+    const { config } = makeConfig({
+      launcher: async () => {
+        throw providerError;
+      },
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange: async () => {
+          throw persistenceError;
+        },
+      },
+    ).catch((error: unknown) => error);
+    expect(caught).toBe(providerError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      persistenceError,
+    ]);
+    expect(Object.keys(caught as object)).not.toContain('suppressedErrors');
   });
 
   it('bounds the launcher request by workflow and per-call token budgets', async () => {
@@ -359,6 +588,177 @@ describe('executeAgentCall', () => {
       schema: { type: 'object', properties: { ok: { type: 'string' } } },
     };
     await expect(executeAgentCall('prompt', opts, config)).rejects.toThrow(SchemaValidationError);
+  });
+
+  it('keeps schema failures primary when persistence also fails', async () => {
+    const persistenceError = new Error('budget persistence secondary');
+    const { config } = makeConfig();
+    const caught = await executeAgentCall(
+      'prompt',
+      {
+        label: 'test',
+        phase: 'Scan',
+        schema: { type: 'object', properties: { ok: { type: 'string' } } },
+      },
+      {
+        ...config,
+        onBudgetChange: async () => {
+          throw persistenceError;
+        },
+      },
+    ).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(SchemaValidationError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toContain(
+      persistenceError,
+    );
+  });
+
+  it('keeps a budget pause primary when the later cache save fails', async () => {
+    const cacheError = new Error('cache secondary');
+    const cache: AgentCacheStore = {
+      async load() {
+        return null;
+      },
+      async save() {
+        throw cacheError;
+      },
+    };
+    const { config } = makeConfig({
+      cache,
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 5 }),
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        runStore: budgetApprovalStore('pending'),
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'pause' },
+        onBudgetChange: async () => {},
+      },
+    ).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(WorkflowBudgetPausedError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      cacheError,
+    ]);
+  });
+
+  it('makes pause policy primary over a charged schema failure after durable settlement', async () => {
+    const savePendingApproval = vi.fn(async () => undefined);
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => ({ data: { ok: 42 }, tokenUsage: 5 }),
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      {
+        label: 'test',
+        phase: 'Scan',
+        schema: { type: 'object', properties: { ok: { type: 'string' } } },
+      },
+      {
+        ...config,
+        runStore: {
+          ...budgetApprovalStore('pending'),
+          savePendingApproval,
+        } as unknown as RunStore,
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'pause' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(WorkflowBudgetPausedError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      expect.any(SchemaValidationError),
+    ]);
+    expect(savePendingApproval).toHaveBeenCalledOnce();
+  });
+
+  it('makes fail policy primary over the charged provider error', async () => {
+    const providerError = Object.assign(new Error('provider failed'), { tokenUsage: 5 });
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => {
+        throw providerError;
+      },
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        runStore: budgetApprovalStore('pending'),
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'fail' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(WorkflowBudgetExceededError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      providerError,
+    ]);
+  });
+
+  it('fails instead of reporting a pause when approval persistence fails', async () => {
+    const approvalError = new Error('approval persistence failed');
+    const { config } = makeConfig({
+      budget: { tokensUsed: 0, tokensRemaining: 5, costUsd: 0, agentCalls: 0 },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 5 }),
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        runStore: {
+          ...budgetApprovalStore('pending'),
+          async savePendingApproval() {
+            throw approvalError;
+          },
+        } as unknown as RunStore,
+        budgetPolicy: { tokenBudget: 5, onExceeded: 'pause' },
+        onBudgetChange: async () => undefined,
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBe(approvalError);
+    expect((caught as Error & { suppressedErrors: unknown[] }).suppressedErrors).toEqual([
+      expect.any(WorkflowBudgetPausedError),
+    ]);
+  });
+
+  it('uses a stable AggregateError when a frozen primary cannot receive suppressed errors', async () => {
+    const providerError = Object.freeze(
+      Object.assign(new Error('frozen provider failure'), { tokenUsage: 1 }),
+    );
+    const persistenceError = new Error('budget persistence failed');
+    const { config } = makeConfig({
+      launcher: async () => {
+        throw providerError;
+      },
+    });
+    const caught = await executeAgentCall(
+      'prompt',
+      { label: 'test', phase: 'Scan' },
+      {
+        ...config,
+        onBudgetChange: async () => {
+          throw persistenceError;
+        },
+      },
+    ).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect((caught as AggregateError).cause).toBe(providerError);
+    expect(
+      (caught as AggregateError & { suppressedErrors: readonly unknown[] }).suppressedErrors,
+    ).toEqual([persistenceError]);
+    expect(
+      Object.isFrozen(
+        (caught as AggregateError & { suppressedErrors: readonly unknown[] }).suppressedErrors,
+      ),
+    ).toBe(true);
   });
 
   it('does not emit completed lifecycle evidence for an invalid result schema', async () => {

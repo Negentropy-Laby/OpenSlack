@@ -180,7 +180,7 @@ export async function executeApproval(
 
         // If a runId is present, this is a paused workflow run awaiting approval
         if (params.runId) {
-          const { RunStore, executeResume, findWorkflow, loadWorkflow } =
+          const { RunStore, decodeRunMetaArguments, executeResume, findWorkflow, loadWorkflow } =
             await import('@openslack/workflows');
           const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
 
@@ -202,7 +202,7 @@ export async function executeApproval(
                 await executeResume(mod, {
                   runId: params.runId,
                   manifest: mod.meta,
-                  args: meta.args,
+                  args: decodeRunMetaArguments(meta),
                   budget: meta.budget
                     ? { tokens: meta.budget.tokens, costUsd: meta.budget.costUsd ?? 0 }
                     : undefined,
