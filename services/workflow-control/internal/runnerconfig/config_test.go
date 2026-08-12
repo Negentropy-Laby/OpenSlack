@@ -58,3 +58,37 @@ func TestLoadEnvironmentRequiresExplicitEnablementAndClosedPrivateConfig(t *test
 		})
 	}
 }
+
+func TestCheckpointShadowRunnerConfigIsExplicitAndClosed(t *testing.T) {
+	base := validEnvironment(t)
+	config, err := LoadEnvironment(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.CheckpointShadowEnabled || config.CheckpointShadowBearerToken != "" {
+		t.Fatal("checkpoint shadow was not default-off")
+	}
+	workspace := ""
+	for _, entry := range base {
+		if strings.HasPrefix(entry, "WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=") {
+			workspace = strings.TrimPrefix(entry, "WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=")
+		}
+	}
+	journal := filepath.Join(workspace, ".openslack.local", "workflow-checkpoint-shadow")
+	token := strings.Repeat("t", 32)
+	enabled := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED=1", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT=http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN="+token, "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=runner-control", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT="+journal)
+	config, err = LoadEnvironment(enabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.CheckpointShadowEnabled || config.CheckpointShadowBearerToken != token {
+		t.Fatal("checkpoint shadow runtime config was not preserved")
+	}
+	for _, entry := range []string{"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT=http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED=yes", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED=1", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED=1"} {
+		candidate := append([]string{}, base...)
+		candidate = append(candidate, entry)
+		if _, err := LoadEnvironment(candidate); err == nil {
+			t.Fatalf("invalid checkpoint config accepted: %s", entry)
+		}
+	}
+}

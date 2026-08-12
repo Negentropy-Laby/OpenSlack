@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-checkpoint-shadow/v1/schemas/workflow-checkpoint-shadow-accepted-receipt.v1.schema.json",
+  "title": "OpenSlack accepted Workflow checkpoint shadow receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_checkpoint_shadow_receipt.v1" },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^openslack\\.workflow-checkpoint-shadow\\.v1\\.[0-9a-f]{64}$"
+    },
+    "receiptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740990 },
+    "operation": { "enum": ["checkpoint_commit", "resume_advance"] },
+    "envelopeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "serviceBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "status": { "const": "accepted" },
+    "observationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "parity": { "enum": ["matched", "mismatched"] },
+    "mismatchCode": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+        { "type": "null" }
+      ]
+    },
+    "reconciliationToken": { "type": "null" },
+    "committedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    }
+  },
+  "required": [
+    "schema",
+    "idempotencyKey",
+    "receiptId",
+    "workspaceId",
+    "runId",
+    "sourceSequence",
+    "operation",
+    "envelopeHash",
+    "observationHash",
+    "serviceBuildHash",
+    "status",
+    "observationId",
+    "parity",
+    "mismatchCode",
+    "reconciliationToken",
+    "committedAt"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": { "parity": { "const": "matched" }, "mismatchCode": { "type": "null" } }
+    },
+    {
+      "type": "object",
+      "properties": {
+        "parity": { "const": "mismatched" },
+        "mismatchCode": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" }
+      }
+    }
+  ]
+}

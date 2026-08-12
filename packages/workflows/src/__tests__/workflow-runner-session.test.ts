@@ -134,7 +134,7 @@ describe('GS8-B strict worker session', () => {
     );
     let finish!: (result: RunResult) => void;
     const execute = vi.fn(
-      () =>
+      (_workflow: WorkflowModule, _descriptor: unknown, _context: unknown) =>
         new Promise<RunResult>((resolve) => {
           finish = resolve;
         }),
@@ -170,6 +170,9 @@ describe('GS8-B strict worker session', () => {
     await offerPromise;
     await vi.waitFor(() => expect(load).toHaveBeenCalledOnce());
     expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]?.[2]).toMatchObject({
+      checkpointAuthority: { kind: 'accepted_workflow_runner_lease' },
+    });
 
     finish({ status: 'completed' });
     await waitForSent(sent, 3);

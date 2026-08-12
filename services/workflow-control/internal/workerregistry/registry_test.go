@@ -69,6 +69,63 @@ func TestLoadSealsTrustedBundleWithoutPerJobLaunchOptions(t *testing.T) {
 	}
 }
 
+func TestCheckpointShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testing.T) {
+	reserved := []string{"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT"}
+	for _, name := range reserved {
+		t.Run("reject "+name, func(t *testing.T) {
+			root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{name + "=evil"} })
+			if _, err := Load(root, hash, runtimeConfig); err == nil {
+				t.Fatal("manifest checkpoint override accepted")
+			}
+		})
+	}
+	root, hash, runtimeConfig := writeBundle(t, nil)
+	registry, err := Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range registry.command.Environment {
+		if strings.HasPrefix(entry, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_") {
+			t.Fatalf("disabled runtime injected %s", entry)
+		}
+	}
+	runtimeConfig.CheckpointShadowEnabled = true
+	runtimeConfig.CheckpointShadowEndpoint = "http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints"
+	runtimeConfig.CheckpointShadowBearerToken = strings.Repeat("t", 32)
+	runtimeConfig.CheckpointShadowCallerID = "runner-control"
+	runtimeConfig.CheckpointShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-checkpoint-shadow")
+	registry, err = Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(registry.command.Environment, "\n")
+	for _, want := range []string{"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT=" + runtimeConfig.CheckpointShadowEndpoint, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN=" + runtimeConfig.CheckpointShadowBearerToken, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID=runner-control", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT=" + runtimeConfig.CheckpointShadowJournalRoot} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing trusted injection %s", want)
+		}
+	}
+}
+
+func TestCheckpointShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:8083/v1/shadow/workflow-control/checkpoints",
+		"http://user@127.0.0.1:8083/v1/shadow/workflow-control/checkpoints",
+		"http://user:password@[::1]:8083/v1/shadow/workflow-control/checkpoints",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			root, hash, runtimeConfig := writeBundle(t, nil)
+			runtimeConfig.CheckpointShadowEnabled = true
+			runtimeConfig.CheckpointShadowEndpoint = endpoint
+			runtimeConfig.CheckpointShadowBearerToken = strings.Repeat("t", 32)
+			runtimeConfig.CheckpointShadowCallerID = "runner-control"
+			runtimeConfig.CheckpointShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-checkpoint-shadow")
+			if _, err := Load(root, hash, runtimeConfig); err == nil {
+				t.Fatal("unsafe checkpoint shadow endpoint was accepted")
+			}
+		})
+	}
+}
+
 func TestLoadRejectsEscapeOverrideAndArtifactDrift(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowControlObservationError } from '../workflow-control-observation.js';
 import {
   WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
+  acquireOwnerJournalLock,
   createWorkflowControlObservationPort,
   createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
@@ -61,14 +62,7 @@ function safeWindowsAcl() {
 }
 
 function windowsSecurity(
-  options: {
-    readonly hardenPath?: (path: string, directory: boolean) => void;
-    readonly readWindowsPathSecurity?: (
-      path: string,
-      identity: string,
-      cacheable: boolean,
-    ) => unknown;
-  } = {},
+  options: Partial<WorkflowControlShadowJournalSecurityDependencies> = {},
 ): WorkflowControlShadowJournalSecurityDependencies {
   return Object.freeze({
     platform: 'win32' as const,
@@ -76,6 +70,11 @@ function windowsSecurity(
     readWindowsPathSecurity:
       options.readWindowsPathSecurity ?? (() => JSON.stringify(safeWindowsAcl())),
     hardenPath: options.hardenPath ?? (() => undefined),
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.sleep ? { sleep: options.sleep } : {}),
+    ...(options.processId ? { processId: options.processId } : {}),
+    ...(options.processSessionId ? { processSessionId: options.processSessionId } : {}),
+    ...(options.probeProcess ? { probeProcess: options.probeProcess } : {}),
   });
 }
 
@@ -219,7 +218,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
   );
 
   it(
-    'waits for global journal-capacity lock contention without dropping another run',
+    'treats EPERM as live contention and keeps the observation until the lock is released',
     async () => {
       const root = await journalRoot('workflow-shadow-capacity-lock');
       const published: string[] = [];
@@ -235,7 +234,14 @@ describe('Workflow Control GS7-B durable observation journal', () => {
           }),
           buildObservation: async () => observation,
         },
-        windowsSecurity(),
+        windowsSecurity({
+          probeProcess: () => {
+            throw Object.assign(new Error('foreign live owner'), { code: 'EPERM' });
+          },
+          sleep: async () => {
+            await rm(lockPath, { force: true });
+          },
+        }),
       );
       const capacityHash = createHash('sha256')
         .update('openslack.workflow-control-shadow.journal-capacity.v1')
@@ -245,7 +251,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
         lockPath,
         `${canonicalWorkflowControlJson({
           schema: 'openslack.workflow_control_shadow_journal_lock.v1',
-          pid: process.pid,
+          pid: 424_242,
           sessionId: '123e4567-e89b-42d3-a456-426614174003',
           createdAt: '2026-08-03T00:00:00.000Z',
         })}\n`,
@@ -253,14 +259,45 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       );
 
       port.observeRun(observation.runId);
-      setTimeout(() => void rm(lockPath, { force: true }), 1_100);
-
       await port.flush();
       expect(published).toEqual([observation.runId]);
       expect(await readdir(join(root, 'entries'))).toEqual([]);
     },
     DURABLE_JOURNAL_TIMEOUT_MS,
   );
+
+  it('reclaims a reused PID with a different process session without probing it as live', async () => {
+    const root = await journalRoot('workflow-shadow-pid-reuse');
+    await mkdir(root, { mode: 0o700 });
+    const lockHash = 'a'.repeat(64);
+    const lockPath = join(root, `${lockHash}.lock`);
+    const probeProcess = vi.fn(() => {
+      throw new Error('same reused PID must not be probed');
+    });
+    await writeFile(
+      lockPath,
+      `${canonicalWorkflowControlJson({
+        schema: 'openslack.workflow_control_shadow_journal_lock.v1',
+        pid: 7_777,
+        sessionId: '123e4567-e89b-42d3-a456-426614174002',
+        createdAt: '2026-08-03T00:00:00.000Z',
+      })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    );
+
+    const release = await acquireOwnerJournalLock(
+      root,
+      lockHash,
+      windowsSecurity({
+        processId: 7_777,
+        processSessionId: '123e4567-e89b-42d3-a456-426614174001',
+        probeProcess,
+      }),
+    );
+    expect(probeProcess).not.toHaveBeenCalled();
+    await release();
+    await expect(readFile(lockPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 
   it('keeps invalid and legacy observations out of the durable journal with hashed diagnostics', async () => {
     const diagnostics: WorkflowControlShadowDiagnostic[] = [];
@@ -417,6 +454,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
     expect(diagnostics).toEqual([
       expect.objectContaining({ outcome: 'journal_invalid', code: 'append' }),
     ]);
+    expect(await readdir(join(root, 'locks'))).toEqual([]);
   });
 
   it.skipIf(process.platform === 'win32')(

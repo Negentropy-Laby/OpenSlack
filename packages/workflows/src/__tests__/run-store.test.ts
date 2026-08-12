@@ -1058,5 +1058,39 @@ describe('RunStore', () => {
       const result = await store.listRunsByStatus('paused_waiting_approval');
       expect(result).toEqual([]);
     });
+
+    it('preserves index order with four run workers and at most eight concurrent reads', async () => {
+      const base = createMemFs();
+      let activeReads = 0;
+      let maximumReads = 0;
+      const readFile = base.readFile.bind(base);
+      const fs: RunStoreFs = {
+        ...base,
+        async readFile(path) {
+          if (!path.endsWith('/meta.json') && !path.endsWith('/status.json')) {
+            return readFile(path);
+          }
+          activeReads += 1;
+          maximumReads = Math.max(maximumReads, activeReads);
+          await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 0));
+          const value = await readFile(path);
+          activeReads -= 1;
+          return value;
+        },
+      };
+      const store = new RunStore({ baseDir: '/test/workflows', fs });
+      const runIds = Array.from(
+        { length: 12 },
+        (_, index) => `run-${String(index).padStart(3, '0')}`,
+      );
+      for (const runId of runIds) {
+        await store.initRun(runId, makeMeta({ runId, workflowName: `workflow-${runId}` }));
+      }
+      await fs.writeFile('/test/workflows/runs/.index', `${runIds.join('\n')}\n`);
+
+      const result = await store.listRunsByStatus('running');
+      expect(result.map((item) => item.runId)).toEqual(runIds);
+      expect(maximumReads).toBe(8);
+    });
   });
 });

@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import {
+  canonicalUtcTimestamp,
+  closedDataRecord,
+  immutableContractValue,
+  ownDataField,
+  type ContractDataRecord,
+} from './internal/contract-validation.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_PROTOCOL_VERSION = 'openslack.workflow_runner.v1' as const;
@@ -411,7 +418,7 @@ export interface CreateWorkflowRunnerEventReceiptInput {
   readonly errorCode: (typeof WORKFLOW_RUNNER_RECEIPT_ERROR_CODES)[number] | null;
 }
 
-type DataRecord = Record<string, unknown>;
+type DataRecord = ContractDataRecord;
 const HASH = /^[0-9a-f]{64}$/u;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const CODE = /^[a-z0-9][a-z0-9._:-]{0,127}$/u;
@@ -452,43 +459,28 @@ function validUnicodeScalarSequence(value: string): boolean {
 }
 
 function closedRecord(value: unknown, fields: readonly string[], path: string): DataRecord {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    nodeTypes.isProxy(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
-  ) {
-    return fail('WORKFLOW_RUNNER_INVALID_MESSAGE', path, `${path} must be an inert object.`);
-  }
-  const keys = Reflect.ownKeys(value);
-  for (const field of fields) {
-    if (!Object.hasOwn(value, field)) {
+  return closedDataRecord(value, fields, path, {
+    inert: (recordPath) =>
+      fail('WORKFLOW_RUNNER_INVALID_MESSAGE', recordPath, `${recordPath} must be an inert object.`),
+    missing: (recordPath, field) =>
       fail(
         'WORKFLOW_RUNNER_INVALID_MESSAGE',
-        `${path}/${field}`,
+        `${recordPath}/${field}`,
         `Required field ${field} is missing.`,
-      );
-    }
-  }
-  for (const key of keys) {
-    if (typeof key !== 'string' || !fields.includes(key)) {
-      fail('WORKFLOW_RUNNER_UNKNOWN_FIELD', `${path}/${String(key)}`, 'Unknown field.');
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      ),
+    unknown: (recordPath, key) =>
+      fail('WORKFLOW_RUNNER_UNKNOWN_FIELD', `${recordPath}/${String(key)}`, 'Unknown field.'),
+    dataField: (recordPath, key) =>
       fail(
         'WORKFLOW_RUNNER_INVALID_MESSAGE',
-        `${path}/${key}`,
+        `${recordPath}/${String(key)}`,
         'Only enumerable data fields are allowed.',
-      );
-    }
-  }
-  return value as DataRecord;
+      ),
+  });
 }
 
 function own(record: DataRecord, key: string): unknown {
-  return Object.getOwnPropertyDescriptor(record, key)?.value;
+  return ownDataField(record, key);
 }
 
 function text(value: unknown, path: string, maximum: number, pattern?: RegExp): string {
@@ -513,14 +505,13 @@ function hash(value: unknown, path: string): string {
 }
 
 function timestamp(value: unknown, path: string): string {
-  const result = text(value, path, 24, TIMESTAMP);
-  if (
-    !Number.isFinite(Date.parse(result)) ||
-    new Date(Date.parse(result)).toISOString() !== result
-  ) {
-    return fail('WORKFLOW_RUNNER_INVALID_MESSAGE', path, `${path} must be canonical RFC3339.`);
-  }
-  return result;
+  return canonicalUtcTimestamp(
+    value,
+    path,
+    (input, inputPath) => text(input, inputPath, 24, TIMESTAMP),
+    (inputPath) =>
+      fail('WORKFLOW_RUNNER_INVALID_MESSAGE', inputPath, `${inputPath} must be canonical RFC3339.`),
+  );
 }
 
 function integer(value: unknown, path: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
@@ -575,9 +566,7 @@ function denseArray(value: unknown, path: string, maximum: number): readonly unk
 }
 
 function immutable<T>(value: T): T {
-  if (Array.isArray(value)) value.forEach(immutable);
-  else if (typeof value === 'object' && value !== null) Object.values(value).forEach(immutable);
-  return Object.freeze(value);
+  return immutableContractValue(value);
 }
 
 function assertIncreasing(start: string, end: string, path: string): void {

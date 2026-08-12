@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerapp"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerscheduler"
@@ -30,7 +31,8 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
-const requiredSchemaVersion int64 = 3
+const minimumSchemaVersion int64 = 2
+const maximumSchemaVersion int64 = 4
 
 const workspaceLockDomain = "openslack.workflow-runner.workspace-singleton.v1\x00"
 
@@ -57,7 +59,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := checkDatabaseReady(startup, pool); err != nil {
+	minimumRequiredSchema := minimumSchemaVersion
+	if config.CheckpointShadowEnabled {
+		minimumRequiredSchema = maximumSchemaVersion
+	}
+	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumRequiredSchema, Maximum: maximumSchemaVersion}); err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}
@@ -80,7 +86,12 @@ func main() {
 	}
 	registry, err := workerregistry.Load(config.BundleRoot, config.BundleManifestSHA256, workerregistry.Runtime{
 		WorkspaceID: config.WorkspaceID, WorkspaceRoot: config.WorkspaceRoot,
-		DescriptorRoot: config.DescriptorRoot,
+		DescriptorRoot:              config.DescriptorRoot,
+		CheckpointShadowEnabled:     config.CheckpointShadowEnabled,
+		CheckpointShadowEndpoint:    config.CheckpointShadowEndpoint,
+		CheckpointShadowBearerToken: config.CheckpointShadowBearerToken,
+		CheckpointShadowCallerID:    config.CheckpointShadowCallerID,
+		CheckpointShadowJournalRoot: config.CheckpointShadowJournalRoot,
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")
@@ -235,31 +246,4 @@ func run(ctx context.Context, service httpService, scheduler schedulerService, c
 	cancel()
 	second := <-results
 	return errors.Join(first, second)
-}
-
-func checkDatabaseReady(ctx context.Context, pool *pgxpool.Pool) error {
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("database ping: %w", err)
-	}
-	rows, err := pool.Query(ctx, `SELECT version, dirty FROM schema_migrations`)
-	if err != nil {
-		return fmt.Errorf("read schema_migrations: %w", err)
-	}
-	defer rows.Close()
-	count := 0
-	var version int64
-	var dirty bool
-	for rows.Next() {
-		count++
-		if err := rows.Scan(&version, &dirty); err != nil {
-			return fmt.Errorf("scan schema_migrations: %w", err)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate schema_migrations: %w", err)
-	}
-	if count != 1 || version != requiredSchemaVersion || dirty {
-		return fmt.Errorf("database schema version is not exactly %d clean", requiredSchemaVersion)
-	}
-	return nil
 }

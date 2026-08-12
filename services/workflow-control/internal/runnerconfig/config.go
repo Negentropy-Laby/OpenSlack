@@ -30,17 +30,22 @@ var (
 )
 
 type Config struct {
-	DatabaseURL          string
-	HTTPBind             string
-	NetworkMode          string
-	ServiceBuildSHA      string
-	BearerTokenSHA256    string
-	WorkspaceID          string
-	SupervisorInstanceID string
-	BundleRoot           string
-	BundleManifestSHA256 string
-	WorkspaceRoot        string
-	DescriptorRoot       string
+	DatabaseURL                 string
+	HTTPBind                    string
+	NetworkMode                 string
+	ServiceBuildSHA             string
+	BearerTokenSHA256           string
+	WorkspaceID                 string
+	SupervisorInstanceID        string
+	BundleRoot                  string
+	BundleManifestSHA256        string
+	WorkspaceRoot               string
+	DescriptorRoot              string
+	CheckpointShadowEnabled     bool
+	CheckpointShadowEndpoint    string
+	CheckpointShadowBearerToken string
+	CheckpointShadowCallerID    string
+	CheckpointShadowJournalRoot string
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -112,6 +117,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	checkpointEnabled, checkpointEndpoint, checkpointToken, checkpointCaller, checkpointJournal, err := checkpointShadowConfig(values, workspaceRoot)
+	if err != nil {
+		return Config{}, err
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -125,7 +134,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 		WorkspaceID: workspaceID, SupervisorInstanceID: instanceID,
 		BundleRoot: bundleRoot, BundleManifestSHA256: bundleManifestHash,
 		WorkspaceRoot: workspaceRoot, DescriptorRoot: descriptorRoot,
-		ShutdownDeadline: 30 * time.Second, MaxProcesses: maxProcesses,
+		CheckpointShadowEnabled: checkpointEnabled, CheckpointShadowEndpoint: checkpointEndpoint,
+		CheckpointShadowBearerToken: checkpointToken, CheckpointShadowCallerID: checkpointCaller,
+		CheckpointShadowJournalRoot: checkpointJournal,
+		ShutdownDeadline:            30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
@@ -135,19 +147,24 @@ func LoadEnvironment(environment []string) (Config, error) {
 
 func parse(environment []string) (map[string]string, error) {
 	allowed := map[string]struct{}{
-		"DATABASE_URL":                                   {},
-		"WORKFLOW_RUNNER_CONTROL_ENABLED":                {},
-		"WORKFLOW_RUNNER_CONTROL_HTTP_BIND":              {},
-		"WORKFLOW_RUNNER_CONTROL_NETWORK_MODE":           {},
-		"WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA":      {},
-		"WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256":    {},
-		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID":           {},
-		"WORKFLOW_RUNNER_CONTROL_INSTANCE_ID":            {},
-		"WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT":            {},
-		"WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256": {},
-		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT":         {},
-		"WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT":        {},
-		"WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES":          {},
+		"DATABASE_URL":                                           {},
+		"WORKFLOW_RUNNER_CONTROL_ENABLED":                        {},
+		"WORKFLOW_RUNNER_CONTROL_HTTP_BIND":                      {},
+		"WORKFLOW_RUNNER_CONTROL_NETWORK_MODE":                   {},
+		"WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA":              {},
+		"WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256":            {},
+		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID":                   {},
+		"WORKFLOW_RUNNER_CONTROL_INSTANCE_ID":                    {},
+		"WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT":                    {},
+		"WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256":         {},
+		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT":                 {},
+		"WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT":                {},
+		"WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES":                  {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED":      {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT":     {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID":    {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {
@@ -166,6 +183,49 @@ func parse(environment []string) (map[string]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func checkpointShadowConfig(values map[string]string, workspaceRoot string) (bool, string, string, string, string, error) {
+	enabled := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED"])
+	fields := []string{"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT"}
+	if enabled == "" || enabled == "0" {
+		for _, name := range fields {
+			if strings.TrimSpace(values[name]) != "" {
+				return false, "", "", "", "", fmt.Errorf("%s requires checkpoint shadow enablement", name)
+			}
+		}
+		return false, "", "", "", "", nil
+	}
+	if enabled != "1" {
+		return false, "", "", "", "", fmt.Errorf("WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED must be 0 or 1")
+	}
+	endpoint := strings.TrimSpace(values[fields[0]])
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "/v1/shadow/workflow-control/checkpoints" || parsed.Port() == "" {
+		return false, "", "", "", "", fmt.Errorf("checkpoint shadow endpoint must be an exact loopback HTTP observation URL")
+	}
+	host := parsed.Hostname()
+	if host != "127.0.0.1" && host != "::1" {
+		return false, "", "", "", "", fmt.Errorf("checkpoint shadow endpoint must be loopback")
+	}
+	token := values[fields[1]]
+	if token != strings.TrimSpace(token) || len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, "\r\n\x00") {
+		return false, "", "", "", "", fmt.Errorf("checkpoint shadow bearer token is invalid")
+	}
+	caller := strings.TrimSpace(values[fields[2]])
+	if !safeID.MatchString(caller) {
+		return false, "", "", "", "", fmt.Errorf("checkpoint shadow caller identity is invalid")
+	}
+	journal, err := absolutePath(values[fields[3]], fields[3])
+	if err != nil {
+		return false, "", "", "", "", err
+	}
+	localRoot := filepath.Join(workspaceRoot, ".openslack.local")
+	relative, relativeErr := filepath.Rel(localRoot, journal)
+	if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false, "", "", "", "", fmt.Errorf("checkpoint shadow journal root must be inside workspace .openslack.local")
+	}
+	return true, endpoint, token, caller, journal, nil
 }
 
 func postgresURL(value string) (string, error) {

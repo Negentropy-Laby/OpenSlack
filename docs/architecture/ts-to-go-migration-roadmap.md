@@ -381,14 +381,31 @@ an unprovable reconciliation commit fails with a stable non-2xx error. The norma
 the observational server and reports TypeScript authority with routing and new-record acceptance
 disabled.
 
-GS9-C and later stages may transfer only new Workflow Control records after shadow and differential
-qualification explicitly covers response loss, restart, duplicate replay, fingerprint conflict,
-concurrency, checkpoint, resume, approval/effect, cumulative budget, fencing, and audit-outbox
-behavior. Runner-v2 delivery, read canary, immutable routing, durable acceptance, and explicit
-higher-epoch rollback remain separate required gates. Existing TypeScript records continue to
-drain under TypeScript; an existing record never
-changes writer and there is no per-request fallback. A runner message or durable receipt is never
-itself an approval decision. GS9-B evidence is capped at `LOCAL_PASS / Go authority NOT_CLAIMED`.
+GS9-C adds the first post-phase checkpoint/resume differential without transferring Workflow
+authority. The legacy `ctx.phase()` remains a phase-entry marker; a new awaited checkpoint commit
+persists bounded artifact bytes and a TypeScript-owned canonical control head before journaling a
+credential-free observation. Resume generation advances only under that control head and only for
+an opaque attempt/lease/fence binding produced after an advancing GS8 lease receipt. Separate
+`checkpoint_commit` and `resume_advance` observations carry hashes and bounded identities but no
+artifact, input, prompt, provider, approval, credential, transcript, or path content.
+
+The v1 resume form includes the pre-checkpoint case: the prior checkpoint is null and the next
+phase is exactly `phase-0`. New accepted leases may repeat this state until phase 0 commits; later
+resume observations remain bound to the latest committed checkpoint.
+
+The default-off Go service uses a fourth isolated namespace,
+`workflow_control_checkpoint_shadow_*`, to recompute parity and retain exact receipts and
+reconciliation. It never writes the TypeScript head, participates in resume, extends runner v1, or
+reuses the GS8 runner or GS9-B authority tables. Qualification must cover response loss, restart,
+duplicate replay, fingerprint conflict, concurrency, phase order, repeated resume, stale fence,
+source/manifest/input drift, artifact corruption, mismatch latch, and default-off composition.
+The evidence ceiling remains `GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`.
+
+GS9-D and later stages may transfer only new Workflow Control records after approval/effect,
+cumulative budget, runner-v2 delivery, immutable routing, durable acceptance, canary, and explicit
+higher-epoch rollback gates. Existing TypeScript records continue to drain under TypeScript; an
+existing record never changes writer and there is no per-request fallback. A runner message or
+durable receipt is never itself an approval decision.
 
 ### GS10–GS13 — Platform Runtime
 

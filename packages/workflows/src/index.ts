@@ -14,6 +14,7 @@ export type {
   PrmsDoctorBlocker,
   PrmsDoctorResult,
   WorkflowRuntime,
+  WorkflowCheckpointRuntime,
   PreviewResult,
   RunResult,
   OpenSlackWorkflow,
@@ -49,6 +50,9 @@ export type {
   WorkflowCall,
   WorkflowHelperAPI,
   ModelIsolationRoute,
+  WorkflowCheckpointAPI,
+  WorkflowCheckpointCommitInput,
+  WorkflowCheckpointCommitResult,
 } from './types.js';
 
 // ── Workflow Control GS7 contract ──────────────────────────────────────────────────
@@ -528,6 +532,50 @@ export {
   WORKFLOW_CONTROL_SHADOW_RECEIPT_SCHEMA,
   WORKFLOW_CONTROL_SHADOW_ROUTE,
 } from './workflow-control-shadow.js';
+
+// ── Workflow Checkpoint GS9-C credential-free shadow ─────────────────────
+export {
+  validateWorkflowCheckpointControlState,
+  validateWorkflowCheckpointExecutionBinding,
+  validateWorkflowCheckpointRecord,
+  validateWorkflowCheckpointShadowEnvelope,
+  validateWorkflowCheckpointShadowObservation,
+  validateWorkflowCheckpointShadowReceipt,
+  workflowCheckpointBytesHash,
+  workflowCheckpointCanonicalJson,
+  workflowCheckpointError,
+  workflowCheckpointHash,
+  WORKFLOW_CHECKPOINT_MAX_SOURCE_SEQUENCE,
+  WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
+  WORKFLOW_CHECKPOINT_SHADOW_ENVELOPE_SCHEMA,
+  WORKFLOW_CHECKPOINT_SHADOW_IDEMPOTENCY_PREFIX,
+  WORKFLOW_CHECKPOINT_SHADOW_RECEIPT_SCHEMA,
+  WORKFLOW_CHECKPOINT_SHADOW_ROUTE,
+  WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+  WorkflowCheckpointContractError,
+  WorkflowCheckpointError,
+} from './workflow-checkpoint-shadow-contract.js';
+export type {
+  WorkflowCheckpointControlState,
+  WorkflowCheckpointExecutionBinding,
+  WorkflowCheckpointErrorCode,
+  WorkflowCheckpointRecord,
+  WorkflowCheckpointShadowEnvelope,
+  WorkflowCheckpointShadowObservation,
+  WorkflowCheckpointShadowReceipt,
+} from './workflow-checkpoint-shadow-contract.js';
+export {
+  createWorkflowCheckpointObservationPort,
+  createWorkflowCheckpointShadowHttpPublisher,
+  isWorkflowCheckpointObservationPort,
+  isWorkflowCheckpointShadowPublisherPort,
+} from './workflow-checkpoint-shadow.js';
+export type {
+  CreateWorkflowCheckpointObservationPortOptions,
+  WorkflowCheckpointObservationPort,
+  WorkflowCheckpointShadowDiagnostic,
+  WorkflowCheckpointShadowPublisherPort,
+} from './workflow-checkpoint-shadow.js';
 export type {
   CreateWorkflowControlObservationPortOptions,
   WorkflowControlObservationPort,

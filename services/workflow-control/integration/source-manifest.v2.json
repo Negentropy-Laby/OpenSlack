@@ -4,7 +4,7 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
     "targetPath": "services/workflow-control",
-    "migrationPhase": "GS9-B",
+    "migrationPhase": "GS9-C",
     "authority": "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY"
   },
   "containerInputs": {
@@ -18,7 +18,7 @@
   "sourceInputs": {
     "dockerfile": {
       "path": "services/workflow-control/Dockerfile",
-      "sha256": "03e86dc01165b8eb556bb8a0dfbe2c627f2f0206f19effcf1b71569fc255b203"
+      "sha256": "8b2643ca094c35d7b2130b90ece4a4a1347c9242bfb668e6287b2257e35bc6f2"
     },
     "goMod": {
       "path": "services/workflow-control/go.mod",
@@ -35,9 +35,21 @@
     "authorityMigrationDown": {
       "path": "services/workflow-control/migrations/000003_create_workflow_control_authority.down.sql",
       "sha256": "fc04888e19b4c22c3885b5025501084b977e312e5205a62270958195b1edb9a9"
+    },
+    "checkpointShadowMigrationUp": {
+      "path": "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.up.sql",
+      "sha256": "dacd2cf88ae75afdb8503f7261e436b7e2daa43cd462fbbbe5464e0bc16172e0"
+    },
+    "checkpointShadowMigrationDown": {
+      "path": "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.down.sql",
+      "sha256": "32e76f0a6aec433d2615cfd3a74f17acff4a7f4ae1998f09d47e0b907d793193"
     }
   },
   "contractInputs": {
+    "workflowCheckpointShadowContractManifest": {
+      "path": "packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json",
+      "sha256": "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000"
+    },
     "workflowControlContractManifest": {
       "path": "packages/workflows/contracts/workflow-control/v1/manifest.json",
       "sha256": "3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86"
@@ -65,6 +77,10 @@
     "authorityOpenapi": {
       "path": "services/workflow-control/docs/api/authority-openapi.yaml",
       "sha256": "8c1bf057b0ea0e3c005e70e1ed440f585429f66eacbaa923574e0728e0430935"
+    },
+    "checkpointShadowOpenapi": {
+      "path": "services/workflow-control/docs/api/checkpoint-shadow-openapi.yaml",
+      "sha256": "a33f978174fa9b82393864d5b97f03082196a8d369e07d60cc35ce69345fa67a"
     }
   },
   "legalInputs": {
@@ -99,7 +115,10 @@
       "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RUN_SPINE",
       "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
       "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_OUTBOX",
-      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RECONCILIATION"
+      "WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RECONCILIATION",
+      "WORKFLOW_CONTROL_CHECKPOINT_SHADOW_OBSERVATION",
+      "WORKFLOW_CONTROL_CHECKPOINT_SHADOW_EXACT_RECEIPT",
+      "WORKFLOW_CONTROL_CHECKPOINT_SHADOW_RECONCILIATION"
     ],
     "nonClaims": [
       "CHECKPOINT_RESUME_AUTHORITY",

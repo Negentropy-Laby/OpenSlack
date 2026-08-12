@@ -39,6 +39,10 @@ ORDER BY table_name`)
 	}
 	want := []string{
 		"workflow_control_authority_epochs",
+		"workflow_control_checkpoint_shadow_heads",
+		"workflow_control_checkpoint_shadow_observations",
+		"workflow_control_checkpoint_shadow_receipts",
+		"workflow_control_checkpoint_shadow_reconciliations",
 		"workflow_control_outbox",
 		"workflow_control_reconciliations",
 		"workflow_control_runs",
@@ -78,6 +82,9 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_transition_events',
 	      'workflow_control_transition_receipts',
 	      'workflow_control_reconciliations',
+	      'workflow_control_checkpoint_shadow_observations',
+	      'workflow_control_checkpoint_shadow_receipts',
+	      'workflow_control_checkpoint_shadow_reconciliations',
 	      'workflow_control_shadow_observations',
 	      'workflow_control_shadow_receipts',
 	      'workflow_runner_job_receipts',
@@ -90,8 +97,71 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 21 {
-		t.Fatalf("immutable trigger coverage = %d, want 21 event rows", triggerEvents)
+	if triggerEvents != 27 {
+		t.Fatalf("immutable trigger coverage = %d, want 27 event rows", triggerEvents)
+	}
+}
+
+func TestCheckpointShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
+	t.Run("empty namespace is independently removable", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		if _, err := pool.Exec(context.Background(), checkpointShadowDownMigration(t)); err != nil {
+			t.Fatal(err)
+		}
+		var checkpointTables, priorTables int
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name LIKE 'workflow_control_checkpoint_shadow_%'`).Scan(&checkpointTables); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('workflow_control_shadow_heads','workflow_runner_jobs','workflow_control_runs')`).Scan(&priorTables); err != nil {
+			t.Fatal(err)
+		}
+		if checkpointTables != 0 || priorTables != 3 {
+			t.Fatalf("checkpoint=%d prior=%d", checkpointTables, priorTables)
+		}
+	})
+	t.Run("evidence prevents destructive rollback", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		_, err := pool.Exec(context.Background(), `INSERT INTO workflow_control_checkpoint_shadow_heads (workspace_id,run_id,source_sequence,operation,mismatch_latched) VALUES ('workspace','run',1,'checkpoint_commit',true)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(context.Background(), checkpointShadowDownMigration(t)); err == nil {
+			t.Fatal("non-empty checkpoint shadow rollback unexpectedly succeeded")
+		} else {
+			requireSQLState(t, err, "P0001")
+		}
+	})
+}
+
+func TestCheckpointShadowHeadRejectsNullMatchedBypasses(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_checkpoint_shadow_heads (
+    workspace_id, run_id, source_sequence, operation, mismatch_latched
+) VALUES ('workspace-null','run-null',1,'checkpoint_commit',false)`); err == nil {
+		t.Fatal("unmatched non-mismatch head bypassed its CHECK constraint")
+	} else {
+		requireSQLState(t, err, "23514")
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_checkpoint_shadow_heads (
+    workspace_id, run_id, source_sequence, operation, matched_source_sequence,
+    mismatch_latched, observation_hash, exact_observation_bytes
+) VALUES (
+    'workspace-matched','run-matched',1,'checkpoint_commit',1,
+    false,decode(repeat('11',32),'hex'),convert_to('{}','UTF8')
+)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+UPDATE workflow_control_checkpoint_shadow_heads
+SET source_sequence=2, matched_source_sequence=NULL, mismatch_latched=true,
+    observation_hash=NULL, exact_observation_bytes=NULL
+WHERE workspace_id='workspace-matched' AND run_id='run-matched'`); err == nil {
+		t.Fatal("NULL matched sequence bypassed the transition trigger")
+	} else {
+		requireSQLState(t, err, "P0001")
 	}
 }
 
@@ -324,6 +394,20 @@ func authorityDownMigration(t *testing.T) string {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read GS9-B down migration: %v", err)
+	}
+	return string(body)
+}
+
+func checkpointShadowDownMigration(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve migration test source path")
+	}
+	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000004_create_workflow_control_checkpoint_shadow.down.sql"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read GS9-C down migration: %v", err)
 	}
 	return string(body)
 }

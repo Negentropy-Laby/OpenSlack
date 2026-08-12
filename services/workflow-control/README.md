@@ -2,8 +2,9 @@
 
 This module contains the GS7-A pure Go consumer of the TypeScript-owned Workflow Control v1
 contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B runner-lifecycle
-control plane, and the GS9-B default-off PostgreSQL authority qualification spine. The three
-servers are separate entry points and have separate configuration and authority boundaries.
+control plane, the GS9-B default-off PostgreSQL authority qualification spine, and the GS9-C
+checkpoint/resume differential observer. The four servers are separate entry points and have
+separate configuration and authority boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -89,3 +90,33 @@ GS8 runner job/attempt/lease/fence namespace and does not own checkpoints, appro
 budgets, active routing, CLI/MCP/Qoder reads, or TypeScript RunStore records. Its API is frozen in
 `docs/api/authority-openapi.yaml`; its evidence ceiling is documented in
 `docs/testing/gs9b-qualification.md`.
+
+## Explicit GS9-C checkpoint shadow qualification mode
+
+The image also contains `/checkpoint-shadow-server`; the default entry point remains `/server`.
+Without `WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1`, the checkpoint binary is
+health-only and does not register observation or read routes. Explicit qualification additionally
+requires a loopback bind, database, exact service-build SHA-256, bearer-token SHA-256, workspace,
+and caller binding:
+
+```text
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_SERVICE_BUILD_SHA=<64 lowercase hex>
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN_SHA256=<sha256 of bearer token>
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_WORKSPACE_ID=<workspace id>
+WORKFLOW_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=<caller id>
+```
+
+TypeScript remains the only checkpoint-head, resume-generation, and artifact writer. It persists
+the bounded artifact and canonical control head before it durably journals a credential-free
+`checkpoint_commit` or `resume_advance` observation. The Go server recomputes parity in the
+isolated `workflow_control_checkpoint_shadow_*` namespace and stores exact receipts and unresolved
+commit evidence. A Go outage, mismatch, or reconciliation result cannot change or roll back the
+TypeScript commit and cannot authorize resume. Artifact bytes never cross the observation wire.
+
+The API is frozen in `docs/api/checkpoint-shadow-openapi.yaml`; the boundary and evidence ceiling
+are documented in `docs/architecture/checkpoint-shadow.md` and
+`docs/testing/gs9c-qualification.md`. This batch does not activate runner v2, Go Workflow
+authority, routing, canary, approval/effect authority, durable budget authority, or production
+cutover.

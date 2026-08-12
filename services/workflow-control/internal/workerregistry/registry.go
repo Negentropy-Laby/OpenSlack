@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,9 +53,14 @@ type Manifest struct {
 }
 
 type Runtime struct {
-	WorkspaceID    string
-	WorkspaceRoot  string
-	DescriptorRoot string
+	WorkspaceID                 string
+	WorkspaceRoot               string
+	DescriptorRoot              string
+	CheckpointShadowEnabled     bool
+	CheckpointShadowEndpoint    string
+	CheckpointShadowBearerToken string
+	CheckpointShadowCallerID    string
+	CheckpointShadowJournalRoot string
 }
 
 type Registry struct {
@@ -183,11 +189,16 @@ func (registry *Registry) RunnerBuildHash() string { return registry.runnerBuild
 
 func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buildHash string) ([]string, error) {
 	reserved := map[string]struct{}{
-		"OPENSLACK_WORKFLOW_RUNNER_ENABLED":         {},
-		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID":    {},
-		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT":  {},
-		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT": {},
-		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH":      {},
+		"OPENSLACK_WORKFLOW_RUNNER_ENABLED":                 {},
+		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID":            {},
+		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT":          {},
+		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT":         {},
+		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH":              {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED":      {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT":     {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID":    {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
 	}
 	for _, entry := range base {
 		name, _, found := strings.Cut(entry, "=")
@@ -206,6 +217,21 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT="+runtimeConfig.DescriptorRoot,
 		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH="+buildHash,
 	)
+	if runtimeConfig.CheckpointShadowEnabled {
+		parsed, parseErr := url.Parse(runtimeConfig.CheckpointShadowEndpoint)
+		localRoot := filepath.Join(workspaceRoot, ".openslack.local")
+		relative, relativeErr := filepath.Rel(localRoot, runtimeConfig.CheckpointShadowJournalRoot)
+		if parseErr != nil || parsed.Scheme != "http" || parsed.User != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "::1") || parsed.Port() == "" || parsed.Path != "/v1/shadow/workflow-control/checkpoints" || parsed.RawQuery != "" || parsed.Fragment != "" || len(runtimeConfig.CheckpointShadowBearerToken) < 32 || len(runtimeConfig.CheckpointShadowBearerToken) > 4096 || runtimeConfig.CheckpointShadowBearerToken != strings.TrimSpace(runtimeConfig.CheckpointShadowBearerToken) || strings.ContainsAny(runtimeConfig.CheckpointShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || runtimeConfig.CheckpointShadowJournalRoot == "" || !filepath.IsAbs(runtimeConfig.CheckpointShadowJournalRoot) || filepath.Clean(runtimeConfig.CheckpointShadowJournalRoot) != runtimeConfig.CheckpointShadowJournalRoot || relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("checkpoint shadow runtime injection is invalid")
+		}
+		result = append(result,
+			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1",
+			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT="+runtimeConfig.CheckpointShadowEndpoint,
+			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN="+runtimeConfig.CheckpointShadowBearerToken,
+			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID="+runtimeConfig.CheckpointShadowCallerID,
+			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT="+runtimeConfig.CheckpointShadowJournalRoot,
+		)
+	}
 	return result, nil
 }
 

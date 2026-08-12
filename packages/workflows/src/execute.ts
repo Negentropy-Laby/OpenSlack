@@ -9,6 +9,7 @@ import type {
 } from './types.js';
 import {
   createRuntime,
+  createRuntimeWithCheckpointAuthority,
   ExecuteDeniedError,
   WorkflowExecutionCancelledError,
   WorkflowPausedError,
@@ -18,7 +19,7 @@ import { validateEffectAgainstManifest } from './manifest-validator.js';
 import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
 import { RunStore, encodeRunMetaArguments } from './run-store.js';
-import type { RuntimeWithPersistence } from './runtime.js';
+import type { RuntimeOptions, RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
 import { join } from 'node:path';
 import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
@@ -31,6 +32,10 @@ import {
 } from './internal/workflow-arguments.js';
 import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
+import {
+  workflowCheckpointBindingFromAuthority,
+  type WorkflowCheckpointLeaseAuthority,
+} from './internal/workflow-checkpoint-lease-authority.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -466,6 +471,7 @@ export async function executeRunWithStore(
   workflow: Parameters<typeof executeRun>[0],
   options: ExecuteRunOptions,
   storeOverride?: RunStore,
+  checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
 ): Promise<RunResult> {
   const { manifest, budget } = options;
   const encodedArgs = canonicalArguments(options.args ?? {});
@@ -497,6 +503,12 @@ export async function executeRunWithStore(
     manifestHash: resolveWorkflowIdentityHash(workflow, manifest),
     budget: effectiveBudget,
   });
+  if (checkpointAuthority) {
+    await store.initializeCheckpointControl(
+      runId,
+      workflowCheckpointBindingFromAuthority(checkpointAuthority),
+    );
+  }
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined;
@@ -516,7 +528,7 @@ export async function executeRunWithStore(
     );
   }
 
-  const runtime = createRuntime({
+  const runtimeOptions: RuntimeOptions = {
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
@@ -539,7 +551,10 @@ export async function executeRunWithStore(
     onBudgetChange: async (state) => {
       await store.persistBudgetState(runId, state);
     },
-  });
+  };
+  const runtime = checkpointAuthority
+    ? createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
+    : createRuntime(runtimeOptions);
 
   try {
     throwIfExecutionAborted(options.signal, runId);
@@ -645,6 +660,7 @@ export async function executeResumeWithStore(
   workflow: Parameters<typeof executeResume>[0],
   options: Parameters<typeof executeResume>[1],
   storeOverride?: RunStore,
+  checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
 ): Promise<RunResult> {
   const { runId, manifest } = options;
   const rootDir = options.rootDir ?? process.cwd();
@@ -765,7 +781,26 @@ export async function executeResumeWithStore(
     );
   }
 
-  const runtime = createRuntime({
+  if (checkpointAuthority) {
+    const checkpointBinding = workflowCheckpointBindingFromAuthority(checkpointAuthority);
+    const checkpointControl = await store.loadCheckpointControl(runId);
+    const nextPhaseIndex = checkpointControl?.checkpoints.length ?? 0;
+    const nextPhase = manifest.phases[nextPhaseIndex];
+    if (!checkpointControl || !nextPhase) {
+      throw new WorkflowResumeRecoveryRequiredError(
+        runId,
+        'checkpoint resume head or next phase is unavailable',
+      );
+    }
+    await store.beginCheckpointResumeGeneration(
+      runId,
+      checkpointBinding,
+      `phase-${nextPhaseIndex}`,
+      nextPhaseIndex,
+    );
+  }
+
+  const runtimeOptions: RuntimeOptions = {
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
@@ -789,7 +824,10 @@ export async function executeResumeWithStore(
     onBudgetChange: async (state) => {
       await store.persistBudgetState(runId, state);
     },
-  });
+  };
+  const runtime = checkpointAuthority
+    ? createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
+    : createRuntime(runtimeOptions);
 
   try {
     if (status.status === 'paused_waiting_approval') {

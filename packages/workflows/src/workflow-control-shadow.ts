@@ -130,6 +130,12 @@ export interface WorkflowControlShadowJournalSecurityDependencies {
   readonly currentWindowsSid: () => string;
   readonly readWindowsPathSecurity: (path: string, identity: string, cacheable: boolean) => unknown;
   readonly hardenPath: (path: string, directory: boolean) => void;
+  /** @internal Deterministic lock qualification hooks. */
+  readonly now?: () => number;
+  readonly sleep?: (milliseconds: number) => Promise<void>;
+  readonly processId?: number;
+  readonly processSessionId?: string;
+  readonly probeProcess?: (pid: number) => void;
 }
 
 type JsonRecord = Readonly<Record<string, unknown>>;
@@ -524,7 +530,7 @@ function assertOwnerOnlyPath(
   }
 }
 
-function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
+export function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDependencies {
   const currentWindowsSid = () => {
     if (productionWindowsSid !== undefined) return productionWindowsSid;
     const output = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
@@ -623,7 +629,7 @@ function productionJournalSecurity(): WorkflowControlShadowJournalSecurityDepend
   });
 }
 
-async function ensureOwnerDirectory(
+export async function ensureOwnerDirectory(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
   parent?: string,
@@ -680,7 +686,7 @@ async function initializeJournal(
   return Object.freeze({ root, entries, locks, states, security });
 }
 
-async function syncDirectory(path: string): Promise<void> {
+export async function syncDirectory(path: string): Promise<void> {
   if (process.platform === 'win32') return;
   const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
   try {
@@ -690,7 +696,7 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
-async function assertOwnerFile(
+export async function assertOwnerFile(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<BigIntStats> {
@@ -710,7 +716,45 @@ async function assertOwnerFile(
   return after;
 }
 
-async function writeExclusive(
+/**
+ * Read an owner-only regular file through a no-follow handle while proving the
+ * path and opened handle retain one identity for the complete bounded read.
+ */
+export async function readOwnerFile(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  maxBytes: number,
+): Promise<string> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new TypeError('Owner-only file read bound is invalid.');
+  }
+  const before = await assertOwnerFile(path, security);
+  if (before.size > BigInt(maxBytes)) {
+    throw new TypeError('Owner-only file exceeds its byte limit.');
+  }
+  const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || !sameIdentity(before, opened)) {
+      throw new TypeError('Owner-only file identity changed before read.');
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    const repeated = await lstat(path, { bigint: true });
+    if (
+      bytes.byteLength > maxBytes ||
+      !sameIdentity(opened, after) ||
+      !sameIdentity(after, repeated)
+    ) {
+      throw new TypeError('Owner-only file changed during read.');
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function writeExclusive(
   path: string,
   body: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -737,7 +781,7 @@ async function writeExclusive(
   }
 }
 
-async function atomicWrite(
+export async function atomicWrite(
   path: string,
   body: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -757,29 +801,16 @@ async function readCanonical(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<unknown> {
-  const before = await assertOwnerFile(path, security);
-  if (before.size > BigInt(WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes)) {
-    throw new TypeError('Workflow Control shadow journal file is unsafe.');
+  const text = await readOwnerFile(
+    path,
+    security,
+    WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes,
+  );
+  const value = JSON.parse(text) as unknown;
+  if (`${canonicalWorkflowControlJson(value)}\n` !== text) {
+    throw new TypeError('Journal bytes are not exact canonical JSON.');
   }
-  const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
-  try {
-    const opened = await handle.stat({ bigint: true });
-    if (!sameIdentity(before, opened)) throw new TypeError('Journal file identity changed.');
-    const bytes = await handle.readFile();
-    const after = await handle.stat({ bigint: true });
-    const repeated = await lstat(path, { bigint: true });
-    if (!sameIdentity(opened, after) || !sameIdentity(after, repeated)) {
-      throw new TypeError('Journal file changed during read.');
-    }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    const value = JSON.parse(text) as unknown;
-    if (`${canonicalWorkflowControlJson(value)}\n` !== text) {
-      throw new TypeError('Journal bytes are not exact canonical JSON.');
-    }
-    return value;
-  } finally {
-    await handle.close();
-  }
+  return value;
 }
 
 function streamHash(workspaceId: string, runId: string): string {
@@ -861,16 +892,24 @@ async function acquireStreamLock(
   hashValue: string,
 ): Promise<() => Promise<void>> {
   const path = join(directories.locks, `${hashValue}.lock`);
-  const deadline = Date.now() + WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs;
-  while (Date.now() <= deadline) {
+  const now = directories.security.now ?? Date.now;
+  const sleep =
+    directories.security.sleep ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolvePromise) => setTimeout(resolvePromise, milliseconds)));
+  const processId = directories.security.processId ?? process.pid;
+  const processSessionId = directories.security.processSessionId ?? PROCESS_SESSION_ID;
+  const probeProcess = directories.security.probeProcess ?? ((pid: number) => process.kill(pid, 0));
+  const deadline = now() + WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs;
+  while (now() <= deadline) {
     try {
       await writeExclusive(
         path,
         `${canonicalWorkflowControlJson({
           schema: JOURNAL_LOCK_SCHEMA,
-          pid: process.pid,
-          sessionId: PROCESS_SESSION_ID,
-          createdAt: new Date().toISOString(),
+          pid: processId,
+          sessionId: processSessionId,
+          createdAt: new Date(now()).toISOString(),
         })}\n`,
         directories.security,
       );
@@ -908,12 +947,17 @@ async function acquireStreamLock(
       }
       const pid = safeInteger(lock.pid, 'lock.pid', 1);
       let live = true;
-      try {
-        process.kill(pid, 0);
-      } catch (probeError) {
-        const code = (probeError as NodeJS.ErrnoException).code;
-        if (code === 'ESRCH') live = false;
-        else if (code !== 'EPERM') throw probeError;
+      if (pid === processId && lock.sessionId !== processSessionId) {
+        // A lock from this PID but another process session proves PID reuse.
+        live = false;
+      } else {
+        try {
+          probeProcess(pid);
+        } catch (probeError) {
+          const code = (probeError as NodeJS.ErrnoException).code;
+          if (code === 'ESRCH') live = false;
+          else if (code !== 'EPERM') throw probeError;
+        }
       }
       if (!live) {
         try {
@@ -928,12 +972,28 @@ async function acquireStreamLock(
           throw reclaimError;
         }
       }
-      await new Promise((resolvePromise) =>
-        setTimeout(resolvePromise, WORKFLOW_CONTROL_SHADOW_POLICY.defaultOrderingRetryDelayMs),
-      );
+      await sleep(WORKFLOW_CONTROL_SHADOW_POLICY.defaultOrderingRetryDelayMs);
     }
   }
   throw new TypeError('Workflow Control shadow journal lock deadline exceeded.');
+}
+
+/** Shared owner-safe crash-recovering lock primitive for sibling local journals. */
+export async function acquireOwnerJournalLock(
+  locksDirectory: string,
+  lockHash: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<() => Promise<void>> {
+  return acquireStreamLock(
+    {
+      root: locksDirectory,
+      entries: locksDirectory,
+      states: locksDirectory,
+      locks: locksDirectory,
+      security,
+    },
+    lockHash,
+  );
 }
 
 async function streamEntries(directories: JournalDirectories, hashValue: string) {
@@ -1298,19 +1358,29 @@ function validateJournalSecurityDependencies(
 ): WorkflowControlShadowJournalSecurityDependencies {
   const object = plainObject(value, 'Workflow Control shadow journal security dependencies');
   if (
-    !exactKeys(object, [
-      'platform',
-      'currentWindowsSid',
-      'readWindowsPathSecurity',
-      'hardenPath',
-    ]) ||
+    !exactKeys(
+      object,
+      ['platform', 'currentWindowsSid', 'readWindowsPathSecurity', 'hardenPath'],
+      ['now', 'sleep', 'processId', 'processSessionId', 'probeProcess'],
+    ) ||
     typeof object.platform !== 'string' ||
     typeof object.currentWindowsSid !== 'function' ||
     nodeTypes.isProxy(object.currentWindowsSid) ||
     typeof object.readWindowsPathSecurity !== 'function' ||
     nodeTypes.isProxy(object.readWindowsPathSecurity) ||
     typeof object.hardenPath !== 'function' ||
-    nodeTypes.isProxy(object.hardenPath)
+    nodeTypes.isProxy(object.hardenPath) ||
+    (object.now !== undefined &&
+      (typeof object.now !== 'function' || nodeTypes.isProxy(object.now))) ||
+    (object.sleep !== undefined &&
+      (typeof object.sleep !== 'function' || nodeTypes.isProxy(object.sleep))) ||
+    (object.processId !== undefined &&
+      (!Number.isSafeInteger(object.processId) || (object.processId as number) < 1)) ||
+    (object.processSessionId !== undefined &&
+      (typeof object.processSessionId !== 'string' ||
+        !LOCK_SESSION_ID.test(object.processSessionId))) ||
+    (object.probeProcess !== undefined &&
+      (typeof object.probeProcess !== 'function' || nodeTypes.isProxy(object.probeProcess)))
   ) {
     throw new TypeError('Workflow Control shadow journal security dependencies are invalid.');
   }

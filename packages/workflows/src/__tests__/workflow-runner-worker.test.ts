@@ -77,6 +77,44 @@ describe('GS8-B workflow runner worker', () => {
     ).toThrowError(/explicit enablement/u);
   });
 
+  it('confines the checkpoint shadow journal to the canonical local-state root', () => {
+    const workspaceRoot = resolve('workflow-runner-config-workspace');
+    const base = {
+      OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.test',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
+      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors'),
+      OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
+      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED: '1',
+      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT: 'http://127.0.0.1:8085',
+      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
+      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID: 'runner.test',
+    } satisfies NodeJS.ProcessEnv;
+
+    expect(
+      loadWorkflowRunnerWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT: join(
+          workspaceRoot,
+          '.openslack.local',
+          'checkpoint-shadow',
+        ),
+      }).checkpointShadow?.journalRoot,
+    ).toBe(join(workspaceRoot, '.openslack.local', 'checkpoint-shadow'));
+
+    expect(() =>
+      loadWorkflowRunnerWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT: join(
+          workspaceRoot,
+          'nested',
+          '.openslack.local',
+          'checkpoint-shadow',
+        ),
+      }),
+    ).toThrowError(/workspace-local journal/u);
+  });
+
   it('reads and hashes the sealed source during prepare without dynamically importing it', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
     roots.push(workspaceRoot);

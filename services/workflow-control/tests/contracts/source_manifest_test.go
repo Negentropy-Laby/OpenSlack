@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,7 +71,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-B" ||
+		manifest.Service.MigrationPhase != "GS9-C" ||
 		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
@@ -84,17 +84,20 @@ func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
 			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
 			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_OUTBOX",
 			"WORKFLOW_CONTROL_AUTHORITY_QUALIFICATION_RECONCILIATION",
+			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_OBSERVATION",
+			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_EXACT_RECEIPT",
+			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_RECONCILIATION",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.ContractInputs) != 7 {
+		len(manifest.ContractInputs) != 9 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",
-			SHA256: "03e86dc01165b8eb556bb8a0dfbe2c627f2f0206f19effcf1b71569fc255b203",
+			SHA256: "8b2643ca094c35d7b2130b90ece4a4a1347c9242bfb668e6287b2257e35bc6f2",
 		},
 		"goMod": {
 			Path:   "services/workflow-control/go.mod",
@@ -112,9 +115,58 @@ func TestSourceManifestBindsOnlyUnreleasedGS9BInputs(t *testing.T) {
 			Path:   "services/workflow-control/migrations/000003_create_workflow_control_authority.down.sql",
 			SHA256: "fc04888e19b4c22c3885b5025501084b977e312e5205a62270958195b1edb9a9",
 		},
+		"checkpointShadowMigrationUp": {
+			Path:   "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.up.sql",
+			SHA256: "dacd2cf88ae75afdb8503f7261e436b7e2daa43cd462fbbbe5464e0bc16172e0",
+		},
+		"checkpointShadowMigrationDown": {
+			Path:   "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.down.sql",
+			SHA256: "32e76f0a6aec433d2615cfd3a74f17acff4a7f4ae1998f09d47e0b907d793193",
+		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
 		t.Fatalf("source manifest source inputs drifted: %#v", manifest.SourceInputs)
+	}
+	wantContractInputs := map[string]manifestReference{
+		"workflowCheckpointShadowContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json",
+			SHA256: "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000",
+		},
+		"workflowControlContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-control/v1/manifest.json",
+			SHA256: "3c7440ae6254337a6e1d93beb2e531d591fa2f781717d3a8e96d0d2e5d872d86",
+		},
+		"workflowControlShadowContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-control-shadow/v1/manifest.json",
+			SHA256: "91e6eaab207e9baa85fb3be84e1b3370983e881f0057a97cb566c5dc834f5f23",
+		},
+		"workflowRunnerContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-runner/v1/manifest.json",
+			SHA256: "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6",
+		},
+		"workflowControlAuthorityContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
+			SHA256: "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
+		},
+		"openapi": {
+			Path:   "services/workflow-control/docs/api/openapi.yaml",
+			SHA256: "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f",
+		},
+		"runnerOpenapi": {
+			Path:   "services/workflow-control/docs/api/runner-openapi.yaml",
+			SHA256: "8d05d7b08cb1e7a11cf76b6f10b26079e54b546c527efb6325f6bdc42ab3d632",
+		},
+		"authorityOpenapi": {
+			Path:   "services/workflow-control/docs/api/authority-openapi.yaml",
+			SHA256: "8c1bf057b0ea0e3c005e70e1ed440f585429f66eacbaa923574e0728e0430935",
+		},
+		"checkpointShadowOpenapi": {
+			Path:   "services/workflow-control/docs/api/checkpoint-shadow-openapi.yaml",
+			SHA256: "a33f978174fa9b82393864d5b97f03082196a8d369e07d60cc35ce69345fa67a",
+		},
+	}
+	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {
+		t.Fatalf("source manifest contract inputs drifted: %#v", manifest.ContractInputs)
 	}
 	wantNonClaims := []string{
 		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",

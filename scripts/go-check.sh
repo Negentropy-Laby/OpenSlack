@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2 | workflow-control-checkpoint-shadow-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -667,7 +667,8 @@ detect_capabilities() {
           fail "Notification Delivery worker capability is missing ${worker_evidence}"
       done
     elif [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
-      "${runtime_profile_ref}" == "workflow-control-authority-v2" ]]; then
+      "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
+      "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       local runner_evidence
       for runner_evidence in \
         cmd/runner-server/main.go \
@@ -698,7 +699,8 @@ detect_capabilities() {
     fail "Notification Delivery runtime profile requires the worker capability"
   fi
   if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-authority-v2" ]] &&
+    "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
+    "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]] &&
     ! has_capability "${capabilities}" "worker"; then
     fail "Workflow Control runner runtime profile requires the worker capability"
   fi
@@ -723,7 +725,8 @@ detect_capabilities() {
 
   if [[ "${runtime_profile_ref}" == "workflow-control-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
+    "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     local workflow_control_evidence
     for workflow_control_evidence in \
       cmd/server/qualification_test.go \
@@ -754,7 +757,8 @@ detect_capabilities() {
   fi
 
   if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
+    "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     local workflow_runner_evidence
     for workflow_runner_evidence in \
       cmd/runner-server/qualification_test.go \
@@ -766,6 +770,7 @@ detect_capabilities() {
     local workflow_runner_test
     for workflow_runner_test in \
       TestGS8BQualification \
+      TestGS8BQualificationProcessIdentityIsStableWithinOneProcess \
       TestGS8BRestartQualification \
       TestGS8BImageDefaultOff; do
       grep -Eq "^func[[:space:]]+${workflow_runner_test}\\(" "${module_dir}"/cmd/runner-server/*_test.go ||
@@ -773,7 +778,8 @@ detect_capabilities() {
     done
   fi
 
-  if [[ "${runtime_profile_ref}" == "workflow-control-authority-v2" ]]; then
+  if [[ "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
+    "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     local workflow_authority_evidence
     for workflow_authority_evidence in \
       cmd/authority-server/main.go \
@@ -835,6 +841,43 @@ detect_capabilities() {
         "${module_dir}/${named_evidence_path}" ||
         fail "Workflow Control authority runtime profile is missing ${named_evidence_test}"
     done
+  fi
+
+  if [[ "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ]]; then
+    local checkpoint_shadow_root_evidence
+    for checkpoint_shadow_root_evidence in \
+      scripts/workflow-checkpoint-shadow-contracts/index.ts \
+      scripts/workflow-checkpoint-shadow-contracts/tsconfig.json \
+      packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json \
+      packages/workflows/contracts/workflow-checkpoint-shadow/v1/golden-vectors.json; do
+      [[ -f "${repo_root}/${checkpoint_shadow_root_evidence}" ]] ||
+        fail "Workflow Control checkpoint shadow runtime profile is missing ${checkpoint_shadow_root_evidence}"
+    done
+    local checkpoint_shadow_evidence
+    for checkpoint_shadow_evidence in \
+      cmd/checkpoint-shadow-server/main.go \
+      cmd/checkpoint-shadow-server/qualification_test.go \
+      docs/api/checkpoint-shadow-openapi.yaml \
+      internal/checkpointshadowapp/server_test.go \
+      internal/checkpointshadowstore/postgres/repository_test.go \
+      migrations/000004_create_workflow_control_checkpoint_shadow.up.sql \
+      migrations/000004_create_workflow_control_checkpoint_shadow.down.sql \
+      tests/contracts/checkpoint_shadow_openapi_contract_test.go; do
+      [[ -f "${module_dir}/${checkpoint_shadow_evidence}" ]] ||
+        fail "Workflow Control checkpoint shadow runtime profile is missing ${checkpoint_shadow_evidence}"
+    done
+    local checkpoint_shadow_test
+    for checkpoint_shadow_test in \
+      TestGS9CQualification \
+      TestGS9CRestartQualification \
+      TestGS9CImageDefaultOff; do
+      grep -Eq "^func[[:space:]]+${checkpoint_shadow_test}\\(" \
+        "${module_dir}"/cmd/checkpoint-shadow-server/*_test.go ||
+        fail "Workflow Control checkpoint shadow runtime profile is missing ${checkpoint_shadow_test}"
+    done
+    grep -Eq '^func[[:space:]]+TestCheckpointShadowOpenAPIIsClosedAndValid\(' \
+      "${module_dir}/tests/contracts/checkpoint_shadow_openapi_contract_test.go" ||
+      fail "Workflow Control checkpoint shadow runtime profile is missing TestCheckpointShadowOpenAPIIsClosedAndValid"
   fi
 
   if ((http_ref)); then
@@ -1055,13 +1098,15 @@ run_module_gate() {
     fi
   elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-runner-v1" ||
-    "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile}" == "workflow-control-authority-v2" ||
+    "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=127.0.0.1:8080
       --env WORKFLOW_CONTROL_NETWORK_MODE=loopback
     )
-    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
+      "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082
@@ -1070,6 +1115,16 @@ run_module_gate() {
         --env WORKFLOW_CONTROL_AUTHORITY_WORKSPACE_ID=workspace.demo
         --env WORKFLOW_CONTROL_AUTHORITY_CALLER_ID=typescript:workflow-control-qualification
         --env WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9
+      )
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
+      run_args+=(
+        --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1
+        --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083
+        --env 'WORKFLOW_CONTROL_CHECKPOINT_SHADOW_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+        --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
+        --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_WORKSPACE_ID=workspace.demo
+        --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=typescript:workflow-checkpoint-shadow
       )
     fi
   fi
@@ -1108,7 +1163,8 @@ run_module_gate() {
     fi
   elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-runner-v1" ||
-    "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile}" == "workflow-control-authority-v2" ||
+    "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     ((has_database)) || fail "Workflow Control shadow qualification requires PostgreSQL"
     run_workflow_control_qualification \
       "${resource_prefix}" \
@@ -1118,7 +1174,8 @@ run_module_gate() {
       "${resource_owner}" \
       "${run_token}"
     if [[ "${runtime_profile}" == "workflow-control-runner-v1" ||
-      "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+      "${runtime_profile}" == "workflow-control-authority-v2" ||
+      "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       run_workflow_runner_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1127,8 +1184,18 @@ run_module_gate() {
         "${resource_owner}" \
         "${run_token}"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
+      "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       run_workflow_authority_qualification \
+        "${resource_prefix}" \
+        "${network}" \
+        "${database_container}" \
+        "${database_name}" \
+        "${resource_owner}" \
+        "${run_token}"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
+      run_workflow_checkpoint_shadow_qualification \
         "${resource_prefix}" \
         "${network}" \
         "${database_container}" \
@@ -1609,6 +1676,82 @@ run_workflow_authority_qualification() {
     "WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_workflow_checkpoint_shadow_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local test_name="$6"
+  shift 6
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1
+    --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083
+    --env 'WORKFLOW_CONTROL_CHECKPOINT_SHADOW_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
+    --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_WORKSPACE_ID=workspace.demo
+    --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=typescript:workflow-checkpoint-shadow
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/workflow-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/checkpoint-shadow-server -run "^${test_name}$" -count=1
+}
+
+run_workflow_checkpoint_shadow_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="workflow_control_gs9c_restart_${restart_token//-/}"
+
+  log "qualifying Workflow Control GS9-C checkpoint/resume shadow bounds"
+  run_workflow_checkpoint_shadow_test_container \
+    "${resource_prefix}" checkpoint-bounds "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9CQualification \
+    WORKFLOW_CONTROL_GS9C_QUALIFICATION=1
+
+  log "seeding Workflow Control GS9-C checkpoint shadow restart qualification"
+  run_workflow_checkpoint_shadow_test_container \
+    "${resource_prefix}" checkpoint-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9CRestartQualification \
+    WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed \
+    "WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS9-C checkpoint shadow restart"
+
+  log "verifying Workflow Control GS9-C checkpoint shadow after PostgreSQL restart"
+  run_workflow_checkpoint_shadow_test_container \
+    "${resource_prefix}" checkpoint-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9CRestartQualification \
+    WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify \
+    "WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -1692,6 +1835,49 @@ run_workflow_authority_image_default_off() {
     go test -race ./cmd/authority-server -run '^TestGS9BImageDefaultOff$' -count=1
 }
 
+run_workflow_checkpoint_shadow_image_default_off() {
+  local resource_prefix="$1"
+  local image_tag="$2"
+  local resource_owner="$3"
+  local checkpoint_container="${resource_prefix}-checkpoint-shadow-default-off"
+  local test_container="${resource_prefix}-qualification-checkpoint-image-default-off"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+
+  cleanup_containers+=("${resource_owner}|${checkpoint_container}")
+  docker_cmd_interruptible run -d --pull=never \
+    --name "${checkpoint_container}" \
+    --label "com.openslack.go-check.run=${resource_owner}" \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+    --network none \
+    --health-cmd 'kill -0 1' \
+    --health-interval 1s \
+    --health-timeout 1s \
+    --health-retries 30 \
+    --entrypoint /checkpoint-shadow-server \
+    "${image_tag}" >/dev/null
+  require_resource_owned container "${checkpoint_container}" "${resource_owner}"
+  wait_for_healthy_container "${checkpoint_container}" "Workflow Control checkpoint shadow default-off"
+
+  cleanup_containers+=("${resource_owner}|${test_container}")
+  docker_cmd_interruptible run --rm --pull=never \
+    --name "${test_container}" \
+    --label "com.openslack.go-check.run=${resource_owner}" \
+    --network "container:${checkpoint_container}" \
+    --env GOTOOLCHAIN=local \
+    --env GOWORK=off \
+    --env GOMODCACHE=/go/pkg/mod \
+    --env GOCACHE=/root/.cache/go-build \
+    --env WORKFLOW_CONTROL_GS9C_DEFAULT_ORIGIN=http://127.0.0.1:8083 \
+    --mount "type=bind,source=${repository_mount},target=/source,readonly" \
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod" \
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build" \
+    --workdir /source/services/workflow-control \
+    "${GO_IMAGE}" \
+    go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CImageDefaultOff$' -count=1
+}
+
 run_http_smoke() {
   local resource_prefix="$1"
   local image_tag="$2"
@@ -1755,7 +1941,8 @@ run_http_smoke() {
     fi
   elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-runner-v1" ||
-    "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile}" == "workflow-control-authority-v2" ||
+    "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=:8080
@@ -1789,23 +1976,31 @@ run_http_smoke() {
     fi
   elif [[ "${runtime_profile}" == "workflow-control-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-runner-v1" ||
-    "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    "${runtime_profile}" == "workflow-control-authority-v2" ||
+    "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
     log "verifying Workflow Control GS7-B image API responses"
     run_workflow_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
       TestGS7BImageSmoke \
       "WORKFLOW_CONTROL_GS7B_SMOKE_ORIGIN=http://${app_network_alias}:8080"
     if [[ "${runtime_profile}" == "workflow-control-runner-v1" ||
-      "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+      "${runtime_profile}" == "workflow-control-authority-v2" ||
+      "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       log "verifying Workflow Control GS8-B default image keeps runner disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
         ./cmd/runner-server TestGS8BImageDefaultOff 1 \
         "WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://${app_network_alias}:8080"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
+      "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
       log "verifying Workflow Control GS9-B authority image defaults to mutation-off"
       run_workflow_authority_image_default_off \
+        "${resource_prefix}" "${image_tag}" "${resource_owner}"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ]]; then
+      log "verifying Workflow Control GS9-C checkpoint shadow image defaults to observation-off"
+      run_workflow_checkpoint_shadow_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
   fi

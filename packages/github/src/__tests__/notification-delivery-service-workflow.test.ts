@@ -70,6 +70,11 @@ const reusableWorkflowUrl = new URL(
 );
 const reusableSource = readFileSync(reusableWorkflowUrl, 'utf8');
 const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
+const workflowControlPostgresGateUrl = new URL(
+  '../../../../scripts/qualification/workflow-control-postgres-gate.sh',
+  import.meta.url,
+);
+const workflowControlPostgresGateSource = readFileSync(workflowControlPostgresGateUrl, 'utf8');
 const rootPackageUrl = new URL('../../../../package.json', import.meta.url);
 const rootPackage = JSON.parse(readFileSync(rootPackageUrl, 'utf8')) as {
   scripts: Record<string, string>;
@@ -134,14 +139,17 @@ const triggerPaths = [
   'packages/workflows/contracts/workflow-control/**',
   'packages/workflows/contracts/workflow-control-authority/**',
   'packages/workflows/contracts/workflow-control-shadow/**',
+  'packages/workflows/contracts/workflow-checkpoint-shadow/**',
   'packages/workflows/contracts/workflow-runner/**',
   'packages/workflows/src/workflow-control-contract.ts',
   'packages/workflows/src/workflow-control-authority-contract.ts',
   'packages/workflows/src/workflow-control-observation.ts',
   'packages/workflows/src/workflow-control-shadow*.ts',
+  'packages/workflows/src/workflow-checkpoint-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
+  'packages/workflows/src/__tests__/workflow-checkpoint-shadow*.test.ts',
   'packages/workflows/src/workflow-runner-contract.ts',
   'packages/workflows/src/workflow-runner*.ts',
   'packages/workflows/src/__tests__/workflow-runner*.test.ts',
@@ -186,7 +194,9 @@ const triggerPaths = [
   'scripts/workflow-control-contracts/**',
   'scripts/workflow-authority-contracts/**',
   'scripts/workflow-control-shadow-contracts/**',
+  'scripts/workflow-checkpoint-shadow-contracts/**',
   'scripts/workflow-runner-contracts/**',
+  'scripts/qualification/workflow-control-postgres-gate.sh',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -276,74 +286,11 @@ function gs7bCrossLanguageRun(): string {
 }
 
 function gs9bAuthorityRun(): string {
-  return lines(
-    'set -euo pipefail',
-    'postgres_container="openslack-gs9b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
-    'cleanup() {',
-    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
-    '}',
-    'trap cleanup EXIT',
-    'cleanup',
-    'docker run --detach \\',
-    '  --name "$postgres_container" \\',
-    '  --env POSTGRES_USER=openslack \\',
-    '  --env POSTGRES_PASSWORD=openslack \\',
-    '  --env POSTGRES_DB=openslack \\',
-    '  --publish 127.0.0.1::5432 \\',
-    `  ${postgresImage} >/dev/null`,
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'export WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
-    'export WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082',
-    'export WORKFLOW_CONTROL_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    'export WORKFLOW_CONTROL_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d',
-    'export WORKFLOW_CONTROL_AUTHORITY_WORKSPACE_ID=workspace.demo',
-    'export WORKFLOW_CONTROL_AUTHORITY_CALLER_ID=typescript:workflow-control-qualification',
-    'export WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
-    'go test -race \\',
-    '  ./internal/authorityapp \\',
-    '  ./internal/authoritystore/... \\',
-    '  ./internal/config \\',
-    '  ./tests/contracts \\',
-    '  ./tests/integration \\',
-    '  -count=1',
-    'WORKFLOW_CONTROL_GS9B_QUALIFICATION=1 \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BQualification$' -count=1",
-    'restart_schema="workflow_control_gs9b_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"',
-    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed \\',
-    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
-    'docker restart "$postgres_container" >/dev/null',
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify \\',
-    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
-  );
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9b-authority';
+}
+
+function gs9cCheckpointRun(): string {
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9c-checkpoint';
 }
 
 describe('notification delivery service workflow', () => {
@@ -403,6 +350,10 @@ describe('notification delivery service workflow', () => {
     const workflowAuthorityGoIndex = stepIndex('Qualify GS9-A Go authority contract mirror');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
+    const workflowCheckpointGoldenIndex = stepIndex(
+      'Verify Workflow Checkpoint shadow golden contracts',
+    );
+    const workflowCheckpointTsIndex = stepIndex('Qualify GS9-C TypeScript checkpoint shadow');
     const workflowRunnerLinuxIndex = stepIndex(
       'Qualify the sealed TypeScript Workflow Runner on Linux',
     );
@@ -415,6 +366,7 @@ describe('notification delivery service workflow', () => {
     const gs7bCrossLanguageIndex = stepIndex('Qualify GS7-B TypeScript-to-Go shadow observation');
     const gs8bRunnerIndex = stepIndex('Qualify GS8-B real TypeScript runner lifecycle');
     const gs9bAuthorityIndex = stepIndex('Qualify GS9-B Workflow Control authority');
+    const gs9cCheckpointIndex = stepIndex('Qualify GS9-C Workflow checkpoint shadow');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -436,7 +388,9 @@ describe('notification delivery service workflow', () => {
     expect(workflowAuthorityGoIndex).toBe(workflowAuthorityTsIndex + 1);
     expect(workflowShadowGoldenIndex).toBe(workflowAuthorityGoIndex + 1);
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
-    expect(workflowRunnerLinuxIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(workflowCheckpointGoldenIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(workflowCheckpointTsIndex).toBe(workflowCheckpointGoldenIndex + 1);
+    expect(workflowRunnerLinuxIndex).toBe(workflowCheckpointTsIndex + 1);
     expect(graphDistIndex).toBe(workflowRunnerLinuxIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
@@ -446,7 +400,8 @@ describe('notification delivery service workflow', () => {
     expect(gs7bCrossLanguageIndex).toBe(gs6CrossLanguageIndex + 1);
     expect(gs8bRunnerIndex).toBe(gs7bCrossLanguageIndex + 1);
     expect(gs9bAuthorityIndex).toBe(gs8bRunnerIndex + 1);
-    expect(goCheckIndex).toBe(gs9bAuthorityIndex + 1);
+    expect(gs9cCheckpointIndex).toBe(gs9bAuthorityIndex + 1);
+    expect(goCheckIndex).toBe(gs9cCheckpointIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -534,6 +489,24 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: 'bun run workflow:runner-golden -- --check',
     });
+    expect(job.steps[workflowCheckpointGoldenIndex]).toEqual({
+      name: 'Verify Workflow Checkpoint shadow golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:checkpoint-shadow-golden -- --check',
+    });
+    expect(job.steps[workflowCheckpointTsIndex]).toEqual({
+      name: 'Qualify GS9-C TypeScript checkpoint shadow',
+      'working-directory': '.',
+      run: lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-session.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-worker.test.ts \\',
+        '  packages/workflows/src/__tests__/run-store.test.ts',
+      ),
+    });
     expect(job.steps[workflowRunnerLinuxIndex]).toEqual({
       name: 'Qualify the sealed TypeScript Workflow Runner on Linux',
       'working-directory': '.',
@@ -579,8 +552,13 @@ describe('notification delivery service workflow', () => {
     });
     expect(job.steps[gs9bAuthorityIndex]).toEqual({
       name: 'Qualify GS9-B Workflow Control authority',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9bAuthorityRun(),
+    });
+    expect(job.steps[gs9cCheckpointIndex]).toEqual({
+      name: 'Qualify GS9-C Workflow checkpoint shadow',
+      'working-directory': '.',
+      run: gs9cCheckpointRun(),
     });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
@@ -632,6 +610,8 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-A Go authority contract mirror',
       'Verify Workflow Control shadow golden contracts',
       'Verify Workflow Runner golden contracts',
+      'Verify Workflow Checkpoint shadow golden contracts',
+      'Qualify GS9-C TypeScript checkpoint shadow',
       'Qualify the sealed TypeScript Workflow Runner on Linux',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
@@ -642,6 +622,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS7-B TypeScript-to-Go shadow observation',
       'Qualify GS8-B real TypeScript runner lifecycle',
       'Qualify GS9-B Workflow Control authority',
+      'Qualify GS9-C Workflow checkpoint shadow',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -685,6 +666,17 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
+      'Verify Workflow Checkpoint shadow golden contracts':
+        'bun run workflow:checkpoint-shadow-golden -- --check',
+      'Qualify GS9-C TypeScript checkpoint shadow': lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-session.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-worker.test.ts \\',
+        '  packages/workflows/src/__tests__/run-store.test.ts',
+      ),
       'Qualify the sealed TypeScript Workflow Runner on Linux': lines(
         'set -euo pipefail',
         'bun run build',
@@ -711,6 +703,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS7-B TypeScript-to-Go shadow observation': gs7bCrossLanguageRun(),
       'Qualify GS8-B real TypeScript runner lifecycle': gs8bRunnerRun as string,
       'Qualify GS9-B Workflow Control authority': gs9bAuthorityRun(),
+      'Qualify GS9-C Workflow checkpoint shadow': gs9cCheckpointRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -757,6 +750,12 @@ describe('notification delivery service workflow', () => {
     );
     expect(rootPackage.scripts.typecheck).toContain(
       'tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts['workflow:checkpoint-shadow-golden']).toBe(
+      'bun scripts/workflow-checkpoint-shadow-contracts/index.ts',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'tsc --noEmit -p scripts/workflow-checkpoint-shadow-contracts/tsconfig.json',
     );
   });
 
@@ -1012,7 +1011,7 @@ describe('notification delivery service workflow', () => {
     );
     expect(step).toEqual({
       name: 'Qualify GS9-B Workflow Control authority',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9bAuthorityRun(),
     });
     for (const evidence of [
@@ -1020,7 +1019,8 @@ describe('notification delivery service workflow', () => {
       'trap cleanup EXIT',
       'WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
       'WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
-      'go test -race \\',
+      'export GOWORK=off',
+      'go test -race ./internal/authorityapp',
       './internal/authorityapp',
       './internal/authoritystore/...',
       './internal/config',
@@ -1033,12 +1033,17 @@ describe('notification delivery service workflow', () => {
       'docker restart "$postgres_container"',
       'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify',
     ]) {
-      expect(step?.run).toContain(evidence);
+      expect(workflowControlPostgresGateSource).toContain(evidence);
     }
     expect(
-      step?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
-    ).toHaveLength(2);
-    expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+      workflowControlPostgresGateSource.match(
+        /published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu,
+      ),
+    ).toHaveLength(1);
+    expect(workflowControlPostgresGateSource).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+    expect(workflowControlPostgresGateSource).toContain(
+      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint}',
+    );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
     expect(names.indexOf('Qualify GS8-B real TypeScript runner lifecycle')).toBeLessThan(
@@ -1047,6 +1052,60 @@ describe('notification delivery service workflow', () => {
     expect(names.indexOf('Qualify GS9-B Workflow Control authority')).toBeLessThan(
       names.indexOf('Run reviewed Go workspace verifier'),
     );
+  });
+
+  it('qualifies the GS9-C checkpoint shadow against pinned PostgreSQL without transferring authority', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS9-C Workflow checkpoint shadow',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS9-C Workflow checkpoint shadow',
+      'working-directory': '.',
+      run: gs9cCheckpointRun(),
+    });
+    for (const evidence of [
+      postgresImage,
+      'trap cleanup EXIT',
+      'WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1',
+      'WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083',
+      './internal/checkpointshadowapp',
+      './internal/checkpointshadowstore/...',
+      './tests/contracts',
+      './tests/integration',
+      'WORKFLOW_CONTROL_GS9C_QUALIFICATION=1',
+      "-run '^TestGS9CQualification$'",
+      'WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed',
+      'docker restart "$postgres_container"',
+      'WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify',
+    ]) {
+      expect(workflowControlPostgresGateSource).toContain(evidence);
+    }
+    expect(
+      workflowControlPostgresGateSource.match(
+        /published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu,
+      ),
+    ).toHaveLength(1);
+    expect(workflowControlPostgresGateSource).not.toMatch(
+      /accept_new_records|accept-new-records/iu,
+    );
+
+    const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
+    expect(names.indexOf('Qualify GS9-B Workflow Control authority')).toBeLessThan(
+      names.indexOf('Qualify GS9-C Workflow checkpoint shadow'),
+    );
+    expect(names.indexOf('Qualify GS9-C Workflow checkpoint shadow')).toBeLessThan(
+      names.indexOf('Run reviewed Go workspace verifier'),
+    );
+  });
+
+  it('binds the shared PostgreSQL gate to the two reviewed profiles', () => {
+    expect(workflowControlPostgresGateSource).toContain('gs9b-authority|gs9c-checkpoint) ;;');
+    expect(workflowControlPostgresGateSource).toContain('exit 2');
+    expect(workflowControlPostgresGateSource).toContain('for attempt in $(seq 1 60)');
+    expect(workflowControlPostgresGateSource).toContain('docker restart "$postgres_container"');
+    expect(workflowControlPostgresGateSource).toContain('refresh_database_url');
+    expect(workflowControlPostgresGateSource.match(/refresh_database_url/gu)).toHaveLength(3);
+    expect(workflowControlPostgresGateSource).not.toContain('eval ');
   });
 
   it('does not expand into deployment, external-input, or broad repository authority', () => {

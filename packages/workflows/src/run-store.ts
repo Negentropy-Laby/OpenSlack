@@ -21,10 +21,15 @@ import {
   stat,
   unlink,
 } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
 import {
+  atomicWrite,
+  acquireOwnerJournalLock,
   isWorkflowControlObservationPort,
+  productionJournalSecurity,
+  ensureOwnerDirectory,
+  readOwnerFile,
   type WorkflowControlObservationPort,
 } from './workflow-control-shadow.js';
 import { enqueueByKey } from './internal/keyed-serial-queue.js';
@@ -44,6 +49,25 @@ import {
   type WorkflowArgumentsEnvelope,
 } from './internal/workflow-arguments.js';
 import { WORKFLOW_CONTROL_CONTRACT_LIMITS } from './workflow-control-contract.js';
+import {
+  WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
+  WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+  validateWorkflowCheckpointControlState,
+  validateWorkflowCheckpointExecutionBinding,
+  workflowCheckpointCanonicalJson,
+  workflowCheckpointBytesHash,
+  workflowCheckpointError,
+  workflowCheckpointHash,
+  type WorkflowCheckpointControlState,
+  type WorkflowCheckpointExecutionBinding,
+  type WorkflowCheckpointRecord,
+  type WorkflowCheckpointShadowObservation,
+} from './workflow-checkpoint-shadow-contract.js';
+import {
+  isWorkflowCheckpointObservationPort,
+  type WorkflowCheckpointObservationPort,
+} from './workflow-checkpoint-shadow.js';
+import type { WorkflowCheckpointCommitInput, WorkflowCheckpointCommitResult } from './types.js';
 
 // ── Directory layout ──────────────────────────────────────────────────────────
 //
@@ -134,6 +158,23 @@ export interface WorkflowBudgetSnapshot {
 
 export const WORKFLOW_AUDIT_RECORD_SCHEMA = 'openslack.workflow_audit_record.v1' as const;
 export const WORKFLOW_AUDIT_MAX_BYTES = 2 * 1024 * 1024;
+export const WORKFLOW_CHECKPOINT_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
+const WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES = 8 * 1024 * 1024;
+const WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES = 6 * 1024 * 1024;
+const WORKFLOW_CHECKPOINT_HASH = /^[0-9a-f]{64}$/u;
+const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
+
+function checkpointBinding(value: unknown): WorkflowCheckpointExecutionBinding {
+  try {
+    return validateWorkflowCheckpointExecutionBinding(value);
+  } catch (error) {
+    throw workflowCheckpointError(
+      'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+      'Workflow checkpoint execution binding is invalid.',
+      error,
+    );
+  }
+}
 
 /** Hash-only local audit evidence. Raw effect details are never persisted. */
 export interface WorkflowAuditRecord {
@@ -227,12 +268,19 @@ export interface RunStoreFs {
   writeFile(path: string, content: string): Promise<void>;
   /** Read a file as UTF-8 text. Returns null if file does not exist. */
   readFile(path: string): Promise<string | null>;
+  /** Hardened owner-only/no-follow bounded read for checkpoint authority files. */
+  readOwnerOnlyFile?(path: string, maxBytes: number): Promise<string | null>;
   /** Append a line to a file (creates if missing). */
   appendFile(path: string, line: string): Promise<void>;
   /** Check if a path exists. */
   exists(path: string): Promise<boolean>;
   /** Stable file identity used only for per-run validated read caches. */
   fileIdentity?(path: string): Promise<RunStoreFileIdentity | null>;
+  /** Production cross-process exclusion for checkpoint head CAS. */
+  withExclusiveLock?<T>(path: string, action: () => Promise<T>): Promise<T>;
+  /** Owner-only temp+fsync+rename replacement for authoritative checkpoint heads. */
+  writeOwnerOnlyAtomic?(path: string, content: string): Promise<void>;
+  ensureOwnerOnlyDirectory?(path: string): Promise<void>;
 }
 
 export interface RunStoreFileIdentity {
@@ -265,6 +313,8 @@ export interface RunStoreOptions {
   fs?: RunStoreFs;
   /** Optional, default-off GS7-B fail-open shadow observation seam. */
   observationPort?: WorkflowControlObservationPort;
+  /** Optional, default-off GS9-C post-commit checkpoint observer. */
+  checkpointObservationPort?: WorkflowCheckpointObservationPort;
 }
 
 /**
@@ -276,9 +326,11 @@ export class RunStore {
   private readonly baseDir: string;
   private readonly fs: RunStoreFs;
   private readonly observationPort: WorkflowControlObservationPort | undefined;
+  private readonly checkpointObservationPort: WorkflowCheckpointObservationPort | undefined;
   private readonly budgetQueues = new Map<string, Promise<unknown>>();
   private readonly auditQueues = new Map<string, Promise<unknown>>();
   private readonly statusQueues = new Map<string, Promise<unknown>>();
+  private readonly checkpointQueues = new Map<string, Promise<unknown>>();
   private readonly budgetSessions = new Map<string, BudgetSession>();
   private readonly auditSessions = new Map<string, AuditSession>();
 
@@ -292,6 +344,16 @@ export class RunStore {
       throw new TypeError('RunStore observationPort must be a host-created Workflow Control port.');
     }
     this.observationPort = options.observationPort;
+    if (
+      options.checkpointObservationPort !== undefined &&
+      !isWorkflowCheckpointObservationPort(options.checkpointObservationPort)
+    ) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_OBSERVER_CONFIG_INVALID',
+        'RunStore checkpointObservationPort must be a host-created checkpoint shadow port.',
+      );
+    }
+    this.checkpointObservationPort = options.checkpointObservationPort;
   }
 
   private observeRun(runId: string): void {
@@ -327,6 +389,23 @@ export class RunStore {
   /** Path to a specific phase file. */
   phasePath(runId: string, phaseName: string): string {
     return `${this.phasesDir(runId)}/${phaseName}.json`;
+  }
+
+  /** TS-authoritative, canonical checkpoint head; deliberately separate from legacy status.json. */
+  checkpointControlDir(runId: string): string {
+    return `${this.runDir(runId)}/checkpoint-control`;
+  }
+
+  checkpointControlPath(runId: string): string {
+    return `${this.checkpointControlDir(runId)}/head.v1.json`;
+  }
+
+  checkpointArtifactsDir(runId: string): string {
+    return `${this.checkpointControlDir(runId)}/artifacts`;
+  }
+
+  checkpointArtifactPath(runId: string, artifactHash: string): string {
+    return `${this.checkpointArtifactsDir(runId)}/${artifactHash}.json`;
   }
 
   /** Path to the agents directory. */
@@ -703,6 +782,592 @@ export class RunStore {
     return JSON.parse(raw) as PhaseCheckpoint;
   }
 
+  // ── GS9-C authoritative checkpoint control ──────────────────────────────
+
+  /** Initialize the separate canonical checkpoint head for a newly accepted runner binding. */
+  async initializeCheckpointControl(
+    runId: string,
+    bindingValue: WorkflowCheckpointExecutionBinding,
+  ): Promise<WorkflowCheckpointControlState> {
+    if (this.fs.ensureOwnerOnlyDirectory) {
+      await this.fs.ensureOwnerOnlyDirectory(this.checkpointControlDir(runId));
+    } else {
+      await this.fs.mkdir(this.checkpointControlDir(runId));
+    }
+    const state = await this.withCheckpointMutation(runId, async () => {
+      const binding = checkpointBinding(bindingValue);
+      if (binding.workflowRunId !== runId) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+          'Workflow checkpoint binding run is mismatched.',
+        );
+      }
+      const existing = await this.loadCheckpointControl(runId);
+      if (existing !== null) {
+        if (
+          workflowCheckpointCanonicalJson(existing.activeBinding) ===
+          workflowCheckpointCanonicalJson(binding)
+        ) {
+          return existing;
+        }
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_STALE',
+          'Workflow checkpoint control is already bound to another attempt.',
+        );
+      }
+      const now = new Date().toISOString();
+      const state = validateWorkflowCheckpointControlState(
+        {
+          schema: WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
+          runId,
+          revision: 1,
+          resumeGeneration: 0,
+          sourceSequence: 0,
+          shadowEnabled: Boolean(this.checkpointObservationPort),
+          shadowOverflowed: false,
+          activeBinding: binding,
+          seenBindingHashes: [workflowCheckpointHash(binding)],
+          checkpoints: [],
+          pendingObservations: [],
+          updatedAt: now,
+        },
+        runId,
+      );
+      await this.writeCheckpointControl(runId, state);
+      return state;
+    });
+    await this.drainPendingCheckpointObservations(runId);
+    return state;
+  }
+
+  /**
+   * Advance resume generation once for a new accepted runner binding.
+   * Retrying the exact binding is idempotent; reusing an older binding is stale.
+   */
+  async beginCheckpointResumeGeneration(
+    runId: string,
+    bindingValue: WorkflowCheckpointExecutionBinding,
+    nextPhaseId: string,
+    nextPhaseIndex: number,
+  ): Promise<WorkflowCheckpointControlState> {
+    const next = await this.withCheckpointMutation(runId, async () => {
+      const binding = checkpointBinding(bindingValue);
+      if (binding.workflowRunId !== runId) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+          'Workflow checkpoint binding run is mismatched.',
+        );
+      }
+      const state = await this.requireCheckpointControl(runId);
+      const bindingHash = workflowCheckpointHash(binding);
+      if (state.seenBindingHashes.includes(bindingHash)) {
+        if (
+          bindingHash === state.seenBindingHashes.at(-1) &&
+          nextPhaseId === `phase-${nextPhaseIndex}` &&
+          nextPhaseIndex === state.checkpoints.length
+        ) {
+          return state;
+        }
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_STALE',
+          'Workflow checkpoint binding is stale.',
+        );
+      }
+      const priorCheckpoint = state.checkpoints.at(-1) ?? null;
+      const initialPhaseReentry =
+        priorCheckpoint === null &&
+        state.checkpoints.length === 0 &&
+        nextPhaseIndex === 0 &&
+        nextPhaseId === 'phase-0';
+      if (
+        (!initialPhaseReentry &&
+          (priorCheckpoint === null || nextPhaseIndex !== priorCheckpoint.phaseIndex + 1)) ||
+        nextPhaseId !== `phase-${nextPhaseIndex}` ||
+        binding.attemptId === state.activeBinding.attemptId ||
+        binding.leaseId === state.activeBinding.leaseId ||
+        binding.fencingToken <= state.activeBinding.fencingToken ||
+        binding.workspaceId !== state.activeBinding.workspaceId ||
+        binding.workflowRunId !== state.activeBinding.workflowRunId ||
+        binding.correlationId !== state.activeBinding.correlationId ||
+        binding.runnerBuildHash !== state.activeBinding.runnerBuildHash ||
+        binding.workflowSourceHash !== state.activeBinding.workflowSourceHash ||
+        binding.manifestHash !== state.activeBinding.manifestHash ||
+        binding.inputHash !== state.activeBinding.inputHash
+      ) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_RESUME_INVALID',
+          'Workflow checkpoint resume binding or next phase is invalid.',
+        );
+      }
+      if (priorCheckpoint) await this.verifyCheckpointArtifact(runId, priorCheckpoint);
+      const revision = state.revision + 1;
+      const resumeGeneration = state.resumeGeneration + 1;
+      const queueObservation = Boolean(
+        state.shadowEnabled &&
+        this.checkpointObservationPort &&
+        !state.shadowOverflowed &&
+        state.pendingObservations.length < 1024,
+      );
+      const sourceSequence = state.sourceSequence + (queueObservation ? 1 : 0);
+      const observation: WorkflowCheckpointShadowObservation = {
+        schema: WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+        authority: 'typescript',
+        goRole: 'observer_only',
+        runId,
+        revision,
+        resumeGeneration,
+        workflowSourceHash: binding.workflowSourceHash,
+        manifestHash: binding.manifestHash,
+        inputHash: binding.inputHash,
+        runner: this.checkpointRunner(binding),
+        checkpoint: null,
+        priorCheckpoint,
+        nextPhaseId,
+        nextPhaseIndex,
+      };
+      const next = validateWorkflowCheckpointControlState(
+        {
+          ...state,
+          revision,
+          resumeGeneration,
+          sourceSequence,
+          shadowOverflowed:
+            state.shadowOverflowed || Boolean(state.shadowEnabled && !queueObservation),
+          activeBinding: binding,
+          seenBindingHashes: [...state.seenBindingHashes, bindingHash],
+          pendingObservations: queueObservation
+            ? [
+                ...state.pendingObservations,
+                { sourceSequence, operation: 'resume_advance', observation },
+              ]
+            : state.pendingObservations,
+          updatedAt: new Date().toISOString(),
+        },
+        runId,
+      );
+      await this.writeCheckpointControl(runId, next);
+      return next;
+    });
+    await this.drainPendingCheckpointObservations(runId);
+    return next;
+  }
+
+  /** Commit one after-phase checkpoint, then notify the fail-open observer. */
+  async commitWorkflowCheckpoint(
+    runId: string,
+    bindingValue: WorkflowCheckpointExecutionBinding,
+    phaseId: string,
+    phaseIndex: number,
+    input: WorkflowCheckpointCommitInput,
+  ): Promise<WorkflowCheckpointCommitResult> {
+    const result = await this.withCheckpointMutation(runId, async () => {
+      const binding = checkpointBinding(bindingValue);
+      const state = await this.requireCheckpointControl(runId);
+      if (
+        workflowCheckpointCanonicalJson(state.activeBinding) !==
+        workflowCheckpointCanonicalJson(binding)
+      ) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_STALE',
+          'Workflow checkpoint commit binding is stale or mismatched.',
+        );
+      }
+      if (phaseId !== `phase-${phaseIndex}`) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+          'Workflow checkpoint phase identity is invalid.',
+        );
+      }
+      if (
+        !(input.artifact instanceof Uint8Array) ||
+        input.artifact.byteLength === 0 ||
+        input.artifact.byteLength > WORKFLOW_CHECKPOINT_ARTIFACT_MAX_BYTES
+      ) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_ARTIFACT_INVALID',
+          'Workflow checkpoint artifact bytes are invalid or out of bounds.',
+        );
+      }
+      const artifactHash = workflowCheckpointBytesHash(input.artifact);
+      const artifactRef = `checkpoint-control/artifacts/${artifactHash}.json`;
+      const resultHash = input.resultHash ?? null;
+      const cacheKeyHash = input.cacheKeyHash ?? null;
+      if (
+        (resultHash !== null && !WORKFLOW_CHECKPOINT_HASH.test(resultHash)) ||
+        (cacheKeyHash !== null && !WORKFLOW_CHECKPOINT_HASH.test(cacheKeyHash))
+      ) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+          'Workflow checkpoint result or cache hash is invalid.',
+        );
+      }
+      const prior = state.checkpoints[phaseIndex];
+      if (prior) {
+        if (
+          prior.phaseId !== phaseId ||
+          prior.artifactRef !== artifactRef ||
+          prior.artifactHash !== artifactHash ||
+          prior.resultHash !== resultHash ||
+          prior.cacheKeyHash !== cacheKeyHash
+        ) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+            'Workflow checkpoint replay conflicts with the committed phase.',
+          );
+        }
+        await this.verifyCheckpointArtifact(runId, prior);
+        return Object.freeze({
+          checkpointId: prior.checkpointId,
+          revision: prior.committedRevision,
+          resumeGeneration: prior.resumeGeneration,
+          duplicate: true,
+        });
+      }
+      if (phaseIndex !== state.checkpoints.length) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+          'Workflow checkpoint phases must commit in declared order.',
+        );
+      }
+      await this.persistCheckpointArtifact(runId, artifactHash, input.artifact);
+      const committedRevision = state.revision + 1;
+      const queueObservation = Boolean(
+        state.shadowEnabled &&
+        this.checkpointObservationPort &&
+        !state.shadowOverflowed &&
+        state.pendingObservations.length < 1024,
+      );
+      const sourceSequence = state.sourceSequence + (queueObservation ? 1 : 0);
+      const committedAt = new Date().toISOString();
+      const checkpointSeed = {
+        runId,
+        phaseId,
+        phaseIndex,
+        artifactRef,
+        artifactHash,
+        resultHash,
+        cacheKeyHash,
+      };
+      const checkpoint: WorkflowCheckpointRecord = {
+        checkpointId: `checkpoint-${workflowCheckpointHash(checkpointSeed)}`,
+        phaseId,
+        phaseIndex,
+        commitPoint: 'after_phase_work',
+        artifactRef,
+        artifactHash,
+        resultHash,
+        cacheKeyHash,
+        committedRevision,
+        resumeGeneration: state.resumeGeneration,
+        committedAt,
+      };
+      const observation: WorkflowCheckpointShadowObservation = {
+        schema: WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+        authority: 'typescript',
+        goRole: 'observer_only',
+        runId,
+        revision: committedRevision,
+        resumeGeneration: state.resumeGeneration,
+        workflowSourceHash: binding.workflowSourceHash,
+        manifestHash: binding.manifestHash,
+        inputHash: binding.inputHash,
+        runner: this.checkpointRunner(binding),
+        checkpoint,
+        priorCheckpoint: null,
+        nextPhaseId: null,
+        nextPhaseIndex: null,
+      };
+      const next = validateWorkflowCheckpointControlState(
+        {
+          ...state,
+          revision: committedRevision,
+          sourceSequence,
+          shadowOverflowed:
+            state.shadowOverflowed || Boolean(state.shadowEnabled && !queueObservation),
+          checkpoints: [...state.checkpoints, checkpoint],
+          pendingObservations: queueObservation
+            ? [
+                ...state.pendingObservations,
+                { sourceSequence, operation: 'checkpoint_commit', observation },
+              ]
+            : state.pendingObservations,
+          updatedAt: committedAt,
+        },
+        runId,
+      );
+      await this.writeCheckpointControl(runId, next);
+      return Object.freeze({
+        checkpointId: checkpoint.checkpointId,
+        revision: committedRevision,
+        resumeGeneration: checkpoint.resumeGeneration,
+        duplicate: false,
+      });
+    });
+    await this.drainPendingCheckpointObservations(runId);
+    return result;
+  }
+
+  async loadCheckpointControl(runId: string): Promise<WorkflowCheckpointControlState | null> {
+    try {
+      const raw = this.fs.readOwnerOnlyFile
+        ? await this.fs.readOwnerOnlyFile(
+            this.checkpointControlPath(runId),
+            WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES,
+          )
+        : await this.fs.readFile(this.checkpointControlPath(runId));
+      if (raw === null) return null;
+      const state = validateWorkflowCheckpointControlState(
+        parseBoundedJson(
+          raw,
+          `Workflow checkpoint control for ${runId}`,
+          WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES,
+        ),
+        runId,
+      );
+      if (workflowCheckpointCanonicalJson(state) !== raw) {
+        throw new Error('Workflow checkpoint control bytes are not canonical.');
+      }
+      return state;
+    } catch (error) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+        'Workflow checkpoint control is corrupt.',
+        error,
+      );
+    }
+  }
+
+  private async requireCheckpointControl(runId: string): Promise<WorkflowCheckpointControlState> {
+    const state = await this.loadCheckpointControl(runId);
+    if (state === null) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_CONTROL_MISSING',
+        `Workflow checkpoint control for ${runId} is missing.`,
+      );
+    }
+    return state;
+  }
+
+  private async writeCheckpointControl(
+    runId: string,
+    state: WorkflowCheckpointControlState,
+  ): Promise<void> {
+    const path = this.checkpointControlPath(runId);
+    const body = workflowCheckpointCanonicalJson(state);
+    try {
+      if (this.fs.writeOwnerOnlyAtomic) await this.fs.writeOwnerOnlyAtomic(path, body);
+      else await this.fs.writeFile(path, body);
+      const readback = this.fs.readOwnerOnlyFile
+        ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES)
+        : await this.fs.readFile(path);
+      if (readback === body) return;
+      throw new Error('Workflow checkpoint control readback is mismatched.');
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        (error as { code?: unknown }).code === 'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT'
+      ) {
+        throw error;
+      }
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+        'Workflow checkpoint control persistence failed.',
+        error,
+      );
+    }
+  }
+
+  private checkpointRunner(binding: WorkflowCheckpointExecutionBinding) {
+    return Object.freeze({
+      workspaceId: binding.workspaceId,
+      jobId: binding.jobId,
+      attemptId: binding.attemptId,
+      leaseId: binding.leaseId,
+      fencingToken: binding.fencingToken,
+      correlationId: binding.correlationId,
+      runnerBuildHash: binding.runnerBuildHash,
+    });
+  }
+
+  private async persistCheckpointArtifact(
+    runId: string,
+    artifactHash: string,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    if (this.fs.ensureOwnerOnlyDirectory) {
+      await this.fs.ensureOwnerOnlyDirectory(this.checkpointArtifactsDir(runId));
+    } else {
+      await this.fs.mkdir(this.checkpointArtifactsDir(runId));
+    }
+    const body = workflowCheckpointCanonicalJson({
+      schema: 'openslack.workflow_checkpoint_artifact.v1',
+      artifactHash,
+      bytesBase64: Buffer.from(bytes).toString('base64'),
+    });
+    const path = this.checkpointArtifactPath(runId, artifactHash);
+    let existing: string | null;
+    try {
+      existing = this.fs.readOwnerOnlyFile
+        ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES)
+        : await this.fs.readFile(path);
+      if (existing === null) {
+        if (this.fs.writeOwnerOnlyAtomic) await this.fs.writeOwnerOnlyAtomic(path, body);
+        else await this.fs.writeFile(path, body);
+        return;
+      }
+    } catch (error) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_INVALID',
+        'Workflow checkpoint artifact persistence failed.',
+        error,
+      );
+    }
+    if (existing !== body) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact is mismatched.',
+      );
+    }
+  }
+
+  private async verifyCheckpointArtifact(
+    runId: string,
+    checkpoint: WorkflowCheckpointRecord,
+  ): Promise<void> {
+    if (checkpoint.artifactRef !== `checkpoint-control/artifacts/${checkpoint.artifactHash}.json`) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact reference is invalid.',
+      );
+    }
+    const path = this.checkpointArtifactPath(runId, checkpoint.artifactHash);
+    let raw: string | null;
+    try {
+      raw = this.fs.readOwnerOnlyFile
+        ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES)
+        : await this.fs.readFile(path);
+    } catch (error) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact could not be read safely.',
+        error,
+      );
+    }
+    if (raw === null) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_MISSING',
+        'Workflow checkpoint artifact is missing.',
+      );
+    }
+    if (Buffer.byteLength(raw, 'utf8') > WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_INVALID',
+        'Workflow checkpoint artifact exceeds its byte limit.',
+      );
+    }
+    const value = parseBoundedJson(
+      raw,
+      `Workflow checkpoint artifact for ${runId}`,
+      WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES,
+    );
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Reflect.ownKeys(value).sort().join(',') !== 'artifactHash,bytesBase64,schema'
+    ) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact framing is invalid.',
+      );
+    }
+    const artifact = value as Record<string, unknown>;
+    if (
+      artifact.schema !== 'openslack.workflow_checkpoint_artifact.v1' ||
+      artifact.artifactHash !== checkpoint.artifactHash ||
+      typeof artifact.bytesBase64 !== 'string' ||
+      workflowCheckpointCanonicalJson(artifact) !== raw
+    ) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact framing is invalid.',
+      );
+    }
+    const bytes = Buffer.from(artifact.bytesBase64, 'base64');
+    if (
+      bytes.byteLength === 0 ||
+      bytes.byteLength > WORKFLOW_CHECKPOINT_ARTIFACT_MAX_BYTES ||
+      bytes.toString('base64') !== artifact.bytesBase64 ||
+      workflowCheckpointBytesHash(bytes) !== checkpoint.artifactHash
+    ) {
+      throw workflowCheckpointError(
+        'WORKFLOW_CHECKPOINT_ARTIFACT_TAMPERED',
+        'Workflow checkpoint artifact digest is invalid.',
+      );
+    }
+  }
+
+  private async withCheckpointMutation<T>(runId: string, action: () => Promise<T>): Promise<T> {
+    return enqueueByKey(this.checkpointQueues, runId, async () => {
+      if (this.fs.withExclusiveLock) {
+        return this.fs.withExclusiveLock(`${this.checkpointControlPath(runId)}.lock`, action);
+      }
+      return action();
+    });
+  }
+
+  private async drainPendingCheckpointObservations(runId: string): Promise<void> {
+    if (!this.checkpointObservationPort) return;
+    while (true) {
+      const pending = await this.withCheckpointMutation(runId, async () => {
+        const state = await this.requireCheckpointControl(runId);
+        return [...state.pendingObservations];
+      });
+      if (pending.length === 0) return;
+      let acknowledged = 0;
+      for (const observation of pending) {
+        try {
+          await this.checkpointObservationPort.journalObservation(
+            observation.sourceSequence,
+            observation.operation,
+            observation.observation,
+          );
+          acknowledged += 1;
+        } catch {
+          break;
+        }
+      }
+      if (acknowledged === 0) return;
+      try {
+        await this.withCheckpointMutation(runId, async () => {
+          const state = await this.requireCheckpointControl(runId);
+          const exactPrefix = pending.slice(0, acknowledged).every((expected, index) => {
+            const current = state.pendingObservations[index];
+            return (
+              current?.sourceSequence === expected.sourceSequence &&
+              current.operation === expected.operation &&
+              workflowCheckpointHash(current.observation) ===
+                workflowCheckpointHash(expected.observation)
+            );
+          });
+          if (!exactPrefix) return;
+          await this.writeCheckpointControl(
+            runId,
+            validateWorkflowCheckpointControlState(
+              { ...state, pendingObservations: state.pendingObservations.slice(acknowledged) },
+              runId,
+            ),
+          );
+        });
+      } catch {
+        // The journal is already durable. Acknowledgement cleanup is shadow-only.
+        return;
+      }
+      if (acknowledged < pending.length) return;
+    }
+  }
+
   // ── Agent result cache ────────────────────────────────────────────────────
 
   /**
@@ -1020,22 +1685,31 @@ export class RunStore {
       return [];
     }
 
-    const results: WorkflowRunInfo[] = [];
-    for (const runId of runIds) {
-      const meta = await this.loadMeta(runId);
-      const st = await this.loadStatus(runId);
-      if (meta && st && st.status === status) {
-        results.push({
-          runId: meta.runId,
-          workflowName: meta.workflowName,
-          mode: meta.mode,
-          status: st.status as RunStatusState,
-          startedAt: meta.startedAt,
-          updatedAt: st.updatedAt,
-        });
+    const results = new Array<WorkflowRunInfo | null>(runIds.length).fill(null);
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= runIds.length) return;
+        const runId = runIds[index]!;
+        const [meta, st] = await Promise.all([this.loadMeta(runId), this.loadStatus(runId)]);
+        if (meta && st && st.status === status) {
+          results[index] = {
+            runId: meta.runId,
+            workflowName: meta.workflowName,
+            mode: meta.mode,
+            status: st.status as RunStatusState,
+            startedAt: meta.startedAt,
+            updatedAt: st.updatedAt,
+          };
+        }
       }
-    }
-    return results;
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(WORKFLOW_RUN_LIST_CONCURRENCY, runIds.length) }, worker),
+    );
+    return results.filter((item): item is WorkflowRunInfo => item !== null);
   }
 }
 
@@ -1073,6 +1747,14 @@ function createNodeFs(): RunStoreFs {
         throw err;
       }
     },
+    async readOwnerOnlyFile(path: string, maxBytes: number) {
+      try {
+        return await readOwnerFile(resolve(path), productionJournalSecurity(), maxBytes);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      }
+    },
     async appendFile(path: string, line: string) {
       await fsAppendFile(resolve(path), line, 'utf-8');
     },
@@ -1083,6 +1765,34 @@ function createNodeFs(): RunStoreFs {
       } catch {
         return false;
       }
+    },
+    async withExclusiveLock<T>(path: string, action: () => Promise<T>) {
+      const target = resolve(path);
+      let release: () => Promise<void>;
+      try {
+        release = await acquireOwnerJournalLock(
+          dirname(target),
+          basename(target, '.lock'),
+          productionJournalSecurity(),
+        );
+      } catch (error) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+          'Workflow checkpoint control lock could not be acquired.',
+          error,
+        );
+      }
+      try {
+        return await action();
+      } finally {
+        await release();
+      }
+    },
+    async writeOwnerOnlyAtomic(path: string, content: string) {
+      await atomicWrite(resolve(path), content, productionJournalSecurity());
+    },
+    async ensureOwnerOnlyDirectory(path: string) {
+      await ensureOwnerDirectory(resolve(path), productionJournalSecurity());
     },
     async fileIdentity(path: string) {
       try {
@@ -1274,8 +1984,12 @@ export function encodeRunMetaArguments(meta: RunMeta): ReturnType<typeof encodeW
   return encodeWorkflowArguments(decodeRunMetaArguments(meta));
 }
 
-function parseBoundedJson(raw: string, label: string): unknown {
-  if (Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes) {
+function parseBoundedJson(
+  raw: string,
+  label: string,
+  maxBytes = WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes,
+): unknown {
+  if (Buffer.byteLength(raw, 'utf8') > maxBytes) {
     throw new Error(`${label} exceeds its byte limit.`);
   }
   try {

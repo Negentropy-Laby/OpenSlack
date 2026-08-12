@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,10 +13,12 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/app"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	shadowpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore/postgres"
 )
 
-const requiredSchemaVersion int64 = 3
+const minimumSchemaVersion int64 = 1
+const maximumSchemaVersion int64 = 4
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -36,7 +37,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := checkDatabaseReady(startup, pool); err != nil {
+	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumSchemaVersion, Maximum: maximumSchemaVersion}); err != nil {
 		logger.Error("workflow_control_shadow_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}
@@ -50,31 +51,4 @@ func main() {
 		logger.Error("workflow_control_shadow_stopped_with_error", "code", "HTTP_SERVER_FAILED")
 		os.Exit(1)
 	}
-}
-
-func checkDatabaseReady(ctx context.Context, pool *pgxpool.Pool) error {
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("database ping: %w", err)
-	}
-	rows, err := pool.Query(ctx, `SELECT version, dirty FROM schema_migrations`)
-	if err != nil {
-		return fmt.Errorf("read schema_migrations: %w", err)
-	}
-	defer rows.Close()
-	count := 0
-	var version int64
-	var dirty bool
-	for rows.Next() {
-		count++
-		if err := rows.Scan(&version, &dirty); err != nil {
-			return fmt.Errorf("scan schema_migrations: %w", err)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate schema_migrations: %w", err)
-	}
-	if count != 1 || version != requiredSchemaVersion || dirty {
-		return fmt.Errorf("database schema version is not exactly %d clean", requiredSchemaVersion)
-	}
-	return nil
 }

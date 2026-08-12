@@ -1,0 +1,421 @@
+openapi: 3.0.3
+info:
+  title: OpenSlack Workflow Checkpoint Shadow Qualification API
+  version: 1.0.0
+  description: Default-off, observation-only GS9-C surface. TypeScript remains checkpoint and resume authority.
+paths:
+  /health/live:
+    get:
+      responses:
+        '200': { description: Live }
+  /health/ready:
+    get:
+      responses:
+        '200': { description: Ready }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /version:
+    get:
+      responses:
+        '200': { description: Version and non-authority declaration }
+  /metrics:
+    get:
+      responses:
+        '200': { description: Bounded Prometheus metrics }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/checkpoints:
+    post:
+      x-openslack-replay-response: exact-original
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointEnvelope' }
+      responses:
+        '200':
+          description: Exact accepted receipt replay
+          headers:
+            Idempotency-Replayed: { required: true, schema: { type: string, enum: ['true'] } }
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CheckpointReceipt' } } }
+        '201':
+          description: Observation accepted
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CheckpointReceipt' } } }
+        '202':
+          description: Reconciliation required after an unknown commit result
+          headers:
+            Idempotency-Replayed: { required: false, schema: { type: string, enum: ['true'] } }
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CheckpointReceipt' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/InvalidContent' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/runs/{runId}/checkpoint-head:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/SafeId' } }
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+      responses:
+        '200':
+          {
+            description: Observed head,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/CheckpointHead' } } },
+          }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/receipts/{idempotencyKey}:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {
+            name: idempotencyKey,
+            in: path,
+            required: true,
+            schema: { $ref: '#/components/schemas/IdempotencyKey' },
+          }
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+      responses:
+        '200':
+          {
+            description: Exact stored receipt,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/CheckpointReceipt' } } },
+          }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Workspace:
+      {
+        name: X-OpenSlack-Workspace-ID,
+        in: header,
+        required: true,
+        schema: { $ref: '#/components/schemas/SafeId' },
+      }
+    Caller:
+      {
+        name: X-OpenSlack-Caller-ID,
+        in: header,
+        required: true,
+        schema: { $ref: '#/components/schemas/SafeId' },
+      }
+    IdempotencyKey:
+      {
+        name: Idempotency-Key,
+        in: header,
+        required: true,
+        schema: { $ref: '#/components/schemas/IdempotencyKey' },
+      }
+  responses:
+    Unauthorized:
+      {
+        description: Identity rejected,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    NotFound:
+      {
+        description: Record not found,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Conflict:
+      {
+        description: Sequence or idempotency conflict,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    UnsupportedMediaType:
+      {
+        description: Content type rejected,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    RequestTooLarge:
+      {
+        description: Request body exceeds the frozen byte limit,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    InvalidContent:
+      {
+        description: Canonical observation rejected,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Internal:
+      {
+        description: Stored integrity or commit outcome failure,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    Unavailable:
+      {
+        description: PostgreSQL unavailable,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+  schemas:
+    SafeId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$' }
+    SafeRef: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$' }
+    Hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+    SafeInteger: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+    IdempotencyKey:
+      { type: string, pattern: '^openslack\.workflow-checkpoint-shadow\.v1\.[0-9a-f]{64}$' }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_error.v1] }
+        code: { $ref: '#/components/schemas/SafeId' }
+        message: { type: string, minLength: 1, maxLength: 512 }
+    RunnerBinding:
+      type: object
+      additionalProperties: false
+      required:
+        [workspaceId, jobId, attemptId, leaseId, fencingToken, correlationId, runnerBuildHash]
+      properties:
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        jobId: { $ref: '#/components/schemas/SafeId' }
+        attemptId: { $ref: '#/components/schemas/SafeId' }
+        leaseId: { $ref: '#/components/schemas/SafeId' }
+        fencingToken: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        correlationId: { $ref: '#/components/schemas/SafeId' }
+        runnerBuildHash: { $ref: '#/components/schemas/Hash' }
+    Checkpoint:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          checkpointId,
+          phaseId,
+          phaseIndex,
+          commitPoint,
+          artifactRef,
+          artifactHash,
+          resultHash,
+          cacheKeyHash,
+          committedRevision,
+          resumeGeneration,
+          committedAt,
+        ]
+      properties:
+        checkpointId: { $ref: '#/components/schemas/SafeId' }
+        phaseId: { $ref: '#/components/schemas/SafeId' }
+        phaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+        commitPoint: { type: string, enum: [after_phase_work] }
+        artifactRef: { $ref: '#/components/schemas/SafeRef' }
+        artifactHash: { $ref: '#/components/schemas/Hash' }
+        resultHash: { allOf: [{ $ref: '#/components/schemas/Hash' }], nullable: true }
+        cacheKeyHash: { allOf: [{ $ref: '#/components/schemas/Hash' }], nullable: true }
+        committedRevision: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        resumeGeneration: { $ref: '#/components/schemas/SafeInteger' }
+        committedAt:
+          {
+            type: string,
+            format: date-time,
+            pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$',
+          }
+    CheckpointObservation:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - properties:
+            checkpoint: { $ref: '#/components/schemas/Checkpoint' }
+            priorCheckpoint: { nullable: true, enum: [null] }
+            nextPhaseId: { nullable: true, enum: [null] }
+            nextPhaseIndex: { nullable: true, enum: [null] }
+        - properties:
+            checkpoint: { nullable: true, enum: [null] }
+            priorCheckpoint: { $ref: '#/components/schemas/Checkpoint' }
+            nextPhaseId: { $ref: '#/components/schemas/SafeId' }
+            nextPhaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+        - properties:
+            checkpoint: { nullable: true, enum: [null] }
+            priorCheckpoint: { nullable: true, enum: [null] }
+            nextPhaseId: { type: string, enum: [phase-0] }
+            nextPhaseIndex: { type: integer, enum: [0] }
+      required:
+        [
+          schema,
+          authority,
+          goRole,
+          runId,
+          revision,
+          resumeGeneration,
+          workflowSourceHash,
+          manifestHash,
+          inputHash,
+          runner,
+          checkpoint,
+          priorCheckpoint,
+          nextPhaseId,
+          nextPhaseIndex,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_observation.v1] }
+        authority: { type: string, enum: [typescript] }
+        goRole: { type: string, enum: [observer_only] }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        revision: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        resumeGeneration: { $ref: '#/components/schemas/SafeInteger' }
+        workflowSourceHash: { $ref: '#/components/schemas/Hash' }
+        manifestHash: { $ref: '#/components/schemas/Hash' }
+        inputHash: { $ref: '#/components/schemas/Hash' }
+        runner: { $ref: '#/components/schemas/RunnerBinding' }
+        checkpoint: { allOf: [{ $ref: '#/components/schemas/Checkpoint' }], nullable: true }
+        priorCheckpoint: { allOf: [{ $ref: '#/components/schemas/Checkpoint' }], nullable: true }
+        nextPhaseId: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        nextPhaseIndex: { allOf: [{ $ref: '#/components/schemas/SafeInteger' }], nullable: true }
+    CheckpointEnvelope:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - properties:
+            operation: { type: string, enum: [checkpoint_commit] }
+            observation:
+              allOf:
+                - { $ref: '#/components/schemas/CheckpointObservation' }
+                - properties:
+                    checkpoint: { $ref: '#/components/schemas/Checkpoint' }
+                    priorCheckpoint: { nullable: true, enum: [null] }
+                    nextPhaseId: { nullable: true, enum: [null] }
+                    nextPhaseIndex: { nullable: true, enum: [null] }
+        - properties:
+            operation: { type: string, enum: [resume_advance] }
+            observation:
+              allOf:
+                - { $ref: '#/components/schemas/CheckpointObservation' }
+                - oneOf:
+                    - properties:
+                        checkpoint: { nullable: true, enum: [null] }
+                        priorCheckpoint: { $ref: '#/components/schemas/Checkpoint' }
+                        nextPhaseId: { $ref: '#/components/schemas/SafeId' }
+                        nextPhaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+                    - properties:
+                        checkpoint: { nullable: true, enum: [null] }
+                        priorCheckpoint: { nullable: true, enum: [null] }
+                        nextPhaseId: { type: string, enum: [phase-0] }
+                        nextPhaseIndex: { type: integer, enum: [0] }
+      required: [schema, goRole, sourceSequence, operation, observation, observationHash]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_envelope.v1] }
+        goRole: { type: string, enum: [observer_only] }
+        sourceSequence: { type: integer, format: int64, minimum: 1, maximum: 9007199254740990 }
+        operation: { type: string, enum: [checkpoint_commit, resume_advance] }
+        observation: { $ref: '#/components/schemas/CheckpointObservation' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+    CheckpointReceipt:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - properties:
+            status: { type: string, enum: [accepted] }
+            parity: { type: string, enum: [matched] }
+            mismatchCode: { nullable: true, enum: [null] }
+            observationId: { $ref: '#/components/schemas/SafeId' }
+            reconciliationToken: { nullable: true, enum: [null] }
+            committedAt: { type: string, format: date-time }
+        - properties:
+            status: { type: string, enum: [accepted] }
+            parity: { type: string, enum: [mismatched] }
+            mismatchCode: { $ref: '#/components/schemas/SafeId' }
+            observationId: { $ref: '#/components/schemas/SafeId' }
+            reconciliationToken: { nullable: true, enum: [null] }
+            committedAt: { type: string, format: date-time }
+        - properties:
+            status: { type: string, enum: [reconciliation_required] }
+            parity: { type: string, enum: [unknown] }
+            mismatchCode: { nullable: true, enum: [null] }
+            observationId: { nullable: true, enum: [null] }
+            reconciliationToken: { $ref: '#/components/schemas/SafeId' }
+            committedAt: { nullable: true, enum: [null] }
+      required:
+        [
+          schema,
+          status,
+          idempotencyKey,
+          receiptId,
+          observationId,
+          workspaceId,
+          runId,
+          sourceSequence,
+          operation,
+          parity,
+          mismatchCode,
+          reconciliationToken,
+          envelopeHash,
+          observationHash,
+          serviceBuildHash,
+          committedAt,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_receipt.v1] }
+        status: { type: string, enum: [accepted, reconciliation_required] }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        receiptId: { $ref: '#/components/schemas/SafeId' }
+        observationId: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        sourceSequence: { type: integer, format: int64, minimum: 1, maximum: 9007199254740990 }
+        operation: { type: string, enum: [checkpoint_commit, resume_advance] }
+        parity: { type: string, enum: [matched, mismatched, unknown] }
+        mismatchCode: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        reconciliationToken: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        envelopeHash: { $ref: '#/components/schemas/Hash' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+        serviceBuildHash: { $ref: '#/components/schemas/Hash' }
+        committedAt: { type: string, format: date-time, nullable: true }
+    CheckpointHead:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - properties:
+            matchedSourceSequence:
+              { type: integer, format: int64, minimum: 1, maximum: 9007199254740990 }
+            observationHash: { $ref: '#/components/schemas/Hash' }
+            observation: { $ref: '#/components/schemas/CheckpointObservation' }
+        - properties:
+            matchedSourceSequence: { nullable: true, enum: [null] }
+            observationHash: { nullable: true, enum: [null] }
+            observation: { nullable: true, enum: [null] }
+      required:
+        [
+          schema,
+          goRole,
+          workspaceId,
+          runId,
+          sourceSequence,
+          operation,
+          matchedSourceSequence,
+          mismatchLatched,
+          observationHash,
+          observation,
+          updatedAt,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_head.v1] }
+        goRole: { type: string, enum: [observer_only] }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        sourceSequence: { type: integer, format: int64, minimum: 1, maximum: 9007199254740990 }
+        operation: { type: string, enum: [checkpoint_commit, resume_advance] }
+        matchedSourceSequence:
+          { type: integer, format: int64, minimum: 1, maximum: 9007199254740990, nullable: true }
+        mismatchLatched: { type: boolean }
+        observationHash: { allOf: [{ $ref: '#/components/schemas/Hash' }], nullable: true }
+        observation:
+          { allOf: [{ $ref: '#/components/schemas/CheckpointObservation' }], nullable: true }
+        updatedAt: { type: string, format: date-time }

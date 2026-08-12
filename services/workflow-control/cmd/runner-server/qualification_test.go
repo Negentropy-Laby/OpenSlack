@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,7 +41,36 @@ const (
 var (
 	errGS8BTerminationUncertain = errors.New("GS8-B qualification: simulated unproven process termination")
 	errGS8BUnknownEffectOutcome = errors.New("GS8-B qualification: simulated true unknown effect outcome")
+	gs8bQualificationProcess    struct {
+		sync.Once
+		identity string
+		err      error
+	}
 )
+
+func gs8bQualificationProcessIdentity() (string, error) {
+	gs8bQualificationProcess.Do(func() {
+		gs8bQualificationProcess.identity, gs8bQualificationProcess.err = newBootInstanceID(
+			"runner.restart.process",
+			rand.Reader,
+		)
+	})
+	return gs8bQualificationProcess.identity, gs8bQualificationProcess.err
+}
+
+func TestGS8BQualificationProcessIdentityIsStableWithinOneProcess(t *testing.T) {
+	first, err := gs8bQualificationProcessIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := gs8bQualificationProcessIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" || first != second {
+		t.Fatalf("qualification process identity is not process-stable: first=%q second=%q", first, second)
+	}
+}
 
 // TestGS8BQualification is deliberately environment-gated. When enabled it
 // uses a real PostgreSQL schema, the externally anchored sealed worker bundle,
@@ -255,6 +286,10 @@ func TestGS8BRestartQualification(t *testing.T) {
 		t.Skip("GS8-B Go/PostgreSQL restart qualification is not enabled")
 	}
 	schema := strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA"))
+	processIdentity, err := gs8bQualificationProcessIdentity()
+	if err != nil {
+		t.Fatalf("create qualification process identity: %v", err)
+	}
 	switch phase {
 	case "seed":
 		pool := testsupport.OpenPersistentSchema(t, schema, true)
@@ -267,7 +302,7 @@ func TestGS8BRestartQualification(t *testing.T) {
 CREATE TABLE gs8b_restart_qualification (
 	  fixture text PRIMARY KEY,
 	  postmaster_started_at timestamptz NOT NULL,
-	  go_pid bigint NOT NULL,
+	  go_process_identity text NOT NULL,
 	  boot_instance_id text NOT NULL,
   job_id text NOT NULL,
   attempt_id text NOT NULL,
@@ -308,7 +343,7 @@ UPDATE workflow_runner_jobs SET state='running' WHERE workspace_id=$4 AND job_id
 					}
 				}
 			}
-			if _, err := pool.Exec(t.Context(), `INSERT INTO gs8b_restart_qualification (fixture,postmaster_started_at,go_pid,boot_instance_id,job_id,attempt_id,lease_id,fence) VALUES ($1,pg_postmaster_start_time(),$2,$3,$4,$5,$6,$7)`, fixture, os.Getpid(), seedBoot, lease.JobID, lease.AttemptID, lease.LeaseID, lease.FencingToken); err != nil {
+			if _, err := pool.Exec(t.Context(), `INSERT INTO gs8b_restart_qualification (fixture,postmaster_started_at,go_process_identity,boot_instance_id,job_id,attempt_id,lease_id,fence) VALUES ($1,pg_postmaster_start_time(),$2,$3,$4,$5,$6,$7)`, fixture, processIdentity, seedBoot, lease.JobID, lease.AttemptID, lease.LeaseID, lease.FencingToken); err != nil {
 				t.Fatalf("record restart fixture %s: %v", fixture, err)
 			}
 		}
@@ -317,12 +352,12 @@ UPDATE workflow_runner_jobs SET state='running' WHERE workspace_id=$4 AND job_id
 		pool := testsupport.OpenPersistentSchema(t, schema, false)
 		repository := runnerpostgres.New(pool)
 		var seededPostmaster time.Time
-		var seededPID int64
+		var seededProcessIdentity string
 		var seededBoot string
 		if err := pool.QueryRow(t.Context(), `
-		SELECT postmaster_started_at,go_pid,boot_instance_id
+		SELECT postmaster_started_at,go_process_identity,boot_instance_id
 		FROM gs8b_restart_qualification WHERE fixture='safe'`).Scan(
-			&seededPostmaster, &seededPID, &seededBoot,
+			&seededPostmaster, &seededProcessIdentity, &seededBoot,
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -330,8 +365,8 @@ UPDATE workflow_runner_jobs SET state='running' WHERE workspace_id=$4 AND job_id
 		if err := pool.QueryRow(t.Context(), `SELECT pg_postmaster_start_time()`).Scan(&currentPostmaster); err != nil {
 			t.Fatal(err)
 		}
-		if currentPostmaster.Equal(seededPostmaster) || seededPID == int64(os.Getpid()) {
-			t.Fatalf("restart qualification requires a new PostgreSQL and Go process: postgres seed=%s current=%s go seed=%d current=%d", seededPostmaster, currentPostmaster, seededPID, os.Getpid())
+		if currentPostmaster.Equal(seededPostmaster) || seededProcessIdentity == processIdentity {
+			t.Fatalf("restart qualification requires a new PostgreSQL and Go process: postgres seed=%s current=%s go seed=%q current=%q", seededPostmaster, currentPostmaster, seededProcessIdentity, processIdentity)
 		}
 		verifyBoot, err := newBootInstanceID("runner.restart.verify", bytes.NewReader(bytes.Repeat([]byte{2}, 16)))
 		if err != nil || verifyBoot == seededBoot {

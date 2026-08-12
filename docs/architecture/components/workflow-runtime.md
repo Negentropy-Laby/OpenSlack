@@ -827,6 +827,39 @@ budget, canary routing, rollback, migration, or writer retirement. The evidence 
 `GS9-B LOCAL_PASS / Go authority NOT_CLAIMED` after the reviewed real-PostgreSQL race, restart,
 atomicity, migration, OpenAPI, and default-off image gates pass.
 
+### GS9-C checkpoint and resume shadow
+
+GS9-C introduces an explicit awaited `ctx.checkpoint.commit()` for evidence recorded after phase
+work. The existing `ctx.phase()` remains a synchronous phase-entry marker for compatibility and
+cannot be used as a durable commit claim. The TypeScript `RunStore` persists bounded artifact bytes
+and a canonical checkpoint-control head before journaling a hash-only observation.
+
+The control head owns revision, resume generation, source sequence, checkpoint prefix, immutable
+workflow/manifest/input identity, and the current runner binding. Resume is allowed only with the
+opaque binding minted by `WorkflowRunnerSession` after an advancing lease receipt; public callers
+cannot manufacture that authority. Each valid resume uses a new attempt/lease and higher fence and
+emits `resume_advance` before the next checkpoint. Artifact and control corruption, phase gaps,
+identity drift, and stale bindings fail closed in TypeScript.
+
+An accepted lease may resume before any checkpoint only at the derived `phase-0` identity with a
+null prior checkpoint. Consecutive new leases may repeat that state, but the first committed
+checkpoint must still be phase 0. Ordinary `createRuntime()` instances expose no checkpoint member;
+the required capability exists only on the internal runner-authority runtime subtype.
+
+The optional observer is disabled unless the trusted runner host injects a closed loopback
+configuration. Local journal durability is awaited; remote delivery is ordered and asynchronous,
+so Go failure cannot delay or roll back the TypeScript checkpoint. Artifact bytes, workflow input,
+prompts, results, provider payloads, approval details, credentials, and paths are excluded from the
+wire.
+
+The RunStore uses the same owner-safe, deadline-bounded lock primitive as the Workflow Control
+shadow journal. Pending observations are journaled from a stable snapshot and only the exact
+successful prefix is removed under a second lock, preserving concurrent tail appends for replay.
+
+The isolated Go checkpoint shadow validates `checkpoint_commit` and `resume_advance`, recomputes a
+matched prefix, records exact receipts and reconciliation, and never participates in resume. This
+does not negotiate runner v2, activate Go Workflow authority, or change CLI/MCP/Qoder reads.
+
 ### Operator Module
 
 The Operator module provides the CLI commands that interface with the runtime:

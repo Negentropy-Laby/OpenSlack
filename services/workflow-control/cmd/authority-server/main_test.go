@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestAuthorityServerRequiresSchemaVersionThree(t *testing.T) {
-	if requiredSchemaVersion != 3 {
-		t.Fatalf("schema version=%d", requiredSchemaVersion)
+	if minimumSchemaVersion != 3 || maximumSchemaVersion != 4 {
+		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
 	}
 }

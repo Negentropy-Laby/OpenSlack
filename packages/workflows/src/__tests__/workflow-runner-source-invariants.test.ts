@@ -80,6 +80,43 @@ describe('GS8-B source and authority invariants', () => {
     expect(worker).not.toContain('export async function executeWorkflowRunnerJob');
   });
 
+  it('keeps checkpoint lease authority out of every public execution surface', async () => {
+    const [index, packageJson, execute, runtime] = await Promise.all([
+      source('packages/workflows/src/index.ts'),
+      source('packages/workflows/package.json'),
+      source('packages/workflows/src/execute.ts'),
+      source('packages/workflows/src/runtime.ts'),
+    ]);
+    expect(index).not.toContain('createWorkflowCheckpointLeaseAuthority');
+    expect(index).not.toContain('WorkflowCheckpointLeaseAuthority');
+    expect(JSON.parse(packageJson).exports).toEqual({
+      '.': {
+        types: './dist/index.d.ts',
+        import: './dist/index.js',
+      },
+      './workflow-runner-worker': {
+        types: './dist/workflow-runner-worker.d.ts',
+        import: './dist/workflow-runner-worker.js',
+      },
+    });
+    const publicRun = execute.slice(
+      execute.indexOf('export async function executeRun('),
+      execute.indexOf('/** @internal Worker authority path'),
+    );
+    const publicResume = execute.slice(
+      execute.indexOf('export async function executeResume('),
+      execute.indexOf('/** @internal Worker authority path', execute.indexOf('executeResume(')),
+    );
+    expect(publicRun).not.toContain('checkpointAuthority');
+    expect(publicResume).not.toContain('checkpointAuthority');
+    expect(
+      runtime.slice(
+        runtime.indexOf('export function createRuntime('),
+        runtime.indexOf('/** @internal Accepted worker path'),
+      ),
+    ).not.toContain('WorkflowCheckpointLeaseAuthority');
+  });
+
   it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {
     const [worker, legacyLoader, packageJson] = await Promise.all([
       source('packages/workflows/src/workflow-runner-worker.ts'),
