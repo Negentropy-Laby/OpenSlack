@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-control/v1/schemas/workflow-effect-control-observation.v1.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_observation.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "goEffectDecisionAuthority": { "const": false },
+        "goEffectExecutionAuthority": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "requiredCapabilityHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "operation": { "const": "approval_created" },
+        "approvalRevision": { "const": 0 },
+        "approvalStatus": { "const": "pending" },
+        "approvalDecisionHash": { "type": "null" },
+        "humanDecision": { "type": "null" },
+        "bindingHash": { "type": "null" },
+        "decision": { "type": "null" },
+        "auditEventId": { "type": "null" },
+        "auditStatus": { "type": "null" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "goEffectDecisionAuthority",
+        "goEffectExecutionAuthority",
+        "workspaceId",
+        "runId",
+        "occurrenceId",
+        "approvalId",
+        "approvalHash",
+        "effectId",
+        "effectHash",
+        "correlationId",
+        "requiredCapabilityHash",
+        "observedAt",
+        "operation",
+        "approvalRevision",
+        "approvalStatus",
+        "approvalDecisionHash",
+        "humanDecision",
+        "bindingHash",
+        "decision",
+        "auditEventId",
+        "auditStatus"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_observation.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "goEffectDecisionAuthority": { "const": false },
+        "goEffectExecutionAuthority": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "requiredCapabilityHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "approvalStatus": { "enum": ["approved", "rejected"] },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "humanDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": { "const": "openslack.workflow_effect_human_decision_projection.v1" },
+            "channel": { "const": "local_human_attestation_tty_v1" },
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "runId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "approvalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "correlationId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "decision": { "enum": ["approved", "rejected"] },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "approvalExpiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "bindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "schema",
+            "channel",
+            "principalId",
+            "workspaceId",
+            "capability",
+            "runId",
+            "approvalId",
+            "correlationId",
+            "decision",
+            "reasonHash",
+            "approvalExpiresAt",
+            "issuedAt",
+            "expiresAt",
+            "bindingHash",
+            "attestationHash",
+            "decidedAt"
+          ]
+        },
+        "bindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "decision": { "enum": ["approved", "rejected"] },
+        "auditEventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "operation": { "const": "approval_decided" },
+        "approvalRevision": { "const": 1 },
+        "auditStatus": { "const": "pending" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "goEffectDecisionAuthority",
+        "goEffectExecutionAuthority",
+        "workspaceId",
+        "runId",
+        "occurrenceId",
+        "approvalId",
+        "approvalHash",
+        "effectId",
+        "effectHash",
+        "correlationId",
+        "requiredCapabilityHash",
+        "observedAt",
+        "approvalStatus",
+        "approvalDecisionHash",
+        "humanDecision",
+        "bindingHash",
+        "decision",
+        "auditEventId",
+        "operation",
+        "approvalRevision",
+        "auditStatus"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_observation.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "goEffectDecisionAuthority": { "const": false },
+        "goEffectExecutionAuthority": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "requiredCapabilityHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "approvalStatus": { "enum": ["approved", "rejected"] },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "humanDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": { "const": "openslack.workflow_effect_human_decision_projection.v1" },
+            "channel": { "const": "local_human_attestation_tty_v1" },
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "runId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "approvalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "correlationId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "decision": { "enum": ["approved", "rejected"] },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "approvalExpiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            },
+            "bindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "schema",
+            "channel",
+            "principalId",
+            "workspaceId",
+            "capability",
+            "runId",
+            "approvalId",
+            "correlationId",
+            "decision",
+            "reasonHash",
+            "approvalExpiresAt",
+            "issuedAt",
+            "expiresAt",
+            "bindingHash",
+            "attestationHash",
+            "decidedAt"
+          ]
+        },
+        "bindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "decision": { "enum": ["approved", "rejected"] },
+        "auditEventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "operation": { "const": "audit_recorded" },
+        "approvalRevision": { "const": 2 },
+        "auditStatus": { "const": "recorded" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "goEffectDecisionAuthority",
+        "goEffectExecutionAuthority",
+        "workspaceId",
+        "runId",
+        "occurrenceId",
+        "approvalId",
+        "approvalHash",
+        "effectId",
+        "effectHash",
+        "correlationId",
+        "requiredCapabilityHash",
+        "observedAt",
+        "approvalStatus",
+        "approvalDecisionHash",
+        "humanDecision",
+        "bindingHash",
+        "decision",
+        "auditEventId",
+        "operation",
+        "approvalRevision",
+        "auditStatus"
+      ]
+    }
+  ]
+}

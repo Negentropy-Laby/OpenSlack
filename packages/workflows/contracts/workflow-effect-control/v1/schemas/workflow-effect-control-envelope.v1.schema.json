@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-control/v1/schemas/workflow-effect-control-envelope.v1.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_envelope.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "sourceSequence": { "const": 1 },
+        "operation": { "const": "approval_created" },
+        "observation": {
+          "allOf": [
+            { "$ref": "workflow-effect-control-observation.v1.schema.json" },
+            {
+              "type": "object",
+              "properties": {
+                "operation": { "const": "approval_created" },
+                "approvalRevision": { "const": 0 }
+              },
+              "required": ["operation", "approvalRevision"]
+            }
+          ]
+        },
+        "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "sourceSequence",
+        "operation",
+        "observation",
+        "observationHash"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_envelope.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "sourceSequence": { "const": 2 },
+        "operation": { "const": "approval_decided" },
+        "observation": {
+          "allOf": [
+            { "$ref": "workflow-effect-control-observation.v1.schema.json" },
+            {
+              "type": "object",
+              "properties": {
+                "operation": { "const": "approval_decided" },
+                "approvalRevision": { "const": 1 }
+              },
+              "required": ["operation", "approvalRevision"]
+            }
+          ]
+        },
+        "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "sourceSequence",
+        "operation",
+        "observation",
+        "observationHash"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_envelope.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "goRole": { "const": "observer_only" },
+        "authorityClaim": { "const": "NO_AUTHORITY" },
+        "nonAuthorizingObservation": { "const": true },
+        "sourceSequence": { "const": 3 },
+        "operation": { "const": "audit_recorded" },
+        "observation": {
+          "allOf": [
+            { "$ref": "workflow-effect-control-observation.v1.schema.json" },
+            {
+              "type": "object",
+              "properties": {
+                "operation": { "const": "audit_recorded" },
+                "approvalRevision": { "const": 2 }
+              },
+              "required": ["operation", "approvalRevision"]
+            }
+          ]
+        },
+        "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "goRole",
+        "authorityClaim",
+        "nonAuthorizingObservation",
+        "sourceSequence",
+        "operation",
+        "observation",
+        "observationHash"
+      ]
+    }
+  ]
+}

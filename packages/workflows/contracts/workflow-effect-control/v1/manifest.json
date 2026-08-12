@@ -1,0 +1,100 @@
+{
+  "schema": "openslack.workflow_effect_control_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "observer_only",
+    "goAuthorityClaim": "NO_AUTHORITY",
+    "goAuthorityEligible": false,
+    "legacyRunGateCanAuthorizeEffect": false,
+    "observerCanAuthorizeEffect": false,
+    "runnerV1Unchanged": true
+  },
+  "semanticArtifacts": [
+    "effect_intent",
+    "effect_approval_pending",
+    "effect_decision_committed",
+    "effect_audit_recorded",
+    "effect_execution_claim",
+    "legacy_run_gate_observation"
+  ],
+  "observerOperations": ["approval_created", "approval_decided", "audit_recorded"],
+  "limits": {
+    "maxArtifactBytes": 524288,
+    "maxObservationBytes": 262144,
+    "maxEnvelopeBytes": 524288,
+    "maxJsonDepth": 24,
+    "maxJsonNodes": 8192,
+    "maxSourceSequence": 3
+  },
+  "transport": {
+    "method": "POST",
+    "path": "/v1/shadow/workflow-control/effect-events",
+    "idempotencyKey": "openslack.workflow-effect-control-shadow.v1.{bodyHash}"
+  },
+  "sourceLocks": {
+    "runnerV1ManifestSha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6",
+    "runnerV1GoldenSha256": "b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844",
+    "authorityV2ManifestSha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
+    "authorityV2GoldenSha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe",
+    "checkpointManifestSha256": "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000",
+    "checkpointGoldenSha256": "65bd0ea771fb0984fd97b6a97306953953686f2a381a12b4adb3a8765c1c42c7"
+  },
+  "observerRawForbidden": [
+    "nonce",
+    "reason",
+    "detail",
+    "prompt",
+    "input",
+    "providerRequest",
+    "providerResponse",
+    "credential",
+    "token",
+    "endpoint",
+    "path",
+    "transcript",
+    "stack"
+  ],
+  "artifacts": {
+    "schemas/workflow-effect-control-artifact.v1.schema.json": {
+      "path": "schemas/workflow-effect-control-artifact.v1.schema.json",
+      "byteLength": 31666,
+      "sha256": "45fe06b375c726a0b034eda31ac906aaa00c02e3edd19d20a08f6a3c3853da49"
+    },
+    "schemas/workflow-effect-approval-record.v2.schema.json": {
+      "path": "schemas/workflow-effect-approval-record.v2.schema.json",
+      "byteLength": 19787,
+      "sha256": "59ed40810296d48668d66e1419d975c0cf1ae9376df7cb5a5ef598e25e2b75d3"
+    },
+    "schemas/workflow-effect-control-human-decision.v1.schema.json": {
+      "path": "schemas/workflow-effect-control-human-decision.v1.schema.json",
+      "byteLength": 2555,
+      "sha256": "36798d97090514b33d476ebd369da426f0785242df8413fd5a2f033b26d562c1"
+    },
+    "schemas/workflow-effect-control-observation.v1.schema.json": {
+      "path": "schemas/workflow-effect-control-observation.v1.schema.json",
+      "byteLength": 15036,
+      "sha256": "bd26b934cb155f71f6917753960c6be0e895b188002414c739694b50f8795592"
+    },
+    "schemas/workflow-effect-control-envelope.v1.schema.json": {
+      "path": "schemas/workflow-effect-control-envelope.v1.schema.json",
+      "byteLength": 4131,
+      "sha256": "6c4e540b48b9ba18c7b04eb0f7b21f9861bd2ae831b3b3f4df776ee21befa208"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 165750,
+      "sha256": "81148c51f86464507761aa78cbdc3d8c696235220cb77d5a8a274b1c72bbdf86"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-effect-control-artifact.v1.schema.json",
+    "schemas/workflow-effect-approval-record.v2.schema.json",
+    "schemas/workflow-effect-control-human-decision.v1.schema.json",
+    "schemas/workflow-effect-control-observation.v1.schema.json",
+    "schemas/workflow-effect-control-envelope.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

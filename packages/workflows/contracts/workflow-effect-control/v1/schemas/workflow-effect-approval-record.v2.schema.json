@@ -1,0 +1,606 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-control/v1/schemas/workflow-effect-approval-record.v2.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_approval.v2" },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "maxLength": 512
+        },
+        "workflowHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requiredCapability": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "revision": { "const": 0 },
+        "status": { "const": "pending" },
+        "decision": { "type": "null" },
+        "auditProjection": { "type": "null" }
+      },
+      "required": [
+        "schema",
+        "runId",
+        "approvalId",
+        "correlationId",
+        "workflowId",
+        "workflowVersion",
+        "workflowHash",
+        "inputHash",
+        "effectId",
+        "effectHash",
+        "requiredCapability",
+        "createdAt",
+        "expiresAt",
+        "revision",
+        "status",
+        "decision",
+        "auditProjection"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_approval.v2" },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "maxLength": 512
+        },
+        "workflowHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requiredCapability": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "revision": { "const": 1 },
+        "status": { "const": "approved" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationNonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "principalId",
+            "workspaceId",
+            "capability",
+            "reasonHash",
+            "attestationNonce",
+            "decidedAt"
+          ]
+        },
+        "auditProjection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "const": "pending" },
+            "eventId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            }
+          },
+          "required": ["status", "eventId"]
+        }
+      },
+      "required": [
+        "schema",
+        "runId",
+        "approvalId",
+        "correlationId",
+        "workflowId",
+        "workflowVersion",
+        "workflowHash",
+        "inputHash",
+        "effectId",
+        "effectHash",
+        "requiredCapability",
+        "createdAt",
+        "expiresAt",
+        "revision",
+        "status",
+        "decision",
+        "auditProjection"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_approval.v2" },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "maxLength": 512
+        },
+        "workflowHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requiredCapability": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "revision": { "const": 2 },
+        "status": { "const": "approved" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationNonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "principalId",
+            "workspaceId",
+            "capability",
+            "reasonHash",
+            "attestationNonce",
+            "decidedAt"
+          ]
+        },
+        "auditProjection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "const": "recorded" },
+            "eventId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "recordedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": ["status", "eventId", "recordedAt"]
+        }
+      },
+      "required": [
+        "schema",
+        "runId",
+        "approvalId",
+        "correlationId",
+        "workflowId",
+        "workflowVersion",
+        "workflowHash",
+        "inputHash",
+        "effectId",
+        "effectHash",
+        "requiredCapability",
+        "createdAt",
+        "expiresAt",
+        "revision",
+        "status",
+        "decision",
+        "auditProjection"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_approval.v2" },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "maxLength": 512
+        },
+        "workflowHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requiredCapability": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "revision": { "const": 1 },
+        "status": { "const": "rejected" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationNonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "principalId",
+            "workspaceId",
+            "capability",
+            "reasonHash",
+            "attestationNonce",
+            "decidedAt"
+          ]
+        },
+        "auditProjection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "const": "pending" },
+            "eventId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            }
+          },
+          "required": ["status", "eventId"]
+        }
+      },
+      "required": [
+        "schema",
+        "runId",
+        "approvalId",
+        "correlationId",
+        "workflowId",
+        "workflowVersion",
+        "workflowHash",
+        "inputHash",
+        "effectId",
+        "effectHash",
+        "requiredCapability",
+        "createdAt",
+        "expiresAt",
+        "revision",
+        "status",
+        "decision",
+        "auditProjection"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_approval.v2" },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "workflowVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "maxLength": 512
+        },
+        "workflowHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "requiredCapability": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "revision": { "const": 2 },
+        "status": { "const": "rejected" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "principalId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "capability": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9_-]*(?:\\.[a-z][A-Za-z0-9_-]*)+$",
+              "maxLength": 512
+            },
+            "reasonHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "attestationNonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "decidedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "principalId",
+            "workspaceId",
+            "capability",
+            "reasonHash",
+            "attestationNonce",
+            "decidedAt"
+          ]
+        },
+        "auditProjection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "const": "recorded" },
+            "eventId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+              "maxLength": 256
+            },
+            "recordedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
+            }
+          },
+          "required": ["status", "eventId", "recordedAt"]
+        }
+      },
+      "required": [
+        "schema",
+        "runId",
+        "approvalId",
+        "correlationId",
+        "workflowId",
+        "workflowVersion",
+        "workflowHash",
+        "inputHash",
+        "effectId",
+        "effectHash",
+        "requiredCapability",
+        "createdAt",
+        "expiresAt",
+        "revision",
+        "status",
+        "decision",
+        "auditProjection"
+      ]
+    }
+  ]
+}
