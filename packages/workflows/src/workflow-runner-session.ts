@@ -152,6 +152,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   #cancelReason: WorkflowRunnerCancelRequestMessage['payload']['reason'] | undefined;
   #effectAmbiguous = false;
   #terminal = false;
+  #terminalReceiptAccepted = false;
 
   constructor(options: WorkflowRunnerSessionOptions<TPrepared>) {
     assertHash(options.runnerBuildHash, 'runnerBuildHash');
@@ -359,7 +360,8 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       correlationId: message.correlationId,
       leaseExpiresAt: message.payload.expiresAt,
     });
-    await this.#emitReceiptable('lease_reject', { rejectedAt: this.#now(), reason });
+    const rejectedAt = this.#now();
+    await this.#emitReceiptable('lease_reject', { rejectedAt, reason });
     if (this.#outstanding) await this.#waitForOutstanding();
     this.#clearLease();
     this.#state = 'idle';
@@ -453,9 +455,13 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     if (this.#terminal || this.#state === 'closed' || this.#state === 'reconciliation_required') {
       return;
     }
-    if (this.#outstanding) await this.#waitForOutstanding();
+    // Seal the terminal transition before draining an earlier heartbeat. This
+    // prevents the timer from occupying the single outstanding-event slot in
+    // the receipt-to-terminal continuation window.
     this.#terminal = true;
+    this.#terminalReceiptAccepted = false;
     this.#state = 'waiting_terminal_receipt';
+    if (this.#outstanding) await this.#waitForOutstanding();
     await this.#emitReceiptable('terminal', payload);
     if (this.#queuedCancel) await this.#sendQueuedCancelAck();
     this.#state = 'closed';
@@ -530,7 +536,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       sequence: this.#workerSequence,
       eventId: safeId(kind),
       correlationId: this.#lease.correlationId,
-      sentAt: this.#now(),
+      sentAt: receiptableSentAt(kind, payload) ?? this.#now(),
       payload,
     }) as WorkflowRunnerMessage & { readonly kind: WorkflowRunnerReceiptableKind };
     const prepared = prepareWorkflowRunnerMessage(message);
@@ -569,18 +575,16 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       return;
     }
     this.#lastReceiptSequence = outstanding.message.sequence;
+    if (outstanding.message.kind === 'terminal') this.#terminalReceiptAccepted = true;
     outstanding.resolve();
-    if (this.#queuedCancel && outstanding.message.kind !== 'terminal') {
+    if (this.#queuedCancel && !this.#terminal && outstanding.message.kind !== 'terminal') {
       void this.#sendQueuedCancelAck().catch((error) => this.#fatal(error));
     }
   }
 
   async #handleCancel(message: WorkflowRunnerCancelRequestMessage): Promise<void> {
-    const terminalReceiptOutstanding =
-      this.#terminal &&
-      this.#state === 'waiting_terminal_receipt' &&
-      this.#outstanding?.message.kind === 'terminal';
-    if (!this.#lease || (this.#terminal && !terminalReceiptOutstanding)) {
+    const terminalEmissionInProgress = this.#terminal && this.#state === 'waiting_terminal_receipt';
+    if (!this.#lease || (this.#terminal && !terminalEmissionInProgress)) {
       throw new WorkflowRunnerSessionError(
         'WORKFLOW_RUNNER_SESSION_STATE',
         'Cancel request does not target an active attempt.',
@@ -594,6 +598,10 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
         'Cancel request expired before receipt.',
       );
     }
+    // Receipt validation has already proven the terminal transition. A cancel
+    // arriving before the awaiting close continuation is obsolete; accepting
+    // it must not manufacture a second terminal exchange.
+    if (this.#terminalReceiptAccepted) return;
     if (this.#queuedCancel && this.#queuedCancel.payload.cancelId !== message.payload.cancelId) {
       throw new WorkflowRunnerSessionError(
         'WORKFLOW_RUNNER_SESSION_STATE',
@@ -601,7 +609,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       );
     }
     this.#queuedCancel = message;
-    if (terminalReceiptOutstanding) return;
+    if (terminalEmissionInProgress) return;
     this.#cancelReason = message.payload.reason;
     const validatingOffer = this.#state === 'validating_offer';
     this.#state = 'cancelling';
@@ -615,9 +623,10 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     const cancel = this.#queuedCancel;
     if (!cancel || this.#outstanding) return;
     this.#queuedCancel = undefined;
+    const acknowledgedAt = this.#now();
     await this.#emitReceiptable('cancel_ack', {
       cancelId: cancel.payload.cancelId,
-      acknowledgedAt: this.#now(),
+      acknowledgedAt,
       status: this.#terminal
         ? 'already_terminal'
         : this.#abortController
@@ -685,6 +694,8 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
     this.#lastControlSequence = 0;
+    this.#terminal = false;
+    this.#terminalReceiptAccepted = false;
   }
 
   async #fatal(_error: unknown): Promise<void> {
@@ -692,4 +703,22 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     this.#state = 'closed';
     await this.#options.close(1);
   }
+}
+
+const RECEIPTABLE_SENT_AT_FIELDS: Partial<Record<WorkflowRunnerReceiptableKind, string>> = {
+  lease_accept: 'acceptedAt',
+  lease_reject: 'rejectedAt',
+  heartbeat: 'observedAt',
+  cancel_ack: 'acknowledgedAt',
+  terminal: 'finishedAt',
+};
+
+function receiptableSentAt(
+  kind: WorkflowRunnerReceiptableKind,
+  payload: unknown,
+): string | undefined {
+  const field = RECEIPTABLE_SENT_AT_FIELDS[kind];
+  if (!field || typeof payload !== 'object' || payload === null) return undefined;
+  const value = (payload as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value : undefined;
 }

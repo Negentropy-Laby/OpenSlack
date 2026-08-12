@@ -123,6 +123,7 @@ describe('GS8-B strict worker session', () => {
     const value = descriptor();
     const sent: string[] = [];
     const closed: number[] = [];
+    let clockOffset = 0;
     const prepare = vi.fn(async () => ({ sourceHash: value.workflowSourceHash }));
     const load = vi.fn(
       async (): Promise<WorkflowModule> => ({
@@ -152,7 +153,7 @@ describe('GS8-B strict worker session', () => {
       close: (code) => {
         closed.push(code);
       },
-      now: () => '2026-08-04T01:00:03.000Z',
+      now: () => new Date(Date.parse('2026-08-04T01:00:03.000Z') + clockOffset++).toISOString(),
     });
 
     await session.start();
@@ -162,6 +163,8 @@ describe('GS8-B strict worker session', () => {
     await waitForSent(sent, 2);
     const accept = parsedAt(sent, 1);
     expect(accept.kind).toBe('lease_accept');
+    if (accept.kind !== 'lease_accept') throw new Error('expected lease_accept');
+    expect(accept.payload.acceptedAt).toBe(accept.sentAt);
     expect(prepare).toHaveBeenCalledOnce();
     expect(load).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
@@ -178,6 +181,8 @@ describe('GS8-B strict worker session', () => {
     await waitForSent(sent, 3);
     const terminal = parsedAt(sent, 2);
     expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'completed' } });
+    if (terminal.kind !== 'terminal') throw new Error('expected terminal');
+    expect(terminal.payload.finishedAt).toBe(terminal.sentAt);
     expect(closed).toEqual([]);
     await session.receive(receipt(terminal, 3));
     await vi.waitFor(() => expect(closed).toEqual([0]));
@@ -348,6 +353,121 @@ describe('GS8-B strict worker session', () => {
       'terminal',
       'cancel_ack',
     ]);
+  });
+
+  it('ignores an obsolete cancel after the terminal receipt while close is settling', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    const session = new WorkflowRunnerSession({
+      workspaceId: value.workspaceId,
+      runnerBuildHash: RUNNER_BUILD,
+      runtimeVersion: '22.0.0',
+      descriptorStore: { read: vi.fn(async () => value) },
+      sourceLoader: {
+        prepare: vi.fn(async () => ({})),
+        load: vi.fn(
+          async (): Promise<WorkflowModule> => ({
+            meta: manifest,
+            format: 'openslack-native',
+            hash: 'legacy-hash',
+            run: async () => ({ status: 'completed' }),
+          }),
+        ),
+      },
+      execute: async () => ({ status: 'completed' }),
+      send: (body) => {
+        sent.push(body);
+      },
+      close: (code) => {
+        closed.push(code);
+      },
+      now: () => '2026-08-04T01:00:03.000Z',
+    });
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+    await waitForSent(sent, 3);
+    const terminal = parsedAt(sent, 2);
+
+    const terminalReceipt = session.receive(receipt(terminal, 3));
+    expect(session.state).toBe('waiting_terminal_receipt');
+    await expect(session.receive(cancelRequest(value, 4))).resolves.toBeUndefined();
+    await terminalReceipt;
+    await vi.waitFor(() => expect(closed).toEqual([0]));
+    expect(session.state).toBe('closed');
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
+      'hello',
+      'lease_accept',
+      'terminal',
+    ]);
+  });
+
+  it('seals terminal emission before draining an outstanding heartbeat', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    let finish!: (result: RunResult) => void;
+    const session = new WorkflowRunnerSession({
+      workspaceId: value.workspaceId,
+      runnerBuildHash: RUNNER_BUILD,
+      runtimeVersion: '22.0.0',
+      descriptorStore: { read: vi.fn(async () => value) },
+      sourceLoader: {
+        prepare: vi.fn(async () => ({})),
+        load: vi.fn(
+          async (): Promise<WorkflowModule> => ({
+            meta: manifest,
+            format: 'openslack-native',
+            hash: 'legacy-hash',
+            run: async () => ({ status: 'completed' }),
+          }),
+        ),
+      },
+      execute: async () =>
+        new Promise<RunResult>((resolve) => {
+          finish = resolve;
+        }),
+      send: (body) => {
+        sent.push(body);
+      },
+      close: (code) => {
+        closed.push(code);
+      },
+      now: () => '2026-08-04T01:00:03.000Z',
+    });
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+
+    expect(await session.heartbeat()).toBe(true);
+    await waitForSent(sent, 3);
+    const heartbeat = parsedAt(sent, 2);
+    expect(heartbeat.kind).toBe('heartbeat');
+    finish({ status: 'completed' });
+    await vi.waitFor(() => expect(session.state).toBe('waiting_terminal_receipt'));
+    expect(session.hasOutstandingEvent).toBe(true);
+    expect(await session.heartbeat()).toBe(false);
+
+    await session.receive(receipt(heartbeat, 3));
+    await waitForSent(sent, 4);
+    const terminal = parsedAt(sent, 3);
+    expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'completed' } });
+    await session.receive(receipt(terminal, 4));
+    await vi.waitFor(() => expect(closed).toEqual([0]));
+    expect(session.state).toBe('closed');
   });
 
   it('binds hello_ack to the exact generated pre-lease negotiation identity', async () => {
