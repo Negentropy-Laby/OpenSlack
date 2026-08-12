@@ -123,6 +123,7 @@ describe('GS8-B strict worker session', () => {
     const value = descriptor();
     const sent: string[] = [];
     const closed: number[] = [];
+    let clockOffset = 0;
     const prepare = vi.fn(async () => ({ sourceHash: value.workflowSourceHash }));
     const load = vi.fn(
       async (): Promise<WorkflowModule> => ({
@@ -152,7 +153,7 @@ describe('GS8-B strict worker session', () => {
       close: (code) => {
         closed.push(code);
       },
-      now: () => '2026-08-04T01:00:03.000Z',
+      now: () => new Date(Date.parse('2026-08-04T01:00:03.000Z') + clockOffset++).toISOString(),
     });
 
     await session.start();
@@ -162,6 +163,8 @@ describe('GS8-B strict worker session', () => {
     await waitForSent(sent, 2);
     const accept = parsedAt(sent, 1);
     expect(accept.kind).toBe('lease_accept');
+    if (accept.kind !== 'lease_accept') throw new Error('expected lease_accept');
+    expect(accept.payload.acceptedAt).toBe(accept.sentAt);
     expect(prepare).toHaveBeenCalledOnce();
     expect(load).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
@@ -178,10 +181,51 @@ describe('GS8-B strict worker session', () => {
     await waitForSent(sent, 3);
     const terminal = parsedAt(sent, 2);
     expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'completed' } });
+    if (terminal.kind !== 'terminal') throw new Error('expected terminal');
+    expect(terminal.payload.finishedAt).toBe(terminal.sentAt);
     expect(closed).toEqual([]);
     await session.receive(receipt(terminal, 3));
     await vi.waitFor(() => expect(closed).toEqual([0]));
     expect(session.state).toBe('closed');
+  });
+
+  it('reuses the payload timestamp for an unsupported lease rejection', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    let clockOffset = 0;
+    const session = new WorkflowRunnerSession({
+      workspaceId: value.workspaceId,
+      runnerBuildHash: RUNNER_BUILD,
+      runtimeVersion: '22.0.0',
+      descriptorStore: { read: vi.fn(async () => value) },
+      sourceLoader: {
+        prepare: vi.fn(async () => {
+          throw new Error('unsupported workflow source');
+        }),
+        load: vi.fn(),
+      },
+      execute: vi.fn(),
+      send: (body) => {
+        sent.push(body);
+      },
+      close: vi.fn(),
+      now: () => new Date(Date.parse('2026-08-04T01:00:03.000Z') + clockOffset++).toISOString(),
+    });
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const rejection = parsedAt(sent, 1);
+    expect(rejection.kind).toBe('lease_reject');
+    if (rejection.kind !== 'lease_reject') throw new Error('expected lease_reject');
+    expect(rejection.payload).toMatchObject({ reason: 'unsupported' });
+    expect(rejection.payload.rejectedAt).toBe(rejection.sentAt);
+
+    await session.receive(receipt(rejection, 2));
+    await offerPromise;
+    expect(session.state).toBe('idle');
   });
 
   it('retries the exact outstanding bytes and queues cancel_ack behind its receipt', async () => {
@@ -345,6 +389,154 @@ describe('GS8-B strict worker session', () => {
     expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
       'hello',
       'lease_accept',
+      'terminal',
+      'cancel_ack',
+    ]);
+  });
+
+  it('ignores an obsolete cancel after the terminal receipt while close is settling', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    const session = new WorkflowRunnerSession({
+      workspaceId: value.workspaceId,
+      runnerBuildHash: RUNNER_BUILD,
+      runtimeVersion: '22.0.0',
+      descriptorStore: { read: vi.fn(async () => value) },
+      sourceLoader: {
+        prepare: vi.fn(async () => ({})),
+        load: vi.fn(
+          async (): Promise<WorkflowModule> => ({
+            meta: manifest,
+            format: 'openslack-native',
+            hash: 'legacy-hash',
+            run: async () => ({ status: 'completed' }),
+          }),
+        ),
+      },
+      execute: async () => ({ status: 'completed' }),
+      send: (body) => {
+        sent.push(body);
+      },
+      close: (code) => {
+        closed.push(code);
+      },
+      now: () => '2026-08-04T01:00:03.000Z',
+    });
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+    await waitForSent(sent, 3);
+    const terminal = parsedAt(sent, 2);
+
+    const terminalReceipt = session.receive(receipt(terminal, 3));
+    expect(session.state).toBe('waiting_terminal_receipt');
+    await expect(session.receive(cancelRequest(value, 4))).resolves.toBeUndefined();
+    await terminalReceipt;
+    await vi.waitFor(() => expect(closed).toEqual([0]));
+    expect(session.state).toBe('closed');
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
+      'hello',
+      'lease_accept',
+      'terminal',
+    ]);
+  });
+
+  it('keeps a queued cancel behind terminal emission while draining a heartbeat', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    let clockOffset = 0;
+    const session = new WorkflowRunnerSession({
+      workspaceId: value.workspaceId,
+      runnerBuildHash: RUNNER_BUILD,
+      runtimeVersion: '22.0.0',
+      descriptorStore: { read: vi.fn(async () => value) },
+      sourceLoader: {
+        prepare: vi.fn(async () => ({})),
+        load: vi.fn(
+          async (): Promise<WorkflowModule> => ({
+            meta: manifest,
+            format: 'openslack-native',
+            hash: 'legacy-hash',
+            run: async () => ({ status: 'completed' }),
+          }),
+        ),
+      },
+      execute: async (_workflow, _descriptor, context) =>
+        new Promise<RunResult>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => reject(context.signal.reason), {
+            once: true,
+          });
+        }),
+      send: (body) => {
+        sent.push(body);
+      },
+      close: (code) => {
+        closed.push(code);
+      },
+      now: () => new Date(Date.parse('2026-08-04T01:00:03.000Z') + clockOffset++).toISOString(),
+    });
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+
+    expect(await session.heartbeat()).toBe(true);
+    await waitForSent(sent, 3);
+    const heartbeat = parsedAt(sent, 2);
+    expect(heartbeat.kind).toBe('heartbeat');
+    if (heartbeat.kind !== 'heartbeat') throw new Error('expected heartbeat');
+    expect(heartbeat.payload.observedAt).toBe(heartbeat.sentAt);
+
+    await session.receive(cancelRequest(value, 3));
+    await vi.waitFor(() => expect(session.state).toBe('waiting_terminal_receipt'));
+    expect(session.hasOutstandingEvent).toBe(true);
+    expect(await session.heartbeat()).toBe(false);
+    expect(sent).toHaveLength(3);
+
+    await session.receive(receipt(heartbeat, 4));
+    await waitForSent(sent, 4);
+    const terminal = parsedAt(sent, 3);
+    expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'cancelled' } });
+    if (terminal.kind !== 'terminal') throw new Error('expected terminal');
+    expect(terminal.payload.finishedAt).toBe(terminal.sentAt);
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
+      'hello',
+      'lease_accept',
+      'heartbeat',
+      'terminal',
+    ]);
+
+    await session.receive(receipt(terminal, 5));
+    await waitForSent(sent, 5);
+    const cancelAck = parsedAt(sent, 4);
+    expect(cancelAck).toMatchObject({
+      kind: 'cancel_ack',
+      payload: { cancelId: 'cancel.control.3', status: 'already_terminal' },
+    });
+    if (cancelAck.kind !== 'cancel_ack') throw new Error('expected cancel_ack');
+    expect(cancelAck.payload.acknowledgedAt).toBe(cancelAck.sentAt);
+    expect(closed).toEqual([]);
+
+    await session.receive(receipt(cancelAck, 6));
+    await vi.waitFor(() => expect(closed).toEqual([0]));
+    expect(session.state).toBe('closed');
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
+      'hello',
+      'lease_accept',
+      'heartbeat',
       'terminal',
       'cancel_ack',
     ]);
