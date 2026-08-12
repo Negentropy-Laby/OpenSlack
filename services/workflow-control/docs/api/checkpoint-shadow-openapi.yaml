@@ -54,6 +54,7 @@ paths:
             { application/json: { schema: { $ref: '#/components/schemas/CheckpointReceipt' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/InvalidContent' }
         '500': { $ref: '#/components/responses/Internal' }
@@ -143,6 +144,11 @@ components:
     UnsupportedMediaType:
       {
         description: Content type rejected,
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+      }
+    RequestTooLarge:
+      {
+        description: Request body exceeds the frozen byte limit,
         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
       }
     InvalidContent:
@@ -236,6 +242,11 @@ components:
             priorCheckpoint: { $ref: '#/components/schemas/Checkpoint' }
             nextPhaseId: { $ref: '#/components/schemas/SafeId' }
             nextPhaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+        - properties:
+            checkpoint: { nullable: true, enum: [null] }
+            priorCheckpoint: { nullable: true, enum: [null] }
+            nextPhaseId: { type: string, enum: [phase-0] }
+            nextPhaseIndex: { type: integer, enum: [0] }
       required:
         [
           schema,
@@ -287,11 +298,17 @@ components:
             observation:
               allOf:
                 - { $ref: '#/components/schemas/CheckpointObservation' }
-                - properties:
-                    checkpoint: { nullable: true, enum: [null] }
-                    priorCheckpoint: { $ref: '#/components/schemas/Checkpoint' }
-                    nextPhaseId: { $ref: '#/components/schemas/SafeId' }
-                    nextPhaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+                - oneOf:
+                    - properties:
+                        checkpoint: { nullable: true, enum: [null] }
+                        priorCheckpoint: { $ref: '#/components/schemas/Checkpoint' }
+                        nextPhaseId: { $ref: '#/components/schemas/SafeId' }
+                        nextPhaseIndex: { $ref: '#/components/schemas/SafeInteger' }
+                    - properties:
+                        checkpoint: { nullable: true, enum: [null] }
+                        priorCheckpoint: { nullable: true, enum: [null] }
+                        nextPhaseId: { type: string, enum: [phase-0] }
+                        nextPhaseIndex: { type: integer, enum: [0] }
       required: [schema, goRole, sourceSequence, operation, observation, observationHash]
       properties:
         schema: { type: string, enum: [openslack.workflow_checkpoint_shadow_envelope.v1] }

@@ -24,6 +24,7 @@ import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import {
   createWorkflowCheckpointObservationPort,
   createWorkflowCheckpointShadowHttpPublisher,
+  type WorkflowCheckpointShadowDiagnostic,
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
 
@@ -388,6 +389,15 @@ function boundedDiagnostic(error: unknown): string {
   return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
 }
 
+function writeCheckpointDiagnostic(diagnostic: WorkflowCheckpointShadowDiagnostic): void {
+  writeSync(
+    2,
+    `${JSON.stringify({ schema: 'openslack.workflow_checkpoint_shadow_diagnostic.v1', ...diagnostic })}\n`,
+    undefined,
+    'utf8',
+  );
+}
+
 /**
  * Dispatch one accepted runner job without ever treating an existing run as a
  * fresh execution. Only paused/resuming runs enter the strict resume path;
@@ -447,6 +457,7 @@ export async function runWorkflowRunnerWorker(
             bearerToken: config.checkpointShadow.bearerToken,
             callerId: config.checkpointShadow.callerId,
           }),
+          diagnosticSink: writeCheckpointDiagnostic,
         })
       : undefined);
   const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);

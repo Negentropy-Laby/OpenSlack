@@ -4,6 +4,7 @@ import type {
   ExecutionMode,
   WorkflowMeta,
   WorkflowRuntime,
+  WorkflowCheckpointRuntime,
   AgentOptions,
   ParallelOptions,
   PipelineOptions,
@@ -220,8 +221,14 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
 export function createRuntimeWithCheckpointAuthority(
   options: RuntimeOptions,
   authority: WorkflowCheckpointLeaseAuthority,
-): WorkflowRuntime {
-  return createRuntimeInternal(options, authority);
+): WorkflowCheckpointRuntime {
+  if (!options.runStore) {
+    throw workflowCheckpointError(
+      'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+      'Workflow checkpoint commit requires an accepted runner binding and RunStore.',
+    );
+  }
+  return createRuntimeInternal(options, authority) as WorkflowCheckpointRuntime;
 }
 
 function createRuntimeInternal(
@@ -526,6 +533,27 @@ function createRuntimeInternal(
   };
 
   // --- Runtime interface ---
+  const checkpoint =
+    options.runStore && checkpointBinding
+      ? Object.freeze({
+          async commit(input: WorkflowCheckpointCommitInput) {
+            throwIfAborted('runtime_api');
+            if (currentPhaseIndex < 0 || currentPhase === undefined) {
+              throw workflowCheckpointError(
+                'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
+                'Workflow checkpoint commit requires an active phase.',
+              );
+            }
+            return options.runStore!.commitWorkflowCheckpoint(
+              runId,
+              checkpointBinding,
+              `phase-${currentPhaseIndex}`,
+              currentPhaseIndex,
+              input,
+            );
+          },
+        })
+      : undefined;
   const runtime: WorkflowRuntime = {
     get runId() {
       return runId;
@@ -539,30 +567,7 @@ function createRuntimeInternal(
     get args() {
       return cloneWorkflowArguments(runtimeArgs);
     },
-    checkpoint: Object.freeze({
-      async commit(input: WorkflowCheckpointCommitInput) {
-        throwIfAborted('runtime_api');
-        if (!options.runStore || !checkpointBinding) {
-          throw workflowCheckpointError(
-            'WORKFLOW_CHECKPOINT_BINDING_INVALID',
-            'Workflow checkpoint commit requires an accepted runner binding.',
-          );
-        }
-        if (currentPhaseIndex < 0 || currentPhase === undefined) {
-          throw workflowCheckpointError(
-            'WORKFLOW_CHECKPOINT_COMMIT_INVALID',
-            'Workflow checkpoint commit requires an active phase.',
-          );
-        }
-        return options.runStore.commitWorkflowCheckpoint(
-          runId,
-          checkpointBinding,
-          `phase-${currentPhaseIndex}`,
-          currentPhaseIndex,
-          input,
-        );
-      },
-    }),
+    ...(checkpoint ? { checkpoint } : {}),
 
     phase(name: string): void {
       throwIfAborted('runtime_api');

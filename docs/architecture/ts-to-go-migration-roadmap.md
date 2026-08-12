@@ -389,6 +389,10 @@ an opaque attempt/lease/fence binding produced after an advancing GS8 lease rece
 `checkpoint_commit` and `resume_advance` observations carry hashes and bounded identities but no
 artifact, input, prompt, provider, approval, credential, transcript, or path content.
 
+The v1 resume form includes the pre-checkpoint case: the prior checkpoint is null and the next
+phase is exactly `phase-0`. New accepted leases may repeat this state until phase 0 commits; later
+resume observations remain bound to the latest committed checkpoint.
+
 The default-off Go service uses a fourth isolated namespace,
 `workflow_control_checkpoint_shadow_*`, to recompute parity and retain exact receipts and
 reconciliation. It never writes the TypeScript head, participates in resume, extends runner v1, or

@@ -92,6 +92,41 @@ func TestCommitResponseLossAndRollbackReconciliation(t *testing.T) {
 	}
 }
 
+func TestCommitUnknownRereadsReceiptAfterAdvisoryLock(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	input := observeInput(prepared(t, envelope(t, 1, 2, 0, 0)), "d")
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	unknown := NewWithCommitter(pool, func(ctx context.Context, tx pgx.Tx) error {
+		_ = tx.Rollback(ctx)
+		return errors.New("commit outcome unknown")
+	})
+	unknown.beforeReconcileLock = func() {
+		close(reached)
+		<-release
+	}
+
+	type outcome struct {
+		receipt checkpointshadowstore.Receipt
+		err     error
+	}
+	result := make(chan outcome, 1)
+	go func() {
+		receipt, err := unknown.Observe(context.Background(), input)
+		result <- outcome{receipt: receipt, err: err}
+	}()
+	<-reached
+	accepted, err := New(pool).Observe(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	recovered := <-result
+	if recovered.err != nil || !bytes.Equal(recovered.receipt.ExactBytes, accepted.ExactBytes) || recovered.receipt.Value.Status != "accepted" {
+		t.Fatalf("recovered=%#v err=%v accepted=%#v", recovered.receipt.Value, recovered.err, accepted.Value)
+	}
+}
+
 func TestGS9CQualification(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	repository := New(pool)

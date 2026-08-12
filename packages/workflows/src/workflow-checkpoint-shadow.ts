@@ -24,6 +24,7 @@ import {
   readOwnerFile,
   syncDirectory,
   writeExclusive,
+  WORKFLOW_CONTROL_SHADOW_POLICY,
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
 
@@ -61,10 +62,6 @@ export interface CreateWorkflowCheckpointObservationPortOptions {
 const PORTS = new WeakSet<object>();
 const PUBLISHERS = new WeakSet<object>();
 const JOURNAL_FILE = /^([0-9]{1,16})-([0-9a-f]{64})\.json$/u;
-const MAX_RECEIPT_BYTES = 64 * 1024;
-const MAX_JOURNAL_FILE_BYTES = 1024 * 1024;
-const MAX_JOURNAL_ENTRIES = 16_384;
-const MAX_JOURNAL_BYTES = 512 * 1024 * 1024;
 
 async function readBoundedResponse(response: Response, signal: AbortSignal): Promise<string> {
   if (!response.body) return '';
@@ -76,7 +73,7 @@ async function readBoundedResponse(response: Response, signal: AbortSignal): Pro
     const item = await reader.read();
     if (item.done) break;
     length += item.value.byteLength;
-    if (length > MAX_RECEIPT_BYTES) {
+    if (length > WORKFLOW_CONTROL_SHADOW_POLICY.maxReceiptBytes) {
       await reader.cancel();
       throw workflowCheckpointError(
         'WORKFLOW_CHECKPOINT_TRANSPORT_INVALID',
@@ -110,7 +107,11 @@ async function readJournalEnvelope(
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<WorkflowCheckpointShadowEnvelope> {
   try {
-    const raw = await readOwnerFile(path, security, MAX_JOURNAL_FILE_BYTES);
+    const raw = await readOwnerFile(
+      path,
+      security,
+      WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes,
+    );
     const envelope = validateWorkflowCheckpointShadowEnvelope(JSON.parse(raw));
     if (workflowCheckpointCanonicalJson(envelope) !== raw) {
       throw new TypeError('Checkpoint journal file must be canonical.');
@@ -207,7 +208,7 @@ class ObservationPort implements WorkflowCheckpointObservationPort {
     const fileName = `${String(envelope.sourceSequence).padStart(16, '0')}-${observationHash}.json`;
     const path = join(this.#entries, fileName);
     const body = workflowCheckpointCanonicalJson(envelope);
-    if (Buffer.byteLength(body, 'utf8') > MAX_JOURNAL_FILE_BYTES) {
+    if (Buffer.byteLength(body, 'utf8') > WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes) {
       throw workflowCheckpointError(
         'WORKFLOW_CHECKPOINT_JOURNAL_INVALID',
         'Checkpoint journal entry exceeds the frozen bound.',
@@ -241,8 +242,8 @@ class ObservationPort implements WorkflowCheckpointObservationPort {
       }
       if (
         !entries.includes(fileName) &&
-        (entries.length >= MAX_JOURNAL_ENTRIES ||
-          bytes + Buffer.byteLength(body) > MAX_JOURNAL_BYTES)
+        (entries.length >= WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalEntries ||
+          bytes + Buffer.byteLength(body) > WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalBytes)
       ) {
         throw workflowCheckpointError(
           'WORKFLOW_CHECKPOINT_JOURNAL_CAPACITY',
@@ -391,7 +392,18 @@ export async function createWorkflowCheckpointObservationPort(
     new ObservationPort(entries, locks, options.publisher, security, options.diagnosticSink),
   );
   PORTS.add(port);
-  void port.replay().catch(() => undefined);
+  void port.replay().catch(async () => {
+    try {
+      await options.diagnosticSink?.({
+        outcome: 'failed',
+        runIdHash: workflowCheckpointHash('checkpoint-journal-run-unavailable'),
+        observationHash: workflowCheckpointHash('checkpoint-journal-replay-unavailable'),
+        code: 'WORKFLOW_CHECKPOINT_JOURNAL_REPLAY_FAILED',
+      });
+    } catch {
+      // Startup replay and its diagnostics are observation-only.
+    }
+  });
   return port;
 }
 
@@ -401,6 +413,25 @@ export function isWorkflowCheckpointObservationPort(
   return Boolean(
     value && typeof value === 'object' && !nodeTypes.isProxy(value) && PORTS.has(value),
   );
+}
+
+/** @internal Allows deterministic RunStore qualification without a filesystem journal. */
+export function createWorkflowCheckpointObservationPortForTest(
+  implementation: WorkflowCheckpointObservationPort,
+): WorkflowCheckpointObservationPort {
+  if (
+    !implementation ||
+    typeof implementation !== 'object' ||
+    nodeTypes.isProxy(implementation) ||
+    typeof implementation.journalObservation !== 'function' ||
+    typeof implementation.replay !== 'function' ||
+    typeof implementation.flush !== 'function'
+  ) {
+    throw new TypeError('Workflow checkpoint observation test port is invalid.');
+  }
+  const port = Object.freeze(implementation);
+  PORTS.add(port);
+  return port;
 }
 
 export function isWorkflowCheckpointShadowPublisherPort(
@@ -429,11 +460,8 @@ export function createWorkflowCheckpointShadowHttpPublisher(options: {
     );
   }
   if (
-    (endpoint.protocol !== 'https:' &&
-      !(
-        endpoint.protocol === 'http:' &&
-        ['127.0.0.1', '::1', 'localhost'].includes(endpoint.hostname)
-      )) ||
+    endpoint.protocol !== 'http:' ||
+    !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
     endpoint.username ||
     endpoint.password ||
     endpoint.search ||

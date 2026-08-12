@@ -3,6 +3,7 @@ package checkpointshadowstore
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
@@ -42,6 +43,48 @@ func TestPrepareObservationAndResumeComparison(t *testing.T) {
 	rehash(t, &resume)
 	if parity, code := Compare(resume, head); parity != "mismatched" || code != "stale_resume_fence" {
 		t.Fatalf("stale parity=%s code=%s", parity, code)
+	}
+}
+
+func TestPreCheckpointResumeReentryAndPhaseZeroCommit(t *testing.T) {
+	initial := preCheckpointResumeEnvelope(t, 1, 2, 1, 2)
+	body, err := canonicaljson.Encode(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareObservation(body); err != nil {
+		t.Fatalf("initial pre-checkpoint resume: %v", err)
+	}
+	if parity, code := Compare(initial, nil); parity != "matched" || code != "" {
+		t.Fatalf("initial parity=%s code=%s", parity, code)
+	}
+	matched := int64(1)
+	head := &Head{SourceSequence: 1, MatchedSourceSequence: &matched, Operation: OperationResumeAdvance, Observation: &initial.Observation}
+	repeated := preCheckpointResumeEnvelope(t, 2, 3, 2, 3)
+	if parity, code := Compare(repeated, head); parity != "matched" || code != "" {
+		t.Fatalf("reentry parity=%s code=%s", parity, code)
+	}
+	repeatedMatched := int64(2)
+	repeatedHead := &Head{SourceSequence: 2, MatchedSourceSequence: &repeatedMatched, Operation: OperationResumeAdvance, Observation: &repeated.Observation}
+	checkpoint := testEnvelope(t, 3, OperationCheckpointCommit, 4, 2, 0)
+	checkpoint.Observation.Runner = repeated.Observation.Runner
+	rehash(t, &checkpoint)
+	if parity, code := Compare(checkpoint, repeatedHead); parity != "matched" || code != "" {
+		t.Fatalf("phase-0 commit parity=%s code=%s", parity, code)
+	}
+
+	wrong := preCheckpointResumeEnvelope(t, 1, 2, 1, 2)
+	wrongID := "phase-1"
+	wrongIndex := int64(1)
+	wrong.Observation.NextPhaseID = &wrongID
+	wrong.Observation.NextPhaseIndex = &wrongIndex
+	rehash(t, &wrong)
+	body, err = canonicaljson.Encode(wrong)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareObservation(body); !IsCode(err, ErrorInputInvalid) {
+		t.Fatalf("invalid initial resume error=%v", err)
 	}
 }
 
@@ -184,6 +227,37 @@ func testEnvelope(t *testing.T, sequence int64, operation Operation, revision, g
 		observation.Runner.FencingToken = 2
 	}
 	result := Envelope{Schema: EnvelopeSchema, GoRole: "observer_only", SourceSequence: sequence, Operation: operation, Observation: observation}
+	rehash(t, &result)
+	return result
+}
+
+func preCheckpointResumeEnvelope(t *testing.T, sequence, revision, generation, fence int64) Envelope {
+	t.Helper()
+	nextID := phaseID(0)
+	nextIndex := int64(0)
+	observation := Observation{
+		Schema:             ObservationSchema,
+		Authority:          "typescript",
+		GoRole:             "observer_only",
+		RunID:              "run-test",
+		Revision:           revision,
+		ResumeGeneration:   generation,
+		WorkflowSourceHash: repeatHash("b"),
+		ManifestHash:       repeatHash("c"),
+		InputHash:          repeatHash("d"),
+		Runner: RunnerBinding{
+			WorkspaceID:     "workspace-test",
+			JobID:           "job-test",
+			AttemptID:       fmt.Sprintf("attempt-%d", generation),
+			LeaseID:         fmt.Sprintf("lease-%d", generation),
+			FencingToken:    fence,
+			CorrelationID:   "correlation-test",
+			RunnerBuildHash: repeatHash("e"),
+		},
+		NextPhaseID:    &nextID,
+		NextPhaseIndex: &nextIndex,
+	}
+	result := Envelope{Schema: EnvelopeSchema, GoRole: "observer_only", SourceSequence: sequence, Operation: OperationResumeAdvance, Observation: observation}
 	rehash(t, &result)
 	return result
 }

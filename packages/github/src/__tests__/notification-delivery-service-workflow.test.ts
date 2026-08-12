@@ -70,6 +70,11 @@ const reusableWorkflowUrl = new URL(
 );
 const reusableSource = readFileSync(reusableWorkflowUrl, 'utf8');
 const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
+const workflowControlPostgresGateUrl = new URL(
+  '../../../../scripts/qualification/workflow-control-postgres-gate.sh',
+  import.meta.url,
+);
+const workflowControlPostgresGateSource = readFileSync(workflowControlPostgresGateUrl, 'utf8');
 const rootPackageUrl = new URL('../../../../package.json', import.meta.url);
 const rootPackage = JSON.parse(readFileSync(rootPackageUrl, 'utf8')) as {
   scripts: Record<string, string>;
@@ -191,6 +196,7 @@ const triggerPaths = [
   'scripts/workflow-control-shadow-contracts/**',
   'scripts/workflow-checkpoint-shadow-contracts/**',
   'scripts/workflow-runner-contracts/**',
+  'scripts/qualification/workflow-control-postgres-gate.sh',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -280,144 +286,11 @@ function gs7bCrossLanguageRun(): string {
 }
 
 function gs9bAuthorityRun(): string {
-  return lines(
-    'set -euo pipefail',
-    'postgres_container="openslack-gs9b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
-    'cleanup() {',
-    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
-    '}',
-    'trap cleanup EXIT',
-    'cleanup',
-    'docker run --detach \\',
-    '  --name "$postgres_container" \\',
-    '  --env POSTGRES_USER=openslack \\',
-    '  --env POSTGRES_PASSWORD=openslack \\',
-    '  --env POSTGRES_DB=openslack \\',
-    '  --publish 127.0.0.1::5432 \\',
-    `  ${postgresImage} >/dev/null`,
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'export WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
-    'export WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082',
-    'export WORKFLOW_CONTROL_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    'export WORKFLOW_CONTROL_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d',
-    'export WORKFLOW_CONTROL_AUTHORITY_WORKSPACE_ID=workspace.demo',
-    'export WORKFLOW_CONTROL_AUTHORITY_CALLER_ID=typescript:workflow-control-qualification',
-    'export WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
-    'go test -race \\',
-    '  ./internal/authorityapp \\',
-    '  ./internal/authoritystore/... \\',
-    '  ./internal/config \\',
-    '  ./tests/contracts \\',
-    '  ./tests/integration \\',
-    '  -count=1',
-    'WORKFLOW_CONTROL_GS9B_QUALIFICATION=1 \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BQualification$' -count=1",
-    'restart_schema="workflow_control_gs9b_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"',
-    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed \\',
-    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
-    'docker restart "$postgres_container" >/dev/null',
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify \\',
-    '  WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/authority-server -run '^TestGS9BRestartQualification$' -count=1",
-  );
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9b-authority';
 }
 
 function gs9cCheckpointRun(): string {
-  return lines(
-    'set -euo pipefail',
-    'postgres_container="openslack-gs9c-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
-    'cleanup() {',
-    '  docker rm --force "$postgres_container" >/dev/null 2>&1 || true',
-    '}',
-    'trap cleanup EXIT',
-    'cleanup',
-    'docker run --detach \\',
-    '  --name "$postgres_container" \\',
-    '  --env POSTGRES_USER=openslack \\',
-    '  --env POSTGRES_PASSWORD=openslack \\',
-    '  --env POSTGRES_DB=openslack \\',
-    '  --publish 127.0.0.1::5432 \\',
-    `  ${postgresImage} >/dev/null`,
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_WORKSPACE_ID=workspace.demo',
-    'export WORKFLOW_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=typescript:workflow-checkpoint-shadow',
-    'go test -race \\',
-    '  ./internal/checkpointshadowapp \\',
-    '  ./internal/checkpointshadowstore/... \\',
-    '  ./internal/config \\',
-    '  ./tests/contracts \\',
-    '  ./tests/integration \\',
-    '  -count=1',
-    'WORKFLOW_CONTROL_GS9C_QUALIFICATION=1 \\',
-    "  go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CQualification$' -count=1",
-    'restart_schema="workflow_control_gs9c_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"',
-    'WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed \\',
-    '  WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CRestartQualification$' -count=1",
-    'docker restart "$postgres_container" >/dev/null',
-    'for attempt in $(seq 1 60); do',
-    '  if docker exec "$postgres_container" pg_isready --username openslack --dbname openslack >/dev/null 2>&1; then',
-    '    break',
-    '  fi',
-    '  if [ "$attempt" -eq 60 ]; then',
-    '    docker logs "$postgres_container"',
-    '    exit 1',
-    '  fi',
-    '  sleep 1',
-    'done',
-    'published="$(docker port "$postgres_container" 5432/tcp)"',
-    'postgres_port="${published##*:}"',
-    'test "$postgres_port" -ge 1',
-    'export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"',
-    'WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify \\',
-    '  WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA="$restart_schema" \\',
-    "  go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CRestartQualification$' -count=1",
-  );
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9c-checkpoint';
 }
 
 describe('notification delivery service workflow', () => {
@@ -679,12 +552,12 @@ describe('notification delivery service workflow', () => {
     });
     expect(job.steps[gs9bAuthorityIndex]).toEqual({
       name: 'Qualify GS9-B Workflow Control authority',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9bAuthorityRun(),
     });
     expect(job.steps[gs9cCheckpointIndex]).toEqual({
       name: 'Qualify GS9-C Workflow checkpoint shadow',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9cCheckpointRun(),
     });
     expect(job.steps[rootDocsIndex]).toEqual({
@@ -1138,7 +1011,7 @@ describe('notification delivery service workflow', () => {
     );
     expect(step).toEqual({
       name: 'Qualify GS9-B Workflow Control authority',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9bAuthorityRun(),
     });
     for (const evidence of [
@@ -1146,7 +1019,8 @@ describe('notification delivery service workflow', () => {
       'trap cleanup EXIT',
       'WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1',
       'WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9',
-      'go test -race \\',
+      'export GOWORK=off',
+      'go test -race ./internal/authorityapp',
       './internal/authorityapp',
       './internal/authoritystore/...',
       './internal/config',
@@ -1159,12 +1033,17 @@ describe('notification delivery service workflow', () => {
       'docker restart "$postgres_container"',
       'WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify',
     ]) {
-      expect(step?.run).toContain(evidence);
+      expect(workflowControlPostgresGateSource).toContain(evidence);
     }
     expect(
-      step?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
-    ).toHaveLength(2);
-    expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+      workflowControlPostgresGateSource.match(
+        /published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu,
+      ),
+    ).toHaveLength(1);
+    expect(workflowControlPostgresGateSource).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
+    expect(workflowControlPostgresGateSource).toContain(
+      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint}',
+    );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
     expect(names.indexOf('Qualify GS8-B real TypeScript runner lifecycle')).toBeLessThan(
@@ -1181,7 +1060,7 @@ describe('notification delivery service workflow', () => {
     );
     expect(step).toEqual({
       name: 'Qualify GS9-C Workflow checkpoint shadow',
-      'working-directory': 'services/workflow-control',
+      'working-directory': '.',
       run: gs9cCheckpointRun(),
     });
     for (const evidence of [
@@ -1199,13 +1078,16 @@ describe('notification delivery service workflow', () => {
       'docker restart "$postgres_container"',
       'WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify',
     ]) {
-      expect(step?.run).toContain(evidence);
+      expect(workflowControlPostgresGateSource).toContain(evidence);
     }
     expect(
-      step?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
-    ).toHaveLength(2);
-    expect(step?.run).not.toMatch(/WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH/iu);
-    expect(step?.run).not.toMatch(/accept_new_records|accept-new-records/iu);
+      workflowControlPostgresGateSource.match(
+        /published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu,
+      ),
+    ).toHaveLength(1);
+    expect(workflowControlPostgresGateSource).not.toMatch(
+      /accept_new_records|accept-new-records/iu,
+    );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
     expect(names.indexOf('Qualify GS9-B Workflow Control authority')).toBeLessThan(
@@ -1214,6 +1096,16 @@ describe('notification delivery service workflow', () => {
     expect(names.indexOf('Qualify GS9-C Workflow checkpoint shadow')).toBeLessThan(
       names.indexOf('Run reviewed Go workspace verifier'),
     );
+  });
+
+  it('binds the shared PostgreSQL gate to the two reviewed profiles', () => {
+    expect(workflowControlPostgresGateSource).toContain('gs9b-authority|gs9c-checkpoint) ;;');
+    expect(workflowControlPostgresGateSource).toContain('exit 2');
+    expect(workflowControlPostgresGateSource).toContain('for attempt in $(seq 1 60)');
+    expect(workflowControlPostgresGateSource).toContain('docker restart "$postgres_container"');
+    expect(workflowControlPostgresGateSource).toContain('refresh_database_url');
+    expect(workflowControlPostgresGateSource.match(/refresh_database_url/gu)).toHaveLength(3);
+    expect(workflowControlPostgresGateSource).not.toContain('eval ');
   });
 
   it('does not expand into deployment, external-input, or broad repository authority', () => {

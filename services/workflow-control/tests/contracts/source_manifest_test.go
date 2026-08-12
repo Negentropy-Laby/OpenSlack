@@ -117,7 +117,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 		},
 		"checkpointShadowMigrationUp": {
 			Path:   "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.up.sql",
-			SHA256: "0ee8c8c72649fa7e966e2d3ab28e10fc1adf4bec52748a21639a75c6b1dcf13e",
+			SHA256: "dacd2cf88ae75afdb8503f7261e436b7e2daa43cd462fbbbe5464e0bc16172e0",
 		},
 		"checkpointShadowMigrationDown": {
 			Path:   "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.down.sql",
@@ -130,7 +130,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 	wantContractInputs := map[string]manifestReference{
 		"workflowCheckpointShadowContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json",
-			SHA256: "6972b9770868e79c2e1824919c73715dd8ee96d3d812eff4c58e1db4169e63aa",
+			SHA256: "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000",
 		},
 		"workflowControlContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-control/v1/manifest.json",
@@ -162,7 +162,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 		},
 		"checkpointShadowOpenapi": {
 			Path:   "services/workflow-control/docs/api/checkpoint-shadow-openapi.yaml",
-			SHA256: "3a31e726277212c5738c9a7333434c006f8c182c04ea804d492e347219247a6a",
+			SHA256: "a33f978174fa9b82393864d5b97f03082196a8d369e07d60cc35ce69345fa67a",
 		},
 	}
 	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {

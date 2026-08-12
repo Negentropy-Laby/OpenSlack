@@ -21,6 +21,7 @@ import {
   type WorkflowCheckpointShadowObservation,
   type WorkflowCheckpointShadowReceipt,
 } from '../../packages/workflows/src/workflow-checkpoint-shadow-contract.js';
+import { WORKFLOW_CONTROL_SHADOW_POLICY } from '../../packages/workflows/src/workflow-control-shadow.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -54,9 +55,6 @@ const IDEMPOTENCY_PATTERN = '^openslack\\.workflow-checkpoint-shadow\\.v1\\.[0-9
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const MAX_ARTIFACT_BYTES = 4 * 1024 * 1024;
 const MAX_RECEIPT_BYTES = 64 * 1024;
-const MAX_JOURNAL_FILE_BYTES = 1024 * 1024;
-const MAX_JOURNAL_ENTRIES = 16_384;
-const MAX_JOURNAL_BYTES = 512 * 1024 * 1024;
 const MAX_PENDING_OBSERVATIONS = 1024;
 
 function strictObject(properties: JsonRecord, required = Object.keys(properties)): JsonRecord {
@@ -117,10 +115,26 @@ const resumeAdvanceVariant = {
   type: 'object',
   properties: {
     checkpoint: { type: 'null' },
-    priorCheckpoint: { $ref: '#/$defs/checkpoint' },
+    priorCheckpoint: { oneOf: [{ $ref: '#/$defs/checkpoint' }, { type: 'null' }] },
     nextPhaseId: idSchema,
     nextPhaseIndex: nonNegativeIntegerSchema,
   },
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        priorCheckpoint: { type: 'null' },
+        nextPhaseId: { const: 'phase-0' },
+        nextPhaseIndex: { const: 0 },
+      },
+    },
+    {
+      type: 'object',
+      properties: {
+        priorCheckpoint: { $ref: '#/$defs/checkpoint' },
+      },
+    },
+  ],
 };
 
 const observationProperties = {
@@ -269,6 +283,7 @@ const controlSchema = {
     pendingObservations: {
       type: 'array',
       maxItems: MAX_PENDING_OBSERVATIONS,
+      uniqueItems: true,
       items: pendingObservationSchema,
     },
     updatedAt: timestampSchema,
@@ -433,6 +448,18 @@ function resumeObservation(): WorkflowCheckpointShadowObservation {
   };
 }
 
+function preCheckpointResumeObservation(): WorkflowCheckpointShadowObservation {
+  return {
+    ...resumeObservation(),
+    runId: 'run.gs9c.pre-checkpoint',
+    revision: 2,
+    resumeGeneration: 1,
+    priorCheckpoint: null,
+    nextPhaseId: 'phase-0',
+    nextPhaseIndex: 0,
+  };
+}
+
 function envelope(
   sourceSequence: number,
   operation: WorkflowCheckpointShadowEnvelope['operation'],
@@ -529,6 +556,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
 
   const checkpointCommit = envelope(1, 'checkpoint_commit', checkpointObservation());
   const resumeAdvance = envelope(2, 'resume_advance', resumeObservation());
+  const preCheckpointResume = envelope(1, 'resume_advance', preCheckpointResumeObservation());
   const acceptedReplay = acceptedReceipt(checkpointCommit);
   const reconciliation = reconciliationReceipt(resumeAdvance);
   outputs.set(
@@ -540,6 +568,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
       vectors: {
         checkpointCommit: exactVector(checkpointCommit),
         resumeAdvance: exactVector(resumeAdvance),
+        preCheckpointResume: exactVector(preCheckpointResume),
         acceptedReplay: {
           transport: { httpStatus: 200, idempotencyReplayed: true },
           ...exactVector(acceptedReplay),
@@ -588,6 +617,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
         idempotencyKey: `${WORKFLOW_CHECKPOINT_SHADOW_IDEMPOTENCY_PREFIX}{observationHash}`,
         sourceSequence: 'independent_monotonic_per_run_event_stream_starting_at_1',
         phaseId: 'phase-{zero_based_manifest_index}',
+        preCheckpointResume: 'prior_checkpoint_null_next_phase_0_generation_monotonic',
         checkpointCommitPoint: 'after_phase_work',
         duplicateReceipt: 'exact_stored_bytes_transport_header_only',
       },
@@ -600,10 +630,11 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
         maxSourceSequence: WORKFLOW_CHECKPOINT_MAX_SOURCE_SEQUENCE,
         maxReceiptBytes: MAX_RECEIPT_BYTES,
         maxArtifactBytes: MAX_ARTIFACT_BYTES,
-        maxJournalFileBytes: MAX_JOURNAL_FILE_BYTES,
-        maxJournalEntries: MAX_JOURNAL_ENTRIES,
-        maxJournalBytes: MAX_JOURNAL_BYTES,
+        maxJournalFileBytes: WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalFileBytes,
+        maxJournalEntries: WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalEntries,
+        maxJournalBytes: WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalBytes,
         maxPendingObservations: MAX_PENDING_OBSERVATIONS,
+        maxCanonicalDepth: 64,
       },
       localOnlySchemas: [
         'schemas/workflow-checkpoint-artifact.v1.schema.json',

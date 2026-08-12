@@ -106,6 +106,26 @@ func TestCheckpointShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testin
 	}
 }
 
+func TestCheckpointShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:8083/v1/shadow/workflow-control/checkpoints",
+		"http://user@127.0.0.1:8083/v1/shadow/workflow-control/checkpoints",
+		"http://user:password@[::1]:8083/v1/shadow/workflow-control/checkpoints",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			root, hash, runtimeConfig := writeBundle(t, nil)
+			runtimeConfig.CheckpointShadowEnabled = true
+			runtimeConfig.CheckpointShadowEndpoint = endpoint
+			runtimeConfig.CheckpointShadowBearerToken = strings.Repeat("t", 32)
+			runtimeConfig.CheckpointShadowCallerID = "runner-control"
+			runtimeConfig.CheckpointShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-checkpoint-shadow")
+			if _, err := Load(root, hash, runtimeConfig); err == nil {
+				t.Fatal("unsafe checkpoint shadow endpoint was accepted")
+			}
+		})
+	}
+}
+
 func TestLoadRejectsEscapeOverrideAndArtifactDrift(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

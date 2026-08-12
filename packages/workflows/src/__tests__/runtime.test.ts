@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRuntime, WorkflowAuditDetailInvalidError } from '../runtime.js';
+import {
+  createRuntime,
+  createRuntimeWithCheckpointAuthority,
+  WorkflowAuditDetailInvalidError,
+} from '../runtime.js';
+import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import type { RuntimeOptions } from '../runtime.js';
 import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
 import type { PipelineCacheStore } from '../pipeline-runner.js';
@@ -66,6 +71,53 @@ describe('createRuntime', () => {
     it('exposes args as empty object by default', () => {
       const rt = makeRuntime();
       expect(rt.args).toEqual({});
+    });
+
+    it('exposes checkpoint only on the accepted runner authority runtime', async () => {
+      expect(makeRuntime().checkpoint).toBeUndefined();
+      const commitWorkflowCheckpoint = vi.fn(async () => ({
+        checkpointId: 'checkpoint.test',
+        revision: 2,
+        resumeGeneration: 0,
+        duplicate: false,
+      }));
+      const runStore = {
+        commitWorkflowCheckpoint,
+        setCurrentPhase: vi.fn(async () => undefined),
+        savePhaseCheckpoint: vi.fn(async () => undefined),
+      } as unknown as RunStore;
+      const authority = createWorkflowCheckpointLeaseAuthority({
+        workspaceId: 'workspace.test',
+        jobId: 'job.test',
+        workflowRunId: 'test-run-001',
+        attemptId: 'attempt.test',
+        leaseId: 'lease.test',
+        fencingToken: 1,
+        correlationId: 'correlation.test',
+        runnerBuildHash: 'a'.repeat(64),
+        workflowSourceHash: 'b'.repeat(64),
+        manifestHash: 'c'.repeat(64),
+        inputHash: 'd'.repeat(64),
+      });
+      const runtime = createRuntimeWithCheckpointAuthority(
+        {
+          runId: 'test-run-001',
+          mode: 'execute',
+          manifest: testManifest,
+          onConfirm: autoConfirm,
+          runStore,
+        },
+        authority,
+      );
+      runtime.phase('Scan');
+      await runtime.checkpoint.commit({ artifact: Buffer.from('artifact') });
+      expect(commitWorkflowCheckpoint).toHaveBeenCalledWith(
+        'test-run-001',
+        expect.any(Object),
+        'phase-0',
+        0,
+        { artifact: Buffer.from('artifact') },
+      );
     });
 
     it('returns a deep independent rich-value snapshot for every args read', () => {

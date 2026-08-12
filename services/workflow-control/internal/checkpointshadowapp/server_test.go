@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/checkpointshadowstore"
@@ -168,6 +169,50 @@ func TestQualificationRequiresClosedBindings(t *testing.T) {
 	_, err := New(Options{QualificationMode: true, Store: &stubStore{}, BuildSHA: "bad", BearerTokenSHA256: strings.Repeat("a", 64), WorkspaceID: "workspace", CallerID: "caller"})
 	if err == nil {
 		t.Fatal("invalid build was accepted")
+	}
+}
+
+func TestRunReturnsBindErrorsAndDrainsCancellation(t *testing.T) {
+	service, err := New(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Run(context.Background(), "127.0.0.1:-1", time.Second); err == nil {
+		t.Fatal("invalid bind did not fail synchronously")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := service.Run(ctx, "127.0.0.1:0", time.Second); err != nil {
+		t.Fatalf("cancelled server: %v", err)
+	}
+}
+
+func TestQualificationRejectsOversizeAndMismatchedIdentities(t *testing.T) {
+	service, token := qualificationService(t, &stubStore{})
+	oversize := bytes.Repeat([]byte("x"), checkpointshadowstore.MaxRequestBytes+1)
+	response := performCheckpointRequest(
+		service.Handler(),
+		http.MethodPost,
+		"/v1/shadow/workflow-control/checkpoints",
+		oversize,
+		qualificationHeaders(token),
+	)
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize status=%d body=%s", response.Code, response.Body.String())
+	}
+	for _, header := range []string{"X-OpenSlack-Workspace-ID", "X-OpenSlack-Caller-ID"} {
+		headers := qualificationHeaders(token)
+		headers[header] = "mismatched"
+		response = performCheckpointRequest(
+			service.Handler(),
+			http.MethodPost,
+			"/v1/shadow/workflow-control/checkpoints",
+			checkpointBody(t),
+			headers,
+		)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s mismatch status=%d", header, response.Code)
+		}
 	}
 }
 

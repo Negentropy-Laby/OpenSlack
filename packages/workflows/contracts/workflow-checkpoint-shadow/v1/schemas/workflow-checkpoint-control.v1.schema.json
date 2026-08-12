@@ -58,6 +58,7 @@
     "pendingObservations": {
       "type": "array",
       "maxItems": 1024,
+      "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,

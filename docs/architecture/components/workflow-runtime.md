@@ -841,11 +841,20 @@ cannot manufacture that authority. Each valid resume uses a new attempt/lease an
 emits `resume_advance` before the next checkpoint. Artifact and control corruption, phase gaps,
 identity drift, and stale bindings fail closed in TypeScript.
 
+An accepted lease may resume before any checkpoint only at the derived `phase-0` identity with a
+null prior checkpoint. Consecutive new leases may repeat that state, but the first committed
+checkpoint must still be phase 0. Ordinary `createRuntime()` instances expose no checkpoint member;
+the required capability exists only on the internal runner-authority runtime subtype.
+
 The optional observer is disabled unless the trusted runner host injects a closed loopback
 configuration. Local journal durability is awaited; remote delivery is ordered and asynchronous,
 so Go failure cannot delay or roll back the TypeScript checkpoint. Artifact bytes, workflow input,
 prompts, results, provider payloads, approval details, credentials, and paths are excluded from the
 wire.
+
+The RunStore uses the same owner-safe, deadline-bounded lock primitive as the Workflow Control
+shadow journal. Pending observations are journaled from a stable snapshot and only the exact
+successful prefix is removed under a second lock, preserving concurrent tail appends for replay.
 
 The isolated Go checkpoint shadow validates `checkpoint_commit` and `resume_advance`, recomputes a
 matched prefix, records exact receipts and reconciliation, and never participates in resume. This

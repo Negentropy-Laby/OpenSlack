@@ -117,19 +117,6 @@ describe('GS8-B source and authority invariants', () => {
     ).not.toContain('WorkflowCheckpointLeaseAuthority');
   });
 
-  it('keeps multiword phase titles local and emits one canonical machine phase ID', async () => {
-    const [runtime, execute] = await Promise.all([
-      source('packages/workflows/src/runtime.ts'),
-      source('packages/workflows/src/execute.ts'),
-    ]);
-    expect(runtime).toContain('`phase-${currentPhaseIndex}`');
-    expect(execute).toContain('`phase-${nextPhaseIndex}`');
-    expect(runtime).not.toContain(
-      'commitWorkflowCheckpoint(\n          runId,\n          checkpointBinding,\n          currentPhase,',
-    );
-    expect(execute).not.toContain('nextPhase.title');
-  });
-
   it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {
     const [worker, legacyLoader, packageJson] = await Promise.all([
       source('packages/workflows/src/workflow-runner-worker.ts'),

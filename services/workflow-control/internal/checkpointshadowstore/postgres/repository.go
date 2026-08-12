@@ -33,6 +33,7 @@ type Repository struct {
 	pool                 *pgxpool.Pool
 	commit               func(context.Context, pgx.Tx) error
 	commitReconciliation func(context.Context, pgx.Tx) error
+	beforeReconcileLock  func()
 }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
@@ -225,13 +226,8 @@ func (r *Repository) resolveCommitOutcome(input checkpointshadowstore.ObserveInp
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return checkpointshadowstore.Receipt{}, mapReadFailure("recover checkpoint commit", err)
 	}
-	token, tokenErr := randomToken("wccs-reconciliation")
-	if tokenErr != nil {
-		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "generate checkpoint reconciliation", errors.Join(commitErr, tokenErr))
-	}
-	receiptID, receiptIDErr := randomToken("wccs-receipt")
-	if receiptIDErr != nil {
-		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "generate checkpoint reconciliation receipt", errors.Join(commitErr, receiptIDErr))
+	if r.beforeReconcileLock != nil {
+		r.beforeReconcileLock()
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -241,6 +237,24 @@ func (r *Repository) resolveCommitOutcome(input checkpointshadowstore.ObserveInp
 	o := input.Prepared.Envelope.Observation
 	if err := lockScope(ctx, tx, input.IdempotencyKey, o.Runner.WorkspaceID, o.RunID); err != nil {
 		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "lock checkpoint reconciliation", errors.Join(commitErr, err))
+	}
+	receipt, raw, err = readReceipt(tx.QueryRow(ctx, receiptByKeySQL, input.IdempotencyKey))
+	if err == nil {
+		if subtle.ConstantTimeCompare(raw, fingerprint) == 1 {
+			return receipt, nil
+		}
+		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorIdempotencyConflict, "commit recovery fingerprint conflict", commitErr)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "reread checkpoint reconciliation receipt", errors.Join(commitErr, err))
+	}
+	token, tokenErr := randomToken("wccs-reconciliation")
+	if tokenErr != nil {
+		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "generate checkpoint reconciliation", errors.Join(commitErr, tokenErr))
+	}
+	receiptID, receiptIDErr := randomToken("wccs-receipt")
+	if receiptIDErr != nil {
+		return checkpointshadowstore.Receipt{}, checkpointshadowstore.Failure(checkpointshadowstore.ErrorCommitUnknown, "generate checkpoint reconciliation receipt", errors.Join(commitErr, receiptIDErr))
 	}
 	value := checkpointshadowstore.ReceiptValue{Schema: checkpointshadowstore.ReceiptSchema, Status: "reconciliation_required", IdempotencyKey: input.IdempotencyKey, ReceiptID: receiptID, WorkspaceID: o.Runner.WorkspaceID, RunID: o.RunID, SourceSequence: input.Prepared.Envelope.SourceSequence, Operation: input.Prepared.Envelope.Operation, Parity: "unknown", EnvelopeHash: input.Prepared.EnvelopeHash, ObservationHash: input.Prepared.Envelope.ObservationHash, ServiceBuildHash: input.ServiceBuildHash, ReconciliationToken: &token}
 	if validationErr := checkpointshadowstore.ValidateReceiptValue(value); validationErr != nil {

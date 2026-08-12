@@ -15,6 +15,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunStore, type RunStoreFs } from '../run-store.js';
 import {
   validateWorkflowCheckpointShadowObservation,
+  validateWorkflowCheckpointControlState,
+  workflowCheckpointBytesHash,
   workflowCheckpointCanonicalJson,
   workflowCheckpointHash,
   type WorkflowCheckpointExecutionBinding,
@@ -22,6 +24,7 @@ import {
 } from '../workflow-checkpoint-shadow-contract.js';
 import {
   createWorkflowCheckpointObservationPort,
+  createWorkflowCheckpointObservationPortForTest,
   createWorkflowCheckpointShadowHttpPublisher,
   type WorkflowCheckpointObservationPort,
 } from '../workflow-checkpoint-shadow.js';
@@ -163,7 +166,9 @@ function memoryStore(
     store: new RunStore({
       baseDir: '/memory/workflows',
       fs,
-      checkpointObservationPort: options.observer,
+      checkpointObservationPort: options.observer
+        ? createWorkflowCheckpointObservationPortForTest(options.observer)
+        : undefined,
     }),
     files,
     fs,
@@ -171,6 +176,30 @@ function memoryStore(
 }
 
 describe('GS9-C TS checkpoint authority and credential-free observation', () => {
+  it('resumes phase-0 before any checkpoint and permits consecutive new lease generations', async () => {
+    const { store } = memoryStore();
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-0', 0),
+    ).resolves.toMatchObject({ revision: 2, resumeGeneration: 1, checkpoints: [] });
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(3), 'phase-0', 0),
+    ).resolves.toMatchObject({ revision: 3, resumeGeneration: 2, checkpoints: [] });
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(4), 'phase-1', 1),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_CHECKPOINT_RESUME_INVALID' });
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-0', 0),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_CHECKPOINT_BINDING_STALE' });
+
+    await expect(
+      store.commitWorkflowCheckpoint('run.checkpoint.1', binding(3), 'phase-0', 0, {
+        artifact: Buffer.from('phase-zero-after-resume'),
+      }),
+    ).resolves.toMatchObject({ revision: 4, resumeGeneration: 2, duplicate: false });
+  });
+
   it('rejects a multiword display title as a wire phase ID', async () => {
     const { store } = memoryStore();
     await store.initializeCheckpointControl('run.checkpoint.1', binding());
@@ -257,6 +286,94 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
       code: 'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
     });
   });
+
+  it('reads the maximum 4 MiB artifact through its 6 MiB JSON envelope limit', async () => {
+    const { store, files } = memoryStore();
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+    await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(), 'phase-0', 0, {
+      artifact: Buffer.alloc(4 * 1024 * 1024, 0x61),
+    });
+    const checkpoint = (await store.loadCheckpointControl('run.checkpoint.1'))!.checkpoints[0]!;
+    const artifactPath = store.checkpointArtifactPath('run.checkpoint.1', checkpoint.artifactHash);
+    expect(Buffer.byteLength(files.get(artifactPath)!, 'utf8')).toBeGreaterThan(4 * 1024 * 1024);
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1),
+    ).resolves.toMatchObject({ revision: 3 });
+
+    files.set(artifactPath, ' '.repeat(6 * 1024 * 1024 + 1));
+    await expect(
+      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(3), 'phase-1', 1),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_CHECKPOINT_ARTIFACT_INVALID' });
+  }, 30_000);
+
+  it('loads a 1024-item pending control above 256 KiB and rejects control above 8 MiB', async () => {
+    const observer: WorkflowCheckpointObservationPort = {
+      async journalObservation() {
+        throw new Error('offline');
+      },
+      async replay() {},
+      async flush() {},
+    };
+    const { store, files } = memoryStore({ observer });
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+    await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(), 'phase-0', 0, {
+      artifact: Buffer.from('artifact'),
+    });
+    await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1);
+    const controlPath = store.checkpointControlPath('run.checkpoint.1');
+    const seed = (await store.loadCheckpointControl('run.checkpoint.1'))!;
+    const resumeSeed = seed.pendingObservations[1]!;
+    const pendingObservations = [
+      seed.pendingObservations[0]!,
+      ...Array.from({ length: 1023 }, (_, offset) => {
+        const resumeGeneration = offset + 1;
+        const sourceSequence = resumeGeneration + 1;
+        const active = binding(resumeGeneration + 1);
+        return {
+          sourceSequence,
+          operation: 'resume_advance' as const,
+          observation: {
+            ...resumeSeed.observation,
+            revision: sourceSequence + 1,
+            resumeGeneration,
+            runner: {
+              workspaceId: active.workspaceId,
+              jobId: active.jobId,
+              attemptId: active.attemptId,
+              leaseId: active.leaseId,
+              fencingToken: active.fencingToken,
+              correlationId: active.correlationId,
+              runnerBuildHash: active.runnerBuildHash,
+            },
+          },
+        };
+      }),
+    ];
+    const expanded = validateWorkflowCheckpointControlState(
+      {
+        ...seed,
+        revision: 1025,
+        resumeGeneration: 1023,
+        sourceSequence: 1024,
+        activeBinding: binding(1024),
+        seenBindingHashes: Array.from({ length: 1024 }, (_, index) =>
+          workflowCheckpointHash(binding(index + 1)),
+        ),
+        pendingObservations,
+      },
+      'run.checkpoint.1',
+    );
+    files.set(controlPath, workflowCheckpointCanonicalJson(expanded));
+    expect(Buffer.byteLength(files.get(controlPath)!, 'utf8')).toBeGreaterThan(256 * 1024);
+    const loaded = await store.loadCheckpointControl('run.checkpoint.1');
+    expect(loaded?.sourceSequence).toBe(1024);
+    expect(loaded?.pendingObservations).toHaveLength(1024);
+
+    files.set(controlPath, ' '.repeat(8 * 1024 * 1024 + 1));
+    await expect(store.loadCheckpointControl('run.checkpoint.1')).rejects.toMatchObject({
+      code: 'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+    });
+  }, 30_000);
 
   it('keeps the observer completely absent from a large default-off checkpoint run', async () => {
     const { store } = memoryStore();
@@ -483,6 +600,80 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
     ).toEqual([]);
   }, 30_000);
 
+  it('removes only the successfully journaled pending prefix after one snapshot batch', async () => {
+    let online = false;
+    const calls: number[] = [];
+    const observer: WorkflowCheckpointObservationPort = {
+      async journalObservation(sourceSequence) {
+        calls.push(sourceSequence);
+        if (!online || sourceSequence === 2) throw new Error('offline');
+      },
+      async replay() {},
+      async flush() {},
+    };
+    const { store } = memoryStore({ observer });
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+    await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-0', 0);
+    await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(2), 'phase-0', 0, {
+      artifact: Buffer.from('artifact'),
+    });
+    online = true;
+    calls.length = 0;
+
+    await store.initializeCheckpointControl('run.checkpoint.1', binding(2));
+    expect(calls).toEqual([1, 2]);
+    expect(
+      (await store.loadCheckpointControl('run.checkpoint.1'))?.pendingObservations.map(
+        (item) => item.sourceSequence,
+      ),
+    ).toEqual([2]);
+  });
+
+  it('preserves a concurrently appended tail while another batch acknowledges its snapshot', async () => {
+    let invocation = 0;
+    let releaseFirst!: () => void;
+    let signalStarted!: () => void;
+    const started = new Promise<void>((resolvePromise) => {
+      signalStarted = resolvePromise;
+    });
+    const blocked = new Promise<void>((resolvePromise) => {
+      releaseFirst = resolvePromise;
+    });
+    let offline = true;
+    const calls: number[] = [];
+    const observer: WorkflowCheckpointObservationPort = {
+      async journalObservation(sourceSequence) {
+        calls.push(sourceSequence);
+        if (offline) throw new Error('offline');
+        invocation += 1;
+        if (invocation === 1) {
+          signalStarted();
+          await blocked;
+        }
+      },
+      async replay() {},
+      async flush() {},
+    };
+    const { store } = memoryStore({ observer });
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+    await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-0', 0);
+    offline = false;
+    calls.length = 0;
+
+    const firstDrain = store.initializeCheckpointControl('run.checkpoint.1', binding(2));
+    await started;
+    await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(2), 'phase-0', 0, {
+      artifact: Buffer.from('artifact'),
+    });
+    releaseFirst();
+    await firstDrain;
+
+    expect(calls).toEqual([1, 1, 2]);
+    expect((await store.loadCheckpointControl('run.checkpoint.1'))?.pendingObservations).toEqual(
+      [],
+    );
+  });
+
   it.each(['accepted', 'reconciliation_required'] as const)(
     'recovers a %s receipt after transport response loss without changing request bytes',
     async (status) => {
@@ -557,6 +748,43 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
     );
     expect(JSON.stringify(diagnostics)).not.toContain('must-not-escape');
   }, 30_000);
+
+  it('keeps startup replay fail-open with one stable redacted diagnostic', async () => {
+    const workspace = await root();
+    const journalRoot = join(workspace, 'journal');
+    const publisher = createWorkflowCheckpointShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8082',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetch: vi.fn(async () => {
+        throw new Error('network must not receive invalid journal content');
+      }) as typeof globalThis.fetch,
+    });
+    await createWorkflowCheckpointObservationPort({ enabled: true, journalRoot, publisher });
+    await writeFile(join(journalRoot, 'entries', 'secret-path-fragment'), 'secret-journal-bytes');
+    const diagnostics: Array<{ code?: string; runIdHash: string; observationHash: string }> = [];
+
+    await expect(
+      createWorkflowCheckpointObservationPort({
+        enabled: true,
+        journalRoot,
+        publisher,
+        diagnosticSink: (diagnostic) => {
+          diagnostics.push(diagnostic);
+        },
+      }),
+    ).resolves.toBeDefined();
+    await vi.waitFor(() => {
+      expect(diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'WORKFLOW_CHECKPOINT_JOURNAL_REPLAY_FAILED',
+          runIdHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+          observationHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        }),
+      );
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain('secret');
+  });
 
   it.runIf(process.platform !== 'win32')(
     'rejects a symlinked journal entry through the no-follow reader',
@@ -706,5 +934,83 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
         rawResult: 'forbidden',
       }),
     ).toThrow('missing or unknown fields');
+  });
+
+  it('rejects derived phase drift and duplicate pending source sequences', async () => {
+    const value = envelope().observation;
+    expect(() =>
+      validateWorkflowCheckpointShadowObservation({
+        ...value,
+        checkpoint: { ...value.checkpoint!, phaseId: 'phase-1' },
+      }),
+    ).toThrow('phase identity');
+
+    const observer: WorkflowCheckpointObservationPort = {
+      async journalObservation() {
+        throw new Error('offline');
+      },
+      async replay() {},
+      async flush() {},
+    };
+    const { store } = memoryStore({ observer });
+    await store.initializeCheckpointControl('run.checkpoint.1', binding());
+    await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-0', 0);
+    const state = (await store.loadCheckpointControl('run.checkpoint.1'))!;
+    const pending = state.pendingObservations[0]!;
+    expect(() =>
+      validateWorkflowCheckpointControlState(
+        { ...state, pendingObservations: [pending, pending] },
+        'run.checkpoint.1',
+      ),
+    ).toThrow('duplicated');
+  });
+
+  it('accepts only IP-literal loopback HTTP publishers and enforces checkpoint depth 64', () => {
+    for (const endpoint of ['http://127.0.0.1:8082', 'http://[::1]:8082']) {
+      expect(() =>
+        createWorkflowCheckpointShadowHttpPublisher({
+          endpoint,
+          bearerToken: 'qualification-bearer-token-value',
+          callerId: 'workflow-runner',
+        }),
+      ).not.toThrow();
+    }
+    for (const endpoint of [
+      'http://localhost:8082',
+      'https://checkpoint.internal:8443',
+      'http://user@127.0.0.1:8082',
+    ]) {
+      expect(() =>
+        createWorkflowCheckpointShadowHttpPublisher({
+          endpoint,
+          bearerToken: 'qualification-bearer-token-value',
+          callerId: 'workflow-runner',
+        }),
+      ).toThrow('options are invalid');
+    }
+
+    let within: unknown = 'leaf';
+    for (let depth = 0; depth < 64; depth += 1) within = { child: within };
+    expect(() => workflowCheckpointCanonicalJson(within)).not.toThrow();
+    expect(() => workflowCheckpointCanonicalJson({ child: within })).toThrow('depth exceeded');
+  });
+
+  it('re-encodes every golden vector to its frozen canonical bytes and hash', async () => {
+    const golden = JSON.parse(
+      await readFile(
+        new URL(
+          '../../contracts/workflow-checkpoint-shadow/v1/golden-vectors.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as {
+      vectors: Record<string, { value: unknown; canonicalBytes: string; sha256: string }>;
+    };
+    for (const vector of Object.values(golden.vectors)) {
+      const canonicalBytes = workflowCheckpointCanonicalJson(vector.value);
+      expect(canonicalBytes).toBe(vector.canonicalBytes);
+      expect(workflowCheckpointBytesHash(Buffer.from(canonicalBytes, 'utf8'))).toBe(vector.sha256);
+    }
   });
 });

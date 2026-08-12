@@ -26,6 +26,7 @@
     "idempotencyKey": "openslack.workflow-checkpoint-shadow.v1.{observationHash}",
     "sourceSequence": "independent_monotonic_per_run_event_stream_starting_at_1",
     "phaseId": "phase-{zero_based_manifest_index}",
+    "preCheckpointResume": "prior_checkpoint_null_next_phase_0_generation_monotonic",
     "checkpointCommitPoint": "after_phase_work",
     "duplicateReceipt": "exact_stored_bytes_transport_header_only"
   },
@@ -41,7 +42,8 @@
     "maxJournalFileBytes": 1048576,
     "maxJournalEntries": 16384,
     "maxJournalBytes": 536870912,
-    "maxPendingObservations": 1024
+    "maxPendingObservations": 1024,
+    "maxCanonicalDepth": 64
   },
   "localOnlySchemas": [
     "schemas/workflow-checkpoint-artifact.v1.schema.json",
@@ -79,13 +81,13 @@
     },
     "schemas/workflow-checkpoint-control.v1.schema.json": {
       "path": "schemas/workflow-checkpoint-control.v1.schema.json",
-      "byteLength": 4730,
-      "sha256": "a9cfc1964ad7e07ae4465c1d6ebc45894a1de783feb11f0b74a89c52e5a768a3"
+      "byteLength": 4757,
+      "sha256": "97e17e11600e7e4e447daeacb2567f5cdaff508b7ae26bc5eec417da79a3e78d"
     },
     "schemas/workflow-checkpoint-shadow-observation.v1.schema.json": {
       "path": "schemas/workflow-checkpoint-shadow-observation.v1.schema.json",
-      "byteLength": 5776,
-      "sha256": "ff897bdb0fbbb67dbfc34b18c0e806b2b4355aed7a9e6cf2c60b4e1282acb61b"
+      "byteLength": 6566,
+      "sha256": "06b255f0783864c3503e102e850aa5fedfdd1bb97689f5ea53745f0f76d0c702"
     },
     "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json": {
       "path": "schemas/workflow-checkpoint-shadow-envelope.v1.schema.json",
@@ -109,8 +111,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 11948,
-      "sha256": "4cad9d491a30c8d15e70320163448d9fe6bbed01ba019ee441bcd301f67b92a8"
+      "byteLength": 14535,
+      "sha256": "65bd0ea771fb0984fd97b6a97306953953686f2a381a12b4adb3a8765c1c42c7"
     }
   },
   "bundleFiles": [

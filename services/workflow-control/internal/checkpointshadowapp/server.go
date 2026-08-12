@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -66,15 +67,29 @@ func New(options Options) (*Service, error) {
 func (s *Service) Handler() http.Handler { return s.handler }
 func (s *Service) Run(ctx context.Context, bind string, shutdown time.Duration) error {
 	server := &http.Server{Addr: bind, Handler: s.handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: readTimeout, WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
-	errors := make(chan error, 1)
-	go func() { errors <- server.ListenAndServe() }()
+	listener, err := net.Listen("tcp", bind)
+	if err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdown)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
-	case err := <-errors:
-		if err == http.ErrServerClosed {
+		shutdownErr := server.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			// A timed-out graceful shutdown does not necessarily unblock Serve.
+			// Close the listener/connections before draining the serve result.
+			shutdownErr = errors.Join(shutdownErr, server.Close())
+		}
+		serveErr := <-done
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		return errors.Join(shutdownErr, serveErr)
+	case err := <-done:
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
@@ -86,7 +101,7 @@ func (s *Service) requireIdentity(next http.Handler) http.Handler {
 		authorization := r.Header.Values("Authorization")
 		workspace := r.Header.Values("X-OpenSlack-Workspace-ID")
 		caller := r.Header.Values("X-OpenSlack-Caller-ID")
-		valid := len(authorization) == 1 && strings.HasPrefix(authorization[0], "Bearer ") && len(workspace) == 1 && workspace[0] == s.options.WorkspaceID && len(caller) == 1 && caller[0] == s.options.CallerID
+		valid := len(authorization) == 1 && strings.HasPrefix(authorization[0], "Bearer ") && len(workspace) == 1 && constantTimeText(workspace[0], s.options.WorkspaceID) && len(caller) == 1 && constantTimeText(caller[0], s.options.CallerID)
 		if valid {
 			digest := sha256.Sum256([]byte(strings.TrimPrefix(authorization[0], "Bearer ")))
 			expected, _ := hex.DecodeString(s.options.BearerTokenSHA256)
@@ -99,6 +114,12 @@ func (s *Service) requireIdentity(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func constantTimeText(actual, expected string) bool {
+	actualDigest := sha256.Sum256([]byte(actual))
+	expectedDigest := sha256.Sum256([]byte(expected))
+	return subtle.ConstantTimeCompare(actualDigest[:], expectedDigest[:]) == 1
 }
 func (s *Service) handleObserve(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestDeadline)
@@ -122,7 +143,7 @@ func (s *Service) handleObserve(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	if prepared.Envelope.Observation.Runner.WorkspaceID != s.options.WorkspaceID {
+	if !constantTimeText(prepared.Envelope.Observation.Runner.WorkspaceID, s.options.WorkspaceID) {
 		writeError(w, http.StatusUnprocessableEntity, string(checkpointshadowstore.ErrorInputInvalid), "workspace binding is invalid")
 		return
 	}

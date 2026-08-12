@@ -14,6 +14,7 @@ CREATE TABLE workflow_control_checkpoint_shadow_heads (
     PRIMARY KEY (workspace_id, run_id),
     CHECK ((matched_source_sequence IS NULL) = (observation_hash IS NULL)),
     CHECK ((observation_hash IS NULL) = (exact_observation_bytes IS NULL)),
+    CHECK (matched_source_sequence IS NOT NULL OR mismatch_latched),
     CHECK (observation_hash IS NULL OR octet_length(observation_hash) = 32),
     CHECK (exact_observation_bytes IS NULL OR octet_length(exact_observation_bytes) BETWEEN 1 AND 524288)
 );
@@ -92,7 +93,7 @@ BEGIN
            NEW.exact_observation_bytes IS DISTINCT FROM OLD.exact_observation_bytes THEN
             RAISE EXCEPTION 'unmatched transition changed checkpoint shadow head';
         END IF;
-    ELSIF NEW.matched_source_sequence <> NEW.source_sequence OR OLD.mismatch_latched THEN
+    ELSIF NEW.matched_source_sequence IS DISTINCT FROM NEW.source_sequence OR OLD.mismatch_latched THEN
         RAISE EXCEPTION 'invalid matched checkpoint shadow transition';
     END IF;
     RETURN NEW;

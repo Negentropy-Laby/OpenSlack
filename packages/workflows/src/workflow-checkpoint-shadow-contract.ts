@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
-import { types as nodeTypes } from 'node:util';
 import { canonicalJson } from './internal/canonical-json.js';
+import {
+  canonicalUtcTimestamp,
+  closedDataRecord,
+  immutableContractValue,
+  ownDataField,
+  type ContractDataRecord,
+} from './internal/contract-validation.js';
 
 export const WORKFLOW_CHECKPOINT_SHADOW_SCHEMA =
   'openslack.workflow_checkpoint_shadow_observation.v1' as const;
@@ -14,6 +20,7 @@ export const WORKFLOW_CHECKPOINT_SHADOW_ROUTE = '/v1/shadow/workflow-control/che
 export const WORKFLOW_CHECKPOINT_SHADOW_IDEMPOTENCY_PREFIX =
   'openslack.workflow-checkpoint-shadow.v1.' as const;
 export const WORKFLOW_CHECKPOINT_MAX_SOURCE_SEQUENCE = 9_007_199_254_740_990;
+const WORKFLOW_CHECKPOINT_CANONICAL_MAX_DEPTH = 64;
 
 export type WorkflowCheckpointErrorCode =
   | 'WORKFLOW_CHECKPOINT_ARTIFACT_INVALID'
@@ -165,7 +172,7 @@ export class WorkflowCheckpointContractError extends WorkflowCheckpointError {
   }
 }
 
-type DataRecord = Record<string, unknown>;
+type DataRecord = ContractDataRecord;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$/u;
 const HASH = /^[0-9a-f]{64}$/u;
@@ -177,34 +184,17 @@ function fail(path: string, message: string): never {
 }
 
 function record(value: unknown, fields: readonly string[], path: string): DataRecord {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    nodeTypes.isProxy(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
-  ) {
-    return fail(path, `${path} must be an inert object.`);
-  }
-  const keys = Reflect.ownKeys(value);
-  if (
-    keys.length !== fields.length ||
-    fields.some((field) => !Object.hasOwn(value, field)) ||
-    keys.some((key) => typeof key !== 'string' || !fields.includes(key))
-  ) {
-    return fail(path, `${path} has missing or unknown fields.`);
-  }
-  for (const key of keys) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
-      return fail(`${path}/${String(key)}`, 'Only enumerable data fields are allowed.');
-    }
-  }
-  return value as DataRecord;
+  return closedDataRecord(value, fields, path, {
+    inert: (recordPath) => fail(recordPath, `${recordPath} must be an inert object.`),
+    missing: (recordPath) => fail(recordPath, `${recordPath} has missing or unknown fields.`),
+    unknown: (recordPath) => fail(recordPath, `${recordPath} has missing or unknown fields.`),
+    dataField: (recordPath, key) =>
+      fail(`${recordPath}/${String(key)}`, 'Only enumerable data fields are allowed.'),
+  });
 }
 
 function own(value: DataRecord, key: string): unknown {
-  return value[key];
+  return ownDataField(value, key);
 }
 
 function text(value: unknown, path: string, pattern: RegExp): string {
@@ -228,20 +218,16 @@ function integer(value: unknown, path: string, minimum = 0): number {
 }
 
 function timestamp(value: unknown, path: string): string {
-  const result = text(value, path, TIMESTAMP);
-  if (
-    !Number.isFinite(Date.parse(result)) ||
-    new Date(Date.parse(result)).toISOString() !== result
-  ) {
-    return fail(path, `${path} is not canonical UTC.`);
-  }
-  return result;
+  return canonicalUtcTimestamp(
+    value,
+    path,
+    (input, inputPath) => text(input, inputPath, TIMESTAMP),
+    (inputPath) => fail(inputPath, `${inputPath} is not canonical UTC.`),
+  );
 }
 
 function immutable<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value;
-  for (const item of Object.values(value as Record<string, unknown>)) immutable(item);
-  return Object.freeze(value);
+  return immutableContractValue(value);
 }
 
 export function validateWorkflowCheckpointExecutionBinding(
@@ -302,10 +288,15 @@ export function validateWorkflowCheckpointRecord(
   }
   const nullableHash = (key: 'resultHash' | 'cacheKeyHash') =>
     own(item, key) === null ? null : hash(own(item, key), `${path}/${key}`);
+  const phaseId = id(own(item, 'phaseId'), `${path}/phaseId`);
+  const phaseIndex = integer(own(item, 'phaseIndex'), `${path}/phaseIndex`);
+  if (phaseId !== `phase-${phaseIndex}`) {
+    fail(`${path}/phaseId`, 'Checkpoint phase identity is invalid.');
+  }
   return immutable({
     checkpointId: id(own(item, 'checkpointId'), `${path}/checkpointId`),
-    phaseId: id(own(item, 'phaseId'), `${path}/phaseId`),
-    phaseIndex: integer(own(item, 'phaseIndex'), `${path}/phaseIndex`),
+    phaseId,
+    phaseIndex,
     commitPoint: 'after_phase_work' as const,
     artifactRef: text(own(item, 'artifactRef'), `${path}/artifactRef`, SAFE_REF),
     artifactHash: hash(own(item, 'artifactHash'), `${path}/artifactHash`),
@@ -514,6 +505,13 @@ export function validateWorkflowCheckpointShadowObservation(
     own(item, 'nextPhaseIndex') === null
       ? null
       : integer(own(item, 'nextPhaseIndex'), '$/nextPhaseIndex');
+  if (
+    nextPhaseId !== null &&
+    nextPhaseIndex !== null &&
+    nextPhaseId !== `phase-${nextPhaseIndex}`
+  ) {
+    fail('$/nextPhaseId', 'Resume phase identity is invalid.');
+  }
   const runnerValue = record(
     own(item, 'runner'),
     [
@@ -534,13 +532,21 @@ export function validateWorkflowCheckpointShadowObservation(
     nextPhaseIndex === null &&
     checkpoint.committedRevision === revision &&
     checkpoint.resumeGeneration === resumeGeneration;
-  const resumeVariant =
+  const initialResumeVariant =
+    checkpoint === null &&
+    priorCheckpoint === null &&
+    nextPhaseId === 'phase-0' &&
+    nextPhaseIndex === 0 &&
+    revision > 1 &&
+    resumeGeneration > 0;
+  const checkpointResumeVariant =
     checkpoint === null &&
     priorCheckpoint !== null &&
     nextPhaseId !== null &&
     nextPhaseIndex === priorCheckpoint.phaseIndex + 1 &&
     revision > priorCheckpoint.committedRevision &&
     resumeGeneration > priorCheckpoint.resumeGeneration;
+  const resumeVariant = initialResumeVariant || checkpointResumeVariant;
   if (checkpointVariant === resumeVariant) {
     fail('$/checkpoint', 'Observation variant is invalid.');
   }
@@ -700,11 +706,13 @@ export function validateWorkflowCheckpointShadowReceipt(
 }
 
 export function workflowCheckpointCanonicalJson(value: unknown): string {
-  return canonicalJson(value);
+  return canonicalJson(value, { maxDepth: WORKFLOW_CHECKPOINT_CANONICAL_MAX_DEPTH });
 }
 
 export function workflowCheckpointHash(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+  return createHash('sha256')
+    .update(canonicalJson(value, { maxDepth: WORKFLOW_CHECKPOINT_CANONICAL_MAX_DEPTH }), 'utf8')
+    .digest('hex');
 }
 
 export function workflowCheckpointBytesHash(value: Uint8Array | string): string {

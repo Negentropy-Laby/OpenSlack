@@ -258,8 +258,11 @@ identities.
 Resume advances a monotonic generation under the same TypeScript control lock and emits an
 explicit `resume_advance` observation. The opaque execution binding can be created only by the
 runner session after an advancing GS8 `lease_accept` receipt. It is not accepted by public execute
-or resume options. A new attempt and lease with a higher fence may resume; reuse, drift, missing
-artifact, corrupt control, and phase gaps fail closed before new evidence is committed.
+or resume options. Before the first checkpoint, a new accepted lease resumes at exactly
+`phase-0` with a null prior checkpoint; further new leases may repeat that pre-checkpoint resume
+until one commits phase 0. Afterward, resume advances from the latest committed checkpoint. A new
+attempt and lease with a higher fence may resume; reuse, drift, missing artifact, corrupt control,
+and phase gaps fail closed before new evidence is committed.
 
 The credential-free shadow contract is frozen under:
 
@@ -271,6 +274,11 @@ It contains closed observation, envelope, control, artifact, accepted receipt, r
 receipt, and golden-vector schemas. `checkpoint_commit` and `resume_advance` are discriminated
 operations with an independent per-run source sequence. Runner protocol v1 bytes remain unchanged;
 the observation is delivered through a separate default-off loopback HTTP port.
+
+The public `WorkflowRuntime.checkpoint` capability is optional and absent from ordinary runtimes.
+Only the accepted sealed-runner path receives the stronger runner-only runtime with a required
+checkpoint capability. Checkpoint canonical data is bounded to depth 64; control, artifact JSON,
+and ordinary run metadata use their own 8 MiB, 6 MiB, and 256 KiB read bounds respectively.
 
 The Go service writes only `workflow_control_checkpoint_shadow_*`. It validates the canonical
 envelope, recomputes parity, advances only a contiguous matched prefix, returns byte-identical

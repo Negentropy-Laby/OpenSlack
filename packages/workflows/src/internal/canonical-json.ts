@@ -2,6 +2,8 @@ import { types as nodeTypes } from 'node:util';
 
 export interface CanonicalJsonOptions {
   readonly allowNullPrototype?: boolean;
+  /** Maximum container nesting depth. The root value is depth zero. */
+  readonly maxDepth?: number;
 }
 
 export class CanonicalJsonError extends TypeError {
@@ -13,7 +15,13 @@ export class CanonicalJsonError extends TypeError {
 
 /** Encode inert JSON data with lexicographically sorted object keys. */
 export function canonicalJson(value: unknown, options: CanonicalJsonOptions = {}): string {
-  return encode(value, options, new WeakSet<object>());
+  if (
+    options.maxDepth !== undefined &&
+    (!Number.isSafeInteger(options.maxDepth) || options.maxDepth < 0)
+  ) {
+    throw new CanonicalJsonError('Canonical JSON maximum depth is invalid.');
+  }
+  return encode(value, options, new WeakSet<object>(), 0);
 }
 
 /** Validate and clone inert JSON data without retaining caller-owned objects. */
@@ -21,7 +29,15 @@ export function canonicalJsonRoundTrip<T>(value: T, options: CanonicalJsonOption
   return JSON.parse(canonicalJson(value, options)) as T;
 }
 
-function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSet<object>): string {
+function encode(
+  value: unknown,
+  options: CanonicalJsonOptions,
+  ancestors: WeakSet<object>,
+  depth: number,
+): string {
+  if (options.maxDepth !== undefined && depth > options.maxDepth) {
+    throw new CanonicalJsonError('Canonical JSON depth exceeded.');
+  }
   if (value === null || typeof value === 'boolean' || typeof value === 'string') {
     return JSON.stringify(value);
   }
@@ -60,7 +76,7 @@ function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSe
         if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
           throw new CanonicalJsonError();
         }
-        encoded.push(encode(descriptor.value, options, ancestors));
+        encoded.push(encode(descriptor.value, options, ancestors, depth + 1));
       }
       return `[${encoded.join(',')}]`;
     }
@@ -74,7 +90,7 @@ function encode(value: unknown, options: CanonicalJsonOptions, ancestors: WeakSe
         if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
           throw new CanonicalJsonError();
         }
-        return `${JSON.stringify(key)}:${encode(descriptor.value, options, ancestors)}`;
+        return `${JSON.stringify(key)}:${encode(descriptor.value, options, ancestors, depth + 1)}`;
       })
       .join(',')}}`;
   } finally {

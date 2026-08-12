@@ -36,7 +36,7 @@ func TestTypeScriptCheckpointShadowGoldenVectors(t *testing.T) {
 	if bundle.Schema != "openslack.workflow_checkpoint_shadow_golden_vectors.v1" || bundle.Authority != "typescript" || bundle.GoRole != "observer_only" {
 		t.Fatalf("unexpected TypeScript golden bundle identity: %#v", bundle)
 	}
-	for _, name := range []string{"checkpointCommit", "resumeAdvance"} {
+	for _, name := range []string{"checkpointCommit", "preCheckpointResume", "resumeAdvance"} {
 		vector, ok := bundle.Vectors[name]
 		if !ok {
 			t.Fatalf("missing TypeScript golden vector %s", name)

@@ -133,6 +133,38 @@ func TestCheckpointShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T)
 	})
 }
 
+func TestCheckpointShadowHeadRejectsNullMatchedBypasses(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_checkpoint_shadow_heads (
+    workspace_id, run_id, source_sequence, operation, mismatch_latched
+) VALUES ('workspace-null','run-null',1,'checkpoint_commit',false)`); err == nil {
+		t.Fatal("unmatched non-mismatch head bypassed its CHECK constraint")
+	} else {
+		requireSQLState(t, err, "23514")
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_checkpoint_shadow_heads (
+    workspace_id, run_id, source_sequence, operation, matched_source_sequence,
+    mismatch_latched, observation_hash, exact_observation_bytes
+) VALUES (
+    'workspace-matched','run-matched',1,'checkpoint_commit',1,
+    false,decode(repeat('11',32),'hex'),convert_to('{}','UTF8')
+)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+UPDATE workflow_control_checkpoint_shadow_heads
+SET source_sequence=2, matched_source_sequence=NULL, mismatch_latched=true,
+    observation_hash=NULL, exact_observation_bytes=NULL
+WHERE workspace_id='workspace-matched' AND run_id='run-matched'`); err == nil {
+		t.Fatal("NULL matched sequence bypassed the transition trigger")
+	} else {
+		requireSQLState(t, err, "P0001")
+	}
+}
+
 func TestRunnerMigrationDoesNotClaimGS9Authority(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := context.Background()

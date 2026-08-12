@@ -228,7 +228,8 @@ export interface WorkflowRuntime {
   readonly mode: ExecutionMode;
   readonly budget: BudgetState & ClaudeBudgetAPI;
   readonly args: Record<string, unknown>;
-  readonly checkpoint: WorkflowCheckpointAPI;
+  /** Present only for the accepted sealed-runner checkpoint authority path. */
+  readonly checkpoint?: WorkflowCheckpointAPI;
 
   phase(name: string): void;
   log(message: string): void;
@@ -268,6 +269,11 @@ export interface WorkflowRuntime {
       audit(action: string, details?: unknown): Promise<void>;
     };
   };
+}
+
+/** Runner-only runtime with an accepted checkpoint lease authority. */
+export interface WorkflowCheckpointRuntime extends WorkflowRuntime {
+  readonly checkpoint: WorkflowCheckpointAPI;
 }
 
 export interface FanoutSynthesizeOptions<T, R, S> {

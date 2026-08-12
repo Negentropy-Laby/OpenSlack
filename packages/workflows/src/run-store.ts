@@ -17,17 +17,15 @@ import {
   writeFile as fsWriteFile,
   appendFile as fsAppendFile,
   access,
-  open,
   rename,
   stat,
-  lstat,
   unlink,
 } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
 import {
   atomicWrite,
-  assertOwnerFile,
+  acquireOwnerJournalLock,
   isWorkflowControlObservationPort,
   productionJournalSecurity,
   ensureOwnerDirectory,
@@ -164,9 +162,7 @@ export const WORKFLOW_CHECKPOINT_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
 const WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES = 8 * 1024 * 1024;
 const WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES = 6 * 1024 * 1024;
 const WORKFLOW_CHECKPOINT_HASH = /^[0-9a-f]{64}$/u;
-const WORKFLOW_CHECKPOINT_LOCK_STALE_MS = 30_000;
-const WORKFLOW_CHECKPOINT_LOCK_WAIT_MS = 3_000;
-const WORKFLOW_CHECKPOINT_PROCESS_SESSION_ID = randomUUID();
+const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
 
 function checkpointBinding(value: unknown): WorkflowCheckpointExecutionBinding {
   try {
@@ -877,10 +873,15 @@ export class RunStore {
           'Workflow checkpoint binding is stale.',
         );
       }
-      const priorCheckpoint = state.checkpoints.at(-1);
+      const priorCheckpoint = state.checkpoints.at(-1) ?? null;
+      const initialPhaseReentry =
+        priorCheckpoint === null &&
+        state.checkpoints.length === 0 &&
+        nextPhaseIndex === 0 &&
+        nextPhaseId === 'phase-0';
       if (
-        !priorCheckpoint ||
-        nextPhaseIndex !== priorCheckpoint.phaseIndex + 1 ||
+        (!initialPhaseReentry &&
+          (priorCheckpoint === null || nextPhaseIndex !== priorCheckpoint.phaseIndex + 1)) ||
         nextPhaseId !== `phase-${nextPhaseIndex}` ||
         binding.attemptId === state.activeBinding.attemptId ||
         binding.leaseId === state.activeBinding.leaseId ||
@@ -898,7 +899,7 @@ export class RunStore {
           'Workflow checkpoint resume binding or next phase is invalid.',
         );
       }
-      await this.verifyCheckpointArtifact(runId, priorCheckpoint);
+      if (priorCheckpoint) await this.verifyCheckpointArtifact(runId, priorCheckpoint);
       const revision = state.revision + 1;
       const resumeGeneration = state.resumeGeneration + 1;
       const queueObservation = Boolean(
@@ -1116,7 +1117,11 @@ export class RunStore {
         : await this.fs.readFile(this.checkpointControlPath(runId));
       if (raw === null) return null;
       const state = validateWorkflowCheckpointControlState(
-        parseBoundedJson(raw, `Workflow checkpoint control for ${runId}`),
+        parseBoundedJson(
+          raw,
+          `Workflow checkpoint control for ${runId}`,
+          WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES,
+        ),
         runId,
       );
       if (workflowCheckpointCanonicalJson(state) !== raw) {
@@ -1261,7 +1266,11 @@ export class RunStore {
         'Workflow checkpoint artifact exceeds its byte limit.',
       );
     }
-    const value = parseBoundedJson(raw, `Workflow checkpoint artifact for ${runId}`);
+    const value = parseBoundedJson(
+      raw,
+      `Workflow checkpoint artifact for ${runId}`,
+      WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES,
+    );
     if (
       value === null ||
       typeof value !== 'object' ||
@@ -1313,26 +1322,40 @@ export class RunStore {
     while (true) {
       const pending = await this.withCheckpointMutation(runId, async () => {
         const state = await this.requireCheckpointControl(runId);
-        return state.pendingObservations[0] ?? null;
+        return [...state.pendingObservations];
       });
-      if (!pending) return;
-      try {
-        await this.checkpointObservationPort.journalObservation(
-          pending.sourceSequence,
-          pending.operation,
-          pending.observation,
-        );
-      } catch {
-        return;
+      if (pending.length === 0) return;
+      let acknowledged = 0;
+      for (const observation of pending) {
+        try {
+          await this.checkpointObservationPort.journalObservation(
+            observation.sourceSequence,
+            observation.operation,
+            observation.observation,
+          );
+          acknowledged += 1;
+        } catch {
+          break;
+        }
       }
+      if (acknowledged === 0) return;
       try {
         await this.withCheckpointMutation(runId, async () => {
           const state = await this.requireCheckpointControl(runId);
-          if (state.pendingObservations[0]?.sourceSequence !== pending.sourceSequence) return;
+          const exactPrefix = pending.slice(0, acknowledged).every((expected, index) => {
+            const current = state.pendingObservations[index];
+            return (
+              current?.sourceSequence === expected.sourceSequence &&
+              current.operation === expected.operation &&
+              workflowCheckpointHash(current.observation) ===
+                workflowCheckpointHash(expected.observation)
+            );
+          });
+          if (!exactPrefix) return;
           await this.writeCheckpointControl(
             runId,
             validateWorkflowCheckpointControlState(
-              { ...state, pendingObservations: state.pendingObservations.slice(1) },
+              { ...state, pendingObservations: state.pendingObservations.slice(acknowledged) },
               runId,
             ),
           );
@@ -1341,6 +1364,7 @@ export class RunStore {
         // The journal is already durable. Acknowledgement cleanup is shadow-only.
         return;
       }
+      if (acknowledged < pending.length) return;
     }
   }
 
@@ -1661,22 +1685,31 @@ export class RunStore {
       return [];
     }
 
-    const results: WorkflowRunInfo[] = [];
-    for (const runId of runIds) {
-      const meta = await this.loadMeta(runId);
-      const st = await this.loadStatus(runId);
-      if (meta && st && st.status === status) {
-        results.push({
-          runId: meta.runId,
-          workflowName: meta.workflowName,
-          mode: meta.mode,
-          status: st.status as RunStatusState,
-          startedAt: meta.startedAt,
-          updatedAt: st.updatedAt,
-        });
+    const results = new Array<WorkflowRunInfo | null>(runIds.length).fill(null);
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= runIds.length) return;
+        const runId = runIds[index]!;
+        const [meta, st] = await Promise.all([this.loadMeta(runId), this.loadStatus(runId)]);
+        if (meta && st && st.status === status) {
+          results[index] = {
+            runId: meta.runId,
+            workflowName: meta.workflowName,
+            mode: meta.mode,
+            status: st.status as RunStatusState,
+            startedAt: meta.startedAt,
+            updatedAt: st.updatedAt,
+          };
+        }
       }
-    }
-    return results;
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(WORKFLOW_RUN_LIST_CONCURRENCY, runIds.length) }, worker),
+    );
+    return results.filter((item): item is WorkflowRunInfo => item !== null);
   }
 }
 
@@ -1735,93 +1768,24 @@ function createNodeFs(): RunStoreFs {
     },
     async withExclusiveLock<T>(path: string, action: () => Promise<T>) {
       const target = resolve(path);
-      let handle: Awaited<ReturnType<typeof open>> | undefined;
-      const deadline = Date.now() + WORKFLOW_CHECKPOINT_LOCK_WAIT_MS;
-      while (Date.now() <= deadline) {
-        try {
-          handle = await open(target, 'wx', 0o600);
-          productionJournalSecurity().hardenPath(target, false);
-          await assertOwnerFile(target, productionJournalSecurity());
-          await handle.writeFile(
-            workflowCheckpointCanonicalJson({
-              schema: 'openslack.workflow_checkpoint_control_lock.v1',
-              pid: process.pid,
-              sessionId: WORKFLOW_CHECKPOINT_PROCESS_SESSION_ID,
-              createdAt: new Date().toISOString(),
-            }),
-            'utf8',
-          );
-          await handle.sync();
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-            throw workflowCheckpointError(
-              'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
-              'Workflow checkpoint control lock could not be acquired.',
-              error,
-            );
-          }
-          let before: Awaited<ReturnType<typeof assertOwnerFile>>;
-          let lock: Record<string, unknown>;
-          try {
-            before = await assertOwnerFile(target, productionJournalSecurity());
-            const raw = await readOwnerFile(target, productionJournalSecurity(), 16 * 1024);
-            lock = JSON.parse(raw) as Record<string, unknown>;
-            if (workflowCheckpointCanonicalJson(lock) !== raw) {
-              throw new Error('Workflow checkpoint control lock is not canonical.');
-            }
-          } catch (inspectionError) {
-            if ((inspectionError as NodeJS.ErrnoException).code === 'ENOENT') continue;
-            throw workflowCheckpointError(
-              'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
-              'Workflow checkpoint control lock is invalid.',
-              inspectionError,
-            );
-          }
-          const createdAt = typeof lock.createdAt === 'string' ? Date.parse(lock.createdAt) : NaN;
-          const pid = lock.pid;
-          if (
-            lock.schema !== 'openslack.workflow_checkpoint_control_lock.v1' ||
-            typeof lock.sessionId !== 'string' ||
-            typeof pid !== 'number' ||
-            !Number.isSafeInteger(pid) ||
-            pid < 1 ||
-            !Number.isFinite(createdAt)
-          ) {
-            throw workflowCheckpointError(
-              'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
-              'Workflow checkpoint control lock is invalid.',
-            );
-          }
-          let live = true;
-          try {
-            process.kill(pid, 0);
-          } catch (probeError) {
-            const probeCode = (probeError as NodeJS.ErrnoException).code;
-            if (probeCode === 'ESRCH') live = false;
-            else if (probeCode !== 'EPERM') throw probeError;
-          }
-          if (!live && Date.now() - createdAt >= WORKFLOW_CHECKPOINT_LOCK_STALE_MS) {
-            const repeated = await lstat(target, { bigint: true });
-            if (before.dev === repeated.dev && before.ino === repeated.ino) {
-              await unlink(target);
-              continue;
-            }
-          }
-          await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
-        }
-      }
-      if (!handle) {
+      let release: () => Promise<void>;
+      try {
+        release = await acquireOwnerJournalLock(
+          dirname(target),
+          basename(target, '.lock'),
+          productionJournalSecurity(),
+        );
+      } catch (error) {
         throw workflowCheckpointError(
           'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
-          'Workflow checkpoint control lock deadline exceeded.',
+          'Workflow checkpoint control lock could not be acquired.',
+          error,
         );
       }
       try {
         return await action();
       } finally {
-        await handle.close();
-        await unlink(target).catch(() => undefined);
+        await release();
       }
     },
     async writeOwnerOnlyAtomic(path: string, content: string) {
@@ -2020,8 +1984,12 @@ export function encodeRunMetaArguments(meta: RunMeta): ReturnType<typeof encodeW
   return encodeWorkflowArguments(decodeRunMetaArguments(meta));
 }
 
-function parseBoundedJson(raw: string, label: string): unknown {
-  if (Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes) {
+function parseBoundedJson(
+  raw: string,
+  label: string,
+  maxBytes = WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes,
+): unknown {
+  if (Buffer.byteLength(raw, 'utf8') > maxBytes) {
     throw new Error(`${label} exceeds its byte limit.`);
   }
   try {

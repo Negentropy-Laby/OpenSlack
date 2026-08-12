@@ -82,11 +82,20 @@ func validateEnvelope(value Envelope) error {
 			return err
 		}
 	} else {
-		if o.Checkpoint != nil || o.PriorCheckpoint == nil || o.NextPhaseID == nil || o.NextPhaseIndex == nil || !safeID.MatchString(*o.NextPhaseID) || *o.NextPhaseIndex != o.PriorCheckpoint.PhaseIndex+1 || *o.NextPhaseID != phaseID(*o.NextPhaseIndex) || *o.NextPhaseIndex > MaxSafeInteger || o.Revision <= o.PriorCheckpoint.CommittedRevision || o.ResumeGeneration <= o.PriorCheckpoint.ResumeGeneration {
+		if o.Checkpoint != nil || o.NextPhaseID == nil || o.NextPhaseIndex == nil || !safeID.MatchString(*o.NextPhaseID) || *o.NextPhaseID != phaseID(*o.NextPhaseIndex) || *o.NextPhaseIndex < 0 || *o.NextPhaseIndex > MaxSafeInteger {
 			return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
 		}
-		if err := validateCheckpoint(*o.PriorCheckpoint); err != nil {
-			return err
+		if o.PriorCheckpoint == nil {
+			if *o.NextPhaseIndex != 0 || o.Revision <= 1 || o.ResumeGeneration <= 0 {
+				return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
+			}
+		} else {
+			if *o.NextPhaseIndex != o.PriorCheckpoint.PhaseIndex+1 || o.Revision <= o.PriorCheckpoint.CommittedRevision || o.ResumeGeneration <= o.PriorCheckpoint.ResumeGeneration {
+				return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
+			}
+			if err := validateCheckpoint(*o.PriorCheckpoint); err != nil {
+				return err
+			}
 		}
 	}
 	if !hash64.MatchString(value.ObservationHash) {
@@ -148,7 +157,9 @@ func Compare(next Envelope, previous *Head) (string, string) {
 	}
 	current := next.Observation
 	if previous == nil {
-		if next.SourceSequence != 1 || next.Operation != OperationCheckpointCommit || current.Checkpoint == nil || current.Checkpoint.PhaseIndex != 0 || current.ResumeGeneration != 0 {
+		initialCheckpoint := next.Operation == OperationCheckpointCommit && current.Checkpoint != nil && current.Checkpoint.PhaseIndex == 0 && current.ResumeGeneration == 0
+		initialResume := next.Operation == OperationResumeAdvance && current.PriorCheckpoint == nil && current.NextPhaseID != nil && *current.NextPhaseID == phaseID(0) && current.NextPhaseIndex != nil && *current.NextPhaseIndex == 0 && current.ResumeGeneration == 1
+		if next.SourceSequence != 1 || (!initialCheckpoint && !initialResume) {
 			return "mismatched", "initial_sequence_mismatch"
 		}
 		return "matched", ""
@@ -161,8 +172,15 @@ func Compare(next Envelope, previous *Head) (string, string) {
 		return "mismatched", "checkpoint_head_drift"
 	}
 	if next.Operation == OperationResumeAdvance {
-		if current.PriorCheckpoint == nil || current.NextPhaseID == nil || current.NextPhaseIndex == nil {
+		if current.NextPhaseID == nil || current.NextPhaseIndex == nil {
 			return "mismatched", "resume_binding_missing"
+		}
+		if current.PriorCheckpoint == nil {
+			validPreCheckpointReentry := previous.Operation == OperationResumeAdvance && prior.PriorCheckpoint == nil && prior.NextPhaseID != nil && *prior.NextPhaseID == phaseID(0) && prior.NextPhaseIndex != nil && *prior.NextPhaseIndex == 0 && *current.NextPhaseID == phaseID(0) && *current.NextPhaseIndex == 0
+			if !validPreCheckpointReentry || current.ResumeGeneration != prior.ResumeGeneration+1 || current.Runner.AttemptID == prior.Runner.AttemptID || current.Runner.LeaseID == prior.Runner.LeaseID || current.Runner.FencingToken <= prior.Runner.FencingToken {
+				return "mismatched", "stale_resume_fence"
+			}
+			return "matched", ""
 		}
 		var checkpoint *Checkpoint
 		var nextPhaseID string

@@ -14,6 +14,7 @@ export type {
   PrmsDoctorBlocker,
   PrmsDoctorResult,
   WorkflowRuntime,
+  WorkflowCheckpointRuntime,
   PreviewResult,
   RunResult,
   OpenSlackWorkflow,
