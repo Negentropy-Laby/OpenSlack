@@ -694,8 +694,6 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
     this.#lastControlSequence = 0;
-    this.#terminal = false;
-    this.#terminalReceiptAccepted = false;
   }
 
   async #fatal(_error: unknown): Promise<void> {
