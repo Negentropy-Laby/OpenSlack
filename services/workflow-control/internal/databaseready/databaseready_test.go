@@ -10,10 +10,10 @@ import (
 )
 
 type fakeDatabase struct {
-	pingErr         error
-	count, version  int64
-	dirty           bool
-	rowErr          error
+	pingErr        error
+	count, version int64
+	dirty          bool
+	rowErr         error
 }
 
 func (database fakeDatabase) Ping(context.Context) error { return database.pingErr }
