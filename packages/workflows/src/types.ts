@@ -112,6 +112,7 @@ export type RunStatusState =
   | 'cancelled';
 
 export interface PendingApproval {
+  /** Legacy run-gate projection only; never authorizes an effect execution. */
   id: string;
   operation: string;
   detail: string;
@@ -139,8 +140,10 @@ export interface RunStatus {
  * - 'validate': Schema and manifest validation only. No side effects.
  * - 'preview': Read-only exploration. No side effects.
  * - 'dry-run': Simulated side effects. Nothing is written externally.
- * - 'execute': Real side effects. REQUIRES human confirmation via onConfirm
- *   callback or explicit allowUnattended flag. Never proceeds without one.
+ * - 'execute': Requests real side effects. onConfirm, a manifest, and
+ *   allowUnattended are admission gates only; the accepted runner path also
+ *   requires an exact active workflow_effect_approval.v2 decision and a
+ *   one-time TypeScript execution claim before an effect may run.
  *
  * @see memory_bank/t2_execution/approval-vocabulary.md for the full approval/confirmation vocabulary
  */

@@ -10,6 +10,7 @@ import type {
 import {
   createRuntime,
   createRuntimeWithCheckpointAuthority,
+  createRuntimeWithHostAuthorities,
   ExecuteDeniedError,
   WorkflowExecutionCancelledError,
   WorkflowPausedError,
@@ -36,6 +37,10 @@ import {
   workflowCheckpointBindingFromAuthority,
   type WorkflowCheckpointLeaseAuthority,
 } from './internal/workflow-checkpoint-lease-authority.js';
+import {
+  WorkflowEffectApprovalPendingError,
+  type WorkflowEffectAuthorizationPort,
+} from './internal/workflow-effect-authorization-contract.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -134,21 +139,21 @@ export interface ExecuteRunOptions {
   /** Pipeline cache store */
   pipelineCache?: PipelineCacheStore;
   /**
-   * Confirmation callback for execute mode. Required unless allowUnattended is set.
-   * Called before each side-effect operation; returning false aborts with ExecuteDeniedError.
+   * Legacy admission callback for execute mode. Required unless allowUnattended is set.
+   * Returning true only admits the request to the exact v2 authorization path;
+   * it never grants effect execution authority by itself.
    */
   onConfirm?: ConfirmCallback;
   /**
-   * Allow non-interactive execution without a confirmation callback.
-   * This is the programmatic equivalent of --yes. Only use in trusted
-   * automation contexts (CI, tests) where human confirmation is not feasible.
-   * When set, operations proceed without prompting but are still logged.
+   * Allow non-interactive legacy admission without a confirmation callback.
+   * This is the programmatic equivalent of --yes, but it does not replace an
+   * exact v2 effect decision or one-time execution claim.
    */
   allowUnattended?: boolean;
   /**
-   * Manifest-based confirmation policy. Preferred over legacy onConfirm/allowUnattended.
-   * When provided, the runtime validates each side effect against the approved manifest
-   * and either auto-confirms known effects or pauses on unexpected ones.
+   * Manifest-based admission policy. Preferred over legacy onConfirm/allowUnattended.
+   * When provided, the runtime validates each requested effect against the manifest;
+   * it remains non-authorizing and cannot replace an exact v2 decision.
    */
   confirmationPolicy?: ConfirmationPolicy;
   /**
@@ -272,6 +277,11 @@ async function initializeRun(options: {
 async function flushRuntime(runtime: WorkflowRuntime): Promise<void> {
   const flush = (runtime as Partial<RuntimeWithPersistence>).flushPersistence;
   if (flush) await flush();
+}
+
+function assertRuntimeEffectTerminalState(runtime: WorkflowRuntime): void {
+  const assertTerminal = (runtime as Partial<RuntimeWithPersistence>).assertEffectTerminalState;
+  if (assertTerminal) assertTerminal();
 }
 
 async function pauseForUnexpectedEffect(
@@ -445,13 +455,15 @@ export function createOnConfirmFromPolicy(policy: ConfirmationPolicy): ConfirmCa
 /**
  * Execute a workflow in execute mode with real side effects.
  *
- * SAFETY: Execute mode requires either a confirmation callback (onConfirm)
- * or an explicit allowUnattended flag. Without either, the function throws
- * immediately to prevent unattended execution with real side effects.
+ * SAFETY: Execute mode requires either a legacy admission callback (onConfirm)
+ * or an explicit allowUnattended flag. Neither grants effect authority. Real
+ * effects additionally require the authenticated worker's exact v2 decision
+ * and one-time execution claim; public callers fail closed before the effect.
  *
  * When a callback is provided, it is called before each side-effect operation;
  * returning false aborts the operation with ExecuteDeniedError. When
- * allowUnattended is set, operations proceed without prompting (for CI/test use).
+ * allowUnattended is set, legacy admission proceeds without prompting, but the
+ * authenticated v2 authorization boundary remains mandatory.
  */
 export async function executeRun(
   workflow: {
@@ -472,6 +484,7 @@ export async function executeRunWithStore(
   options: ExecuteRunOptions,
   storeOverride?: RunStore,
   checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort?: WorkflowEffectAuthorizationPort,
 ): Promise<RunResult> {
   const { manifest, budget } = options;
   const encodedArgs = canonicalArguments(options.args ?? {});
@@ -519,12 +532,12 @@ export async function executeRunWithStore(
       options.onConfirm ?? (options.allowUnattended ? async () => true : undefined);
   }
 
-  // Safety gate: execute mode MUST have either a confirmation callback
-  // or an explicit allowUnattended flag to prevent silent side effects.
+  // Legacy admission gate. The authenticated v2 claim remains mandatory at
+  // every real effect boundary, including unattended admission.
   if (!effectiveOnConfirm) {
     throw new Error(
       'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
-        'Without human confirmation, workflows with real side effects will not execute.',
+        'This legacy admission gate does not replace exact v2 effect authorization.',
     );
   }
 
@@ -553,7 +566,13 @@ export async function executeRunWithStore(
     },
   };
   const runtime = checkpointAuthority
-    ? createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
+    ? effectAuthorizationPort
+      ? createRuntimeWithHostAuthorities(
+          runtimeOptions,
+          checkpointAuthority,
+          effectAuthorizationPort,
+        )
+      : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
     : createRuntime(runtimeOptions);
 
   try {
@@ -575,6 +594,7 @@ export async function executeRunWithStore(
       const output = { ...result, runId };
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await flushRuntime(runtime);
+      assertRuntimeEffectTerminalState(runtime);
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
       await safeTransition(store, runId, 'completed');
@@ -589,6 +609,7 @@ export async function executeRunWithStore(
     const output = { ...result, runId };
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);
+    assertRuntimeEffectTerminalState(runtime);
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
     await safeTransition(store, runId, 'completed');
@@ -597,6 +618,10 @@ export async function executeRunWithStore(
     await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
       await pauseForUnexpectedEffect(store, runId, err);
+      throw err;
+    }
+    if (err instanceof WorkflowEffectApprovalPendingError) {
+      await safeTransition(store, runId, 'paused_waiting_approval');
       throw err;
     }
     if (err instanceof WorkflowBudgetPausedError) {
@@ -622,8 +647,8 @@ export async function executeRunWithStore(
  * workflow must place replay-safe cached work before any approval pause; this
  * function does not claim arbitrary JavaScript can resume mid-function.
  *
- * SAFETY: Like executeRun, resume mode in execute requires either onConfirm
- * or allowUnattended to prevent unattended side effects.
+ * SAFETY: Like executeRun, resume mode requires legacy admission and the
+ * authenticated worker's exact v2 decision plus one-time execution claim.
  */
 export async function executeResume(
   workflow: {
@@ -641,7 +666,7 @@ export async function executeResume(
     agentCache?: AgentCacheStore;
     pipelineCache?: PipelineCacheStore;
     onConfirm?: ConfirmCallback;
-    /** Allow non-interactive execution without confirmation (CI/test use). */
+    /** Allow non-interactive legacy admission; does not grant effect authority. */
     allowUnattended?: boolean;
     confirmationPolicy?: ConfirmationPolicy;
     /** Optional event emitter for agent conversation lifecycle events. */
@@ -661,6 +686,7 @@ export async function executeResumeWithStore(
   options: Parameters<typeof executeResume>[1],
   storeOverride?: RunStore,
   checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort?: WorkflowEffectAuthorizationPort,
 ): Promise<RunResult> {
   const { runId, manifest } = options;
   const rootDir = options.rootDir ?? process.cwd();
@@ -773,11 +799,11 @@ export async function executeResumeWithStore(
       options.onConfirm ?? (options.allowUnattended ? async () => true : undefined);
   }
 
-  // Safety gate: same as executeRun
+  // Legacy admission gate; exact v2 authorization is still required per effect.
   if (!effectiveOnConfirm) {
     throw new Error(
       'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
-        'Without human confirmation, workflows with real side effects will not execute.',
+        'This legacy admission gate does not replace exact v2 effect authorization.',
     );
   }
 
@@ -826,7 +852,13 @@ export async function executeResumeWithStore(
     },
   };
   const runtime = checkpointAuthority
-    ? createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
+    ? effectAuthorizationPort
+      ? createRuntimeWithHostAuthorities(
+          runtimeOptions,
+          checkpointAuthority,
+          effectAuthorizationPort,
+        )
+      : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
     : createRuntime(runtimeOptions);
 
   try {
@@ -854,6 +886,7 @@ export async function executeResumeWithStore(
       const output = { ...result, runId };
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await flushRuntime(runtime);
+      assertRuntimeEffectTerminalState(runtime);
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
       await safeTransition(store, runId, 'completed');
@@ -868,6 +901,7 @@ export async function executeResumeWithStore(
     const output = { ...result, runId };
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await flushRuntime(runtime);
+    assertRuntimeEffectTerminalState(runtime);
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
     await safeTransition(store, runId, 'completed');
@@ -876,6 +910,10 @@ export async function executeResumeWithStore(
     await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
       await pauseForUnexpectedEffect(store, runId, err);
+      throw err;
+    }
+    if (err instanceof WorkflowEffectApprovalPendingError) {
+      await safeTransition(store, runId, 'paused_waiting_approval');
       throw err;
     }
     if (err instanceof WorkflowBudgetPausedError) {

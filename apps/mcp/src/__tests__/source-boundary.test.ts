@@ -61,6 +61,12 @@ describe('QW2 MCP source boundary', () => {
       /\b(?:issueHumanDecisionBinding|createWorkflowEffectDecisionAuthority)\b/,
     );
     expect(source).not.toMatch(
+      /\b(?:executeRun|executeResume|createRuntime|createRuntimeWithHostAuthorities|createWorkflowEffectAuthorizationPort|LocalWorkflowEffectAuthorityStore)\b/,
+    );
+    expect(source).not.toMatch(
+      /\b(?:authorize|claim|complete|reconcile)(?:WorkflowEffect|EffectExecution)?\s*\(/,
+    );
+    expect(source).not.toMatch(
       /\b(?:createLocalHumanAttestationProvider|bindLocalHumanSubject|resolveProductionSubject)\b|local-human-attestation/,
     );
     expect(source).toContain('per-decision attestation');

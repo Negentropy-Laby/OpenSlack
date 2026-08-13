@@ -390,6 +390,26 @@ legacy approval, `onConfirm`, manifest approval, and unattended mode never subst
 authorization. Human-attestation and CLI/MCP tests must prove the decision tool records only the
 exact decision and never executes the effect or exposes raw reason or attestation nonce.
 
+The D2 implementation keeps both capabilities module-private. An advancing runner-v1
+`lease_accept` receipt mints a nominal lease authority; only that authority can compose the effect
+authorization port used by the worker. Public `executeRun`, `executeResume`, `RuntimeOptions`, CLI
+admission callbacks, manifests, and unattended flags contain no grant or claim-store injection
+surface. The TypeScript owner store uses:
+
+```text
+.openslack.local/workflows/effect-approvals/  canonical workflow_effect_approval.v2 records
+.openslack.local/workflows/effect-authority/  intent lineage, decision WAL, execution claims, locks
+```
+
+The owner store persists an accepted runner-v1 intent before creating the exact pending approval,
+revalidates the complete occurrence and human decision while holding the claim lock, and publishes
+the first claim with create-if-absent semantics. The authority record carries a second durable
+execution high-watermark, so deleting or rolling back the claim file cannot silently recreate
+execution authority. A caught pending or reconciliation error is latched at run scope: the current
+runner-v1 boundary is closed, no successor effect may start, and the run cannot report completion.
+Pending becomes `paused_waiting_approval`; any post-claim uncertainty becomes
+`WORKFLOW_EFFECT_RECONCILIATION_REQUIRED` and requires explicit recovery.
+
 ### D3 observer exit gates
 
 D3 may be reported complete only when a separate default-off, credential-free Go observer consumes

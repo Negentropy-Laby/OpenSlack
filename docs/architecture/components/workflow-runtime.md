@@ -860,7 +860,7 @@ The isolated Go checkpoint shadow validates `checkpoint_commit` and `resume_adva
 matched prefix, records exact receipts and reconciliation, and never participates in resume. This
 does not negotiate runner v2, activate Go Workflow authority, or change CLI/MCP/Qoder reads.
 
-### GS9-D D1 effect-control seam
+### GS9-D D1/D2 effect-control seam
 
 The effect boundary remains TypeScript-owned. D1 freezes a closed schema/manifest/golden-vector
 bundle without implementing the runtime or store. The bundle has exactly six semantic artifact
@@ -869,7 +869,7 @@ variants: `effect_intent`, `effect_approval_pending`, `effect_decision_committed
 occurrence ID prevents two identical operation/detail pairs in one run from sharing a decision or
 execution claim.
 
-The future runtime order is:
+The D2 TypeScript runtime order is:
 
 ```text
 durable TypeScript effect_intent
@@ -926,6 +926,15 @@ cases. Until both exit gates pass, the evidence ceiling remains
 The pinned runner manifest and golden hashes are source-lock evidence only. The runtime
 `controlBuildHash` is a separate deployment identity supplied by trusted composition and is never
 learned from, or self-certified by, an incoming receipt.
+
+In D2 the nominal composition is created only by the authenticated worker after the advancing
+`lease_accept` receipt. Each current attempt emits and closes its own runner-v1 intent/outcome
+pair, while resume reuses the original owner-local occurrence, approval, and one-time execution
+claim. The claim is published exclusively and mirrored in the authority head; mismatch, missing
+consumption evidence, a live competing owner, or an unknown terminal write fails closed. Pending
+approval and reconciliation are run-level latches even when workflow code catches the thrown
+error. Public TypeScript callers therefore remain useful for validation and admission, but cannot
+execute a governed effect without the private authenticated-host capability.
 
 GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a

@@ -86,6 +86,9 @@ const SENSITIVE_NORMALIZED_KEYS = new Set([
   'setcookie',
   'session',
   'sessionid',
+  'attestationnonce',
+  'rawreason',
+  'humanreason',
   'privatekey',
   'jwt',
 ]);

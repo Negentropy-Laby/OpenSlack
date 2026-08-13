@@ -368,7 +368,7 @@ describe('executeApproval', () => {
           topic: 'Deploy to staging',
           decision: 'confirmed',
           rationale: expect.stringContaining('confirmed via TUI'),
-          tags: expect.arrayContaining(['workflow-effect', 'tui']),
+          tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui']),
         }),
       );
     });
@@ -789,9 +789,8 @@ describe('executeApproval workflow-effect with runId', () => {
     vi.clearAllMocks();
   });
 
-  it('approves and resumes paused workflow', async () => {
-    const { RunStore, findWorkflow, loadWorkflow, executeResume } =
-      await import('@openslack/workflows');
+  it('records a legacy run gate without authorizing or resuming the effect', async () => {
+    const { RunStore, executeResume } = await import('@openslack/workflows');
     const mockStore = {
       loadPendingApprovals: vi.fn(() => [
         {
@@ -816,18 +815,6 @@ describe('executeApproval workflow-effect with runId', () => {
     vi.mocked(RunStore).mockImplementation(
       () => mockStore as unknown as InstanceType<typeof RunStore>,
     );
-    vi.mocked(findWorkflow).mockResolvedValue({
-      path: '/test/wf.js',
-      name: 'test-wf',
-      source: 'openslack-project',
-    });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }] },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
-    vi.mocked(executeResume).mockResolvedValue({ status: 'completed' });
-
     const result = await executeApproval(
       {
         id: 'run-001',
@@ -842,12 +829,14 @@ describe('executeApproval workflow-effect with runId', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain('resumed');
+    expect(result.message).toContain('exact v2 human decision');
+    expect(result.data).toMatchObject({ effectDecisionAuthority: false });
     expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'approved');
+    expect(executeResume).not.toHaveBeenCalled();
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'approved',
-        tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
+        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
       }),
     );
   });
@@ -891,7 +880,7 @@ describe('executeApproval workflow-effect with runId', () => {
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'cancelled',
-        tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
+        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
       }),
     );
   });

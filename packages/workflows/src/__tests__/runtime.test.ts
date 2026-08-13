@@ -411,24 +411,25 @@ describe('createRuntime', () => {
       expect(result).toEqual({ preview: true, data: { title: 'Test' } });
     });
 
-    it('task.createIssue returns issue URL and number', async () => {
+    it('task.createIssue requires authenticated TypeScript authorization in execute mode', async () => {
       const rt = makeRuntime();
-      const result = await rt.openslack.task.createIssue({ title: 'Bug' });
-      expect(result.issueUrl).toBeDefined();
-      expect(typeof result.issueNumber).toBe('number');
+      await expect(rt.openslack.task.createIssue({ title: 'Bug' })).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
-    it('task.checkout returns worktree path and branch name', async () => {
+    it('task.checkout requires authenticated TypeScript authorization in execute mode', async () => {
       const rt = makeRuntime();
-      const result = await rt.openslack.task.checkout(42, 'agent-1');
-      expect(result.worktreePath).toBeDefined();
-      expect(result.branchName).toContain('agent-1');
+      await expect(rt.openslack.task.checkout(42, 'agent-1')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
-    it('task.sync returns pushed status', async () => {
+    it('task.sync requires authenticated TypeScript authorization in execute mode', async () => {
       const rt = makeRuntime();
-      const result = await rt.openslack.task.sync(42);
-      expect(typeof result.pushed).toBe('boolean');
+      await expect(rt.openslack.task.sync(42)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
     it('prms.classify returns categorized paths', async () => {
@@ -457,30 +458,34 @@ describe('createRuntime', () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
-    it('prms.requestMerge returns merge status', async () => {
+    it('prms.requestMerge requires authenticated TypeScript authorization', async () => {
       const rt = makeRuntime();
-      const result = await rt.openslack.prms.requestMerge(1);
-      expect(typeof result.merged).toBe('boolean');
-      expect(typeof result.prmsStatus).toBe('string');
+      await expect(rt.openslack.prms.requestMerge(1)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
-    it('collaboration.recordEvent does not throw', async () => {
+    it('collaboration.recordEvent requires authenticated TypeScript authorization', async () => {
       const rt = makeRuntime();
-      await expect(
-        rt.openslack.collaboration.recordEvent({ type: 'test' }),
-      ).resolves.toBeUndefined();
+      await expect(rt.openslack.collaboration.recordEvent({ type: 'test' })).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
-    it('governance.audit does not throw', async () => {
-      const rt = makeRuntime({ runStore: auditStore() });
-      await expect(rt.openslack.governance.audit('test-action')).resolves.toBeUndefined();
+    it('governance.audit requires authenticated TypeScript authorization', async () => {
+      const appendAuditRecord = vi.fn(async () => undefined);
+      const rt = makeRuntime({ runStore: auditStore(appendAuditRecord) });
+      await expect(rt.openslack.governance.audit('test-action')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
+      expect(appendAuditRecord).not.toHaveBeenCalled();
     });
 
     it('fails closed when execute-mode audit has no durable run store', async () => {
       const rt = makeRuntime();
-      await expect(rt.openslack.governance.audit('test-action')).rejects.toThrow(
-        'requires a durable run store',
-      );
+      await expect(rt.openslack.governance.audit('test-action')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
     it.each([
@@ -662,11 +667,17 @@ describe('createRuntime', () => {
       );
     });
 
-    it('allows write operations in execute mode with confirmation', async () => {
+    it('does not treat execute-mode confirmation as effect authority', async () => {
       const rt = makeRuntime({ mode: 'execute' });
-      await expect(rt.openslack.task.createIssue({ title: 'Bug' })).resolves.toBeDefined();
-      await expect(rt.openslack.task.checkout(42, 'agent-1')).resolves.toBeDefined();
-      await expect(rt.openslack.task.sync(42)).resolves.toBeDefined();
+      await expect(rt.openslack.task.createIssue({ title: 'Bug' })).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
+      await expect(rt.openslack.task.checkout(42, 'agent-1')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
+      await expect(rt.openslack.task.sync(42)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
     });
 
     it('allows write operations in dry-run mode', async () => {
@@ -735,7 +746,9 @@ describe('createRuntime', () => {
     it('calls onConfirm before createIssue', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.task.createIssue({ title: 'Bug' });
+      await expect(rt.openslack.task.createIssue({ title: 'Bug' })).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
       expect(onConfirm).toHaveBeenCalledWith('openslack.task.createIssue', expect.any(String));
     });
@@ -743,49 +756,67 @@ describe('createRuntime', () => {
     it('calls onConfirm before checkout', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.task.checkout(42, 'agent-1');
+      await expect(rt.openslack.task.checkout(42, 'agent-1')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before sync', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.task.sync(42);
+      await expect(rt.openslack.task.sync(42)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before requestMerge', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.prms.requestMerge(1);
+      await expect(rt.openslack.prms.requestMerge(1)).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before recordEvent', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.collaboration.recordEvent({ type: 'test' });
+      await expect(rt.openslack.collaboration.recordEvent({ type: 'test' })).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before createHandoff', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.collaboration.createHandoff({ from: 'a', to: 'b' });
+      await expect(
+        rt.openslack.collaboration.createHandoff({ from: 'a', to: 'b' }),
+      ).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before recordDecision', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm });
-      await rt.openslack.collaboration.recordDecision({ topic: 'test' });
+      await expect(
+        rt.openslack.collaboration.recordDecision({ topic: 'test' }),
+      ).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('calls onConfirm before governance.audit', async () => {
       const onConfirm = vi.fn(async () => true);
       const rt = makeRuntime({ mode: 'execute', onConfirm, runStore: auditStore() });
-      await rt.openslack.governance.audit('test');
+      await expect(rt.openslack.governance.audit('test')).rejects.toMatchObject({
+        code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+      });
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 

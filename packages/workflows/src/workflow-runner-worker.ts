@@ -27,6 +27,8 @@ import {
   type WorkflowCheckpointShadowDiagnostic,
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
+import { createWorkflowEffectAuthorizationPort } from './workflow-effect-authorization.js';
+import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -435,10 +437,27 @@ async function executeWorkflowRunnerJob(
     effectBoundary: context.effectBoundary,
     rootDir: workspaceRoot,
   };
+  const effectAuthorizationPort = createWorkflowEffectAuthorizationPort({
+    workspaceRoot,
+    effectBoundary: context.effectBoundary,
+    leaseAuthority: workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
+  });
 
   return disposition === 'initialize'
-    ? executeRunWithStore(workflow, common, store, context.checkpointAuthority)
-    : executeResumeWithStore(workflow, common, store, context.checkpointAuthority);
+    ? executeRunWithStore(
+        workflow,
+        common,
+        store,
+        context.checkpointAuthority,
+        effectAuthorizationPort,
+      )
+    : executeResumeWithStore(
+        workflow,
+        common,
+        store,
+        context.checkpointAuthority,
+        effectAuthorizationPort,
+      );
 }
 
 export async function runWorkflowRunnerWorker(

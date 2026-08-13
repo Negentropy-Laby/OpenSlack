@@ -34,6 +34,14 @@ import {
   type WorkflowCheckpointLeaseAuthority,
 } from './internal/workflow-checkpoint-lease-authority.js';
 import { workflowCheckpointError } from './workflow-checkpoint-shadow-contract.js';
+import {
+  assertWorkflowEffectAuthorizationPort,
+  WorkflowEffectAuthorizationRequiredError,
+  WorkflowEffectAuthorizationRejectedError,
+  WorkflowEffectReconciliationRequiredError,
+  type WorkflowEffectAuthorizationDisposition,
+  type WorkflowEffectAuthorizationPort,
+} from './internal/workflow-effect-authorization-contract.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -52,9 +60,9 @@ interface LogEntry {
 }
 
 /**
- * Confirmation callback for execute mode.
- * Called before performing any real side effect.
- * Return true to proceed, false to abort the operation.
+ * Legacy admission callback for execute mode.
+ * Returning true admits evaluation to the exact v2 authorization boundary;
+ * it does not grant effect execution authority.
  */
 export type ConfirmCallback = (operation: string, detail: string) => Promise<boolean>;
 
@@ -83,7 +91,7 @@ export interface RuntimeOptions {
   nestingDepth?: number;
   parentPermissions?: Set<string>;
   onWorkflowCall?: (name: string, args?: Record<string, unknown>) => Promise<unknown>;
-  /** Confirmation gate for execute mode. Required when mode is 'execute'. */
+  /** Legacy admission gate for execute mode; never an effect authority. */
   onConfirm?: ConfirmCallback;
   /** Optional event emitter for agent conversation lifecycle events. */
   agentEventEmitter?: AgentEventEmitter;
@@ -93,12 +101,13 @@ export interface RuntimeOptions {
   runStore?: RunStore;
   /** Cooperative cancellation owned by the TypeScript worker host. */
   signal?: AbortSignal;
-  /** Optional durable runner observation around the existing TS effect authority. */
+  /** Durable runner observation only; never an approval or execution authority. */
   effectBoundary?: WorkflowEffectBoundary;
 }
 
 export interface RuntimeWithPersistence extends WorkflowRuntime {
   flushPersistence(): Promise<void>;
+  assertEffectTerminalState(): void;
 }
 
 /**
@@ -231,9 +240,29 @@ export function createRuntimeWithCheckpointAuthority(
   return createRuntimeInternal(options, authority) as WorkflowCheckpointRuntime;
 }
 
+/** @internal Accepted worker path; intentionally not exported from the package root. */
+export function createRuntimeWithHostAuthorities(
+  options: RuntimeOptions,
+  checkpointAuthority: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort: WorkflowEffectAuthorizationPort,
+): WorkflowCheckpointRuntime {
+  if (!options.runStore || !options.effectBoundary) {
+    throw workflowCheckpointError(
+      'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+      'Workflow host authority requires the accepted runner RunStore and effect boundary.',
+    );
+  }
+  return createRuntimeInternal(
+    options,
+    checkpointAuthority,
+    assertWorkflowEffectAuthorizationPort(effectAuthorizationPort),
+  ) as WorkflowCheckpointRuntime;
+}
+
 function createRuntimeInternal(
   options: RuntimeOptions,
   checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort?: WorkflowEffectAuthorizationPort,
 ): WorkflowRuntime {
   const { runId, mode, manifest, nestingDepth = 0, onWorkflowCall, onConfirm } = options;
   const checkpointBinding = checkpointAuthority
@@ -253,6 +282,8 @@ function createRuntimeInternal(
   const logEntries: LogEntry[] = [];
   const phaseStatusMap = new Map<string, 'running' | 'completed' | 'failed'>();
   const persistenceTasks: Promise<void>[] = [];
+  let effectEvaluationIndex = 0;
+  let latchedEffectFailure: Error | undefined;
 
   function throwIfAborted(boundary: WorkflowRunnerCancellationBoundary): void {
     if (!options.signal?.aborted) return;
@@ -286,12 +317,22 @@ function createRuntimeInternal(
     detail: string,
     effect: () => Promise<T> | T,
   ): Promise<T> {
+    if (latchedEffectFailure) throw latchedEffectFailure;
     throwIfAborted('effect_intent');
     if (!onConfirm) {
       throw new ExecuteDeniedError(operation, 'Execute mode requires confirmation callback');
     }
-    let handle: WorkflowEffectBoundaryHandle | undefined;
-    if (options.effectBoundary) {
+    effectEvaluationIndex += 1;
+    const preparedAuthorization = effectAuthorizationPort
+      ? await effectAuthorizationPort.prepare({
+          runId,
+          evaluationIndex: effectEvaluationIndex,
+          operation,
+          detail,
+        })
+      : undefined;
+    let handle: WorkflowEffectBoundaryHandle | undefined = preparedAuthorization?.handle;
+    if (!handle && options.effectBoundary) {
       handle = await options.effectBoundary.intent({ runId, operation, detail });
     }
     throwIfAborted('effect_intent');
@@ -303,19 +344,94 @@ function createRuntimeInternal(
       throw error;
     }
     if (!approved) {
-      await reportOutcome(handle, 'rejected', { decision: 'denied' });
+      await reportOutcome(handle, 'failed', { code: 'WORKFLOW_EFFECT_LEGACY_ADMISSION_DENIED' });
       throw new ExecuteDeniedError(operation, `User denied ${operation}`);
     }
-    throwIfAborted('effect_execution');
-    let value: T;
-    try {
-      value = await effect();
-    } catch (error) {
-      // A thrown effect cannot prove whether an external commit happened.
-      await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+    if (!effectAuthorizationPort || !preparedAuthorization) {
+      const error = new WorkflowEffectAuthorizationRequiredError(operation);
+      latchedEffectFailure = error;
+      await reportOutcome(handle, 'failed', boundedErrorEvidence(error));
       throw error;
     }
-    await reportOutcome(handle, 'executed', value);
+    throwIfAborted('effect_execution');
+    let authorization: WorkflowEffectAuthorizationDisposition;
+    try {
+      authorization = await effectAuthorizationPort.authorize(
+        preparedAuthorization,
+        options.signal,
+      );
+    } catch (error) {
+      if (error instanceof WorkflowEffectAuthorizationRejectedError) {
+        await reportOutcome(handle, 'rejected', {
+          approvalId: error.approvalId,
+          approvalDecisionHash: error.approvalDecisionHash,
+        });
+      } else if (error instanceof WorkflowEffectReconciliationRequiredError) {
+        latchedEffectFailure = error;
+        await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+      } else {
+        if (error instanceof Error) latchedEffectFailure = error;
+        await reportOutcome(handle, 'failed', boundedErrorEvidence(error));
+      }
+      throw error;
+    }
+    if (authorization.disposition === 'replay') {
+      await reportOutcome(handle, 'executed', {
+        executionId: authorization.executionId,
+        outcomeHash: authorization.outcomeHash,
+        replay: true,
+      });
+      throwIfAborted('effect_outcome');
+      return authorization.value as T;
+    }
+    const claim = authorization.authority;
+    let value: T;
+    try {
+      throwIfAborted('effect_execution');
+      value = await effect();
+    } catch (error) {
+      try {
+        await effectAuthorizationPort.reconcile(
+          claim,
+          error instanceof WorkflowExecutionCancelledError
+            ? 'cancelled_after_claim'
+            : 'effect_outcome_unknown',
+        );
+      } catch (reconciliationError) {
+        const reconciliation = new WorkflowEffectReconciliationRequiredError(
+          'Workflow effect failed after its durable execution claim and reconciliation could not be fully recorded.',
+          { cause: new AggregateError([error, reconciliationError]) },
+        );
+        latchedEffectFailure = reconciliation;
+        throw reconciliation;
+      }
+      await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+      const reconciliation = new WorkflowEffectReconciliationRequiredError(
+        'Workflow effect outcome is unknown after its durable execution claim.',
+        { cause: error },
+      );
+      latchedEffectFailure = reconciliation;
+      throw reconciliation;
+    }
+    let completion: { readonly outcomeHash: string };
+    try {
+      completion = await effectAuthorizationPort.complete(claim, value);
+    } catch (error) {
+      await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+      const reconciliation =
+        error instanceof WorkflowEffectReconciliationRequiredError
+          ? error
+          : new WorkflowEffectReconciliationRequiredError(
+              'Workflow effect completion could not be proved after its durable execution claim.',
+              { cause: error },
+            );
+      latchedEffectFailure = reconciliation;
+      throw reconciliation;
+    }
+    await reportOutcome(handle, 'executed', {
+      executionId: authorization.executionId,
+      outcomeHash: completion.outcomeHash,
+    });
     throwIfAborted('effect_outcome');
     return value;
   }
@@ -891,6 +1007,13 @@ function createRuntimeInternal(
   Object.defineProperty(runtime, 'flushPersistence', {
     value: async () => {
       await Promise.all(persistenceTasks);
+    },
+    enumerable: false,
+  });
+
+  Object.defineProperty(runtime, 'assertEffectTerminalState', {
+    value: () => {
+      if (latchedEffectFailure) throw latchedEffectFailure;
     },
     enumerable: false,
   });

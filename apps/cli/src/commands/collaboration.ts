@@ -1936,7 +1936,7 @@ export function collaborationCommands(): Command {
       [],
     )
     .option('--budget-tokens <number>', 'Token budget for execution', '100000')
-    .option('--yes', 'Auto-approve all side effects without interactive confirmation')
+    .option('--yes', 'Skip the legacy prompt; exact v2 effect authorization is still required')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--audit-issue', 'Create a GitHub issue to audit this workflow run', false)
     .action(
@@ -1968,17 +1968,20 @@ export function collaborationCommands(): Command {
             process.exit(1);
           }
 
-          // Confirmation gate: --yes auto-approves, otherwise interactive prompt required
+          // Legacy admission only: --yes skips this prompt but cannot mint the
+          // exact v2 human decision or one-time effect execution claim.
           const onConfirm = options.yes
             ? async (operation: string, detail: string): Promise<boolean> => {
-                console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
+                console.log(`[UNATTENDED-ADMISSION] ${operation}: ${detail}`);
                 return true;
               }
             : async (operation: string, detail: string): Promise<boolean> => {
                 // Refuse to execute interactively if not in a TTY
                 if (!process.stdin.isTTY) {
                   console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
-                  console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
+                  console.error(
+                    `  Use --yes to skip this legacy prompt, or run in an interactive terminal.`,
+                  );
                   return false;
                 }
                 console.log(`[CONFIRM] ${operation}: ${detail}`);
@@ -1995,7 +1998,7 @@ export function collaborationCommands(): Command {
           console.log(`  Mode: execute`);
           console.log(`  Budget: ${budgetTokens} tokens`);
           if (options.yes) {
-            console.log(`  Confirmation: auto-approve (--yes)`);
+            console.log(`  Admission: unattended (--yes); exact v2 authorization still required`);
           }
           if (mod.meta.sideEffects && mod.meta.sideEffects.length > 0) {
             console.log(`  Declared side effects:`);
@@ -2065,7 +2068,7 @@ export function collaborationCommands(): Command {
   workflow
     .command('resume <runId>')
     .description('Resume a paused workflow run from its last checkpoint')
-    .option('--yes', 'Auto-approve all side effects without interactive confirmation')
+    .option('--yes', 'Skip the legacy prompt; exact v2 effect authorization is still required')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(async (runId: string, options: { yes?: boolean; agentId?: string }) => {
       ensureWorkflowEnabled('resume');
@@ -2127,13 +2130,15 @@ export function collaborationCommands(): Command {
 
         const onConfirm = options.yes
           ? async (operation: string, detail: string): Promise<boolean> => {
-              console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
+              console.log(`[UNATTENDED-ADMISSION] ${operation}: ${detail}`);
               return true;
             }
           : async (operation: string, detail: string): Promise<boolean> => {
               if (!process.stdin.isTTY) {
                 console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
-                console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
+                console.error(
+                  `  Use --yes to skip this legacy prompt, or run in an interactive terminal.`,
+                );
                 return false;
               }
               console.log(`[CONFIRM] ${operation}: ${detail}`);
@@ -2921,7 +2926,7 @@ export function collaborationCommands(): Command {
       '--on-existing-pr <action>',
       'Action when open profile-sync PR exists: skip, update, create_new',
     )
-    .option('--yes', 'Auto-approve side effects')
+    .option('--yes', 'Skip the legacy prompt; exact v2 effect authorization is still required')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(
       async (options: {
@@ -2953,7 +2958,7 @@ export function collaborationCommands(): Command {
             ? async (_operation: string, _detail: string): Promise<boolean> => true
             : async (operation: string, detail: string): Promise<boolean> => {
                 if (!process.stdin.isTTY) {
-                  console.error(`[ERROR] Not a TTY. Use --yes to auto-approve.`);
+                  console.error(`[ERROR] Not a TTY. Use --yes to skip the legacy prompt.`);
                   return false;
                 }
                 console.log(`[CONFIRM] ${operation}: ${detail}`);

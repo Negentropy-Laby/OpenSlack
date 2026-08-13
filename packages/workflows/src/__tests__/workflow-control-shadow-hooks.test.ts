@@ -176,7 +176,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     expect(published).toEqual([1]);
   });
 
-  it('observes effect approval create, decide, and audit only after their atomic commits', async () => {
+  it('observes effect approval commits and exact authority recovery only after durable state', async () => {
     const workspace = await root('workflow-shadow-effect');
     const published: number[] = [];
     const port = await observationPort(join(workspace, 'journal'), published);
@@ -189,7 +189,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     });
     let offset = 1000;
     const approvalRoot = join(workspace, 'effect-approvals');
-    await mkdir(approvalRoot);
+    await mkdir(approvalRoot, { mode: 0o700 });
     const store = new LocalWorkflowEffectApprovalStore(
       approvalRoot,
       authority,
@@ -248,8 +248,11 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
         expectedRevision: 1,
         eventId: decided.auditProjection!.eventId,
       }),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' });
+    ).resolves.toMatchObject({
+      revision: 2,
+      auditProjection: { status: 'recorded', eventId: decided.auditProjection!.eventId },
+    });
     await port.flush();
-    expect(published).toEqual([1, 2, 3]);
+    expect(published).toEqual([1, 2, 3, 4]);
   });
 });

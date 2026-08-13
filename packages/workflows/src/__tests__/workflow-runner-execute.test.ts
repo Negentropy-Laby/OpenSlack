@@ -14,7 +14,7 @@ const manifest: WorkflowMeta = {
 };
 
 describe('GS8-B executeRun/runtime worker integration', () => {
-  it('durably reports intent before TS approval and outcome after TS execution', async () => {
+  it('reports intent before legacy admission and refuses execution without exact v2 authority', async () => {
     const order: string[] = [];
     let releaseIntent!: () => void;
     const intentGate = new Promise<void>((resolve) => {
@@ -52,16 +52,18 @@ describe('GS8-B executeRun/runtime worker integration', () => {
     await vi.waitFor(() => expect(order).toEqual(['intent:openslack.task.createIssue']));
     expect(onConfirm).not.toHaveBeenCalled();
     releaseIntent();
-    await expect(pending).resolves.toMatchObject({ issueNumber: 1 });
+    await expect(pending).rejects.toMatchObject({
+      code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED',
+    });
     expect(order).toEqual([
       'intent:openslack.task.createIssue',
       'intent-receipt',
       'approved-by-typescript',
-      'outcome:executed',
+      'outcome:failed',
     ]);
   });
 
-  it('reports a denied TS decision without executing the effect', async () => {
+  it('reports a denied legacy admission without fabricating a v2 rejection', async () => {
     const statuses: string[] = [];
     const boundary: WorkflowEffectBoundary = {
       async intent(input) {
@@ -85,7 +87,7 @@ describe('GS8-B executeRun/runtime worker integration', () => {
       effectBoundary: boundary,
     });
     await expect(runtime.openslack.task.sync(1)).rejects.toThrow('User denied');
-    expect(statuses).toEqual(['rejected']);
+    expect(statuses).toEqual(['failed']);
   });
 
   it('checks cooperative cancellation at runtime boundaries', () => {
@@ -102,7 +104,7 @@ describe('GS8-B executeRun/runtime worker integration', () => {
     expect(() => runtime.log('after cancellation')).toThrow('operator stop');
   });
 
-  it('fails the effect with reconciliation evidence when strict audit persistence fails', async () => {
+  it('does not reach audit persistence through a legacy callback alone', async () => {
     const statuses: string[] = [];
     const fs: RunStoreFs = {
       async mkdir() {},
@@ -142,7 +144,7 @@ describe('GS8-B executeRun/runtime worker integration', () => {
 
     await expect(
       runtime.openslack.governance.audit('qualification', { pass: true }),
-    ).rejects.toThrow('audit disk unavailable');
-    expect(statuses).toEqual(['reconciliation_required']);
+    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORIZATION_REQUIRED' });
+    expect(statuses).toEqual(['failed']);
   });
 });

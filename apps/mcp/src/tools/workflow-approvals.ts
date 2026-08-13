@@ -21,6 +21,15 @@ export function workflowApprovalRecordResult(
   const pending = record.status === 'pending';
   const auditProjectionFailed = !pending && !auditRecorded;
   const principalId = record.decision?.principalId;
+  const decision = record.decision
+    ? Object.freeze({
+        principalId: record.decision.principalId,
+        workspaceId: record.decision.workspaceId,
+        capability: record.decision.capability,
+        reasonHash: record.decision.reasonHash,
+        decidedAt: record.decision.decidedAt,
+      })
+    : null;
   const result = createOpenSlackMcpResult({
     status: pending ? 'blocked' : terminalConflict ? 'failed' : 'completed',
     summary: pending
@@ -38,7 +47,7 @@ export function workflowApprovalRecordResult(
       workflowId: record.workflowId,
       workflowVersion: record.workflowVersion,
       effectId: record.effectId,
-      decision: record.decision,
+      decision,
       auditProjection:
         record.auditProjection?.status === 'recorded'
           ? 'recorded'

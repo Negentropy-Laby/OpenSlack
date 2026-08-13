@@ -1171,11 +1171,11 @@ The workflow engine loads, validates, executes, checkpoints, and resumes OpenSla
 | `openslack collaboration workflow dry-run <name> --budget-tokens 50000`                | Dry-run with custom token budget                                                       |
 | `openslack collaboration workflow run <name>`                                          | Execute a workflow with real side effects                                              |
 | `openslack collaboration workflow run <name> --input key=value`                        | Execute with input values                                                              |
-| `openslack collaboration workflow run <name> --yes`                                    | Auto-approve all side effects without interactive confirmation                         |
+| `openslack collaboration workflow run <name> --yes`                                    | Skip the legacy prompt; exact v2 effect authorization remains required                 |
 | `openslack collaboration workflow run <name> --agent-id <id>`                          | Execute with agent principal authorization                                             |
 | `openslack collaboration workflow run <name> --budget-tokens 100000`                   | Execute with custom token budget                                                       |
 | `openslack collaboration workflow resume <runId>`                                      | Resume a paused workflow run from its last checkpoint                                  |
-| `openslack collaboration workflow resume <runId> --yes`                                | Resume with auto-approved side effects                                                 |
+| `openslack collaboration workflow resume <runId> --yes`                                | Resume without the legacy prompt; exact v2 effect authorization remains required       |
 | `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Resume with agent principal authorization                                              |
 | `openslack collaboration workflow start --prompt "..."`                                | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
 | `openslack collaboration workflow start --pattern <pattern>`                           | Start from a known orchestration pattern without executing                             |

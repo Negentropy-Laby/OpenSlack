@@ -17,7 +17,6 @@ import {
 import { WorkflowPausedError } from '../runtime.js';
 import { RunStore } from '../run-store.js';
 import type { WorkflowMeta, WorkflowModule, WorkflowRuntime } from '../types.js';
-import type { WorkflowEffectBoundaryHandle } from '../workflow-runner-effect-boundary.js';
 
 const roots: string[] = [];
 const manifest: WorkflowMeta = {
@@ -184,7 +183,7 @@ describe('strict cumulative workflow resume', () => {
     },
   );
 
-  it('preserves cache and cumulative usage across a real pause/resume cycle', async () => {
+  it('preserves cache and cumulative usage across a legacy run-gate pause/resume cycle', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'openslack-pause-resume-budget-'));
     roots.push(rootDir);
     const runId = 'run.pause.resume.budget';
@@ -193,21 +192,13 @@ describe('strict cumulative workflow resume', () => {
       data: { label: options.label },
       tokenUsage: options.label === 'call-a' ? 10 : 20,
     }));
-    const effectBoundary = {
-      intent: vi.fn(async (input: { operation: string }) => ({
-        effectId: `effect:${input.operation}`,
-        effectKind: input.operation,
-        effectHash: 'a'.repeat(64),
-        capabilityHash: 'b'.repeat(64),
-        requiresHumanDecision: true,
-      })),
-      outcome: vi.fn(async (_handle: WorkflowEffectBoundaryHandle) => undefined),
-    };
+    let admitCompletion = false;
     const workflow = makeWorkflow(async (ctx: WorkflowRuntime) => {
       ctx.phase('Run');
       await ctx.agent('prompt-a', { label: 'call-a', phase: 'Run' });
-      await ctx.openslack.governance.audit('pre-approval', { phase: 'Run' });
-      await ctx.openslack.task.createIssue({ title: 'bounded audit effect' });
+      if (!admitCompletion) {
+        throw new WorkflowPausedError('legacy.run-gate', 'bounded resume test', runId);
+      }
       await ctx.agent('prompt-b', { label: 'call-b', phase: 'Run' });
       return { status: 'completed' };
     });
@@ -219,11 +210,7 @@ describe('strict cumulative workflow resume', () => {
         args: { qualification: true },
         budget,
         agentLauncher: launcher,
-        onConfirm: async (operation, detail) => {
-          if (operation === 'openslack.governance.audit') return true;
-          throw new WorkflowPausedError(operation, detail, runId);
-        },
-        effectBoundary,
+        onConfirm: async () => true,
         rootDir,
       }),
     ).rejects.toBeInstanceOf(WorkflowPausedError);
@@ -239,14 +226,11 @@ describe('strict cumulative workflow resume', () => {
         args: { qualification: true },
         budget,
         agentLauncher: launcher,
-        onConfirm: async (operation, detail) => {
-          if (operation === 'openslack.governance.audit') return true;
-          throw new WorkflowPausedError(operation, detail, runId);
-        },
-        effectBoundary,
+        onConfirm: async () => true,
         rootDir,
       }),
     ).rejects.toBeInstanceOf(WorkflowPausedError);
+    admitCompletion = true;
     await executeResume(workflow, {
       runId,
       manifest,
@@ -254,7 +238,6 @@ describe('strict cumulative workflow resume', () => {
       budget,
       agentLauncher: launcher,
       onConfirm: async () => true,
-      effectBoundary,
       rootDir,
     });
 
@@ -262,19 +245,7 @@ describe('strict cumulative workflow resume', () => {
     await expect(store.loadBudgetSnapshot(runId)).resolves.toMatchObject({
       usage: { tokensUsed: 30, tokensRemaining: 70, agentCalls: 2 },
     });
-    await expect(store.readAuditRecords(runId)).resolves.toMatchObject([
-      { sequence: 1, operation: 'pre-approval' },
-    ]);
-    expect(
-      effectBoundary.intent.mock.calls.filter(
-        ([input]) => input.operation === 'openslack.governance.audit',
-      ),
-    ).toHaveLength(3);
-    expect(
-      effectBoundary.outcome.mock.calls.filter(
-        ([handle]) => handle.effectKind === 'openslack.governance.audit',
-      ),
-    ).toHaveLength(3);
+    await expect(store.readAuditRecords(runId)).resolves.toEqual([]);
   });
 
   it('reuses cached calls without charging and charges new calls against prior usage', async () => {

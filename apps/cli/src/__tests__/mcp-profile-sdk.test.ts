@@ -587,6 +587,7 @@ describe('MCP CLI production profiles over the official SDK', () => {
           governance: { owner: 'human.interviewer' },
           data: { status: 'approved', auditProjection: 'recorded' },
         });
+        expect(JSON.stringify(decision.structuredContent)).not.toContain('attestationNonce');
         expect(
           await approvalStore!.read('run-human-attested-001', 'approval-human-attested-001'),
         ).toMatchObject({

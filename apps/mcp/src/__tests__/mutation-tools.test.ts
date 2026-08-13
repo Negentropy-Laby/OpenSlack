@@ -85,7 +85,7 @@ function harness(workspaceRoot: string, definitions?: readonly GovernedActionExe
       buildNonce: 'qg5-test-build-nonce-0123456789',
     }),
     audit: async () => undefined,
-    executionTimeoutMs: 1_000,
+    executionTimeoutMs: 10_000,
   });
   const mutations = createOpenSlackGovernedMutationPort({
     service,
@@ -298,7 +298,7 @@ describe('governed MCP mutation profile', () => {
 
   it('previews without side effects and returns one root-only confirmation capability', async () => {
     const workspaceRoot = root();
-    const { core, execute } = harness(workspaceRoot);
+    const { core, execute, mutations } = harness(workspaceRoot);
     const preview = await core.callTool('openslack_preview_scenario', {
       scenarioId: 'software-delivery',
       input: { objective: 'Explain delivery state.' },
@@ -464,7 +464,7 @@ describe('governed MCP mutation profile', () => {
 
   it('exposes the seventeenth tool only with per-decision human attestation and preserves business correlation', async () => {
     const workspaceRoot = root();
-    const { attest, core, store } = await approvalHarness(workspaceRoot);
+    const { attest, core, execute, store } = await approvalHarness(workspaceRoot);
     expect(core.listTools().map((tool) => tool.name)).toEqual([
       ...OPENSLACK_READ_TOOL_NAMES,
       ...OPENSLACK_MUTATION_TOOL_NAMES,
@@ -494,15 +494,24 @@ describe('governed MCP mutation profile', () => {
         status: 'approved',
         revision: 2,
         auditProjection: 'recorded',
+        decision: {
+          principalId: 'human.interviewer',
+          workspaceId: 'workspace.contract-demo',
+          capability: 'workflow.effect.decide',
+        },
       },
     });
     expect(decision.structuredContent.correlationId).not.toBe('mcp:approval-transport-call');
     expect(decision.content[0]!.text).toContain('no GitHub review was created');
     expect(JSON.parse(decision.content[0]!.text)).toEqual(decision.structuredContent);
-    expect((await store.read('run-contract-001', 'approval-security-review'))?.correlationId).toBe(
-      'business-correlation-001',
-    );
+    const stored = await store.read('run-contract-001', 'approval-security-review');
+    const serialized = JSON.stringify(decision);
+    expect(serialized).not.toContain('attestationNonce');
+    expect(serialized).not.toContain(stored!.decision!.attestationNonce);
+    expect(serialized).not.toContain('Security review evidence is complete.');
+    expect(stored?.correlationId).toBe('business-correlation-001');
     expect(attest).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
     expect(attest.mock.calls[0]?.[0]).toMatchObject({
       runId: 'run-contract-001',
       approvalId: 'approval-security-review',
@@ -583,6 +592,7 @@ describe('governed MCP mutation profile', () => {
       });
       const text = decision.content as Array<{ type: string; text?: string }>;
       expect(JSON.parse(String(text[0]?.text))).toEqual(decision.structuredContent);
+      expect(JSON.stringify(decision.structuredContent)).not.toContain('attestationNonce');
     } catch (error) {
       throw new Error(`Official MCP SDK phase failed: ${phase}: ${String(error)}`, {
         cause: error,

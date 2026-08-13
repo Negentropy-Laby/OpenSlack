@@ -33,6 +33,12 @@ import {
   createWorkflowCheckpointLeaseAuthority,
   type WorkflowCheckpointLeaseAuthority,
 } from './internal/workflow-checkpoint-lease-authority.js';
+import {
+  bindWorkflowEffectBoundaryToLease,
+  createWorkflowEffectLeaseAuthority,
+  type WorkflowEffectIntentEvidence,
+  type WorkflowEffectIntentPreparation,
+} from './internal/workflow-effect-lease-authority.js';
 
 export type WorkflowRunnerSessionState =
   | 'created'
@@ -111,7 +117,7 @@ interface LeaseIdentity {
 interface OutstandingEvent {
   readonly message: WorkflowRunnerMessage & { readonly kind: WorkflowRunnerReceiptableKind };
   readonly prepared: WorkflowRunnerPreparedMessage;
-  readonly resolve: () => void;
+  readonly resolve: (receipt: WorkflowRunnerEventReceiptMessage) => void;
   readonly reject: (error: Error) => void;
 }
 
@@ -144,6 +150,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   #descriptor: WorkflowRunnerExecutionDescriptor | undefined;
   #preparedSource: TPrepared | undefined;
   #outstanding: OutstandingEvent | undefined;
+  #preparingEvent = false;
   #workerSequence = 0;
   #lastReceiptSequence = 0;
   #lastControlSequence = 0;
@@ -174,7 +181,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   }
 
   get hasOutstandingEvent(): boolean {
-    return this.#outstanding !== undefined;
+    return this.#outstanding !== undefined || this.#preparingEvent;
   }
 
   #now(): string {
@@ -380,13 +387,26 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     try {
       const boundary = createWorkflowRunnerProtocolEffectBoundary({
         port: this,
-        requiresHumanDecision: (operation) => {
-          const approved = descriptor.confirmationPolicy.approvalManifest?.approvedEffects.some(
-            (effect) => effect.kind === operation,
-          );
-          return descriptor.confirmationPolicy.mode !== 'unattended-explicit' && !approved;
-        },
+        // D2 freezes every real effect as human-decision gated. Legacy
+        // unattended/manifest approval remains only an admission gate.
+        requiresHumanDecision: () => true,
       });
+      bindWorkflowEffectBoundaryToLease(
+        boundary,
+        createWorkflowEffectLeaseAuthority({
+          workspaceId: lease.workspaceId,
+          runId: lease.workflowRunId,
+          correlationId: lease.correlationId,
+          workflowId: descriptor.workflowId,
+          workflowVersion: descriptor.workflowVersion,
+          workflowSourceHash: descriptor.workflowSourceHash,
+          manifestHash: descriptor.manifestHash,
+          inputHash: descriptor.inputHash,
+          descriptorExpiresAt: descriptor.expiresAt,
+          expectedControlBuildHash: this.#controlBuildHash!,
+          emitIntent: (handle, beforeSend) => this.#emitEffectIntent(handle, beforeSend),
+        }),
+      );
       const result = await this.#options.execute(workflow, descriptor, {
         signal: this.#abortController!.signal,
         effectBoundary: boundary,
@@ -424,6 +444,13 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       return;
     }
     if (this.#effectAmbiguous) return this.#sendReconciliationTerminal();
+    if (
+      error instanceof Error &&
+      (error as Error & { readonly code?: unknown }).code ===
+        'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED'
+    ) {
+      return this.#sendReconciliationTerminal();
+    }
     if (this.#abortController?.signal.aborted || this.#cancelReason) {
       const timedOut = this.#cancelReason === 'timeout';
       return this.#sendTerminal({
@@ -469,12 +496,34 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   }
 
   async emitIntent(handle: WorkflowEffectBoundaryHandle): Promise<void> {
-    await this.#emitReceiptable('effect_intent', {
-      effectId: handle.effectId,
-      effectKind: handle.effectKind,
-      effectHash: handle.effectHash,
-      capabilityHash: handle.capabilityHash,
-      requiresHumanDecision: handle.requiresHumanDecision,
+    await this.#emitEffectIntent(handle, async () => undefined);
+  }
+
+  async #emitEffectIntent(
+    handle: WorkflowEffectBoundaryHandle,
+    beforeSend: (preparation: WorkflowEffectIntentPreparation) => Promise<void>,
+  ): Promise<WorkflowEffectIntentEvidence> {
+    const evidence = await this.#emitReceiptable(
+      'effect_intent',
+      {
+        effectId: handle.effectId,
+        effectKind: handle.effectKind,
+        effectHash: handle.effectHash,
+        capabilityHash: handle.capabilityHash,
+        requiresHumanDecision: handle.requiresHumanDecision,
+      },
+      beforeSend,
+    );
+    if (evidence.message.kind !== 'effect_intent') {
+      throw new WorkflowRunnerSessionError(
+        'WORKFLOW_RUNNER_SESSION_STATE',
+        'Effect intent evidence kind changed.',
+      );
+    }
+    return Object.freeze({
+      message: evidence.message,
+      prepared: evidence.prepared,
+      receipt: evidence.receipt,
     });
   }
 
@@ -491,7 +540,12 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   }
 
   async heartbeat(): Promise<boolean> {
-    if (!['executing', 'cancelling'].includes(this.#state) || this.#outstanding || !this.#lease) {
+    if (
+      !['executing', 'cancelling'].includes(this.#state) ||
+      this.#outstanding ||
+      this.#preparingEvent ||
+      !this.#lease
+    ) {
       return false;
     }
     const state = this.#state === 'cancelling' ? 'cancelling' : 'running';
@@ -505,25 +559,33 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
   }
 
   async retryOutstanding(): Promise<boolean> {
-    if (!this.#outstanding || this.#state === 'closed') return false;
+    if (!this.#outstanding || this.#preparingEvent || this.#state === 'closed') return false;
     await this.#options.send(this.#outstanding.prepared.body);
     return true;
   }
 
-  async #emitReceiptable(kind: WorkflowRunnerReceiptableKind, payload: unknown): Promise<void> {
+  async #emitReceiptable(
+    kind: WorkflowRunnerReceiptableKind,
+    payload: unknown,
+    beforeSend?: (preparation: WorkflowEffectIntentPreparation) => Promise<void>,
+  ): Promise<{
+    readonly message: WorkflowRunnerMessage & { readonly kind: WorkflowRunnerReceiptableKind };
+    readonly prepared: WorkflowRunnerPreparedMessage;
+    readonly receipt: WorkflowRunnerEventReceiptMessage;
+  }> {
     if (!this.#lease) {
       throw new WorkflowRunnerSessionError(
         'WORKFLOW_RUNNER_SESSION_STATE',
         'Cannot emit a leased event without an active lease.',
       );
     }
-    if (this.#outstanding) {
+    if (this.#outstanding || this.#preparingEvent) {
       throw new WorkflowRunnerSessionError(
         'WORKFLOW_RUNNER_SESSION_SEQUENCE',
         'Only one worker event may be outstanding.',
       );
     }
-    this.#workerSequence += 1;
+    const nextWorkerSequence = this.#workerSequence + 1;
     const message = validateWorkflowRunnerMessage({
       protocolVersion: WORKFLOW_RUNNER_PROTOCOL_VERSION,
       kind,
@@ -533,18 +595,36 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       attemptId: this.#lease.attemptId,
       leaseId: this.#lease.leaseId,
       fencingToken: this.#lease.fencingToken,
-      sequence: this.#workerSequence,
+      sequence: nextWorkerSequence,
       eventId: safeId(kind),
       correlationId: this.#lease.correlationId,
       sentAt: receiptableSentAt(kind, payload) ?? this.#now(),
       payload,
     }) as WorkflowRunnerMessage & { readonly kind: WorkflowRunnerReceiptableKind };
     const prepared = prepareWorkflowRunnerMessage(message);
-    const receipt = new Promise<void>((resolve, reject) => {
+    if (beforeSend) {
+      if (message.kind !== 'effect_intent') {
+        throw new WorkflowRunnerSessionError(
+          'WORKFLOW_RUNNER_SESSION_STATE',
+          'Only effect intent supports pre-send durability.',
+        );
+      }
+      // Reserve the single-event lane while owner-local intent evidence is
+      // durably prepared. Heartbeat/cancel acknowledgements must not overtake
+      // this sequence, and the sequence is not consumed if preparation fails.
+      this.#preparingEvent = true;
+      try {
+        await beforeSend({ message, prepared });
+      } finally {
+        this.#preparingEvent = false;
+      }
+    }
+    this.#workerSequence = nextWorkerSequence;
+    const receipt = new Promise<WorkflowRunnerEventReceiptMessage>((resolve, reject) => {
       this.#outstanding = { message, prepared, resolve, reject };
     });
     await this.#options.send(prepared.body);
-    await receipt;
+    return Object.freeze({ message, prepared, receipt: await receipt });
   }
 
   #handleReceipt(message: WorkflowRunnerEventReceiptMessage): void {
@@ -576,7 +656,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     }
     this.#lastReceiptSequence = outstanding.message.sequence;
     if (outstanding.message.kind === 'terminal') this.#terminalReceiptAccepted = true;
-    outstanding.resolve();
+    outstanding.resolve(receipt);
     if (this.#queuedCancel && !this.#terminal && outstanding.message.kind !== 'terminal') {
       void this.#sendQueuedCancelAck().catch((error) => this.#fatal(error));
     }
@@ -614,14 +694,14 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     const validatingOffer = this.#state === 'validating_offer';
     this.#state = 'cancelling';
     this.#abortController?.abort(new Error(`workflow runner cancel: ${message.payload.reason}`));
-    if (!this.#outstanding && !validatingOffer) {
+    if (!this.#outstanding && !this.#preparingEvent && !validatingOffer) {
       await this.#sendQueuedCancelAck();
     }
   }
 
   async #sendQueuedCancelAck(): Promise<void> {
     const cancel = this.#queuedCancel;
-    if (!cancel || this.#outstanding) return;
+    if (!cancel || this.#outstanding || this.#preparingEvent) return;
     this.#queuedCancel = undefined;
     const acknowledgedAt = this.#now();
     await this.#emitReceiptable('cancel_ack', {
@@ -672,8 +752,8 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       const current = this.#outstanding!;
       this.#outstanding = {
         ...current,
-        resolve: () => {
-          current.resolve();
+        resolve: (receipt) => {
+          current.resolve(receipt);
           resolve();
         },
         reject: (error) => {
@@ -694,6 +774,7 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
     this.#lastControlSequence = 0;
+    this.#preparingEvent = false;
   }
 
   async #fatal(_error: unknown): Promise<void> {
