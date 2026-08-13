@@ -301,25 +301,29 @@ async function preparePathsUncached(
       'Approval evidence exists but its authority lineage is missing.',
     );
   }
+  let canonicalRoot: string;
   try {
-    await ensureOwnerDirectory(root, JOURNAL_SECURITY);
+    canonicalRoot = await ensureOwnerDirectory(root, JOURNAL_SECURITY);
   } catch (error) {
     return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root is unsafe.', error);
   }
   const paths = {
     root,
-    records: join(root, 'records'),
-    claims: join(root, 'claims'),
+    // Windows realpath may expand a safe 8.3 workspace path. Anchor child
+    // creation to the verified canonical root so containment never compares
+    // the host spelling with its expanded spelling.
+    records: join(canonicalRoot, 'records'),
+    claims: join(canonicalRoot, 'claims'),
     // Anchors and immutable replay artifacts share the owner-only claim
     // directory. Their domain-separated hash keys cannot collide, and this
     // avoids two extra Windows ACL processes for every new authority root.
-    anchors: join(root, 'claims'),
-    replays: join(root, 'claims'),
-    locks: join(root, 'locks'),
+    anchors: join(canonicalRoot, 'claims'),
+    replays: join(canonicalRoot, 'claims'),
+    locks: join(canonicalRoot, 'locks'),
   };
   for (const path of [paths.records, paths.claims, paths.locks]) {
     try {
-      await ensureOwnerDirectory(path, JOURNAL_SECURITY, root);
+      await ensureOwnerDirectory(path, JOURNAL_SECURITY, canonicalRoot);
     } catch (error) {
       return fail(
         'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
