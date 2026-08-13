@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   WORKFLOW_EFFECT_CONTROL_ARTIFACT_KINDS,
@@ -9,27 +9,65 @@ import {
   WORKFLOW_EFFECT_CONTROL_AUTHORITY_V2_MANIFEST_SHA256,
   WORKFLOW_EFFECT_CONTROL_CHECKPOINT_GOLDEN_SHA256,
   WORKFLOW_EFFECT_CONTROL_CHECKPOINT_MANIFEST_SHA256,
+  WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS,
+  WORKFLOW_EFFECT_CONTROL_LIMITS,
   WORKFLOW_EFFECT_CONTROL_OBSERVER_OPERATIONS,
   WORKFLOW_EFFECT_CONTROL_RUNNER_V1_GOLDEN_SHA256,
   WORKFLOW_EFFECT_CONTROL_RUNNER_V1_MANIFEST_SHA256,
+  WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS,
+  canonicalWorkflowEffectControlJson,
   deriveWorkflowEffectOccurrenceId,
   hashWorkflowEffectApprovalDecision,
+  hashWorkflowEffectApprovalRecord,
+  hashWorkflowEffectControlDomain,
   projectWorkflowEffectHumanDecision,
   validateWorkflowEffectControlArtifact,
   validateWorkflowEffectControlEnvelope,
   validateWorkflowEffectControlObservation,
+  workflowEffectControlEnvelopeBytes,
+  type WorkflowEffectControlHumanDecisionProjection,
 } from '../workflow-effect-control-contract.js';
 import {
   createPendingWorkflowEffectApproval,
   createWorkflowEffectDecisionAuthority,
   applyWorkflowEffectApprovalDecision,
   markWorkflowEffectApprovalAuditRecorded,
+  type WorkflowEffectApprovalRecord,
 } from '../workflow-effect-approval.js';
+
+const VALIDATION_CONTEXT = Object.freeze({ expectedControlBuildHash: '2'.repeat(64) });
 
 const sha = (path: string) =>
   createHash('sha256')
     .update(readFileSync(resolve(path)))
     .digest('hex');
+
+interface EffectControlGoldenVector {
+  readonly value: Record<string, unknown>;
+  readonly canonicalBytes: string;
+  readonly byteLength: number;
+}
+
+const loadEffectControlGolden = () =>
+  JSON.parse(
+    readFileSync(
+      resolve('packages/workflows/contracts/workflow-effect-control/v1/golden-vectors.json'),
+      'utf8',
+    ),
+  ) as {
+    vectors: {
+      artifacts: Record<string, EffectControlGoldenVector>;
+      observer: Record<string, EffectControlGoldenVector>;
+      transport: {
+        preparedApprovalDecided: {
+          envelope: Record<string, unknown>;
+          body: string;
+          bodyHash: string;
+          idempotencyKey: string;
+        };
+      };
+    };
+  };
 
 describe('Workflow effect control D1 contract', () => {
   it('freezes six TS artifacts separately from three nonauthorizing observer operations', () => {
@@ -94,60 +132,66 @@ describe('Workflow effect control D1 contract', () => {
   });
 
   it('keeps the approval decision hash stable while the exact record hash may advance', () => {
-    const now = Date.now();
-    const authority = createWorkflowEffectDecisionAuthority({
-      workspaceId: 'workspace-1',
-      humanPrincipalIds: ['human-1'],
-      capabilities: ['workflow.effect.decide'],
-      maxBindingTtlMs: 60_000,
-    });
-    const pending = createPendingWorkflowEffectApproval({
-      runId: 'run-1',
-      approvalId: 'approval-1',
-      correlationId: 'corr-1',
-      workflowId: 'workflow-1',
-      workflowVersion: '1.0.0',
-      workflowHash: '1'.repeat(64),
-      inputHash: '2'.repeat(64),
-      effectId: `workflow-effect:sha256:${'3'.repeat(64)}`,
-      effectHash: '3'.repeat(64),
-      requiredCapability: 'workflow.effect.decide',
-      createdAt: new Date(now - 1000).toISOString(),
-      expiresAt: new Date(now + 60_000).toISOString(),
-    });
-    const reasonHash = '4'.repeat(64);
-    const binding = authority.issueHumanDecisionBinding({
-      principalId: 'human-1',
-      capability: 'workflow.effect.decide',
-      runId: 'run-1',
-      approvalId: 'approval-1',
-      correlationId: 'corr-1',
-      approvalExpiresAt: pending.expiresAt,
-      decision: 'approved',
-      reasonHash,
-      expiresAt: new Date(now + 30_000).toISOString(),
-    });
-    const decided = applyWorkflowEffectApprovalDecision(
-      pending,
-      'approved',
-      binding,
-      authority,
-      reasonHash,
-      new Date().toISOString(),
-    );
-    const recorded = markWorkflowEffectApprovalAuditRecorded(
-      decided,
-      decided.auditProjection!.eventId,
-      new Date(now + 1000).toISOString(),
-    );
-    const projection = projectWorkflowEffectHumanDecision({
-      approval: decided,
-      issuedAt: binding.issuedAt,
-      expiresAt: binding.expiresAt,
-    });
-    expect(hashWorkflowEffectApprovalDecision(decided, projection)).toBe(
-      hashWorkflowEffectApprovalDecision(recorded, projection),
-    );
+    const now = Date.parse('2026-08-12T00:00:10.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      const authority = createWorkflowEffectDecisionAuthority({
+        workspaceId: 'workspace-1',
+        humanPrincipalIds: ['human-1'],
+        capabilities: ['workflow.effect.decide'],
+        maxBindingTtlMs: 60_000,
+      });
+      const pending = createPendingWorkflowEffectApproval({
+        runId: 'run-1',
+        approvalId: 'approval-1',
+        correlationId: 'corr-1',
+        workflowId: 'workflow-1',
+        workflowVersion: '1.0.0',
+        workflowHash: '1'.repeat(64),
+        inputHash: '2'.repeat(64),
+        effectId: `workflow-effect:sha256:${'3'.repeat(64)}`,
+        effectHash: '3'.repeat(64),
+        requiredCapability: 'workflow.effect.decide',
+        createdAt: new Date(now - 1000).toISOString(),
+        expiresAt: new Date(now + 60_000).toISOString(),
+      });
+      const reasonHash = '4'.repeat(64);
+      const binding = authority.issueHumanDecisionBinding({
+        principalId: 'human-1',
+        capability: 'workflow.effect.decide',
+        runId: 'run-1',
+        approvalId: 'approval-1',
+        correlationId: 'corr-1',
+        approvalExpiresAt: pending.expiresAt,
+        decision: 'approved',
+        reasonHash,
+        expiresAt: new Date(now + 30_000).toISOString(),
+      });
+      const decided = applyWorkflowEffectApprovalDecision(
+        pending,
+        'approved',
+        binding,
+        authority,
+        reasonHash,
+        new Date(now).toISOString(),
+      );
+      const recorded = markWorkflowEffectApprovalAuditRecorded(
+        decided,
+        decided.auditProjection!.eventId,
+        new Date(now + 1000).toISOString(),
+      );
+      const projection = projectWorkflowEffectHumanDecision({
+        approval: decided,
+        issuedAt: binding.issuedAt,
+        expiresAt: binding.expiresAt,
+      });
+      expect(hashWorkflowEffectApprovalDecision(decided, projection)).toBe(
+        hashWorkflowEffectApprovalDecision(recorded, projection),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects any observer authority or implicit grant claim', () => {
@@ -213,12 +257,10 @@ describe('Workflow effect control D1 contract', () => {
       'legacyExpired',
     ]);
     for (const vector of Object.values(golden.vectors.artifacts)) {
-      expect(validateWorkflowEffectControlArtifact(vector.value)).toBeDefined();
+      expect(validateWorkflowEffectControlArtifact(vector.value, VALIDATION_CONTEXT)).toBeDefined();
     }
-    for (const [name, vector] of Object.entries(golden.vectors.observer)) {
-      if (name !== 'preparedApprovalDecided') {
-        expect(validateWorkflowEffectControlEnvelope(vector.value)).toBeDefined();
-      }
+    for (const vector of Object.values(golden.vectors.observer)) {
+      expect(validateWorkflowEffectControlEnvelope(vector.value)).toBeDefined();
     }
   });
 
@@ -268,10 +310,8 @@ describe('Workflow effect control D1 contract', () => {
     for (const vector of Object.values(golden.vectors.artifacts)) {
       expect(validateArtifact(vector.value), JSON.stringify(validateArtifact.errors)).toBe(true);
     }
-    for (const [name, vector] of Object.entries(golden.vectors.observer)) {
-      if (name !== 'preparedApprovalDecided') {
-        expect(validateEnvelope(vector.value), JSON.stringify(validateEnvelope.errors)).toBe(true);
-      }
+    for (const vector of Object.values(golden.vectors.observer)) {
+      expect(validateEnvelope(vector.value), JSON.stringify(validateEnvelope.errors)).toBe(true);
     }
     const openNested = structuredClone(golden.vectors.artifacts.decisionApproved.value) as {
       approval: { decision: Record<string, unknown> };
@@ -289,7 +329,9 @@ describe('Workflow effect control D1 contract', () => {
     rejectedClaim.humanDecision = rejected.humanDecision;
     rejectedClaim.consumedApprovalRecordHash = rejected.approvalRecordHash;
     expect(validateArtifact(rejectedClaim)).toBe(false);
-    expect(() => validateWorkflowEffectControlArtifact(rejectedClaim)).toThrowError(
+    expect(() =>
+      validateWorkflowEffectControlArtifact(rejectedClaim, VALIDATION_CONTEXT),
+    ).toThrowError(
       expect.objectContaining({ code: 'WORKFLOW_EFFECT_CONTROL_APPROVAL_PLANE_MISMATCH' }),
     );
 
@@ -298,9 +340,9 @@ describe('Workflow effect control D1 contract', () => {
     };
     invalidVersion.approval.workflowVersion = 'not-semver';
     expect(validateArtifact(invalidVersion)).toBe(false);
-    expect(() => validateWorkflowEffectControlArtifact(invalidVersion)).toThrowError(
-      expect.objectContaining({ code: 'WORKFLOW_EFFECT_APPROVAL_INVALID' }),
-    );
+    expect(() =>
+      validateWorkflowEffectControlArtifact(invalidVersion, VALIDATION_CONTEXT),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_EFFECT_APPROVAL_INVALID' }));
 
     for (const [targetName, sourceName] of [
       ['decisionApproved', 'auditApproved'],
@@ -316,9 +358,9 @@ describe('Workflow effect control D1 contract', () => {
       revisionDrift.approvalDecisionHash = source.approvalDecisionHash;
       revisionDrift.humanDecision = source.humanDecision;
       expect(validateArtifact(revisionDrift)).toBe(false);
-      expect(() => validateWorkflowEffectControlArtifact(revisionDrift)).toThrowError(
-        expect.objectContaining({ code: 'WORKFLOW_EFFECT_CONTROL_STALE_REVISION' }),
-      );
+      expect(() =>
+        validateWorkflowEffectControlArtifact(revisionDrift, VALIDATION_CONTEXT),
+      ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_EFFECT_CONTROL_STALE_REVISION' }));
     }
   });
 
@@ -343,11 +385,11 @@ describe('Workflow effect control D1 contract', () => {
     const intent = structuredClone(golden.vectors.artifacts.intentAccepted.value);
     intent.occurrenceIndex = 2;
     intent.occurrenceId = deriveWorkflowEffectOccurrenceId(intent.runId as string, 2);
-    expect(() => validateWorkflowEffectControlArtifact(intent)).toThrow();
+    expect(() => validateWorkflowEffectControlArtifact(intent, VALIDATION_CONTEXT)).toThrow();
 
     const claim = structuredClone(golden.vectors.artifacts.claimClaimed.value);
     claim.claimedAt = (claim.approval as Record<string, unknown>).expiresAt;
-    expect(() => validateWorkflowEffectControlArtifact(claim)).toThrowError(
+    expect(() => validateWorkflowEffectControlArtifact(claim, VALIDATION_CONTEXT)).toThrowError(
       expect.objectContaining({ code: 'WORKFLOW_EFFECT_CONTROL_STALE_REVISION' }),
     );
 
@@ -364,5 +406,224 @@ describe('Workflow effect control D1 contract', () => {
     expect(() => validateWorkflowEffectControlObservation(observedAtDrift)).toThrowError(
       expect.objectContaining({ code: 'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH' }),
     );
+  });
+
+  it('binds every terminal approval decision to the artifact workspace', () => {
+    const golden = loadEffectControlGolden();
+    const artifact = structuredClone(golden.vectors.artifacts.decisionApproved!.value) as Record<
+      string,
+      unknown
+    >;
+    const approval = artifact.approval as WorkflowEffectApprovalRecord;
+    const approvalDecision = (artifact.approval as Record<string, unknown>).decision as Record<
+      string,
+      unknown
+    >;
+    const humanDecision = artifact.humanDecision as Record<string, unknown>;
+    approvalDecision.workspaceId = 'workspace-attacker';
+    humanDecision.workspaceId = 'workspace-attacker';
+    const bindingCore = {
+      approvalExpiresAt: humanDecision.approvalExpiresAt,
+      approvalId: humanDecision.approvalId,
+      capability: humanDecision.capability,
+      channel: humanDecision.channel,
+      correlationId: humanDecision.correlationId,
+      decision: humanDecision.decision,
+      decidedAt: humanDecision.decidedAt,
+      expiresAt: humanDecision.expiresAt,
+      issuedAt: humanDecision.issuedAt,
+      nonce: humanDecision.nonce,
+      principalId: humanDecision.principalId,
+      reasonHash: humanDecision.reasonHash,
+      runId: humanDecision.runId,
+      workspaceId: humanDecision.workspaceId,
+    };
+    humanDecision.bindingHash = hashWorkflowEffectControlDomain('human-binding', bindingCore);
+    humanDecision.attestationHash = hashWorkflowEffectControlDomain('human-attestation', {
+      bindingHash: humanDecision.bindingHash,
+      channel: humanDecision.channel,
+    });
+    artifact.approvalRecordHash = hashWorkflowEffectApprovalRecord(approval);
+    artifact.approvalDecisionHash = hashWorkflowEffectApprovalDecision(
+      approval,
+      humanDecision as unknown as WorkflowEffectControlHumanDecisionProjection,
+    );
+
+    expect(() => validateWorkflowEffectControlArtifact(artifact, VALIDATION_CONTEXT)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH',
+        path: '$/approval/decision/workspaceId',
+      }),
+    );
+  });
+
+  it('requires trusted control build identity and maps runner receipt failures', () => {
+    const intent = structuredClone(
+      loadEffectControlGolden().vectors.artifacts.intentAccepted!.value,
+    );
+    expect(validateWorkflowEffectControlArtifact(intent, VALIDATION_CONTEXT)).toBeDefined();
+    expect(() =>
+      validateWorkflowEffectControlArtifact(intent, {
+        expectedControlBuildHash: '9'.repeat(64),
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_HASH_MISMATCH',
+        path: '$/runnerV1Receipt/payload',
+      }),
+    );
+
+    const identityDrift = structuredClone(intent);
+    (identityDrift.runnerV1Receipt as Record<string, unknown>).workspaceId = 'workspace-other';
+    expect(() =>
+      validateWorkflowEffectControlArtifact(identityDrift, VALIDATION_CONTEXT),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH',
+        path: '$/runnerV1Receipt',
+      }),
+    );
+
+    const invalidReceipt = structuredClone(intent);
+    delete (
+      (invalidReceipt.runnerV1Receipt as Record<string, unknown>).payload as Record<string, unknown>
+    ).controlBuildHash;
+    expect(() =>
+      validateWorkflowEffectControlArtifact(invalidReceipt, VALIDATION_CONTEXT),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_INVALID',
+        path: '$/runnerV1Receipt/payload/controlBuildHash',
+      }),
+    );
+  });
+
+  it('requires claim human evidence and permits completion after approval expiry', () => {
+    const executed = structuredClone(
+      loadEffectControlGolden().vectors.artifacts.claimExecuted!.value,
+    );
+    executed.committedAt = '2026-08-12T02:00:03.000Z';
+    const validated = validateWorkflowEffectControlArtifact(executed, VALIDATION_CONTEXT);
+    if (validated.kind !== 'effect_execution_claim') throw new Error('Expected execution claim.');
+    expect(validated.humanDecision.workspaceId).toBe(validated.workspaceId);
+    expect(validated.committedAt).toBe('2026-08-12T02:00:03.000Z');
+
+    const backwards = structuredClone(executed);
+    backwards.committedAt = '2026-08-12T00:00:05.000Z';
+    expect(() => validateWorkflowEffectControlArtifact(backwards, VALIDATION_CONTEXT)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_STALE_REVISION',
+        path: '$/committedAt',
+      }),
+    );
+  });
+
+  it('counts naked canonical artifact and observation bytes but frames envelopes once', () => {
+    const golden = loadEffectControlGolden();
+    const artifact = golden.vectors.artifacts.intentAccepted!;
+    const observer = golden.vectors.observer.approvalCreated!;
+    expect(Buffer.byteLength(canonicalWorkflowEffectControlJson(artifact.value), 'utf8')).toBe(
+      artifact.byteLength - 1,
+    );
+    expect(Buffer.byteLength(canonicalWorkflowEffectControlJson(observer.value), 'utf8')).toBe(
+      observer.byteLength - 1,
+    );
+    const envelope = validateWorkflowEffectControlEnvelope(observer.value);
+    expect(workflowEffectControlEnvelopeBytes(envelope).byteLength).toBe(observer.byteLength);
+    const source = readFileSync(
+      resolve('packages/workflows/src/workflow-effect-control-contract.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(
+      /Buffer\.byteLength\(canonicalWorkflowEffectControlJson\(artifact\), 'utf8'\) >\s*WORKFLOW_EFFECT_CONTROL_LIMITS\.maxArtifactBytes/u,
+    );
+    expect(source).toMatch(
+      /Buffer\.byteLength\(canonicalWorkflowEffectControlJson\(result\), 'utf8'\) >\s*WORKFLOW_EFFECT_CONTROL_LIMITS\.maxObservationBytes/u,
+    );
+  });
+
+  it('reports missing, unknown, and accessor fields with distinct stable diagnostics', () => {
+    const pending = structuredClone(loadEffectControlGolden().vectors.artifacts.pending!.value);
+    const missing = structuredClone(pending);
+    delete missing.writer;
+    expect(() => validateWorkflowEffectControlArtifact(missing, VALIDATION_CONTEXT)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_UNKNOWN_FIELD',
+        path: '$/writer',
+        message: 'Required field is missing.',
+      }),
+    );
+
+    const unknown = { ...structuredClone(pending), rawReason: 'forbidden' };
+    expect(() => validateWorkflowEffectControlArtifact(unknown, VALIDATION_CONTEXT)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_UNKNOWN_FIELD',
+        path: '$/rawReason',
+        message: 'Unknown field is forbidden.',
+      }),
+    );
+
+    const accessor = structuredClone(pending);
+    Object.defineProperty(accessor, 'writer', {
+      configurable: true,
+      enumerable: true,
+      get: () => '@openslack/workflows',
+    });
+    expect(() => validateWorkflowEffectControlArtifact(accessor, VALIDATION_CONTEXT)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_INVALID',
+        path: '$/writer',
+        message: 'Data field required.',
+      }),
+    );
+  });
+
+  it('uses one human-decision field inventory and the frozen source-sequence limit', () => {
+    const contractRoot = resolve('packages/workflows/contracts/workflow-effect-control/v1');
+    const humanSchema = JSON.parse(
+      readFileSync(
+        resolve(contractRoot, 'schemas/workflow-effect-control-human-decision.v1.schema.json'),
+        'utf8',
+      ),
+    ) as { required: string[] };
+    const observationSchema = JSON.parse(
+      readFileSync(
+        resolve(contractRoot, 'schemas/workflow-effect-control-observation.v1.schema.json'),
+        'utf8',
+      ),
+    ) as {
+      oneOf: Array<{ properties: { humanDecision: { required?: string[] } } }>;
+    };
+    expect(humanSchema.required).toEqual(WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS);
+    expect(observationSchema.oneOf[1]!.properties.humanDecision.required).toEqual(
+      WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS,
+    );
+
+    const envelope = structuredClone(
+      loadEffectControlGolden().vectors.observer.auditRecorded!.value,
+    );
+    envelope.sourceSequence = WORKFLOW_EFFECT_CONTROL_LIMITS.maxSourceSequence + 1;
+    expect(() => validateWorkflowEffectControlEnvelope(envelope)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_EFFECT_CONTROL_INVALID',
+        path: '$/sourceSequence',
+      }),
+    );
+  });
+
+  it('separates observer envelopes from prepared transport evidence', () => {
+    const vectors = loadEffectControlGolden().vectors;
+    expect(Object.keys(vectors.observer)).toEqual([
+      'approvalCreated',
+      'approvalDecided',
+      'auditRecorded',
+    ]);
+    for (const vector of Object.values(vectors.observer)) {
+      expect(validateWorkflowEffectControlEnvelope(vector.value)).toBeDefined();
+    }
+    const prepared = vectors.transport.preparedApprovalDecided;
+    const envelope = validateWorkflowEffectControlEnvelope(prepared.envelope);
+    expect(prepared.body).toBe(workflowEffectControlEnvelopeBytes(envelope).toString('utf8'));
+    expect(prepared.body.endsWith('\n')).toBe(true);
   });
 });

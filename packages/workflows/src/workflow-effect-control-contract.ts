@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import {
+  canonicalUtcTimestamp,
+  closedDataRecord,
+  immutableContractValue,
+  ownDataField,
+  type ContractDataRecord,
+} from './internal/contract-validation.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
+  WorkflowRunnerContractError,
   prepareWorkflowRunnerMessage,
   validateWorkflowRunnerEventReceipt,
   validateWorkflowRunnerMessage,
@@ -25,7 +33,7 @@ export const WORKFLOW_EFFECT_CONTROL_OBSERVATION_SCHEMA =
 export const WORKFLOW_EFFECT_CONTROL_ENVELOPE_SCHEMA =
   'openslack.workflow_effect_control_envelope.v1' as const;
 export const WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_SCHEMA =
-  'openslack.workflow_effect_human_decision_projection.v1' as const;
+  'openslack.workflow_effect_control_human_decision_projection.v1' as const;
 export const WORKFLOW_EFFECT_CONTROL_AUTHORITY = 'typescript' as const;
 export const WORKFLOW_EFFECT_CONTROL_GO_ROLE = 'observer_only' as const;
 export const WORKFLOW_EFFECT_CONTROL_AUTHORITY_CLAIM = 'NO_AUTHORITY' as const;
@@ -86,6 +94,30 @@ export const WORKFLOW_EFFECT_CONTROL_LIMITS = Object.freeze({
   maxSourceSequence: WORKFLOW_EFFECT_CONTROL_MAX_SOURCE_SEQUENCE,
 } as const);
 
+export const WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS = Object.freeze([
+  'schema',
+  'channel',
+  'principalId',
+  'workspaceId',
+  'capability',
+  'runId',
+  'approvalId',
+  'correlationId',
+  'decision',
+  'reasonHash',
+  'approvalExpiresAt',
+  'issuedAt',
+  'expiresAt',
+  'nonce',
+  'bindingHash',
+  'attestationHash',
+  'decidedAt',
+] as const);
+
+export const WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS = Object.freeze(
+  WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS.filter((field) => field !== 'nonce'),
+);
+
 export class WorkflowEffectControlContractError extends Error {
   constructor(
     readonly code: WorkflowEffectControlErrorCode,
@@ -101,6 +133,10 @@ export interface WorkflowEffectOccurrenceBinding {
   readonly runId: string;
   readonly occurrenceIndex: number;
   readonly occurrenceId: string;
+}
+
+export interface WorkflowEffectControlValidationContext {
+  readonly expectedControlBuildHash: string;
 }
 
 export interface WorkflowEffectControlHumanDecisionProjection {
@@ -171,6 +207,7 @@ export interface WorkflowEffectAuditRecordedArtifact extends ApprovalArtifactBas
 
 export interface WorkflowEffectExecutionClaimArtifact extends ApprovalArtifactBase {
   readonly kind: 'effect_execution_claim';
+  readonly humanDecision: WorkflowEffectControlHumanDecisionProjection;
   readonly executionId: string;
   readonly consumedApprovalRecordHash: string;
   readonly consumedApprovalRevision: 1 | 2;
@@ -254,14 +291,13 @@ export interface WorkflowEffectControlPreparedEnvelope {
   readonly idempotencyKey: string;
 }
 
-type DataRecord = Record<string, unknown>;
+type DataRecord = ContractDataRecord;
 const HASH = /^[0-9a-f]{64}$/u;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const CAPABILITY = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)+$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const OCCURRENCE_ID = /^WFOCCURRENCE-[0-9a-f]{64}$/u;
 const EXECUTION_ID = /^WFEXECUTION-[0-9a-f]{64}$/u;
-const APPROVAL_ID = /^WFAPPROVAL-[0-9a-f]{64}$/u;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 function fail(code: WorkflowEffectControlErrorCode, path: string, message: string): never {
@@ -269,42 +305,32 @@ function fail(code: WorkflowEffectControlErrorCode, path: string, message: strin
 }
 
 function closedRecord(value: unknown, fields: readonly string[], path = '$'): DataRecord {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    nodeTypes.isProxy(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
-  ) {
-    return fail('WORKFLOW_EFFECT_CONTROL_INVALID', path, `${path} must be an inert object.`);
-  }
-  const keys = Reflect.ownKeys(value);
-  if (
-    keys.length !== fields.length ||
-    fields.some((field) => !Object.hasOwn(value, field)) ||
-    keys.some((key) => typeof key !== 'string' || !fields.includes(key))
-  ) {
-    return fail(
-      'WORKFLOW_EFFECT_CONTROL_UNKNOWN_FIELD',
-      path,
-      `${path} has missing or unknown fields.`,
-    );
-  }
-  for (const key of keys) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
-      return fail(
+  return closedDataRecord(value, fields, path, {
+    inert: (recordPath) =>
+      fail('WORKFLOW_EFFECT_CONTROL_INVALID', recordPath, `${recordPath} must be an inert object.`),
+    missing: (recordPath, field) =>
+      fail(
+        'WORKFLOW_EFFECT_CONTROL_UNKNOWN_FIELD',
+        `${recordPath}/${field}`,
+        'Required field is missing.',
+      ),
+    unknown: (recordPath, key) =>
+      fail(
+        'WORKFLOW_EFFECT_CONTROL_UNKNOWN_FIELD',
+        `${recordPath}/${String(key)}`,
+        'Unknown field is forbidden.',
+      ),
+    dataField: (recordPath, key) =>
+      fail(
         'WORKFLOW_EFFECT_CONTROL_INVALID',
-        `${path}/${String(key)}`,
+        `${recordPath}/${String(key)}`,
         'Data field required.',
-      );
-    }
-  }
-  return value as DataRecord;
+      ),
+  });
 }
 
 function own(record: DataRecord, field: string): unknown {
-  return record[field];
+  return ownDataField(record, field);
 }
 
 function text(value: unknown, path: string, pattern = SAFE_ID): string {
@@ -319,15 +345,26 @@ function hash(value: unknown, path: string): string {
 }
 
 function timestamp(value: unknown, path: string): string {
-  if (
-    typeof value !== 'string' ||
-    !TIMESTAMP.test(value) ||
-    !Number.isFinite(Date.parse(value)) ||
-    new Date(Date.parse(value)).toISOString() !== value
-  ) {
-    return fail('WORKFLOW_EFFECT_CONTROL_INVALID', path, `${path} is not canonical time.`);
-  }
-  return value;
+  return canonicalUtcTimestamp(
+    value,
+    path,
+    (candidate, candidatePath) => {
+      if (typeof candidate !== 'string' || !TIMESTAMP.test(candidate)) {
+        return fail(
+          'WORKFLOW_EFFECT_CONTROL_INVALID',
+          candidatePath,
+          `${candidatePath} is not canonical time.`,
+        );
+      }
+      return candidate;
+    },
+    (candidatePath) =>
+      fail(
+        'WORKFLOW_EFFECT_CONTROL_INVALID',
+        candidatePath,
+        `${candidatePath} is not canonical time.`,
+      ),
+  );
 }
 
 function integer(value: unknown, path: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
@@ -338,10 +375,39 @@ function integer(value: unknown, path: string, min: number, max = Number.MAX_SAF
 }
 
 function immutable<T>(value: T): T {
-  if (Array.isArray(value)) value.forEach(immutable);
-  else if (value && typeof value === 'object' && !ArrayBuffer.isView(value))
-    Object.values(value).forEach(immutable);
-  return Object.freeze(value);
+  return immutableContractValue(value);
+}
+
+function validationContext(value: WorkflowEffectControlValidationContext) {
+  const record = closedRecord(value, ['expectedControlBuildHash'], '$/context');
+  return immutable({
+    expectedControlBuildHash: hash(
+      own(record, 'expectedControlBuildHash'),
+      '$/context/expectedControlBuildHash',
+    ),
+  });
+}
+
+function runnerErrorPath(prefix: string, path: string): string {
+  return path === '$' ? prefix : `${prefix}${path.slice(1)}`;
+}
+
+function withRunnerContract<T>(prefix: string, operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof WorkflowEffectControlContractError) throw error;
+    if (error instanceof WorkflowRunnerContractError) {
+      const code =
+        error.code === 'WORKFLOW_RUNNER_HASH_MISMATCH'
+          ? 'WORKFLOW_EFFECT_CONTROL_HASH_MISMATCH'
+          : error.code === 'WORKFLOW_RUNNER_IDENTITY_MISMATCH'
+            ? 'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH'
+            : 'WORKFLOW_EFFECT_CONTROL_INVALID';
+      return fail(code, runnerErrorPath(prefix, error.path), error.message);
+    }
+    return fail('WORKFLOW_EFFECT_CONTROL_INVALID', prefix, 'GS8 contract evidence is invalid.');
+  }
 }
 
 export function canonicalWorkflowEffectControlJson(value: unknown): string {
@@ -420,19 +486,17 @@ function artifactBase(record: DataRecord, kind: WorkflowEffectControlArtifactKin
   });
 }
 
-export function hashWorkflowEffectControlArtifact(value: WorkflowEffectControlArtifact): string {
-  return hashWorkflowEffectControlDomain('artifact', validateWorkflowEffectControlArtifact(value));
+export function hashWorkflowEffectControlArtifact(
+  value: WorkflowEffectControlArtifact,
+  contextValue: WorkflowEffectControlValidationContext,
+): string {
+  return hashWorkflowEffectControlDomain(
+    'artifact',
+    validateWorkflowEffectControlArtifact(value, contextValue),
+  );
 }
 
-export function hashWorkflowEffectIntentBinding(value: WorkflowEffectIntentArtifact): string {
-  const artifact = validateWorkflowEffectControlArtifact(value);
-  if (artifact.kind !== 'effect_intent') {
-    return fail(
-      'WORKFLOW_EFFECT_CONTROL_APPROVAL_PLANE_MISMATCH',
-      '$/kind',
-      'Stable intent binding requires an effect_intent artifact.',
-    );
-  }
+function hashValidatedWorkflowEffectIntentBinding(artifact: WorkflowEffectIntentArtifact): string {
   return hashWorkflowEffectControlDomain('intent-binding', {
     occurrenceId: artifact.occurrenceId,
     occurrenceIndex: artifact.occurrenceIndex,
@@ -441,6 +505,21 @@ export function hashWorkflowEffectIntentBinding(value: WorkflowEffectIntentArtif
     runnerV1Message: artifact.runnerV1Message,
     runnerV1Prepared: artifact.runnerV1Prepared,
   });
+}
+
+export function hashWorkflowEffectIntentBinding(
+  value: WorkflowEffectIntentArtifact,
+  contextValue: WorkflowEffectControlValidationContext,
+): string {
+  const artifact = validateWorkflowEffectControlArtifact(value, contextValue);
+  if (artifact.kind !== 'effect_intent') {
+    return fail(
+      'WORKFLOW_EFFECT_CONTROL_APPROVAL_PLANE_MISMATCH',
+      '$/kind',
+      'Stable intent binding requires an effect_intent artifact.',
+    );
+  }
+  return hashValidatedWorkflowEffectIntentBinding(artifact);
 }
 
 export function hashWorkflowEffectApprovalRecord(record: WorkflowEffectApprovalRecord): string {
@@ -491,25 +570,7 @@ export function hashWorkflowEffectApprovalDecision(
 export function validateWorkflowEffectControlHumanDecisionProjection(
   value: unknown,
 ): WorkflowEffectControlHumanDecisionProjection {
-  const record = closedRecord(value, [
-    'schema',
-    'channel',
-    'principalId',
-    'workspaceId',
-    'capability',
-    'runId',
-    'approvalId',
-    'correlationId',
-    'decision',
-    'reasonHash',
-    'approvalExpiresAt',
-    'issuedAt',
-    'expiresAt',
-    'nonce',
-    'bindingHash',
-    'attestationHash',
-    'decidedAt',
-  ]);
+  const record = closedRecord(value, WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS);
   if (own(record, 'schema') !== WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_SCHEMA) {
     return fail('WORKFLOW_EFFECT_CONTROL_INVALID', '$/schema', 'Decision schema is invalid.');
   }
@@ -676,11 +737,42 @@ const BASE = [
   'occurrenceId',
 ];
 
-function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEffectControlArtifact {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || nodeTypes.isProxy(value)) {
+type ApprovalArtifactKind = Exclude<
+  WorkflowEffectControlArtifactKind,
+  'effect_intent' | 'legacy_run_gate_observation'
+>;
+
+const APPROVAL_ARTIFACT_EXTRA_FIELDS = {
+  effect_approval_pending: [],
+  effect_decision_committed: ['humanDecision'],
+  effect_audit_recorded: ['humanDecision'],
+  effect_execution_claim: [
+    'humanDecision',
+    'executionId',
+    'consumedApprovalRecordHash',
+    'consumedApprovalRevision',
+    'claimRevision',
+    'claimStatus',
+    'claimedAt',
+    'outcomeHash',
+    'committedAt',
+    'reconciliationToken',
+  ],
+} as const satisfies Record<ApprovalArtifactKind, readonly string[]>;
+
+function validateWorkflowEffectControlArtifactInner(
+  value: unknown,
+  context: Readonly<WorkflowEffectControlValidationContext>,
+): WorkflowEffectControlArtifact {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    nodeTypes.isProxy(value)
+  ) {
     return fail('WORKFLOW_EFFECT_CONTROL_INVALID', '$', 'Artifact must be an object.');
   }
-  const kind = (value as DataRecord).kind;
+  const kind = ownDataField(value as DataRecord, 'kind');
   if (!WORKFLOW_EFFECT_CONTROL_ARTIFACT_KINDS.includes(kind as WorkflowEffectControlArtifactKind)) {
     return fail('WORKFLOW_EFFECT_CONTROL_INVALID', '$/kind', 'Artifact kind is unsupported.');
   }
@@ -693,7 +785,9 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
       'runnerV1Receipt',
     ]);
     const base = artifactBase(record, k);
-    const message = validateWorkflowRunnerMessage(own(record, 'runnerV1Message'));
+    const message = withRunnerContract('$/runnerV1Message', () =>
+      validateWorkflowRunnerMessage(own(record, 'runnerV1Message')),
+    );
     if (message.kind !== 'effect_intent') {
       return fail(
         'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH',
@@ -718,7 +812,9 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
         'GS8 intent binding is invalid.',
       );
     }
-    const prepared = prepareWorkflowRunnerMessage(message);
+    const prepared = withRunnerContract('$/runnerV1Message', () =>
+      prepareWorkflowRunnerMessage(message),
+    );
     const suppliedPrepared = closedRecord(
       own(record, 'runnerV1Prepared'),
       ['schema', 'body', 'messageDigest', 'idempotencyKey', 'requestFingerprint'],
@@ -734,8 +830,7 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
         'GS8 prepared evidence changed.',
       );
     }
-    let receipt: WorkflowRunnerEventReceiptMessage;
-    try {
+    const receipt = withRunnerContract('$/runnerV1Receipt', () => {
       const suppliedReceipt = validateWorkflowRunnerMessage(own(record, 'runnerV1Receipt'));
       if (suppliedReceipt.kind !== 'event_receipt') {
         return fail(
@@ -744,19 +839,12 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
           'GS8 event receipt required.',
         );
       }
-      receipt = validateWorkflowRunnerEventReceipt(
+      return validateWorkflowRunnerEventReceipt(
         suppliedReceipt,
         message,
-        suppliedReceipt.payload.controlBuildHash,
+        context.expectedControlBuildHash,
       );
-    } catch (error) {
-      if (error instanceof WorkflowEffectControlContractError) throw error;
-      return fail(
-        'WORKFLOW_EFFECT_CONTROL_INVALID',
-        '$/runnerV1Receipt',
-        error instanceof Error ? error.message : 'GS8 receipt is invalid.',
-      );
-    }
+    });
     if (
       !['accepted', 'duplicate'].includes(receipt.payload.status) ||
       receipt.payload.receivedKind !== 'effect_intent'
@@ -846,23 +934,7 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
       effectExecutionAuthority: false as const,
     });
   }
-  const extra =
-    k === 'effect_approval_pending'
-      ? []
-      : k === 'effect_execution_claim'
-        ? [
-            'humanDecision',
-            'executionId',
-            'consumedApprovalRecordHash',
-            'consumedApprovalRevision',
-            'claimRevision',
-            'claimStatus',
-            'claimedAt',
-            'outcomeHash',
-            'committedAt',
-            'reconciliationToken',
-          ]
-        : ['humanDecision'];
+  const extra = APPROVAL_ARTIFACT_EXTRA_FIELDS[k as ApprovalArtifactKind];
   const record = closedRecord(value, [
     ...BASE,
     'intentArtifact',
@@ -876,7 +948,10 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
     ...extra,
   ]);
   const base = artifactBase(record, k);
-  const intentArtifactValue = validateWorkflowEffectControlArtifact(own(record, 'intentArtifact'));
+  const intentArtifactValue = validateWorkflowEffectControlArtifactWithContext(
+    own(record, 'intentArtifact'),
+    context,
+  );
   if (intentArtifactValue.kind !== 'effect_intent') {
     return fail(
       'WORKFLOW_EFFECT_CONTROL_APPROVAL_PLANE_MISMATCH',
@@ -886,7 +961,7 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
   }
   const intentArtifact: WorkflowEffectIntentArtifact = intentArtifactValue;
   const intentBindingHash = hash(own(record, 'intentBindingHash'), '$/intentBindingHash');
-  const expectedIntentBindingHash = hashWorkflowEffectIntentBinding(intentArtifact);
+  const expectedIntentBindingHash = hashValidatedWorkflowEffectIntentBinding(intentArtifact);
   const approval = validateWorkflowEffectApproval(own(record, 'approval'));
   const approvalRecordHash = hash(own(record, 'approvalRecordHash'), '$/approvalRecordHash');
   const intentEffectId = text(own(record, 'intentEffectId'), '$/intentEffectId');
@@ -946,6 +1021,13 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
   const humanDecision = validateWorkflowEffectControlHumanDecisionProjection(
     own(record, 'humanDecision'),
   );
+  if (approval.decision?.workspaceId !== base.workspaceId) {
+    return fail(
+      'WORKFLOW_EFFECT_CONTROL_IDENTITY_MISMATCH',
+      '$/approval/decision/workspaceId',
+      'Approval decision workspace does not match the artifact workspace.',
+    );
+  }
   assertHumanDecisionMatchesApproval(humanDecision, approval);
   if (approvalDecisionHash !== hashWorkflowEffectApprovalDecision(approval, humanDecision)) {
     return fail(
@@ -1057,13 +1139,19 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
   if (
     !approval.decision ||
     Date.parse(claimedAt) < Date.parse(approval.decision.decidedAt) ||
-    Date.parse(claimedAt) >= Date.parse(approval.expiresAt) ||
-    (committedAt !== null && Date.parse(committedAt) < Date.parse(claimedAt))
+    Date.parse(claimedAt) >= Date.parse(approval.expiresAt)
   ) {
     return fail(
       'WORKFLOW_EFFECT_CONTROL_STALE_REVISION',
       '$/claimedAt',
-      'Execution claim is outside the active approved decision lifetime.',
+      'Execution claim must begin within the active approved decision lifetime.',
+    );
+  }
+  if (committedAt !== null && Date.parse(committedAt) < Date.parse(claimedAt)) {
+    return fail(
+      'WORKFLOW_EFFECT_CONTROL_STALE_REVISION',
+      '$/committedAt',
+      'Execution completion cannot precede its claim.',
     );
   }
   return immutable({
@@ -1091,12 +1179,13 @@ function validateWorkflowEffectControlArtifactInner(value: unknown): WorkflowEff
   });
 }
 
-export function validateWorkflowEffectControlArtifact(
+function validateWorkflowEffectControlArtifactWithContext(
   value: unknown,
+  context: Readonly<WorkflowEffectControlValidationContext>,
 ): WorkflowEffectControlArtifact {
-  const artifact = validateWorkflowEffectControlArtifactInner(value);
+  const artifact = validateWorkflowEffectControlArtifactInner(value, context);
   if (
-    Buffer.byteLength(canonicalWorkflowEffectControlJson(artifact), 'utf8') + 1 >
+    Buffer.byteLength(canonicalWorkflowEffectControlJson(artifact), 'utf8') >
     WORKFLOW_EFFECT_CONTROL_LIMITS.maxArtifactBytes
   ) {
     return fail(
@@ -1106,6 +1195,13 @@ export function validateWorkflowEffectControlArtifact(
     );
   }
   return artifact;
+}
+
+export function validateWorkflowEffectControlArtifact(
+  value: unknown,
+  contextValue: WorkflowEffectControlValidationContext,
+): WorkflowEffectControlArtifact {
+  return validateWorkflowEffectControlArtifactWithContext(value, validationContext(contextValue));
 }
 
 export function validateWorkflowEffectControlObservation(
@@ -1159,7 +1255,9 @@ export function validateWorkflowEffectControlObservation(
   }
   const operation = own(record, 'operation');
   const revision = integer(own(record, 'approvalRevision'), '$/approvalRevision', 0, 2) as
-    0 | 1 | 2;
+    | 0
+    | 1
+    | 2;
   const status = own(record, 'approvalStatus');
   const decision = own(record, 'decision');
   const approvalDecisionHash = own(record, 'approvalDecisionHash');
@@ -1209,9 +1307,7 @@ export function validateWorkflowEffectControlObservation(
   const humanDecision =
     humanDecisionValue === null
       ? null
-      : sanitizeWorkflowEffectHumanDecision(
-          validateSanitizedWorkflowEffectHumanDecision(humanDecisionValue),
-        );
+      : validateSanitizedWorkflowEffectHumanDecision(humanDecisionValue);
   const result = immutable({
     schema: WORKFLOW_EFFECT_CONTROL_OBSERVATION_SCHEMA,
     contractVersion: WORKFLOW_EFFECT_CONTROL_CONTRACT_VERSION,
@@ -1288,7 +1384,7 @@ export function validateWorkflowEffectControlObservation(
     );
   }
   if (
-    Buffer.byteLength(canonicalWorkflowEffectControlJson(result), 'utf8') + 1 >
+    Buffer.byteLength(canonicalWorkflowEffectControlJson(result), 'utf8') >
     WORKFLOW_EFFECT_CONTROL_LIMITS.maxObservationBytes
   ) {
     return fail(
@@ -1305,63 +1401,15 @@ type SanitizedHumanDecision = Omit<WorkflowEffectControlHumanDecisionProjection,
 function sanitizeWorkflowEffectHumanDecision(
   value: WorkflowEffectControlHumanDecisionProjection | SanitizedHumanDecision,
 ): SanitizedHumanDecision {
-  const {
-    schema,
-    channel,
-    principalId,
-    workspaceId,
-    capability,
-    runId,
-    approvalId,
-    correlationId,
-    decision,
-    reasonHash,
-    approvalExpiresAt,
-    issuedAt,
-    expiresAt,
-    bindingHash,
-    attestationHash,
-    decidedAt,
-  } = value;
-  return immutable({
-    schema,
-    channel,
-    principalId,
-    workspaceId,
-    capability,
-    runId,
-    approvalId,
-    correlationId,
-    decision,
-    reasonHash,
-    approvalExpiresAt,
-    issuedAt,
-    expiresAt,
-    bindingHash,
-    attestationHash,
-    decidedAt,
-  });
+  return immutable(
+    Object.fromEntries(
+      WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS.map((field) => [field, value[field]]),
+    ) as unknown as SanitizedHumanDecision,
+  );
 }
 
 function validateSanitizedWorkflowEffectHumanDecision(value: unknown): SanitizedHumanDecision {
-  const record = closedRecord(value, [
-    'schema',
-    'channel',
-    'principalId',
-    'workspaceId',
-    'capability',
-    'runId',
-    'approvalId',
-    'correlationId',
-    'decision',
-    'reasonHash',
-    'approvalExpiresAt',
-    'issuedAt',
-    'expiresAt',
-    'bindingHash',
-    'attestationHash',
-    'decidedAt',
-  ]);
+  const record = closedRecord(value, WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS);
   if (
     own(record, 'schema') !== WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_SCHEMA ||
     own(record, 'channel') !== 'local_human_attestation_tty_v1' ||
@@ -1401,8 +1449,9 @@ export function projectWorkflowEffectControlObservation(
     | WorkflowEffectApprovalPendingArtifact
     | WorkflowEffectDecisionCommittedArtifact
     | WorkflowEffectAuditRecordedArtifact,
+  contextValue: WorkflowEffectControlValidationContext,
 ): WorkflowEffectControlObservation {
-  const artifact = validateWorkflowEffectControlArtifact(artifactValue);
+  const artifact = validateWorkflowEffectControlArtifact(artifactValue, contextValue);
   if (
     artifact.kind !== 'effect_approval_pending' &&
     artifact.kind !== 'effect_decision_committed' &&
@@ -1519,7 +1568,7 @@ export function validateWorkflowEffectControlEnvelope(
     own(record, 'sourceSequence'),
     '$/sourceSequence',
     1,
-    WORKFLOW_EFFECT_CONTROL_MAX_SOURCE_SEQUENCE,
+    WORKFLOW_EFFECT_CONTROL_LIMITS.maxSourceSequence,
   );
   if (sourceSequence !== observation.approvalRevision + 1) {
     return fail(

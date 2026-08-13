@@ -69,13 +69,13 @@
     },
     "schemas/workflow-effect-control-human-decision.v1.schema.json": {
       "path": "schemas/workflow-effect-control-human-decision.v1.schema.json",
-      "byteLength": 2555,
-      "sha256": "36798d97090514b33d476ebd369da426f0785242df8413fd5a2f033b26d562c1"
+      "byteLength": 2563,
+      "sha256": "f9c36ea387875de77a9dc4f8f59a452cc4df3de0bd92b5ab4e91641150d664c1"
     },
     "schemas/workflow-effect-control-observation.v1.schema.json": {
       "path": "schemas/workflow-effect-control-observation.v1.schema.json",
-      "byteLength": 15036,
-      "sha256": "bd26b934cb155f71f6917753960c6be0e895b188002414c739694b50f8795592"
+      "byteLength": 15052,
+      "sha256": "64455a02dccee5809b64b4048dc339b83949c4041b3a2ca71549c160c5fb81ef"
     },
     "schemas/workflow-effect-control-envelope.v1.schema.json": {
       "path": "schemas/workflow-effect-control-envelope.v1.schema.json",
@@ -84,8 +84,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 165750,
-      "sha256": "81148c51f86464507761aa78cbdc3d8c696235220cb77d5a8a274b1c72bbdf86"
+      "byteLength": 165935,
+      "sha256": "9b40c455a129ddff0c22119431481d99b2de00f7ed85ff4b3caf0450d350d669"
     }
   },
   "bundleFiles": [

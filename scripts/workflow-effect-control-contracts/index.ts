@@ -16,12 +16,14 @@ import {
   WORKFLOW_EFFECT_CONTROL_GO_ROLE,
   WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_SCHEMA,
   WORKFLOW_EFFECT_CONTROL_IDEMPOTENCY_PREFIX,
+  WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS,
   WORKFLOW_EFFECT_CONTROL_LIMITS,
   WORKFLOW_EFFECT_CONTROL_OBSERVATION_SCHEMA,
   WORKFLOW_EFFECT_CONTROL_OBSERVER_OPERATIONS,
   WORKFLOW_EFFECT_CONTROL_ROUTE,
   WORKFLOW_EFFECT_CONTROL_RUNNER_V1_GOLDEN_SHA256,
   WORKFLOW_EFFECT_CONTROL_RUNNER_V1_MANIFEST_SHA256,
+  WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS,
   canonicalWorkflowEffectControlJson,
   deriveWorkflowEffectApprovalId,
   deriveWorkflowEffectOccurrenceId,
@@ -77,7 +79,7 @@ const SEMVER =
   '^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$';
 const TIME = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
 const UUID4 = '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
-const strict = (properties: Json, required = Object.keys(properties)): Json => ({
+const strict = (properties: Json, required: readonly string[] = Object.keys(properties)): Json => ({
   type: 'object',
   additionalProperties: false,
   properties,
@@ -88,7 +90,7 @@ const id = { type: 'string', pattern: ID, maxLength: 256 };
 const capability = { type: 'string', pattern: CAP, maxLength: 512 };
 const time = { type: 'string', pattern: TIME, format: 'date-time' };
 const nullableHash = { oneOf: [hash, { type: 'null' }] };
-const nullableId = { oneOf: [id, { type: 'null' }] };
+const VALIDATION_CONTEXT = Object.freeze({ expectedControlBuildHash: '2'.repeat(64) });
 
 const approvalCommon = {
   schema: { const: 'openslack.workflow_effect_approval.v2' },
@@ -163,14 +165,20 @@ const humanProperties = {
   bindingHash: hash,
   attestationHash: hash,
   decidedAt: time,
-};
+} satisfies Record<(typeof WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS)[number], unknown>;
 const humanSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'https://openslack.dev/contracts/workflow-effect-control/v1/schemas/workflow-effect-control-human-decision.v1.schema.json',
-  ...strict(humanProperties),
+  ...strict(humanProperties, WORKFLOW_EFFECT_CONTROL_HUMAN_DECISION_FIELDS),
 };
 const sanitizedHuman = strict(
-  Object.fromEntries(Object.entries(humanProperties).filter(([field]) => field !== 'nonce')),
+  Object.fromEntries(
+    WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS.map((field) => [
+      field,
+      humanProperties[field],
+    ]),
+  ),
+  WORKFLOW_EFFECT_CONTROL_SANITIZED_HUMAN_DECISION_FIELDS,
 );
 
 const artifactBase = {
@@ -522,22 +530,28 @@ function buildVectors() {
     occurrenceIndex,
     occurrenceId,
   } as const;
-  const intent = validateWorkflowEffectControlArtifact({
-    ...common,
-    kind: 'effect_intent',
-    runnerV1Message: message,
-    runnerV1Prepared: prepared,
-    runnerV1Receipt: receipt,
-  }) as WorkflowEffectIntentArtifact;
-  const duplicateIntent = validateWorkflowEffectControlArtifact({
-    ...common,
-    kind: 'effect_intent',
-    runnerV1Message: message,
-    runnerV1Prepared: prepared,
-    runnerV1Receipt: duplicateReceipt,
-  }) as WorkflowEffectIntentArtifact;
-  const intentBindingHash = hashWorkflowEffectIntentBinding(intent);
-  if (hashWorkflowEffectIntentBinding(duplicateIntent) !== intentBindingHash)
+  const intent = validateWorkflowEffectControlArtifact(
+    {
+      ...common,
+      kind: 'effect_intent',
+      runnerV1Message: message,
+      runnerV1Prepared: prepared,
+      runnerV1Receipt: receipt,
+    },
+    VALIDATION_CONTEXT,
+  ) as WorkflowEffectIntentArtifact;
+  const duplicateIntent = validateWorkflowEffectControlArtifact(
+    {
+      ...common,
+      kind: 'effect_intent',
+      runnerV1Message: message,
+      runnerV1Prepared: prepared,
+      runnerV1Receipt: duplicateReceipt,
+    },
+    VALIDATION_CONTEXT,
+  ) as WorkflowEffectIntentArtifact;
+  const intentBindingHash = hashWorkflowEffectIntentBinding(intent, VALIDATION_CONTEXT);
+  if (hashWorkflowEffectIntentBinding(duplicateIntent, VALIDATION_CONTEXT) !== intentBindingHash)
     throw new Error('Replay changed stable intent binding.');
   const approvalId = deriveWorkflowEffectApprovalId(occurrenceId, intentBindingHash);
   const pendingApproval = createPendingWorkflowEffectApproval({
@@ -562,13 +576,16 @@ function buildVectors() {
     intentEffectHash: effectHash,
     correlationId,
   };
-  const pending = validateWorkflowEffectControlArtifact({
-    ...approvalBase,
-    kind: 'effect_approval_pending',
-    approval: pendingApproval,
-    approvalRecordHash: hashWorkflowEffectApprovalRecord(pendingApproval),
-    approvalDecisionHash: null,
-  });
+  const pending = validateWorkflowEffectControlArtifact(
+    {
+      ...approvalBase,
+      kind: 'effect_approval_pending',
+      approval: pendingApproval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(pendingApproval),
+      approvalDecisionHash: null,
+    },
+    VALIDATION_CONTEXT,
+  );
   const terminal = (status: 'approved' | 'rejected'): WorkflowEffectApprovalRecord =>
     validateWorkflowEffectApproval({
       ...pendingApproval,
@@ -594,14 +611,17 @@ function buildVectors() {
       issuedAt: '2026-08-12T00:00:04.000Z',
       expiresAt: '2026-08-12T00:00:30.000Z',
     });
-    return validateWorkflowEffectControlArtifact({
-      ...approvalBase,
-      kind: 'effect_decision_committed',
-      approval,
-      approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
-      approvalDecisionHash: hashWorkflowEffectApprovalDecision(approval, humanDecision),
-      humanDecision,
-    });
+    return validateWorkflowEffectControlArtifact(
+      {
+        ...approvalBase,
+        kind: 'effect_decision_committed',
+        approval,
+        approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
+        approvalDecisionHash: hashWorkflowEffectApprovalDecision(approval, humanDecision),
+        humanDecision,
+      },
+      VALIDATION_CONTEXT,
+    );
   };
   const approved = decisionArtifact('approved');
   const rejected = decisionArtifact('rejected');
@@ -616,14 +636,17 @@ function buildVectors() {
         recordedAt: '2026-08-12T00:00:07.000Z',
       },
     });
-    return validateWorkflowEffectControlArtifact({
-      ...approvalBase,
-      kind: 'effect_audit_recorded',
-      approval,
-      approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
-      approvalDecisionHash: decisionArtifactValue.approvalDecisionHash,
-      humanDecision: decisionArtifactValue.humanDecision,
-    });
+    return validateWorkflowEffectControlArtifact(
+      {
+        ...approvalBase,
+        kind: 'effect_audit_recorded',
+        approval,
+        approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
+        approvalDecisionHash: decisionArtifactValue.approvalDecisionHash,
+        humanDecision: decisionArtifactValue.humanDecision,
+      },
+      VALIDATION_CONTEXT,
+    );
   };
   const auditApproved = auditArtifact(approved);
   const auditRejected = auditArtifact(rejected);
@@ -644,51 +667,63 @@ function buildVectors() {
     consumedApprovalRevision: 1,
     claimedAt: '2026-08-12T00:00:06.000Z',
   } as const;
-  const claimed = validateWorkflowEffectControlArtifact({
-    ...claimBase,
-    claimRevision: 0,
-    claimStatus: 'claimed',
-    outcomeHash: null,
-    committedAt: null,
-    reconciliationToken: null,
-  });
-  const executed = validateWorkflowEffectControlArtifact({
-    ...claimBase,
-    claimRevision: 1,
-    claimStatus: 'executed',
-    outcomeHash: '6'.repeat(64),
-    committedAt: '2026-08-12T00:00:08.000Z',
-    reconciliationToken: null,
-  });
-  const reconciliation = validateWorkflowEffectControlArtifact({
-    ...claimBase,
-    claimRevision: 1,
-    claimStatus: 'reconciliation_required',
-    outcomeHash: null,
-    committedAt: '2026-08-12T00:00:08.000Z',
-    reconciliationToken: 'reconciliation-d1',
-  });
+  const claimed = validateWorkflowEffectControlArtifact(
+    {
+      ...claimBase,
+      claimRevision: 0,
+      claimStatus: 'claimed',
+      outcomeHash: null,
+      committedAt: null,
+      reconciliationToken: null,
+    },
+    VALIDATION_CONTEXT,
+  );
+  const executed = validateWorkflowEffectControlArtifact(
+    {
+      ...claimBase,
+      claimRevision: 1,
+      claimStatus: 'executed',
+      outcomeHash: '6'.repeat(64),
+      committedAt: '2026-08-12T00:00:08.000Z',
+      reconciliationToken: null,
+    },
+    VALIDATION_CONTEXT,
+  );
+  const reconciliation = validateWorkflowEffectControlArtifact(
+    {
+      ...claimBase,
+      claimRevision: 1,
+      claimStatus: 'reconciliation_required',
+      outcomeHash: null,
+      committedAt: '2026-08-12T00:00:08.000Z',
+      reconciliationToken: 'reconciliation-d1',
+    },
+    VALIDATION_CONTEXT,
+  );
   const legacy = (status: 'pending' | 'approved' | 'rejected' | 'expired', revision: number) =>
-    validateWorkflowEffectControlArtifact({
-      ...common,
-      kind: 'legacy_run_gate_observation',
-      plane: 'legacy_run_gate',
-      semantics: 'run_gate_only',
-      status,
-      revision,
-      legacyProjectionHash: hashWorkflowEffectControlDomain('legacy-projection', {
-        effectDecisionAuthority: false,
+    validateWorkflowEffectControlArtifact(
+      {
+        ...common,
+        kind: 'legacy_run_gate_observation',
         plane: 'legacy_run_gate',
-        revision,
-        runId,
         semantics: 'run_gate_only',
         status,
-        workspaceId,
-      }),
-      observedAt: '2026-08-12T00:00:09.000Z',
-      effectDecisionAuthority: false,
-      effectExecutionAuthority: false,
-    });
+        revision,
+        legacyProjectionHash: hashWorkflowEffectControlDomain('legacy-projection', {
+          effectDecisionAuthority: false,
+          plane: 'legacy_run_gate',
+          revision,
+          runId,
+          semantics: 'run_gate_only',
+          status,
+          workspaceId,
+        }),
+        observedAt: '2026-08-12T00:00:09.000Z',
+        effectDecisionAuthority: false,
+        effectExecutionAuthority: false,
+      },
+      VALIDATION_CONTEXT,
+    );
   const lifecycle = [pending, approved, auditApproved] as const;
   const envelopes = lifecycle.map((artifact, index) => {
     if (
@@ -697,7 +732,7 @@ function buildVectors() {
       artifact.kind !== 'effect_audit_recorded'
     )
       throw new Error('bad lifecycle vector');
-    const observation = projectWorkflowEffectControlObservation(artifact);
+    const observation = projectWorkflowEffectControlObservation(artifact, VALIDATION_CONTEXT);
     return {
       schema: WORKFLOW_EFFECT_CONTROL_ENVELOPE_SCHEMA,
       contractVersion: 'v1',
@@ -733,6 +768,8 @@ function buildVectors() {
       approvalCreated: exact(envelopes[0]),
       approvalDecided: exact(envelopes[1]),
       auditRecorded: exact(envelopes[2]),
+    },
+    transport: {
       preparedApprovalDecided: prepareWorkflowEffectControlEnvelope(envelopes[1]),
     },
     chains: {

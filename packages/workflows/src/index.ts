@@ -177,6 +177,7 @@ export type {
   WorkflowEffectControlObservation,
   WorkflowEffectControlObserverOperation,
   WorkflowEffectControlPreparedEnvelope,
+  WorkflowEffectControlValidationContext,
   WorkflowEffectDecisionCommittedArtifact,
   WorkflowEffectExecutionClaimArtifact,
   WorkflowEffectIntentArtifact,

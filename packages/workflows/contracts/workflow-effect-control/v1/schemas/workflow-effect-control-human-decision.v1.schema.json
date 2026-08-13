@@ -4,7 +4,7 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "schema": { "const": "openslack.workflow_effect_human_decision_projection.v1" },
+    "schema": { "const": "openslack.workflow_effect_control_human_decision_projection.v1" },
     "channel": { "const": "local_human_attestation_tty_v1" },
     "principalId": {
       "type": "string",

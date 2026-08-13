@@ -901,6 +901,10 @@ Once claimed, an occurrence cannot be automatically executed again. A crash, can
 timeout, or response loss after claim but before a proved outcome becomes reconciliation. Resume
 or a newer lease may inspect that state, but neither can retry the effect until an explicit
 reconciliation path proves what happened. Rejection produces no claim and no invocation.
+The decision workspace must equal the artifact workspace. Claim acquisition must occur while the
+approved decision is active; a terminal execution or reconciliation commit may occur after that
+approval expires so long as it is not earlier than the durable claim. Expiry therefore blocks new
+claims without invalidating an already consumed one.
 
 The effect-control observer is a separate, optional, default-off port. TypeScript commits its
 authoritative local record first. The six semantic artifacts map to exactly three future Go
@@ -919,6 +923,9 @@ the default-off Go parity observer over only the three observer operations, incl
 duplicate, response-loss, concurrency, tamper, expiry, capacity, and disabled/unavailable-Go
 cases. Until both exit gates pass, the evidence ceiling remains
 `GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`.
+The pinned runner manifest and golden hashes are source-lock evidence only. The runtime
+`controlBuildHash` is a separate deployment identity supplied by trusted composition and is never
+learned from, or self-certified by, an incoming receipt.
 
 GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a

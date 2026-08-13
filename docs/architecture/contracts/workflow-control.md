@@ -325,6 +325,10 @@ pending or the same decision's revision-2 audit-recorded projection may be consu
 success is evidence, not a precondition for effect authorization. The claim binds an exact
 `executionId`, immutable decision revision/hash, and one-time substate. D1 deliberately does not
 bind runner job, attempt, lease, or fence; those bindings belong to GS9-F runner-v2 delivery.
+Every terminal decision must name the same workspace as its enclosing artifact. An approved claim
+must begin after the decision and before the approval expires. Once that claim has begun, its
+proved completion or reconciliation record may be committed after approval expiry, but never
+before `claimedAt`; expiry prevents a new claim and does not erase an already-consumed decision.
 
 `openslack.workflow_effect_approval.v2` is the only human effect-decision authority. Its pending
 record binds the exact run, approval, business correlation, workflow ID/version/hash, manifest and
@@ -367,6 +371,10 @@ Runner protocol v1 schemas, bytes, kinds, idempotency, receipts, and process lif
 frozen. D1-D3 do not deliver runner-v2 `effect_authorization` and do not reinterpret a v1 runner
 message or durable receipt as approval. GS9-F must use a separately negotiated v2 session and
 preserve v1 unchanged.
+The six runner/authority/checkpoint manifest and golden SHA values in the bundle are source locks,
+not deployment identity. Runtime receipt validation receives the expected `controlBuildHash` from
+trusted composition context and never accepts the receipt's own value as proof of the control
+build that produced it.
 
 ### D2 TypeScript exit gates
 

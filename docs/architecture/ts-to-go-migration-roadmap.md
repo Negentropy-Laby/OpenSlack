@@ -409,6 +409,9 @@ occurrence, exact workflow/input/effect/capability/correlation identities, the v
 and hash, expiry, and a one-time `executionId`. `effect_execution_claim` has the substates
 `claimed`, `executed`, and `reconciliation_required`. D1 does not bind job, attempt, lease, or fence;
 those bindings belong to GS9-F.
+The terminal decision workspace must equal the artifact workspace. A one-time execution claim must
+begin within the approval lifetime, while proved completion or reconciliation may be committed
+after expiry provided it does not predate that claim.
 
 Legacy run approval remains a continuation gate only. TUI resolution, `onConfirm`, preapproved
 manifests, and unattended execution may pause, cancel, or continue evaluation, but cannot create a
@@ -446,6 +449,9 @@ v2. GS9-G owns new-record routing, canary, PostgreSQL single-writer cutover, and
 rollback. GS9-H makes TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only
 after external qualification and drain. Existing records stay on their original writer and no
 stage permits per-request fallback.
+Runner/authority/checkpoint manifest hashes are source locks rather than deployment build
+identity. Receipt validation receives the expected runtime `controlBuildHash` from trusted
+composition and does not infer it from the receipt being validated.
 
 No GS9-D result claims authenticated external-host qualification, live verification, release,
 tag/npm publication, production activation, or Go Workflow authority. Those claims remain
