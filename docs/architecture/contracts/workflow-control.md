@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-12
+updated: 2026-08-14
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -19,11 +19,12 @@ sources:
 
 Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
-checkpoint/resume differential, and the GS9-D D1 effect-control contract freeze. TypeScript
-remains the sole workflow writer, runner, approval, budget, effect, resume, and user-visible read
-authority. D1 freezes only a closed schema/manifest/golden-vector bundle; it adds no runtime
-delivery or Go authority. The current evidence ceiling remains
-`GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`.
+checkpoint/resume differential, and the GS9-D effect-control seam plus default-off parity shadow.
+TypeScript remains the sole workflow writer, runner, approval, budget, effect, resume, and
+user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision and
+one-time claim, and D3 observes only the three credential-free decision/audit projections. The
+evidence ceiling is `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED` after the reviewed D3
+exact-head gates pass.
 
 ## Authority boundary
 
@@ -447,6 +448,33 @@ tamper, stale approval/decision identity, audit pending versus recorded, bounded
 default-off composition, and Go unavailable or mismatched while TypeScript behavior remains
 unchanged. Passing those gates supports only
 `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED`.
+
+The frozen observer transport is exactly:
+
+```text
+POST /v1/shadow/workflow-control/effect-events
+Idempotency-Key: openslack.workflow-effect-control-shadow.v1.<sha256>
+operations: approval_created | approval_decided | audit_recorded
+```
+
+The route is registered only by `effect-shadow-server` in `local-qualification-v1` mode with an
+exact loopback workspace, caller, build, bearer hash, and `127.0.0.1:8084` bind. Disabled mode is
+health-only. Migration `000005_create_workflow_control_effect_shadow` creates a fifth isolated
+namespace, `workflow_control_effect_shadow_*`; it does not alter the GS8 runner, GS9-B authority,
+or GS9-C checkpoint tables.
+
+An accepted receipt is immutable and replayed byte-for-byte. The observer advances matched parity
+only for a contiguous semantically matching source prefix. Fingerprint conflict, identity or
+revision drift, tamper, expiry, and capacity failures are observer errors; a semantic mismatch is
+durable parity evidence; an ambiguous commit is durable reconciliation evidence. None of these
+conditions is authorization, retry permission, or a signal to roll back TypeScript. Raw human
+attestation and reason, effect or audit detail, input, payload/result, provider data, credentials,
+endpoints, transcripts, commands, and local paths are excluded from both wire and database.
+
+The read-only decision/audit outbox is traversed by an opaque `(recorded_at,event_id)` keyset
+cursor that preserves PostgreSQL timestamp precision. The TypeScript publisher keeps failed
+entries durable, validates the closed remote error contract, and applies only bounded retry; it
+never turns observer availability into effect authority.
 
 GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a

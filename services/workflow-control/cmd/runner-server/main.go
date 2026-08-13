@@ -32,7 +32,7 @@ import (
 )
 
 const minimumSchemaVersion int64 = 2
-const maximumSchemaVersion int64 = 4
+const maximumSchemaVersion int64 = 5
 
 const workspaceLockDomain = "openslack.workflow-runner.workspace-singleton.v1\x00"
 
@@ -61,7 +61,10 @@ func main() {
 	defer pool.Close()
 	minimumRequiredSchema := minimumSchemaVersion
 	if config.CheckpointShadowEnabled {
-		minimumRequiredSchema = maximumSchemaVersion
+		minimumRequiredSchema = 4
+	}
+	if config.EffectShadowEnabled {
+		minimumRequiredSchema = 5
 	}
 	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumRequiredSchema, Maximum: maximumSchemaVersion}); err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
@@ -92,6 +95,11 @@ func main() {
 		CheckpointShadowBearerToken: config.CheckpointShadowBearerToken,
 		CheckpointShadowCallerID:    config.CheckpointShadowCallerID,
 		CheckpointShadowJournalRoot: config.CheckpointShadowJournalRoot,
+		EffectShadowEnabled:         config.EffectShadowEnabled,
+		EffectShadowEndpoint:        config.EffectShadowEndpoint,
+		EffectShadowBearerToken:     config.EffectShadowBearerToken,
+		EffectShadowCallerID:        config.EffectShadowCallerID,
+		EffectShadowJournalRoot:     config.EffectShadowJournalRoot,
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")

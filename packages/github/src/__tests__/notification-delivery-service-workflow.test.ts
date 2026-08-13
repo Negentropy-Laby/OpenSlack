@@ -140,16 +140,21 @@ const triggerPaths = [
   'packages/workflows/contracts/workflow-control-authority/**',
   'packages/workflows/contracts/workflow-control-shadow/**',
   'packages/workflows/contracts/workflow-checkpoint-shadow/**',
+  'packages/workflows/contracts/workflow-effect-control/**',
+  'packages/workflows/contracts/workflow-effect-shadow/**',
   'packages/workflows/contracts/workflow-runner/**',
   'packages/workflows/src/workflow-control-contract.ts',
   'packages/workflows/src/workflow-control-authority-contract.ts',
   'packages/workflows/src/workflow-control-observation.ts',
   'packages/workflows/src/workflow-control-shadow*.ts',
   'packages/workflows/src/workflow-checkpoint-shadow*.ts',
+  'packages/workflows/src/workflow-effect-*.ts',
+  'packages/workflows/src/internal/workflow-effect-*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-checkpoint-shadow*.test.ts',
+  'packages/workflows/src/__tests__/workflow-effect-*.test.ts',
   'packages/workflows/src/workflow-runner-contract.ts',
   'packages/workflows/src/workflow-runner*.ts',
   'packages/workflows/src/__tests__/workflow-runner*.test.ts',
@@ -159,7 +164,6 @@ const triggerPaths = [
   'packages/workflows/src/runtime.ts',
   'packages/workflows/src/run-store.ts',
   'packages/workflows/src/workflow-runs.ts',
-  'packages/workflows/src/workflow-effect-approval-store.ts',
   'packages/workflows/src/index.ts',
   'README.md',
   'docs/README.md',
@@ -195,6 +199,8 @@ const triggerPaths = [
   'scripts/workflow-authority-contracts/**',
   'scripts/workflow-control-shadow-contracts/**',
   'scripts/workflow-checkpoint-shadow-contracts/**',
+  'scripts/workflow-effect-control-contracts/**',
+  'scripts/workflow-effect-shadow-contracts/**',
   'scripts/workflow-runner-contracts/**',
   'scripts/qualification/workflow-control-postgres-gate.sh',
   'scripts/release/stage-schema-assets.ts',
@@ -293,6 +299,10 @@ function gs9cCheckpointRun(): string {
   return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9c-checkpoint';
 }
 
+function gs9dEffectRun(): string {
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9d-effect';
+}
+
 describe('notification delivery service workflow', () => {
   it('runs only for the service contract on main and manual dispatch', () => {
     expect(workflow.name).toBe('Notification Delivery Service CI');
@@ -354,6 +364,13 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Checkpoint shadow golden contracts',
     );
     const workflowCheckpointTsIndex = stepIndex('Qualify GS9-C TypeScript checkpoint shadow');
+    const workflowEffectControlGoldenIndex = stepIndex(
+      'Verify Workflow Effect Control golden contracts',
+    );
+    const workflowEffectShadowGoldenIndex = stepIndex(
+      'Verify Workflow Effect shadow golden contracts',
+    );
+    const workflowEffectTsIndex = stepIndex('Qualify GS9-D TypeScript effect decision observer');
     const workflowRunnerLinuxIndex = stepIndex(
       'Qualify the sealed TypeScript Workflow Runner on Linux',
     );
@@ -367,6 +384,7 @@ describe('notification delivery service workflow', () => {
     const gs8bRunnerIndex = stepIndex('Qualify GS8-B real TypeScript runner lifecycle');
     const gs9bAuthorityIndex = stepIndex('Qualify GS9-B Workflow Control authority');
     const gs9cCheckpointIndex = stepIndex('Qualify GS9-C Workflow checkpoint shadow');
+    const gs9dEffectIndex = stepIndex('Qualify GS9-D Workflow effect shadow');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -390,7 +408,10 @@ describe('notification delivery service workflow', () => {
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
     expect(workflowCheckpointGoldenIndex).toBe(workflowRunnerGoldenIndex + 1);
     expect(workflowCheckpointTsIndex).toBe(workflowCheckpointGoldenIndex + 1);
-    expect(workflowRunnerLinuxIndex).toBe(workflowCheckpointTsIndex + 1);
+    expect(workflowEffectControlGoldenIndex).toBe(workflowCheckpointTsIndex + 1);
+    expect(workflowEffectShadowGoldenIndex).toBe(workflowEffectControlGoldenIndex + 1);
+    expect(workflowEffectTsIndex).toBe(workflowEffectShadowGoldenIndex + 1);
+    expect(workflowRunnerLinuxIndex).toBe(workflowEffectTsIndex + 1);
     expect(graphDistIndex).toBe(workflowRunnerLinuxIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
     expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
@@ -401,7 +422,8 @@ describe('notification delivery service workflow', () => {
     expect(gs8bRunnerIndex).toBe(gs7bCrossLanguageIndex + 1);
     expect(gs9bAuthorityIndex).toBe(gs8bRunnerIndex + 1);
     expect(gs9cCheckpointIndex).toBe(gs9bAuthorityIndex + 1);
-    expect(goCheckIndex).toBe(gs9cCheckpointIndex + 1);
+    expect(gs9dEffectIndex).toBe(gs9cCheckpointIndex + 1);
+    expect(goCheckIndex).toBe(gs9dEffectIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -507,6 +529,29 @@ describe('notification delivery service workflow', () => {
         '  packages/workflows/src/__tests__/run-store.test.ts',
       ),
     });
+    expect(job.steps[workflowEffectControlGoldenIndex]).toEqual({
+      name: 'Verify Workflow Effect Control golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:effect-control-golden -- --check',
+    });
+    expect(job.steps[workflowEffectShadowGoldenIndex]).toEqual({
+      name: 'Verify Workflow Effect shadow golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:effect-shadow-golden -- --check',
+    });
+    expect(job.steps[workflowEffectTsIndex]).toEqual({
+      name: 'Qualify GS9-D TypeScript effect decision observer',
+      'working-directory': '.',
+      run: lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-effect-control-contract.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-effect-authorization.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-effect-shadow.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-worker.test.ts',
+      ),
+    });
     expect(job.steps[workflowRunnerLinuxIndex]).toEqual({
       name: 'Qualify the sealed TypeScript Workflow Runner on Linux',
       'working-directory': '.',
@@ -560,6 +605,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: gs9cCheckpointRun(),
     });
+    expect(job.steps[gs9dEffectIndex]).toEqual({
+      name: 'Qualify GS9-D Workflow effect shadow',
+      'working-directory': '.',
+      run: gs9dEffectRun(),
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -612,6 +662,9 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Runner golden contracts',
       'Verify Workflow Checkpoint shadow golden contracts',
       'Qualify GS9-C TypeScript checkpoint shadow',
+      'Verify Workflow Effect Control golden contracts',
+      'Verify Workflow Effect shadow golden contracts',
+      'Qualify GS9-D TypeScript effect decision observer',
       'Qualify the sealed TypeScript Workflow Runner on Linux',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
@@ -623,6 +676,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS8-B real TypeScript runner lifecycle',
       'Qualify GS9-B Workflow Control authority',
       'Qualify GS9-C Workflow checkpoint shadow',
+      'Qualify GS9-D Workflow effect shadow',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -677,6 +731,19 @@ describe('notification delivery service workflow', () => {
         '  packages/workflows/src/__tests__/workflow-runner-worker.test.ts \\',
         '  packages/workflows/src/__tests__/run-store.test.ts',
       ),
+      'Verify Workflow Effect Control golden contracts':
+        'bun run workflow:effect-control-golden -- --check',
+      'Verify Workflow Effect shadow golden contracts':
+        'bun run workflow:effect-shadow-golden -- --check',
+      'Qualify GS9-D TypeScript effect decision observer': lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-effect-control-contract.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-effect-authorization.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-effect-shadow.test.ts \\',
+        '  packages/workflows/src/__tests__/workflow-runner-worker.test.ts',
+      ),
       'Qualify the sealed TypeScript Workflow Runner on Linux': lines(
         'set -euo pipefail',
         'bun run build',
@@ -704,6 +771,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS8-B real TypeScript runner lifecycle': gs8bRunnerRun as string,
       'Qualify GS9-B Workflow Control authority': gs9bAuthorityRun(),
       'Qualify GS9-C Workflow checkpoint shadow': gs9cCheckpointRun(),
+      'Qualify GS9-D Workflow effect shadow': gs9dEffectRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -996,6 +1064,7 @@ describe('notification delivery service workflow', () => {
       'workflow-runner-source-invariants.test.ts',
       'workflow-runner-execute.test.ts',
       'workflow-runner-framing.test.ts',
+      'workflow-effect-shadow.test.ts',
     ]) {
       expect(windowsTests).toContain(file);
     }
@@ -1042,7 +1111,7 @@ describe('notification delivery service workflow', () => {
     ).toHaveLength(1);
     expect(workflowControlPostgresGateSource).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
     expect(workflowControlPostgresGateSource).toContain(
-      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint}',
+      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect}',
     );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
@@ -1098,8 +1167,49 @@ describe('notification delivery service workflow', () => {
     );
   });
 
-  it('binds the shared PostgreSQL gate to the two reviewed profiles', () => {
-    expect(workflowControlPostgresGateSource).toContain('gs9b-authority|gs9c-checkpoint) ;;');
+  it('qualifies the GS9-D effect shadow against pinned PostgreSQL without transferring authority', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS9-D Workflow effect shadow',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS9-D Workflow effect shadow',
+      'working-directory': '.',
+      run: gs9dEffectRun(),
+    });
+    for (const evidence of [
+      postgresImage,
+      'trap cleanup EXIT',
+      'WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1',
+      'WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084',
+      './internal/effectshadowapp',
+      './internal/effectshadowstore/...',
+      './tests/contracts',
+      './tests/integration',
+      'WORKFLOW_CONTROL_GS9D_QUALIFICATION=1',
+      "-run '^TestGS9DQualification$'",
+      'WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed',
+      'docker restart "$postgres_container"',
+      'WORKFLOW_CONTROL_GS9D_RESTART_PHASE=verify',
+    ]) {
+      expect(workflowControlPostgresGateSource).toContain(evidence);
+    }
+    expect(workflowControlPostgresGateSource).not.toMatch(
+      /effect_authori[sz]ed|accept_new_records|accept-new-records/iu,
+    );
+
+    const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
+    expect(names.indexOf('Qualify GS9-C Workflow checkpoint shadow')).toBeLessThan(
+      names.indexOf('Qualify GS9-D Workflow effect shadow'),
+    );
+    expect(names.indexOf('Qualify GS9-D Workflow effect shadow')).toBeLessThan(
+      names.indexOf('Run reviewed Go workspace verifier'),
+    );
+  });
+
+  it('binds the shared PostgreSQL gate to the three reviewed profiles', () => {
+    expect(workflowControlPostgresGateSource).toContain(
+      'gs9b-authority|gs9c-checkpoint|gs9d-effect) ;;',
+    );
     expect(workflowControlPostgresGateSource).toContain('exit 2');
     expect(workflowControlPostgresGateSource).toContain('for attempt in $(seq 1 60)');
     expect(workflowControlPostgresGateSource).toContain('docker restart "$postgres_container"');

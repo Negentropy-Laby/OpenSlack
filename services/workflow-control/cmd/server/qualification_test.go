@@ -25,7 +25,7 @@ import (
 const qualificationBuildSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestShadowServerRequiresSchemaVersionThree(t *testing.T) {
-	if minimumSchemaVersion != 1 || maximumSchemaVersion != 4 {
+	if minimumSchemaVersion != 1 || maximumSchemaVersion != 5 {
 		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
 	}
 }

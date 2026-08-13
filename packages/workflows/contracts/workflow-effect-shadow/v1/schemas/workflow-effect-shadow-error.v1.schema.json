@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-shadow/v1/schemas/workflow-effect-shadow-error.v1.schema.json",
+  "title": "OpenSlack Workflow effect shadow error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "code", "message"],
+  "properties": {
+    "schema": { "const": "openslack.workflow_effect_shadow_error.v1" },
+    "code": {
+      "enum": [
+        "WORKFLOW_EFFECT_SHADOW_INPUT_INVALID",
+        "WORKFLOW_EFFECT_SHADOW_CONTENT_INVALID",
+        "WORKFLOW_EFFECT_SHADOW_CONFLICT",
+        "WORKFLOW_EFFECT_SHADOW_IDEMPOTENCY_CONFLICT",
+        "WORKFLOW_EFFECT_SHADOW_COMMIT_OUTCOME_UNKNOWN",
+        "WORKFLOW_EFFECT_SHADOW_NOT_FOUND",
+        "WORKFLOW_EFFECT_SHADOW_INTEGRITY_ERROR",
+        "WORKFLOW_EFFECT_SHADOW_DATABASE_ERROR",
+        "WORKFLOW_EFFECT_SHADOW_UNAUTHORIZED",
+        "WORKFLOW_EFFECT_SHADOW_CONTENT_TYPE",
+        "WORKFLOW_EFFECT_SHADOW_NOT_READY",
+        "WORKFLOW_EFFECT_SHADOW_METRICS_UNAVAILABLE",
+        "WORKFLOW_EFFECT_SHADOW_INTERNAL"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\r\\n\\u0000]+$"
+    }
+  }
+}

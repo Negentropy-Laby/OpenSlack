@@ -76,7 +76,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-checkpoint-shadow-v1',
+        'runtime_profile=workflow-control-effect-shadow-v1',
         '',
       ].join('\n'),
     );
@@ -695,6 +695,96 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
     expect(failureLog).toContain('-qualification-checkpoint-bounds');
     expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed');
+  }, 30_000);
+
+  it('runs the Workflow Control GS9-D effect profile as a strict GS7/GS8/GS9-B/GS9-C superset', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    addWorkflowAuthorityEvidence(moduleRoot);
+    addWorkflowCheckpointShadowEvidence(moduleRoot);
+    addWorkflowEffectShadowEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-effect-shadow-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1');
+    expect(log).toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084');
+    expect(log).toContain(
+      'WORKFLOW_CONTROL_EFFECT_SHADOW_CALLER_ID=typescript:workflow-effect-shadow',
+    );
+    expect(log).toContain('WORKFLOW_CONTROL_GS9D_QUALIFICATION=1');
+    expect(log).toContain('-run \\^TestGS9DQualification\\$');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS9DRestartQualification\\$');
+    expect(log).toContain('--entrypoint /effect-shadow-server');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9D_DEFAULT_ORIGIN=http://127.0.0.1:8084');
+    expect(log).toContain('-run \\^TestGS9DImageDefaultOff\\$');
+    for (const requiredName of [
+      'TestWorkflowEffectShadowGoldenVectors',
+      'TestWorkflowEffectShadowRejectsFramingAndAuthorityDrift',
+      'TestGS9DEffectShadowLifecycleOutboxAndExactReplay',
+      'TestGS9DEffectShadowOutboxPaginationTraversesBeyondFirstHundred',
+      'TestGS9DEffectShadowMismatchDoesNotCreateOutbox',
+      'TestGS9DEffectShadowCommittedResponseLossKeepsOutboxAtomic',
+      'TestGS9DEffectShadowRejectsCorruptOutboxPayload',
+      'TestGS9DEffectShadowConflictsConcurrencyAndStoredIntegrity',
+      'TestGS9DEffectShadowCommitUnknownReconciliationAndDoubleUnknown',
+      'TestGS9DEffectShadowCommitUnknownRereadsReceiptAfterScopeLock',
+      'TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence',
+    ]) {
+      expect(goCheckSource).toContain(requiredName);
+    }
+    const effectDefaultOffRun = log
+      .split('\n')
+      .find((line) => line.includes('--entrypoint /effect-shadow-server'));
+    expect(effectDefaultOffRun).toContain('--network none');
+    expect(effectDefaultOffRun).not.toContain('DATABASE_URL=');
+    expect(effectDefaultOffRun).not.toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA=(workflow_control_gs9d_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(5);
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    addWorkflowAuthorityEvidence(failureModuleRoot);
+    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
+    addWorkflowEffectShadowEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-effect-shadow-v1',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9D_FAIL_PHASE: 'effect-bounds',
+      FAKE_GS9D_FAIL_STATUS: '50',
+    });
+    expect(failure.status).toBe(50);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-effect-bounds');
+    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed');
   }, 30_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
@@ -1644,6 +1734,121 @@ function addWorkflowCheckpointShadowEvidence(moduleRoot: string): void {
   );
 }
 
+function addWorkflowEffectShadowEvidence(moduleRoot: string): void {
+  const fixtureRoot = resolve(moduleRoot, '../..');
+  for (const directory of [
+    'scripts/workflow-effect-shadow-contracts',
+    'packages/workflows/contracts/workflow-effect-shadow/v1',
+  ]) {
+    mkdirSync(join(fixtureRoot, directory), { recursive: true });
+  }
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-effect-shadow-contracts/index.ts'),
+    'export {};\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-effect-shadow-contracts/tsconfig.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'packages/workflows/contracts/workflow-effect-shadow/v1/golden-vectors.json'),
+    '{}\n',
+    'utf8',
+  );
+  for (const directory of [
+    'cmd/effect-shadow-server',
+    'internal/effectshadowapp',
+    'internal/effectshadowstore/postgres',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(join(moduleRoot, 'cmd/effect-shadow-server/main.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/effect-shadow-server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9DQualification(t *testing.T) {}',
+      'func TestGS9DRestartQualification(t *testing.T) {}',
+      'func TestGS9DImageDefaultOff(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/effectshadowapp/server_test.go'),
+    'package effectshadowapp\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/effectshadowstore/contract_test.go'),
+    [
+      'package effectshadowstore',
+      '',
+      'import "testing"',
+      '',
+      'func TestWorkflowEffectShadowGoldenVectors(t *testing.T) {}',
+      'func TestWorkflowEffectShadowRejectsFramingAndAuthorityDrift(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/effectshadowstore/postgres/repository_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9DEffectShadowLifecycleOutboxAndExactReplay(t *testing.T) {}',
+      'func TestGS9DEffectShadowOutboxPaginationTraversesBeyondFirstHundred(t *testing.T) {}',
+      'func TestGS9DEffectShadowMismatchDoesNotCreateOutbox(t *testing.T) {}',
+      'func TestGS9DEffectShadowCommittedResponseLossKeepsOutboxAtomic(t *testing.T) {}',
+      'func TestGS9DEffectShadowRejectsCorruptOutboxPayload(t *testing.T) {}',
+      'func TestGS9DEffectShadowConflictsConcurrencyAndStoredIntegrity(t *testing.T) {}',
+      'func TestGS9DEffectShadowCommitUnknownReconciliationAndDoubleUnknown(t *testing.T) {}',
+      'func TestGS9DEffectShadowCommitUnknownRereadsReceiptAfterScopeLock(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000005_create_workflow_control_effect_shadow.up.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000005_create_workflow_control_effect_shadow.down.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/effect_shadow_openapi_contract_test.go'),
+    'package contracts\n\nimport "testing"\n\nfunc TestEffectShadowOpenAPIIsClosedAndValid(t *testing.T) {}\n',
+    'utf8',
+  );
+  const migrationTestPath = join(moduleRoot, 'tests/integration/migration_test.go');
+  writeFileSync(
+    migrationTestPath,
+    `${readFileSync(migrationTestPath, 'utf8')}\nfunc TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {}\n`,
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'docs/api/effect-shadow-openapi.yaml'),
+    'openapi: 3.1.0\n',
+    'utf8',
+  );
+}
+
 function createFullServiceFixture(): Fixture {
   const fixture = createFixture();
   addFullServiceCapabilities(join(fixture.root, 'services/pure'));
@@ -1795,6 +2000,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS9C_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9C_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS9C_FAIL_STATUS:-49}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS9D_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9D_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS9D_FAIL_STATUS:-50}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

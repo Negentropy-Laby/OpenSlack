@@ -46,6 +46,11 @@ type Config struct {
 	CheckpointShadowBearerToken string
 	CheckpointShadowCallerID    string
 	CheckpointShadowJournalRoot string
+	EffectShadowEnabled         bool
+	EffectShadowEndpoint        string
+	EffectShadowBearerToken     string
+	EffectShadowCallerID        string
+	EffectShadowJournalRoot     string
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -121,6 +126,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	effectEnabled, effectEndpoint, effectToken, effectCaller, effectJournal, err := effectShadowConfig(values, workspaceRoot)
+	if err != nil {
+		return Config{}, err
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -137,7 +146,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 		CheckpointShadowEnabled: checkpointEnabled, CheckpointShadowEndpoint: checkpointEndpoint,
 		CheckpointShadowBearerToken: checkpointToken, CheckpointShadowCallerID: checkpointCaller,
 		CheckpointShadowJournalRoot: checkpointJournal,
-		ShutdownDeadline:            30 * time.Second, MaxProcesses: maxProcesses,
+		EffectShadowEnabled:         effectEnabled, EffectShadowEndpoint: effectEndpoint,
+		EffectShadowBearerToken: effectToken, EffectShadowCallerID: effectCaller,
+		EffectShadowJournalRoot: effectJournal,
+		ShutdownDeadline:        30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
@@ -165,6 +177,11 @@ func parse(environment []string) (map[string]string, error) {
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID":    {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED":          {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT":         {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN":     {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID":        {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT":     {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {
@@ -224,6 +241,71 @@ func checkpointShadowConfig(values map[string]string, workspaceRoot string) (boo
 	relative, relativeErr := filepath.Rel(localRoot, journal)
 	if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return false, "", "", "", "", fmt.Errorf("checkpoint shadow journal root must be inside workspace .openslack.local")
+	}
+	return true, endpoint, token, caller, journal, nil
+}
+
+func effectShadowConfig(values map[string]string, workspaceRoot string) (bool, string, string, string, string, error) {
+	return localShadowConfig(values, workspaceRoot, localShadowOptions{
+		enabled:  "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED",
+		endpoint: "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT",
+		token:    "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN",
+		caller:   "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID",
+		journal:  "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT",
+		route:    "/v1/shadow/workflow-control/effect-events",
+		label:    "effect shadow",
+	})
+}
+
+type localShadowOptions struct {
+	enabled  string
+	endpoint string
+	token    string
+	caller   string
+	journal  string
+	route    string
+	label    string
+}
+
+func localShadowConfig(values map[string]string, workspaceRoot string, options localShadowOptions) (bool, string, string, string, string, error) {
+	enabled := strings.TrimSpace(values[options.enabled])
+	fields := []string{options.endpoint, options.token, options.caller, options.journal}
+	if enabled == "" || enabled == "0" {
+		for _, name := range fields {
+			if strings.TrimSpace(values[name]) != "" {
+				return false, "", "", "", "", fmt.Errorf("%s requires %s enablement", name, options.label)
+			}
+		}
+		return false, "", "", "", "", nil
+	}
+	if enabled != "1" {
+		return false, "", "", "", "", fmt.Errorf("%s must be 0 or 1", options.enabled)
+	}
+	endpoint := strings.TrimSpace(values[options.endpoint])
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != options.route || parsed.Port() == "" {
+		return false, "", "", "", "", fmt.Errorf("%s endpoint must be an exact loopback HTTP observation URL", options.label)
+	}
+	host := parsed.Hostname()
+	if host != "127.0.0.1" && host != "::1" {
+		return false, "", "", "", "", fmt.Errorf("%s endpoint must be loopback", options.label)
+	}
+	token := values[options.token]
+	if token != strings.TrimSpace(token) || len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, "\r\n\x00") {
+		return false, "", "", "", "", fmt.Errorf("%s bearer token is invalid", options.label)
+	}
+	caller := strings.TrimSpace(values[options.caller])
+	if !safeID.MatchString(caller) {
+		return false, "", "", "", "", fmt.Errorf("%s caller identity is invalid", options.label)
+	}
+	journal, err := absolutePath(values[options.journal], options.journal)
+	if err != nil {
+		return false, "", "", "", "", err
+	}
+	localRoot := filepath.Join(workspaceRoot, ".openslack.local")
+	relative, relativeErr := filepath.Rel(localRoot, journal)
+	if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false, "", "", "", "", fmt.Errorf("%s journal root must be inside workspace .openslack.local", options.label)
 	}
 	return true, endpoint, token, caller, journal, nil
 }

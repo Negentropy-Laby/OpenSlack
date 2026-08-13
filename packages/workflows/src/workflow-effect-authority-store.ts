@@ -14,17 +14,20 @@ import {
   hashWorkflowEffectApprovalRecord,
   hashWorkflowEffectControlDomain,
   hashWorkflowEffectIntentBinding,
+  projectWorkflowEffectControlObservation,
   projectWorkflowEffectHumanDecision,
   validateWorkflowEffectControlArtifact,
   type WorkflowEffectAuditRecordedArtifact,
   type WorkflowEffectApprovalPendingArtifact,
   type WorkflowEffectControlHumanDecisionProjection,
+  type WorkflowEffectControlObservation,
   type WorkflowEffectControlValidationContext,
   type WorkflowEffectDecisionCommittedArtifact,
   type WorkflowEffectExecutionClaimArtifact,
   type WorkflowEffectIntentArtifact,
 } from './workflow-effect-control-contract.js';
 import {
+  createPendingWorkflowEffectApproval,
   validateWorkflowEffectApproval,
   workflowEffectApprovalBytes,
   type HumanWorkflowEffectDecisionBinding,
@@ -3615,5 +3618,223 @@ export async function updateWorkflowEffectAuthorityAudit(
       await writeAuthority(paths, validateAuthorityRecord({ ...current, artifact }));
       return;
     }
+  });
+}
+
+export type WorkflowEffectAuthorityObservationArtifact =
+  | WorkflowEffectApprovalPendingArtifact
+  | WorkflowEffectDecisionCommittedArtifact
+  | WorkflowEffectAuditRecordedArtifact;
+
+function observationArtifactBase(
+  artifact:
+    | WorkflowEffectApprovalPendingArtifact
+    | WorkflowEffectDecisionCommittedArtifact
+    | WorkflowEffectAuditRecordedArtifact
+    | WorkflowEffectExecutionClaimArtifact,
+) {
+  return {
+    schema: artifact.schema,
+    contractVersion: artifact.contractVersion,
+    authority: artifact.authority,
+    writer: artifact.writer,
+    goRole: artifact.goRole,
+    goAuthorityClaim: artifact.goAuthorityClaim,
+    goAuthorityEligible: artifact.goAuthorityEligible,
+    workspaceId: artifact.workspaceId,
+    runId: artifact.runId,
+    occurrenceIndex: artifact.occurrenceIndex,
+    occurrenceId: artifact.occurrenceId,
+    intentArtifact: artifact.intentArtifact,
+    intentBindingHash: artifact.intentBindingHash,
+    intentEffectId: artifact.intentEffectId,
+    intentEffectHash: artifact.intentEffectHash,
+    correlationId: artifact.correlationId,
+    approvalGeneration: artifact.approvalGeneration,
+  } as const;
+}
+
+function projectAuthorityObservationPrefix(
+  record: AuthorityRecord,
+): readonly WorkflowEffectAuthorityObservationArtifact[] {
+  const artifact = record.artifact;
+  if (!artifact || artifact.kind === 'effect_intent') return Object.freeze([]);
+  const current = artifact as
+    | WorkflowEffectApprovalPendingArtifact
+    | WorkflowEffectDecisionCommittedArtifact
+    | WorkflowEffectAuditRecordedArtifact
+    | WorkflowEffectExecutionClaimArtifact;
+  const base = observationArtifactBase(current);
+  const approval = current.approval;
+  const pendingApproval = createPendingWorkflowEffectApproval({
+    runId: approval.runId,
+    approvalId: approval.approvalId,
+    correlationId: approval.correlationId,
+    workflowId: approval.workflowId,
+    workflowVersion: approval.workflowVersion,
+    workflowHash: approval.workflowHash,
+    inputHash: approval.inputHash,
+    effectId: approval.effectId,
+    effectHash: approval.effectHash,
+    requiredCapability: approval.requiredCapability,
+    createdAt: approval.createdAt,
+    expiresAt: approval.expiresAt,
+  });
+  const pendingValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_approval_pending',
+      approval: pendingApproval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(pendingApproval),
+      approvalDecisionHash: null,
+    },
+    record.validationContext,
+  );
+  if (pendingValue.kind !== 'effect_approval_pending') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed pending artifact kind.',
+    );
+  }
+  if (current.kind === 'effect_approval_pending') return Object.freeze([pendingValue]);
+  const humanDecision = current.humanDecision;
+  const auditProjection = approval.auditProjection;
+  if (!auditProjection) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered terminal approval has no audit projection.',
+    );
+  }
+  const decisionApproval = validateWorkflowEffectApproval({
+    ...approval,
+    revision: 1,
+    auditProjection: { status: 'pending', eventId: auditProjection.eventId },
+  });
+  const decisionValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_decision_committed',
+      approval: decisionApproval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(decisionApproval),
+      approvalDecisionHash: hashWorkflowEffectApprovalDecision(decisionApproval, humanDecision),
+      humanDecision,
+    },
+    record.validationContext,
+  );
+  if (decisionValue.kind !== 'effect_decision_committed') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed decision artifact kind.',
+    );
+  }
+  if (approval.revision === 1) return Object.freeze([pendingValue, decisionValue]);
+  const auditValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_audit_recorded',
+      approval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
+      approvalDecisionHash: hashWorkflowEffectApprovalDecision(approval, humanDecision),
+      humanDecision,
+    },
+    record.validationContext,
+  );
+  if (auditValue.kind !== 'effect_audit_recorded') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed audit artifact kind.',
+    );
+  }
+  return Object.freeze([pendingValue, decisionValue, auditValue]);
+}
+
+/**
+ * Rebuilds the exact observer prefix from the current durable D2 authority
+ * artifact. It never reads the caller-facing approval store as authority and
+ * never changes effect decision or execution state.
+ */
+export async function recoverWorkflowEffectAuthorityObservationPrefix(
+  approvalStoreRoot: string,
+  runId: string,
+  approvalId: string,
+): Promise<readonly WorkflowEffectControlObservation[]> {
+  if (!SAFE_ID.test(runId) || !SAFE_ID.test(approvalId)) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_IDENTITY_MISMATCH',
+      'Observer recovery scope is invalid.',
+    );
+  }
+  const matches = (
+    await recoverAllWorkflowEffectAuthorityObservationPrefixes(approvalStoreRoot)
+  ).filter((value) => value.runId === runId && value.approvalId === approvalId);
+  if (matches.length > 1) {
+    return fail(
+      'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+      'Observer recovery found duplicate approval authority records.',
+    );
+  }
+  return matches[0]?.observations ?? Object.freeze([]);
+}
+
+export interface WorkflowEffectAuthorityObservationPrefix {
+  readonly runId: string;
+  readonly approvalId: string;
+  readonly observations: readonly WorkflowEffectControlObservation[];
+}
+
+/** Rebuilds every observer prefix under one owner-safe authority-store lock. */
+export async function recoverAllWorkflowEffectAuthorityObservationPrefixes(
+  approvalStoreRoot: string,
+): Promise<readonly WorkflowEffectAuthorityObservationPrefix[]> {
+  const paths = await preparePaths(approvalStoreRoot, false);
+  return withLock(paths, async () => {
+    const prefixes: WorkflowEffectAuthorityObservationPrefix[] = [];
+    const seenApprovals = new Set<string>();
+    for (const entry of await readdir(paths.records, { withFileTypes: true })) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !AUTHORITY_FILE.test(entry.name)) {
+        return fail(
+          'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE',
+          'Authority observer recovery found an unsafe record entry.',
+        );
+      }
+      const bytes = await readBounded(
+        join(paths.records, entry.name),
+        paths.records,
+        MAX_AUTHORITY_BYTES,
+      );
+      if (!bytes) continue;
+      const candidate = parseAuthorityRecord(bytes);
+      const recovered = await readAuthority(
+        paths,
+        approvalStoreRoot,
+        candidate.runId,
+        candidate.evaluationIndex,
+      );
+      const artifact = recovered?.artifact;
+      if (!recovered || !artifact || artifact.kind === 'effect_intent') {
+        continue;
+      }
+      const approvalId = artifact.approval.approvalId;
+      const scope = `${recovered.runId}\0${approvalId}`;
+      if (seenApprovals.has(scope)) {
+        return fail(
+          'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+          'Observer recovery found duplicate approval authority records.',
+        );
+      }
+      seenApprovals.add(scope);
+      prefixes.push(
+        Object.freeze({
+          runId: recovered.runId,
+          approvalId,
+          observations: Object.freeze(
+            projectAuthorityObservationPrefix(recovered).map((value) =>
+              projectWorkflowEffectControlObservation(value, recovered.validationContext),
+            ),
+          ),
+        }),
+      );
+    }
+    return Object.freeze(prefixes);
   });
 }

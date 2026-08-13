@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,7 +71,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-C" ||
+		manifest.Service.MigrationPhase != "GS9-D" ||
 		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
@@ -87,17 +87,21 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_OBSERVATION",
 			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_EXACT_RECEIPT",
 			"WORKFLOW_CONTROL_CHECKPOINT_SHADOW_RECONCILIATION",
+			"WORKFLOW_CONTROL_EFFECT_SHADOW_OBSERVATION",
+			"WORKFLOW_CONTROL_EFFECT_SHADOW_EXACT_RECEIPT",
+			"WORKFLOW_CONTROL_EFFECT_SHADOW_OUTBOX",
+			"WORKFLOW_CONTROL_EFFECT_SHADOW_RECONCILIATION",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.ContractInputs) != 9 {
+		len(manifest.ContractInputs) != 12 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",
-			SHA256: "8b2643ca094c35d7b2130b90ece4a4a1347c9242bfb668e6287b2257e35bc6f2",
+			SHA256: "a51554c67d80367eaa8564aca6e08561aab8bf3296970542014e36b4e1b90d7f",
 		},
 		"goMod": {
 			Path:   "services/workflow-control/go.mod",
@@ -122,6 +126,14 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 		"checkpointShadowMigrationDown": {
 			Path:   "services/workflow-control/migrations/000004_create_workflow_control_checkpoint_shadow.down.sql",
 			SHA256: "32e76f0a6aec433d2615cfd3a74f17acff4a7f4ae1998f09d47e0b907d793193",
+		},
+		"effectShadowMigrationUp": {
+			Path:   "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.up.sql",
+			SHA256: "697afe8a2008cdcc9ce23a25a4b0684fada63cdba5b29049ba4f11e7980dc3dc",
+		},
+		"effectShadowMigrationDown": {
+			Path:   "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.down.sql",
+			SHA256: "cf8e1497494ea7a17771403c9efe02b0faacf327705e75e5525926a375fb5a14",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
@@ -148,6 +160,14 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 			Path:   "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
 			SHA256: "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
 		},
+		"workflowEffectControlContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-effect-control/v1/manifest.json",
+			SHA256: "36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65",
+		},
+		"workflowEffectShadowContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
+			SHA256: "25083813a5e43f17aa2b26439532018d72c0d47a996a07f1ebe87ee7c9e8ce11",
+		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
 			SHA256: "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f",
@@ -163,6 +183,10 @@ func TestSourceManifestBindsOnlyUnreleasedGS9CInputs(t *testing.T) {
 		"checkpointShadowOpenapi": {
 			Path:   "services/workflow-control/docs/api/checkpoint-shadow-openapi.yaml",
 			SHA256: "a33f978174fa9b82393864d5b97f03082196a8d369e07d60cc35ce69345fa67a",
+		},
+		"effectShadowOpenapi": {
+			Path:   "services/workflow-control/docs/api/effect-shadow-openapi.yaml",
+			SHA256: "8b180a28ff8f1f0aa9fb70384fa2f6531b984bceaa77780728416eb31bfab656",
 		},
 	}
 	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {

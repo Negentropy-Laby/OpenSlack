@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-shadow/v1/schemas/workflow-effect-shadow-head.v1.schema.json",
+  "title": "OpenSlack Workflow effect shadow head v1",
+  "$comment": "Runtime validation additionally enforces contiguous source sequence and matched-prefix operation relationships.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "workspaceId",
+    "runId",
+    "occurrenceId",
+    "approvalId",
+    "lastSourceSequence",
+    "lastOperation",
+    "lastObservationHash",
+    "matchedSourceSequence",
+    "matchedOperation",
+    "matchedObservationHash",
+    "mismatchLatched",
+    "mismatchCode",
+    "serviceBuildHash",
+    "updatedAt"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.workflow_effect_shadow_head.v1" },
+    "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+    "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "lastSourceSequence": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "lastOperation": { "enum": ["approval_created", "approval_decided", "audit_recorded"] },
+    "lastObservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "matchedSourceSequence": {
+      "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 3 }, { "type": "null" }]
+    },
+    "matchedOperation": {
+      "oneOf": [
+        { "enum": ["approval_created", "approval_decided", "audit_recorded"] },
+        { "type": "null" }
+      ]
+    },
+    "matchedObservationHash": {
+      "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+    },
+    "mismatchLatched": { "type": "boolean" },
+    "mismatchCode": {
+      "oneOf": [{ "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }, { "type": "null" }]
+    },
+    "serviceBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "updatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "required": ["matchedSourceSequence", "matchedOperation", "matchedObservationHash"],
+          "properties": {
+            "matchedSourceSequence": { "type": "null" },
+            "matchedOperation": { "type": "null" },
+            "matchedObservationHash": { "type": "null" }
+          }
+        },
+        {
+          "required": ["matchedSourceSequence", "matchedOperation", "matchedObservationHash"],
+          "properties": {
+            "matchedSourceSequence": { "type": "integer", "minimum": 1, "maximum": 3 },
+            "matchedOperation": {
+              "enum": ["approval_created", "approval_decided", "audit_recorded"]
+            },
+            "matchedObservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      ]
+    },
+    {
+      "oneOf": [
+        {
+          "required": [
+            "mismatchLatched",
+            "mismatchCode",
+            "matchedSourceSequence",
+            "matchedOperation",
+            "matchedObservationHash"
+          ],
+          "properties": {
+            "mismatchLatched": { "const": false },
+            "mismatchCode": { "type": "null" },
+            "matchedSourceSequence": { "type": "integer", "minimum": 1, "maximum": 3 },
+            "matchedOperation": {
+              "enum": ["approval_created", "approval_decided", "audit_recorded"]
+            },
+            "matchedObservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        {
+          "required": ["mismatchLatched", "mismatchCode"],
+          "properties": {
+            "mismatchLatched": { "const": true },
+            "mismatchCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }
+          }
+        }
+      ]
+    }
+  ]
+}

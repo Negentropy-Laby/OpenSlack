@@ -1,0 +1,759 @@
+openapi: 3.0.3
+info:
+  title: OpenSlack Workflow Effect Shadow Qualification API
+  version: 1.0.0
+  description: >-
+    Default-off GS9-D observation surface. TypeScript remains the sole effect
+    decision and execution authority. The Go service can record parity and
+    expose pending observation evidence, but cannot grant or execute effects.
+paths:
+  /health/live:
+    get:
+      responses:
+        '200':
+          description: Process is live.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Live' }
+  /health/ready:
+    get:
+      responses:
+        '200':
+          description: Qualification repository is ready, or the service is disabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /version:
+    get:
+      responses:
+        '200':
+          description: Build identity and explicit non-authority declaration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Version' }
+  /metrics:
+    get:
+      responses:
+        '200':
+          description: Bounded Prometheus metrics.
+          content:
+            text/plain:
+              schema: { type: string }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/effect-events:
+    post:
+      x-openslack-replay-response: exact-original
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Envelope' }
+      responses:
+        '200':
+          description: Byte-identical accepted receipt replay.
+          headers:
+            Idempotency-Replayed:
+              required: true
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedReceipt' }
+        '201':
+          description: Fresh observation accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedReceipt' }
+        '202':
+          description: Commit outcome requires reconciliation.
+          headers:
+            Idempotency-Replayed:
+              required: false
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/InvalidContent' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/runs/{runId}/occurrences/{occurrenceId}/approvals/{approvalId}/head:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/SafeId' } }
+        - {
+            name: occurrenceId,
+            in: path,
+            required: true,
+            schema: { $ref: '#/components/schemas/OccurrenceId' },
+          }
+        - {
+            name: approvalId,
+            in: path,
+            required: true,
+            schema: { $ref: '#/components/schemas/SafeId' },
+          }
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+      responses:
+        '200':
+          description: Current effect observation head.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Head' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/receipts/{idempotencyKey}:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {
+            name: idempotencyKey,
+            in: path,
+            required: true,
+            schema: { $ref: '#/components/schemas/IdempotencyKey' },
+          }
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+      responses:
+        '200':
+          description: Exact stored receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/outbox:pending:
+    get:
+      description: >-
+        Read-only pending decision/audit observation evidence. There is no
+        acknowledgement or publisher endpoint.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque keyset cursor returned by the previous page.
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
+      responses:
+        '200':
+          description: Pending observer outbox entries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OutboxPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/InvalidContent' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Workspace:
+      name: X-OpenSlack-Workspace-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/SafeId' }
+    Caller:
+      name: X-OpenSlack-Caller-ID
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/SafeId' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/IdempotencyKey' }
+  responses:
+    Unauthorized:
+      description: Identity rejected.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Record not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Sequence, state or idempotency conflict.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedMediaType:
+      description: Content type rejected.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RequestTooLarge:
+      description: Request body exceeds 512 KiB.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidContent:
+      description: Canonical observation or query rejected.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Internal:
+      description: Stored integrity or commit outcome failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: PostgreSQL unavailable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    SafeId:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$'
+    OccurrenceId:
+      type: string
+      pattern: '^WFOCCURRENCE-[0-9a-f]{64}$'
+    Hash:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+    IdempotencyKey:
+      type: string
+      pattern: '^openslack\.workflow-effect-control-shadow\.v1\.[0-9a-f]{64}$'
+    Operation:
+      type: string
+      enum: [approval_created, approval_decided, audit_recorded]
+    Live:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    Ready:
+      type: object
+      additionalProperties: false
+      required: [status, qualificationMode]
+      properties:
+        status: { type: string, enum: [ready] }
+        qualificationMode: { type: boolean }
+    Version:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          buildSha,
+          authority,
+          goRole,
+          nonAuthorizingObservation,
+          goEffectDecisionAuthority,
+          goEffectExecutionAuthority,
+          qualificationMode,
+        ]
+      properties:
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        authority: { type: string, enum: [typescript] }
+        goRole: { type: string, enum: [observer_only] }
+        nonAuthorizingObservation: { type: boolean, enum: [true] }
+        goEffectDecisionAuthority: { type: boolean, enum: [false] }
+        goEffectExecutionAuthority: { type: boolean, enum: [false] }
+        qualificationMode: { type: boolean }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [schema, code, message]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_error.v1] }
+        code:
+          type: string
+          enum:
+            - WORKFLOW_EFFECT_SHADOW_INPUT_INVALID
+            - WORKFLOW_EFFECT_SHADOW_CONTENT_INVALID
+            - WORKFLOW_EFFECT_SHADOW_CONFLICT
+            - WORKFLOW_EFFECT_SHADOW_IDEMPOTENCY_CONFLICT
+            - WORKFLOW_EFFECT_SHADOW_COMMIT_OUTCOME_UNKNOWN
+            - WORKFLOW_EFFECT_SHADOW_NOT_FOUND
+            - WORKFLOW_EFFECT_SHADOW_INTEGRITY_ERROR
+            - WORKFLOW_EFFECT_SHADOW_DATABASE_ERROR
+            - WORKFLOW_EFFECT_SHADOW_UNAUTHORIZED
+            - WORKFLOW_EFFECT_SHADOW_CONTENT_TYPE
+            - WORKFLOW_EFFECT_SHADOW_NOT_READY
+            - WORKFLOW_EFFECT_SHADOW_METRICS_UNAVAILABLE
+            - WORKFLOW_EFFECT_SHADOW_INTERNAL
+        message: { type: string, minLength: 1, maxLength: 512 }
+    HumanDecision:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          channel,
+          principalId,
+          workspaceId,
+          capability,
+          runId,
+          approvalId,
+          correlationId,
+          decision,
+          reasonHash,
+          approvalExpiresAt,
+          issuedAt,
+          expiresAt,
+          bindingHash,
+          attestationHash,
+          decidedAt,
+        ]
+      properties:
+        schema:
+          { type: string, enum: [openslack.workflow_effect_control_human_decision_projection.v1] }
+        channel: { type: string, enum: [local_human_attestation_tty_v1] }
+        principalId: { $ref: '#/components/schemas/SafeId' }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        capability:
+          {
+            type: string,
+            pattern: '^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)+$',
+            maxLength: 512,
+          }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        correlationId: { $ref: '#/components/schemas/SafeId' }
+        decision: { type: string, enum: [approved, rejected] }
+        reasonHash: { $ref: '#/components/schemas/Hash' }
+        approvalExpiresAt: { $ref: '#/components/schemas/Timestamp' }
+        issuedAt: { $ref: '#/components/schemas/Timestamp' }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+        bindingHash: { $ref: '#/components/schemas/Hash' }
+        attestationHash: { $ref: '#/components/schemas/Hash' }
+        decidedAt: { $ref: '#/components/schemas/Timestamp' }
+    ObservationCreated:
+      type: object
+      additionalProperties: false
+      required:
+        &observationFields [
+          schema,
+          contractVersion,
+          authority,
+          goRole,
+          authorityClaim,
+          nonAuthorizingObservation,
+          goEffectDecisionAuthority,
+          goEffectExecutionAuthority,
+          operation,
+          workspaceId,
+          runId,
+          occurrenceId,
+          approvalId,
+          approvalRevision,
+          approvalStatus,
+          approvalHash,
+          approvalDecisionHash,
+          effectId,
+          effectHash,
+          correlationId,
+          requiredCapabilityHash,
+          humanDecision,
+          bindingHash,
+          decision,
+          auditEventId,
+          auditStatus,
+          observedAt,
+        ]
+      properties: &observationProperties
+        schema: { type: string, enum: [openslack.workflow_effect_control_observation.v1] }
+        contractVersion: { type: string, enum: [v1] }
+        authority: { type: string, enum: [typescript] }
+        goRole: { type: string, enum: [observer_only] }
+        authorityClaim: { type: string, enum: [NO_AUTHORITY] }
+        nonAuthorizingObservation: { type: boolean, enum: [true] }
+        goEffectDecisionAuthority: { type: boolean, enum: [false] }
+        goEffectExecutionAuthority: { type: boolean, enum: [false] }
+        operation: { type: string, enum: [approval_created] }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        occurrenceId: { $ref: '#/components/schemas/OccurrenceId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        approvalRevision: { type: integer, enum: [0] }
+        approvalStatus: { type: string, enum: [pending] }
+        approvalHash: { $ref: '#/components/schemas/Hash' }
+        approvalDecisionHash: { nullable: true, enum: [null] }
+        effectId: { type: string, pattern: '^workflow-effect:sha256:[0-9a-f]{64}$' }
+        effectHash: { $ref: '#/components/schemas/Hash' }
+        correlationId: { $ref: '#/components/schemas/SafeId' }
+        requiredCapabilityHash: { $ref: '#/components/schemas/Hash' }
+        humanDecision: { nullable: true, enum: [null] }
+        bindingHash: { nullable: true, enum: [null] }
+        decision: { nullable: true, enum: [null] }
+        auditEventId: { nullable: true, enum: [null] }
+        auditStatus: { nullable: true, enum: [null] }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+    ObservationDecided:
+      type: object
+      additionalProperties: false
+      required: *observationFields
+      properties:
+        <<: *observationProperties
+        operation: { type: string, enum: [approval_decided] }
+        approvalRevision: { type: integer, enum: [1] }
+        approvalStatus: { type: string, enum: [approved, rejected] }
+        approvalDecisionHash: { $ref: '#/components/schemas/Hash' }
+        humanDecision: { $ref: '#/components/schemas/HumanDecision' }
+        bindingHash: { $ref: '#/components/schemas/Hash' }
+        decision: { type: string, enum: [approved, rejected] }
+        auditEventId: { $ref: '#/components/schemas/SafeId' }
+        auditStatus: { type: string, enum: [pending] }
+    ObservationAudit:
+      type: object
+      additionalProperties: false
+      required: *observationFields
+      properties:
+        <<: *observationProperties
+        operation: { type: string, enum: [audit_recorded] }
+        approvalRevision: { type: integer, enum: [2] }
+        approvalStatus: { type: string, enum: [approved, rejected] }
+        approvalDecisionHash: { $ref: '#/components/schemas/Hash' }
+        humanDecision: { $ref: '#/components/schemas/HumanDecision' }
+        bindingHash: { $ref: '#/components/schemas/Hash' }
+        decision: { type: string, enum: [approved, rejected] }
+        auditEventId: { $ref: '#/components/schemas/SafeId' }
+        auditStatus: { type: string, enum: [recorded] }
+    Observation:
+      oneOf:
+        - { $ref: '#/components/schemas/ObservationCreated' }
+        - { $ref: '#/components/schemas/ObservationDecided' }
+        - { $ref: '#/components/schemas/ObservationAudit' }
+    EnvelopeCreated:
+      type: object
+      additionalProperties: false
+      required:
+        &envelopeFields [
+          schema,
+          contractVersion,
+          authority,
+          goRole,
+          authorityClaim,
+          nonAuthorizingObservation,
+          sourceSequence,
+          operation,
+          observation,
+          observationHash,
+        ]
+      properties: &envelopeProperties
+        schema: { type: string, enum: [openslack.workflow_effect_control_envelope.v1] }
+        contractVersion: { type: string, enum: [v1] }
+        authority: { type: string, enum: [typescript] }
+        goRole: { type: string, enum: [observer_only] }
+        authorityClaim: { type: string, enum: [NO_AUTHORITY] }
+        nonAuthorizingObservation: { type: boolean, enum: [true] }
+        sourceSequence: { type: integer, enum: [1] }
+        operation: { type: string, enum: [approval_created] }
+        observation: { $ref: '#/components/schemas/ObservationCreated' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+    EnvelopeDecided:
+      type: object
+      additionalProperties: false
+      required: *envelopeFields
+      properties:
+        <<: *envelopeProperties
+        sourceSequence: { type: integer, enum: [2] }
+        operation: { type: string, enum: [approval_decided] }
+        observation: { $ref: '#/components/schemas/ObservationDecided' }
+    EnvelopeAudit:
+      type: object
+      additionalProperties: false
+      required: *envelopeFields
+      properties:
+        <<: *envelopeProperties
+        sourceSequence: { type: integer, enum: [3] }
+        operation: { type: string, enum: [audit_recorded] }
+        observation: { $ref: '#/components/schemas/ObservationAudit' }
+    Envelope:
+      oneOf:
+        - { $ref: '#/components/schemas/EnvelopeCreated' }
+        - { $ref: '#/components/schemas/EnvelopeDecided' }
+        - { $ref: '#/components/schemas/EnvelopeAudit' }
+    AcceptedReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        &receiptFields [
+          schema,
+          status,
+          idempotencyKey,
+          receiptId,
+          observationId,
+          workspaceId,
+          runId,
+          occurrenceId,
+          approvalId,
+          sourceSequence,
+          operation,
+          parity,
+          mismatchCode,
+          reconciliationToken,
+          envelopeHash,
+          observationHash,
+          serviceBuildHash,
+          committedAt,
+        ]
+      properties: &receiptProperties
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_receipt.v1] }
+        status: { type: string, enum: [accepted] }
+        idempotencyKey: { $ref: '#/components/schemas/IdempotencyKey' }
+        receiptId: { $ref: '#/components/schemas/SafeId' }
+        observationId: { $ref: '#/components/schemas/SafeId' }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        occurrenceId: { $ref: '#/components/schemas/OccurrenceId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        sourceSequence: { type: integer, minimum: 1, maximum: 3 }
+        operation: { $ref: '#/components/schemas/Operation' }
+        parity: { type: string, enum: [matched, mismatched] }
+        mismatchCode: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        reconciliationToken: { nullable: true, enum: [null] }
+        envelopeHash: { $ref: '#/components/schemas/Hash' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+        serviceBuildHash: { $ref: '#/components/schemas/Hash' }
+        committedAt: { $ref: '#/components/schemas/Timestamp' }
+    ReconciliationReceipt:
+      type: object
+      additionalProperties: false
+      required: *receiptFields
+      properties:
+        <<: *receiptProperties
+        status: { type: string, enum: [reconciliation_required] }
+        observationId: { nullable: true, enum: [null] }
+        parity: { type: string, enum: [unknown] }
+        mismatchCode: { nullable: true, enum: [null] }
+        reconciliationToken: { $ref: '#/components/schemas/SafeId' }
+        committedAt: { nullable: true, enum: [null] }
+    Receipt:
+      oneOf:
+        - { $ref: '#/components/schemas/AcceptedReceipt' }
+        - { $ref: '#/components/schemas/ReconciliationReceipt' }
+    Head:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          runId,
+          occurrenceId,
+          approvalId,
+          lastSourceSequence,
+          lastOperation,
+          lastObservationHash,
+          matchedSourceSequence,
+          matchedOperation,
+          matchedObservationHash,
+          mismatchLatched,
+          mismatchCode,
+          serviceBuildHash,
+          updatedAt,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_head.v1] }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        occurrenceId: { $ref: '#/components/schemas/OccurrenceId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        lastSourceSequence: { type: integer, minimum: 1, maximum: 3 }
+        lastOperation: { $ref: '#/components/schemas/Operation' }
+        lastObservationHash: { $ref: '#/components/schemas/Hash' }
+        matchedSourceSequence: { type: integer, minimum: 1, maximum: 3, nullable: true }
+        matchedOperation: { allOf: [{ $ref: '#/components/schemas/Operation' }], nullable: true }
+        matchedObservationHash: { allOf: [{ $ref: '#/components/schemas/Hash' }], nullable: true }
+        mismatchLatched: { type: boolean }
+        mismatchCode: { allOf: [{ $ref: '#/components/schemas/SafeId' }], nullable: true }
+        serviceBuildHash: { $ref: '#/components/schemas/Hash' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+      allOf:
+        - oneOf:
+            - properties:
+                { lastSourceSequence: { enum: [1] }, lastOperation: { enum: [approval_created] } }
+            - properties:
+                { lastSourceSequence: { enum: [2] }, lastOperation: { enum: [approval_decided] } }
+            - properties:
+                { lastSourceSequence: { enum: [3] }, lastOperation: { enum: [audit_recorded] } }
+        - oneOf:
+            - properties:
+                mismatchLatched: { enum: [false] }
+                mismatchCode: { nullable: true, enum: [null] }
+                matchedSourceSequence: { type: integer, minimum: 1, maximum: 3 }
+                matchedOperation: { $ref: '#/components/schemas/Operation' }
+                matchedObservationHash: { $ref: '#/components/schemas/Hash' }
+            - properties:
+                mismatchLatched: { enum: [true] }
+                mismatchCode: { $ref: '#/components/schemas/SafeId' }
+                matchedSourceSequence: { nullable: true, enum: [null] }
+                matchedOperation: { nullable: true, enum: [null] }
+                matchedObservationHash: { nullable: true, enum: [null] }
+            - properties:
+                mismatchLatched: { enum: [true] }
+                mismatchCode: { $ref: '#/components/schemas/SafeId' }
+                matchedSourceSequence: { type: integer, minimum: 1, maximum: 3 }
+                matchedOperation: { $ref: '#/components/schemas/Operation' }
+                matchedObservationHash: { $ref: '#/components/schemas/Hash' }
+        - oneOf:
+            - properties: { matchedSourceSequence: { nullable: true, enum: [null] } }
+            - properties:
+                {
+                  matchedSourceSequence: { enum: [1] },
+                  matchedOperation: { enum: [approval_created] },
+                }
+            - properties:
+                {
+                  matchedSourceSequence: { enum: [2] },
+                  matchedOperation: { enum: [approval_decided] },
+                }
+            - properties:
+                {
+                  matchedSourceSequence: { enum: [3] },
+                  matchedOperation: { enum: [audit_recorded] },
+                }
+    OutboxPayload:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          eventId,
+          eventType,
+          authority,
+          goRole,
+          nonAuthorizingObservation,
+          goEffectDecisionAuthority,
+          goEffectExecutionAuthority,
+          workspaceId,
+          runId,
+          occurrenceId,
+          approvalId,
+          sourceSequence,
+          operation,
+          observationId,
+          observationHash,
+          approvalStatus,
+          decision,
+          auditEventId,
+          bindingHash,
+          observedAt,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_outbox_payload.v1] }
+        eventId: { $ref: '#/components/schemas/SafeId' }
+        eventType: { type: string, enum: [effect_decision_observed, effect_audit_recorded] }
+        authority: { type: string, enum: [typescript] }
+        goRole: { type: string, enum: [observer_only] }
+        nonAuthorizingObservation: { type: boolean, enum: [true] }
+        goEffectDecisionAuthority: { type: boolean, enum: [false] }
+        goEffectExecutionAuthority: { type: boolean, enum: [false] }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        occurrenceId: { $ref: '#/components/schemas/OccurrenceId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        sourceSequence: { type: integer, minimum: 2, maximum: 3 }
+        operation: { type: string, enum: [approval_decided, audit_recorded] }
+        observationId: { $ref: '#/components/schemas/SafeId' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+        approvalStatus: { type: string, enum: [approved, rejected] }
+        decision: { type: string, enum: [approved, rejected] }
+        auditEventId: { $ref: '#/components/schemas/SafeId' }
+        bindingHash: { $ref: '#/components/schemas/Hash' }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+      allOf:
+        - oneOf:
+            - properties:
+                eventType: { enum: [effect_decision_observed] }
+                sourceSequence: { enum: [2] }
+                operation: { enum: [approval_decided] }
+            - properties:
+                eventType: { enum: [effect_audit_recorded] }
+                sourceSequence: { enum: [3] }
+                operation: { enum: [audit_recorded] }
+        - oneOf:
+            - properties: { approvalStatus: { enum: [approved] }, decision: { enum: [approved] } }
+            - properties: { approvalStatus: { enum: [rejected] }, decision: { enum: [rejected] } }
+    OutboxRead:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schema,
+          status,
+          eventId,
+          eventType,
+          workspaceId,
+          runId,
+          occurrenceId,
+          approvalId,
+          sourceSequence,
+          operation,
+          observationId,
+          observationHash,
+          payloadHash,
+          payload,
+          recordedAt,
+        ]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_outbox_read.v1] }
+        status: { type: string, enum: [pending] }
+        eventId: { $ref: '#/components/schemas/SafeId' }
+        eventType: { type: string, enum: [effect_decision_observed, effect_audit_recorded] }
+        workspaceId: { $ref: '#/components/schemas/SafeId' }
+        runId: { $ref: '#/components/schemas/SafeId' }
+        occurrenceId: { $ref: '#/components/schemas/OccurrenceId' }
+        approvalId: { $ref: '#/components/schemas/SafeId' }
+        sourceSequence: { type: integer, minimum: 2, maximum: 3 }
+        operation: { type: string, enum: [approval_decided, audit_recorded] }
+        observationId: { $ref: '#/components/schemas/SafeId' }
+        observationHash: { $ref: '#/components/schemas/Hash' }
+        payloadHash: { $ref: '#/components/schemas/Hash' }
+        payload: { $ref: '#/components/schemas/OutboxPayload' }
+        recordedAt: { $ref: '#/components/schemas/Timestamp' }
+      oneOf:
+        - properties:
+            eventType: { enum: [effect_decision_observed] }
+            sourceSequence: { enum: [2] }
+            operation: { enum: [approval_decided] }
+        - properties:
+            eventType: { enum: [effect_audit_recorded] }
+            sourceSequence: { enum: [3] }
+            operation: { enum: [audit_recorded] }
+    OutboxPage:
+      type: object
+      additionalProperties: false
+      required: [schema, items, count, nextCursor]
+      properties:
+        schema: { type: string, enum: [openslack.workflow_effect_shadow_outbox_page.v1] }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/OutboxRead' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 512
+          pattern: '^[A-Za-z0-9_-]+$'
+          nullable: true

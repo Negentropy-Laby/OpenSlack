@@ -33,6 +33,10 @@ import {
   type WorkflowEffectLeaseAuthority,
 } from './internal/workflow-effect-lease-authority.js';
 import {
+  isWorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowObservationPort,
+} from './internal/workflow-effect-shadow-port.js';
+import {
   registerWorkflowEffectAuthorizationPort,
   WorkflowEffectApprovalPendingError,
   WorkflowEffectAuthorizationBusyError,
@@ -109,6 +113,7 @@ export function createWorkflowEffectAuthorizationPort(options: {
   readonly now?: () => string;
   readonly approvalTtlMs?: number;
   readonly observationPort?: WorkflowControlObservationPort;
+  readonly effectShadowObservationPort?: WorkflowEffectShadowObservationPort;
 }): WorkflowEffectAuthorizationPort {
   if (
     !options ||
@@ -118,7 +123,9 @@ export function createWorkflowEffectAuthorizationPort(options: {
     !options.effectBoundary ||
     typeof options.effectBoundary !== 'object' ||
     (options.observationPort !== undefined &&
-      !isWorkflowControlObservationPort(options.observationPort))
+      !isWorkflowControlObservationPort(options.observationPort)) ||
+    (options.effectShadowObservationPort !== undefined &&
+      !isWorkflowEffectShadowObservationPort(options.effectShadowObservationPort))
   ) {
     throw new TypeError('Workflow effect authorization composition is invalid.');
   }
@@ -139,6 +146,13 @@ export function createWorkflowEffectAuthorizationPort(options: {
     'effect-approvals',
   );
   const store = new LocalWorkflowEffectAuthorityStore(approvalRoot, now);
+  const observeAuthority = (approvalId: string) => {
+    try {
+      options.effectShadowObservationPort?.observeAuthority(binding.runId, approvalId);
+    } catch {
+      // The Go shadow is non-authorizing and never changes TypeScript authority.
+    }
+  };
   const persistPending = async (
     approval: ReturnType<typeof createPendingWorkflowEffectApproval>,
   ) => {
@@ -364,7 +378,14 @@ export function createWorkflowEffectAuthorizationPort(options: {
           const pending = artifact.approval;
           await persistPending(pending);
         }
+        observeAuthority(artifact.approval.approvalId);
         throw new WorkflowEffectApprovalPendingError(binding.runId, artifact.approval.approvalId);
+      }
+      if (
+        artifact?.kind === 'effect_decision_committed' ||
+        artifact?.kind === 'effect_audit_recorded'
+      ) {
+        observeAuthority(artifact.approval.approvalId);
       }
       if (
         (artifact?.kind === 'effect_decision_committed' ||

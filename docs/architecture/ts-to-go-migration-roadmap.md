@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-12
+updated: 2026-08-14
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -440,7 +440,7 @@ latched for the whole run, the current v1 boundary is closed before the runner t
 public execute/resume, legacy gate, manifest, unattended switch, MCP result, or TUI action can mint
 or inject the private capability.
 
-D3 may then add a separate default-off Go parity observer with exactly three operations:
+D3 adds a separate default-off Go parity observer with exactly three operations:
 `approval_created`, `approval_decided`, and `audit_recorded`. Intent, execution claim, and legacy
 gate artifacts are not Go approval-shadow operations. Go receives only bounded identifiers,
 revisions, timestamps, status/mismatch codes, and hashes; raw effect detail, workflow input,
@@ -450,6 +450,17 @@ mismatch must not block or alter the TypeScript decision, claim, execution, or r
 state. Qualification covers exact replay, fingerprint conflict, concurrency, restart, response
 loss, tamper, stale decision identity, capacity, and default-off composition. D3 can establish only
 `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED`.
+
+The D3 observer is an additive strict superset of the GS9-C qualification profile. Its private
+binary is `effect-shadow-server`, its only ingest route is
+`POST /v1/shadow/workflow-control/effect-events`, and its idempotency prefix is
+`openslack.workflow-effect-control-shadow.v1.`. Explicit local qualification binds loopback port
+8084, one workspace, caller, build, and bearer hash. Migration `000005` creates only
+`workflow_control_effect_shadow_*`; the GS8 runner, GS9-B authority, and GS9-C checkpoint
+namespaces remain unchanged. Exact replay, fingerprint conflict, contiguous matched-prefix
+progression, mismatch latching, unknown-commit reconciliation, concurrency, restart, capacity, and
+default-off image behavior are required gates. Go never enters the TypeScript approval, claim,
+effect, resume, or user-response path.
 
 TypeScript remains the sole writer throughout GS9-D. Runner protocol v1 bytes and behavior remain
 frozen; D1-D3 neither negotiate nor deliver runner v2, and a runner message or durable receipt is

@@ -126,6 +126,69 @@ func TestCheckpointShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
 	}
 }
 
+func TestEffectShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testing.T) {
+	reserved := []string{"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT"}
+	for _, name := range reserved {
+		t.Run("reject "+name, func(t *testing.T) {
+			root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{name + "=evil"} })
+			if _, err := Load(root, hash, runtimeConfig); err == nil {
+				t.Fatal("manifest effect override accepted")
+			}
+		})
+	}
+	root, hash, runtimeConfig := writeBundle(t, nil)
+	registry, err := Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range registry.command.Environment {
+		if strings.HasPrefix(entry, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_") {
+			t.Fatalf("disabled runtime injected %s", entry)
+		}
+	}
+	runtimeConfig.EffectShadowEnabled = true
+	runtimeConfig.EffectShadowEndpoint = "http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events"
+	runtimeConfig.EffectShadowBearerToken = strings.Repeat("e", 32)
+	runtimeConfig.EffectShadowCallerID = "runner-control"
+	runtimeConfig.EffectShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-effect-shadow")
+	registry, err = Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(registry.command.Environment, "\n")
+	for _, want := range []string{
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1",
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT=" + runtimeConfig.EffectShadowEndpoint,
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN=" + runtimeConfig.EffectShadowBearerToken,
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID=runner-control",
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT=" + runtimeConfig.EffectShadowJournalRoot,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing trusted injection %s", want)
+		}
+	}
+}
+
+func TestEffectShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:8084/v1/shadow/workflow-control/effect-events",
+		"http://user@127.0.0.1:8084/v1/shadow/workflow-control/effect-events",
+		"http://user:password@[::1]:8084/v1/shadow/workflow-control/effect-events",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			root, hash, runtimeConfig := writeBundle(t, nil)
+			runtimeConfig.EffectShadowEnabled = true
+			runtimeConfig.EffectShadowEndpoint = endpoint
+			runtimeConfig.EffectShadowBearerToken = strings.Repeat("e", 32)
+			runtimeConfig.EffectShadowCallerID = "runner-control"
+			runtimeConfig.EffectShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-effect-shadow")
+			if _, err := Load(root, hash, runtimeConfig); err == nil {
+				t.Fatal("unsafe effect shadow endpoint was accepted")
+			}
+		})
+	}
+}
+
 func TestLoadRejectsEscapeOverrideAndArtifactDrift(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

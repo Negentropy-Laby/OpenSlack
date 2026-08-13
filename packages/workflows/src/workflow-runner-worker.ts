@@ -28,6 +28,13 @@ import {
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
 import { createWorkflowEffectAuthorizationPort } from './workflow-effect-authorization.js';
+import { WORKFLOW_EFFECT_CONTROL_ROUTE } from './workflow-effect-control-contract.js';
+import {
+  createWorkflowEffectShadowHttpPublisher,
+  createWorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowDiagnostic,
+  type WorkflowEffectShadowObservationPort,
+} from './workflow-effect-shadow.js';
 import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
 
@@ -40,6 +47,12 @@ export interface WorkflowRunnerWorkerConfig {
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
   readonly checkpointShadow?: {
+    readonly endpoint: string;
+    readonly bearerToken: string;
+    readonly callerId: string;
+    readonly journalRoot: string;
+  };
+  readonly effectShadow?: {
     readonly endpoint: string;
     readonly bearerToken: string;
     readonly callerId: string;
@@ -233,6 +246,80 @@ export function loadWorkflowRunnerWorkerConfig(
       );
     }
   }
+  const effectKeys = [
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT',
+  ] as const;
+  const effectEnabledValue = environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED;
+  if (
+    effectEnabledValue !== undefined &&
+    effectEnabledValue !== '0' &&
+    effectEnabledValue !== '1'
+  ) {
+    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow enablement is invalid.');
+  }
+  const effectEnabled = effectEnabledValue === '1';
+  if (!effectEnabled && effectKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled Workflow effect shadow configuration must be empty.',
+    );
+  }
+  const effectShadow = effectEnabled
+    ? {
+        endpoint: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT ?? '',
+        bearerToken: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN ?? '',
+        callerId: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID ?? '',
+        journalRoot: absolutePath(
+          environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT,
+          'Workflow effect shadow journal root',
+        ),
+      }
+    : undefined;
+  if (
+    effectEnabled &&
+    (!effectShadow?.endpoint ||
+      effectShadow.bearerToken.length < 32 ||
+      !SAFE_ID.test(effectShadow.callerId))
+  ) {
+    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow configuration is invalid.');
+  }
+  if (effectShadow) {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(effectShadow.endpoint);
+    } catch {
+      throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow endpoint is invalid.');
+    }
+    const localRoot = join(workspaceRoot, '.openslack.local');
+    const journalRelative = relative(localRoot, effectShadow.journalRoot);
+    const protectedRoots = [
+      join(localRoot, 'workflows', 'effect-approvals'),
+      join(localRoot, 'workflows', 'effect-authority'),
+    ];
+    if (
+      endpoint.protocol !== 'http:' ||
+      !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
+      endpoint.pathname !== WORKFLOW_EFFECT_CONTROL_ROUTE ||
+      endpoint.username !== '' ||
+      endpoint.password !== '' ||
+      endpoint.search !== '' ||
+      endpoint.hash !== '' ||
+      journalRelative.length === 0 ||
+      journalRelative.startsWith('..') ||
+      isAbsolute(journalRelative) ||
+      protectedRoots.some(
+        (protectedRoot) =>
+          within(protectedRoot, effectShadow.journalRoot) ||
+          within(effectShadow.journalRoot, protectedRoot),
+      )
+    ) {
+      throw new WorkflowRunnerWorkerConfigError(
+        'Workflow effect shadow must use its exact loopback route and a workspace-local journal.',
+      );
+    }
+  }
   return Object.freeze({
     enabled: true,
     workspaceId,
@@ -243,6 +330,7 @@ export function loadWorkflowRunnerWorkerConfig(
     ),
     runnerBuildHash,
     ...(checkpointShadow ? { checkpointShadow: Object.freeze(checkpointShadow) } : {}),
+    ...(effectShadow ? { effectShadow: Object.freeze(effectShadow) } : {}),
   });
 }
 
@@ -404,6 +492,15 @@ function writeCheckpointDiagnostic(diagnostic: WorkflowCheckpointShadowDiagnosti
   );
 }
 
+function writeEffectShadowDiagnostic(diagnostic: WorkflowEffectShadowDiagnostic): void {
+  writeSync(
+    2,
+    `${JSON.stringify({ schema: 'openslack.workflow_effect_shadow_diagnostic.v1', ...diagnostic })}\n`,
+    undefined,
+    'utf8',
+  );
+}
+
 /**
  * Dispatch one accepted runner job without ever treating an existing run as a
  * fresh execution. Only paused/resuming runs enter the strict resume path;
@@ -416,6 +513,7 @@ async function executeWorkflowRunnerJob(
   workspaceRoot: string,
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
   observationPort?: WorkflowControlObservationPort,
+  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
 ): Promise<RunResult> {
   const store = new RunStore({
     baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
@@ -448,6 +546,7 @@ async function executeWorkflowRunnerJob(
     effectBoundary: context.effectBoundary,
     leaseAuthority: workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
     observationPort,
+    effectShadowObservationPort,
   });
 
   return disposition === 'initialize'
@@ -471,6 +570,7 @@ export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
   observationPort?: WorkflowControlObservationPort,
+  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
 ): Promise<void> {
   installProtocolOnlyStreams();
   const effectiveCheckpointObservationPort =
@@ -487,6 +587,40 @@ export async function runWorkflowRunnerWorker(
           diagnosticSink: writeCheckpointDiagnostic,
         })
       : undefined);
+  const effectiveEffectShadowObservationPort =
+    effectShadowObservationPort ??
+    (config.effectShadow
+      ? await createWorkflowEffectShadowObservationPort({
+          enabled: true,
+          workspaceRoot: config.workspaceRoot,
+          journalRoot: config.effectShadow.journalRoot,
+          publisher: createWorkflowEffectShadowHttpPublisher({
+            endpoint: config.effectShadow.endpoint,
+            bearerToken: config.effectShadow.bearerToken,
+            callerId: config.effectShadow.callerId,
+          }),
+          diagnosticSink: writeEffectShadowDiagnostic,
+        })
+      : undefined);
+  if (effectiveEffectShadowObservationPort) {
+    void (async () => {
+      await effectiveEffectShadowObservationPort.replay();
+      await effectiveEffectShadowObservationPort.synchronize();
+    })().catch((error) => {
+      writeEffectShadowDiagnostic({
+        outcome: 'failed',
+        runIdHash: 'unavailable',
+        approvalIdHash: 'unavailable',
+        observationHash: null,
+        code:
+          error &&
+          typeof error === 'object' &&
+          typeof (error as { readonly code?: unknown }).code === 'string'
+            ? String((error as { readonly code: string }).code).slice(0, 128)
+            : 'WORKFLOW_EFFECT_SHADOW_REPLAY_FAILED',
+      });
+    });
+  }
   const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
   await descriptorStore.initialize();
   let closed = false;
@@ -522,6 +656,7 @@ export async function runWorkflowRunnerWorker(
         config.workspaceRoot,
         effectiveCheckpointObservationPort,
         observationPort,
+        effectiveEffectShadowObservationPort,
       );
     },
   });

@@ -42,7 +42,7 @@ func TestRunCancelsHTTPWhenSchedulerFails(t *testing.T) {
 }
 
 func TestRunnerServerRequiresSchemaVersionThree(t *testing.T) {
-	if minimumSchemaVersion != 2 || maximumSchemaVersion != 4 {
+	if minimumSchemaVersion != 2 || maximumSchemaVersion != 5 {
 		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
 	}
 }

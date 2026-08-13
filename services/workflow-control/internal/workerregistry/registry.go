@@ -61,6 +61,11 @@ type Runtime struct {
 	CheckpointShadowBearerToken string
 	CheckpointShadowCallerID    string
 	CheckpointShadowJournalRoot string
+	EffectShadowEnabled         bool
+	EffectShadowEndpoint        string
+	EffectShadowBearerToken     string
+	EffectShadowCallerID        string
+	EffectShadowJournalRoot     string
 }
 
 type Registry struct {
@@ -199,6 +204,11 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
 		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID":    {},
 		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED":          {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT":         {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN":     {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID":        {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT":     {},
 	}
 	for _, entry := range base {
 		name, _, found := strings.Cut(entry, "=")
@@ -230,6 +240,21 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN="+runtimeConfig.CheckpointShadowBearerToken,
 			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID="+runtimeConfig.CheckpointShadowCallerID,
 			"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT="+runtimeConfig.CheckpointShadowJournalRoot,
+		)
+	}
+	if runtimeConfig.EffectShadowEnabled {
+		parsed, parseErr := url.Parse(runtimeConfig.EffectShadowEndpoint)
+		localRoot := filepath.Join(workspaceRoot, ".openslack.local")
+		relative, relativeErr := filepath.Rel(localRoot, runtimeConfig.EffectShadowJournalRoot)
+		if parseErr != nil || parsed.Scheme != "http" || parsed.User != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "::1") || parsed.Port() == "" || parsed.Path != "/v1/shadow/workflow-control/effect-events" || parsed.RawQuery != "" || parsed.Fragment != "" || len(runtimeConfig.EffectShadowBearerToken) < 32 || len(runtimeConfig.EffectShadowBearerToken) > 4096 || runtimeConfig.EffectShadowBearerToken != strings.TrimSpace(runtimeConfig.EffectShadowBearerToken) || strings.ContainsAny(runtimeConfig.EffectShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || runtimeConfig.EffectShadowJournalRoot == "" || !filepath.IsAbs(runtimeConfig.EffectShadowJournalRoot) || filepath.Clean(runtimeConfig.EffectShadowJournalRoot) != runtimeConfig.EffectShadowJournalRoot || relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("effect shadow runtime injection is invalid")
+		}
+		result = append(result,
+			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1",
+			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT="+runtimeConfig.EffectShadowEndpoint,
+			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN="+runtimeConfig.EffectShadowBearerToken,
+			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID="+runtimeConfig.EffectShadowCallerID,
+			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT="+runtimeConfig.EffectShadowJournalRoot,
 		)
 	}
 	return result, nil

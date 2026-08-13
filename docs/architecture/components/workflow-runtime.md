@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-12
+updated: 2026-08-14
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -939,8 +939,9 @@ activate runner-v2 `effect_authorization`. D2 consumes the bundle to implement a
 TypeScript store plus nominal, non-public authorization/claim composition. D3 adds and qualifies
 the default-off Go parity observer over only the three observer operations, including restart,
 duplicate, response-loss, concurrency, tamper, expiry, capacity, and disabled/unavailable-Go
-cases. Until both exit gates pass, the evidence ceiling remains
-`GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`.
+cases. Until the D3 exit gates pass, the evidence ceiling remains
+`GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`; afterward it may become
+`GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED` and nothing broader.
 The pinned runner manifest and golden hashes are source-lock evidence only. The runtime
 `controlBuildHash` is a separate deployment identity supplied by trusted composition and is never
 learned from, or self-certified by, an incoming receipt.
@@ -956,6 +957,40 @@ execute a governed effect without the private authenticated-host capability.
 Manifest `approvedEffects` remains admission metadata only and never replaces the per-occurrence
 v2 human decision. Effect pending, decision, and audit persistence use the same optional
 observation hook as local execution; observer failure remains fail-open to TypeScript authority.
+
+### GS9-D D3 default-off effect parity shadow
+
+D3 consumes only the three credential-free observer operations frozen by D1 and emitted after the
+authoritative D2 TypeScript commits: `approval_created`, `approval_decided`, and
+`audit_recorded`. The owner-only TypeScript journal remains append-before-send, ordered per run,
+and fail-open to the TypeScript effect result. Intent, execution-claim, replay-result, and legacy
+run-gate artifacts never enter this transport.
+
+The separate `effect-shadow-server` registers
+`POST /v1/shadow/workflow-control/effect-events` only in explicit
+`local-qualification-v1` mode. Its request idempotency keys use the frozen
+`openslack.workflow-effect-control-shadow.v1.` prefix and bind the exact canonical envelope plus
+workspace, run, occurrence, approval, source sequence, operation, and hashes. It listens on
+loopback `127.0.0.1:8084` for qualification and remains health-only when disabled.
+
+PostgreSQL persistence uses only `workflow_control_effect_shadow_*` tables introduced by migration
+`000005`. It records immutable observations, byte-identical replay receipts, one matched-prefix
+head, mismatch evidence, and unknown-commit reconciliation. A semantic mismatch may advance the
+observed source sequence but cannot advance matched parity; a latched mismatch or reconciliation
+cannot be hidden by a later observation. Same-key/different-fingerprint, stale sequence, identity
+drift, tamper, expiry, and capacity violations fail closed inside the observer.
+
+The local observer retries transient transport failures eight times with bounded exponential
+backoff while preserving its append-before-send journal. The Go outbox remains read-only and uses
+opaque exact-timestamp keyset pagination; page size does not cap total evidence visibility.
+
+Go never reads human attestation, creates or changes a decision, mints an authorization, claims or
+executes an effect, resumes a run, or changes a TypeScript response. Go outage, timeout, invalid
+receipt, mismatch, and reconciliation remain observational only. Runner v1 remains byte-identical
+and runner-v2 `effect_authorization` is still not negotiated or delivered. The reviewed exact-byte,
+real-PostgreSQL race/restart/response-loss, OpenAPI, default-off image, and cross-language gates may
+establish only `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED`; authenticated-host, live,
+release, production, routing, and writer-cutover claims remain separate.
 
 Public CLI and TUI execution submit to the loopback Workflow Runner control service rather than
 calling `executeRun` or `executeResume` directly. The client seals a descriptor, submits only the

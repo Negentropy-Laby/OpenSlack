@@ -18,7 +18,7 @@ import (
 )
 
 const minimumSchemaVersion int64 = 1
-const maximumSchemaVersion int64 = 4
+const maximumSchemaVersion int64 = 5
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
