@@ -186,6 +186,7 @@ interface ApprovalArtifactBase extends ArtifactBase {
   readonly intentEffectId: string;
   readonly intentEffectHash: string;
   readonly correlationId: string;
+  readonly approvalGeneration: number;
   readonly approval: WorkflowEffectApprovalRecord;
   readonly approvalRecordHash: string;
   readonly approvalDecisionHash: string | null;
@@ -443,6 +444,20 @@ export function deriveWorkflowEffectApprovalId(
   return `WFAPPROVAL-${hashWorkflowEffectControlDomain('approval-id', {
     intentBindingHash,
     occurrenceId,
+  })}`;
+}
+
+export function deriveWorkflowEffectApprovalGenerationId(
+  occurrenceIdValue: string,
+  intentBindingHashValue: string,
+  generationValue: number,
+): string {
+  const baseApprovalId = deriveWorkflowEffectApprovalId(occurrenceIdValue, intentBindingHashValue);
+  const generation = integer(generationValue, '$/approvalGeneration', 0);
+  if (generation === 0) return baseApprovalId;
+  return `WFAPPROVAL-${hashWorkflowEffectControlDomain('approval-generation-id', {
+    baseApprovalId,
+    generation,
   })}`;
 }
 
@@ -942,6 +957,7 @@ function validateWorkflowEffectControlArtifactInner(
     'intentEffectId',
     'intentEffectHash',
     'correlationId',
+    'approvalGeneration',
     'approval',
     'approvalRecordHash',
     'approvalDecisionHash',
@@ -967,6 +983,7 @@ function validateWorkflowEffectControlArtifactInner(
   const intentEffectId = text(own(record, 'intentEffectId'), '$/intentEffectId');
   const intentEffectHash = hash(own(record, 'intentEffectHash'), '$/intentEffectHash');
   const correlationId = text(own(record, 'correlationId'), '$/correlationId');
+  const approvalGeneration = integer(own(record, 'approvalGeneration'), '$/approvalGeneration', 0);
   const intentPayload = intentArtifact.runnerV1Message.payload;
   if (
     intentBindingHash !== expectedIntentBindingHash ||
@@ -974,7 +991,12 @@ function validateWorkflowEffectControlArtifactInner(
     intentArtifact.runId !== base.runId ||
     intentArtifact.occurrenceIndex !== base.occurrenceIndex ||
     intentArtifact.occurrenceId !== base.occurrenceId ||
-    approval.approvalId !== deriveWorkflowEffectApprovalId(base.occurrenceId, intentBindingHash) ||
+    approval.approvalId !==
+      deriveWorkflowEffectApprovalGenerationId(
+        base.occurrenceId,
+        intentBindingHash,
+        approvalGeneration,
+      ) ||
     approval.runId !== base.runId ||
     approvalRecordHash !== hashWorkflowEffectApprovalRecord(approval) ||
     approval.effectId !== intentEffectId ||
@@ -1012,6 +1034,7 @@ function validateWorkflowEffectControlArtifactInner(
       intentEffectId,
       intentEffectHash,
       correlationId,
+      approvalGeneration,
       approval,
       approvalRecordHash,
       approvalDecisionHash: null,
@@ -1052,6 +1075,7 @@ function validateWorkflowEffectControlArtifactInner(
       intentEffectId,
       intentEffectHash,
       correlationId,
+      approvalGeneration,
       approval,
       approvalRecordHash,
       approvalDecisionHash,
@@ -1074,6 +1098,7 @@ function validateWorkflowEffectControlArtifactInner(
       intentEffectId,
       intentEffectHash,
       correlationId,
+      approvalGeneration,
       approval,
       approvalRecordHash,
       approvalDecisionHash,
@@ -1163,6 +1188,7 @@ function validateWorkflowEffectControlArtifactInner(
     intentEffectId,
     intentEffectHash,
     correlationId,
+    approvalGeneration,
     approvalRecordHash,
     approvalDecisionHash,
     humanDecision,

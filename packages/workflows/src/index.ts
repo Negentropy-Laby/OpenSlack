@@ -149,6 +149,7 @@ export {
   WorkflowEffectControlContractError,
   canonicalWorkflowEffectControlJson,
   deriveWorkflowEffectApprovalId,
+  deriveWorkflowEffectApprovalGenerationId,
   deriveWorkflowEffectOccurrenceId,
   hashWorkflowEffectApprovalDecision,
   hashWorkflowEffectApprovalRecord,
@@ -166,6 +167,8 @@ export {
   validateWorkflowEffectControlObservation,
   workflowEffectControlEnvelopeBytes,
 } from './workflow-effect-control-contract.js';
+export { repairWorkflowEffectAuthoritySecurity } from './workflow-effect-authority-store.js';
+export type { WorkflowEffectAuthoritySecurityRepairReport } from './workflow-effect-authority-store.js';
 export type {
   WorkflowEffectApprovalPendingArtifact,
   WorkflowEffectAuditRecordedArtifact,
@@ -721,6 +724,34 @@ export {
   WorkflowRunnerDescriptorStoreError,
 } from './workflow-runner-descriptor-store.js';
 export type { WorkflowRunnerDescriptorPathSecurity } from './workflow-runner-descriptor-store.js';
+export {
+  loadWorkflowRunnerControlConfig,
+  prepareWorkflowRunnerJobSpec,
+  validateWorkflowRunnerJobReceipt,
+  validateWorkflowRunnerJobSpec,
+  validateWorkflowRunnerJobView,
+  WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA,
+  WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
+  WORKFLOW_RUNNER_JOB_VIEW_SCHEMA,
+  WorkflowRunnerControlClient,
+  WorkflowRunnerControlError,
+} from './workflow-runner-control-client.js';
+export {
+  executeWorkflowThroughRunner,
+  readWorkflowRunnerSourceBytes,
+} from './workflow-runner-execution-client.js';
+export type {
+  ExecuteWorkflowThroughRunnerInput,
+  WorkflowRunnerPausedResult,
+} from './workflow-runner-execution-client.js';
+export type {
+  PreparedWorkflowRunnerJobSpec,
+  WorkflowRunnerControlConfig,
+  WorkflowRunnerControlPort,
+  WorkflowRunnerJobReceipt,
+  WorkflowRunnerJobSpec,
+  WorkflowRunnerJobView,
+} from './workflow-runner-control-client.js';
 export {
   decodeWorkflowRunnerFrame,
   WorkflowRunnerFramingError,

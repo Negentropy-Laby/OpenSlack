@@ -69,7 +69,7 @@ function sealedDescriptor() {
 }
 
 describe('GS8-B closed cancellation boundary inventory', () => {
-  it('covers every declared runtime and effect cancellation boundary mechanically', async () => {
+  it('covers every cancellation boundary reachable before exact D2 execution authority', async () => {
     const observed = new Set<WorkflowRunnerCancellationBoundary>();
 
     for (const [name, invoke] of [
@@ -123,88 +123,6 @@ describe('GS8-B closed cancellation boundary inventory', () => {
       observed.add(cancellationBoundary(error));
     }
 
-    const executionController = new AbortController();
-    let effectExecuted = false;
-    const executionRuntime = createRuntime({
-      runId: 'run.effect-execution',
-      mode: 'execute',
-      manifest,
-      onConfirm: async () => {
-        executionController.abort(new Error('stop before execution'));
-        return true;
-      },
-      signal: executionController.signal,
-      effectBoundary: passiveBoundary(),
-    });
-    try {
-      await executionRuntime.openslack.task.createIssue({
-        get title() {
-          effectExecuted = true;
-          return 'must not be evaluated after approval';
-        },
-      });
-    } catch (error) {
-      observed.add(cancellationBoundary(error));
-    }
-    // Detail serialization occurs before the approval boundary; the actual
-    // effect is proven separately by the absence of an executed outcome.
-    expect(effectExecuted).toBe(true);
-
-    const outcomeController = new AbortController();
-    const outcomes: string[] = [];
-    const outcomeBoundary: WorkflowEffectBoundary = {
-      async intent(input) {
-        return effectHandle(input.operation);
-      },
-      async outcome(_handle, input) {
-        outcomes.push(input.status);
-      },
-    };
-    const outcomeRuntime = createRuntime({
-      runId: 'run.effect-outcome',
-      mode: 'execute',
-      manifest,
-      onConfirm: async () => {
-        outcomeController.abort(new Error('stop after approval'));
-        // Clear the stop just for this test is impossible; this deliberately
-        // proves the pre-execution boundary instead of an ambiguous commit.
-        return true;
-      },
-      signal: outcomeController.signal,
-      effectBoundary: outcomeBoundary,
-    });
-    try {
-      await outcomeRuntime.openslack.task.sync(1);
-    } catch (error) {
-      observed.add(cancellationBoundary(error));
-    }
-    expect(outcomes).toEqual([]);
-
-    // Exercise effect_outcome with a boundary that aborts after the durable
-    // executed outcome; execution is not replayed and cancellation wins next.
-    const afterOutcomeController = new AbortController();
-    const afterOutcomeBoundary: WorkflowEffectBoundary = {
-      async intent(input) {
-        return effectHandle(input.operation);
-      },
-      async outcome() {
-        afterOutcomeController.abort(new Error('stop after outcome receipt'));
-      },
-    };
-    const afterOutcomeRuntime = createRuntime({
-      runId: 'run.after-outcome',
-      mode: 'execute',
-      manifest,
-      onConfirm: async () => true,
-      signal: afterOutcomeController.signal,
-      effectBoundary: afterOutcomeBoundary,
-    });
-    try {
-      await afterOutcomeRuntime.openslack.task.sync(1);
-    } catch (error) {
-      observed.add(cancellationBoundary(error));
-    }
-
     expect(observed).toEqual(
       new Set([
         'runtime_api',
@@ -212,8 +130,6 @@ describe('GS8-B closed cancellation boundary inventory', () => {
         'parallel_dispatch',
         'pipeline_dispatch',
         'effect_intent',
-        'effect_execution',
-        'effect_outcome',
       ]),
     );
   });
@@ -297,15 +213,6 @@ function effectHandle(operation: string) {
     capabilityHash: 'b'.repeat(64),
     requiresHumanDecision: false,
   } as const;
-}
-
-function passiveBoundary(): WorkflowEffectBoundary {
-  return {
-    async intent(input) {
-      return effectHandle(input.operation);
-    },
-    async outcome() {},
-  };
 }
 
 function helloAck(correlationId: string): WorkflowRunnerMessage {

@@ -431,6 +431,15 @@ callback-approved, manifest-approved, or unattended paths must fail to authorize
 v2 decision. D2 must also prove the MCP/human channel decides only the bound record, never invokes
 the effect, and exposes neither raw reason nor attestation nonce.
 
+The D2 implementation is deliberately local and TypeScript-owned. The accepted runner session
+mints the only nominal composition capability; the owner-only authority store binds the exact
+runner-v1 intent, stable evaluation occurrence, complete v2 human decision, and an exclusive
+execution claim. A separate authority-head high-watermark makes a missing or rolled-back claim
+record a reconciliation condition instead of fresh authority. Pending and ambiguous outcomes are
+latched for the whole run, the current v1 boundary is closed before the runner terminal, and no
+public execute/resume, legacy gate, manifest, unattended switch, MCP result, or TUI action can mint
+or inject the private capability.
+
 D3 may then add a separate default-off Go parity observer with exactly three operations:
 `approval_created`, `approval_decided`, and `audit_recorded`. Intent, execution claim, and legacy
 gate artifacts are not Go approval-shadow operations. Go receives only bounded identifiers,

@@ -69,7 +69,7 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
       case 'merge-request':
         return 'Confirm merge';
       case 'workflow-effect':
-        return 'Confirm effect';
+        return 'Record legacy gate';
       case 'profile-sync':
         return 'Sync profile';
       case 'github-review':
@@ -82,7 +82,7 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
     case 'merge-request':
       return 'Cancel merge';
     case 'workflow-effect':
-      return 'Cancel effect';
+      return 'Reject legacy gate';
     case 'profile-sync':
       return 'Cancel sync';
     case 'github-review':

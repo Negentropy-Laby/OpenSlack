@@ -8,14 +8,17 @@ async function source(path: string): Promise<string> {
 }
 
 describe('GS8-B source and authority invariants', () => {
-  it('keeps the existing CLI run and resume routes on TypeScript authority', async () => {
+  it('keeps public CLI execution behind runner control and legacy TUI gates nonauthorizing', async () => {
     const [collaboration, tuiExecutors] = await Promise.all([
       source('apps/cli/src/commands/collaboration.ts'),
       source('apps/cli/src/commands/tui-executors.ts'),
     ]);
+    expect(collaboration).toContain('executeWorkflowThroughRunner');
+    expect(collaboration).not.toMatch(/\bexecuteRun\(/u);
+    expect(collaboration).not.toMatch(/\bexecuteResume\(/u);
+    expect(tuiExecutors).not.toContain('executeResume');
+    expect(tuiExecutors).toContain('effectDecisionAuthority: false');
     for (const cli of [collaboration, tuiExecutors]) {
-      expect(cli).toContain('executeRun');
-      expect(cli).toContain('executeResume');
       expect(cli).not.toContain('workflow-runner-worker');
       expect(cli).not.toContain('OPENSLACK_WORKFLOW_RUNNER_ENABLED');
     }
@@ -81,11 +84,12 @@ describe('GS8-B source and authority invariants', () => {
   });
 
   it('keeps checkpoint lease authority out of every public execution surface', async () => {
-    const [index, packageJson, execute, runtime] = await Promise.all([
+    const [index, packageJson, execute, runtime, types] = await Promise.all([
       source('packages/workflows/src/index.ts'),
       source('packages/workflows/package.json'),
       source('packages/workflows/src/execute.ts'),
       source('packages/workflows/src/runtime.ts'),
+      source('packages/workflows/src/types.ts'),
     ]);
     expect(index).not.toContain('createWorkflowCheckpointLeaseAuthority');
     expect(index).not.toContain('WorkflowCheckpointLeaseAuthority');
@@ -109,12 +113,29 @@ describe('GS8-B source and authority invariants', () => {
     );
     expect(publicRun).not.toContain('checkpointAuthority');
     expect(publicResume).not.toContain('checkpointAuthority');
+    expect(publicRun).not.toMatch(/effectAuthorization|executionClaim|approvalStore/u);
+    expect(publicResume).not.toMatch(/effectAuthorization|executionClaim|approvalStore/u);
     expect(
       runtime.slice(
         runtime.indexOf('export function createRuntime('),
         runtime.indexOf('/** @internal Accepted worker path'),
       ),
-    ).not.toContain('WorkflowCheckpointLeaseAuthority');
+    ).not.toMatch(
+      /WorkflowCheckpointLeaseAuthority|WorkflowEffectAuthorizationPort|claimStore|approvalRecord|humanDecision|attestationNonce/u,
+    );
+    const runtimeOptions = runtime.slice(
+      runtime.indexOf('export interface RuntimeOptions'),
+      runtime.indexOf('export interface RuntimeWithPersistence'),
+    );
+    expect(runtimeOptions).not.toMatch(
+      /authorizationPort|claimStore|approvalRecord|humanDecision|attestationNonce/u,
+    );
+    expect(types).not.toMatch(
+      /WorkflowEffectAuthorizationPort|WorkflowEffectClaimAuthorization|LocalWorkflowEffectAuthorityStore/u,
+    );
+    expect(index).not.toMatch(
+      /createWorkflowEffectAuthorizationPort|WorkflowEffectAuthorizationPort|LocalWorkflowEffectAuthorityStore/u,
+    );
   });
 
   it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {

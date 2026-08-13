@@ -10,6 +10,10 @@ import {
   hashWorkflowRunnerDescriptor,
 } from '../workflow-runner-descriptor.js';
 import { WorkflowRunnerSession } from '../workflow-runner-session.js';
+import {
+  workflowEffectLeaseAuthorityFromBoundary,
+  workflowEffectLeaseBindingFromAuthority,
+} from '../internal/workflow-effect-lease-authority.js';
 import type { RunResult, WorkflowMeta, WorkflowModule } from '../types.js';
 
 const CONTROL_BUILD = 'c'.repeat(64);
@@ -493,7 +497,7 @@ describe('GS8-B strict worker session', () => {
     await session.receive(receipt(accept, 2));
     await offerPromise;
 
-    expect(await session.heartbeat()).toBe(true);
+    const heartbeatPromise = session.heartbeat();
     await waitForSent(sent, 3);
     const heartbeat = parsedAt(sent, 2);
     expect(heartbeat.kind).toBe('heartbeat');
@@ -507,6 +511,7 @@ describe('GS8-B strict worker session', () => {
     expect(sent).toHaveLength(3);
 
     await session.receive(receipt(heartbeat, 4));
+    await expect(heartbeatPromise).resolves.toBe(true);
     await waitForSent(sent, 4);
     const terminal = parsedAt(sent, 3);
     expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'cancelled' } });
@@ -691,6 +696,124 @@ describe('GS8-B strict worker session', () => {
     await vi.waitFor(() => expect(closed).toEqual([2]));
     expect(execute).toHaveBeenCalledOnce();
     expect(sent.map((body) => parsedBody(body).kind)).not.toContain('terminal');
+  });
+
+  it('reserves the event lane while exact effect intent evidence is prepared', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    let releasePreparation!: () => void;
+    let preparationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      preparationStarted = resolve;
+    });
+    const preparation = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const execute = vi.fn(async (_workflow, _descriptor, context) => {
+      const binding = workflowEffectLeaseBindingFromAuthority(
+        workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
+      );
+      const effectHash = 'e'.repeat(64);
+      await binding.emitIntent(
+        {
+          effectId: `workflow-effect:sha256:${effectHash}`,
+          effectKind: 'openslack.governance.audit',
+          effectHash,
+          capabilityHash: 'a'.repeat(64),
+          requiresHumanDecision: true,
+        },
+        async () => {
+          preparationStarted();
+          await preparation;
+        },
+      );
+      if (context.signal.aborted) throw context.signal.reason;
+      return { status: 'completed' };
+    });
+    const session = effectSession(value, sent, closed, execute as never);
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+    await started;
+    expect(session.hasOutstandingEvent).toBe(true);
+    await expect(session.heartbeat()).resolves.toBe(false);
+    await session.receive(cancelRequest(value, 3));
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual(['hello', 'lease_accept']);
+
+    releasePreparation();
+    await waitForSent(sent, 3);
+    const intent = parsedAt(sent, 2);
+    expect(intent).toMatchObject({ kind: 'effect_intent', sequence: 2 });
+    await session.receive(receipt(intent, 4));
+    await waitForSent(sent, 4);
+    const cancelAck = parsedAt(sent, 3);
+    expect(cancelAck).toMatchObject({ kind: 'cancel_ack', sequence: 3 });
+    await session.receive(receipt(cancelAck, 5));
+    await waitForSent(sent, 5);
+    const terminal = parsedAt(sent, 4);
+    expect(terminal).toMatchObject({
+      kind: 'terminal',
+      sequence: 4,
+      payload: { status: 'cancelled' },
+    });
+    await session.receive(receipt(terminal, 6));
+    await vi.waitFor(() => expect(closed).toEqual([0]));
+  });
+
+  it('does not consume a worker sequence when pre-send intent durability fails', async () => {
+    const value = descriptor();
+    const sent: string[] = [];
+    const closed: number[] = [];
+    const execute = vi.fn(async (_workflow, _descriptor, context) => {
+      const binding = workflowEffectLeaseBindingFromAuthority(
+        workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
+      );
+      const effectHash = 'e'.repeat(64);
+      await binding.emitIntent(
+        {
+          effectId: `workflow-effect:sha256:${effectHash}`,
+          effectKind: 'openslack.governance.audit',
+          effectHash,
+          capabilityHash: 'a'.repeat(64),
+          requiresHumanDecision: true,
+        },
+        async () => {
+          throw new Error('owner store unavailable before send');
+        },
+      );
+      return { status: 'completed' };
+    });
+    const session = effectSession(value, sent, closed, execute as never);
+
+    await session.start();
+    const hello = parsedAt(sent, 0);
+    await session.receive(helloAck(hello.correlationId));
+    const offerPromise = session.receive(offer(value));
+    await waitForSent(sent, 2);
+    const accept = parsedAt(sent, 1);
+    await session.receive(receipt(accept, 2));
+    await offerPromise;
+    await waitForSent(sent, 3);
+    const terminal = parsedAt(sent, 2);
+    expect(terminal).toMatchObject({
+      kind: 'terminal',
+      sequence: 2,
+      payload: { status: 'failed' },
+    });
+    expect(sent.map(parsedBody).map((message) => message.kind)).toEqual([
+      'hello',
+      'lease_accept',
+      'terminal',
+    ]);
+    await session.receive(receipt(terminal, 3));
+    await vi.waitFor(() => expect(closed).toEqual([0]));
   });
 });
 

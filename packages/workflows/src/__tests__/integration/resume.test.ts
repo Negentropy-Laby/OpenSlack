@@ -7,6 +7,7 @@ import { RunStore } from '../../run-store.js';
 import type { RunStoreFs, RunMeta } from '../../run-store.js';
 import { checkResumable, prepareResume, forceResume, replayCachedPhases } from '../../resume.js';
 import type { AgentLauncher } from '../../agent-shim.js';
+import { WorkflowEffectAuthorizationRequiredError } from '../../internal/workflow-effect-authorization-contract.js';
 import type {
   WorkflowMeta,
   WorkflowRuntime,
@@ -204,7 +205,7 @@ describe('executeResume integration', () => {
     expect(agentResult).toEqual({ resumed: true });
   });
 
-  it('uses provided onConfirm callback', async () => {
+  it('does not treat the provided onConfirm callback as effect authorization', async () => {
     const onConfirm = vi.fn(async () => true);
     const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
       ctx.phase('Scan');
@@ -214,13 +215,14 @@ describe('executeResume integration', () => {
     const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
     await initPausedExecutionRun(executionRoot, 'run-resume-001');
 
-    const result = await executeResume(workflow, {
-      runId: 'run-resume-001',
-      manifest: TEST_MANIFEST,
-      onConfirm,
-      rootDir: executionRoot,
-    });
-    expect(result.status).toBe('complete');
+    await expect(
+      executeResume(workflow, {
+        runId: 'run-resume-001',
+        manifest: TEST_MANIFEST,
+        onConfirm,
+        rootDir: executionRoot,
+      }),
+    ).rejects.toBeInstanceOf(WorkflowEffectAuthorizationRequiredError);
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 

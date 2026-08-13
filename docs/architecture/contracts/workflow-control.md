@@ -329,6 +329,16 @@ Every terminal decision must name the same workspace as its enclosing artifact. 
 must begin after the decision and before the approval expires. Once that claim has begun, its
 proved completion or reconciliation record may be committed after approval expiry, but never
 before `claimedAt`; expiry prevents a new claim and does not erase an already-consumed decision.
+The current runner descriptor expiry is an attempt-only claim condition, not part of the durable
+occurrence identity. A newly accepted lease can therefore resume the same occurrence, but an
+expired lease cannot claim or execute it. The authority persists an immutable occurrence anchor
+before its mutable head; missing, one-sided, or hash-divergent evidence requires reconciliation.
+
+An expired pending approval advances to a deterministic next generation instead of failing the
+run. Generation zero preserves the original approval ID; each later generation has a distinct
+derived ID and an atomic current-generation anchor. Old decisions, attestations, and views are
+immutable history and cannot authorize the current generation. The default TTL is 15 minutes and
+trusted composition may select a value from one minute through 24 hours.
 
 `openslack.workflow_effect_approval.v2` is the only human effect-decision authority. Its pending
 record binds the exact run, approval, business correlation, workflow ID/version/hash, manifest and
@@ -351,6 +361,11 @@ effect again. A proved terminal result advances the same claim to `executed`; a 
 stop, response loss, or unknown commit advances it to `reconciliation_required`. Neither resume,
 restart, a Go receipt, nor another human decision creates retry authority. Recovery requires an
 explicit reconciliation operation that proves what happened before any successor action.
+Successful results are stored out of line as owner-only canonical JSON replay artifacts, limited
+to 256 KiB and bound to the execution claim by reference and SHA-256. Missing, changed, or
+oversize result evidence after a side effect becomes reconciliation, never retry authority.
+Deterministic replay preserves the original occurrence/source-sequence identity. Manifest
+`approvedEffects` is admission metadata and never substitutes for the exact v2 decision.
 
 The six semantic artifacts are not six Go approval-shadow operations. D3 exposes exactly three
 credential-free observer operations: `approval_created`, `approval_decided`, and `audit_recorded`,
@@ -389,6 +404,38 @@ prove public execute/resume callers cannot inject an authorization grant or clai
 legacy approval, `onConfirm`, manifest approval, and unattended mode never substitute for v2
 authorization. Human-attestation and CLI/MCP tests must prove the decision tool records only the
 exact decision and never executes the effect or exposes raw reason or attestation nonce.
+
+The D2 implementation keeps both capabilities module-private. An advancing runner-v1
+`lease_accept` receipt mints a nominal lease authority; only that authority can compose the effect
+authorization port used by the worker. Public `executeRun`, `executeResume`, `RuntimeOptions`, CLI
+admission callbacks, manifests, and unattended flags contain no grant or claim-store injection
+surface. The TypeScript owner store uses:
+
+```text
+.openslack.local/workflows/effect-approvals/  canonical workflow_effect_approval.v2 records
+.openslack.local/workflows/effect-authority/  intent lineage, decision WAL, execution claims, locks
+```
+
+The owner store persists an accepted runner-v1 intent before creating the exact pending approval,
+revalidates the complete occurrence and human decision while holding the claim lock, and publishes
+the first claim with create-if-absent semantics. The authority record carries a second durable
+execution high-watermark, so deleting or rolling back the claim file cannot silently recreate
+execution authority. A caught pending or reconciliation error is latched at run scope: the current
+runner-v1 boundary is closed, no successor effect may start, and the run cannot report completion.
+Pending becomes `paused_waiting_approval`; any post-claim uncertainty becomes
+`WORKFLOW_EFFECT_RECONCILIATION_REQUIRED` and requires explicit recovery.
+Owner-safe atomic writes use identifiable temporary files. Recovery completes a temporary only
+after its canonical bytes, target hash, file identity, containment, and authority lineage validate;
+conflicting or unknown evidence remains fail-closed. On Windows,
+`openslack collaboration workflow approvals repair-security` audits legacy DACLs, while `--apply`
+rebuilds exact owner-plus-SYSTEM ACLs only after complete canonical lineage validation.
+
+The public workflow run/resume, profile-sync run, and TUI execution routes use the strict loopback
+Workflow Runner client. It seals a descriptor, submits a hash-only JobSpec, polls JobView, and
+checks the completed result hash against RunStore. Every resume has a new job/descriptor and the
+same workflow run ID. No transport configuration means no execution; there is no direct-call
+fallback. The runner remains admission/lease/fence authority, while D2 remains the sole effect
+decision and execution authority.
 
 ### D3 observer exit gates
 

@@ -67,7 +67,8 @@ vi.mock('@openslack/workflows', async () => {
     loadWorkflow: vi.fn(),
     executePreview: vi.fn(),
     executeDryRun: vi.fn(),
-    executeRun: vi.fn(),
+    executeWorkflowThroughRunner: vi.fn(),
+    readWorkflowRunnerSourceBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
     executeResume: vi.fn(),
     buildApprovalManifest: vi.fn(() => ({
       workflowName: 'test-wf',
@@ -368,7 +369,7 @@ describe('executeApproval', () => {
           topic: 'Deploy to staging',
           decision: 'confirmed',
           rationale: expect.stringContaining('confirmed via TUI'),
-          tags: expect.arrayContaining(['workflow-effect', 'tui']),
+          tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui']),
         }),
       );
     });
@@ -652,7 +653,7 @@ describe('executeWorkflowRun', () => {
       findWorkflow,
       loadWorkflow,
       executeDryRun,
-      executeRun,
+      executeWorkflowThroughRunner,
       buildApprovalManifest,
       TrustStore,
     } = await import('@openslack/workflows');
@@ -693,15 +694,14 @@ describe('executeWorkflowRun', () => {
       ],
       errors: [],
     });
-    vi.mocked(executeRun).mockResolvedValue({ status: 'completed' });
+    vi.mocked(executeWorkflowThroughRunner).mockResolvedValue({ status: 'completed' });
 
     const result = await executeWorkflowRun('test-wf', 'run', ROOT);
 
     expect(result.success).toBe(true);
     expect(executeDryRun).toHaveBeenCalled();
     expect(buildApprovalManifest).toHaveBeenCalled();
-    expect(executeRun).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(executeWorkflowThroughRunner).toHaveBeenCalledWith(
       expect.objectContaining({
         confirmationPolicy: expect.objectContaining({
           mode: 'preapproved-manifest',
@@ -745,8 +745,13 @@ describe('executeWorkflowRun', () => {
   });
 
   it('run mode returns pause message on WorkflowPausedError', async () => {
-    const { findWorkflow, loadWorkflow, executeDryRun, executeRun, WorkflowPausedError } =
-      await import('@openslack/workflows');
+    const {
+      findWorkflow,
+      loadWorkflow,
+      executeDryRun,
+      executeWorkflowThroughRunner,
+      WorkflowPausedError,
+    } = await import('@openslack/workflows');
     vi.mocked(findWorkflow).mockResolvedValue({
       path: '/test/wf.js',
       name: 'test-wf',
@@ -769,7 +774,7 @@ describe('executeWorkflowRun', () => {
       simulatedEffects: [],
       errors: [],
     });
-    vi.mocked(executeRun).mockImplementation(() => {
+    vi.mocked(executeWorkflowThroughRunner).mockImplementation(() => {
       throw new WorkflowPausedError('openslack.task.checkout', 'Checkout', 'run-001');
     });
 
@@ -789,9 +794,8 @@ describe('executeApproval workflow-effect with runId', () => {
     vi.clearAllMocks();
   });
 
-  it('approves and resumes paused workflow', async () => {
-    const { RunStore, findWorkflow, loadWorkflow, executeResume } =
-      await import('@openslack/workflows');
+  it('records a legacy run gate without authorizing or resuming the effect', async () => {
+    const { RunStore, executeResume } = await import('@openslack/workflows');
     const mockStore = {
       loadPendingApprovals: vi.fn(() => [
         {
@@ -816,18 +820,6 @@ describe('executeApproval workflow-effect with runId', () => {
     vi.mocked(RunStore).mockImplementation(
       () => mockStore as unknown as InstanceType<typeof RunStore>,
     );
-    vi.mocked(findWorkflow).mockResolvedValue({
-      path: '/test/wf.js',
-      name: 'test-wf',
-      source: 'openslack-project',
-    });
-    vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }] },
-      format: 'openslack-native',
-      hash: 'hash123',
-    });
-    vi.mocked(executeResume).mockResolvedValue({ status: 'completed' });
-
     const result = await executeApproval(
       {
         id: 'run-001',
@@ -842,12 +834,14 @@ describe('executeApproval workflow-effect with runId', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.message).toContain('resumed');
+    expect(result.message).toContain('exact v2 human decision');
+    expect(result.data).toMatchObject({ effectDecisionAuthority: false });
     expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'approved');
+    expect(executeResume).not.toHaveBeenCalled();
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'approved',
-        tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
+        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
       }),
     );
   });
@@ -891,7 +885,7 @@ describe('executeApproval workflow-effect with runId', () => {
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'cancelled',
-        tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
+        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
       }),
     );
   });

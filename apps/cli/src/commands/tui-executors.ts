@@ -180,8 +180,7 @@ export async function executeApproval(
 
         // If a runId is present, this is a paused workflow run awaiting approval
         if (params.runId) {
-          const { RunStore, decodeRunMetaArguments, executeResume, findWorkflow, loadWorkflow } =
-            await import('@openslack/workflows');
+          const { RunStore } = await import('@openslack/workflows');
           const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
 
           const pending = await store.loadPendingApprovals(params.runId);
@@ -193,39 +192,20 @@ export async function executeApproval(
               await store.resolvePendingApproval(params.runId, approval.id, 'approved');
             }
 
-            // Resume the workflow
-            const meta = await store.loadMeta(params.runId);
-            if (meta) {
-              const found = await findWorkflow(meta.workflowName, root);
-              if (found) {
-                const mod = await loadWorkflow(found.path);
-                await executeResume(mod, {
-                  runId: params.runId,
-                  manifest: mod.meta,
-                  args: decodeRunMetaArguments(meta),
-                  budget: meta.budget
-                    ? { tokens: meta.budget.tokens, costUsd: meta.budget.costUsd ?? 0 }
-                    : undefined,
-                  confirmationPolicy: {
-                    mode: 'preapproved-manifest',
-                    actorId,
-                    runId: params.runId,
-                    onUnexpectedEffect: 'pause',
-                  },
-                  rootDir: root,
-                });
-              }
-            }
-
             recordDecision({
               topic: title,
               decision: 'approved',
-              rationale: `Workflow effect approved via TUI, run ${params.runId} resumed`,
+              rationale: `Legacy workflow run gate approved via TUI for run ${params.runId}; no effect authorization or resume was performed`,
               decidedBy: actorId,
-              tags: ['workflow-effect', 'tui', `run-${params.runId}`],
+              tags: ['workflow-run-gate', 'legacy', 'tui', `run-${params.runId}`],
             });
 
-            return { success: true, message: `Workflow resumed`, data: { runId: params.runId } };
+            return {
+              success: true,
+              message:
+                'Legacy run gate recorded; an exact v2 human decision and authenticated worker resume are still required.',
+              data: { runId: params.runId, effectDecisionAuthority: false },
+            };
           }
 
           // Reject: cancel the run
@@ -239,7 +219,7 @@ export async function executeApproval(
             decision: 'cancelled',
             rationale: `Workflow effect rejected, run ${params.runId} cancelled`,
             decidedBy: actorId,
-            tags: ['workflow-effect', 'tui', `run-${params.runId}`],
+            tags: ['workflow-run-gate', 'legacy', 'tui', `run-${params.runId}`],
           });
 
           return {
@@ -249,18 +229,19 @@ export async function executeApproval(
           };
         }
 
-        // Fallback: no runId, just record decision (legacy handoff behavior)
+        // Fallback: no runId, record only the legacy run-gate observation.
         recordDecision({
           topic: title,
           decision: isApprove ? 'confirmed' : 'cancelled',
-          rationale: `Workflow effect ${isApprove ? 'confirmed' : 'cancelled'} via TUI${workflowName ? ` for ${workflowName}` : ''}`,
+          rationale: `Legacy workflow run gate ${isApprove ? 'confirmed' : 'cancelled'} via TUI${workflowName ? ` for ${workflowName}` : ''}; no effect authorization was produced`,
           decidedBy: actorId,
-          tags: ['workflow-effect', 'tui'],
+          tags: ['workflow-run-gate', 'legacy', 'tui'],
         });
 
         return {
           success: true,
-          message: `Workflow effect ${isApprove ? 'confirmed' : 'cancelled'}`,
+          message: `Legacy workflow run gate ${isApprove ? 'confirmed' : 'cancelled'}`,
+          data: { effectDecisionAuthority: false },
         };
       }
 
@@ -377,15 +358,14 @@ export async function executeWorkflowRun(
     loadWorkflow,
     executePreview,
     executeDryRun,
-    executeRun,
+    executeWorkflowThroughRunner,
+    readWorkflowRunnerSourceBytes,
     TrustStore,
     buildApprovalManifest,
     WorkflowPausedError,
     WorkflowBudgetPausedError,
     hashString,
   } = await import('@openslack/workflows');
-
-  const { recordEvent } = await import('@openslack/collaboration');
 
   const found = await findWorkflow(workflowName, root);
   if (!found) {
@@ -442,30 +422,16 @@ export async function executeWorkflowRun(
       dryResult.simulatedEffects,
     );
 
-    // Step 3: Execute with manifest-based confirmation policy
-    const agentEventEmitter = (event: import('@openslack/workflows').AgentConversationEvent) => {
-      const severity = event.type === 'agent.conversation.failed' ? 'critical' : undefined;
-      const summary =
-        event.type === 'agent.conversation.started'
-          ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
-          : event.type === 'agent.conversation.completed'
-            ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
-            : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`;
-      recordEvent({
-        type: event.type,
-        actor: { id: event.agentId, kind: 'agent' },
-        object: { kind: 'agent', id: event.resolvedAgentId ?? event.agentId },
-        source: { kind: 'openslack', ref: event.runId },
-        summary,
-        visibility: 'local',
-        redacted: false,
-        containsSensitiveData: false,
-        correlationId: event.runId,
-        ...(severity ? { severity } : {}),
-      });
-    };
-
-    const result = await executeRun(mod, {
+    // Step 3: Seal the manifest admission and execute through runner v1.
+    const result = await executeWorkflowThroughRunner({
+      workspaceRoot: root,
+      workflowRunId: dryResult.runId,
+      workflowSource: found.source,
+      workflowSourceBytes: await readWorkflowRunnerSourceBytes({
+        workflowName: mod.meta.name,
+        discoveredPath: found.path,
+        source: found.source,
+      }),
       manifest: mod.meta,
       args: {},
       confirmationPolicy: {
@@ -475,8 +441,6 @@ export async function executeWorkflowRun(
         approvalManifest,
         onUnexpectedEffect: 'pause',
       },
-      agentEventEmitter,
-      rootDir: root,
     });
 
     return {

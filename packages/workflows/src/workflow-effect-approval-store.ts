@@ -11,7 +11,7 @@ import {
   rm,
   type FileHandle,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { threadId } from 'node:worker_threads';
 import {
@@ -29,7 +29,10 @@ import {
 } from './workflow-effect-approval.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
+  assertOwnerFile,
+  ensureOwnerDirectory,
   isWorkflowControlObservationPort,
+  productionJournalSecurity,
   type WorkflowControlObservationPort,
 } from './workflow-control-shadow.js';
 
@@ -47,6 +50,22 @@ const LOCK_TEMP =
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const LOCK_SCHEMA = 'openslack.workflow_effect_approval_lock.v1';
 const PROCESS_SESSION_ID = randomUUID();
+const AUTHORITY_STORE_SECURITY = productionJournalSecurity();
+
+function hasWorkflowEffectAuthorityRoot(approvalStoreRoot: string): boolean {
+  if (!isAbsolute(approvalStoreRoot) || resolve(approvalStoreRoot) !== approvalStoreRoot) {
+    throw new WorkflowEffectApprovalStoreError(
+      'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+      'Approval-store root must be a normalized absolute path.',
+      approvalStoreRoot,
+    );
+  }
+  return basename(approvalStoreRoot) === 'effect-approvals';
+}
+
+async function authorityRecovery() {
+  return import('./workflow-effect-authority-store.js');
+}
 
 export class WorkflowEffectApprovalStoreError extends Error {
   readonly code:
@@ -86,6 +105,62 @@ export interface MarkWorkflowEffectApprovalAuditProjectedInput {
   readonly eventId: string;
 }
 
+/** @internal Runtime-only pending writer; intentionally not exported from the package root. */
+export async function persistWorkflowEffectApprovalPending(
+  root: string,
+  input: CreatePendingWorkflowEffectApprovalInput,
+  nowValue: string,
+  allowExactReplay = true,
+): Promise<WorkflowEffectApprovalRecord> {
+  if (!(await lstatIfPresent(root))) {
+    if (hasWorkflowEffectAuthorityRoot(root)) {
+      await ensureOwnerDirectory(root, AUTHORITY_STORE_SECURITY);
+    } else {
+      await mkdir(root, { recursive: false, mode: 0o700 });
+    }
+  }
+  const record = createPendingWorkflowEffectApproval(input);
+  if (
+    !Number.isFinite(Date.parse(nowValue)) ||
+    new Date(Date.parse(nowValue)).toISOString() !== nowValue
+  ) {
+    return fail(
+      'WORKFLOW_EFFECT_APPROVAL_STORE_RECORD_INVALID',
+      'Approval-store clock must return a canonical timestamp.',
+    );
+  }
+  if (
+    Date.parse(record.createdAt) > Date.parse(nowValue) ||
+    Date.parse(record.expiresAt) <= Date.parse(nowValue)
+  ) {
+    throw new WorkflowEffectApprovalContractError(
+      'WORKFLOW_EFFECT_APPROVAL_EXPIRED',
+      'Pending workflow effect approval is outside its active lifetime.',
+    );
+  }
+  let prepared = await prepare(root, true);
+  const lock = await acquireLock(prepared);
+  try {
+    await recoverRecordTemporaries(prepared);
+    prepared = await prepare(root, false);
+    const path = recordPath(prepared, record.runId, record.approvalId);
+    if (await lstatIfPresent(path)) {
+      const existing = await boundedRead(prepared, record.runId, record.approvalId);
+      if (allowExactReplay && existing.bytes.equals(workflowEffectApprovalBytes(record)))
+        return existing.record;
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_ALREADY_EXISTS',
+        'Workflow effect approval already exists with different exact bytes.',
+        path,
+      );
+    }
+    await atomicWrite(prepared, record.runId, record.approvalId, record, null);
+    return record;
+  } finally {
+    await releaseLock(lock);
+  }
+}
+
 interface PreparedStore {
   readonly root: string;
   readonly rootReal: string;
@@ -111,7 +186,6 @@ interface LockOwner {
 
 interface AcquiredLock {
   readonly path: string;
-  readonly handle: FileHandle;
   readonly stat: Stats;
 }
 
@@ -209,7 +283,10 @@ async function ensureFixedChild(parentReal: string, path: string): Promise<void>
   }
 }
 
-async function scanStore(root: string): Promise<{ totalBytes: number; entries: number }> {
+async function scanStore(
+  root: string,
+  ownerOnly: boolean,
+): Promise<{ totalBytes: number; entries: number }> {
   const rootEntries = await readdir(root, { withFileTypes: true });
   const names = rootEntries.map((entry) => entry.name).sort();
   if (
@@ -254,6 +331,17 @@ async function scanStore(root: string): Promise<{ totalBytes: number; entries: n
           path,
         );
       }
+      if (ownerOnly) {
+        try {
+          await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
+        } catch (error) {
+          return fail(
+            'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+            `Approval-store entry is not owner-only: ${String(error)}`,
+            path,
+          );
+        }
+      }
       totalBytes += stat.size;
       if (stat.size > MAX_FILE_BYTES || totalBytes > MAX_TOTAL_BYTES) {
         return fail(
@@ -287,12 +375,29 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
       'Approval-store root must be a normalized absolute path.',
     );
   }
+  const ownerOnly = hasWorkflowEffectAuthorityRoot(configuredRoot);
+  if (ownerOnly) {
+    try {
+      await ensureOwnerDirectory(configuredRoot, AUTHORITY_STORE_SECURITY);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+        `Approval-store root is not owner-only: ${String(error)}`,
+        configuredRoot,
+      );
+    }
+  }
   const root = await assertDirectory(configuredRoot);
   const recordsPath = join(configuredRoot, 'records');
   const locksPath = join(configuredRoot, 'locks');
   if (create) {
-    await ensureFixedChild(root.real, recordsPath);
-    await ensureFixedChild(root.real, locksPath);
+    if (ownerOnly) {
+      await ensureOwnerDirectory(recordsPath, AUTHORITY_STORE_SECURITY, root.real);
+      await ensureOwnerDirectory(locksPath, AUTHORITY_STORE_SECURITY, root.real);
+    } else {
+      await ensureFixedChild(root.real, recordsPath);
+      await ensureFixedChild(root.real, locksPath);
+    }
   }
   const records = await assertDirectory(recordsPath);
   const locks = await assertDirectory(locksPath);
@@ -312,7 +417,7 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
     locks: locksPath,
     locksReal: locks.real,
     locksStat: locks.stat,
-    ...(await scanStore(configuredRoot)),
+    ...(await scanStore(configuredRoot, ownerOnly)),
   };
 }
 
@@ -449,6 +554,17 @@ async function readLock(prepared: PreparedStore, path: string) {
       'Approval-store lock file is unsafe.',
       path,
     );
+  }
+  if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
+    try {
+      await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+        `Approval-store lock is not owner-only: ${String(error)}`,
+        path,
+      );
+    }
   }
   const resolved = await realpath(path);
   if (!samePath(path, resolved) || !contained(prepared.locksReal, resolved)) {
@@ -629,13 +745,22 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
       fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
       0o600,
     );
+    let handleClosed = false;
     try {
+      if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
+        AUTHORITY_STORE_SECURITY.hardenPath(temporaryPath, false);
+        await assertOwnerFile(temporaryPath, AUTHORITY_STORE_SECURITY);
+      }
       const bytes = lockBytes(owner);
       await writeAll(handle, bytes);
       await handle.sync();
+      const opened = await handle.stat();
+      await handle.close();
+      handleClosed = true;
       const temporaryStat = await lstat(temporaryPath);
       const temporaryReal = await realpath(temporaryPath);
       if (
+        !stableIdentity(opened, temporaryStat) ||
         temporaryStat.size !== bytes.length ||
         !samePath(temporaryPath, temporaryReal) ||
         !contained(prepared.locksReal, temporaryReal)
@@ -650,7 +775,6 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
         await link(temporaryPath, path);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        await handle.close().catch(() => undefined);
         await rm(temporaryPath);
         let observed: Awaited<ReturnType<typeof readLock>>;
         try {
@@ -681,11 +805,14 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
           path,
         );
       }
+      if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
+        await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
+      }
       await rm(temporaryPath);
       await syncDirectory(prepared.locks);
-      return { path, handle, stat: await lstat(path) };
+      return { path, stat: await lstat(path) };
     } catch (error) {
-      await handle.close().catch(() => undefined);
+      if (!handleClosed) await handle.close().catch(() => undefined);
       await rm(temporaryPath, { force: true }).catch(() => undefined);
       throw error;
     }
@@ -698,7 +825,6 @@ async function acquireLock(prepared: PreparedStore): Promise<AcquiredLock> {
 }
 
 async function releaseLock(lock: AcquiredLock): Promise<void> {
-  await lock.handle.close().catch(() => undefined);
   const current = await lstatIfPresent(lock.path);
   const resolved = current ? await realpath(lock.path) : undefined;
   if (
@@ -783,6 +909,18 @@ async function assertRecordFile(path: string, recordsReal: string): Promise<Stat
       path,
     );
   }
+  const storeRoot = dirname(recordsReal);
+  if (hasWorkflowEffectAuthorityRoot(storeRoot)) {
+    try {
+      await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+        `Workflow effect approval file is not owner-only: ${String(error)}`,
+        path,
+      );
+    }
+  }
   return stat;
 }
 
@@ -856,6 +994,18 @@ async function boundedRead(
   }
 }
 
+/** @internal Stable point-read used by the authenticated D2 recovery path. */
+export async function readWorkflowEffectApprovalRecordExact(
+  root: string,
+  runId: string,
+  approvalId: string,
+): Promise<WorkflowEffectApprovalRecord | undefined> {
+  const prepared = await prepare(root, false);
+  const path = recordPath(prepared, runId, approvalId);
+  if (!(await lstatIfPresent(path))) return undefined;
+  return (await boundedRead(prepared, runId, approvalId)).record;
+}
+
 async function atomicWrite(
   prepared: PreparedStore,
   runId: string,
@@ -887,7 +1037,12 @@ async function atomicWrite(
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
   );
+  let handleClosed = false;
   try {
+    if (hasWorkflowEffectAuthorityRoot(prepared.root)) {
+      AUTHORITY_STORE_SECURITY.hardenPath(temporaryPath, false);
+      await assertOwnerFile(temporaryPath, AUTHORITY_STORE_SECURITY);
+    }
     await writeAll(handle, bytes);
     await handle.sync();
     const temporaryStat = await lstat(temporaryPath);
@@ -927,6 +1082,19 @@ async function atomicWrite(
           path,
         );
       }
+      // Windows and WSL drvfs delay visibility of a renamed file until the
+      // source handle closes. Revalidate the exact temporary after closing so
+      // publication remains fail-closed on every supported filesystem.
+      await handle.close();
+      handleClosed = true;
+      const repeatedTemporary = await lstat(temporaryPath);
+      if (!stableIdentity(temporaryStat, repeatedTemporary)) {
+        return fail(
+          'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+          'Workflow effect approval temporary changed before atomic update.',
+          temporaryPath,
+        );
+      }
       await rename(temporaryPath, path);
     }
     await syncDirectory(prepared.records);
@@ -940,7 +1108,7 @@ async function atomicWrite(
     }
     await assertPreparedStable(prepared);
   } finally {
-    await handle.close().catch(() => undefined);
+    if (!handleClosed) await handle.close().catch(() => undefined);
     await rm(temporaryPath, { force: true }).catch(() => undefined);
   }
 }
@@ -998,42 +1166,10 @@ export class LocalWorkflowEffectApprovalStore {
   async createPending(
     input: CreatePendingWorkflowEffectApprovalInput,
   ): Promise<WorkflowEffectApprovalRecord> {
-    const record = createPendingWorkflowEffectApproval(input);
     const now = this.#now();
-    if (!Number.isFinite(Date.parse(now)) || new Date(Date.parse(now)).toISOString() !== now) {
-      return fail(
-        'WORKFLOW_EFFECT_APPROVAL_STORE_RECORD_INVALID',
-        'Approval-store clock must return a canonical timestamp.',
-      );
-    }
-    if (
-      Date.parse(record.createdAt) > Date.parse(now) ||
-      Date.parse(record.expiresAt) <= Date.parse(now)
-    ) {
-      throw new WorkflowEffectApprovalContractError(
-        'WORKFLOW_EFFECT_APPROVAL_EXPIRED',
-        'Pending workflow effect approval is outside its active lifetime.',
-      );
-    }
-    let prepared = await prepare(this.#root, true);
-    const lock = await acquireLock(prepared);
-    try {
-      await recoverRecordTemporaries(prepared);
-      prepared = await prepare(this.#root, false);
-      const path = recordPath(prepared, record.runId, record.approvalId);
-      if (await lstatIfPresent(path)) {
-        return fail(
-          'WORKFLOW_EFFECT_APPROVAL_STORE_ALREADY_EXISTS',
-          'Workflow effect approval already exists.',
-          path,
-        );
-      }
-      await atomicWrite(prepared, record.runId, record.approvalId, record, null);
-      this.#observe(record.runId);
-      return record;
-    } finally {
-      await releaseLock(lock);
-    }
+    const record = await persistWorkflowEffectApprovalPending(this.#root, input, now, false);
+    this.#observe(record.runId);
+    return record;
   }
 
   async read(runId: string, approvalId: string): Promise<WorkflowEffectApprovalRecord | undefined> {
@@ -1113,6 +1249,40 @@ export class LocalWorkflowEffectApprovalStore {
       prepared = await prepare(this.#root, false);
       const current = await boundedRead(prepared, values.runId, values.approvalId);
       if (current.record.revision !== values.expectedRevision) {
+        const decision = current.record.decision;
+        if (
+          hasWorkflowEffectAuthorityRoot(this.#root) &&
+          values.expectedRevision === 0 &&
+          current.record.revision === 1 &&
+          current.record.status === values.decision &&
+          decision !== null &&
+          decision.reasonHash === values.reasonHash &&
+          decision.principalId === values.binding.principalId &&
+          decision.workspaceId === values.binding.workspaceId &&
+          decision.capability === values.binding.capability &&
+          values.binding.runId === current.record.runId &&
+          values.binding.approvalId === current.record.approvalId &&
+          values.binding.correlationId === current.record.correlationId &&
+          values.binding.approvalExpiresAt === current.record.expiresAt &&
+          values.binding.decision === values.decision &&
+          values.binding.reasonHash === values.reasonHash &&
+          values.binding.issuedAt < values.binding.expiresAt
+        ) {
+          this.#authority.assertHumanDecisionBinding(values.binding, {
+            requiredCapability: current.record.requiredCapability,
+            runId: current.record.runId,
+            approvalId: current.record.approvalId,
+            correlationId: current.record.correlationId,
+            approvalExpiresAt: current.record.expiresAt,
+            decision: values.decision,
+            reasonHash: values.reasonHash,
+            decidedAt: values.binding.issuedAt,
+          });
+          const { commitWorkflowEffectAuthorityDecision } = await authorityRecovery();
+          await commitWorkflowEffectAuthorityDecision(this.#root, current.record);
+          this.#observe(values.runId);
+          return current.record;
+        }
         return fail(
           'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH',
           'Workflow effect approval revision no longer matches.',
@@ -1126,9 +1296,25 @@ export class LocalWorkflowEffectApprovalStore {
         values.reasonHash,
         this.#now(),
       );
-      await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+      const { prepareWorkflowEffectAuthorityDecision, commitWorkflowEffectAuthorityDecision } =
+        await authorityRecovery();
+      const durableNext = await prepareWorkflowEffectAuthorityDecision(
+        this.#root,
+        current.record,
+        next,
+        values.binding,
+      );
+      try {
+        await atomicWrite(prepared, values.runId, values.approvalId, durableNext, current.stat);
+      } catch (commitError) {
+        const observed = await boundedRead(prepared, values.runId, values.approvalId).catch(
+          () => undefined,
+        );
+        if (!observed?.bytes.equals(workflowEffectApprovalBytes(durableNext))) throw commitError;
+      }
+      await commitWorkflowEffectAuthorityDecision(this.#root, durableNext);
       this.#observe(values.runId);
-      return next;
+      return durableNext;
     } finally {
       await releaseLock(lock);
     }
@@ -1185,6 +1371,17 @@ export class LocalWorkflowEffectApprovalStore {
       prepared = await prepare(this.#root, false);
       const current = await boundedRead(prepared, values.runId, values.approvalId);
       if (current.record.revision !== values.expectedRevision) {
+        if (
+          hasWorkflowEffectAuthorityRoot(this.#root) &&
+          current.record.revision === 2 &&
+          current.record.auditProjection?.status === 'recorded' &&
+          current.record.auditProjection.eventId === values.eventId
+        ) {
+          const { updateWorkflowEffectAuthorityAudit } = await authorityRecovery();
+          await updateWorkflowEffectAuthorityAudit(this.#root, current.record);
+          this.#observe(values.runId);
+          return current.record;
+        }
         return fail(
           'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH',
           'Workflow effect approval revision no longer matches.',
@@ -1195,7 +1392,16 @@ export class LocalWorkflowEffectApprovalStore {
         values.eventId,
         this.#now(),
       );
-      await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+      try {
+        await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+      } catch (commitError) {
+        const observed = await boundedRead(prepared, values.runId, values.approvalId).catch(
+          () => undefined,
+        );
+        if (!observed?.bytes.equals(workflowEffectApprovalBytes(next))) throw commitError;
+      }
+      const { updateWorkflowEffectAuthorityAudit } = await authorityRecovery();
+      await updateWorkflowEffectAuthorityAudit(this.#root, next);
       this.#observe(values.runId);
       return next;
     } finally {

@@ -19,6 +19,8 @@ vi.mock('@openslack/agent-runtime', () => ({
 
 const roots: string[] = [];
 
+vi.setConfig({ testTimeout: process.platform === 'win32' ? 45_000 : 5_000 });
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -176,7 +178,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     expect(published).toEqual([1]);
   });
 
-  it('observes effect approval create, decide, and audit only after their atomic commits', async () => {
+  it('observes effect approval commits and exact authority recovery only after durable state', async () => {
     const workspace = await root('workflow-shadow-effect');
     const published: number[] = [];
     const port = await observationPort(join(workspace, 'journal'), published);
@@ -189,7 +191,6 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     });
     let offset = 1000;
     const approvalRoot = join(workspace, 'effect-approvals');
-    await mkdir(approvalRoot);
     const store = new LocalWorkflowEffectApprovalStore(
       approvalRoot,
       authority,
@@ -223,6 +224,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       reasonHash,
       expiresAt: new Date(now + 30_000).toISOString(),
     });
+    offset = Date.parse(binding.issuedAt) - now;
     const decided = await store.decide({
       runId: 'run-shadow-test',
       approvalId: 'approval-1',
@@ -232,7 +234,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       binding,
     });
     await port.flush();
-    offset = 2000;
+    offset += 1000;
     await store.markAuditProjected({
       runId: 'run-shadow-test',
       approvalId: 'approval-1',
@@ -248,8 +250,11 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
         expectedRevision: 1,
         eventId: decided.auditProjection!.eventId,
       }),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' });
+    ).resolves.toMatchObject({
+      revision: 2,
+      auditProjection: { status: 'recorded', eventId: decided.auditProjection!.eventId },
+    });
     await port.flush();
-    expect(published).toEqual([1, 2, 3]);
+    expect(published).toEqual([1, 2, 3, 4]);
   });
 });

@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
+import { getEmbeddedBuiltin } from '../embedded-builtins.js';
 import {
   createSealedWorkflowRunnerSourceLoader,
   loadWorkflowRunnerWorkerConfig,
@@ -130,6 +131,38 @@ describe('GS8-B workflow runner worker', () => {
       path: await realpath(sourcePath),
       bytes: sourceBytes,
     });
+  });
+
+  it('accepts a hash-bound reviewed builtin while project catalogs remain self-contained', async () => {
+    const workflow = getEmbeddedBuiltin('openslack:builtin/profile-sync');
+    expect(workflow).toBeDefined();
+    const bytes = await readFile(join(import.meta.dirname, '..', 'builtins', 'profile-sync.ts'));
+    const builtinDescriptor = createWorkflowRunnerExecutionDescriptor({
+      descriptorRef: 'descriptor.worker.builtin',
+      workspaceId: 'workspace.test',
+      workflowRunId: 'run.worker.builtin',
+      correlationId: 'correlation.worker.builtin',
+      workflowId: workflow!.meta.name,
+      workflowVersion: workflow!.meta.version ?? '0.0.0',
+      workflowSource: 'builtin',
+      workflowSourceBytes: bytes,
+      manifest: workflow!.meta,
+      input: {},
+      budget: { tokens: 1_000, costUsd: 1 },
+      confirmationPolicy: {
+        mode: 'unattended-explicit',
+        actorId: 'test-actor',
+        runId: 'run.worker.builtin',
+        allowUnattended: true,
+        onUnexpectedEffect: 'fail',
+      },
+      createdAt: '2026-08-04T01:00:00.000Z',
+      expiresAt: '2026-08-04T02:00:00.000Z',
+    });
+
+    await expect(
+      createSealedWorkflowRunnerSourceLoader(resolve('.')).prepare(builtinDescriptor),
+    ).resolves.toMatchObject({ bytes });
   });
 
   it('initializes only missing runs, resumes paused states, and rejects automatic replay', () => {
