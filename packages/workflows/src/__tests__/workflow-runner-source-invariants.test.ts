@@ -8,13 +8,14 @@ async function source(path: string): Promise<string> {
 }
 
 describe('GS8-B source and authority invariants', () => {
-  it('keeps CLI execution on TypeScript authority and legacy TUI gates nonauthorizing', async () => {
+  it('keeps public CLI execution behind runner control and legacy TUI gates nonauthorizing', async () => {
     const [collaboration, tuiExecutors] = await Promise.all([
       source('apps/cli/src/commands/collaboration.ts'),
       source('apps/cli/src/commands/tui-executors.ts'),
     ]);
-    expect(collaboration).toContain('executeRun');
-    expect(collaboration).toContain('executeResume');
+    expect(collaboration).toContain('executeWorkflowThroughRunner');
+    expect(collaboration).not.toMatch(/\bexecuteRun\(/u);
+    expect(collaboration).not.toMatch(/\bexecuteResume\(/u);
     expect(tuiExecutors).not.toContain('executeResume');
     expect(tuiExecutors).toContain('effectDecisionAuthority: false');
     for (const cli of [collaboration, tuiExecutors]) {

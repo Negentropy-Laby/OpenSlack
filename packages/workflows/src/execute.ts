@@ -565,6 +565,11 @@ export async function executeRunWithStore(
       await store.persistBudgetState(runId, state);
     },
   };
+  if (effectAuthorizationPort && !checkpointAuthority) {
+    throw new Error(
+      'Workflow effect authorization requires the accepted runner checkpoint authority.',
+    );
+  }
   const runtime = checkpointAuthority
     ? effectAuthorizationPort
       ? createRuntimeWithHostAuthorities(
@@ -851,6 +856,11 @@ export async function executeResumeWithStore(
       await store.persistBudgetState(runId, state);
     },
   };
+  if (effectAuthorizationPort && !checkpointAuthority) {
+    throw new Error(
+      'Workflow effect authorization requires the accepted runner checkpoint authority.',
+    );
+  }
   const runtime = checkpointAuthority
     ? effectAuthorizationPort
       ? createRuntimeWithHostAuthorities(

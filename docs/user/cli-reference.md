@@ -1156,6 +1156,16 @@ The `preview` command also accepts `--format <format>` (`diff`, `json`, or `mark
 
 The workflow engine loads, validates, executes, checkpoints, and resumes OpenSlack workflow modules. Workflows are TypeScript/JavaScript files that declare metadata, permissions, and phases, and can run in preview, dry-run, or execute mode.
 
+Real execution is available only through the authenticated loopback Workflow Runner. Configure all
+four values together: `OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN`,
+`OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID`,
+`OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN`, and
+`OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT`. The origin must be exactly
+`http://127.0.0.1:<port>` or `http://[::1]:<port>`; DNS names, userinfo, redirects, paths, query,
+and fragments are rejected. The token is sent only in the loopback request and is never written to
+the descriptor or RunStore. Missing or partial transport configuration fails before execution and
+does not fall back to direct in-process execution.
+
 | Command                                                                                | Purpose                                                                                |
 | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `openslack collaboration workflow list`                                                | List all available workflows (YAML templates and JS modules)                           |
@@ -1172,11 +1182,13 @@ The workflow engine loads, validates, executes, checkpoints, and resumes OpenSla
 | `openslack collaboration workflow run <name>`                                          | Execute a workflow with real side effects                                              |
 | `openslack collaboration workflow run <name> --input key=value`                        | Execute with input values                                                              |
 | `openslack collaboration workflow run <name> --yes`                                    | Skip the legacy prompt; exact v2 effect authorization remains required                 |
-| `openslack collaboration workflow run <name> --agent-id <id>`                          | Execute with agent principal authorization                                             |
+| `openslack collaboration workflow run <name> --agent-id <id>`                          | Bind the submitted runner admission to the named actor                                 |
 | `openslack collaboration workflow run <name> --budget-tokens 100000`                   | Execute with custom token budget                                                       |
 | `openslack collaboration workflow resume <runId>`                                      | Resume a paused workflow run from its last checkpoint                                  |
 | `openslack collaboration workflow resume <runId> --yes`                                | Resume without the legacy prompt; exact v2 effect authorization remains required       |
-| `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Resume with agent principal authorization                                              |
+| `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Bind the resume admission to the named actor                                           |
+| `openslack collaboration workflow approvals repair-security`                           | Audit legacy Windows effect-authority ACLs without modifying them                      |
+| `openslack collaboration workflow approvals repair-security --apply`                   | Rebuild exact owner-plus-SYSTEM ACLs after complete canonical lineage validation       |
 | `openslack collaboration workflow start --prompt "..."`                                | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
 | `openslack collaboration workflow start --pattern <pattern>`                           | Start from a known orchestration pattern without executing                             |
 | `openslack collaboration workflow start --saved <name>`                                | Show preview, dry-run, and run commands for a saved workflow                           |

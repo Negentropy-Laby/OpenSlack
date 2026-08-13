@@ -1,7 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, constants as fsConstants, type BigIntStats } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  unlink,
+  type FileHandle,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
@@ -434,8 +444,9 @@ function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
   );
 }
 
-function securityIdentity(stat: BigIntStats): string {
-  return [stat.dev, stat.ino, stat.birthtimeNs, stat.ctimeNs, stat.mode].join(':');
+function securityIdentity(path: string, stat: BigIntStats): string {
+  const canonicalPath = process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path);
+  return [canonicalPath, stat.dev, stat.ino, stat.birthtimeNs, stat.ctimeNs, stat.mode].join(':');
 }
 
 interface WindowsPathSecurity {
@@ -506,10 +517,12 @@ function assertOwnerOnlyPath(
   if (!WINDOWS_SID.test(sid)) {
     throw new TypeError('Workflow Control shadow journal Windows SID is invalid.');
   }
-  // Windows SET_SECURITY only guarantees LastChangeTime updates for non-directory files.
-  const cacheable = stat.isFile();
+  // The stable identity includes ctime. Directory entry and DACL mutations
+  // advance that identity on the supported Windows qualification profiles, so
+  // unchanged owner-only directories can share the same bounded cache as files.
+  const cacheable = true;
   const acl = parseWindowsPathSecurity(
-    security.readWindowsPathSecurity(path, securityIdentity(stat), cacheable),
+    security.readWindowsPathSecurity(path, securityIdentity(path, stat), cacheable),
   );
   const allowed = new Set([sid, WINDOWS_SYSTEM_SID]);
   const failure = acl.reparse
@@ -661,6 +674,27 @@ export async function ensureOwnerDirectory(
   return canonical;
 }
 
+/** Verify an existing owner-only directory without coupling its identity to child-entry churn. */
+export async function assertOwnerDirectory(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  parent?: string,
+): Promise<string> {
+  const stat = await lstat(path, { bigint: true });
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
+  }
+  assertOwnerOnlyPath(path, stat, security);
+  const canonical = await realpath(path);
+  if (
+    !sameCanonicalPath(canonical, path, security) ||
+    (parent !== undefined && !contained(parent, canonical))
+  ) {
+    throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
+  }
+  return canonical;
+}
+
 async function initializeJournal(
   rootValue: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -754,21 +788,22 @@ export async function readOwnerFile(
   }
 }
 
-export async function writeExclusive(
+async function writeExclusiveWithIdentity(
   path: string,
   body: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
-): Promise<void> {
+): Promise<BigIntStats> {
   const handle = await open(
     path,
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
   );
   let complete = false;
+  let opened: BigIntStats | undefined;
   try {
     security.hardenPath(path, false);
     const linked = await assertOwnerFile(path, security);
-    const opened = await handle.stat({ bigint: true });
+    opened = await handle.stat({ bigint: true });
     if (!sameIdentity(linked, opened)) {
       throw new TypeError('Workflow Control shadow journal file identity changed.');
     }
@@ -779,6 +814,15 @@ export async function writeExclusive(
     await handle.close();
     if (!complete) await rm(path, { force: true }).catch(() => undefined);
   }
+  return opened!;
+}
+
+export async function writeExclusive(
+  path: string,
+  body: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
+  await writeExclusiveWithIdentity(path, body, security);
 }
 
 export async function atomicWrite(
@@ -903,26 +947,75 @@ async function acquireStreamLock(
   const deadline = now() + WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs;
   while (now() <= deadline) {
     try {
-      await writeExclusive(
-        path,
-        `${canonicalWorkflowControlJson({
-          schema: JOURNAL_LOCK_SCHEMA,
-          pid: processId,
-          sessionId: processSessionId,
-          createdAt: new Date(now()).toISOString(),
-        })}\n`,
-        directories.security,
-      );
-      await syncDirectory(directories.locks);
-      return async () => {
-        await unlink(path).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== 'ENOENT') throw error;
-        });
+      const body = `${canonicalWorkflowControlJson({
+        schema: JOURNAL_LOCK_SCHEMA,
+        pid: processId,
+        sessionId: processSessionId,
+        createdAt: new Date(now()).toISOString(),
+      })}\n`;
+      let created: BigIntStats | undefined;
+      let handle: FileHandle | undefined;
+      try {
+        await writeExclusiveWithIdentity(path, body, directories.security);
+        created = await lstat(path, { bigint: true });
         await syncDirectory(directories.locks);
-      };
+        handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
+        const acquired = await handle.stat({ bigint: true });
+        const linked = await lstat(path, { bigint: true });
+        if (!sameIdentity(acquired, linked)) {
+          throw new TypeError(
+            'Workflow Control shadow journal lock identity changed after acquire.',
+          );
+        }
+        created = linked;
+        const ownedHandle = handle;
+        return async () => {
+          let releaseError: unknown;
+          try {
+            const opened = await ownedHandle.stat({ bigint: true });
+            const current = await lstat(path, { bigint: true });
+            if (!sameIdentity(acquired, opened) || !sameIdentity(opened, current)) {
+              throw new TypeError('Workflow Control shadow journal lock changed before release.');
+            }
+          } catch (error) {
+            releaseError = error;
+          } finally {
+            await ownedHandle.close().catch((error) => {
+              releaseError ??= error;
+            });
+          }
+          if (releaseError !== undefined) throw releaseError;
+          await unlink(path);
+          await syncDirectory(directories.locks);
+        };
+      } catch (creationError) {
+        if ((creationError as NodeJS.ErrnoException).code === 'EEXIST') throw creationError;
+        const cleanupErrors: unknown[] = [];
+        if (handle) await handle.close().catch((error) => cleanupErrors.push(error));
+        if (created) {
+          try {
+            const current = await lstat(path, { bigint: true });
+            if (sameIdentity(created, current)) {
+              await unlink(path);
+              await syncDirectory(directories.locks);
+            }
+          } catch (cleanupError) {
+            if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+              cleanupErrors.push(cleanupError);
+            }
+          }
+        }
+        if (cleanupErrors.length > 0) {
+          throw new AggregateError(
+            [creationError, ...cleanupErrors],
+            'Workflow Control shadow journal lock creation and cleanup both failed.',
+          );
+        }
+        throw creationError;
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let before: BigIntStats;
+      let before: BigIntStats | undefined;
       let lock: JsonRecord;
       try {
         before = await lstat(path, { bigint: true });
@@ -932,6 +1025,22 @@ async function acquireStreamLock(
         );
       } catch (inspectionError) {
         if ((inspectionError as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        // O_EXCL publishes the directory entry before the creator has finished
+        // hardening and syncing it. Only retry an inspection failure when the
+        // path identity demonstrably changed during that construction window;
+        // stable malformed or unsafe locks remain fail-closed.
+        if (before !== undefined) {
+          try {
+            const repeated = await lstat(path, { bigint: true });
+            if (!sameIdentity(before, repeated)) {
+              await sleep(WORKFLOW_CONTROL_SHADOW_POLICY.defaultOrderingRetryDelayMs);
+              continue;
+            }
+          } catch (repeatError) {
+            if ((repeatError as NodeJS.ErrnoException).code === 'ENOENT') continue;
+            throw repeatError;
+          }
+        }
         throw inspectionError;
       }
       if (

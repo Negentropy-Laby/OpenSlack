@@ -549,12 +549,12 @@ export class WorkflowRunnerSession<TPrepared = unknown> implements WorkflowRunne
       return false;
     }
     const state = this.#state === 'cancelling' ? 'cancelling' : 'running';
-    void this.#emitReceiptable('heartbeat', {
+    await this.#emitReceiptable('heartbeat', {
       observedAt: this.#now(),
       leaseExpiresAt: this.#lease.leaseExpiresAt,
       state,
       lastReceiptSequence: this.#lastReceiptSequence,
-    }).catch((error) => this.#fatal(error));
+    });
     return true;
   }
 

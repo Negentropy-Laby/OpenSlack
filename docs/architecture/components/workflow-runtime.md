@@ -897,6 +897,19 @@ audit pending and the same decision's revision-2 `effect_audit_recorded` project
 inputs to that one claim. Audit-sink success is evidence, not an authorization prerequisite. D1
 does not bind job, attempt, lease, or fence; GS9-F introduces runner-v2 execution binding.
 
+The stable occurrence identity deliberately excludes the runner descriptor expiry. Descriptor
+expiry is checked for every attempt before claim use, so an expired lease cannot execute, while a
+new accepted lease can resume the same occurrence without minting a second approval or execution
+identity. An immutable occurrence anchor is written before the mutable authority head. Missing,
+one-sided, or hash-divergent anchor/head evidence latches reconciliation instead of allowing a
+deleted record to look like a first execution.
+
+Pending approvals are generation-bound. Generation zero retains the original deterministic
+approval ID. If it expires before claim acquisition, the authority advances an immutable current
+generation anchor and creates a new deterministic approval ID; old decisions, attestations, and
+views remain historical evidence and cannot authorize the new generation. The host may configure
+the approval TTL from one minute through 24 hours; the default remains 15 minutes.
+
 Once claimed, an occurrence cannot be automatically executed again. A crash, cancellation,
 timeout, or response loss after claim but before a proved outcome becomes reconciliation. Resume
 or a newer lease may inspect that state, but neither can retry the effect until an explicit
@@ -905,6 +918,11 @@ The decision workspace must equal the artifact workspace. Claim acquisition must
 approved decision is active; a terminal execution or reconciliation commit may occur after that
 approval expires so long as it is not earlier than the durable claim. Expiry therefore blocks new
 claims without invalidating an already consumed one.
+An executed JSON result is stored in a separate owner-only replay artifact and bound to the claim
+by reference and SHA-256. Its canonical JSON payload is limited to 256 KiB. Missing, modified, or
+oversize replay evidence latches reconciliation after the side effect; it never permits a second
+invocation. Deterministic replay returns only that hash-verified value and preserves the original
+effect source-sequence position.
 
 The effect-control observer is a separate, optional, default-off port. TypeScript commits its
 authoritative local record first. The six semantic artifacts map to exactly three future Go
@@ -935,6 +953,18 @@ consumption evidence, a live competing owner, or an unknown terminal write fails
 approval and reconciliation are run-level latches even when workflow code catches the thrown
 error. Public TypeScript callers therefore remain useful for validation and admission, but cannot
 execute a governed effect without the private authenticated-host capability.
+Manifest `approvedEffects` remains admission metadata only and never replaces the per-occurrence
+v2 human decision. Effect pending, decision, and audit persistence use the same optional
+observation hook as local execution; observer failure remains fail-open to TypeScript authority.
+
+Public CLI and TUI execution submit to the loopback Workflow Runner control service rather than
+calling `executeRun` or `executeResume` directly. The client seals a descriptor, submits only the
+canonical hash-bound JobSpec, polls the strict JobView, and accepts a completed result only when
+its hash matches the durable RunStore output. Resume creates a new job and descriptor but reuses
+the workflow run ID. Project/user workflow sources remain single-file and self-contained; reviewed
+builtins may use transitive product modules because the exact builtin source hash and the sealed
+runner build hash jointly bind those bytes. Missing transport configuration fails before execution
+and never falls back to the legacy in-process route.
 
 GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a

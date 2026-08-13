@@ -262,6 +262,7 @@ const effectIntent = strict({
 });
 const approvalArtifactBase = {
   ...artifactBase,
+  approvalGeneration: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   intentArtifact: { $ref: '#/$defs/effectIntent' },
   intentBindingHash: hash,
   intentEffectId: id,
@@ -570,6 +571,7 @@ function buildVectors() {
   });
   const approvalBase = {
     ...common,
+    approvalGeneration: 0,
     intentArtifact: intent,
     intentBindingHash,
     intentEffectId: effectId,

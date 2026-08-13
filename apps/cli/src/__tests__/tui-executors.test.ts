@@ -67,7 +67,8 @@ vi.mock('@openslack/workflows', async () => {
     loadWorkflow: vi.fn(),
     executePreview: vi.fn(),
     executeDryRun: vi.fn(),
-    executeRun: vi.fn(),
+    executeWorkflowThroughRunner: vi.fn(),
+    readWorkflowRunnerSourceBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
     executeResume: vi.fn(),
     buildApprovalManifest: vi.fn(() => ({
       workflowName: 'test-wf',
@@ -652,7 +653,7 @@ describe('executeWorkflowRun', () => {
       findWorkflow,
       loadWorkflow,
       executeDryRun,
-      executeRun,
+      executeWorkflowThroughRunner,
       buildApprovalManifest,
       TrustStore,
     } = await import('@openslack/workflows');
@@ -693,15 +694,14 @@ describe('executeWorkflowRun', () => {
       ],
       errors: [],
     });
-    vi.mocked(executeRun).mockResolvedValue({ status: 'completed' });
+    vi.mocked(executeWorkflowThroughRunner).mockResolvedValue({ status: 'completed' });
 
     const result = await executeWorkflowRun('test-wf', 'run', ROOT);
 
     expect(result.success).toBe(true);
     expect(executeDryRun).toHaveBeenCalled();
     expect(buildApprovalManifest).toHaveBeenCalled();
-    expect(executeRun).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(executeWorkflowThroughRunner).toHaveBeenCalledWith(
       expect.objectContaining({
         confirmationPolicy: expect.objectContaining({
           mode: 'preapproved-manifest',
@@ -745,8 +745,13 @@ describe('executeWorkflowRun', () => {
   });
 
   it('run mode returns pause message on WorkflowPausedError', async () => {
-    const { findWorkflow, loadWorkflow, executeDryRun, executeRun, WorkflowPausedError } =
-      await import('@openslack/workflows');
+    const {
+      findWorkflow,
+      loadWorkflow,
+      executeDryRun,
+      executeWorkflowThroughRunner,
+      WorkflowPausedError,
+    } = await import('@openslack/workflows');
     vi.mocked(findWorkflow).mockResolvedValue({
       path: '/test/wf.js',
       name: 'test-wf',
@@ -769,7 +774,7 @@ describe('executeWorkflowRun', () => {
       simulatedEffects: [],
       errors: [],
     });
-    vi.mocked(executeRun).mockImplementation(() => {
+    vi.mocked(executeWorkflowThroughRunner).mockImplementation(() => {
       throw new WorkflowPausedError('openslack.task.checkout', 'Checkout', 'run-001');
     });
 

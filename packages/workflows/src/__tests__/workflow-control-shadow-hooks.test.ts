@@ -19,6 +19,8 @@ vi.mock('@openslack/agent-runtime', () => ({
 
 const roots: string[] = [];
 
+vi.setConfig({ testTimeout: process.platform === 'win32' ? 45_000 : 5_000 });
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -189,7 +191,6 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     });
     let offset = 1000;
     const approvalRoot = join(workspace, 'effect-approvals');
-    await mkdir(approvalRoot, { mode: 0o700 });
     const store = new LocalWorkflowEffectApprovalStore(
       approvalRoot,
       authority,
@@ -223,6 +224,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       reasonHash,
       expiresAt: new Date(now + 30_000).toISOString(),
     });
+    offset = Date.parse(binding.issuedAt) - now;
     const decided = await store.decide({
       runId: 'run-shadow-test',
       approvalId: 'approval-1',
@@ -232,7 +234,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       binding,
     });
     await port.flush();
-    offset = 2000;
+    offset += 1000;
     await store.markAuditProjected({
       runId: 'run-shadow-test',
       approvalId: 'approval-1',

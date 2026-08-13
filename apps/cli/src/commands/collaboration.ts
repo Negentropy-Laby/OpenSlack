@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { TextDecoder } from 'node:util';
@@ -35,7 +35,6 @@ import {
   renderDashboardProjection,
   renderDashboardMarkdown,
   BLOCKER_TYPES,
-  recordEvent,
   validateEvent,
   buildBusinessOutcomeProjection,
   renderBusinessOutcomeProjection,
@@ -63,8 +62,9 @@ import {
   loadWorkflow,
   executePreview,
   executeDryRun,
-  executeRun,
-  executeResume,
+  executeWorkflowThroughRunner,
+  readWorkflowRunnerSourceBytes,
+  repairWorkflowEffectAuthoritySecurity,
   WorkflowBudgetPausedError,
   WorkflowPausedError,
   RunStore,
@@ -101,10 +101,6 @@ import {
 } from '@openslack/workflows';
 import { recommendWorkflowForQuery } from '@openslack/operator';
 import type {
-  DryRunResult,
-  SimulatedEffect,
-  AgentEventEmitter,
-  AgentConversationEvent,
   RunStatus,
   WorkflowRunControlAction,
   WorkflowRunControlTarget,
@@ -153,37 +149,6 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
     process.exit(1);
   }
   return { principal: resolved.principal, snapshot: resolved.snapshot };
-}
-
-/**
- * Create an AgentEventEmitter bridge that records agent conversation lifecycle
- * events into the collaboration event store. Converts the lightweight
- * AgentConversationEvent from the workflow runtime into a full CollaborationEvent
- * via recordEvent().
- */
-function createCollaborationEventEmitter(): AgentEventEmitter {
-  return (event: AgentConversationEvent) => {
-    const severity = event.type === 'agent.conversation.failed' ? 'critical' : undefined;
-    const summary =
-      event.type === 'agent.conversation.started'
-        ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
-        : event.type === 'agent.conversation.completed'
-          ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
-          : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`;
-
-    recordEvent({
-      type: event.type,
-      actor: { id: event.agentId, kind: 'agent' },
-      object: { kind: 'agent', id: event.resolvedAgentId ?? event.agentId },
-      source: { kind: 'openslack', ref: event.runId },
-      summary,
-      visibility: 'local',
-      redacted: false,
-      containsSensitiveData: false,
-      correlationId: event.runId,
-      ...(severity ? { severity } : {}),
-    });
-  };
 }
 
 function parseInputs(items: string[] | undefined): Record<string, unknown> {
@@ -2007,15 +1972,34 @@ export function collaborationCommands(): Command {
           if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
           console.log('');
 
-          const result = await executeRun(mod, {
+          const admitted = await onConfirm(
+            'workflow.runner.submit',
+            `Submit ${mod.meta.name} to the authenticated Workflow Runner`,
+          );
+          if (!admitted) throw new Error('Workflow runner submission was not admitted.');
+          const root = findRepoRoot();
+          const runId = `run.${randomUUID()}`;
+          const result = await executeWorkflowThroughRunner({
+            workspaceRoot: root,
+            workflowRunId: runId,
+            workflowSource: found.source,
+            workflowSourceBytes: await readWorkflowRunnerSourceBytes({
+              workflowName: mod.meta.name,
+              discoveredPath: found.path,
+              source: found.source,
+            }),
             manifest: mod.meta,
             args,
-            budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
-            onConfirm,
-            allowUnattended: options.yes,
-            agentEventEmitter: createCollaborationEventEmitter(),
-            rootDir: findRepoRoot(),
-            ...resolveAgentAuthOptions(options.agentId),
+            budget: {
+              tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000,
+              costUsd: 1.0,
+            },
+            confirmationPolicy: {
+              mode: 'unattended-explicit',
+              actorId: options.agentId ?? 'openslack-agent-operator',
+              runId,
+              allowUnattended: true,
+            },
           });
 
           console.log('Execution Result:');
@@ -2151,14 +2135,28 @@ export function collaborationCommands(): Command {
               return answer.toLowerCase() === 'y';
             };
 
-        const result = await executeResume(mod, {
-          runId,
+        const admitted = await onConfirm(
+          'workflow.runner.resume',
+          `Submit resume for ${mod.meta.name} to the authenticated Workflow Runner`,
+        );
+        if (!admitted) throw new Error('Workflow runner resume was not admitted.');
+        const result = await executeWorkflowThroughRunner({
+          workspaceRoot: root,
+          workflowRunId: runId,
+          workflowSource: found.source,
+          workflowSourceBytes: await readWorkflowRunnerSourceBytes({
+            workflowName: mod.meta.name,
+            discoveredPath: found.path,
+            source: found.source,
+          }),
           manifest: mod.meta,
           args: decodeRunMetaArguments(meta),
-          onConfirm,
-          allowUnattended: options.yes,
-          agentEventEmitter: createCollaborationEventEmitter(),
-          rootDir: findRepoRoot(),
+          confirmationPolicy: {
+            mode: 'unattended-explicit',
+            actorId: options.agentId ?? 'openslack-agent-operator',
+            runId,
+            allowUnattended: true,
+          },
         });
 
         console.log('Resume Result:');
@@ -2182,6 +2180,22 @@ export function collaborationCommands(): Command {
         process.exit(1);
       }
     });
+
+  const approvals = new Command('approvals').description(
+    'Audit and repair Workflow effect approval authority',
+  );
+  approvals
+    .command('repair-security')
+    .description('Audit legacy Windows effect-authority ACLs without trusting invalid evidence')
+    .option('--apply', 'Rebuild exact owner and SYSTEM ACLs after complete evidence validation')
+    .action(async (options: { apply?: boolean }) => {
+      const report = await repairWorkflowEffectAuthoritySecurity(findRepoRoot(), {
+        apply: options.apply === true,
+      });
+      console.log(JSON.stringify(report, null, 2));
+      if (report.status === 'reconciliation_required') process.exitCode = 1;
+    });
+  workflow.addCommand(approvals);
 
   workflow
     .command('trust <name>')
@@ -2971,7 +2985,22 @@ export function collaborationCommands(): Command {
                 return answer.toLowerCase() === 'y';
               };
 
-          const result = await executeRun(mod, {
+          const admitted = await onConfirm(
+            'workflow.runner.submit',
+            'Submit profile-sync to the authenticated Workflow Runner',
+          );
+          if (!admitted) throw new Error('Workflow runner submission was not admitted.');
+          const root = findRepoRoot();
+          const runId = `run.${randomUUID()}`;
+          const result = await executeWorkflowThroughRunner({
+            workspaceRoot: root,
+            workflowRunId: runId,
+            workflowSource: found.source,
+            workflowSourceBytes: await readWorkflowRunnerSourceBytes({
+              workflowName: mod.meta.name,
+              discoveredPath: found.path,
+              source: found.source,
+            }),
             manifest: mod.meta,
             args: {
               sourceRepo: config.source.repo,
@@ -2982,11 +3011,12 @@ export function collaborationCommands(): Command {
               maxPosts: config.max_posts,
             },
             budget: { tokens: 100000, costUsd: 1.0 },
-            onConfirm,
-            allowUnattended: options.yes,
-            agentEventEmitter: createCollaborationEventEmitter(),
-            rootDir: findRepoRoot(),
-            ...resolveAgentAuthOptions(options.agentId),
+            confirmationPolicy: {
+              mode: 'unattended-explicit',
+              actorId: options.agentId ?? 'openslack-agent-operator',
+              runId,
+              allowUnattended: true,
+            },
           });
 
           console.log(JSON.stringify(result, null, 2));

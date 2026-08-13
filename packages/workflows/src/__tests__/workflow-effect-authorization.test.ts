@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyWorkflowEffectApprovalDecision,
@@ -13,17 +14,21 @@ import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-st
 import { executeRunWithStore } from '../execute.js';
 import { createRuntimeWithHostAuthorities } from '../runtime.js';
 import { RunStore } from '../run-store.js';
+import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import { canonicalWorkflowEffectControlJson } from '../workflow-effect-control-contract.js';
 import {
   createWorkflowEffectAuthorizationPort,
   WorkflowEffectReconciliationRequiredError,
   WorkflowEffectApprovalPendingError,
+  WorkflowEffectAuthorizationBusyError,
   type WorkflowEffectAuthorizationPort,
 } from '../workflow-effect-authorization.js';
+import { registerWorkflowEffectAuthorizationPort } from '../internal/workflow-effect-authorization-contract.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import {
   LocalWorkflowEffectAuthorityStore,
   prepareWorkflowEffectAuthorityDecision,
+  repairWorkflowEffectAuthoritySecurity,
 } from '../workflow-effect-authority-store.js';
 import {
   createWorkflowEffectLeaseAuthority,
@@ -45,6 +50,11 @@ const INPUT_HASH = '4'.repeat(64);
 const REASON_HASH = '5'.repeat(64);
 const roots: string[] = [];
 
+// Exact Windows DACL qualification invokes the platform ACL authority for each
+// newly-created durable artifact. Keep the bound above the observed multi-step
+// approval + claim + replay path while Linux retains the normal fast timeout.
+vi.setConfig({ testTimeout: process.platform === 'win32' ? 120_000 : 5_000 });
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -54,7 +64,6 @@ async function fixture(nowValue = new Date().toISOString(), descriptorTtlMs = 60
   const workspaceRoot = await mkdtemp(join(temporaryRoot, 'openslack-effect-authority-'));
   roots.push(workspaceRoot);
   const approvalRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
-  await mkdir(approvalRoot, { recursive: true, mode: 0o700 });
   let now = nowValue;
   let sequence = 2;
   const binding: WorkflowEffectLeaseBinding = {
@@ -157,6 +166,9 @@ async function createPending(port: WorkflowEffectAuthorizationPort) {
 async function approve(value: Awaited<ReturnType<typeof fixture>>, approvalId: string) {
   const pending = await value.approvals.read('run-1', approvalId);
   expect(pending?.status).toBe('pending');
+  const bindingExpiresAt = new Date(
+    Math.min(Date.now() + 30_000, Date.parse(pending!.expiresAt) - 1),
+  ).toISOString();
   const binding = value.decisionAuthority.issueHumanDecisionBinding({
     principalId: 'wsman',
     capability: 'workflow.effect.decide',
@@ -166,7 +178,7 @@ async function approve(value: Awaited<ReturnType<typeof fixture>>, approvalId: s
     approvalExpiresAt: pending!.expiresAt,
     decision: 'approved',
     reasonHash: REASON_HASH,
-    expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
+    expiresAt: bindingExpiresAt,
   });
   value.setNow(binding.issuedAt);
   const decided = await value.approvals.decide({
@@ -183,6 +195,9 @@ async function approve(value: Awaited<ReturnType<typeof fixture>>, approvalId: s
 async function reject(value: Awaited<ReturnType<typeof fixture>>, approvalId: string) {
   const pending = await value.approvals.read('run-1', approvalId);
   expect(pending?.status).toBe('pending');
+  const bindingExpiresAt = new Date(
+    Math.min(Date.now() + 30_000, Date.parse(pending!.expiresAt) - 1),
+  ).toISOString();
   const binding = value.decisionAuthority.issueHumanDecisionBinding({
     principalId: 'wsman',
     capability: 'workflow.effect.decide',
@@ -192,7 +207,7 @@ async function reject(value: Awaited<ReturnType<typeof fixture>>, approvalId: st
     approvalExpiresAt: pending!.expiresAt,
     decision: 'rejected',
     reasonHash: REASON_HASH,
-    expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
+    expiresAt: bindingExpiresAt,
   });
   value.setNow(binding.issuedAt);
   return value.approvals.decide({
@@ -219,6 +234,23 @@ async function recordFiles(value: Awaited<ReturnType<typeof fixture>>) {
       value: JSON.parse(await readFile(join(directory, name), 'utf8')) as Record<string, unknown>,
     })),
   );
+}
+
+async function authorityClaimFiles(value: Awaited<ReturnType<typeof fixture>>, schema: string) {
+  const directory = join(
+    value.workspaceRoot,
+    '.openslack.local',
+    'workflows',
+    'effect-authority',
+    'claims',
+  );
+  const files = await Promise.all(
+    (await readdir(directory)).map(async (name) => ({
+      path: join(directory, name),
+      value: JSON.parse(await readFile(join(directory, name), 'utf8')) as Record<string, unknown>,
+    })),
+  );
+  return files.filter((entry) => entry.value.schema === schema);
 }
 
 async function writeCanonical(path: string, value: unknown) {
@@ -270,6 +302,166 @@ function hostRuntime(
 }
 
 describe('workflow effect D2 authorization', () => {
+  it('retries BUSY at the same evaluation index without latching the run', async () => {
+    const value = await fixture();
+    const prepared = Object.freeze({
+      kind: 'workflow_effect_prepared_authorization' as const,
+      handle: Object.freeze({
+        effectId: 'effect-1',
+        effectKind: 'openslack.governance.audit',
+        effectHash: '6'.repeat(64),
+        capabilityHash: '7'.repeat(64),
+        requiresHumanDecision: true as const,
+      }),
+    });
+    const indexes: number[] = [];
+    const port: WorkflowEffectAuthorizationPort = {
+      async prepare(input) {
+        indexes.push(input.evaluationIndex);
+        if (indexes.length === 1) throw new WorkflowEffectAuthorizationBusyError();
+        return prepared;
+      },
+      async authorize() {
+        throw new WorkflowEffectApprovalPendingError('run-1', 'approval-1');
+      },
+      async complete() {
+        throw new Error('unreachable');
+      },
+      async reconcile() {
+        throw new Error('unreachable');
+      },
+    };
+    registerWorkflowEffectAuthorizationPort(port);
+    const runtime = createRuntimeWithHostAuthorities(
+      {
+        runId: 'run-1',
+        mode: 'execute',
+        manifest: {
+          name: 'workflow-1',
+          version: '1.0.0',
+          description: 'D2 busy retry test.',
+          phases: [{ title: 'Run', detail: 'Run once.' }],
+          risk: 'low',
+        },
+        onConfirm: async () => true,
+        effectBoundary: value.boundary,
+        runStore: {
+          appendAuditRecord: vi.fn(async () => undefined),
+          appendLog: vi.fn(async () => undefined),
+        } as unknown as RunStore,
+      },
+      createWorkflowCheckpointLeaseAuthority({
+        workspaceId: 'workspace-1',
+        jobId: 'job-1',
+        workflowRunId: 'run-1',
+        attemptId: 'attempt-1',
+        leaseId: 'lease-1',
+        fencingToken: 1,
+        correlationId: 'correlation-1',
+        runnerBuildHash: BUILD_HASH,
+        workflowSourceHash: SOURCE_HASH,
+        manifestHash: MANIFEST_HASH,
+        inputHash: INPUT_HASH,
+      }),
+      port,
+    );
+
+    await expect(runtime.openslack.governance.audit('bounded audit')).rejects.toBeInstanceOf(
+      WorkflowEffectAuthorizationBusyError,
+    );
+    await expect(runtime.openslack.governance.audit('bounded audit')).rejects.toBeInstanceOf(
+      WorkflowEffectApprovalPendingError,
+    );
+    await expect(runtime.openslack.governance.audit('successor audit')).rejects.toBeInstanceOf(
+      WorkflowEffectApprovalPendingError,
+    );
+    expect(indexes).toEqual([1, 1]);
+  });
+
+  it('retries claim contention at the same occurrence without publishing a false outcome', async () => {
+    const value = await fixture();
+    const indexes: number[] = [];
+    let authorizationAttempts = 0;
+    const prepared = Object.freeze({
+      kind: 'workflow_effect_prepared_authorization' as const,
+      handle: Object.freeze({
+        effectId: 'effect-1',
+        effectKind: 'openslack.governance.audit',
+        effectHash: '6'.repeat(64),
+        capabilityHash: '7'.repeat(64),
+        requiresHumanDecision: true as const,
+      }),
+    });
+    const port: WorkflowEffectAuthorizationPort = {
+      async prepare(input) {
+        indexes.push(input.evaluationIndex);
+        return prepared;
+      },
+      async authorize() {
+        authorizationAttempts += 1;
+        if (authorizationAttempts === 1) throw new WorkflowEffectAuthorizationBusyError();
+        return {
+          disposition: 'replay' as const,
+          value: undefined,
+          executionId: 'execution-1',
+          outcomeHash: '8'.repeat(64),
+        };
+      },
+      async complete() {
+        throw new Error('unreachable');
+      },
+      async reconcile() {
+        throw new Error('unreachable');
+      },
+    };
+    registerWorkflowEffectAuthorizationPort(port);
+    const runtime = createRuntimeWithHostAuthorities(
+      {
+        runId: 'run-1',
+        mode: 'execute',
+        manifest: {
+          name: 'workflow-1',
+          version: '1.0.0',
+          description: 'D2 claim contention retry test.',
+          phases: [{ title: 'Run', detail: 'Run once.' }],
+          risk: 'low',
+        },
+        onConfirm: async () => true,
+        effectBoundary: value.boundary,
+        runStore: {
+          appendAuditRecord: vi.fn(async () => undefined),
+          appendLog: vi.fn(async () => undefined),
+        } as unknown as RunStore,
+      },
+      createWorkflowCheckpointLeaseAuthority({
+        workspaceId: 'workspace-1',
+        jobId: 'job-1',
+        workflowRunId: 'run-1',
+        attemptId: 'attempt-1',
+        leaseId: 'lease-1',
+        fencingToken: 1,
+        correlationId: 'correlation-1',
+        runnerBuildHash: BUILD_HASH,
+        workflowSourceHash: SOURCE_HASH,
+        manifestHash: MANIFEST_HASH,
+        inputHash: INPUT_HASH,
+      }),
+      port,
+    );
+
+    await expect(runtime.openslack.governance.audit('bounded audit')).rejects.toBeInstanceOf(
+      WorkflowEffectAuthorizationBusyError,
+    );
+    expect(value.boundary.outcome).not.toHaveBeenCalled();
+    await expect(runtime.openslack.governance.audit('bounded audit')).resolves.toBeUndefined();
+    expect(indexes).toEqual([1, 1]);
+    expect(value.boundary.outcome).toHaveBeenCalledOnce();
+    expect(value.boundary.outcome).toHaveBeenCalledWith(
+      prepared.handle,
+      expect.objectContaining({ status: 'executed' }),
+    );
+  });
+
   it('closes the runner boundary and latches the run while exact approval is pending', async () => {
     const value = await fixture();
     const appendAuditRecord = vi.fn(async () => undefined);
@@ -291,6 +483,9 @@ describe('workflow effect D2 authorization', () => {
     await expect(runtime.openslack.governance.audit('successor audit')).rejects.toBeInstanceOf(
       WorkflowEffectApprovalPendingError,
     );
+    await expect(
+      runtime.checkpoint!.commit({ artifact: new Uint8Array([1]) }),
+    ).rejects.toBeInstanceOf(WorkflowEffectApprovalPendingError);
     expect(() =>
       (runtime as unknown as { assertEffectTerminalState(): void }).assertEffectTerminalState(),
     ).toThrow(WorkflowEffectApprovalPendingError);
@@ -522,14 +717,9 @@ describe('workflow effect D2 authorization', () => {
     await expect(port.authorize(prepared)).rejects.toMatchObject({
       code: 'WORKFLOW_EFFECT_AUTHORIZATION_REJECTED',
     });
-    const claims = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority',
-      'claims',
-    );
-    expect(await readdir(claims)).toEqual([]);
+    expect(
+      await authorityClaimFiles(value, 'openslack.workflow_effect_execution_record.v1'),
+    ).toEqual([]);
   });
 
   it('fails closed on workflow, input, correlation, and effect identity drift', async () => {
@@ -540,6 +730,7 @@ describe('workflow effect D2 authorization', () => {
       { manifestHash: 'b'.repeat(64) },
       { inputHash: 'c'.repeat(64) },
       { correlationId: 'correlation-drift' },
+      { expectedControlBuildHash: 'd'.repeat(64) },
     ] satisfies Array<Partial<WorkflowEffectLeaseBinding>>) {
       const port = value.makePort(overrides);
       await expect(
@@ -648,15 +839,11 @@ describe('workflow effect D2 authorization', () => {
     expect(claim.disposition).toBe('claimed');
     if (claim.disposition !== 'claimed') throw new Error('expected claim');
     await port.complete(claim.authority, { ok: true });
-    const claims = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority',
-      'claims',
+    const [executionFile] = await authorityClaimFiles(
+      value,
+      'openslack.workflow_effect_execution_record.v1',
     );
-    const [claimName] = await readdir(claims);
-    const claimPath = join(claims, claimName!);
+    const claimPath = executionFile!.path;
     const execution = JSON.parse(await readFile(claimPath, 'utf8')) as Record<string, unknown>;
     (execution.artifact as Record<string, unknown>).outcomeHash = 'f'.repeat(64);
     await writeCanonical(claimPath, execution);
@@ -687,15 +874,11 @@ describe('workflow effect D2 authorization', () => {
     const claim = await port.authorize(prepared);
     if (claim.disposition !== 'claimed') throw new Error('expected claim');
     await port.complete(claim.authority, { ok: true });
-    const claims = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority',
-      'claims',
+    const [claimFile] = await authorityClaimFiles(
+      value,
+      'openslack.workflow_effect_execution_record.v1',
     );
-    const [claimName] = await readdir(claims);
-    await rm(join(claims, claimName!));
+    await rm(claimFile!.path);
 
     const retry = value.makePort();
     const retryPrepared = await retry.prepare({
@@ -727,6 +910,58 @@ describe('workflow effect D2 authorization', () => {
         detail: 'bounded audit',
       }),
     ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED' });
+  });
+
+  it('requires both sides of the immutable occurrence anchor binding', async () => {
+    const value = await fixture();
+    await createPending(value.makePort());
+    const [anchor] = await authorityClaimFiles(
+      value,
+      'openslack.workflow_effect_occurrence_anchor.v1',
+    );
+    await rm(anchor!.path);
+    await expect(
+      value.makePort().prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      }),
+    ).rejects.toBeInstanceOf(WorkflowEffectReconciliationRequiredError);
+  });
+
+  it('recovers a canonical atomic-write temporary before reading authority state', async () => {
+    const value = await fixture();
+    const { pending } = await createPending(value.makePort());
+    const [authority] = await recordFiles(value);
+    const directory = join(
+      value.workspaceRoot,
+      '.openslack.local',
+      'workflows',
+      'effect-authority',
+      'records',
+    );
+    const targetHash = createHash('sha256').update(authority!.path, 'utf8').digest('hex');
+    const temporary = join(directory, `.${targetHash}.${process.pid}.${randomUUID()}.tmp`);
+    await writeExclusive(
+      temporary,
+      `${canonicalWorkflowEffectControlJson(authority!.value)}\n`,
+      productionJournalSecurity(),
+    );
+    await rm(authority!.path);
+
+    const recovered = value.makePort();
+    const prepared = await recovered.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    await expect(recovered.authorize(prepared)).rejects.toMatchObject({
+      code: 'WORKFLOW_EFFECT_APPROVAL_PENDING',
+      approvalId: pending.approvalId,
+    });
+    expect(await readdir(directory)).not.toContain(basename(temporary));
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -776,6 +1011,51 @@ describe('workflow effect D2 authorization', () => {
         code: 'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
       });
     },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'audits and explicitly rebuilds verified legacy DACLs without manufacturing authority',
+    async () => {
+      const value = await fixture();
+      const { pending } = await createPending(value.makePort());
+      await approve(value, pending.approvalId);
+      const port = value.makePort();
+      const prepared = await port.prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      const claim = await port.authorize(prepared);
+      if (claim.disposition !== 'claimed') throw new Error('expected claim');
+      await port.complete(claim.authority, { ok: true });
+      const [execution] = await authorityClaimFiles(
+        value,
+        'openslack.workflow_effect_execution_record.v1',
+      );
+      expect(execution).toBeDefined();
+      execFileSync('icacls.exe', [execution!.path, '/grant', '*S-1-1-0:(R)'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+
+      await expect(
+        repairWorkflowEffectAuthoritySecurity(value.workspaceRoot),
+      ).resolves.toMatchObject({
+        status: 'repairable',
+        insecurePaths: expect.any(Number),
+      });
+      await expect(
+        repairWorkflowEffectAuthoritySecurity(value.workspaceRoot, { apply: true }),
+      ).resolves.toMatchObject({ status: 'repaired' });
+      await expect(
+        repairWorkflowEffectAuthoritySecurity(value.workspaceRoot),
+      ).resolves.toMatchObject({
+        status: 'secure',
+        insecurePaths: 0,
+      });
+    },
+    240_000,
   );
 
   it('rejects a forged authority lock without deleting it', async () => {
@@ -909,6 +1189,28 @@ describe('workflow effect D2 authorization', () => {
       join(value.approvalRoot, 'records', rawFiles[0]!),
       workflowEffectApprovalBytes(next),
     );
+
+    const repairBinding = value.decisionAuthority.issueHumanDecisionBinding({
+      principalId: 'wsman',
+      capability: 'workflow.effect.decide',
+      runId: 'run-1',
+      approvalId: pending.approvalId,
+      correlationId: 'correlation-1',
+      approvalExpiresAt: current!.expiresAt,
+      decision: 'approved',
+      reasonHash: REASON_HASH,
+      expiresAt: new Date(Date.parse(value.getNow()) + 30_000).toISOString(),
+    });
+    expect(repairBinding.nonce).not.toBe(binding.nonce);
+    const repaired = await value.approvals.decide({
+      runId: 'run-1',
+      approvalId: pending.approvalId,
+      expectedRevision: 0,
+      decision: 'approved',
+      reasonHash: REASON_HASH,
+      binding: repairBinding,
+    });
+    expect(repaired.decision?.attestationNonce).toBe(binding.nonce);
 
     const port = value.makePort();
     const prepared = await port.prepare({
@@ -1067,7 +1369,7 @@ describe('workflow effect D2 authorization', () => {
     const claim = await port.authorize(prepared);
     expect(claim.disposition).toBe('claimed');
     if (claim.disposition !== 'claimed') throw new Error('expected claim');
-    await expect(port.complete(claim.authority, 'x'.repeat(70 * 1024))).rejects.toBeInstanceOf(
+    await expect(port.complete(claim.authority, 'x'.repeat(256 * 1024))).rejects.toBeInstanceOf(
       WorkflowEffectReconciliationRequiredError,
     );
     const retry = value.makePort();
@@ -1079,6 +1381,34 @@ describe('workflow effect D2 authorization', () => {
         detail: 'bounded audit',
       }),
     ).rejects.toBeInstanceOf(WorkflowEffectReconciliationRequiredError);
+  });
+
+  it('persists and replays the exact 256 KiB canonical result boundary out of line', async () => {
+    const value = await fixture();
+    const { pending } = await createPending(value.makePort());
+    await approve(value, pending.approvalId);
+    const port = value.makePort();
+    const prepared = await port.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    const claim = await port.authorize(prepared);
+    if (claim.disposition !== 'claimed') throw new Error('expected claim');
+    const result = 'x'.repeat(256 * 1024 - 2);
+    await expect(port.complete(claim.authority, result)).resolves.toBeDefined();
+    const replayPort = value.makePort();
+    const replayPrepared = await replayPort.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    await expect(replayPort.authorize(replayPrepared)).resolves.toMatchObject({
+      disposition: 'replay',
+      value: result,
+    });
   });
 
   it('rejects the runner descriptor expiry independently of approval expiry', async () => {
@@ -1097,54 +1427,158 @@ describe('workflow effect D2 authorization', () => {
       code: 'WORKFLOW_EFFECT_AUTHORITY_EXPIRED',
       message: expect.stringContaining('descriptor'),
     });
+
+    const renewedLease = value.makePort({
+      descriptorExpiresAt: new Date(Date.parse(value.getNow()) + 60_000).toISOString(),
+    });
+    const renewedPrepared = await renewedLease.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    await expect(renewedLease.authorize(renewedPrepared)).resolves.toMatchObject({
+      disposition: 'claimed',
+    });
   });
 
-  it('maps revision-one and revision-two approval views to one concurrent execution claim', async () => {
+  it('renews an expired pending approval with a monotonic generation', async () => {
     const value = await fixture();
-    const { pending } = await createPending(value.makePort());
-    const { decided } = await approve(value, pending.approvalId);
-    const revisionOne = await Promise.all(
-      Array.from({ length: 50 }, async () => {
-        const port = value.makePort();
-        return {
-          port,
-          prepared: await port.prepare({
-            runId: 'run-1',
-            evaluationIndex: 1,
-            operation: 'openslack.governance.audit',
-            detail: 'bounded audit',
-          }),
-        };
-      }),
-    );
-    await value.approvals.markAuditProjected({
+    const first = await createPending(value.makePort());
+    value.setNow(new Date(Date.parse(value.getNow()) + 16 * 60_000).toISOString());
+    const port = value.makePort();
+    const prepared = await port.prepare({
       runId: 'run-1',
-      approvalId: pending.approvalId,
-      expectedRevision: 1,
-      eventId: workflowEffectApprovalAuditEventId('run-1', pending.approvalId),
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
     });
-    expect(decided.auditProjection?.status).toBe('pending');
+    const renewedError = await port.authorize(prepared).catch((error: unknown) => error);
+    expect(renewedError).toBeInstanceOf(WorkflowEffectApprovalPendingError);
+    const renewedApprovalId = (renewedError as WorkflowEffectApprovalPendingError).approvalId;
+    expect(renewedApprovalId).not.toBe(first.pending.approvalId);
+    await expect(approve(value, first.pending.approvalId)).rejects.toBeDefined();
+    await expect(value.approvals.read('run-1', renewedApprovalId)).resolves.toMatchObject({
+      status: 'pending',
+      revision: 0,
+    });
+  });
 
-    const revisionTwo = await Promise.all(
-      Array.from({ length: 50 }, async () => {
-        const port = value.makePort();
-        return {
-          port,
-          prepared: await port.prepare({
-            runId: 'run-1',
-            evaluationIndex: 1,
-            operation: 'openslack.governance.audit',
-            detail: 'bounded audit',
-          }),
-        };
-      }),
-    );
-    const settled = await Promise.allSettled(
-      [...revisionOne, ...revisionTwo].map(({ port, prepared }) => port.authorize(prepared)),
-    );
-    expect(settled.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
-    expect(settled.filter((entry) => entry.status === 'rejected')).toHaveLength(99);
-  }, 30_000);
+  it('recovers a persisted approval generation after the authority-head write is lost', async () => {
+    const value = await fixture();
+    const first = await createPending(value.makePort());
+    const [priorAuthority] = await recordFiles(value);
+    expect(priorAuthority).toBeDefined();
+
+    value.setNow(new Date(Date.parse(value.getNow()) + 16 * 60_000).toISOString());
+    const renewingPort = value.makePort();
+    const renewingPrepared = await renewingPort.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    const renewed = await renewingPort.authorize(renewingPrepared).catch((error: unknown) => error);
+    expect(renewed).toBeInstanceOf(WorkflowEffectApprovalPendingError);
+    const renewedApprovalId = (renewed as WorkflowEffectApprovalPendingError).approvalId;
+    expect(renewedApprovalId).not.toBe(first.pending.approvalId);
+
+    // Model a crash after the immutable generation anchor and pending D1 record
+    // reached durable storage, but before the mutable authority head did.
+    await writeCanonical(priorAuthority!.path, priorAuthority!.value);
+
+    const recoveredPort = value.makePort();
+    const recoveredPrepared = await recoveredPort.prepare({
+      runId: 'run-1',
+      evaluationIndex: 1,
+      operation: 'openslack.governance.audit',
+      detail: 'bounded audit',
+    });
+    await expect(recoveredPort.authorize(recoveredPrepared)).rejects.toMatchObject({
+      code: 'WORKFLOW_EFFECT_APPROVAL_PENDING',
+      approvalId: renewedApprovalId,
+    });
+    const [recoveredAuthority] = await recordFiles(value);
+    expect(recoveredAuthority!.value).toMatchObject({
+      state: 'approval_committed',
+      artifact: {
+        approvalGeneration: 1,
+        approval: { approvalId: renewedApprovalId },
+      },
+    });
+  });
+
+  it(
+    'maps revision-one and revision-two approval views to one concurrent execution claim',
+    async () => {
+      const value = await fixture();
+      const { pending } = await createPending(value.makePort());
+      const { decided } = await approve(value, pending.approvalId);
+      const revisionOne = await Promise.all(
+        Array.from({ length: 12 }, async () => {
+          const port = value.makePort();
+          return {
+            port,
+            prepared: await port.prepare({
+              runId: 'run-1',
+              evaluationIndex: 1,
+              operation: 'openslack.governance.audit',
+              detail: 'bounded audit',
+            }),
+          };
+        }),
+      );
+      await value.approvals.markAuditProjected({
+        runId: 'run-1',
+        approvalId: pending.approvalId,
+        expectedRevision: 1,
+        eventId: workflowEffectApprovalAuditEventId('run-1', pending.approvalId),
+      });
+      expect(decided.auditProjection?.status).toBe('pending');
+
+      const revisionTwo = await Promise.all(
+        Array.from({ length: 12 }, async () => {
+          const port = value.makePort();
+          return {
+            port,
+            prepared: await port.prepare({
+              runId: 'run-1',
+              evaluationIndex: 1,
+              operation: 'openslack.governance.audit',
+              detail: 'bounded audit',
+            }),
+          };
+        }),
+      );
+      const settled = await Promise.allSettled(
+        [...revisionOne, ...revisionTwo].map(({ port, prepared }) => port.authorize(prepared)),
+      );
+      const fulfilledIndex = settled.findIndex((entry) => entry.status === 'fulfilled');
+      expect(settled.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
+      for (const rejected of settled.filter((entry) => entry.status === 'rejected')) {
+        expect(rejected.reason).toBeInstanceOf(WorkflowEffectAuthorizationBusyError);
+        expect(rejected.reason).toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORIZATION_BUSY' });
+      }
+      const claimed = settled[fulfilledIndex];
+      if (claimed?.status !== 'fulfilled' || claimed.value.disposition !== 'claimed') {
+        throw new Error('expected one concurrent claim');
+      }
+      const owner = [...revisionOne, ...revisionTwo][fulfilledIndex]!.port;
+      await owner.complete(claimed.value.authority, { ok: true });
+      const replayPort = value.makePort();
+      const replayPrepared = await replayPort.prepare({
+        runId: 'run-1',
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      await expect(replayPort.authorize(replayPrepared)).resolves.toMatchObject({
+        disposition: 'replay',
+        value: { ok: true },
+      });
+    },
+    process.platform === 'win32' ? 120_000 : 30_000,
+  );
 
   it('rejects expired decisions before creating an execution claim', async () => {
     const value = await fixture();

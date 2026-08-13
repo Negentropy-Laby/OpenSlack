@@ -497,7 +497,7 @@ describe('GS8-B strict worker session', () => {
     await session.receive(receipt(accept, 2));
     await offerPromise;
 
-    expect(await session.heartbeat()).toBe(true);
+    const heartbeatPromise = session.heartbeat();
     await waitForSent(sent, 3);
     const heartbeat = parsedAt(sent, 2);
     expect(heartbeat.kind).toBe('heartbeat');
@@ -511,6 +511,7 @@ describe('GS8-B strict worker session', () => {
     expect(sent).toHaveLength(3);
 
     await session.receive(receipt(heartbeat, 4));
+    await expect(heartbeatPromise).resolves.toBe(true);
     await waitForSent(sent, 4);
     const terminal = parsedAt(sent, 3);
     expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'cancelled' } });

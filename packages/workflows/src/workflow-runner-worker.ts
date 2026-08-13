@@ -28,6 +28,7 @@ import {
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
 import { createWorkflowEffectAuthorizationPort } from './workflow-effect-authorization.js';
+import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
@@ -320,10 +321,13 @@ export function createSealedWorkflowRunnerSourceLoader(
       if (hashWorkflowRunnerSource(source.bytes) !== descriptor.workflowSourceHash) {
         throw new Error('Sealed workflow source hash does not match the descriptor.');
       }
-      // GS8 accepts only a single hash-bound source object. Reject source forms
-      // that could load unbound transitive execution bytes before lease_accept.
-      // The existing CLI loader is deliberately outside this default-off path.
-      assertWorkflowRunnerSourceIsSelfContained(source.bytes);
+      // Project and user catalogs accept only one hash-bound source object.
+      // Builtins are reviewed code inside the sealed runner distribution: the
+      // exact catalog source hash binds the requested entry while the runner
+      // build hash binds its transitive product-code dependencies.
+      if (descriptor.workflowSource !== 'builtin') {
+        assertWorkflowRunnerSourceIsSelfContained(source.bytes);
+      }
       return Object.freeze({
         path: canonical,
         bytes: source.bytes,
@@ -411,9 +415,11 @@ async function executeWorkflowRunnerJob(
   context: WorkflowRunnerExecutionContext,
   workspaceRoot: string,
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
+  observationPort?: WorkflowControlObservationPort,
 ): Promise<RunResult> {
   const store = new RunStore({
     baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+    observationPort,
     checkpointObservationPort,
   });
   const exists = await store.runExists(descriptor.workflowRunId);
@@ -441,6 +447,7 @@ async function executeWorkflowRunnerJob(
     workspaceRoot,
     effectBoundary: context.effectBoundary,
     leaseAuthority: workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
+    observationPort,
   });
 
   return disposition === 'initialize'
@@ -463,6 +470,7 @@ async function executeWorkflowRunnerJob(
 export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
+  observationPort?: WorkflowControlObservationPort,
 ): Promise<void> {
   installProtocolOnlyStreams();
   const effectiveCheckpointObservationPort =
@@ -513,6 +521,7 @@ export async function runWorkflowRunnerWorker(
         context,
         config.workspaceRoot,
         effectiveCheckpointObservationPort,
+        observationPort,
       );
     },
   });
@@ -545,11 +554,19 @@ export async function runWorkflowRunnerWorker(
 
   await session.start();
   let lastHeartbeat = 0;
+  let heartbeatInFlight: Promise<void> | undefined;
   timers.heartbeat = setInterval(() => {
     const interval = session.heartbeatIntervalMs;
-    if (interval <= 0 || Date.now() - lastHeartbeat < interval) return;
-    lastHeartbeat = Date.now();
-    void session.heartbeat().catch(fatal);
+    if (interval <= 0 || heartbeatInFlight || Date.now() - lastHeartbeat < interval) return;
+    heartbeatInFlight = session
+      .heartbeat()
+      .then((sent) => {
+        if (sent) lastHeartbeat = Date.now();
+      })
+      .catch(fatal)
+      .finally(() => {
+        heartbeatInFlight = undefined;
+      });
   }, 250);
   timers.retry = setInterval(() => {
     void session.retryOutstanding().catch(fatal);

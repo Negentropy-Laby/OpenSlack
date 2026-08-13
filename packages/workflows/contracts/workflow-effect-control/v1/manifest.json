@@ -59,8 +59,8 @@
   "artifacts": {
     "schemas/workflow-effect-control-artifact.v1.schema.json": {
       "path": "schemas/workflow-effect-control-artifact.v1.schema.json",
-      "byteLength": 31666,
-      "sha256": "45fe06b375c726a0b034eda31ac906aaa00c02e3edd19d20a08f6a3c3853da49"
+      "byteLength": 32422,
+      "sha256": "cae57b18a91b58ac861e671e8bc509e89f7c0e66337ae5f7d29c9e01551c73fb"
     },
     "schemas/workflow-effect-approval-record.v2.schema.json": {
       "path": "schemas/workflow-effect-approval-record.v2.schema.json",
@@ -84,8 +84,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 165935,
-      "sha256": "9b40c455a129ddff0c22119431481d99b2de00f7ed85ff4b3caf0450d350d669"
+      "byteLength": 166415,
+      "sha256": "2ec002b70d27c9658d692bac233ac7c28cd25faf5e1d789bfb055411597aa329"
     }
   },
   "bundleFiles": [

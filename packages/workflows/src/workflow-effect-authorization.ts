@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
   deriveWorkflowEffectApprovalId,
+  deriveWorkflowEffectApprovalGenerationId,
   hashWorkflowEffectIntentBinding,
   type WorkflowEffectIntentArtifact,
 } from './workflow-effect-control-contract.js';
@@ -10,6 +11,10 @@ import {
   persistWorkflowEffectApprovalPending,
   readWorkflowEffectApprovalRecordExact,
 } from './workflow-effect-approval-store.js';
+import {
+  isWorkflowControlObservationPort,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
 import {
   LocalWorkflowEffectAuthorityStore,
   WorkflowEffectAuthorityStoreError,
@@ -30,16 +35,16 @@ import {
 import {
   registerWorkflowEffectAuthorizationPort,
   WorkflowEffectApprovalPendingError,
+  WorkflowEffectAuthorizationBusyError,
   WorkflowEffectAuthorizationRejectedError,
   WorkflowEffectReconciliationRequiredError,
   type WorkflowEffectAuthorizationPort,
-  type WorkflowEffectPreparedAuthorization,
-  type WorkflowEffectClaimAuthorization,
 } from './internal/workflow-effect-authorization-contract.js';
 
 export {
   assertWorkflowEffectAuthorizationPort,
   WorkflowEffectApprovalPendingError,
+  WorkflowEffectAuthorizationBusyError,
   WorkflowEffectAuthorizationRejectedError,
   WorkflowEffectAuthorizationRequiredError,
   WorkflowEffectReconciliationRequiredError,
@@ -50,6 +55,8 @@ export {
 } from './internal/workflow-effect-authorization-contract.js';
 
 const APPROVAL_TTL_MS = 15 * 60_000;
+const MIN_APPROVAL_TTL_MS = 60_000;
+const MAX_APPROVAL_TTL_MS = 24 * 60 * 60_000;
 
 type PrepareInput = Parameters<WorkflowEffectAuthorizationPort['prepare']>[0];
 type PreparedAuthorization = Parameters<WorkflowEffectAuthorizationPort['authorize']>[0];
@@ -83,6 +90,12 @@ function mapStoreError(error: unknown): never {
   if (error.code === 'WORKFLOW_EFFECT_AUTHORITY_PENDING') {
     throw error;
   }
+  if (
+    error.code === 'WORKFLOW_EFFECT_AUTHORITY_BUSY' ||
+    error.code === 'WORKFLOW_EFFECT_AUTHORITY_ALREADY_CLAIMED'
+  ) {
+    throw new WorkflowEffectAuthorizationBusyError(error.message, { cause: error });
+  }
   if (error.code === 'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED') {
     throw new WorkflowEffectReconciliationRequiredError(error.message, { cause: error });
   }
@@ -94,6 +107,8 @@ export function createWorkflowEffectAuthorizationPort(options: {
   readonly effectBoundary: WorkflowEffectBoundary;
   readonly leaseAuthority: WorkflowEffectLeaseAuthority;
   readonly now?: () => string;
+  readonly approvalTtlMs?: number;
+  readonly observationPort?: WorkflowControlObservationPort;
 }): WorkflowEffectAuthorizationPort {
   if (
     !options ||
@@ -101,12 +116,22 @@ export function createWorkflowEffectAuthorizationPort(options: {
     nodeTypes.isProxy(options) ||
     typeof options.workspaceRoot !== 'string' ||
     !options.effectBoundary ||
-    typeof options.effectBoundary !== 'object'
+    typeof options.effectBoundary !== 'object' ||
+    (options.observationPort !== undefined &&
+      !isWorkflowControlObservationPort(options.observationPort))
   ) {
     throw new TypeError('Workflow effect authorization composition is invalid.');
   }
   const binding = workflowEffectLeaseBindingFromAuthority(options.leaseAuthority);
   const now = options.now ?? (() => new Date().toISOString());
+  const approvalTtlMs = options.approvalTtlMs ?? APPROVAL_TTL_MS;
+  if (
+    !Number.isSafeInteger(approvalTtlMs) ||
+    approvalTtlMs < MIN_APPROVAL_TTL_MS ||
+    approvalTtlMs > MAX_APPROVAL_TTL_MS
+  ) {
+    throw new TypeError('Workflow effect approval TTL must be between 1 minute and 24 hours.');
+  }
   const approvalRoot = join(
     options.workspaceRoot,
     '.openslack.local',
@@ -114,6 +139,34 @@ export function createWorkflowEffectAuthorizationPort(options: {
     'effect-approvals',
   );
   const store = new LocalWorkflowEffectAuthorityStore(approvalRoot, now);
+  const persistPending = async (
+    approval: ReturnType<typeof createPendingWorkflowEffectApproval>,
+  ) => {
+    const persisted = await persistWorkflowEffectApprovalPending(
+      approvalRoot,
+      {
+        runId: approval.runId,
+        approvalId: approval.approvalId,
+        correlationId: approval.correlationId,
+        workflowId: approval.workflowId,
+        workflowVersion: approval.workflowVersion,
+        workflowHash: approval.workflowHash,
+        inputHash: approval.inputHash,
+        effectId: approval.effectId,
+        effectHash: approval.effectHash,
+        requiredCapability: approval.requiredCapability,
+        createdAt: approval.createdAt,
+        expiresAt: approval.expiresAt,
+      },
+      now(),
+    );
+    try {
+      options.observationPort?.observeRun(persisted.runId);
+    } catch {
+      // The Go shadow is observer-only and never changes TypeScript authority.
+    }
+    return persisted;
+  };
 
   const port: WorkflowEffectAuthorizationPort = Object.freeze({
     async prepare(input: PrepareInput) {
@@ -253,7 +306,7 @@ export function createWorkflowEffectAuthorizationPort(options: {
           occurrence.record.validationContext,
         );
         const createdAt = now();
-        const expiresAt = new Date(Date.parse(createdAt) + APPROVAL_TTL_MS).toISOString();
+        const expiresAt = new Date(Date.parse(createdAt) + approvalTtlMs).toISOString();
         const pendingInput = {
           runId: binding.runId,
           approvalId: deriveWorkflowEffectApprovalId(intent.occurrenceId, intentBindingHash),
@@ -269,30 +322,47 @@ export function createWorkflowEffectAuthorizationPort(options: {
           expiresAt,
         } as const;
         const approval = createPendingWorkflowEffectApproval(pendingInput);
+        // The pending record is not authorization by itself. Persist it first
+        // so an anchor-first authority crash can deterministically repair the
+        // exact generation without accepting caller-supplied replacement bytes.
+        await persistPending(approval);
         occurrence = await store.commitPending(occurrence, approval);
       }
-      const artifact = occurrence.record.artifact;
+      let artifact = occurrence.record.artifact;
       if (artifact?.kind === 'effect_approval_pending') {
+        if (Date.parse(artifact.approval.expiresAt) <= Date.parse(now())) {
+          const createdAt = now();
+          const approvalGeneration = artifact.approvalGeneration + 1;
+          const renewed = createPendingWorkflowEffectApproval({
+            runId: artifact.approval.runId,
+            approvalId: deriveWorkflowEffectApprovalGenerationId(
+              artifact.occurrenceId,
+              artifact.intentBindingHash,
+              approvalGeneration,
+            ),
+            correlationId: artifact.approval.correlationId,
+            workflowId: artifact.approval.workflowId,
+            workflowVersion: artifact.approval.workflowVersion,
+            workflowHash: artifact.approval.workflowHash,
+            inputHash: artifact.approval.inputHash,
+            effectId: artifact.approval.effectId,
+            effectHash: artifact.approval.effectHash,
+            requiredCapability: artifact.approval.requiredCapability,
+            createdAt,
+            expiresAt: new Date(Date.parse(createdAt) + approvalTtlMs).toISOString(),
+          });
+          await persistPending(renewed);
+          occurrence = await store.renewPending(occurrence, renewed);
+          artifact = occurrence.record.artifact;
+        }
+        if (artifact?.kind !== 'effect_approval_pending') {
+          throw new WorkflowEffectReconciliationRequiredError(
+            'Renewed workflow effect approval changed authority state.',
+          );
+        }
         if (occurrence.record.state === 'approval_committed') {
           const pending = artifact.approval;
-          await persistWorkflowEffectApprovalPending(
-            approvalRoot,
-            {
-              runId: pending.runId,
-              approvalId: pending.approvalId,
-              correlationId: pending.correlationId,
-              workflowId: pending.workflowId,
-              workflowVersion: pending.workflowVersion,
-              workflowHash: pending.workflowHash,
-              inputHash: pending.inputHash,
-              effectId: pending.effectId,
-              effectHash: pending.effectHash,
-              requiredCapability: pending.requiredCapability,
-              createdAt: pending.createdAt,
-              expiresAt: pending.expiresAt,
-            },
-            now(),
-          );
+          await persistPending(pending);
         }
         throw new WorkflowEffectApprovalPendingError(binding.runId, artifact.approval.approvalId);
       }

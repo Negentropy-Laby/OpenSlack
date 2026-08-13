@@ -1260,16 +1260,24 @@ export class LocalWorkflowEffectApprovalStore {
           decision.principalId === values.binding.principalId &&
           decision.workspaceId === values.binding.workspaceId &&
           decision.capability === values.binding.capability &&
-          decision.attestationNonce === values.binding.nonce &&
           values.binding.runId === current.record.runId &&
           values.binding.approvalId === current.record.approvalId &&
           values.binding.correlationId === current.record.correlationId &&
           values.binding.approvalExpiresAt === current.record.expiresAt &&
           values.binding.decision === values.decision &&
           values.binding.reasonHash === values.reasonHash &&
-          decision.decidedAt >= values.binding.issuedAt &&
-          decision.decidedAt < values.binding.expiresAt
+          values.binding.issuedAt < values.binding.expiresAt
         ) {
+          this.#authority.assertHumanDecisionBinding(values.binding, {
+            requiredCapability: current.record.requiredCapability,
+            runId: current.record.runId,
+            approvalId: current.record.approvalId,
+            correlationId: current.record.correlationId,
+            approvalExpiresAt: current.record.expiresAt,
+            decision: values.decision,
+            reasonHash: values.reasonHash,
+            decidedAt: values.binding.issuedAt,
+          });
           const { commitWorkflowEffectAuthorityDecision } = await authorityRecovery();
           await commitWorkflowEffectAuthorityDecision(this.#root, current.record);
           this.#observe(values.runId);
@@ -1290,23 +1298,23 @@ export class LocalWorkflowEffectApprovalStore {
       );
       const { prepareWorkflowEffectAuthorityDecision, commitWorkflowEffectAuthorityDecision } =
         await authorityRecovery();
-      await prepareWorkflowEffectAuthorityDecision(
+      const durableNext = await prepareWorkflowEffectAuthorityDecision(
         this.#root,
         current.record,
         next,
         values.binding,
       );
       try {
-        await atomicWrite(prepared, values.runId, values.approvalId, next, current.stat);
+        await atomicWrite(prepared, values.runId, values.approvalId, durableNext, current.stat);
       } catch (commitError) {
         const observed = await boundedRead(prepared, values.runId, values.approvalId).catch(
           () => undefined,
         );
-        if (!observed?.bytes.equals(workflowEffectApprovalBytes(next))) throw commitError;
+        if (!observed?.bytes.equals(workflowEffectApprovalBytes(durableNext))) throw commitError;
       }
-      await commitWorkflowEffectAuthorityDecision(this.#root, next);
+      await commitWorkflowEffectAuthorityDecision(this.#root, durableNext);
       this.#observe(values.runId);
-      return next;
+      return durableNext;
     } finally {
       await releaseLock(lock);
     }

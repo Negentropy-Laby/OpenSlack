@@ -36,6 +36,8 @@ import {
 import { workflowCheckpointError } from './workflow-checkpoint-shadow-contract.js';
 import {
   assertWorkflowEffectAuthorizationPort,
+  WorkflowEffectApprovalPendingError,
+  WorkflowEffectAuthorizationBusyError,
   WorkflowEffectAuthorizationRequiredError,
   WorkflowEffectAuthorizationRejectedError,
   WorkflowEffectReconciliationRequiredError,
@@ -312,6 +314,27 @@ function createRuntimeInternal(
     if (handle) await options.effectBoundary!.outcome(handle, { status, evidence });
   }
 
+  function asEffectIntegrityFailure(error: unknown): Error | undefined {
+    if (!(error instanceof Error)) return undefined;
+    const code = (error as Error & { readonly code?: unknown }).code;
+    if (
+      typeof code === 'string' &&
+      [
+        'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
+        'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE',
+        'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+        'WORKFLOW_EFFECT_AUTHORITY_IDENTITY_MISMATCH',
+        'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED',
+      ].includes(code)
+    ) {
+      return new WorkflowEffectReconciliationRequiredError(
+        'Workflow effect authority integrity could not be proved.',
+        { cause: error },
+      );
+    }
+    return undefined;
+  }
+
   async function executeConfirmedEffect<T>(
     operation: string,
     detail: string,
@@ -322,15 +345,37 @@ function createRuntimeInternal(
     if (!onConfirm) {
       throw new ExecuteDeniedError(operation, 'Execute mode requires confirmation callback');
     }
-    effectEvaluationIndex += 1;
-    const preparedAuthorization = effectAuthorizationPort
-      ? await effectAuthorizationPort.prepare({
-          runId,
-          evaluationIndex: effectEvaluationIndex,
-          operation,
-          detail,
-        })
-      : undefined;
+    const nextEffectEvaluationIndex = effectEvaluationIndex + 1;
+    let preparedAuthorization:
+      | Awaited<ReturnType<WorkflowEffectAuthorizationPort['prepare']>>
+      | undefined;
+    try {
+      preparedAuthorization = effectAuthorizationPort
+        ? await effectAuthorizationPort.prepare({
+            runId,
+            evaluationIndex: nextEffectEvaluationIndex,
+            operation,
+            detail,
+          })
+        : undefined;
+      if (preparedAuthorization) effectEvaluationIndex = nextEffectEvaluationIndex;
+    } catch (error) {
+      if (
+        error instanceof WorkflowEffectApprovalPendingError ||
+        error instanceof WorkflowEffectReconciliationRequiredError
+      ) {
+        latchedEffectFailure = error;
+      }
+      if (error instanceof WorkflowEffectAuthorizationBusyError) {
+        throw error;
+      }
+      const integrityFailure = asEffectIntegrityFailure(error);
+      if (integrityFailure) {
+        latchedEffectFailure = integrityFailure;
+        throw integrityFailure;
+      }
+      throw error;
+    }
     let handle: WorkflowEffectBoundaryHandle | undefined = preparedAuthorization?.handle;
     if (!handle && options.effectBoundary) {
       handle = await options.effectBoundary.intent({ runId, operation, detail });
@@ -366,9 +411,17 @@ function createRuntimeInternal(
           approvalId: error.approvalId,
           approvalDecisionHash: error.approvalDecisionHash,
         });
+      } else if (error instanceof WorkflowEffectApprovalPendingError) {
+        latchedEffectFailure = error;
+        await reportOutcome(handle, 'failed', boundedErrorEvidence(error));
       } else if (error instanceof WorkflowEffectReconciliationRequiredError) {
         latchedEffectFailure = error;
         await reportOutcome(handle, 'reconciliation_required', boundedErrorEvidence(error));
+      } else if (error instanceof WorkflowEffectAuthorizationBusyError) {
+        // Claim contention is neither a terminal effect outcome nor a consumed
+        // occurrence. Let an exact retry reuse the same durable evaluation
+        // index; a different effect at that index will fail its identity bind.
+        if (effectEvaluationIndex === nextEffectEvaluationIndex) effectEvaluationIndex -= 1;
       } else {
         if (error instanceof Error) latchedEffectFailure = error;
         await reportOutcome(handle, 'failed', boundedErrorEvidence(error));
@@ -653,6 +706,7 @@ function createRuntimeInternal(
     options.runStore && checkpointBinding
       ? Object.freeze({
           async commit(input: WorkflowCheckpointCommitInput) {
+            if (latchedEffectFailure) throw latchedEffectFailure;
             throwIfAborted('runtime_api');
             if (currentPhaseIndex < 0 || currentPhase === undefined) {
               throw workflowCheckpointError(

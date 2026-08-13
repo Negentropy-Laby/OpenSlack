@@ -34,6 +34,18 @@ export class WorkflowEffectAuthorizationRejectedError extends Error {
   }
 }
 
+export class WorkflowEffectAuthorizationBusyError extends Error {
+  readonly code = 'WORKFLOW_EFFECT_AUTHORIZATION_BUSY' as const;
+
+  constructor(
+    message = 'Workflow effect authorization is temporarily busy.',
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'WorkflowEffectAuthorizationBusyError';
+  }
+}
+
 export class WorkflowEffectReconciliationRequiredError extends Error {
   readonly code = 'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED' as const;
 
