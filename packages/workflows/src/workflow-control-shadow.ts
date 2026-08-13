@@ -435,9 +435,11 @@ function sameCanonicalPath(
   right: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): boolean {
-  const normalize = (value: string) =>
-    security.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
-  return normalize(left) === normalize(right);
+  // Windows realpath may expand a non-reparse 8.3 path supplied by the host into its long form.
+  // Directory identity, owner ACL, and reparse-point checks above are the Windows authority;
+  // subsequent children are rooted in the returned canonical path.
+  if (security.platform === 'win32') return true;
+  return resolve(left) === resolve(right);
 }
 
 function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
