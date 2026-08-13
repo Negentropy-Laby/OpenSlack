@@ -1445,6 +1445,19 @@ describe('workflow effect D2 authorization', () => {
   it('renews an expired pending approval with a monotonic generation', async () => {
     const value = await fixture();
     const first = await createPending(value.makePort());
+    const firstRecord = await value.approvals.read('run-1', first.pending.approvalId);
+    expect(firstRecord?.status).toBe('pending');
+    const staleBinding = value.decisionAuthority.issueHumanDecisionBinding({
+      principalId: 'wsman',
+      capability: 'workflow.effect.decide',
+      runId: 'run-1',
+      approvalId: first.pending.approvalId,
+      correlationId: 'correlation-1',
+      approvalExpiresAt: firstRecord!.expiresAt,
+      decision: 'approved',
+      reasonHash: REASON_HASH,
+      expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    });
     value.setNow(new Date(Date.parse(value.getNow()) + 16 * 60_000).toISOString());
     const port = value.makePort();
     const prepared = await port.prepare({
@@ -1457,7 +1470,16 @@ describe('workflow effect D2 authorization', () => {
     expect(renewedError).toBeInstanceOf(WorkflowEffectApprovalPendingError);
     const renewedApprovalId = (renewedError as WorkflowEffectApprovalPendingError).approvalId;
     expect(renewedApprovalId).not.toBe(first.pending.approvalId);
-    await expect(approve(value, first.pending.approvalId)).rejects.toBeDefined();
+    await expect(
+      value.approvals.decide({
+        runId: 'run-1',
+        approvalId: first.pending.approvalId,
+        expectedRevision: 0,
+        decision: 'approved',
+        reasonHash: REASON_HASH,
+        binding: staleBinding,
+      }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_EFFECT_APPROVAL_EXPIRED' });
     await expect(value.approvals.read('run-1', renewedApprovalId)).resolves.toMatchObject({
       status: 'pending',
       revision: 0,
