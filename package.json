@@ -11,7 +11,7 @@
     "@openslack/collaboration": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/qualification-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-checkpoint-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/qualification-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-control-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-checkpoint-shadow-contracts/tsconfig.json && tsc --noEmit -p scripts/workflow-effect-control-contracts/tsconfig.json && bun run workflow:effect-control-golden -- --check && tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,6 +26,7 @@
     "workflow:authority-golden": "bun scripts/workflow-authority-contracts/index.ts",
     "workflow:shadow-golden": "bun scripts/workflow-control-shadow-contracts/index.ts",
     "workflow:checkpoint-shadow-golden": "bun scripts/workflow-checkpoint-shadow-contracts/index.ts",
+    "workflow:effect-control-golden": "bun scripts/workflow-effect-control-contracts/index.ts",
     "workflow:runner-golden": "bun scripts/workflow-runner-contracts/index.ts",
     "graph:dist-build": "bunx tsc --build packages/organization-graph/tsconfig.json --clean && bunx tsc --build packages/organization-graph/tsconfig.json --force && bun run schema:stage",
     "graph:dist-smoke": "bun scripts/organization-graph-contracts/dist-smoke.ts",

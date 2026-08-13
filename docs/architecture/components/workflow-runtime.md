@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-04
+updated: 2026-08-12
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -859,6 +859,78 @@ successful prefix is removed under a second lock, preserving concurrent tail app
 The isolated Go checkpoint shadow validates `checkpoint_commit` and `resume_advance`, recomputes a
 matched prefix, records exact receipts and reconciliation, and never participates in resume. This
 does not negotiate runner v2, activate Go Workflow authority, or change CLI/MCP/Qoder reads.
+
+### GS9-D D1 effect-control seam
+
+The effect boundary remains TypeScript-owned. D1 freezes a closed schema/manifest/golden-vector
+bundle without implementing the runtime or store. The bundle has exactly six semantic artifact
+variants: `effect_intent`, `effect_approval_pending`, `effect_decision_committed`,
+`effect_audit_recorded`, `effect_execution_claim`, and `legacy_run_gate_observation`. A stable
+occurrence ID prevents two identical operation/detail pairs in one run from sharing a decision or
+execution claim.
+
+The future runtime order is:
+
+```text
+durable TypeScript effect_intent
+  -> admission/run-continuation gate
+  -> exact effect_approval_pending
+  -> independently authenticated effect_decision_committed
+  -> atomic one-time TypeScript effect_execution_claim:claimed
+  -> effect invocation
+  -> effect_execution_claim:executed or effect_execution_claim:reconciliation_required
+```
+
+The admission gate may still use a callback, manifest, unattended policy, or legacy run state to
+pause, cancel, or continue evaluation. It cannot authorize the effect. In particular, changing a
+legacy `pending-approvals.json` entry to `approved` may resume an old run, but the re-entered effect
+must still present an exact, active v2 decision and win its one-time claim. The legacy record is
+never read as an effect grant and its only semantic projection,
+`legacy_run_gate_observation`, carries no authority edge.
+
+The v2 decision binds run, workflow ID/version/hash, input hash, stable effect occurrence, effect
+ID/hash, required capability, business correlation, expiry, decision revision/hash, workspace,
+human principal, and reason hash. The independently authenticated human channel must be current
+for that exact decision. The owner-only store rechecks expiry and expected revision under lock,
+then atomically binds one claim to an exact `executionId`. An approved revision-1 decision with
+audit pending and the same decision's revision-2 `effect_audit_recorded` projection are both valid
+inputs to that one claim. Audit-sink success is evidence, not an authorization prerequisite. D1
+does not bind job, attempt, lease, or fence; GS9-F introduces runner-v2 execution binding.
+
+Once claimed, an occurrence cannot be automatically executed again. A crash, cancellation,
+timeout, or response loss after claim but before a proved outcome becomes reconciliation. Resume
+or a newer lease may inspect that state, but neither can retry the effect until an explicit
+reconciliation path proves what happened. Rejection produces no claim and no invocation.
+The decision workspace must equal the artifact workspace. Claim acquisition must occur while the
+approved decision is active; a terminal execution or reconciliation commit may occur after that
+approval expires so long as it is not earlier than the durable claim. Expiry therefore blocks new
+claims without invalidating an already consumed one.
+
+The effect-control observer is a separate, optional, default-off port. TypeScript commits its
+authoritative local record first. The six semantic artifacts map to exactly three future Go
+observer operations: `approval_created`, `approval_decided`, and `audit_recorded`. Intent,
+execution claim, and legacy gate observations are not Go approval-shadow operations. Go receives
+only credential-free hashes, bounded identity, revision, time, and status. Go cannot create a
+decision or claim, and its outage, mismatch, receipt, or audit-sink failure cannot change a
+TypeScript effect result. Raw detail, input, prompt, provider content, effect payload/result, human
+reason, attestation nonce, credential, bearer, endpoint, transcript, stack, command, and local path
+remain local and never enter the observer.
+
+Runner v1 remains byte-for-byte frozen. The D1 bundle is not a v1 message extension and does not
+activate runner-v2 `effect_authorization`. D2 consumes the bundle to implement and qualify the
+TypeScript store plus nominal, non-public authorization/claim composition. D3 adds and qualifies
+the default-off Go parity observer over only the three observer operations, including restart,
+duplicate, response-loss, concurrency, tamper, expiry, capacity, and disabled/unavailable-Go
+cases. Until both exit gates pass, the evidence ceiling remains
+`GS9-C LOCAL_PASS / Go authority NOT_CLAIMED`.
+The pinned runner manifest and golden hashes are source-lock evidence only. The runtime
+`controlBuildHash` is a separate deployment identity supplied by trusted composition and is never
+learned from, or self-certified by, an incoming receipt.
+
+GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
+canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
+read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
+drain. D1 makes no live, release, production, external-host, or Go-authority claim.
 
 ### Operator Module
 

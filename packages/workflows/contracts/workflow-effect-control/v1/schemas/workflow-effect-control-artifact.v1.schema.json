@@ -1,0 +1,869 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-control/v1/schemas/workflow-effect-control-artifact.v1.schema.json",
+  "$defs": {
+    "effectIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "kind": { "const": "effect_intent" },
+        "runnerV1Message": {
+          "allOf": [
+            {
+              "$ref": "https://openslack.dev/contracts/workflow-runner/v1/workflow-runner-message.v1.schema.json"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "protocolVersion": { "const": "openslack.workflow_runner.v1" },
+                "kind": { "const": "effect_intent" },
+                "workspaceId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "jobId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "attemptId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "leaseId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "eventId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "correlationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "sentAt": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                  "format": "date-time"
+                },
+                "payload": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "effectId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                      "maxLength": 256
+                    },
+                    "effectKind": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$",
+                      "maxLength": 128
+                    },
+                    "effectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "capabilityHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "requiresHumanDecision": { "const": true }
+                  },
+                  "required": [
+                    "effectId",
+                    "effectKind",
+                    "effectHash",
+                    "capabilityHash",
+                    "requiresHumanDecision"
+                  ]
+                }
+              },
+              "required": [
+                "protocolVersion",
+                "kind",
+                "workspaceId",
+                "jobId",
+                "workflowRunId",
+                "attemptId",
+                "leaseId",
+                "fencingToken",
+                "sequence",
+                "eventId",
+                "correlationId",
+                "sentAt",
+                "payload"
+              ]
+            }
+          ]
+        },
+        "runnerV1Prepared": {
+          "$ref": "https://openslack.dev/contracts/workflow-runner/v1/workflow-runner-prepared-message.v1.schema.json"
+        },
+        "runnerV1Receipt": {
+          "allOf": [
+            {
+              "$ref": "https://openslack.dev/contracts/workflow-runner/v1/workflow-runner-message.v1.schema.json"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "protocolVersion": { "const": "openslack.workflow_runner.v1" },
+                "kind": { "const": "event_receipt" },
+                "workspaceId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "jobId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "attemptId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "leaseId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "fencingToken": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "eventId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "correlationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                "sentAt": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                  "format": "date-time"
+                },
+                "payload": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "receivedEventId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                      "maxLength": 256
+                    },
+                    "receivedKind": { "const": "effect_intent" },
+                    "receivedSequence": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "receivedDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "receivedIdempotencyKey": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                      "maxLength": 256
+                    },
+                    "receivedFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+                    "status": { "enum": ["accepted", "duplicate"] },
+                    "controlBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "committedAt": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                      "format": "date-time"
+                    },
+                    "errorCode": { "type": "null" }
+                  },
+                  "required": [
+                    "receivedEventId",
+                    "receivedKind",
+                    "receivedSequence",
+                    "receivedDigest",
+                    "receivedIdempotencyKey",
+                    "receivedFingerprint",
+                    "status",
+                    "controlBuildHash",
+                    "committedAt",
+                    "errorCode"
+                  ]
+                }
+              },
+              "required": [
+                "protocolVersion",
+                "kind",
+                "workspaceId",
+                "jobId",
+                "workflowRunId",
+                "attemptId",
+                "leaseId",
+                "fencingToken",
+                "sequence",
+                "eventId",
+                "correlationId",
+                "sentAt",
+                "payload"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "kind",
+        "runnerV1Message",
+        "runnerV1Prepared",
+        "runnerV1Receipt"
+      ]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/effectIntent" },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": { "revision": { "const": 0 }, "auditProjection": { "type": "null" } },
+              "required": ["revision", "auditProjection"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "null" },
+        "kind": { "const": "effect_approval_pending" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": {
+                "revision": { "const": 1 },
+                "auditProjection": {
+                  "type": "object",
+                  "properties": { "status": { "const": "pending" } },
+                  "required": ["status"]
+                }
+              },
+              "required": ["revision", "auditProjection"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "const": "effect_decision_committed" },
+        "humanDecision": { "$ref": "workflow-effect-control-human-decision.v1.schema.json" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind",
+        "humanDecision"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": {
+                "revision": { "const": 2 },
+                "auditProjection": {
+                  "type": "object",
+                  "properties": { "status": { "const": "recorded" } },
+                  "required": ["status"]
+                }
+              },
+              "required": ["revision", "auditProjection"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "const": "effect_audit_recorded" },
+        "humanDecision": { "$ref": "workflow-effect-control-human-decision.v1.schema.json" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind",
+        "humanDecision"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": { "status": { "const": "approved" } },
+              "required": ["status"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "const": "effect_execution_claim" },
+        "humanDecision": { "$ref": "workflow-effect-control-human-decision.v1.schema.json" },
+        "executionId": { "type": "string", "pattern": "^WFEXECUTION-[0-9a-f]{64}$" },
+        "consumedApprovalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "consumedApprovalRevision": { "enum": [1, 2] },
+        "claimedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "claimRevision": { "const": 0 },
+        "claimStatus": { "const": "claimed" },
+        "outcomeHash": { "type": "null" },
+        "committedAt": { "type": "null" },
+        "reconciliationToken": { "type": "null" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind",
+        "humanDecision",
+        "executionId",
+        "consumedApprovalRecordHash",
+        "consumedApprovalRevision",
+        "claimedAt",
+        "claimRevision",
+        "claimStatus",
+        "outcomeHash",
+        "committedAt",
+        "reconciliationToken"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": { "status": { "const": "approved" } },
+              "required": ["status"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "const": "effect_execution_claim" },
+        "humanDecision": { "$ref": "workflow-effect-control-human-decision.v1.schema.json" },
+        "executionId": { "type": "string", "pattern": "^WFEXECUTION-[0-9a-f]{64}$" },
+        "consumedApprovalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "consumedApprovalRevision": { "enum": [1, 2] },
+        "claimedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "claimRevision": { "const": 1 },
+        "claimStatus": { "const": "executed" },
+        "outcomeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "reconciliationToken": { "type": "null" }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind",
+        "humanDecision",
+        "executionId",
+        "consumedApprovalRecordHash",
+        "consumedApprovalRevision",
+        "claimedAt",
+        "claimRevision",
+        "claimStatus",
+        "outcomeHash",
+        "committedAt",
+        "reconciliationToken"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "intentArtifact": { "$ref": "#/$defs/effectIntent" },
+        "intentBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "intentEffectId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "intentEffectHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "correlationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "approval": {
+          "allOf": [
+            { "$ref": "workflow-effect-approval-record.v2.schema.json" },
+            {
+              "type": "object",
+              "properties": { "status": { "const": "approved" } },
+              "required": ["status"]
+            }
+          ]
+        },
+        "approvalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "approvalDecisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "const": "effect_execution_claim" },
+        "humanDecision": { "$ref": "workflow-effect-control-human-decision.v1.schema.json" },
+        "executionId": { "type": "string", "pattern": "^WFEXECUTION-[0-9a-f]{64}$" },
+        "consumedApprovalRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "consumedApprovalRevision": { "enum": [1, 2] },
+        "claimedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "claimRevision": { "const": 1 },
+        "claimStatus": { "const": "reconciliation_required" },
+        "outcomeHash": { "type": "null" },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "reconciliationToken": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "intentArtifact",
+        "intentBindingHash",
+        "intentEffectId",
+        "intentEffectHash",
+        "correlationId",
+        "approval",
+        "approvalRecordHash",
+        "approvalDecisionHash",
+        "kind",
+        "humanDecision",
+        "executionId",
+        "consumedApprovalRecordHash",
+        "consumedApprovalRevision",
+        "claimedAt",
+        "claimRevision",
+        "claimStatus",
+        "outcomeHash",
+        "committedAt",
+        "reconciliationToken"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_effect_control_artifact.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "occurrenceIndex": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+        "kind": { "const": "legacy_run_gate_observation" },
+        "plane": { "const": "legacy_run_gate" },
+        "semantics": { "const": "run_gate_only" },
+        "status": { "enum": ["pending", "approved", "rejected", "expired"] },
+        "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "legacyProjectionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "effectDecisionAuthority": { "const": false },
+        "effectExecutionAuthority": { "const": false }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "workspaceId",
+        "runId",
+        "occurrenceIndex",
+        "occurrenceId",
+        "kind",
+        "plane",
+        "semantics",
+        "status",
+        "revision",
+        "legacyProjectionHash",
+        "observedAt",
+        "effectDecisionAuthority",
+        "effectExecutionAuthority"
+      ]
+    }
+  ]
+}
