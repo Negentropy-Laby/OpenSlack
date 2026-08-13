@@ -168,7 +168,11 @@ describe('governance shadow observation journal', () => {
     );
     port.observeAudit(value, audit(value));
 
-    await waitFor(() => expect(calls).toHaveLength(3));
+    // Flush is the public durability boundary for all work scheduled above;
+    // polling a one-second wall-clock window flakes under the hosted full-suite
+    // load and does not test any stronger contract.
+    await port.flush();
+    expect(calls).toHaveLength(3);
     expect(calls.map((call) => call.source.sourceSequence)).toEqual([1, 2, 3]);
     expect(calls.map((call) => call.observation.kind)).toEqual(['record', 'confirmation', 'audit']);
     const serialized = calls.map((call) => canonicalGovernedJson(call)).join('\n');
