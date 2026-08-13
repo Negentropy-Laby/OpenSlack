@@ -429,13 +429,17 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
     root: configuredRoot,
     rootReal: root.real,
     rootStat: root.stat,
-    records: recordsPath,
+    // Keep all durable child and file operations rooted in the verified
+    // canonical directories. Windows may expand a safe 8.3 configured root,
+    // and reusing the host spelling would make later exact-path checks reject
+    // the store's own owner-checked temporaries.
+    records: records.real,
     recordsReal: records.real,
     recordsStat: records.stat,
-    locks: locksPath,
+    locks: locks.real,
     locksReal: locks.real,
     locksStat: locks.stat,
-    ...(await scanStore(configuredRoot, ownerOnly)),
+    ...(await scanStore(root.real, ownerOnly)),
   };
 }
 
