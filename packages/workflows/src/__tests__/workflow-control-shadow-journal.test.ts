@@ -20,6 +20,7 @@ import {
   createWorkflowControlObservationPort,
   createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
+  ensureOwnerDirectory,
   prepareWorkflowControlShadowRequest,
   type WorkflowControlShadowJournalSecurityDependencies,
   type WorkflowControlShadowDiagnostic,
@@ -99,6 +100,17 @@ function receiptFor(
 }
 
 describe('Workflow Control GS7-B durable observation journal', () => {
+  it('treats Windows parent and child canonical path casing as one containment scope', async () => {
+    const root = await journalRoot('workflow-shadow-windows-canonical-case');
+    const security = windowsSecurity();
+    const canonicalRoot = await ensureOwnerDirectory(root, security);
+    const child = join(root, 'entries');
+
+    await expect(ensureOwnerDirectory(child, security, canonicalRoot.toUpperCase())).resolves.toBe(
+      await realpath(child),
+    );
+  });
+
   it('is default-off and requires no journal, network, or authority dependencies', async () => {
     const port = await createWorkflowControlObservationPort();
     expect(() => port.observeRun('run-disabled')).not.toThrow();

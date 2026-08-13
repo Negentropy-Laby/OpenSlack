@@ -419,8 +419,14 @@ export function isWorkflowControlShadowPublisherPort(
   );
 }
 
-function contained(root: string, candidate: string): boolean {
-  const value = relative(root, candidate);
+function containedCanonicalPath(
+  root: string,
+  candidate: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): boolean {
+  const normalize = (value: string) =>
+    security.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
+  const value = relative(normalize(root), normalize(candidate));
   return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
@@ -663,7 +669,7 @@ export async function ensureOwnerDirectory(
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
-    (parent !== undefined && !contained(parent, canonical))
+    (parent !== undefined && !containedCanonicalPath(parent, canonical, security))
   ) {
     throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
   }
@@ -688,7 +694,7 @@ export async function assertOwnerDirectory(
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
-    (parent !== undefined && !contained(parent, canonical))
+    (parent !== undefined && !containedCanonicalPath(parent, canonical, security))
   ) {
     throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
   }
