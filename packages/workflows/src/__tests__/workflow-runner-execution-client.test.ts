@@ -65,7 +65,7 @@ async function fixture(status: 'completed' | 'paused_waiting_approval' | 'failed
   roots.push(workspaceRoot);
   const workflowRunId = `run.public.${status}`;
   const descriptorRoot = join(workspaceRoot, '.runner-descriptors');
-  await mkdir(descriptorRoot);
+  await mkdir(descriptorRoot, { mode: 0o700 });
   hardenWindowsDirectory(descriptorRoot);
   const config: WorkflowRunnerControlConfig = {
     origin: 'http://127.0.0.1:18183',
