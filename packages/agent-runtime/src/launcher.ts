@@ -36,6 +36,12 @@ import {
   resolveRuntimeCredential,
 } from './openai-compatible-runtime.js';
 import { assertAgentResultSchema } from './schema-validation.js';
+import {
+  attachProviderUsageEvidence,
+  assertProviderUsageEvidence,
+  getProviderUsageEvidence,
+  type ProviderUsageReceipt,
+} from './provider-usage-evidence.js';
 
 export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
   fetchImpl?: typeof fetch;
@@ -201,7 +207,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   const launchAgent = async function launchAgent<T>(
     prompt: string,
     agentOptions: AgentLaunchOptions,
-  ): Promise<{ data: T; tokenUsage?: number; runId: string }> {
+  ): Promise<{
+    data: T;
+    tokenUsage?: number;
+    usageEvidence?: readonly ProviderUsageReceipt[];
+    runId: string;
+  }> {
     const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
       prepareAndValidate(prompt, agentOptions);
 
@@ -249,6 +260,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     });
 
     const runAdapter = providerResolution.adapter;
+    let adapterUsageEvidence: readonly ProviderUsageReceipt[] = [];
 
     try {
       // Delegate execution to the adapter
@@ -274,6 +286,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         toolExecutor,
         signal: abortController.signal,
       });
+      if (adapterResult.usageEvidence !== undefined) {
+        assertProviderUsageEvidence(adapterResult.usageEvidence);
+        adapterUsageEvidence = adapterResult.usageEvidence;
+      }
 
       if (abortController.signal.aborted) {
         throw abortController.signal.reason instanceof Error
@@ -303,9 +319,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       return {
         data: adapterResult.data,
         tokenUsage: adapterResult.tokenUsage,
+        usageEvidence: adapterResult.usageEvidence,
         runId,
       };
     } catch (err) {
+      const attachedUsageEvidence = getProviderUsageEvidence(err);
+      const usageEvidence =
+        attachedUsageEvidence.length > 0 ? attachedUsageEvidence : adapterUsageEvidence;
+      attachProviderUsageEvidence(err, usageEvidence);
       const chargedUsage = runStore.getRun(runId)?.tokensUsed ?? 0;
       if (chargedUsage > 0 && err instanceof Error) {
         Object.defineProperty(err, 'tokenUsage', {
@@ -346,9 +367,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             reason,
           });
         }
-        throw err instanceof AgentRunCancelledError
-          ? err
-          : new AgentRunCancelledError(runId, reason);
+        if (err instanceof AgentRunCancelledError) throw err;
+        const cancellationError = new AgentRunCancelledError(runId, reason);
+        attachProviderUsageEvidence(cancellationError, usageEvidence);
+        throw cancellationError;
       }
       if (err instanceof PermissionDeniedError) {
         recorder.fail(runId, err, 'TOOL_DENIED');
@@ -356,6 +378,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
       const failureCode = getAgentRunFailureCode(err);
       const executionError = new AgentExecutionFailedError(failureCode, runId);
+      attachProviderUsageEvidence(executionError, usageEvidence);
+      if (chargedUsage > 0) {
+        Object.defineProperty(executionError, 'tokenUsage', {
+          value: chargedUsage,
+          enumerable: false,
+          configurable: true,
+        });
+      }
       recorder.fail(runId, executionError, failureCode);
       if (runAdapter.bridgeContract) {
         recorder.progress(runId, {

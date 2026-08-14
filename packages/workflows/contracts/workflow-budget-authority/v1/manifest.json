@@ -1,0 +1,312 @@
+{
+  "schema": "openslack.workflow_budget_authority_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "typescriptRemainsSoleWriter": true,
+    "goRole": "validator_only",
+    "goAuthorityClaim": "NO_AUTHORITY",
+    "goAuthorityEligible": false,
+    "postgresImplemented": false,
+    "httpImplemented": false,
+    "runtimeRoutingActivated": false
+  },
+  "dimensions": ["tokens", "nano_usd", "calls"],
+  "invariants": {
+    "eachDimension": "0 <= settled <= reserved <= limit <= 9223372036854775807",
+    "open": "reserved - settled",
+    "reservationAccounting": "reserved = settled + sum(open reservation encumbrance)",
+    "oneReservationPerProviderTurn": true,
+    "requestedCalls": "1"
+  },
+  "folds": {
+    "reserve": {
+      "reserved": "reserved + requested",
+      "settled": "settled",
+      "precondition": "reserved + requested <= limit"
+    },
+    "reject": {
+      "reason": "structurally valid request has insufficient balance",
+      "counters": "unchanged",
+      "revisions": "account and run each advance once",
+      "authorization": { "tokens": "0", "nanoUsd": "0", "calls": "0" }
+    },
+    "settle": {
+      "precondition": "trusted exact provider receipt and actual <= reservation",
+      "settled": "settled + actual",
+      "reserved": "reserved - reservation + actual",
+      "released": "reservation - actual",
+      "failedProviderAttempt": "settle_usage_then_rethrow_without_cache_publication"
+    },
+    "providerUnknownOrOverrun": {
+      "counters": "unchanged",
+      "reservation": "remains_open",
+      "result": "settlement_reconciliation_required",
+      "providerRetryAuthorized": false,
+      "cachePublishAuthorized": false
+    }
+  },
+  "arithmetic": {
+    "quantityEncoding": "canonical_nonnegative_int64_decimal_string",
+    "max": "9223372036854775807",
+    "moneyUnit": "nano_usd",
+    "moneyScale": 9,
+    "rounding": "half_up_nonnegative",
+    "binaryFloatingPointAuthority": false,
+    "perTokenRate": "canonical_nonnegative_decimal_up_to_18_fraction_digits_without_fractional_trailing_zero"
+  },
+  "providerUsage": {
+    "schema": "openslack.provider_usage_receipt.v1",
+    "exactFields": [
+      "schema",
+      "providerHash",
+      "modelHash",
+      "runHash",
+      "attempt",
+      "calls",
+      "status",
+      "inputTokens",
+      "outputTokens",
+      "totalTokens",
+      "outcome",
+      "requestHash",
+      "outcomeHash",
+      "receiptHash"
+    ],
+    "receiptHashDomain": "openslack.provider-usage-receipt.v1",
+    "reservationBinds": [
+      "providerHash",
+      "modelHash",
+      "runHash",
+      "attempt",
+      "calls",
+      "rateNanoUsdPerToken"
+    ],
+    "settlementBindsOnly": [
+      "providerHash",
+      "modelHash",
+      "runHash",
+      "attempt",
+      "calls",
+      "status",
+      "totalTokens",
+      "receiptHash"
+    ],
+    "cachePublishAuthorization": {
+      "semantics": "budget_gate_only_not_business_success",
+      "providerResponseAcceptedRequired": true,
+      "providerAttemptFailedAuthorized": false
+    },
+    "rawForbidden": [
+      "provider",
+      "model",
+      "endpoint",
+      "prompt",
+      "request",
+      "response",
+      "credential",
+      "token",
+      "transcript"
+    ]
+  },
+  "reconciliations": {
+    "providerReasons": [
+      "provider_outcome_unknown",
+      "usage_receipt_missing",
+      "usage_receipt_untrusted",
+      "usage_overrun"
+    ],
+    "databaseReasons": ["database_commit_outcome_unknown"],
+    "domainsInterchangeable": false
+  },
+  "ledgerKinds": [
+    "reserve_reserved",
+    "reserve_rejected",
+    "settlement_settled",
+    "settlement_reconciliation_required"
+  ],
+  "legacyBudgetApproval": {
+    "semantics": "run_gate_only",
+    "limitAmendmentAuthority": false,
+    "reservationAuthority": false,
+    "settlementAuthority": false
+  },
+  "receipts": {
+    "operations": ["reserve", "settle"],
+    "statuses": [
+      "accepted",
+      "provider_reconciliation_required",
+      "database_reconciliation_required"
+    ],
+    "idempotencyPrefix": "openslack.workflow-budget-authority.v1.",
+    "sameKeySameFingerprint": "exact_original_receipt",
+    "sameKeyDifferentFingerprint": "conflict_without_mutation"
+  },
+  "cacheSemantics": {
+    "cacheHit": "no_reserve_no_settle_zero_budget_mutation",
+    "providerBeforeDurableReserve": "forbidden",
+    "cacheVisibleBeforeDurableSettlement": "forbidden"
+  },
+  "requestBinding": {
+    "method": "POST",
+    "paths": {
+      "reserve": "/v1/authority/workflow-budgets:reserve",
+      "settle": "/v1/authority/workflow-budgets:settle"
+    },
+    "body": "canonical-json-plus-one-lf",
+    "requestHash": "sha256_exact_body",
+    "idempotencyKey": "openslack.workflow-budget-authority.v1.{requestHash}",
+    "fingerprintBinds": ["callerId", "method", "operation", "path", "requestHash", "workspaceId"]
+  },
+  "negativeEvidence": {
+    "operations": [
+      "validate_account",
+      "validate_reserve_request",
+      "validate_provider_usage",
+      "validate_settlement_request",
+      "validate_settlement",
+      "validate_receipt",
+      "validate_reconciliation",
+      "validate_legacy_approval",
+      "validate_prepared_request",
+      "validate_receipt_for_prepared_request",
+      "validate_reservation_for_decision",
+      "validate_reserve_decision"
+    ],
+    "fields": [
+      "id",
+      "operation",
+      "input",
+      "schemaArtifact",
+      "expectedSchemaValid",
+      "expectedError"
+    ],
+    "replayableByPureGo": true
+  },
+  "canonicalization": {
+    "encoding": "utf-8",
+    "objectKeys": "lexicographic-ecmascript-code-unit",
+    "bytes": "canonical-json-plus-one-lf-when-framed",
+    "hash": "sha256",
+    "duplicateKeys": "rejected"
+  },
+  "sourceLocks": {
+    "authorityV2ManifestSha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
+    "authorityV2GoldenSha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe",
+    "runnerV1ManifestSha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6",
+    "runnerV1GoldenSha256": "b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844"
+  },
+  "limits": {
+    "maxAccountBytes": 65536,
+    "maxRecordBytes": 262144,
+    "maxJsonDepth": 16,
+    "maxJsonNodes": 4096,
+    "maxIdentifierBytes": 256,
+    "maxDecimalBytes": 19,
+    "maxRateDecimalBytes": 64,
+    "maxRateFractionDigits": 18,
+    "maxSafeInteger": 9007199254740991
+  },
+  "errorCodes": [
+    "WORKFLOW_BUDGET_AUTHORITY_INVALID",
+    "WORKFLOW_BUDGET_AUTHORITY_UNKNOWN_FIELD",
+    "WORKFLOW_BUDGET_AUTHORITY_LIMIT_EXCEEDED",
+    "WORKFLOW_BUDGET_AUTHORITY_INVALID_DECIMAL",
+    "WORKFLOW_BUDGET_AUTHORITY_DECIMAL_OVERFLOW",
+    "WORKFLOW_BUDGET_AUTHORITY_HASH_MISMATCH",
+    "WORKFLOW_BUDGET_AUTHORITY_IDENTITY_MISMATCH",
+    "WORKFLOW_BUDGET_AUTHORITY_POLICY_DRIFT",
+    "WORKFLOW_BUDGET_AUTHORITY_ROUTE_DRIFT",
+    "WORKFLOW_BUDGET_AUTHORITY_STALE_REVISION",
+    "WORKFLOW_BUDGET_AUTHORITY_RECONCILIATION_REQUIRED",
+    "WORKFLOW_BUDGET_AUTHORITY_LEGACY_APPROVAL_NO_AUTHORITY"
+  ],
+  "qualification": {
+    "localStatus": "LOCAL_PASS_when_exact_byte_and_cross_language_gates_pass",
+    "durableGoBudgetAuthority": "NOT_IMPLEMENTED_IN_E1",
+    "productionGoWorkflowBudgetAuthority": "NOT_CLAIMED"
+  },
+  "artifacts": {
+    "schemas/workflow-budget-account.v1.schema.json": {
+      "path": "schemas/workflow-budget-account.v1.schema.json",
+      "byteLength": 5321,
+      "sha256": "c1668083d3d054599c609cac5691dd6a608f96ac2edfdb4ad29e0a35ee1aef01"
+    },
+    "schemas/workflow-budget-reserve-request.v1.schema.json": {
+      "path": "schemas/workflow-budget-reserve-request.v1.schema.json",
+      "byteLength": 4691,
+      "sha256": "c05a005224e29ba239b60c8f451f429c030644272f27d7df887a8e4de880034b"
+    },
+    "schemas/workflow-budget-reserve-decision.v1.schema.json": {
+      "path": "schemas/workflow-budget-reserve-decision.v1.schema.json",
+      "byteLength": 4956,
+      "sha256": "2f5cfee17306cc759236e7497b04f9238781ae67bbb797decb5dcd458e89a6fc"
+    },
+    "schemas/workflow-budget-reservation.v1.schema.json": {
+      "path": "schemas/workflow-budget-reservation.v1.schema.json",
+      "byteLength": 4625,
+      "sha256": "2cb543f891816a27b90c62831dc9307a91a3581dc1950e552a19659334bb4b2c"
+    },
+    "schemas/provider-usage-receipt.v1.schema.json": {
+      "path": "schemas/provider-usage-receipt.v1.schema.json",
+      "byteLength": 4022,
+      "sha256": "1c8b0e6151b4cfa48e3393aba543c9b4141c13569e8a3906867a0d054eafbd4c"
+    },
+    "schemas/workflow-budget-settlement-request.v1.schema.json": {
+      "path": "schemas/workflow-budget-settlement-request.v1.schema.json",
+      "byteLength": 14249,
+      "sha256": "730fef26dde6f505cf38a7d1aa29d5b7c8b3b9f9cdcdfe50ba63e506be764dda"
+    },
+    "schemas/workflow-budget-settlement.v1.schema.json": {
+      "path": "schemas/workflow-budget-settlement.v1.schema.json",
+      "byteLength": 10463,
+      "sha256": "01308bc4d8957fb5317cd2449ce5383dea3472c5f7e3b251576c5d2515381635"
+    },
+    "schemas/workflow-budget-ledger-entry.v1.schema.json": {
+      "path": "schemas/workflow-budget-ledger-entry.v1.schema.json",
+      "byteLength": 5578,
+      "sha256": "031b15505a0a688bc56100173a47c3ae83fc8e7f4d546e4280ed00e4c560d61d"
+    },
+    "schemas/workflow-budget-receipt.v1.schema.json": {
+      "path": "schemas/workflow-budget-receipt.v1.schema.json",
+      "byteLength": 10266,
+      "sha256": "f06187969903206337a53359d58ab872634f2aece0c81162dbfe7b9837efc912"
+    },
+    "schemas/workflow-budget-reconciliation.v1.schema.json": {
+      "path": "schemas/workflow-budget-reconciliation.v1.schema.json",
+      "byteLength": 15014,
+      "sha256": "2f516ef143a65f638d1565349b00216fdf5f8abd98594e4e15d7403a0a1f29a4"
+    },
+    "schemas/workflow-budget-legacy-approval-observation.v1.schema.json": {
+      "path": "schemas/workflow-budget-legacy-approval-observation.v1.schema.json",
+      "byteLength": 1826,
+      "sha256": "7a69a28f7841663fc3dc4afde46f285af87ba1660f8b080b4212caba5001493a"
+    },
+    "schemas/workflow-budget-prepared-request.v1.schema.json": {
+      "path": "schemas/workflow-budget-prepared-request.v1.schema.json",
+      "byteLength": 2459,
+      "sha256": "7fddc59a80c4a28274a73539877191509f392dca85b4b18dc513410c7d519ff5"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 404421,
+      "sha256": "dd1ed6e46282f58b9bd6261417f3039971500d5c71b3f8c7c12fcfe54514b671"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-budget-account.v1.schema.json",
+    "schemas/workflow-budget-reserve-request.v1.schema.json",
+    "schemas/workflow-budget-reserve-decision.v1.schema.json",
+    "schemas/workflow-budget-reservation.v1.schema.json",
+    "schemas/provider-usage-receipt.v1.schema.json",
+    "schemas/workflow-budget-settlement-request.v1.schema.json",
+    "schemas/workflow-budget-settlement.v1.schema.json",
+    "schemas/workflow-budget-ledger-entry.v1.schema.json",
+    "schemas/workflow-budget-receipt.v1.schema.json",
+    "schemas/workflow-budget-reconciliation.v1.schema.json",
+    "schemas/workflow-budget-legacy-approval-observation.v1.schema.json",
+    "schemas/workflow-budget-prepared-request.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

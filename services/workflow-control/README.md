@@ -4,8 +4,9 @@ This module contains the GS7-A pure Go consumer of the TypeScript-owned Workflow
 contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B runner-lifecycle
 control plane, the GS9-B default-off PostgreSQL authority qualification spine, the GS9-C
 checkpoint/resume differential observer, and the GS9-D effect decision/audit differential
-observer. The five servers are separate entry points and have separate configuration and authority
-boundaries.
+observer. It also contains the repository-only GS9-E1 budget operational contract mirror. The five
+servers are separate entry points with separate configuration and authority boundaries; the E1 Go
+package is a validator and has no server entry point.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -153,3 +154,18 @@ The API is frozen in `docs/api/effect-shadow-openapi.yaml`; the boundary and evi
 documented in `docs/architecture/effect-shadow.md` and `docs/testing/gs9d-qualification.md`. This
 batch does not activate runner v2, Go effect authority, routing, canary, production, release, or
 TypeScript writer retirement.
+
+## GS9-E1 budget operational contract mirror
+
+The `budgetcontract` package embeds the byte-identical mirror of the TypeScript-owned
+`workflow-budget-authority/v1` bundle. It validates closed account, reserve decision, provider
+usage, settlement, ledger, exact receipt, and reconciliation records and replays the integer-only
+token, `nano_usd`, and call folds. It is validator-only and cannot reserve, settle, authorize, or
+persist a budget operation. Existing TypeScript floating-point cost estimates remain outside the
+contract authority boundary.
+
+GS9-E1 adds no migration, database repository, HTTP API, route, binary, container entry point,
+runtime budget client, production worker configuration, runner-v2 delivery, routing, or canary.
+TypeScript remains the sole production Workflow and budget authority. The default image and its
+five existing servers do not copy, import, or expose this repository-only package. GS9-E2
+PostgreSQL budget qualification remains pending.

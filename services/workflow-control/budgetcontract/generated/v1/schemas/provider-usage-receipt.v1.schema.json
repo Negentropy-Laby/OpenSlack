@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/provider-usage-receipt.v1.schema.json",
+  "title": "OpenSlack bounded provider usage receipt v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.provider_usage_receipt.v1" },
+        "providerHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "modelHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "runHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "attempt": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "calls": { "const": "1" },
+        "status": { "const": "reported" },
+        "inputTokens": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            { "type": "null" }
+          ]
+        },
+        "outputTokens": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            { "type": "null" }
+          ]
+        },
+        "totalTokens": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "outcome": { "enum": ["provider_response_accepted", "provider_attempt_failed"] },
+        "requestHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "outcomeHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "receiptHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "providerHash",
+        "modelHash",
+        "runHash",
+        "attempt",
+        "calls",
+        "status",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "outcome",
+        "requestHash",
+        "outcomeHash",
+        "receiptHash"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.provider_usage_receipt.v1" },
+        "providerHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "modelHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "runHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "attempt": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "calls": { "const": "1" },
+        "status": { "const": "unreported" },
+        "inputTokens": { "type": "null" },
+        "outputTokens": { "type": "null" },
+        "totalTokens": { "type": "null" },
+        "outcome": { "enum": ["provider_response_accepted", "provider_attempt_failed"] },
+        "requestHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "outcomeHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "receiptHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "providerHash",
+        "modelHash",
+        "runHash",
+        "attempt",
+        "calls",
+        "status",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "outcome",
+        "requestHash",
+        "outcomeHash",
+        "receiptHash"
+      ]
+    }
+  ]
+}

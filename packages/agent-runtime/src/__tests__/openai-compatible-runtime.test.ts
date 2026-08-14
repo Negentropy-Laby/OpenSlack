@@ -12,6 +12,7 @@ import {
   createOpenSlackAgentLauncher,
   createRunRecorder,
   createRunStore,
+  getProviderUsageEvidence,
   loadOpenAICompatibleRuntimeConfig,
   OpenAICompatibleExecutionAdapter,
   PermissionDeniedError,
@@ -137,12 +138,12 @@ describe('OpenAI-compatible agent runtime', () => {
               },
             },
           ],
-          usage: { total_tokens: 10 },
+          usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 },
         });
       }
       return jsonResponse({
         choices: [{ message: { content: '{"summary":"done"}' } }],
-        usage: { total_tokens: 7 },
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
       });
     }) as unknown as typeof fetch;
     const result = await adapter(fetchImpl).execute<{ summary: string }>(context);
@@ -150,6 +151,11 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(result.data).toEqual({ summary: 'done' });
     expect(result.tokenUsage).toBe(17);
     expect(result.tokenUsageRecorded).toBe(true);
+    expect(result.usageEvidence).toHaveLength(2);
+    expect(result.usageEvidence?.map((receipt) => receipt.attempt)).toEqual(['1', '2']);
+    expect(result.usageEvidence?.map((receipt) => receipt.totalTokens)).toEqual(['10', '7']);
+    expect(result.usageEvidence?.map((receipt) => receipt.inputTokens)).toEqual(['6', '5']);
+    expect(result.usageEvidence?.map((receipt) => receipt.outputTokens)).toEqual(['4', '2']);
     expect(store.getRun(context.runId)).toMatchObject({ tokensUsed: 17, tokensRemaining: 23 });
     expect(
       (requests[0].tools as Array<{ function: { name: string } }>).map(
@@ -248,9 +254,22 @@ describe('OpenAI-compatible agent runtime', () => {
         choices: [{ message: { content: '{"ok":true}' } }],
       }),
     ) as unknown as typeof fetch;
-    await expect(adapter(missingUsage).execute(createContext(root).context)).rejects.toBeInstanceOf(
-      ProviderInvalidResponseError,
-    );
+    let missingUsageError: unknown;
+    try {
+      await adapter(missingUsage).execute(createContext(root).context);
+    } catch (error) {
+      missingUsageError = error;
+    }
+    expect(missingUsageError).toBeInstanceOf(ProviderInvalidResponseError);
+    expect(getProviderUsageEvidence(missingUsageError)).toMatchObject([
+      {
+        attempt: '1',
+        calls: '1',
+        status: 'unreported',
+        totalTokens: null,
+        outcome: 'provider_attempt_failed',
+      },
+    ]);
 
     rmSync(join(root, '.openslack.local'), { recursive: true, force: true });
     const overBudget = vi.fn(async () =>
@@ -264,6 +283,56 @@ describe('OpenAI-compatible agent runtime', () => {
       AgentBudgetExceededError,
     );
     expect(store.getRun(context.runId)).toMatchObject({ tokensUsed: 6, tokensRemaining: -1 });
+  });
+
+  it('retains ordered reported receipts when a later provider attempt has no usage', async () => {
+    let turn = 0;
+    const fetchImpl = vi.fn(async () => {
+      turn += 1;
+      return turn === 1
+        ? jsonResponse({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'read-before-failure',
+                      type: 'function',
+                      function: { name: 'repo_read', arguments: '{"path":"README.md"}' },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { total_tokens: 3 },
+          })
+        : jsonResponse({ choices: [{ message: { content: '{"ok":true}' } }] });
+    }) as unknown as typeof fetch;
+
+    let failure: unknown;
+    try {
+      await adapter(fetchImpl).execute(createContext(root).context);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ProviderInvalidResponseError);
+    expect(getProviderUsageEvidence(failure)).toMatchObject([
+      {
+        attempt: '1',
+        status: 'reported',
+        totalTokens: '3',
+        outcome: 'provider_response_accepted',
+      },
+      {
+        attempt: '2',
+        status: 'unreported',
+        totalTokens: null,
+        outcome: 'provider_attempt_failed',
+      },
+    ]);
+    expect(Object.keys(failure as object)).not.toContain('usageEvidence');
   });
 
   it('distinguishes invalid tool arguments, denied tools, and safety limits', async () => {
@@ -286,9 +355,22 @@ describe('OpenAI-compatible agent runtime', () => {
         usage: { total_tokens: 1 },
       }),
     ) as unknown as typeof fetch;
-    await expect(adapter(invalidArgs).execute(createContext(root).context)).rejects.toBeInstanceOf(
-      ToolArgumentInvalidError,
-    );
+    let invalidArgsError: unknown;
+    try {
+      await adapter(invalidArgs).execute(createContext(root).context);
+    } catch (error) {
+      invalidArgsError = error;
+    }
+    expect(invalidArgsError).toBeInstanceOf(ToolArgumentInvalidError);
+    expect(getProviderUsageEvidence(invalidArgsError)).toMatchObject([
+      {
+        status: 'reported',
+        totalTokens: '1',
+        // The provider response is syntactically accepted; the governed local
+        // tool schema rejects it later. Outcome never claims agent success.
+        outcome: 'provider_response_accepted',
+      },
+    ]);
 
     rmSync(join(root, '.openslack.local'), { recursive: true, force: true });
     const denied = vi.fn(async () =>
@@ -453,8 +535,9 @@ describe('OpenAI-compatible agent runtime', () => {
       rootDir: root,
       openAICompatible: { env: { TEST_RUNTIME_KEY: 'transport-only-test-value' }, fetchImpl },
     });
-    await expect(
-      launcher('return a summary', {
+    let failure: unknown;
+    try {
+      await launcher('return a summary', {
         label: 'provider-test',
         phase: 'test',
         budget: { tokens: 20, costUsd: 0 },
@@ -470,11 +553,25 @@ describe('OpenAI-compatible agent runtime', () => {
           runtimeProvider: 'openai-compatible',
           permissionMode: 'plan',
         },
-      }),
-    ).rejects.toMatchObject({
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
       name: AgentExecutionFailedError.name,
       code: 'PROVIDER_INVALID_RESPONSE',
     });
+    expect(getProviderUsageEvidence(failure)).toMatchObject([
+      {
+        attempt: '1',
+        status: 'reported',
+        totalTokens: '3',
+        outcome: 'provider_response_accepted',
+      },
+    ]);
+    expect((failure as { tokenUsage?: number }).tokenUsage).toBe(3);
+    expect(Object.keys(failure as object)).not.toContain('tokenUsage');
+    expect(Object.keys(failure as object)).not.toContain('usageEvidence');
 
     const run = store.listRuns()[0];
     expect(run).toMatchObject({

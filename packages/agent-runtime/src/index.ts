@@ -60,6 +60,26 @@ export type {
 export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
 export type {
+  ProviderUsageStatus,
+  ProviderUsageOutcome,
+  ProviderUsageReceipt,
+  ProviderUsageIdentityHashes,
+  ProviderTokenUsage,
+  BuildProviderUsageReceiptInput,
+} from './provider-usage-evidence.js';
+export {
+  PROVIDER_USAGE_RECEIPT_SCHEMA,
+  PROVIDER_USAGE_EVIDENCE_MAX_ENTRIES,
+  PROVIDER_USAGE_EVIDENCE_MAX_BYTES,
+  buildProviderUsageReceipt,
+  buildProviderUsageIdentityHashes,
+  assertProviderUsageReceipt,
+  assertProviderUsageEvidence,
+  getProviderUsageEvidence,
+  attachProviderUsageEvidence,
+} from './provider-usage-evidence.js';
+
+export type {
   RepositoryToolName,
   RepositoryToolDefinition,
   ToolExecutionResult,

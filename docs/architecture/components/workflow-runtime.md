@@ -992,6 +992,27 @@ real-PostgreSQL race/restart/response-loss, OpenAPI, default-off image, and cros
 establish only `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED`; authenticated-host, live,
 release, production, routing, and writer-cutover claims remain separate.
 
+### GS9-E1 budget operational contract and provider evidence seam
+
+GS9-E1 freezes a TypeScript-owned `workflow-budget-authority/v1` bundle and a byte-identical Go
+mirror. The Go package is validator-only: it replays the closed schemas, golden vectors, canonical
+integer quantities, and pure reserve/reject/settle/reconciliation folds, but owns no runtime state.
+The account, reservation, provider usage, settlement, ledger, exact receipt, and reconciliation
+records bind tokens, `nano_usd`, and calls without using JavaScript or Go floating point in
+authority bytes. Existing TypeScript `BudgetState.costUsd` remains local/UI estimation evidence.
+
+The OpenAI-compatible adapter exposes bounded, domain-separated, hash-only usage evidence for each
+real provider turn. A provider turn, rather than an entire potentially multi-turn agent invocation,
+is the unit that future authority integration must reserve and settle. Receipt and settlement
+bindings contain no prompt, response, endpoint, credential, transcript, or provider-output body.
+Failure with trusted usage remains chargeable evidence; missing or untrusted usage fails closed to
+provider-outcome reconciliation.
+
+This is a contract and evidence seam only. It adds no database, migration, repository, HTTP route,
+server, runner-v2 delivery, production budget client, canary, routing, or authority cutover. The Go
+mirror cannot authorize or persist a budget operation, TypeScript remains the sole production
+Workflow and budget authority, and GS9-E2 PostgreSQL qualification remains pending.
+
 Public CLI and TUI execution submit to the loopback Workflow Runner control service rather than
 calling `executeRun` or `executeResume` directly. The client seals a descriptor, submits only the
 canonical hash-bound JobSpec, polls the strict JobView, and accepts a completed result only when
@@ -1001,7 +1022,8 @@ builtins may use transitive product modules because the exact builtin source has
 runner build hash jointly bind those bytes. Missing transport configuration fails before execution
 and never falls back to the legacy in-process route.
 
-GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
+GS9-E1 freezes the budget contract and evidence seam while E2 remains pending. GS9-F delivers
+runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
 read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
 drain. D1 makes no live, release, production, external-host, or Go-authority claim.

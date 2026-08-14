@@ -21,6 +21,12 @@ import type {
 } from './adapter.js';
 import { redactSensitiveText } from './sensitive-data.js';
 import type { RepositoryToolName } from './tool-executor.js';
+import {
+  attachProviderUsageEvidence,
+  buildProviderUsageReceipt,
+  type ProviderTokenUsage,
+  type ProviderUsageReceipt,
+} from './provider-usage-evidence.js';
 
 export interface OpenAICompatibleRuntimeConfig {
   providerId: 'openai-compatible';
@@ -176,6 +182,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
     ];
     let tokenUsage = 0;
     let toolCalls = 0;
+    const usageEvidence: ProviderUsageReceipt[] = [];
     const startedAt = Date.now();
     // AgentRunState is the immutable launch-time budget snapshot for this
     // execution. Recorder chargeUsage persists fresh states, so all per-turn
@@ -183,152 +190,223 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
     const initialTokensRemaining = context.runState.tokensRemaining;
 
     for (let turn = 0; turn < this.options.maxTurns; turn += 1) {
-      throwIfAborted(context.signal);
-      if (Date.now() - startedAt >= this.options.timeoutMs) {
-        throw new ProviderTimeoutError();
-      }
-      const remaining =
-        initialTokensRemaining === null
-          ? this.options.maxOutputTokens
-          : initialTokensRemaining - tokenUsage;
-      if (remaining <= 0) throw new AgentBudgetExceededError();
-      const maxTokens = Math.min(this.options.maxOutputTokens, remaining);
-      const response = await fetchWithTimeout(
-        fetchImpl,
-        endpoint,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${this.options.apiKey}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: context.resolvedConfig.model ?? this.options.model,
-            messages,
-            tools: definitions.map((definition) => ({
-              type: 'function',
-              function: {
-                name: toWireToolName(definition.name),
-                description: definition.description,
-                parameters: definition.inputSchema,
-              },
-            })),
-            tool_choice: definitions.length > 0 ? 'auto' : undefined,
-            max_tokens: maxTokens,
-          }),
-        },
-        Math.max(1, this.options.timeoutMs - (Date.now() - startedAt)),
-        context.signal,
-      );
-      if (!response.ok) {
-        if (response.status === 408 || response.status === 504) throw new ProviderTimeoutError();
-        if (response.status === 401 || response.status === 403) {
-          throw new RuntimeMisconfiguredError(
-            'OpenAI-compatible provider rejected its credential.',
-          );
-        }
-        if (response.status === 429 || response.status >= 500) {
-          throw new ProviderUnavailableError();
-        }
-        throw new ProviderInvalidResponseError('OpenAI-compatible provider rejected the request.');
-      }
-      let raw: string;
+      let requestBody = '';
+      let responseBytes: string | undefined;
+      let attemptStarted = false;
+      let receiptRecorded = false;
+      let reportedUsage: ProviderTokenUsage | null = null;
       try {
-        raw = await readResponseTextBounded(
-          response,
-          this.options.maxResponseBytes,
+        throwIfAborted(context.signal);
+        if (Date.now() - startedAt >= this.options.timeoutMs) {
+          throw new ProviderTimeoutError();
+        }
+        const remaining =
+          initialTokensRemaining === null
+            ? this.options.maxOutputTokens
+            : initialTokensRemaining - tokenUsage;
+        if (remaining <= 0) throw new AgentBudgetExceededError();
+        const maxTokens = Math.min(this.options.maxOutputTokens, remaining);
+        const modelId = context.resolvedConfig.model ?? this.options.model;
+        requestBody = JSON.stringify({
+          model: modelId,
+          messages,
+          tools: definitions.map((definition) => ({
+            type: 'function',
+            function: {
+              name: toWireToolName(definition.name),
+              description: definition.description,
+              parameters: definition.inputSchema,
+            },
+          })),
+          tool_choice: definitions.length > 0 ? 'auto' : undefined,
+          max_tokens: maxTokens,
+        });
+        attemptStarted = true;
+        const response = await fetchWithTimeout(
+          fetchImpl,
+          endpoint,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${this.options.apiKey}`,
+              'content-type': 'application/json',
+            },
+            body: requestBody,
+          },
           Math.max(1, this.options.timeoutMs - (Date.now() - startedAt)),
           context.signal,
         );
-      } catch (error) {
-        if (
-          context.signal?.aborted ||
-          error instanceof ProviderTimeoutError ||
-          error instanceof AgentLimitExceededError
-        ) {
-          throw error;
-        }
-        throw new ProviderUnavailableError();
-      }
-      const body = parseProviderResponse(raw);
-      const used = readUsage(body.usage);
-      tokenUsage += used;
-      context.recorder.chargeUsage(context.runId, used);
-      if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
-        throw new AgentBudgetExceededError();
-      }
-      const providerChoice = body.choices?.[0];
-      const choice = providerChoice?.message;
-      if (!choice) throw new ProviderInvalidResponseError();
-      context.recorder.progress(context.runId, {
-        step: 'provider_turn_completed',
-        provider: 'openai-compatible',
-        turn: turn + 1,
-        tokenUsage: used,
-        usageStatus: 'reported',
-        costStatus: 'unknown',
-      });
-
-      const requestedTools = choice.tool_calls ?? [];
-      if (requestedTools.length > 0) {
-        if (
-          providerChoice.finish_reason !== undefined &&
-          providerChoice.finish_reason !== null &&
-          providerChoice.finish_reason !== 'tool_calls'
-        ) {
+        if (!response.ok) {
+          responseBytes = JSON.stringify({ kind: 'http_status', status: String(response.status) });
+          if (response.status === 408 || response.status === 504) throw new ProviderTimeoutError();
+          if (response.status === 401 || response.status === 403) {
+            throw new RuntimeMisconfiguredError(
+              'OpenAI-compatible provider rejected its credential.',
+            );
+          }
+          if (response.status === 429 || response.status >= 500) {
+            throw new ProviderUnavailableError();
+          }
           throw new ProviderInvalidResponseError(
-            'Provider returned an invalid tool finish reason.',
+            'OpenAI-compatible provider rejected the request.',
           );
         }
-        messages.push({
-          role: 'assistant',
-          content: choice.content ?? null,
-          tool_calls: requestedTools,
-        });
-        for (const call of requestedTools) {
-          toolCalls += 1;
-          if (toolCalls > this.options.maxToolCalls) {
-            throw new AgentLimitExceededError('Agent tool-call limit was exceeded.');
+        let raw: string;
+        try {
+          raw = await readResponseTextBounded(
+            response,
+            this.options.maxResponseBytes,
+            Math.max(1, this.options.timeoutMs - (Date.now() - startedAt)),
+            context.signal,
+          );
+        } catch (error) {
+          if (
+            context.signal?.aborted ||
+            error instanceof ProviderTimeoutError ||
+            error instanceof AgentLimitExceededError
+          ) {
+            throw error;
           }
-          if (typeof call.id !== 'string' || !call.id || call.type !== 'function') {
-            throw new ProviderInvalidResponseError('Provider tool call is incomplete.');
-          }
-          const toolName = fromWireToolName(call.function?.name);
-          const args = parseToolArguments(toolName, call.function?.arguments);
-          const result = await context.toolExecutor.execute(toolName, args, {
-            signal: context.signal,
-            deadlineAt: startedAt + this.options.timeoutMs,
-            maxResultBytes: this.options.maxToolResultBytes,
-          });
-          if (Buffer.byteLength(JSON.stringify(result)) > this.options.maxToolResultBytes) {
-            throw new AgentLimitExceededError('Agent tool-result byte limit was exceeded.');
-          }
-          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+          throw new ProviderUnavailableError();
         }
-        continue;
-      }
+        responseBytes = raw;
+        const body = parseProviderResponse(raw);
+        const usage = readUsage(body.usage);
+        reportedUsage = usage;
+        const used = usage.totalTokens;
+        tokenUsage += used;
+        context.recorder.chargeUsage(context.runId, used);
+        const providerChoice = body.choices?.[0];
+        const choice = providerChoice?.message;
+        if (!choice) throw new ProviderInvalidResponseError();
+        const requestedTools = choice.tool_calls ?? [];
+        let validatedTools: Array<{
+          call: OpenAIToolCall;
+          toolName: RepositoryToolName;
+          args: Record<string, unknown>;
+        }> = [];
+        if (requestedTools.length > 0) {
+          if (
+            providerChoice.finish_reason !== undefined &&
+            providerChoice.finish_reason !== null &&
+            providerChoice.finish_reason !== 'tool_calls'
+          ) {
+            throw new ProviderInvalidResponseError(
+              'Provider returned an invalid tool finish reason.',
+            );
+          }
+          validatedTools = requestedTools.map((call) => {
+            if (typeof call.id !== 'string' || !call.id || call.type !== 'function') {
+              throw new ProviderInvalidResponseError('Provider tool call is incomplete.');
+            }
+            const toolName = fromWireToolName(call.function?.name);
+            return {
+              call,
+              toolName,
+              args: parseToolArguments(toolName, call.function?.arguments),
+            };
+          });
+        } else {
+          if (typeof choice.content !== 'string' || !choice.content.trim()) {
+            throw new ProviderInvalidResponseError(
+              'Provider returned neither content nor tool calls.',
+            );
+          }
+          if (providerChoice.finish_reason === 'length') {
+            throw new AgentLimitExceededError('Provider output token limit was reached.');
+          }
+          if (
+            providerChoice.finish_reason !== undefined &&
+            providerChoice.finish_reason !== null &&
+            providerChoice.finish_reason !== 'stop'
+          ) {
+            throw new ProviderInvalidResponseError('Provider returned an invalid finish reason.');
+          }
+        }
 
-      if (typeof choice.content !== 'string' || !choice.content.trim()) {
-        throw new ProviderInvalidResponseError('Provider returned neither content nor tool calls.');
+        usageEvidence.push(
+          buildProviderUsageReceipt({
+            providerId: this.options.providerId,
+            modelId,
+            runId: context.runId,
+            attempt: turn + 1,
+            status: 'reported',
+            usage,
+            outcome: 'provider_response_accepted',
+            requestBytes: requestBody,
+            outcomeBytes: responseBytes,
+          }),
+        );
+        receiptRecorded = true;
+        if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
+          throw new AgentBudgetExceededError();
+        }
+        context.recorder.progress(context.runId, {
+          step: 'provider_turn_completed',
+          provider: 'openai-compatible',
+          turn: turn + 1,
+          tokenUsage: used,
+          usageStatus: 'reported',
+          costStatus: 'unknown',
+        });
+
+        if (requestedTools.length > 0) {
+          messages.push({
+            role: 'assistant',
+            content: choice.content ?? null,
+            tool_calls: requestedTools,
+          });
+          for (const { call, toolName, args } of validatedTools) {
+            toolCalls += 1;
+            if (toolCalls > this.options.maxToolCalls) {
+              throw new AgentLimitExceededError('Agent tool-call limit was exceeded.');
+            }
+            const result = await context.toolExecutor.execute(toolName, args, {
+              signal: context.signal,
+              deadlineAt: startedAt + this.options.timeoutMs,
+              maxResultBytes: this.options.maxToolResultBytes,
+            });
+            if (Buffer.byteLength(JSON.stringify(result)) > this.options.maxToolResultBytes) {
+              throw new AgentLimitExceededError('Agent tool-result byte limit was exceeded.');
+            }
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify(result),
+            });
+          }
+          continue;
+        }
+        return {
+          data: parseFinalContent(choice.content!) as T,
+          tokenUsage,
+          tokenUsageRecorded: true,
+          usageEvidence: Object.freeze([...usageEvidence]),
+        };
+      } catch (error) {
+        if (attemptStarted && !receiptRecorded) {
+          usageEvidence.push(
+            buildProviderUsageReceipt({
+              providerId: this.options.providerId,
+              modelId: context.resolvedConfig.model ?? this.options.model,
+              runId: context.runId,
+              attempt: turn + 1,
+              status: reportedUsage === null ? 'unreported' : 'reported',
+              usage: reportedUsage,
+              outcome: 'provider_attempt_failed',
+              requestBytes: requestBody,
+              outcomeBytes: responseBytes ?? providerFailureOutcome(error),
+            }),
+          );
+        }
+        attachProviderUsageEvidence(error, usageEvidence);
+        throw error;
       }
-      if (providerChoice.finish_reason === 'length') {
-        throw new AgentLimitExceededError('Provider output token limit was reached.');
-      }
-      if (
-        providerChoice.finish_reason !== undefined &&
-        providerChoice.finish_reason !== null &&
-        providerChoice.finish_reason !== 'stop'
-      ) {
-        throw new ProviderInvalidResponseError('Provider returned an invalid finish reason.');
-      }
-      return {
-        data: parseFinalContent(choice.content) as T,
-        tokenUsage,
-        tokenUsageRecorded: true,
-      };
     }
 
-    throw new AgentLimitExceededError('Agent turn limit was exceeded.');
+    const error = new AgentLimitExceededError('Agent turn limit was exceeded.');
+    attachProviderUsageEvidence(error, usageEvidence);
+    throw error;
   }
 }
 
@@ -350,7 +428,7 @@ interface OpenAIResponseBody {
     message?: { content?: string | null; tool_calls?: OpenAIToolCall[] };
     finish_reason?: string | null;
   }>;
-  usage?: { total_tokens?: number };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
 function validateConfigShape(config: Record<string, unknown>): void {
@@ -422,12 +500,37 @@ function parseProviderResponse(raw: string): OpenAIResponseBody {
   }
 }
 
-function readUsage(value: OpenAIResponseBody['usage']): number {
-  const tokens = value?.total_tokens;
-  if (typeof tokens !== 'number' || !Number.isInteger(tokens) || tokens < 0) {
+function readUsage(value: OpenAIResponseBody['usage']): ProviderTokenUsage {
+  const totalTokens = readUsageInteger(value?.total_tokens, true);
+  const inputTokens = readUsageInteger(value?.prompt_tokens, false);
+  const outputTokens = readUsageInteger(value?.completion_tokens, false);
+  if (totalTokens === undefined) {
     throw new ProviderInvalidResponseError('Provider response omitted valid token usage.');
   }
-  return tokens;
+  if (
+    inputTokens !== undefined &&
+    outputTokens !== undefined &&
+    inputTokens + outputTokens !== totalTokens
+  ) {
+    throw new ProviderInvalidResponseError('Provider response token usage is inconsistent.');
+  }
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+function readUsageInteger(value: unknown, required: boolean): number | undefined {
+  if (value === undefined && !required) return undefined;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new ProviderInvalidResponseError('Provider response omitted valid token usage.');
+  }
+  return value;
+}
+
+function providerFailureOutcome(error: unknown): string {
+  const code =
+    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+      ? String((error as { code: string }).code)
+      : 'PROVIDER_FAILURE';
+  return JSON.stringify({ kind: 'provider_failure', code });
 }
 
 function parseToolArguments(name: string, value: unknown): Record<string, unknown> {

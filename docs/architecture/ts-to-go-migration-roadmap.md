@@ -462,20 +462,34 @@ progression, mismatch latching, unknown-commit reconciliation, concurrency, rest
 default-off image behavior are required gates. Go never enters the TypeScript approval, claim,
 effect, resume, or user-response path.
 
-TypeScript remains the sole writer throughout GS9-D. Runner protocol v1 bytes and behavior remain
-frozen; D1-D3 neither negotiate nor deliver runner v2, and a runner message or durable receipt is
-never itself an approval decision. GS9-E adds cumulative-budget authority. GS9-F delivers runner
-v2. GS9-G owns new-record routing, canary, PostgreSQL single-writer cutover, and higher-epoch
-rollback. GS9-H makes TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only
-after external qualification and drain. Existing records stay on their original writer and no
-stage permits per-request fallback.
+GS9-E1 freezes the cumulative-budget operational contract before any persistence or delivery work.
+The TypeScript-owned `workflow-budget-authority/v1` bundle and its Go exact mirror close the
+account, reserve decision, provider usage, settlement, ledger, receipt, and reconciliation shapes;
+they use canonical signed-int64 decimal strings and integer-only token, `nano_usd`, and call folds.
+Each provider turn is a separately bound usage event, while prompts, responses, endpoints,
+credentials, transcripts, and existing floating-point `costUsd` estimates remain outside authority
+bytes. Missing, untrusted, unknown, or overrun usage fails closed to provider-outcome
+reconciliation, distinct from future database commit-unknown evidence.
+
+E1 is contract-only and the Go mirror is validator-only. It adds no database, migration,
+repository, HTTP service or route, runtime budget client, production worker configuration, runner-v2
+delivery, routing, canary, or writer transfer. GS9-E2 remains pending and is the first stage allowed
+to add a default-off PostgreSQL budget qualification authority.
+
+TypeScript remains the sole writer throughout GS9-D and GS9-E1. Runner protocol v1 bytes and
+behavior remain frozen; neither stage negotiates or delivers runner v2, and a runner message or
+durable receipt is never itself an approval decision. GS9-F delivers runner v2. GS9-G owns
+new-record routing, canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes
+TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only after external
+qualification and drain. Existing records stay on their original writer and no stage permits
+per-request fallback.
 Runner/authority/checkpoint manifest hashes are source locks rather than deployment build
 identity. Receipt validation receives the expected runtime `controlBuildHash` from trusted
 composition and does not infer it from the receipt being validated.
 
-No GS9-D result claims authenticated external-host qualification, live verification, release,
-tag/npm publication, production activation, or Go Workflow authority. Those claims remain
-independent even when local and hosted differential gates are green.
+No GS9-D or GS9-E1 result claims authenticated external-host qualification, live verification,
+release, tag/npm publication, production activation, durable Go budget authority, or Go Workflow
+authority. Those claims remain independent even when local and hosted contract gates are green.
 
 ### GS10–GS13 — Platform Runtime
 

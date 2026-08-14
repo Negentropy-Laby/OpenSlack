@@ -9,7 +9,10 @@ import {
   requestAgentRunCancellation,
   requestAgentRunRestart,
   AgentRunRestartRequestedError,
+  attachProviderUsageEvidence,
+  buildProviderUsageReceipt,
   LocalExecutionAdapter,
+  getProviderUsageEvidence,
   RuntimeNotConfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
@@ -233,6 +236,49 @@ describe('createOpenSlackAgentLauncher', () => {
     const evidence = JSON.stringify({ failure, run, transcript: readTranscript(run.runId, root) });
     expect(evidence).not.toContain(canary);
     expect(readTranscript(run.runId, root).some((event) => event.type === 'complete')).toBe(false);
+  });
+
+  it('preserves charged usage receipts across the safe launcher failure wrapper', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: {
+        adapterId: 'usage-reporting-provider',
+        async execute(context) {
+          const receipt = buildProviderUsageReceipt({
+            providerId: 'openai-compatible',
+            modelId: 'qualification-model',
+            runId: context.runId,
+            attempt: 1,
+            status: 'reported',
+            usage: { totalTokens: 5 },
+            outcome: 'provider_response_accepted',
+            requestBytes: 'raw request stays hash-only',
+            outcomeBytes: 'raw response stays hash-only',
+          });
+          context.recorder.chargeUsage(context.runId, 5);
+          const error = new Error('provider result failed downstream validation');
+          attachProviderUsageEvidence(error, [receipt]);
+          throw error;
+        },
+      },
+    });
+
+    let failure: unknown;
+    try {
+      await launcher('execute safely', { label: 'usage-agent', phase: 'execute' });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect((failure as { tokenUsage?: unknown }).tokenUsage).toBe(5);
+    expect(getProviderUsageEvidence(failure)).toHaveLength(1);
+    expect(getProviderUsageEvidence(failure)[0]?.totalTokens).toBe('5');
+    expect(Object.keys(failure as object)).not.toContain('usageEvidence');
+    expect(Object.keys(failure as object)).not.toContain('tokenUsage');
+    expect(store.listRuns()[0]).toMatchObject({ tokensUsed: 5 });
   });
 
   it('creates a run record', async () => {
