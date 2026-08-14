@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"sort"
@@ -246,12 +245,4 @@ func isLowerHex(value string) bool {
 		}
 	}
 	return true
-}
-
-func mustCanonical(value any) string {
-	result, err := CanonicalJSON(value)
-	if err != nil {
-		panic(fmt.Sprintf("validated value is not canonical: %v", err))
-	}
-	return result
 }

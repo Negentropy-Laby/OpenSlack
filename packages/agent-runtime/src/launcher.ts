@@ -38,8 +38,8 @@ import {
 import { assertAgentResultSchema } from './schema-validation.js';
 import {
   attachProviderUsageEvidence,
-  assertProviderUsageEvidence,
-  getProviderUsageEvidence,
+  inspectAttachedProviderUsageEvidence,
+  inspectProviderUsageEvidence,
   type ProviderUsageReceipt,
 } from './provider-usage-evidence.js';
 
@@ -286,9 +286,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         toolExecutor,
         signal: abortController.signal,
       });
-      if (adapterResult.usageEvidence !== undefined) {
-        assertProviderUsageEvidence(adapterResult.usageEvidence);
-        adapterUsageEvidence = adapterResult.usageEvidence;
+      const adapterEvidenceInspection = inspectProviderUsageEvidence(adapterResult.usageEvidence);
+      if (adapterEvidenceInspection.status === 'valid') {
+        adapterUsageEvidence = adapterEvidenceInspection.receipts;
+      } else if (adapterEvidenceInspection.status === 'invalid') {
+        recorder.progress(runId, {
+          step: 'provider_usage_evidence_invalid',
+          source: 'adapter_result',
+        });
       }
 
       if (abortController.signal.aborted) {
@@ -319,23 +324,25 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       return {
         data: adapterResult.data,
         tokenUsage: adapterResult.tokenUsage,
-        usageEvidence: adapterResult.usageEvidence,
+        usageEvidence: adapterUsageEvidence.length > 0 ? adapterUsageEvidence : undefined,
         runId,
       };
     } catch (err) {
-      const attachedUsageEvidence = getProviderUsageEvidence(err);
+      const attachedEvidenceInspection = inspectAttachedProviderUsageEvidence(err);
+      if (attachedEvidenceInspection.status === 'invalid') {
+        recorder.progress(runId, {
+          step: 'provider_usage_evidence_invalid',
+          source: 'thrown_error',
+        });
+      }
+      const attachedUsageEvidence =
+        attachedEvidenceInspection.status === 'valid' ? attachedEvidenceInspection.receipts : [];
       const usageEvidence =
         attachedUsageEvidence.length > 0 ? attachedUsageEvidence : adapterUsageEvidence;
       attachProviderUsageEvidence(err, usageEvidence);
       const chargedUsage = runStore.getRun(runId)?.tokensUsed ?? 0;
-      if (chargedUsage > 0 && err instanceof Error) {
-        Object.defineProperty(err, 'tokenUsage', {
-          value: chargedUsage,
-          enumerable: false,
-          configurable: true,
-        });
-      }
-      if (err instanceof AgentRunRestartRequestedError) {
+      attachTokenUsage(err, chargedUsage);
+      if (safeInstanceOf(err, AgentRunRestartRequestedError)) {
         recorder.progress(runId, {
           step: 'agent_restart_handoff',
           reason: err.reason,
@@ -351,13 +358,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         }
         throw err;
       }
-      if (abortController.signal.aborted || err instanceof AgentRunCancelledError) {
-        const reason =
-          err instanceof AgentRunCancelledError
-            ? err.reason
-            : err instanceof Error
-              ? err.message
-              : 'agent run cancelled';
+      if (abortController.signal.aborted || safeInstanceOf(err, AgentRunCancelledError)) {
+        const reason = safeInstanceOf(err, AgentRunCancelledError)
+          ? err.reason
+          : (readErrorMessage(err) ?? 'agent run cancelled');
         recorder.cancel(runId);
         if (runAdapter.bridgeContract) {
           recorder.progress(runId, {
@@ -367,25 +371,19 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             reason,
           });
         }
-        if (err instanceof AgentRunCancelledError) throw err;
+        if (safeInstanceOf(err, AgentRunCancelledError)) throw err;
         const cancellationError = new AgentRunCancelledError(runId, reason);
         attachProviderUsageEvidence(cancellationError, usageEvidence);
         throw cancellationError;
       }
-      if (err instanceof PermissionDeniedError) {
+      if (safeInstanceOf(err, PermissionDeniedError)) {
         recorder.fail(runId, err, 'TOOL_DENIED');
         throw err;
       }
       const failureCode = getAgentRunFailureCode(err);
       const executionError = new AgentExecutionFailedError(failureCode, runId);
       attachProviderUsageEvidence(executionError, usageEvidence);
-      if (chargedUsage > 0) {
-        Object.defineProperty(executionError, 'tokenUsage', {
-          value: chargedUsage,
-          enumerable: false,
-          configurable: true,
-        });
-      }
+      attachTokenUsage(executionError, chargedUsage);
       recorder.fail(runId, executionError, failureCode);
       if (runAdapter.bridgeContract) {
         recorder.progress(runId, {
@@ -461,6 +459,43 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   };
 
   return launchAgent;
+}
+
+function safeInstanceOf<T>(
+  value: unknown,
+  constructor: abstract new (...args: never[]) => T,
+): value is T {
+  try {
+    return value instanceof constructor;
+  } catch {
+    return false;
+  }
+}
+
+function readErrorMessage(error: unknown): string | undefined {
+  if (!safeInstanceOf(error, Error)) return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'message');
+    return descriptor && 'value' in descriptor && typeof descriptor.value === 'string'
+      ? descriptor.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function attachTokenUsage(error: unknown, tokenUsage: number): void {
+  if (tokenUsage <= 0 || !error || typeof error !== 'object') return;
+  try {
+    Object.defineProperty(error, 'tokenUsage', {
+      value: tokenUsage,
+      enumerable: false,
+      configurable: true,
+    });
+  } catch {
+    // Evidence metadata is advisory. It must never replace the execution error
+    // or prevent the run recorder from reaching a terminal state.
+  }
 }
 
 function normalizeBudget(

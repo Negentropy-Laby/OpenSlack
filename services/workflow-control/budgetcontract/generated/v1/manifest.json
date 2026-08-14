@@ -171,7 +171,8 @@
       "validate_prepared_request",
       "validate_receipt_for_prepared_request",
       "validate_reservation_for_decision",
-      "validate_reserve_decision"
+      "validate_reserve_decision",
+      "evaluate_settlement"
     ],
     "fields": [
       "id",
@@ -289,8 +290,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 404421,
-      "sha256": "dd1ed6e46282f58b9bd6261417f3039971500d5c71b3f8c7c12fcfe54514b671"
+      "byteLength": 423337,
+      "sha256": "07ee10351703e1436a7e2e251b35f79ec6aade1634de4177aa414e8f792b7949"
     }
   },
   "bundleFiles": [

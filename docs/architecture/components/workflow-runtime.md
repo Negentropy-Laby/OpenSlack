@@ -1008,6 +1008,15 @@ bindings contain no prompt, response, endpoint, credential, transcript, or provi
 Failure with trusted usage remains chargeable evidence; missing or untrusted usage fails closed to
 provider-outcome reconciliation.
 
+`total_tokens` is the authoritative adapter quantity and must be a non-negative safe integer.
+`prompt_tokens` and `completion_tokens` are optional detail only: invalid, null, fractional, or
+inconsistent detail is omitted from the receipt without discarding a valid total. Usage is charged
+and the budget limit is checked before provider choice or finish-reason validation. Tool calls are
+then counted, bounded, validated, and executed in order so an already executed valid prefix remains
+observable and a limit breach takes precedence over a malformed call beyond that limit. In v1,
+account and run revisions remain separate fields but advance together; a settlement revision may
+not predate the reservation revision that opened its encumbrance.
+
 This is a contract and evidence seam only. It adds no database, migration, repository, HTTP route,
 server, runner-v2 delivery, production budget client, canary, routing, or authority cutover. The Go
 mirror cannot authorize or persist a budget operation, TypeScript remains the sole production

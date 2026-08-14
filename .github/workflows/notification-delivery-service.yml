@@ -11,7 +11,15 @@ on:
       - services/workflow-control/**
       - services/*/go.mod
       - services/*/go.sum
-      - packages/agent-runtime/**
+      - packages/agent-runtime/src/adapter.ts
+      - packages/agent-runtime/src/index.ts
+      - packages/agent-runtime/src/launcher.ts
+      - packages/agent-runtime/src/openai-compatible-runtime.ts
+      - packages/agent-runtime/src/provider-usage-evidence.ts
+      - packages/agent-runtime/src/types.ts
+      - packages/agent-runtime/src/__tests__/launcher.test.ts
+      - packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
+      - packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts
       - packages/organization-graph/**
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**
@@ -104,7 +112,15 @@ on:
       - services/workflow-control/**
       - services/*/go.mod
       - services/*/go.sum
-      - packages/agent-runtime/**
+      - packages/agent-runtime/src/adapter.ts
+      - packages/agent-runtime/src/index.ts
+      - packages/agent-runtime/src/launcher.ts
+      - packages/agent-runtime/src/openai-compatible-runtime.ts
+      - packages/agent-runtime/src/provider-usage-evidence.ts
+      - packages/agent-runtime/src/types.ts
+      - packages/agent-runtime/src/__tests__/launcher.test.ts
+      - packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
+      - packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts
       - packages/organization-graph/**
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**

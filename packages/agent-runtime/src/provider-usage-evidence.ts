@@ -74,6 +74,11 @@ export interface BuildProviderUsageReceiptInput {
   outcomeBytes: string;
 }
 
+export type ProviderUsageEvidenceInspection =
+  | { readonly status: 'absent'; readonly receipts: readonly [] }
+  | { readonly status: 'valid'; readonly receipts: readonly ProviderUsageReceipt[] }
+  | { readonly status: 'invalid'; readonly receipts: readonly [] };
+
 /**
  * Computes the exact hash-only identity a future reserve must bind before a
  * provider attempt starts. The run ID here is the agent-runtime run ID, not a
@@ -211,13 +216,36 @@ export function assertProviderUsageReceipt(value: unknown): asserts value is Pro
 }
 
 export function getProviderUsageEvidence(error: unknown): readonly ProviderUsageReceipt[] {
-  if (!error || typeof error !== 'object' || utilTypes.isProxy(error)) return [];
-  const descriptor = Object.getOwnPropertyDescriptor(error, 'usageEvidence');
-  if (!descriptor || !('value' in descriptor)) return [];
+  const inspection = inspectAttachedProviderUsageEvidence(error);
+  return inspection.status === 'valid' ? inspection.receipts : [];
+}
+
+export function inspectProviderUsageEvidence(value: unknown): ProviderUsageEvidenceInspection {
+  if (value === undefined) return { status: 'absent', receipts: [] };
   try {
-    return readProviderUsageEvidenceArray(descriptor.value);
+    return {
+      status: 'valid',
+      receipts: Object.freeze(readProviderUsageEvidenceArray(value)),
+    };
   } catch {
-    return [];
+    return { status: 'invalid', receipts: [] };
+  }
+}
+
+export function inspectAttachedProviderUsageEvidence(
+  error: unknown,
+): ProviderUsageEvidenceInspection {
+  if (!error || typeof error !== 'object') {
+    return { status: 'absent', receipts: [] };
+  }
+  if (utilTypes.isProxy(error)) return { status: 'invalid', receipts: [] };
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'usageEvidence');
+    if (!descriptor) return { status: 'absent', receipts: [] };
+    if (!('value' in descriptor)) return { status: 'invalid', receipts: [] };
+    return inspectProviderUsageEvidence(descriptor.value);
+  } catch {
+    return { status: 'invalid', receipts: [] };
   }
 }
 
@@ -231,14 +259,26 @@ export function attachProviderUsageEvidence(
   error: unknown,
   receipts: readonly ProviderUsageReceipt[],
 ): void {
-  if (!error || typeof error !== 'object' || utilTypes.isProxy(error)) return;
-  const validated = readProviderUsageEvidenceArray(receipts);
-  if (validated.length === 0) return;
-  Object.defineProperty(error, 'usageEvidence', {
-    value: Object.freeze(validated),
-    enumerable: false,
-    configurable: true,
-  });
+  tryAttachProviderUsageEvidence(error, receipts);
+}
+
+export function tryAttachProviderUsageEvidence(
+  error: unknown,
+  receipts: readonly ProviderUsageReceipt[],
+): boolean {
+  if (!error || typeof error !== 'object' || utilTypes.isProxy(error)) return false;
+  try {
+    const validated = readProviderUsageEvidenceArray(receipts);
+    if (validated.length === 0) return true;
+    Object.defineProperty(error, 'usageEvidence', {
+      value: Object.freeze(validated),
+      enumerable: false,
+      configurable: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readProviderUsageEvidenceArray(value: unknown): ProviderUsageReceipt[] {

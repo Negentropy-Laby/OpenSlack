@@ -8,6 +8,10 @@ import {
   getProviderUsageEvidence,
   PROVIDER_USAGE_EVIDENCE_MAX_ENTRIES,
 } from '../index.js';
+import {
+  inspectAttachedProviderUsageEvidence,
+  inspectProviderUsageEvidence,
+} from '../provider-usage-evidence.js';
 
 function reportedReceipt() {
   return buildProviderUsageReceipt({
@@ -152,5 +156,36 @@ describe('provider usage evidence', () => {
     expect(getProviderUsageEvidence(error)).toEqual([first, second]);
     expect(JSON.stringify(error)).toBe('{}');
     expect(Object.keys(error)).not.toContain('usageEvidence');
+  });
+
+  it('distinguishes malformed evidence and never throws while attaching to hostile errors', () => {
+    const malformed = [{ schema: 'not-a-provider-receipt' }] as never;
+    const error = new Error('malformed evidence');
+    Object.defineProperty(error, 'usageEvidence', {
+      value: malformed,
+      enumerable: false,
+      configurable: true,
+    });
+    expect(inspectAttachedProviderUsageEvidence(error)).toEqual({
+      status: 'invalid',
+      receipts: [],
+    });
+    expect(inspectProviderUsageEvidence(undefined)).toEqual({ status: 'absent', receipts: [] });
+
+    const receipt = reportedReceipt();
+    const hostileErrors = [
+      Object.freeze(new Error('frozen')),
+      Object.preventExtensions(new Error('non-extensible')),
+      new Proxy(new Error('proxied'), {
+        defineProperty() {
+          throw new Error('proxy trap must not escape');
+        },
+      }),
+    ];
+    for (const hostile of hostileErrors) {
+      expect(() => attachProviderUsageEvidence(hostile, [receipt])).not.toThrow();
+      expect(getProviderUsageEvidence(hostile)).toEqual([]);
+    }
+    expect(() => attachProviderUsageEvidence(new Error('invalid'), malformed)).not.toThrow();
   });
 });

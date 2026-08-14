@@ -146,6 +146,13 @@ function executeNegative(operation: string, input: unknown): unknown {
       return validateWorkflowBudgetReservationForDecision(pair.reservation, pair.decision);
     case 'validate_reserve_decision':
       return validateWorkflowBudgetReserveDecision(input);
+    case 'evaluate_settlement':
+      return evaluateWorkflowBudgetSettlement(
+        pair.account,
+        pair.reservation,
+        pair.request,
+        pair.committedAt,
+      );
     default:
       throw new Error(`Unknown negative operation: ${operation}`);
   }
@@ -155,6 +162,7 @@ function negativeSchemaSubject(operation: string, input: unknown): unknown {
   const pair = input as Record<string, unknown>;
   if (operation === 'validate_receipt_for_prepared_request') return pair.receipt;
   if (operation === 'validate_reservation_for_decision') return pair.reservation;
+  if (operation === 'evaluate_settlement') return pair.request;
   return input;
 }
 
@@ -459,6 +467,31 @@ describe('Workflow budget authority GS9-E1 contract', () => {
       outcomeBytes: 'outcome-2',
     });
     expect(validateWorkflowBudgetProviderUsage(unreported)).toEqual(unreported);
+    const totalOnly = buildProviderUsageReceipt({
+      providerId: 'provider-1',
+      modelId: 'model-1',
+      runId: 'agent-run-1',
+      attempt: 3,
+      status: 'reported',
+      usage: { totalTokens: 0 },
+      outcome: 'provider_response_accepted',
+      requestBytes: 'request-3',
+      outcomeBytes: 'outcome-3',
+    });
+    const maximumExact = buildProviderUsageReceipt({
+      providerId: 'provider-1',
+      modelId: 'model-1',
+      runId: 'agent-run-1',
+      attempt: Number.MAX_SAFE_INTEGER,
+      status: 'reported',
+      usage: { totalTokens: Number.MAX_SAFE_INTEGER },
+      outcome: 'provider_attempt_failed',
+      requestBytes: 'request-maximum',
+      outcomeBytes: 'outcome-maximum',
+    });
+    for (const receipt of [reported, unreported, totalOnly, maximumExact]) {
+      expect(validateWorkflowBudgetProviderUsage(receipt)).toEqual(receipt);
+    }
     expect(() =>
       validateWorkflowBudgetProviderUsage({ ...reported, outcome: 'provider_attempt_failed' }),
     ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_BUDGET_AUTHORITY_HASH_MISMATCH' }));
@@ -492,6 +525,9 @@ describe('Workflow budget authority GS9-E1 contract', () => {
       'reserve-decision-time-drift',
       'settlement-request-before-reservation',
       'settlement-time-drift',
+      'settlement-predates-reservation-revision',
+      'settlement-overflow-precedes-stale-revision',
+      'settlement-overflow-precedes-after-account-drift',
     ]);
     const ajv = schemaValidator();
     for (const entry of negatives) {

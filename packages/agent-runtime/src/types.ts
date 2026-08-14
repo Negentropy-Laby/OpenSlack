@@ -248,11 +248,17 @@ export class AgentLimitExceededError extends Error {
 }
 
 export function getAgentRunFailureCode(error: unknown): AgentRunFailureCode {
-  if (error instanceof RuntimeNotConfiguredError) return error.code;
-  if (error instanceof RuntimeMisconfiguredError) return error.code;
-  if (error instanceof PermissionDeniedError) return 'TOOL_DENIED';
+  if (isInstanceOfSafe(error, RuntimeNotConfiguredError)) return error.code;
+  if (isInstanceOfSafe(error, RuntimeMisconfiguredError)) return error.code;
+  if (isInstanceOfSafe(error, PermissionDeniedError)) return 'TOOL_DENIED';
   if (error && typeof error === 'object') {
-    const code = (error as { code?: unknown }).code;
+    let code: unknown;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+      code = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    } catch {
+      return 'EXECUTION_FAILED';
+    }
     if (
       code === 'RUNTIME_NOT_CONFIGURED' ||
       code === 'RUNTIME_MISCONFIGURED' ||
@@ -269,6 +275,17 @@ export function getAgentRunFailureCode(error: unknown): AgentRunFailureCode {
     }
   }
   return 'EXECUTION_FAILED';
+}
+
+function isInstanceOfSafe<T>(
+  value: unknown,
+  constructor: abstract new (...args: never[]) => T,
+): value is T {
+  try {
+    return value instanceof constructor;
+  } catch {
+    return false;
+  }
 }
 
 /** Operator-safe, allowlisted failure text. Raw provider errors are never persisted. */

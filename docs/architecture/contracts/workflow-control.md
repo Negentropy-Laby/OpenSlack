@@ -495,6 +495,14 @@ the prompt, response, endpoint, credential, or transcript. Missing, untrusted, u
 overrun usage produces provider-outcome reconciliation and cannot silently release a reservation.
 That condition remains distinct from a future database commit-unknown reconciliation.
 
+The adapter treats `total_tokens` as the required authoritative quantity. Optional prompt and
+completion splits are included only when present values are valid non-negative safe integers and,
+when both are present, sum to the total. An invalid split or inconsistent pair omits both while the
+exact total remains chargeable. Budget failure
+therefore precedes later choice, finish-reason, or tool-shape errors for the same provider response.
+The v1 account and run revisions are intentionally retained as two lockstep fields, and settlement
+must not present revisions earlier than the reservation's opened revisions.
+
 E1 has no database, migration, repository, HTTP API, route, server, runtime authority client,
 production worker wiring, canary, or routing change. TypeScript remains the only production budget
 authority and the Go mirror cannot reserve, settle, authorize, or persist anything. GS9-E2 remains

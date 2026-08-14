@@ -285,6 +285,88 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(store.getRun(context.runId)).toMatchObject({ tokensUsed: 6, tokensRemaining: -1 });
   });
 
+  it('keeps optional provider usage splits compatible while preserving an exact total', async () => {
+    const variants: Array<Record<string, unknown>> = [
+      { prompt_tokens: null, completion_tokens: null, total_tokens: 10 },
+      { prompt_tokens: '6', completion_tokens: '4', total_tokens: 10 },
+      { prompt_tokens: 6.5, completion_tokens: 3.5, total_tokens: 10 },
+      { prompt_tokens: 6, completion_tokens: 4, total_tokens: 11 },
+    ];
+
+    for (const [index, usage] of variants.entries()) {
+      const caseRoot = join(root, `optional-usage-${index}`);
+      mkdirSync(caseRoot, { recursive: true });
+      writeFileSync(join(caseRoot, 'README.md'), 'runtime fixture\n', 'utf-8');
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse({
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage,
+        }),
+      ) as unknown as typeof fetch;
+      const { context, store } = createContext(caseRoot);
+
+      const result = await adapter(fetchImpl).execute(context);
+
+      expect(result.usageEvidence).toMatchObject([
+        { inputTokens: null, outputTokens: null, totalTokens: String(usage.total_tokens) },
+      ]);
+      expect(store.getRun(context.runId)).toMatchObject({ tokensUsed: usage.total_tokens });
+    }
+  });
+
+  it('rejects totals that cannot be represented as exact provider evidence', async () => {
+    const totals = [undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1];
+    for (const [index, total_tokens] of totals.entries()) {
+      const caseRoot = join(root, `invalid-total-${index}`);
+      mkdirSync(caseRoot, { recursive: true });
+      writeFileSync(join(caseRoot, 'README.md'), 'runtime fixture\n', 'utf-8');
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse({
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { total_tokens },
+        }),
+      ) as unknown as typeof fetch;
+      let failure: unknown;
+      try {
+        await adapter(fetchImpl).execute(createContext(caseRoot).context);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(ProviderInvalidResponseError);
+      expect(getProviderUsageEvidence(failure)).toMatchObject([
+        { status: 'unreported', totalTokens: null, outcome: 'provider_attempt_failed' },
+      ]);
+    }
+  });
+
+  it('keeps budget exhaustion ahead of malformed provider response classification', async () => {
+    const responseBodies = [
+      { choices: [], usage: { total_tokens: 6 } },
+      {
+        choices: [{ message: { content: 'partial' }, finish_reason: 'length' }],
+        usage: { total_tokens: 6 },
+      },
+    ];
+    for (const [index, body] of responseBodies.entries()) {
+      const caseRoot = join(root, `budget-priority-${index}`);
+      mkdirSync(caseRoot, { recursive: true });
+      writeFileSync(join(caseRoot, 'README.md'), 'runtime fixture\n', 'utf-8');
+      const fetchImpl = vi.fn(async () => jsonResponse(body)) as unknown as typeof fetch;
+      const { context, store } = createContext(caseRoot, { tokens: 5 });
+      let failure: unknown;
+      try {
+        await adapter(fetchImpl).execute(context);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(AgentBudgetExceededError);
+      expect(getProviderUsageEvidence(failure)).toMatchObject([
+        { status: 'reported', totalTokens: '6', outcome: 'provider_attempt_failed' },
+      ]);
+      expect(store.getRun(context.runId)).toMatchObject({ tokensUsed: 6, tokensRemaining: -1 });
+    }
+  });
+
   it('retains ordered reported receipts when a later provider attempt has no usage', async () => {
     let turn = 0;
     const fetchImpl = vi.fn(async () => {
@@ -417,6 +499,49 @@ describe('OpenAI-compatible agent runtime', () => {
     );
   });
 
+  it('executes a valid tool prefix before rejecting the next call at the tool limit', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'valid-prefix',
+                  type: 'function',
+                  function: { name: 'repo_read', arguments: '{"path":"README.md"}' },
+                },
+                {
+                  id: 'malformed-after-limit',
+                  type: 'function',
+                  function: { name: 'repo_read', arguments: '{' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: { total_tokens: 1 },
+      }),
+    ) as unknown as typeof fetch;
+    const { context } = createContext(root);
+    let failure: unknown;
+    try {
+      await adapter(fetchImpl, { maxToolCalls: 1 }).execute(context);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AgentLimitExceededError);
+    expect(
+      readTranscript(context.runId, root).filter((event) => event.type === 'tool_call'),
+    ).toHaveLength(1);
+    expect(getProviderUsageEvidence(failure)).toMatchObject([
+      { status: 'reported', totalTokens: '1', outcome: 'provider_response_accepted' },
+    ]);
+  });
+
   it('distinguishes provider timeout from outer cancellation', async () => {
     const hanging = vi.fn(
       async (_input: string | URL | Request, init?: RequestInit) =>
@@ -503,6 +628,9 @@ describe('OpenAI-compatible agent runtime', () => {
       'utf-8',
     );
     expect(() => loadOpenAICompatibleRuntimeConfig({ configPath, env: {} })).toThrow(
+      RuntimeMisconfiguredError,
+    );
+    expect(() => adapter(vi.fn() as unknown as typeof fetch, { maxTurns: 33 })).toThrow(
       RuntimeMisconfiguredError,
     );
   });

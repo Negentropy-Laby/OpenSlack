@@ -281,6 +281,104 @@ describe('createOpenSlackAgentLauncher', () => {
     expect(store.listRuns()[0]).toMatchObject({ tokensUsed: 5 });
   });
 
+  it('keeps a successful adapter result when optional usage evidence is malformed', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: {
+        adapterId: 'malformed-success-evidence',
+        async execute<T>(context: AdapterExecutionContext) {
+          context.recorder.chargeUsage(context.runId, 4);
+          return {
+            data: { ok: true } as T,
+            tokenUsage: 4,
+            tokenUsageRecorded: true,
+            usageEvidence: [{ schema: 'not-a-provider-receipt' }] as never,
+          };
+        },
+      },
+    });
+
+    const result = await launcher<{ ok: boolean }>('execute safely', {
+      label: 'usage-agent',
+      phase: 'execute',
+    });
+
+    expect(result).toMatchObject({ data: { ok: true }, tokenUsage: 4 });
+    expect(result.usageEvidence).toBeUndefined();
+    expect(store.getRun(result.runId)).toMatchObject({ status: 'completed', tokensUsed: 4 });
+    expect(readTranscript(result.runId, root)).toContainEqual(
+      expect.objectContaining({
+        type: 'progress',
+        data: { step: 'provider_usage_evidence_invalid', source: 'adapter_result' },
+      }),
+    );
+  });
+
+  it('terminates runs without masking hostile thrown errors or malformed evidence', async () => {
+    const hostileErrors = (() => {
+      const frozen = new Error('frozen provider failure');
+      Object.defineProperty(frozen, 'usageEvidence', {
+        value: [{ schema: 'invalid-frozen-evidence' }],
+        configurable: true,
+      });
+      const nonExtensible = new Error('non-extensible provider failure');
+      Object.defineProperty(nonExtensible, 'usageEvidence', {
+        value: [{ schema: 'invalid-non-extensible-evidence' }],
+        configurable: true,
+      });
+      const proxiedTarget = new Error('proxied provider failure');
+      Object.defineProperty(proxiedTarget, 'usageEvidence', {
+        value: [{ schema: 'invalid-proxy-evidence' }],
+        configurable: true,
+      });
+      return [
+        Object.freeze(frozen),
+        Object.preventExtensions(nonExtensible),
+        new Proxy(proxiedTarget, {
+          defineProperty() {
+            throw new Error('defineProperty trap must not escape');
+          },
+          getPrototypeOf() {
+            throw new Error('getPrototypeOf trap must not escape');
+          },
+        }),
+      ];
+    })();
+
+    for (const hostile of hostileErrors) {
+      const store = createRunStore(root);
+      const launcher = createOpenSlackAgentLauncher({
+        runStore: store,
+        rootDir: root,
+        adapter: {
+          adapterId: 'hostile-error-evidence',
+          async execute(context) {
+            context.recorder.chargeUsage(context.runId, 3);
+            throw hostile;
+          },
+        },
+      });
+      let failure: unknown;
+      try {
+        await launcher('execute safely', { label: 'usage-agent', phase: 'execute' });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toMatchObject({ code: 'EXECUTION_FAILED', tokenUsage: 3 });
+      const runId = (failure as { runId: string }).runId;
+      expect(store.getRun(runId)).toMatchObject({ status: 'failed', tokensUsed: 3 });
+      expect(readTranscript(runId, root)).toContainEqual(
+        expect.objectContaining({
+          type: 'progress',
+          data: { step: 'provider_usage_evidence_invalid', source: 'thrown_error' },
+        }),
+      );
+    }
+  });
+
   it('creates a run record', async () => {
     const store = createRunStore(root);
     const launcher = createOpenSlackAgentLauncher({

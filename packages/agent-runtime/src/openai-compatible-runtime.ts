@@ -159,8 +159,19 @@ export function resolveRuntimeCredential(
 
 export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
   readonly adapterId = 'openai-compatible';
+  private readonly options: OpenAICompatibleAdapterOptions;
 
-  constructor(private readonly options: OpenAICompatibleAdapterOptions) {}
+  constructor(options: OpenAICompatibleAdapterOptions) {
+    if (typeof options.model !== 'string' || !options.model || options.model.length > 200) {
+      throw new RuntimeMisconfiguredError('OpenAI-compatible runtime model is invalid.');
+    }
+    if (!Number.isSafeInteger(options.maxTurns) || options.maxTurns < 1 || options.maxTurns > 32) {
+      throw new RuntimeMisconfiguredError(
+        'OpenAI-compatible runtime maxTurns must be an integer from 1 through 32.',
+      );
+    }
+    this.options = options;
+  }
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
     const fetchImpl = this.options.fetchImpl ?? fetch;
@@ -276,15 +287,13 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         const used = usage.totalTokens;
         tokenUsage += used;
         context.recorder.chargeUsage(context.runId, used);
+        if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
+          throw new AgentBudgetExceededError();
+        }
         const providerChoice = body.choices?.[0];
         const choice = providerChoice?.message;
         if (!choice) throw new ProviderInvalidResponseError();
         const requestedTools = choice.tool_calls ?? [];
-        let validatedTools: Array<{
-          call: OpenAIToolCall;
-          toolName: RepositoryToolName;
-          args: Record<string, unknown>;
-        }> = [];
         if (requestedTools.length > 0) {
           if (
             providerChoice.finish_reason !== undefined &&
@@ -295,17 +304,6 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
               'Provider returned an invalid tool finish reason.',
             );
           }
-          validatedTools = requestedTools.map((call) => {
-            if (typeof call.id !== 'string' || !call.id || call.type !== 'function') {
-              throw new ProviderInvalidResponseError('Provider tool call is incomplete.');
-            }
-            const toolName = fromWireToolName(call.function?.name);
-            return {
-              call,
-              toolName,
-              args: parseToolArguments(toolName, call.function?.arguments),
-            };
-          });
         } else {
           if (typeof choice.content !== 'string' || !choice.content.trim()) {
             throw new ProviderInvalidResponseError(
@@ -338,9 +336,6 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           }),
         );
         receiptRecorded = true;
-        if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
-          throw new AgentBudgetExceededError();
-        }
         context.recorder.progress(context.runId, {
           step: 'provider_turn_completed',
           provider: 'openai-compatible',
@@ -356,11 +351,16 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             content: choice.content ?? null,
             tool_calls: requestedTools,
           });
-          for (const { call, toolName, args } of validatedTools) {
+          for (const call of requestedTools) {
             toolCalls += 1;
             if (toolCalls > this.options.maxToolCalls) {
               throw new AgentLimitExceededError('Agent tool-call limit was exceeded.');
             }
+            if (typeof call.id !== 'string' || !call.id || call.type !== 'function') {
+              throw new ProviderInvalidResponseError('Provider tool call is incomplete.');
+            }
+            const toolName = fromWireToolName(call.function?.name);
+            const args = parseToolArguments(toolName, call.function?.arguments);
             const result = await context.toolExecutor.execute(toolName, args, {
               signal: context.signal,
               deadlineAt: startedAt + this.options.timeoutMs,
@@ -501,35 +501,56 @@ function parseProviderResponse(raw: string): OpenAIResponseBody {
 }
 
 function readUsage(value: OpenAIResponseBody['usage']): ProviderTokenUsage {
-  const totalTokens = readUsageInteger(value?.total_tokens, true);
-  const inputTokens = readUsageInteger(value?.prompt_tokens, false);
-  const outputTokens = readUsageInteger(value?.completion_tokens, false);
+  const totalTokens = readRequiredUsageInteger(value?.total_tokens);
+  const input = readOptionalUsageInteger(value?.prompt_tokens);
+  const output = readOptionalUsageInteger(value?.completion_tokens);
   if (totalTokens === undefined) {
     throw new ProviderInvalidResponseError('Provider response omitted valid token usage.');
   }
+  let inputTokens = input.value;
+  let outputTokens = output.value;
   if (
-    inputTokens !== undefined &&
-    outputTokens !== undefined &&
-    inputTokens + outputTokens !== totalTokens
+    !input.valid ||
+    !output.valid ||
+    (inputTokens !== undefined &&
+      outputTokens !== undefined &&
+      inputTokens + outputTokens !== totalTokens)
   ) {
-    throw new ProviderInvalidResponseError('Provider response token usage is inconsistent.');
+    inputTokens = undefined;
+    outputTokens = undefined;
   }
   return { inputTokens, outputTokens, totalTokens };
 }
 
-function readUsageInteger(value: unknown, required: boolean): number | undefined {
-  if (value === undefined && !required) return undefined;
+function readRequiredUsageInteger(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new ProviderInvalidResponseError('Provider response omitted valid token usage.');
+    return undefined;
   }
   return value;
 }
 
+function readOptionalUsageInteger(value: unknown): {
+  readonly valid: boolean;
+  readonly value?: number;
+} {
+  if (value === undefined) return { valid: true };
+  const parsed = readRequiredUsageInteger(value);
+  return parsed === undefined ? { valid: false } : { valid: true, value: parsed };
+}
+
 function providerFailureOutcome(error: unknown): string {
-  const code =
-    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
-      ? String((error as { code: string }).code)
-      : 'PROVIDER_FAILURE';
+  let code = 'PROVIDER_FAILURE';
+  if (error && typeof error === 'object') {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+      if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') {
+        code = descriptor.value;
+      }
+    } catch {
+      // Provider errors may be hostile proxies. Their metadata is advisory and
+      // must not replace the original execution failure.
+    }
+  }
   return JSON.stringify({ kind: 'provider_failure', code });
 }
 

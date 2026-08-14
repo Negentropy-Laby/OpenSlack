@@ -43,6 +43,69 @@ func assertReservationBinding(reservation, request Record) error {
 	return nil
 }
 
+type settlementDisposition struct {
+	actual                 *quantityValues
+	reason                 any
+	settled                bool
+	released               Record
+	cachePublishAuthorized bool
+}
+
+func deriveSettlementDisposition(reservation, request Record) (settlementDisposition, error) {
+	if err := assertReservationBinding(reservation, request); err != nil {
+		return settlementDisposition{}, err
+	}
+	reservedAmount := quantitiesBig(reservation["reserved"].(Record))
+	usage, _ := request["providerUsage"].(Record)
+	var actual *quantityValues
+	if request["usageEvidenceStatus"] == "trusted" && usage != nil && usage["status"] == "reported" {
+		charge, err := ChargeNanoUSD(usage["totalTokens"], request["rateNanoUsdPerToken"])
+		if err != nil {
+			return settlementDisposition{}, err
+		}
+		values := quantityValues{
+			decimalBig(usage["totalTokens"]),
+			decimalBig(charge),
+			decimalBig(usage["calls"]),
+		}
+		actual = &values
+	}
+	overrun := actual != nil && (actual.tokens.Cmp(reservedAmount.tokens) > 0 ||
+		actual.nanoUSD.Cmp(reservedAmount.nanoUSD) > 0 ||
+		actual.calls.Cmp(reservedAmount.calls) > 0)
+	var reason any
+	switch {
+	case request["usageEvidenceStatus"] == "missing":
+		reason = "usage_receipt_missing"
+	case request["usageEvidenceStatus"] == "untrusted":
+		reason = "usage_receipt_untrusted"
+	case usage != nil && usage["status"] == "unreported":
+		reason = "provider_outcome_unknown"
+	case overrun:
+		reason = "usage_overrun"
+	}
+	settled := reason == nil
+	var released Record
+	if settled {
+		var err error
+		released, err = makeQuantities(
+			new(big.Int).Sub(new(big.Int).Set(reservedAmount.tokens), actual.tokens),
+			new(big.Int).Sub(new(big.Int).Set(reservedAmount.nanoUSD), actual.nanoUSD),
+			new(big.Int).Sub(new(big.Int).Set(reservedAmount.calls), actual.calls),
+		)
+		if err != nil {
+			return settlementDisposition{}, err
+		}
+	}
+	return settlementDisposition{
+		actual:                 actual,
+		reason:                 reason,
+		settled:                settled,
+		released:               released,
+		cachePublishAuthorized: settled && usage != nil && usage["outcome"] == "provider_response_accepted",
+	}, nil
+}
+
 func nextAccount(before, reserved, settled Record, committedAt string) (Record, error) {
 	next := copyRecord(before)
 	next["accountRevision"] = before["accountRevision"].(int64) + 1
@@ -156,8 +219,12 @@ func EvaluateSettlement(accountValue, reservationValue, requestValue, committedA
 	if err := assertBaseIdentity(account, reservation); err != nil {
 		return SettlementEvaluation{}, err
 	}
-	if err := assertReservationBinding(reservation, request); err != nil {
+	disposition, err := deriveSettlementDisposition(reservation, request)
+	if err != nil {
 		return SettlementEvaluation{}, err
+	}
+	if request["expectedAccountRevision"].(int64) < reservation["openedAccountRevision"].(int64) || request["expectedRunRevision"].(int64) < reservation["openedRunRevision"].(int64) {
+		return SettlementEvaluation{}, failure(ErrorStaleRevision, "$/expectedAccountRevision", "Settlement predates the reservation.")
 	}
 	if request["expectedAccountRevision"] != account["accountRevision"] || request["expectedRunRevision"] != account["runRevision"] {
 		return SettlementEvaluation{}, failure(ErrorStaleRevision, "$/expectedAccountRevision", "Settlement revision is stale.")
@@ -166,31 +233,9 @@ func EvaluateSettlement(accountValue, reservationValue, requestValue, committedA
 	if beforeReserved.tokens.Cmp(reservedAmount.tokens) < 0 || beforeReserved.nanoUSD.Cmp(reservedAmount.nanoUSD) < 0 || beforeReserved.calls.Cmp(reservedAmount.calls) < 0 {
 		return SettlementEvaluation{}, failure(ErrorIdentityMismatch, "$/reservation/reserved", "Reservation is not encumbered.")
 	}
-	var actual *quantityValues
-	usage, _ := request["providerUsage"].(Record)
-	if request["usageEvidenceStatus"] == "trusted" && usage != nil && usage["status"] == "reported" {
-		charge, chargeErr := ChargeNanoUSD(usage["totalTokens"], request["rateNanoUsdPerToken"])
-		if chargeErr != nil {
-			return SettlementEvaluation{}, chargeErr
-		}
-		values := quantityValues{decimalBig(usage["totalTokens"]), decimalBig(charge), decimalBig(usage["calls"])}
-		actual = &values
-	}
-	overrun := actual != nil && (actual.tokens.Cmp(reservedAmount.tokens) > 0 || actual.nanoUSD.Cmp(reservedAmount.nanoUSD) > 0 || actual.calls.Cmp(reservedAmount.calls) > 0)
-	var reason any
-	switch {
-	case request["usageEvidenceStatus"] == "missing":
-		reason = "usage_receipt_missing"
-	case request["usageEvidenceStatus"] == "untrusted":
-		reason = "usage_receipt_untrusted"
-	case usage != nil && usage["status"] == "unreported":
-		reason = "provider_outcome_unknown"
-	case overrun:
-		reason = "usage_overrun"
-	}
-	settled := reason == nil
+	actual, reason, settled := disposition.actual, disposition.reason, disposition.settled
 	nextReserved, nextSettled := account["reserved"].(Record), account["settled"].(Record)
-	var released Record
+	released := disposition.released
 	if settled {
 		nextReserved, err = makeQuantities(new(big.Int).Add(new(big.Int).Sub(beforeReserved.tokens, reservedAmount.tokens), actual.tokens), new(big.Int).Add(new(big.Int).Sub(beforeReserved.nanoUSD, reservedAmount.nanoUSD), actual.nanoUSD), new(big.Int).Add(new(big.Int).Sub(beforeReserved.calls, reservedAmount.calls), actual.calls))
 		if err != nil {
@@ -198,10 +243,6 @@ func EvaluateSettlement(accountValue, reservationValue, requestValue, committedA
 		}
 		beforeSettled := quantitiesBig(account["settled"].(Record))
 		nextSettled, err = makeQuantities(new(big.Int).Add(beforeSettled.tokens, actual.tokens), new(big.Int).Add(beforeSettled.nanoUSD, actual.nanoUSD), new(big.Int).Add(beforeSettled.calls, actual.calls))
-		if err != nil {
-			return SettlementEvaluation{}, err
-		}
-		released, err = makeQuantities(new(big.Int).Sub(reservedAmount.tokens, actual.tokens), new(big.Int).Sub(reservedAmount.nanoUSD, actual.nanoUSD), new(big.Int).Sub(reservedAmount.calls, actual.calls))
 		if err != nil {
 			return SettlementEvaluation{}, err
 		}
@@ -217,7 +258,7 @@ func EvaluateSettlement(accountValue, reservationValue, requestValue, committedA
 	if settled {
 		status = "settled"
 	}
-	cachePublishAuthorized := settled && usage != nil && usage["outcome"] == "provider_response_accepted"
+	cachePublishAuthorized := disposition.cachePublishAuthorized
 	settlementValue := copyRecord(authorityEnvelope())
 	for key, value := range (Record{"schema": SchemaSettlement, "status": status, "request": request, "requestHash": requestHash, "reservation": reservation, "reservationHash": reservationHash, "beforeAccountHash": beforeHash, "afterAccount": after, "released": nil, "reasonCode": reason, "reservationRemainsOpen": !settled, "runReconciliationLatched": !settled, "providerRetryAuthorized": false, "cachePublishAuthorized": cachePublishAuthorized, "legacyBudgetApprovalAuthority": false, "committedAt": committedAt}) {
 		settlementValue[key] = value

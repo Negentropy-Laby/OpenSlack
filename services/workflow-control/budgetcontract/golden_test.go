@@ -129,8 +129,8 @@ func TestWorkflowBudgetAuthorityGoldenVectors(t *testing.T) {
 			}
 		})
 	}
-	if len(golden.Vectors.Negative) != 25 {
-		t.Fatalf("negative inventory drifted: got %d want 25", len(golden.Vectors.Negative))
+	if len(golden.Vectors.Negative) != 28 {
+		t.Fatalf("negative inventory drifted: got %d want 28", len(golden.Vectors.Negative))
 	}
 	for _, vector := range golden.Vectors.Arithmetic.Decimal {
 		actual, err := ValidateDecimal(vector.Input, "$")
@@ -369,6 +369,13 @@ func replayNegative(operation string, input any) error {
 			return err
 		}
 		_, err = EvaluateReserve(record["account"], record["request"], record["committedAt"])
+		return err
+	case "evaluate_settlement", "evaluateWorkflowBudgetSettlement":
+		record, err := asRecord(input, "$")
+		if err != nil {
+			return err
+		}
+		_, err = EvaluateSettlement(record["account"], record["reservation"], record["request"], record["committedAt"])
 		return err
 	default:
 		return failure(ErrorInvalid, "$/operation", "unsupported golden operation")

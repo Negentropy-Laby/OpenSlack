@@ -1,7 +1,5 @@
 package budgetcontract
 
-import "math/big"
-
 func ValidateReserveDecision(value any) (Record, error) {
 	root, err := closed(value, withBase("schema", "status", "request", "requestHash", "beforeAccountHash", "afterAccount", "authorization", "insufficientDimensions", "legacyBudgetApprovalAuthority", "decidedAt"), "$")
 	if err != nil {
@@ -134,7 +132,8 @@ func ValidateSettlement(value any) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := assertReservationBinding(reservation, request); err != nil {
+	disposition, err := deriveSettlementDisposition(reservation, request)
+	if err != nil {
 		return nil, err
 	}
 	after, err := ValidateAccount(root["afterAccount"])
@@ -179,41 +178,11 @@ func ValidateSettlement(value any) (Record, error) {
 			return nil, err
 		}
 	}
-	reservedAmount := quantitiesBig(reservation["reserved"].(Record))
-	providerUsage, _ := request["providerUsage"].(Record)
-	var actual *quantityValues
-	if request["usageEvidenceStatus"] == "trusted" && providerUsage != nil && providerUsage["status"] == "reported" {
-		charge, chargeErr := ChargeNanoUSD(providerUsage["totalTokens"], request["rateNanoUsdPerToken"])
-		if chargeErr != nil {
-			return nil, chargeErr
-		}
-		values := quantityValues{decimalBig(providerUsage["totalTokens"]), decimalBig(charge), decimalBig(providerUsage["calls"])}
-		actual = &values
-	}
-	overrun := actual != nil && (actual.tokens.Cmp(reservedAmount.tokens) > 0 || actual.nanoUSD.Cmp(reservedAmount.nanoUSD) > 0 || actual.calls.Cmp(reservedAmount.calls) > 0)
-	var expectedReason any
-	switch {
-	case request["usageEvidenceStatus"] == "missing":
-		expectedReason = "usage_receipt_missing"
-	case request["usageEvidenceStatus"] == "untrusted":
-		expectedReason = "usage_receipt_untrusted"
-	case providerUsage != nil && providerUsage["status"] == "unreported":
-		expectedReason = "provider_outcome_unknown"
-	case overrun:
-		expectedReason = "usage_overrun"
-	}
+	expectedReason := disposition.reason
 	expectedStatus := "reconciliation_required"
-	var expectedReleased Record
+	expectedReleased := disposition.released
 	if expectedReason == nil {
 		expectedStatus = "settled"
-		expectedReleased, err = makeQuantities(
-			new(big.Int).Sub(new(big.Int).Set(reservedAmount.tokens), actual.tokens),
-			new(big.Int).Sub(new(big.Int).Set(reservedAmount.nanoUSD), actual.nanoUSD),
-			new(big.Int).Sub(new(big.Int).Set(reservedAmount.calls), actual.calls),
-		)
-		if err != nil {
-			return nil, err
-		}
 	}
 	committedAt, err := canonicalTimestamp(root["committedAt"], "$/committedAt")
 	if err != nil {
@@ -228,7 +197,7 @@ func ValidateSettlement(value any) (Record, error) {
 	open, openOK := root["reservationRemainsOpen"].(bool)
 	latched, latchedOK := root["runReconciliationLatched"].(bool)
 	publish, publishOK := root["cachePublishAuthorized"].(bool)
-	expectedPublish := status == "settled" && providerUsage != nil && providerUsage["outcome"] == "provider_response_accepted"
+	expectedPublish := disposition.cachePublishAuthorized
 	if !openOK || !latchedOK || !publishOK || status == "settled" && (released == nil || reason != nil || open || latched || publish != expectedPublish) || status == "reconciliation_required" && (released != nil || reason == nil || !open || !latched || publish) {
 		return nil, failure(ErrorReconciliationRequired, "$/status", "Settlement status fields are inconsistent.")
 	}

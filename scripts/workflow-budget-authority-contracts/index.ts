@@ -807,6 +807,7 @@ const NEGATIVE_OPERATIONS = [
   'validate_receipt_for_prepared_request',
   'validate_reservation_for_decision',
   'validate_reserve_decision',
+  'evaluate_settlement',
 ] as const;
 type NegativeOperation = (typeof NEGATIVE_OPERATIONS)[number];
 
@@ -837,6 +838,13 @@ function executeNegative(operation: NegativeOperation, input: unknown): unknown 
       return validateWorkflowBudgetReservationForDecision(pair.reservation, pair.decision);
     case 'validate_reserve_decision':
       return validateWorkflowBudgetReserveDecision(input);
+    case 'evaluate_settlement':
+      return evaluateWorkflowBudgetSettlement(
+        pair.account,
+        pair.reservation,
+        pair.request,
+        pair.committedAt,
+      );
   }
 }
 
@@ -1223,6 +1231,40 @@ function buildVectors() {
   settlementTimeDrift.committedAt = '2026-08-14T00:00:06.001Z';
   const settlementRequestBeforeReservation = structuredClone(settled.settlement) as unknown as Json;
   (settlementRequestBeforeReservation.request as Json).requestedAt = '2026-08-14T00:00:01.000Z';
+  const staleSettlementRequest = validateWorkflowBudgetSettlementRequest({
+    ...settlementRequest,
+    expectedAccountRevision: account.accountRevision,
+    expectedRunRevision: account.runRevision,
+  });
+  const overflowUsage = buildProviderUsage(
+    'agent-run-1',
+    '1',
+    'reported',
+    {
+      input: WORKFLOW_BUDGET_AUTHORITY_MAX_INT64,
+      output: '0',
+      total: WORKFLOW_BUDGET_AUTHORITY_MAX_INT64,
+    },
+    'provider_response_accepted',
+    'settlement-overflow',
+  );
+  const overflowSettlementRequest = validateWorkflowBudgetSettlementRequest({
+    ...staleSettlementRequest,
+    providerUsage: overflowUsage,
+    usageReceiptHash: overflowUsage.receiptHash,
+  });
+  const staleSettlementEvaluation = {
+    account,
+    reservation: reserved.reservation,
+    request: staleSettlementRequest,
+    committedAt: '2026-08-14T00:00:06.000Z',
+  };
+  const overflowStaleSettlementEvaluation = {
+    ...staleSettlementEvaluation,
+    request: overflowSettlementRequest,
+  };
+  const overflowAfterAccountDrift = structuredClone(settled.settlement) as unknown as Json;
+  overflowAfterAccountDrift.request = overflowSettlementRequest;
 
   return {
     arithmetic: {
@@ -1529,6 +1571,27 @@ function buildVectors() {
         true,
       ),
       negative('settlement-time-drift', 'validate_settlement', settlementTimeDrift, paths[6], true),
+      negative(
+        'settlement-predates-reservation-revision',
+        'evaluate_settlement',
+        staleSettlementEvaluation,
+        paths[5],
+        true,
+      ),
+      negative(
+        'settlement-overflow-precedes-stale-revision',
+        'evaluate_settlement',
+        overflowStaleSettlementEvaluation,
+        paths[5],
+        true,
+      ),
+      negative(
+        'settlement-overflow-precedes-after-account-drift',
+        'validate_settlement',
+        overflowAfterAccountDrift,
+        paths[6],
+        true,
+      ),
     ],
   };
 }
