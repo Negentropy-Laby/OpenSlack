@@ -36,9 +36,9 @@ bounded identities, timestamps, status and SHA-256 digests.
 
 Go failure is fail-open to the already committed TypeScript transition. The owner-only journal
 supports ordered replay and bounded diagnostics without making remote delivery part of the effect
-decision or execution path. Transient transport failures receive a bounded eight-attempt
-exponential retry; the durable entry remains available for explicit replay or process-restart
-recovery after that bound.
+decision or execution path. Transient transport failures receive indefinite exponential retry
+with each delay capped at 30 seconds; deterministic client errors are parked in memory while the
+durable entry remains available for one new attempt after process restart.
 
 ## Go differential behavior
 
@@ -56,8 +56,13 @@ acknowledgement, mutation, grant, or effect endpoint. Its read route uses an opa
 PostgreSQL-timestamp keyset cursor so every immutable row remains traversable beyond the 100-item
 page ceiling without duplicate or omitted rows.
 
-An ambiguous commit first performs exact receipt point-read and otherwise persists
-`reconciliation_required`. Go unavailability, mismatch, outbox state, or reconciliation never
+An ambiguous commit first performs exact receipt point-read and otherwise persists an immutable
+`reconciliation_required` receipt. The publisher immediately invokes the internal observer-only
+resolve route with the same envelope and idempotency key. Resolution atomically records the
+accepted observation, head/outbox changes, and closure evidence; the original 202 receipt remains
+byte-identical on replay. The journal is removed only after an accepted resolution receipt. A
+receipt `committedAt` records database-transaction acceptance time; it does not claim an externally
+observable instant after PostgreSQL COMMIT. Go unavailability, mismatch, outbox state, or reconciliation never
 approves, rejects, executes, resumes, retries, or rolls back a TypeScript effect. Corrupt stored
 evidence returns an integrity error rather than a retryable database error.
 

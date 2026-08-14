@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 
 type stubStore struct {
 	observe          func(context.Context, effectshadowstore.ObserveInput) (effectshadowstore.Receipt, error)
+	resolve          func(context.Context, effectshadowstore.ResolveInput) (effectshadowstore.Receipt, error)
 	head             effectshadowstore.Head
 	receipt          effectshadowstore.Receipt
 	readyErr         error
@@ -31,6 +33,15 @@ type stubStore struct {
 	outboxCursor     string
 	statisticsCalled int
 	observeCalled    int
+	resolveCalled    int
+}
+
+func (s *stubStore) ResolveReconciliation(ctx context.Context, input effectshadowstore.ResolveInput) (effectshadowstore.Receipt, error) {
+	s.resolveCalled++
+	if s.resolve != nil {
+		return s.resolve(ctx, input)
+	}
+	return s.receipt, nil
 }
 
 func (s *stubStore) Observe(ctx context.Context, input effectshadowstore.ObserveInput) (effectshadowstore.Receipt, error) {
@@ -100,6 +111,27 @@ func acceptedReceipt(t *testing.T, input effectshadowstore.ObserveInput, replay 
 	return effectshadowstore.Receipt{Value: value, ExactBytes: exact, Replay: replay}
 }
 
+func reconciliationReceipt(t *testing.T, input effectshadowstore.ObserveInput, replay bool) effectshadowstore.Receipt {
+	t.Helper()
+	o := input.Prepared.Envelope.Observation
+	token := "reconciliation.gs9d.test"
+	value := effectshadowstore.ReceiptValue{
+		Schema: effectshadowstore.ReceiptSchema, Status: "reconciliation_required",
+		IdempotencyKey: input.IdempotencyKey, ReceiptID: "receipt.gs9d.reconciliation",
+		WorkspaceID: o.WorkspaceID, RunID: o.RunID, OccurrenceID: o.OccurrenceID,
+		ApprovalID: o.ApprovalID, SourceSequence: input.Prepared.Envelope.SourceSequence,
+		Operation: input.Prepared.Envelope.Operation, Parity: "unknown",
+		ReconciliationToken: &token, EnvelopeHash: input.Prepared.EnvelopeHash,
+		ObservationHash:  input.Prepared.Envelope.ObservationHash,
+		ServiceBuildHash: input.ServiceBuildHash,
+	}
+	exact, err := canonicaljson.Encode(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return effectshadowstore.Receipt{Value: value, ExactBytes: exact, Replay: replay}
+}
+
 func qualificationService(t *testing.T, store *stubStore) (*Service, string) {
 	t.Helper()
 	token := strings.Repeat("qualification-token-", 2)
@@ -119,7 +151,11 @@ func qualificationService(t *testing.T, store *stubStore) (*Service, string) {
 }
 
 func request(handler http.Handler, method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	return requestReader(handler, method, path, bytes.NewReader(body), headers)
+}
+
+func requestReader(handler http.Handler, method, path string, body io.Reader, headers map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, body)
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
@@ -127,6 +163,10 @@ func request(handler http.Handler, method, path string, body []byte, headers map
 	handler.ServeHTTP(response, req)
 	return response
 }
+
+type failedReader struct{ err error }
+
+func (reader failedReader) Read([]byte) (int, error) { return 0, reader.err }
 
 func identityHeaders(token, key string) map[string]string {
 	return map[string]string{
@@ -268,6 +308,76 @@ func TestEffectShadowRejectsMalformedRequestsAndMapsFailures(t *testing.T) {
 	store.readyErr = errors.New("offline")
 	if got := request(service.Handler(), http.MethodGet, "/health/ready", nil, nil); got.Code != http.StatusServiceUnavailable {
 		t.Fatalf("ready failure = %d", got.Code)
+	}
+}
+
+func TestEffectShadowClassifiesRequestBodyReadFailures(t *testing.T) {
+	store := &stubStore{}
+	service, token := qualificationService(t, store)
+	headers := identityHeaders(token, effectshadowstore.IdempotencyPrefix+strings.Repeat("0", 64))
+	for _, item := range []struct {
+		name string
+		body io.Reader
+		want int
+		code string
+	}{
+		{
+			name: "oversized",
+			body: io.LimitReader(strings.NewReader(strings.Repeat("x", effectshadowstore.MaxRequestBytes+1)), effectshadowstore.MaxRequestBytes+1),
+			want: http.StatusRequestEntityTooLarge,
+			code: string(effectshadowstore.ErrorContentInvalid),
+		},
+		{name: "deadline", body: failedReader{err: context.DeadlineExceeded}, want: http.StatusRequestTimeout, code: "WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT"},
+		{name: "cancelled", body: failedReader{err: context.Canceled}, want: http.StatusRequestTimeout, code: "WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT"},
+		{name: "deterministic", body: failedReader{err: errors.New("read failed")}, want: http.StatusBadRequest, code: "WORKFLOW_EFFECT_SHADOW_REQUEST_READ_FAILED"},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			response := requestReader(service.Handler(), http.MethodPost, effectshadowstore.Route, item.body, headers)
+			if response.Code != item.want || !strings.Contains(response.Body.String(), `"code":"`+item.code+`"`) {
+				t.Fatalf("response = %d %s, want %d/%s", response.Code, response.Body.String(), item.want, item.code)
+			}
+		})
+	}
+	if store.observeCalled != 0 {
+		t.Fatalf("malformed bodies reached the store %d times", store.observeCalled)
+	}
+}
+
+func TestEffectShadowResolvesAnImmutableReconciliationReceipt(t *testing.T) {
+	store := &stubStore{}
+	service, token := qualificationService(t, store)
+	body := goldenBody(t, "approvalCreated")
+	prepared, err := effectshadowstore.PrepareObservation(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := effectshadowstore.IdempotencyPrefix + prepared.EnvelopeHash
+	store.observe = func(_ context.Context, input effectshadowstore.ObserveInput) (effectshadowstore.Receipt, error) {
+		return reconciliationReceipt(t, input, store.observeCalled > 1), nil
+	}
+	store.resolve = func(_ context.Context, input effectshadowstore.ResolveInput) (effectshadowstore.Receipt, error) {
+		if input.ReconciliationToken != "reconciliation.gs9d.test" {
+			t.Fatalf("resolve token = %q", input.ReconciliationToken)
+		}
+		return acceptedReceipt(t, input.ObserveInput, store.resolveCalled > 1), nil
+	}
+
+	original := request(service.Handler(), http.MethodPost, effectshadowstore.Route, body, identityHeaders(token, key))
+	if original.Code != http.StatusAccepted || original.Header().Get("Idempotency-Replayed") != "" {
+		t.Fatalf("original reconciliation = %d/%q %s", original.Code, original.Header().Get("Idempotency-Replayed"), original.Body.String())
+	}
+	replay := request(service.Handler(), http.MethodPost, effectshadowstore.Route, body, identityHeaders(token, key))
+	if replay.Code != http.StatusAccepted || replay.Header().Get("Idempotency-Replayed") != "true" || replay.Body.String() != original.Body.String() {
+		t.Fatalf("replayed reconciliation = %d/%q %s", replay.Code, replay.Header().Get("Idempotency-Replayed"), replay.Body.String())
+	}
+	path := effectshadowstore.ReconciliationResolveRoutePrefix + "reconciliation.gs9d.test" + effectshadowstore.ReconciliationResolveRouteSuffix
+	resolved := request(service.Handler(), http.MethodPost, path, body, identityHeaders(token, key))
+	if resolved.Code != http.StatusCreated || resolved.Header().Get("Idempotency-Replayed") != "" {
+		t.Fatalf("resolved reconciliation = %d/%q %s", resolved.Code, resolved.Header().Get("Idempotency-Replayed"), resolved.Body.String())
+	}
+	resolvedReplay := request(service.Handler(), http.MethodPost, path, body, identityHeaders(token, key))
+	if resolvedReplay.Code != http.StatusOK || resolvedReplay.Header().Get("Idempotency-Replayed") != "true" || resolvedReplay.Body.String() != resolved.Body.String() {
+		t.Fatalf("replayed resolution = %d/%q %s", resolvedReplay.Code, resolvedReplay.Header().Get("Idempotency-Replayed"), resolvedReplay.Body.String())
 	}
 }
 

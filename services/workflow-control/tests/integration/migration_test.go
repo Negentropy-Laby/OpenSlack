@@ -47,6 +47,7 @@ ORDER BY table_name`)
 		"workflow_control_effect_shadow_observations",
 		"workflow_control_effect_shadow_outbox",
 		"workflow_control_effect_shadow_receipts",
+		"workflow_control_effect_shadow_reconciliation_resolutions",
 		"workflow_control_effect_shadow_reconciliations",
 		"workflow_control_outbox",
 		"workflow_control_reconciliations",
@@ -94,6 +95,7 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_effect_shadow_receipts',
 	      'workflow_control_effect_shadow_outbox',
 	      'workflow_control_effect_shadow_reconciliations',
+	      'workflow_control_effect_shadow_reconciliation_resolutions',
 	      'workflow_control_shadow_observations',
 	      'workflow_control_shadow_receipts',
 	      'workflow_runner_job_receipts',
@@ -106,8 +108,8 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 35 {
-		t.Fatalf("immutable trigger coverage = %d, want 35 event rows", triggerEvents)
+	if triggerEvents != 37 {
+		t.Fatalf("immutable trigger coverage = %d, want 37 event rows", triggerEvents)
 	}
 }
 

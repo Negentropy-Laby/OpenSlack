@@ -26,6 +26,7 @@ func TestEffectShadowOpenAPIIsClosedAndValid(t *testing.T) {
 		"/version",
 		"/metrics",
 		"/v1/shadow/workflow-control/effect-events",
+		"/v1/shadow/workflow-control/effect-reconciliations/{reconciliationToken}/resolve",
 		"/v1/shadow/workflow-control/runs/{runId}/occurrences/{occurrenceId}/approvals/{approvalId}/head",
 		"/v1/shadow/workflow-control/receipts/{idempotencyKey}",
 		"/v1/shadow/workflow-control/outbox:pending",
@@ -46,7 +47,7 @@ func TestEffectShadowOpenAPIIsClosedAndValid(t *testing.T) {
 	}
 
 	post := document.Paths.Value("/v1/shadow/workflow-control/effect-events").Post
-	for _, status := range []string{"200", "201", "202", "401", "409", "413", "415", "422", "500", "503"} {
+	for _, status := range []string{"200", "201", "202", "400", "401", "408", "409", "413", "415", "422", "500", "503"} {
 		if post.Responses.Value(status) == nil {
 			t.Fatalf("effect observation is missing response %s", status)
 		}
@@ -54,6 +55,12 @@ func TestEffectShadowOpenAPIIsClosedAndValid(t *testing.T) {
 	replay := post.Responses.Value("200")
 	if replay.Value == nil || replay.Value.Headers["Idempotency-Replayed"] == nil || replay.Value.Headers["Idempotency-Replayed"].Value == nil || !replay.Value.Headers["Idempotency-Replayed"].Value.Required {
 		t.Fatal("effect exact replay response is missing its required replay header")
+	}
+	resolve := document.Paths.Value("/v1/shadow/workflow-control/effect-reconciliations/{reconciliationToken}/resolve").Post
+	for _, status := range []string{"200", "201", "400", "401", "404", "408", "409", "413", "415", "422", "500", "503"} {
+		if resolve.Responses.Value(status) == nil {
+			t.Fatalf("effect reconciliation resolution is missing response %s", status)
+		}
 	}
 	for _, path := range []string{
 		"/v1/shadow/workflow-control/runs/{runId}/occurrences/{occurrenceId}/approvals/{approvalId}/head",

@@ -15,6 +15,26 @@ type Range struct {
 	Maximum int64
 }
 
+const CurrentSchemaVersion int64 = 5
+
+var (
+	ShadowProfile     = Range{Minimum: 1, Maximum: CurrentSchemaVersion}
+	RunnerProfile     = Range{Minimum: 2, Maximum: CurrentSchemaVersion}
+	AuthorityProfile  = Range{Minimum: 3, Maximum: CurrentSchemaVersion}
+	CheckpointProfile = Range{Minimum: 4, Maximum: CurrentSchemaVersion}
+	EffectProfile     = Range{Minimum: 5, Maximum: CurrentSchemaVersion}
+)
+
+func RunnerRange(checkpointShadow, effectShadow bool) Range {
+	if effectShadow {
+		return EffectProfile
+	}
+	if checkpointShadow {
+		return CheckpointProfile
+	}
+	return RunnerProfile
+}
+
 // Database is the narrow pgxpool surface needed for startup validation.
 type Database interface {
 	Ping(context.Context) error

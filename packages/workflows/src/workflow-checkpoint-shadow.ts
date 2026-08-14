@@ -27,6 +27,7 @@ import {
   WORKFLOW_CONTROL_SHADOW_POLICY,
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
+import { validateWorkflowLocalShadowEndpoint } from './internal/workflow-local-shadow-config.js';
 
 export interface WorkflowCheckpointShadowPublisherPort {
   publish(envelope: WorkflowCheckpointShadowEnvelope): Promise<WorkflowCheckpointShadowReceipt>;
@@ -451,21 +452,18 @@ export function createWorkflowCheckpointShadowHttpPublisher(options: {
 }): WorkflowCheckpointShadowPublisherPort {
   let endpoint: URL;
   try {
-    endpoint = new URL(options.endpoint);
+    endpoint = validateWorkflowLocalShadowEndpoint(options.endpoint, [
+      '/',
+      WORKFLOW_CHECKPOINT_SHADOW_ROUTE,
+    ]);
   } catch (error) {
     throw workflowCheckpointError(
       'WORKFLOW_CHECKPOINT_OBSERVER_CONFIG_INVALID',
-      'Workflow checkpoint shadow HTTP endpoint is invalid.',
+      'Workflow checkpoint shadow HTTP options are invalid.',
       error,
     );
   }
   if (
-    endpoint.protocol !== 'http:' ||
-    !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-    endpoint.username ||
-    endpoint.password ||
-    endpoint.search ||
-    endpoint.hash ||
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
     !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(options.callerId) ||

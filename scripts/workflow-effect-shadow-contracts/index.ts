@@ -223,16 +223,12 @@ const errorSchema = {
   }),
 };
 
-async function loadEffectControlEnvelope(
+function loadEffectControlEnvelope(
+  golden: {
+    vectors: { observer: Record<string, { value: unknown }> };
+  },
   name: 'approvalCreated' | 'approvalDecided' | 'auditRecorded',
-): Promise<WorkflowEffectControlEnvelope> {
-  const golden = JSON.parse(
-    await readFile(resolve(effectControlRoot, 'golden-vectors.json'), 'utf8'),
-  ) as {
-    vectors: {
-      observer: Record<string, { value: unknown }>;
-    };
-  };
+): WorkflowEffectControlEnvelope {
   return validateWorkflowEffectControlEnvelope(golden.vectors.observer[name]!.value);
 }
 
@@ -337,19 +333,28 @@ function sha256(value: Uint8Array): string {
 
 async function buildOutputs(): Promise<Map<string, Buffer>> {
   const outputs = new Map<string, Buffer>();
-  const schemas = [
-    acceptedReceiptSchema,
-    reconciliationReceiptSchema,
-    receiptSchema,
-    headSchema,
-    errorSchema,
-  ];
-  for (const [index, schema] of schemas.entries()) {
-    outputs.set(expectedPaths[index]!, await prettyJson(schema));
+  const schemaInventory = new Map<string, unknown>([
+    ['schemas/workflow-effect-shadow-accepted-receipt.v1.schema.json', acceptedReceiptSchema],
+    [
+      'schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json',
+      reconciliationReceiptSchema,
+    ],
+    ['schemas/workflow-effect-shadow-receipt.v1.schema.json', receiptSchema],
+    ['schemas/workflow-effect-shadow-head.v1.schema.json', headSchema],
+    ['schemas/workflow-effect-shadow-error.v1.schema.json', errorSchema],
+  ]);
+  for (const [path, schema] of schemaInventory) {
+    outputs.set(path, await prettyJson(schema));
   }
-  const created = await loadEffectControlEnvelope('approvalCreated');
-  const decided = await loadEffectControlEnvelope('approvalDecided');
-  const recorded = await loadEffectControlEnvelope('auditRecorded');
+  const effectControlGoldenBytes = await readFile(
+    resolve(effectControlRoot, 'golden-vectors.json'),
+  );
+  const effectControlGolden = JSON.parse(effectControlGoldenBytes.toString('utf8')) as {
+    vectors: { observer: Record<string, { value: unknown }> };
+  };
+  const created = loadEffectControlEnvelope(effectControlGolden, 'approvalCreated');
+  const decided = loadEffectControlEnvelope(effectControlGolden, 'approvalDecided');
+  const recorded = loadEffectControlEnvelope(effectControlGolden, 'auditRecorded');
   const matched = acceptedReceipt(created, 'matched');
   const mismatched = acceptedReceipt(decided, 'mismatched');
   const reconciliation = reconciliationReceipt(recorded);
@@ -394,7 +399,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
   );
   const sourceLocks = {
     effectControlManifest: sha256(await readFile(resolve(effectControlRoot, 'manifest.json'))),
-    effectControlGolden: sha256(await readFile(resolve(effectControlRoot, 'golden-vectors.json'))),
+    effectControlGolden: sha256(effectControlGoldenBytes),
   };
   const artifacts = Object.fromEntries(
     [...outputs.entries()].map(([path, bytes]) => [
@@ -455,7 +460,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
         'command',
         'absolutePath',
       ],
-      crossLanguageSchemas: expectedPaths.slice(0, 5),
+      crossLanguageSchemas: [...schemaInventory.keys()],
       artifacts,
       bundleFiles: expectedPaths,
     }),

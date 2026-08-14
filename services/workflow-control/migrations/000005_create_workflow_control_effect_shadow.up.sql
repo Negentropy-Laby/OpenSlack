@@ -111,6 +111,36 @@ CREATE TABLE workflow_control_effect_shadow_reconciliations (
     created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
+-- Immutable closure evidence for an ambiguous original POST. The original
+-- reconciliation receipt remains byte-identical; this row records the later
+-- accepted observer commit without rewriting history.
+CREATE TABLE workflow_control_effect_shadow_reconciliation_resolutions (
+    resolution_receipt_id text PRIMARY KEY,
+    reconciliation_token text NOT NULL UNIQUE REFERENCES workflow_control_effect_shadow_reconciliations(reconciliation_token),
+    original_receipt_id text NOT NULL UNIQUE REFERENCES workflow_control_effect_shadow_receipts(receipt_id),
+    idempotency_key text NOT NULL UNIQUE,
+    request_fingerprint bytea NOT NULL CHECK (octet_length(request_fingerprint) = 32),
+    workspace_id text NOT NULL,
+    run_id text NOT NULL,
+    occurrence_id text NOT NULL,
+    approval_id text NOT NULL,
+    source_sequence bigint NOT NULL CHECK (source_sequence BETWEEN 1 AND 3),
+    operation text NOT NULL CHECK (operation IN ('approval_created','approval_decided','audit_recorded')),
+    status text NOT NULL CHECK (status='accepted'),
+    parity text NOT NULL CHECK (parity IN ('matched','mismatched')),
+    mismatch_code text,
+    observation_id text NOT NULL UNIQUE REFERENCES workflow_control_effect_shadow_observations(observation_id),
+    envelope_hash bytea NOT NULL CHECK (octet_length(envelope_hash) = 32),
+    observation_hash bytea NOT NULL CHECK (octet_length(observation_hash) = 32),
+    service_build_hash bytea NOT NULL CHECK (octet_length(service_build_hash) = 32),
+    reconciliation_marker text,
+    exact_receipt_bytes bytea NOT NULL CHECK (octet_length(exact_receipt_bytes) BETWEEN 1 AND 65536),
+    committed_at timestamptz NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK ((parity='matched' AND mismatch_code IS NULL) OR (parity='mismatched' AND mismatch_code IS NOT NULL)),
+    CHECK (reconciliation_marker IS NULL)
+);
+
 CREATE INDEX workflow_control_effect_shadow_observations_scope_idx
   ON workflow_control_effect_shadow_observations (workspace_id,run_id,occurrence_id,approval_id,source_sequence);
 CREATE INDEX workflow_control_effect_shadow_receipts_scope_idx
@@ -119,6 +149,8 @@ CREATE INDEX workflow_control_effect_shadow_outbox_pending_idx
   ON workflow_control_effect_shadow_outbox (workspace_id,status,recorded_at,event_id);
 CREATE INDEX workflow_control_effect_shadow_reconciliations_scope_idx
   ON workflow_control_effect_shadow_reconciliations (workspace_id,run_id,occurrence_id,approval_id,source_sequence);
+CREATE INDEX workflow_control_effect_shadow_reconciliation_resolutions_scope_idx
+  ON workflow_control_effect_shadow_reconciliation_resolutions (workspace_id,run_id,occurrence_id,approval_id,source_sequence);
 
 CREATE FUNCTION workflow_control_effect_shadow_head_transition() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -153,4 +185,5 @@ CREATE TRIGGER workflow_control_effect_shadow_observations_immutable BEFORE UPDA
 CREATE TRIGGER workflow_control_effect_shadow_receipts_immutable BEFORE UPDATE OR DELETE ON workflow_control_effect_shadow_receipts FOR EACH ROW EXECUTE FUNCTION workflow_control_effect_shadow_immutable();
 CREATE TRIGGER workflow_control_effect_shadow_outbox_immutable BEFORE UPDATE OR DELETE ON workflow_control_effect_shadow_outbox FOR EACH ROW EXECUTE FUNCTION workflow_control_effect_shadow_immutable();
 CREATE TRIGGER workflow_control_effect_shadow_reconciliations_immutable BEFORE UPDATE OR DELETE ON workflow_control_effect_shadow_reconciliations FOR EACH ROW EXECUTE FUNCTION workflow_control_effect_shadow_immutable();
+CREATE TRIGGER workflow_control_effect_shadow_reconciliation_resolutions_immutable BEFORE UPDATE OR DELETE ON workflow_control_effect_shadow_reconciliation_resolutions FOR EACH ROW EXECUTE FUNCTION workflow_control_effect_shadow_immutable();
 COMMIT;

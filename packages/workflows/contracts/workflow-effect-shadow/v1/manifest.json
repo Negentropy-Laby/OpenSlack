@@ -80,8 +80,8 @@
     },
     "schemas/workflow-effect-shadow-error.v1.schema.json": {
       "path": "schemas/workflow-effect-shadow-error.v1.schema.json",
-      "byteLength": 1243,
-      "sha256": "8b0d91266f0c7237bb20020480adb52189226a324842a77ced2ab665c2d25750"
+      "byteLength": 1347,
+      "sha256": "53a20585fc0cf6153afb297ff4175f8fad6fc5f663892620d75cbf05440b259f"
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",

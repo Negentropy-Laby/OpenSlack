@@ -34,6 +34,7 @@ type Repository struct {
 	pool                 *pgxpool.Pool
 	commit               func(context.Context, pgx.Tx) error
 	commitReconciliation func(context.Context, pgx.Tx) error
+	commitResolution     func(context.Context, pgx.Tx) error
 	beforeReconcileLock  func()
 }
 
@@ -169,6 +170,128 @@ func (r *Repository) Observe(ctx context.Context, input effectshadowstore.Observ
 	return result, nil
 }
 
+// ResolveReconciliation closes one immutable ambiguous receipt without
+// rewriting it. It materializes the exact observation only after binding the
+// original token, request fingerprint and envelope under the same locks.
+func (r *Repository) ResolveReconciliation(ctx context.Context, input effectshadowstore.ResolveInput) (effectshadowstore.Receipt, error) {
+	fingerprint, err := decodeHash(input.RequestFingerprint)
+	if err != nil || !effectshadowstore.ValidReconciliationToken(input.ReconciliationToken) || !effectshadowstore.IdempotencyKeyMatchesEnvelope(input.IdempotencyKey, input.Prepared.EnvelopeHash) {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorInputInvalid, "reconciliation identity is invalid", err)
+	}
+	build, err := decodeHash(input.ServiceBuildHash)
+	if err != nil {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorInputInvalid, "service build hash is invalid", err)
+	}
+	o := input.Prepared.Envelope.Observation
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return effectshadowstore.Receipt{}, databaseFailure("begin effect reconciliation resolution", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if err := lockScope(ctx, tx, input.IdempotencyKey, o.WorkspaceID, o.RunID, o.OccurrenceID, o.ApprovalID); err != nil {
+		return effectshadowstore.Receipt{}, err
+	}
+	var originalReceiptID, key, workspace, run, occurrence, approval string
+	var originalFingerprint, observationHash []byte
+	var sequence int64
+	if err := tx.QueryRow(ctx, reconciliationByTokenSQL, input.ReconciliationToken).Scan(&originalReceiptID, &key, &originalFingerprint, &workspace, &run, &occurrence, &approval, &sequence, &observationHash); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorNotFound, "effect reconciliation not found", err)
+		}
+		return effectshadowstore.Receipt{}, mapReadFailure("read effect reconciliation", err)
+	}
+	if key != input.IdempotencyKey || workspace != o.WorkspaceID || run != o.RunID || occurrence != o.OccurrenceID || approval != o.ApprovalID || sequence != input.Prepared.Envelope.SourceSequence || subtle.ConstantTimeCompare(originalFingerprint, fingerprint) != 1 || subtle.ConstantTimeCompare(observationHash, mustDecodeHash(input.Prepared.Envelope.ObservationHash)) != 1 {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIdempotencyConflict, "reconciliation scope or fingerprint changed", nil)
+	}
+	original, rawOriginal, err := readReceipt(tx.QueryRow(ctx, receiptByKeySQL, key))
+	if err != nil || subtle.ConstantTimeCompare(rawOriginal, fingerprint) != 1 || original.Value.Status != "reconciliation_required" || original.Value.ReconciliationToken == nil || *original.Value.ReconciliationToken != input.ReconciliationToken || original.Value.ReceiptID != originalReceiptID {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "original reconciliation receipt is invalid", err)
+	}
+	resolved, rawResolved, err := readReceipt(tx.QueryRow(ctx, resolutionByTokenSQL, input.ReconciliationToken))
+	if err == nil {
+		if subtle.ConstantTimeCompare(rawResolved, fingerprint) != 1 {
+			return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIdempotencyConflict, "reconciliation resolution fingerprint conflict", nil)
+		}
+		resolved.Replay = true
+		return resolved, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return effectshadowstore.Receipt{}, mapReadFailure("read effect reconciliation resolution", err)
+	}
+	previous, err := readHead(tx.QueryRow(ctx, headForUpdateSQL, o.WorkspaceID, o.RunID, o.OccurrenceID, o.ApprovalID))
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return effectshadowstore.Receipt{}, mapReadFailure("read effect head for reconciliation", err)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		previous = nil
+	}
+	if previous == nil && input.Prepared.Envelope.SourceSequence != 1 {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorConflict, "first effect source sequence must be one", nil)
+	}
+	if previous != nil && input.Prepared.Envelope.SourceSequence != previous.SourceSequence+1 {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorConflict, "effect source sequence is not contiguous", nil)
+	}
+	parity, mismatch := effectshadowstore.Compare(input.Prepared.Envelope, previous)
+	observationID, err := randomToken("wces-observation")
+	if err != nil {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorDatabase, "generate observation identity", err)
+	}
+	receiptID, err := randomToken("wces-resolution-receipt")
+	if err != nil {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorDatabase, "generate resolution receipt identity", err)
+	}
+	if _, err := tx.Exec(ctx, observationInsertSQL, observationID, o.WorkspaceID, o.RunID, o.OccurrenceID, o.ApprovalID, input.Prepared.Envelope.SourceSequence, input.Prepared.Envelope.Operation, parity, nullableMismatch(mismatch), mustDecodeHash(input.Prepared.EnvelopeHash), input.Prepared.ExactBody, mustDecodeHash(input.Prepared.Envelope.ObservationHash), input.Prepared.ObservationBytes); err != nil {
+		return effectshadowstore.Receipt{}, classifyWrite("insert reconciled effect observation", err)
+	}
+	if err := writeHead(ctx, tx, previous, input.Prepared, input.ServiceBuildHash, parity == "matched", mismatch); err != nil {
+		return effectshadowstore.Receipt{}, err
+	}
+	if parity == "matched" {
+		if err := writeOutbox(ctx, tx, observationID, input.Prepared); err != nil {
+			return effectshadowstore.Receipt{}, err
+		}
+	}
+	var accepted time.Time
+	if err := tx.QueryRow(ctx, `SELECT date_trunc('milliseconds', clock_timestamp())`).Scan(&accepted); err != nil {
+		return effectshadowstore.Receipt{}, databaseFailure("read effect resolution acceptance time", err)
+	}
+	acceptedText := accepted.UTC().Format(timeLayout)
+	value := effectshadowstore.ReceiptValue{Schema: effectshadowstore.ReceiptSchema, Status: "accepted", IdempotencyKey: input.IdempotencyKey, ReceiptID: receiptID, ObservationID: &observationID, WorkspaceID: o.WorkspaceID, RunID: o.RunID, OccurrenceID: o.OccurrenceID, ApprovalID: o.ApprovalID, SourceSequence: input.Prepared.Envelope.SourceSequence, Operation: input.Prepared.Envelope.Operation, Parity: parity, MismatchCode: mismatchPointer(mismatch), EnvelopeHash: input.Prepared.EnvelopeHash, ObservationHash: input.Prepared.Envelope.ObservationHash, ServiceBuildHash: input.ServiceBuildHash, CommittedAt: &acceptedText}
+	if err := effectshadowstore.ValidateReceiptValue(value); err != nil {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "construct effect resolution receipt", err)
+	}
+	exact, err := canonicaljson.Encode(value)
+	if err != nil || len(exact) > effectshadowstore.MaxReceiptBytes {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "encode effect resolution receipt", err)
+	}
+	if _, err := tx.Exec(ctx, resolutionInsertSQL, receiptID, input.ReconciliationToken, originalReceiptID, input.IdempotencyKey, fingerprint, o.WorkspaceID, o.RunID, o.OccurrenceID, o.ApprovalID, input.Prepared.Envelope.SourceSequence, input.Prepared.Envelope.Operation, "accepted", parity, nullableMismatch(mismatch), observationID, mustDecodeHash(input.Prepared.EnvelopeHash), mustDecodeHash(input.Prepared.Envelope.ObservationHash), build, nil, exact, accepted); err != nil {
+		return effectshadowstore.Receipt{}, classifyWrite("insert effect reconciliation resolution", err)
+	}
+	result := effectshadowstore.Receipt{Value: value, ExactBytes: exact}
+	commit := r.commitResolution
+	if commit == nil {
+		commit = func(ctx context.Context, tx pgx.Tx) error { return tx.Commit(ctx) }
+	}
+	if err := commit(ctx, tx); err != nil {
+		return r.resolveResolutionCommitOutcome(input.ReconciliationToken, fingerprint, err)
+	}
+	return result, nil
+}
+
+func (r *Repository) resolveResolutionCommitOutcome(token string, fingerprint []byte, commitErr error) (effectshadowstore.Receipt, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), reconciliationTimeout)
+	defer cancel()
+	receipt, raw, err := readReceipt(r.pool.QueryRow(ctx, resolutionByTokenSQL, token))
+	if err == nil && subtle.ConstantTimeCompare(raw, fingerprint) == 1 {
+		receipt.Replay = true
+		return receipt, nil
+	}
+	if err == nil {
+		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIdempotencyConflict, "resolution commit recovery fingerprint conflict", commitErr)
+	}
+	return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorCommitUnknown, "effect reconciliation resolution commit is unknown", errors.Join(commitErr, err))
+}
+
 func writeOutbox(ctx context.Context, tx pgx.Tx, observationID string, prepared effectshadowstore.PreparedObservation) error {
 	o := prepared.Envelope.Observation
 	if o.Operation == effectshadowstore.OperationApprovalCreated {
@@ -242,11 +365,10 @@ func writeHead(ctx context.Context, tx pgx.Tx, previous *effectshadowstore.Head,
 	matchedBody := any(nil)
 	if previous.MatchedObservationHash != nil && previous.Observation != nil {
 		matchedHash = mustDecodeHash(*previous.MatchedObservationHash)
-		encoded, err := canonicaljson.Encode(previous.Observation)
-		if err != nil {
-			return effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "encode stored effect head", err)
+		if len(previous.MatchedObservationBytes) == 0 {
+			return effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "stored effect head matched bytes are unavailable", nil)
 		}
-		matchedBody = encoded
+		matchedBody = previous.MatchedObservationBytes
 	}
 	if matched {
 		matchedSequence, matchedOperation = sequence, prepared.Envelope.Operation
@@ -299,11 +421,13 @@ func (r *Repository) ReadPendingOutbox(ctx context.Context, workspaceID string, 
 	if err != nil {
 		return effectshadowstore.OutboxPage{}, err
 	}
-	var after pgtype.Timestamptz
+	query := outboxPendingNoCursorSQL
+	arguments := []any{workspaceID, limit + 1}
 	if !recordedAt.IsZero() {
-		after = pgtype.Timestamptz{Time: recordedAt, Valid: true}
+		query = outboxPendingAfterSQL
+		arguments = append(arguments, recordedAt, eventID)
 	}
-	rows, err := r.pool.Query(ctx, outboxPendingSQL, workspaceID, limit+1, after, eventID)
+	rows, err := r.pool.Query(ctx, query, arguments...)
 	if err != nil {
 		return effectshadowstore.OutboxPage{}, databaseFailure("read pending effect outbox", err)
 	}
@@ -404,6 +528,7 @@ func (r *Repository) resolveCommitOutcome(input effectshadowstore.ObserveInput, 
 	receipt, raw, err := readReceipt(r.pool.QueryRow(ctx, receiptByKeySQL, input.IdempotencyKey))
 	if err == nil {
 		if subtle.ConstantTimeCompare(raw, fingerprint) == 1 {
+			receipt.Replay = true
 			return receipt, nil
 		}
 		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIdempotencyConflict, "commit recovery fingerprint conflict", commitErr)
@@ -426,6 +551,7 @@ func (r *Repository) resolveCommitOutcome(input effectshadowstore.ObserveInput, 
 	receipt, raw, err = readReceipt(tx.QueryRow(ctx, receiptByKeySQL, input.IdempotencyKey))
 	if err == nil {
 		if subtle.ConstantTimeCompare(raw, fingerprint) == 1 {
+			receipt.Replay = true
 			return receipt, nil
 		}
 		return effectshadowstore.Receipt{}, effectshadowstore.Failure(effectshadowstore.ErrorIdempotencyConflict, "commit recovery fingerprint conflict", commitErr)
@@ -543,6 +669,7 @@ func readHead(row pgx.Row) (*effectshadowstore.Head, error) {
 	}
 	result.MatchedObservationHash = &wantHash
 	result.Observation = &observation
+	result.MatchedObservationBytes = append([]byte(nil), matchedBody...)
 	if !result.MismatchLatched && (result.SourceSequence != *result.MatchedSourceSequence || result.Operation != *result.MatchedOperation || result.LastObservationHash != wantHash || result.MismatchCode != nil) {
 		return nil, effectshadowstore.Failure(effectshadowstore.ErrorIntegrity, "stored effect head live prefix is inconsistent", nil)
 	}
@@ -622,16 +749,8 @@ func effectObservationHash(canonical []byte) string {
 }
 
 func lockScope(ctx context.Context, tx pgx.Tx, key, workspace, run, occurrence, approval string) error {
-	for _, lock := range []struct {
-		value string
-		salt  int64
-	}{
-		{value: key, salt: idempotencyLockSalt},
-		{value: approvalScopeKey(workspace, run, occurrence, approval), salt: approvalLockSalt},
-	} {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,$2))`, lock.value, lock.salt); err != nil {
-			return databaseFailure("lock effect scope", err)
-		}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,$2)),pg_advisory_xact_lock(hashtextextended($3,$4))`, key, idempotencyLockSalt, approvalScopeKey(workspace, run, occurrence, approval), approvalLockSalt); err != nil {
+		return databaseFailure("lock effect scope", err)
 	}
 	return nil
 }
@@ -651,12 +770,6 @@ func randomToken(prefix string) (string, error) {
 	}
 	return prefix + "-" + base64.RawURLEncoding.EncodeToString(raw), nil
 }
-
-func validIdempotency(value string) bool {
-	return len(value) == len(effectshadowstore.IdempotencyPrefix)+64 && value[:len(effectshadowstore.IdempotencyPrefix)] == effectshadowstore.IdempotencyPrefix && isHash(value[len(effectshadowstore.IdempotencyPrefix):])
-}
-
-func isHash(value string) bool { _, err := decodeHash(value); return err == nil }
 
 func decodeHash(value string) ([]byte, error) {
 	raw, err := hex.DecodeString(value)
@@ -738,11 +851,16 @@ const headInsertSQL = `INSERT INTO workflow_control_effect_shadow_heads (workspa
 const headUpdateSQL = `UPDATE workflow_control_effect_shadow_heads SET last_source_sequence=$5,last_operation=$6,last_observation_hash=$7,matched_source_sequence=$8,matched_operation=$9,matched_observation_hash=$10,exact_matched_observation_bytes=$11,mismatch_latched=$12,mismatch_code=$13,service_build_hash=$14,updated_at=clock_timestamp() WHERE workspace_id=$1 AND run_id=$2 AND occurrence_id=$3 AND approval_id=$4`
 const observationInsertSQL = `INSERT INTO workflow_control_effect_shadow_observations (observation_id,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,parity,mismatch_code,envelope_hash,exact_envelope_bytes,observation_hash,exact_observation_bytes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
 const outboxInsertSQL = `INSERT INTO workflow_control_effect_shadow_outbox (event_id,event_type,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,observation_id,observation_hash,payload_hash,canonical_payload_bytes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
-const outboxPendingSQL = `SELECT event_id,event_type,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,observation_id,observation_hash,payload_hash,canonical_payload_bytes,recorded_at FROM workflow_control_effect_shadow_outbox WHERE workspace_id=$1 AND status='pending' AND ($3::timestamptz IS NULL OR (recorded_at,event_id)>($3,$4)) ORDER BY recorded_at,event_id LIMIT $2`
+const outboxSelectColumns = `event_id,event_type,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,observation_id,observation_hash,payload_hash,canonical_payload_bytes,recorded_at`
+const outboxPendingNoCursorSQL = `SELECT ` + outboxSelectColumns + ` FROM workflow_control_effect_shadow_outbox WHERE workspace_id=$1 AND status='pending' ORDER BY recorded_at,event_id LIMIT $2`
+const outboxPendingAfterSQL = `SELECT ` + outboxSelectColumns + ` FROM workflow_control_effect_shadow_outbox WHERE workspace_id=$1 AND status='pending' AND (recorded_at,event_id)>($3,$4) ORDER BY recorded_at,event_id LIMIT $2`
 const receiptInsertSQL = `INSERT INTO workflow_control_effect_shadow_receipts (receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,status,parity,mismatch_code,observation_id,envelope_hash,observation_hash,service_build_hash,reconciliation_token,exact_receipt_bytes,committed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`
 const receiptSelectColumns = `receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,status,parity,mismatch_code,observation_id,envelope_hash,observation_hash,service_build_hash,reconciliation_token,exact_receipt_bytes,committed_at`
 const receiptByKeySQL = `SELECT ` + receiptSelectColumns + ` FROM workflow_control_effect_shadow_receipts WHERE idempotency_key=$1`
 const receiptByWorkspaceKeySQL = `SELECT ` + receiptSelectColumns + ` FROM workflow_control_effect_shadow_receipts WHERE workspace_id=$1 AND idempotency_key=$2`
-const reconciliationOpenSQL = `SELECT EXISTS (SELECT 1 FROM workflow_control_effect_shadow_reconciliations WHERE workspace_id=$1 AND run_id=$2 AND occurrence_id=$3 AND approval_id=$4 AND status='open')`
+const reconciliationOpenSQL = `SELECT EXISTS (SELECT 1 FROM workflow_control_effect_shadow_reconciliations r WHERE r.workspace_id=$1 AND r.run_id=$2 AND r.occurrence_id=$3 AND r.approval_id=$4 AND r.status='open' AND NOT EXISTS (SELECT 1 FROM workflow_control_effect_shadow_reconciliation_resolutions x WHERE x.reconciliation_token=r.reconciliation_token))`
 const reconciliationInsertSQL = `INSERT INTO workflow_control_effect_shadow_reconciliations (reconciliation_token,receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,observation_hash,commit_error_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`
-const statisticsSQL = `SELECT (SELECT count(*) FROM workflow_control_effect_shadow_heads),(SELECT count(*) FROM workflow_control_effect_shadow_observations),(SELECT count(*) FROM workflow_control_effect_shadow_receipts),(SELECT count(*) FROM workflow_control_effect_shadow_outbox WHERE status='pending'),(SELECT count(*) FROM workflow_control_effect_shadow_reconciliations WHERE status='open')`
+const reconciliationByTokenSQL = `SELECT receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,observation_hash FROM workflow_control_effect_shadow_reconciliations WHERE reconciliation_token=$1`
+const resolutionInsertSQL = `INSERT INTO workflow_control_effect_shadow_reconciliation_resolutions (resolution_receipt_id,reconciliation_token,original_receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,status,parity,mismatch_code,observation_id,envelope_hash,observation_hash,service_build_hash,reconciliation_marker,exact_receipt_bytes,committed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
+const resolutionByTokenSQL = `SELECT resolution_receipt_id,idempotency_key,request_fingerprint,workspace_id,run_id,occurrence_id,approval_id,source_sequence,operation,status,parity,mismatch_code,observation_id,envelope_hash,observation_hash,service_build_hash,reconciliation_marker,exact_receipt_bytes,committed_at FROM workflow_control_effect_shadow_reconciliation_resolutions WHERE reconciliation_token=$1`
+const statisticsSQL = `SELECT (SELECT count(*) FROM workflow_control_effect_shadow_heads),(SELECT count(*) FROM workflow_control_effect_shadow_observations),(SELECT count(*) FROM workflow_control_effect_shadow_receipts),(SELECT count(*) FROM workflow_control_effect_shadow_outbox WHERE status='pending'),(SELECT count(*) FROM workflow_control_effect_shadow_reconciliations r WHERE r.status='open' AND NOT EXISTS (SELECT 1 FROM workflow_control_effect_shadow_reconciliation_resolutions x WHERE x.reconciliation_token=r.reconciliation_token))`

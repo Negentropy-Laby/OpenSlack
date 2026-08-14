@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
@@ -26,6 +26,7 @@ import {
   WORKFLOW_EFFECT_SHADOW_ERROR_CODES,
   workflowEffectShadowCanonicalJson,
 } from '../workflow-effect-shadow-contract.js';
+import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import {
   createWorkflowEffectLeaseAuthority,
   type WorkflowEffectLeaseBinding,
@@ -213,6 +214,142 @@ describe('GS9-D effect shadow transport and durable observation', () => {
     });
   });
 
+  it('resolves an immutable 202 receipt before acknowledging journal delivery', async () => {
+    const { envelope, canonicalBytes } = await goldenEnvelope('approvalCreated');
+    const calls: URL[] = [];
+    const bodies: unknown[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push(new URL(String(input)));
+      if (init?.body !== undefined && init.body !== null) bodies.push(init.body);
+      const index = calls.length;
+      const resolving = index % 2 === 0;
+      return new Response(
+        receiptFor(envelope, resolving ? 'accepted' : 'reconciliation_required'),
+        {
+          status: resolving ? (index === 2 ? 201 : 200) : 202,
+          headers: {
+            'content-type': 'application/json',
+            ...(index >= 3 ? { 'Idempotency-Replayed': 'true' } : {}),
+          },
+        },
+      );
+    });
+    const publisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    await expect(publisher.publish(envelope)).resolves.toMatchObject({ status: 'accepted' });
+    await expect(publisher.publish(envelope)).resolves.toMatchObject({ status: 'accepted' });
+    expect(calls.map((value) => value.pathname)).toEqual([
+      '/v1/shadow/workflow-control/effect-events',
+      '/v1/shadow/workflow-control/effect-reconciliations/reconciliation.test.1/resolve',
+      '/v1/shadow/workflow-control/effect-events',
+      '/v1/shadow/workflow-control/effect-reconciliations/reconciliation.test.1/resolve',
+    ]);
+    expect(bodies).toEqual(Array.from({ length: 4 }, () => `${canonicalBytes}\n`));
+  });
+
+  it('applies the calibrated timeout independently to the original and resolve requests', async () => {
+    vi.useFakeTimers();
+    try {
+      const { envelope } = await goldenEnvelope('approvalCreated');
+      let call = 0;
+      const publisher = createWorkflowEffectShadowHttpPublisher({
+        endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+        bearerToken: 'qualification-bearer-token-value',
+        callerId: 'workflow-runner',
+        fetchImpl: vi.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10_000));
+          call += 1;
+          return new Response(
+            receiptFor(envelope, call === 1 ? 'reconciliation_required' : 'accepted'),
+            {
+              status: call === 1 ? 202 : 201,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        }) as typeof fetch,
+      });
+
+      const pending = publisher.publish(envelope);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(pending).resolves.toMatchObject({ status: 'accepted' });
+      expect(call).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries only explicit temporary HTTP failures', async () => {
+    const { envelope } = await goldenEnvelope('approvalCreated');
+    const publish = async (status: number, code: string) => {
+      const publisher = createWorkflowEffectShadowHttpPublisher({
+        endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+        bearerToken: 'qualification-bearer-token-value',
+        callerId: 'workflow-runner',
+        fetchImpl: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                schema: 'openslack.workflow_effect_shadow_error.v1',
+                code,
+                message: 'bounded qualification failure',
+              }),
+              { status, headers: { 'content-type': 'application/json' } },
+            ),
+        ) as typeof fetch,
+      });
+      return publisher.publish(envelope);
+    };
+
+    await expect(publish(408, 'WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT')).rejects.toMatchObject({
+      retryable: true,
+    });
+    await expect(publish(400, 'WORKFLOW_EFFECT_SHADOW_REQUEST_READ_FAILED')).rejects.toMatchObject({
+      retryable: false,
+    });
+  });
+
+  it('uses the calibrated 15-second default request timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const { envelope } = await goldenEnvelope('approvalCreated');
+      const publisher = createWorkflowEffectShadowHttpPublisher({
+        endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+        bearerToken: 'qualification-bearer-token-value',
+        callerId: 'workflow-runner',
+        fetchImpl: vi.fn(
+          async (_input, init) =>
+            await new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+                once: true,
+              });
+            }),
+        ) as typeof fetch,
+      });
+      const pending = publisher.publish(envelope);
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).rejects.toMatchObject({ retryable: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects non-loopback routes, contradictory statuses, and oversized receipts', async () => {
     const { envelope } = await goldenEnvelope('approvalCreated');
     expect(() =>
@@ -221,7 +358,7 @@ describe('GS9-D effect shadow transport and durable observation', () => {
         bearerToken: 'qualification-bearer-token-value',
         callerId: 'workflow-runner',
       }),
-    ).toThrow('configuration is invalid');
+    ).toThrow('Workflow effect shadow endpoint is invalid.');
     const contradictory = createWorkflowEffectShadowHttpPublisher({
       endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
       bearerToken: 'qualification-bearer-token-value',
@@ -330,6 +467,169 @@ describe('GS9-D effect shadow transport and durable observation', () => {
     await expect(readdir(join(workspaceRoot, '.openslack.local'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+
+  it('quarantines one safe malformed journal entry without poisoning later replay', async () => {
+    const workspaceRoot = await temporaryRoot();
+    const journalRoot = join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow');
+    const publisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: vi.fn() as typeof fetch,
+    });
+    const observer = await createWorkflowEffectShadowObservationPort({
+      enabled: true,
+      workspaceRoot,
+      journalRoot,
+      publisher,
+    });
+    await writeExclusive(
+      join(journalRoot, 'entries', 'unexpected.tmp'),
+      'incomplete',
+      productionJournalSecurity(),
+    );
+
+    await expect(observer.replay()).resolves.toBeUndefined();
+    expect(await readdir(join(journalRoot, 'entries'))).toEqual([]);
+    expect(await readdir(join(journalRoot, 'quarantine'))).toHaveLength(1);
+    await expect(observer.synchronize()).resolves.toBeUndefined();
+  });
+
+  it('parks deterministic delivery failures and retries the durable journal after restart', async () => {
+    const workspaceRoot = await temporaryRoot();
+    const journalRoot = join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow');
+    const { envelope } = await goldenEnvelope('approvalCreated');
+    const prepared = prepareWorkflowEffectControlEnvelope(envelope);
+    const rejectingPublisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              schema: 'openslack.workflow_effect_shadow_error.v1',
+              code: 'WORKFLOW_EFFECT_SHADOW_INPUT_INVALID',
+              message: 'deterministic qualification rejection',
+            }),
+            { status: 422, headers: { 'content-type': 'application/json' } },
+          ),
+      ) as typeof fetch,
+    });
+    const first = await createWorkflowEffectShadowObservationPort({
+      enabled: true,
+      workspaceRoot,
+      journalRoot,
+      publisher: rejectingPublisher,
+    });
+    const entry = join(
+      journalRoot,
+      'entries',
+      `${envelope.sourceSequence}-${prepared.bodyHash}.json`,
+    );
+    await writeExclusive(entry, prepared.body, productionJournalSecurity());
+
+    await expect(first.replay()).rejects.toMatchObject({ retryable: false });
+    await expect(first.replay()).resolves.toBeUndefined();
+    expect(await readdir(join(journalRoot, 'entries'))).toEqual([basename(entry)]);
+
+    const acceptingPublisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: vi.fn(
+        async () =>
+          new Response(receiptFor(envelope), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ) as typeof fetch,
+    });
+    const restarted = await createWorkflowEffectShadowObservationPort({
+      enabled: true,
+      workspaceRoot,
+      journalRoot,
+      publisher: acceptingPublisher,
+    });
+    await expect(restarted.replay()).resolves.toBeUndefined();
+    expect(await readdir(join(journalRoot, 'entries'))).toEqual([]);
+  });
+
+  it('keeps one delivery in flight while duplicate replay and retry converge', async () => {
+    const workspaceRoot = await temporaryRoot();
+    const journalRoot = join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow');
+    const { envelope } = await goldenEnvelope('approvalCreated');
+    const prepared = prepareWorkflowEffectControlEnvelope(envelope);
+    let calls = 0;
+    let inFlight = 0;
+    let maximumInFlight = 0;
+    let releaseFirst!: () => void;
+    let reportFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      reportFirstStarted = resolve;
+    });
+    const firstRelease = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const publisher = createWorkflowEffectShadowHttpPublisher({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      bearerToken: 'qualification-bearer-token-value',
+      callerId: 'workflow-runner',
+      fetchImpl: vi.fn(async () => {
+        calls += 1;
+        inFlight += 1;
+        maximumInFlight = Math.max(maximumInFlight, inFlight);
+        try {
+          if (calls === 1) {
+            reportFirstStarted();
+            await firstRelease;
+            return new Response(
+              JSON.stringify({
+                schema: 'openslack.workflow_effect_shadow_error.v1',
+                code: 'WORKFLOW_EFFECT_SHADOW_DATABASE_ERROR',
+                message: 'temporary qualification failure',
+              }),
+              { status: 503, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          return new Response(receiptFor(envelope), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        } finally {
+          inFlight -= 1;
+        }
+      }) as typeof fetch,
+    });
+    const observer = await createWorkflowEffectShadowObservationPort({
+      enabled: true,
+      workspaceRoot,
+      journalRoot,
+      publisher,
+    });
+    await writeExclusive(
+      join(journalRoot, 'entries', `${envelope.sourceSequence}-${prepared.bodyHash}.json`),
+      prepared.body,
+      productionJournalSecurity(),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const first = observer.replay();
+      await firstStarted;
+      const duplicate = observer.replay();
+      releaseFirst();
+      await expect(first).rejects.toMatchObject({ retryable: true });
+      await expect(duplicate).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(250);
+      await observer.flush();
+      expect(calls).toBe(2);
+      expect(maximumInFlight).toBe(1);
+      expect(await readdir(join(journalRoot, 'entries'))).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it(
@@ -480,9 +780,9 @@ describe('GS9-D effect shadow transport and durable observation', () => {
         operation: 'openslack.governance.audit',
         detail: 'bounded audit',
       });
-      await expect(resumed.authorize(resumedPrepared)).resolves.toMatchObject({
-        disposition: 'claimed',
-      });
+      const claim = await resumed.authorize(resumedPrepared);
+      expect(claim).toMatchObject({ disposition: 'claimed' });
+      if (claim.disposition !== 'claimed') throw new Error('expected an execution claim');
       await observer.flush();
       expect(delivered.at(-1)?.operation).toBe('approval_decided');
 
@@ -493,7 +793,7 @@ describe('GS9-D effect shadow transport and durable observation', () => {
         expectedRevision: 1,
         eventId: workflowEffectApprovalAuditEventId('run-1', pending.approvalId),
       });
-      await observer.synchronize();
+      await resumed.complete(claim.authority, { ok: true });
       await observer.flush();
       expect(delivered.at(-1)?.operation).toBe('audit_recorded');
       expect(

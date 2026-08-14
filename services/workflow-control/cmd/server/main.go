@@ -17,9 +17,6 @@ import (
 	shadowpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore/postgres"
 )
 
-const minimumSchemaVersion int64 = 1
-const maximumSchemaVersion int64 = 5
-
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg, err := config.Load()
@@ -37,7 +34,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumSchemaVersion, Maximum: maximumSchemaVersion}); err != nil {
+	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.ShadowProfile); err != nil {
 		logger.Error("workflow_control_shadow_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}

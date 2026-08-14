@@ -36,6 +36,7 @@ type Options struct {
 type Service struct {
 	options                                              Options
 	handler                                              http.Handler
+	workspaceDigest, callerDigest, bearerDigest          [sha256.Size]byte
 	requests, unauthorized, accepts, replays, mismatches atomic.Int64
 }
 
@@ -53,6 +54,12 @@ func New(options Options) (*Service, error) {
 		return nil, fmt.Errorf("disabled effect shadow cannot have a store")
 	}
 	service := &Service{options: options}
+	service.workspaceDigest = sha256.Sum256([]byte(options.WorkspaceID))
+	service.callerDigest = sha256.Sum256([]byte(options.CallerID))
+	if options.QualificationMode {
+		expected, _ := hex.DecodeString(options.BearerTokenSHA256)
+		copy(service.bearerDigest[:], expected)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", service.handleLive)
 	mux.HandleFunc("GET /health/ready", service.handleReady)
@@ -60,6 +67,7 @@ func New(options Options) (*Service, error) {
 	mux.HandleFunc("GET /metrics", service.handleMetrics)
 	if options.QualificationMode {
 		mux.Handle("POST "+effectshadowstore.Route, service.requireIdentity(http.HandlerFunc(service.handleObserve)))
+		mux.Handle("POST "+effectshadowstore.ReconciliationResolveRoutePrefix+"{token}"+effectshadowstore.ReconciliationResolveRouteSuffix, service.requireIdentity(http.HandlerFunc(service.handleResolveReconciliation)))
 		mux.Handle("GET /v1/shadow/workflow-control/runs/{runId}/occurrences/{occurrenceId}/approvals/{approvalId}/head", service.requireIdentity(http.HandlerFunc(service.handleReadHead)))
 		mux.Handle("GET /v1/shadow/workflow-control/receipts/{idempotencyKey}", service.requireIdentity(http.HandlerFunc(service.handleReadReceipt)))
 		mux.Handle("GET "+effectshadowstore.OutboxRoute, service.requireIdentity(http.HandlerFunc(service.handleReadOutbox)))
@@ -104,11 +112,10 @@ func (s *Service) requireIdentity(next http.Handler) http.Handler {
 		authorization := r.Header.Values("Authorization")
 		workspace := r.Header.Values("X-OpenSlack-Workspace-ID")
 		caller := r.Header.Values("X-OpenSlack-Caller-ID")
-		valid := len(authorization) == 1 && strings.HasPrefix(authorization[0], "Bearer ") && len(workspace) == 1 && constantTimeText(workspace[0], s.options.WorkspaceID) && len(caller) == 1 && constantTimeText(caller[0], s.options.CallerID)
+		valid := len(authorization) == 1 && strings.HasPrefix(authorization[0], "Bearer ") && len(workspace) == 1 && constantTimeDigest(workspace[0], s.workspaceDigest) && len(caller) == 1 && constantTimeDigest(caller[0], s.callerDigest)
 		if valid {
 			digest := sha256.Sum256([]byte(strings.TrimPrefix(authorization[0], "Bearer ")))
-			expected, _ := hex.DecodeString(s.options.BearerTokenSHA256)
-			valid = subtle.ConstantTimeCompare(digest[:], expected) == 1
+			valid = subtle.ConstantTimeCompare(digest[:], s.bearerDigest[:]) == 1
 		}
 		if !valid {
 			s.unauthorized.Add(1)
@@ -119,48 +126,87 @@ func (s *Service) requireIdentity(next http.Handler) http.Handler {
 	})
 }
 
-func constantTimeText(actual, expected string) bool {
-	actualDigest := sha256.Sum256([]byte(actual))
-	expectedDigest := sha256.Sum256([]byte(expected))
-	return subtle.ConstantTimeCompare(actualDigest[:], expectedDigest[:]) == 1
+func constantTimeDigest(actual string, expected [sha256.Size]byte) bool {
+	digest := sha256.Sum256([]byte(actual))
+	return subtle.ConstantTimeCompare(digest[:], expected[:]) == 1
 }
 func (s *Service) handleObserve(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestDeadline)
 	defer cancel()
+	input, ok := s.prepareObserveInput(ctx, w, r)
+	if !ok {
+		return
+	}
+	receipt, err := s.options.Store.Observe(ctx, input)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	s.writeReceipt(w, receipt)
+}
+
+func (s *Service) prepareObserveInput(ctx context.Context, w http.ResponseWriter, r *http.Request) (effectshadowstore.ObserveInput, bool) {
 	mediaType, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaErr != nil || !strings.EqualFold(mediaType, "application/json") {
 		writeError(w, http.StatusUnsupportedMediaType, "WORKFLOW_EFFECT_SHADOW_CONTENT_TYPE", "content type must be application/json")
-		return
+		return effectshadowstore.ObserveInput{}, false
 	}
 	keys := r.Header.Values("Idempotency-Key")
 	if len(keys) != 1 {
 		writeError(w, http.StatusUnprocessableEntity, string(effectshadowstore.ErrorInputInvalid), "exactly one idempotency key is required")
-		return
+		return effectshadowstore.ObserveInput{}, false
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, effectshadowstore.MaxRequestBytes))
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, string(effectshadowstore.ErrorContentInvalid), "effect body is too large")
-		return
+		var maxBytes *http.MaxBytesError
+		switch {
+		case errors.As(err, &maxBytes):
+			writeError(w, http.StatusRequestEntityTooLarge, string(effectshadowstore.ErrorContentInvalid), "effect body is too large")
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled), ctx.Err() != nil:
+			writeError(w, http.StatusRequestTimeout, "WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT", "effect request body timed out")
+		default:
+			writeError(w, http.StatusBadRequest, "WORKFLOW_EFFECT_SHADOW_REQUEST_READ_FAILED", "effect request body could not be read")
+		}
+		return effectshadowstore.ObserveInput{}, false
 	}
 	prepared, err := effectshadowstore.PrepareObservation(body)
 	if err != nil {
 		writeStoreError(w, err)
-		return
+		return effectshadowstore.ObserveInput{}, false
 	}
 	if !effectshadowstore.IdempotencyKeyMatchesEnvelope(keys[0], prepared.EnvelopeHash) {
 		writeError(w, http.StatusUnprocessableEntity, string(effectshadowstore.ErrorInputInvalid), "idempotency key does not bind the exact effect envelope")
-		return
+		return effectshadowstore.ObserveInput{}, false
 	}
-	if !constantTimeText(prepared.Envelope.Observation.WorkspaceID, s.options.WorkspaceID) {
+	if !constantTimeDigest(prepared.Envelope.Observation.WorkspaceID, s.workspaceDigest) {
 		writeError(w, http.StatusUnprocessableEntity, string(effectshadowstore.ErrorInputInvalid), "workspace binding is invalid")
-		return
+		return effectshadowstore.ObserveInput{}, false
 	}
 	fingerprint := effectshadowstore.Fingerprint(http.MethodPost, effectshadowstore.Route, keys[0], body)
-	receipt, err := s.options.Store.Observe(ctx, effectshadowstore.ObserveInput{Prepared: prepared, IdempotencyKey: keys[0], RequestFingerprint: fingerprint, ServiceBuildHash: s.options.BuildSHA})
+	return effectshadowstore.ObserveInput{Prepared: prepared, IdempotencyKey: keys[0], RequestFingerprint: fingerprint, ServiceBuildHash: s.options.BuildSHA}, true
+}
+
+func (s *Service) handleResolveReconciliation(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), requestDeadline)
+	defer cancel()
+	token := r.PathValue("token")
+	if !effectshadowstore.ValidReconciliationToken(token) {
+		writeError(w, http.StatusNotFound, string(effectshadowstore.ErrorNotFound), "effect reconciliation was not found")
+		return
+	}
+	input, ok := s.prepareObserveInput(ctx, w, r)
+	if !ok {
+		return
+	}
+	receipt, err := s.options.Store.ResolveReconciliation(ctx, effectshadowstore.ResolveInput{ReconciliationToken: token, ObserveInput: input})
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	s.writeReceipt(w, receipt)
+}
+
+func (s *Service) writeReceipt(w http.ResponseWriter, receipt effectshadowstore.Receipt) {
 	if receipt.Replay {
 		s.replays.Add(1)
 		w.Header().Set("Idempotency-Replayed", "true")

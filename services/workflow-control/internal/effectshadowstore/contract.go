@@ -233,7 +233,8 @@ func IdempotencyKeyMatchesEnvelope(v, envelopeHash string) bool {
 	got, err := hex.DecodeString(v[len(IdempotencyPrefix):])
 	return err == nil && subtle.ConstantTimeCompare(got, want) == 1
 }
-func ValidOccurrenceID(v string) bool { return occurrenceID.MatchString(v) }
+func ValidOccurrenceID(v string) bool        { return occurrenceID.MatchString(v) }
+func ValidReconciliationToken(v string) bool { return safeID.MatchString(v) }
 func validOperation(v Operation) bool {
 	return v == OperationApprovalCreated || v == OperationApprovalDecided || v == OperationAuditRecorded
 }

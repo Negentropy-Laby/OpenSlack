@@ -12,13 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
 )
 
@@ -228,10 +228,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH="+buildHash,
 	)
 	if runtimeConfig.CheckpointShadowEnabled {
-		parsed, parseErr := url.Parse(runtimeConfig.CheckpointShadowEndpoint)
-		localRoot := filepath.Join(workspaceRoot, ".openslack.local")
-		relative, relativeErr := filepath.Rel(localRoot, runtimeConfig.CheckpointShadowJournalRoot)
-		if parseErr != nil || parsed.Scheme != "http" || parsed.User != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "::1") || parsed.Port() == "" || parsed.Path != "/v1/shadow/workflow-control/checkpoints" || parsed.RawQuery != "" || parsed.Fragment != "" || len(runtimeConfig.CheckpointShadowBearerToken) < 32 || len(runtimeConfig.CheckpointShadowBearerToken) > 4096 || runtimeConfig.CheckpointShadowBearerToken != strings.TrimSpace(runtimeConfig.CheckpointShadowBearerToken) || strings.ContainsAny(runtimeConfig.CheckpointShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || runtimeConfig.CheckpointShadowJournalRoot == "" || !filepath.IsAbs(runtimeConfig.CheckpointShadowJournalRoot) || filepath.Clean(runtimeConfig.CheckpointShadowJournalRoot) != runtimeConfig.CheckpointShadowJournalRoot || relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		if len(runtimeConfig.CheckpointShadowBearerToken) < 32 || len(runtimeConfig.CheckpointShadowBearerToken) > 4096 || runtimeConfig.CheckpointShadowBearerToken != strings.TrimSpace(runtimeConfig.CheckpointShadowBearerToken) || strings.ContainsAny(runtimeConfig.CheckpointShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.CheckpointShadowJournalRoot, Endpoint: runtimeConfig.CheckpointShadowEndpoint, Routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}}) != nil {
 			return nil, fmt.Errorf("checkpoint shadow runtime injection is invalid")
 		}
 		result = append(result,
@@ -243,10 +240,8 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		)
 	}
 	if runtimeConfig.EffectShadowEnabled {
-		parsed, parseErr := url.Parse(runtimeConfig.EffectShadowEndpoint)
-		localRoot := filepath.Join(workspaceRoot, ".openslack.local")
-		relative, relativeErr := filepath.Rel(localRoot, runtimeConfig.EffectShadowJournalRoot)
-		if parseErr != nil || parsed.Scheme != "http" || parsed.User != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "::1") || parsed.Port() == "" || parsed.Path != "/v1/shadow/workflow-control/effect-events" || parsed.RawQuery != "" || parsed.Fragment != "" || len(runtimeConfig.EffectShadowBearerToken) < 32 || len(runtimeConfig.EffectShadowBearerToken) > 4096 || runtimeConfig.EffectShadowBearerToken != strings.TrimSpace(runtimeConfig.EffectShadowBearerToken) || strings.ContainsAny(runtimeConfig.EffectShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || runtimeConfig.EffectShadowJournalRoot == "" || !filepath.IsAbs(runtimeConfig.EffectShadowJournalRoot) || filepath.Clean(runtimeConfig.EffectShadowJournalRoot) != runtimeConfig.EffectShadowJournalRoot || relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		protectedRoot := filepath.Join(workspaceRoot, ".openslack.local", "workflows")
+		if len(runtimeConfig.EffectShadowBearerToken) < 32 || len(runtimeConfig.EffectShadowBearerToken) > 4096 || runtimeConfig.EffectShadowBearerToken != strings.TrimSpace(runtimeConfig.EffectShadowBearerToken) || strings.ContainsAny(runtimeConfig.EffectShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.EffectShadowJournalRoot, Endpoint: runtimeConfig.EffectShadowEndpoint, Routes: []string{"/v1/shadow/workflow-control/effect-events"}, ProtectedRoots: []string{filepath.Join(protectedRoot, "effect-approvals"), filepath.Join(protectedRoot, "effect-authority")}}) != nil {
 			return nil, fmt.Errorf("effect shadow runtime injection is invalid")
 		}
 		result = append(result,

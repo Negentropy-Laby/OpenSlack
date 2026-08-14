@@ -18,9 +18,6 @@ import (
 	effectpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/effectshadowstore/postgres"
 )
 
-const minimumSchemaVersion int64 = 5
-const maximumSchemaVersion int64 = 5
-
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	configuration, err := config.LoadEffectShadow()
@@ -41,7 +38,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
-		if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumSchemaVersion, Maximum: maximumSchemaVersion}); err != nil {
+		if err := databaseready.RequireCleanSchema(startup, pool, databaseready.EffectProfile); err != nil {
 			logger.Error("workflow_effect_shadow_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 			os.Exit(1)
 		}

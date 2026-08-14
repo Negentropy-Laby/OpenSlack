@@ -78,7 +78,57 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReconciliationReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '408': { $ref: '#/components/responses/RequestTimeout' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/InvalidContent' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/shadow/workflow-control/effect-reconciliations/{reconciliationToken}/resolve:
+    post:
+      description: >-
+        Internal observer-only recovery for an immutable 202 receipt. The
+        original envelope and idempotency key are required again; this route
+        cannot grant or execute an effect.
+      x-openslack-replay-response: exact-resolution
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {
+            name: reconciliationToken,
+            in: path,
+            required: true,
+            schema: { $ref: '#/components/schemas/SafeId' },
+          }
+        - { $ref: '#/components/parameters/Workspace' }
+        - { $ref: '#/components/parameters/Caller' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Envelope' }
+      responses:
+        '200':
+          description: Byte-identical accepted resolution replay.
+          headers:
+            Idempotency-Replayed:
+              required: true
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedReceipt' }
+        '201':
+          description: Reconciliation resolved into an accepted observation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '408': { $ref: '#/components/responses/RequestTimeout' }
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/RequestTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
@@ -184,6 +234,16 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/IdempotencyKey' }
   responses:
+    BadRequest:
+      description: Deterministic request-body read failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RequestTimeout:
+      description: Request body read timed out or was cancelled.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
       description: Identity rejected.
       content:
@@ -300,6 +360,8 @@ components:
             - WORKFLOW_EFFECT_SHADOW_NOT_READY
             - WORKFLOW_EFFECT_SHADOW_METRICS_UNAVAILABLE
             - WORKFLOW_EFFECT_SHADOW_INTERNAL
+            - WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT
+            - WORKFLOW_EFFECT_SHADOW_REQUEST_READ_FAILED
         message: { type: string, minLength: 1, maxLength: 512 }
     HumanDecision:
       type: object

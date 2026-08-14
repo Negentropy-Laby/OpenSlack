@@ -275,7 +275,19 @@ async function assertAuthorityDirectory(
   path: string,
   create: boolean,
   parent?: string,
+  missingIsNotFound = false,
 ): Promise<{ stat: Stats; real: string }> {
+  if (!create && !(await lstatIfPresent(path))) {
+    return fail(
+      missingIsNotFound
+        ? 'WORKFLOW_EFFECT_APPROVAL_STORE_NOT_FOUND'
+        : 'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+      missingIsNotFound
+        ? 'Approval-store directory is missing.'
+        : 'Approval-store directory structure is incomplete.',
+      path,
+    );
+  }
   try {
     const real = create
       ? await ensureOwnerDirectory(path, AUTHORITY_STORE_SECURITY, parent)
@@ -405,7 +417,7 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
   }
   const ownerOnly = hasWorkflowEffectAuthorityRoot(configuredRoot);
   const root = ownerOnly
-    ? await assertAuthorityDirectory(configuredRoot, create)
+    ? await assertAuthorityDirectory(configuredRoot, create, undefined, !create)
     : await assertDirectory(configuredRoot);
   const recordsPath = join(configuredRoot, 'records');
   const locksPath = join(configuredRoot, 'locks');

@@ -1,11 +1,9 @@
-import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import {
   WORKFLOW_EFFECT_CONTROL_IDEMPOTENCY_PREFIX,
   WORKFLOW_EFFECT_CONTROL_OBSERVER_OPERATIONS,
   WORKFLOW_EFFECT_CONTROL_ROUTE,
   canonicalWorkflowEffectControlJson,
-  hashWorkflowEffectControlDomain,
   prepareWorkflowEffectControlEnvelope,
   validateWorkflowEffectControlEnvelope,
   type WorkflowEffectControlEnvelope,
@@ -19,6 +17,9 @@ export const WORKFLOW_EFFECT_SHADOW_HEAD_SCHEMA =
 export const WORKFLOW_EFFECT_SHADOW_ERROR_SCHEMA =
   'openslack.workflow_effect_shadow_error.v1' as const;
 export const WORKFLOW_EFFECT_SHADOW_ROUTE = WORKFLOW_EFFECT_CONTROL_ROUTE;
+export const WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX =
+  '/v1/shadow/workflow-control/effect-reconciliations/' as const;
+export const WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX = '/resolve' as const;
 export const WORKFLOW_EFFECT_SHADOW_IDEMPOTENCY_PREFIX = WORKFLOW_EFFECT_CONTROL_IDEMPOTENCY_PREFIX;
 export const WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES = 64 * 1024;
 export const WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES = 16 * 1024;
@@ -34,6 +35,8 @@ export const WORKFLOW_EFFECT_SHADOW_ERROR_CODES = Object.freeze([
   'WORKFLOW_EFFECT_SHADOW_DATABASE_ERROR',
   'WORKFLOW_EFFECT_SHADOW_UNAUTHORIZED',
   'WORKFLOW_EFFECT_SHADOW_CONTENT_TYPE',
+  'WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT',
+  'WORKFLOW_EFFECT_SHADOW_REQUEST_READ_FAILED',
   'WORKFLOW_EFFECT_SHADOW_NOT_READY',
   'WORKFLOW_EFFECT_SHADOW_METRICS_UNAVAILABLE',
   'WORKFLOW_EFFECT_SHADOW_INTERNAL',
@@ -178,13 +181,6 @@ function immutable<T>(value: T): T {
   if (Array.isArray(value)) value.forEach(immutable);
   else if (value !== null && typeof value === 'object') Object.values(value).forEach(immutable);
   return Object.freeze(value);
-}
-
-export function hashWorkflowEffectShadowValue(domain: string, value: unknown): string {
-  return createHash('sha256')
-    .update(`openslack.workflow-effect-shadow.${domain}.v1\0`, 'utf8')
-    .update(canonicalWorkflowEffectControlJson(value), 'utf8')
-    .digest('hex');
 }
 
 export function validateWorkflowEffectShadowReceipt(

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readdir, unlink } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { lstat, readdir, rename, unlink } from 'node:fs/promises';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
   WORKFLOW_EFFECT_CONTROL_ENVELOPE_SCHEMA,
@@ -15,12 +15,16 @@ import {
   type WorkflowEffectControlObservation,
 } from './workflow-effect-control-contract.js';
 import {
-  recoverAllWorkflowEffectAuthorityObservationPrefixes,
   recoverWorkflowEffectAuthorityObservationPrefix,
+  scanWorkflowEffectAuthorityObservationPrefixes,
+  workflowEffectAuthorityObservationRevisionToken,
+  type WorkflowEffectAuthorityObservationRecordIdentity,
 } from './workflow-effect-authority-store.js';
 import {
   WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES,
   WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX,
   validateWorkflowEffectShadowReceipt,
   validateWorkflowEffectShadowError,
   type WorkflowEffectShadowReceipt,
@@ -29,7 +33,12 @@ import {
   isWorkflowEffectShadowObservationPort,
   registerWorkflowEffectShadowObservationPort,
   type WorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowObservationScope,
 } from './internal/workflow-effect-shadow-port.js';
+import {
+  validateWorkflowLocalShadowEndpoint,
+  validateWorkflowLocalShadowJournalRoot,
+} from './internal/workflow-local-shadow-config.js';
 import {
   acquireOwnerJournalLock,
   assertOwnerFile,
@@ -43,7 +52,10 @@ import {
 } from './workflow-control-shadow.js';
 
 export interface WorkflowEffectShadowPublisherPort {
-  publish(envelope: WorkflowEffectControlEnvelope): Promise<WorkflowEffectShadowReceipt>;
+  publish(
+    envelope: WorkflowEffectControlEnvelope,
+    prepared?: PreparedEffectDelivery,
+  ): Promise<WorkflowEffectShadowReceipt>;
 }
 
 export interface WorkflowEffectShadowDiagnostic {
@@ -71,11 +83,13 @@ export interface CreateWorkflowEffectShadowHttpPublisherOptions {
 }
 
 type DiagnosticSink = CreateWorkflowEffectShadowObservationPortOptions['diagnosticSink'];
+type PreparedEffectDelivery = ReturnType<typeof prepareWorkflowEffectControlEnvelope>;
 
 const PUBLISHERS = new WeakSet<object>();
 const JOURNAL_FILE = /^([1-3])-([0-9a-f]{64})\.json$/u;
-const MAX_DELIVERY_RETRIES = 8;
 const MAX_RETRY_DELAY_MS = 30_000;
+const DEFAULT_EFFECT_SHADOW_TIMEOUT_MS = 15_000;
+const MAX_RETRY_EXPONENT = 17;
 
 export class WorkflowEffectShadowRuntimeError extends Error {
   constructor(
@@ -88,6 +102,7 @@ export class WorkflowEffectShadowRuntimeError extends Error {
     message: string,
     options?: ErrorOptions,
     readonly remoteCode?: string,
+    readonly retryable = false,
   ) {
     super(message, options);
     this.name = 'WorkflowEffectShadowRuntimeError';
@@ -99,12 +114,14 @@ function failure(
   message: string,
   cause?: unknown,
   remoteCode?: string,
+  retryable = false,
 ): WorkflowEffectShadowRuntimeError {
   return new WorkflowEffectShadowRuntimeError(
     code,
     message,
     cause === undefined ? undefined : { cause },
     remoteCode,
+    retryable,
   );
 }
 
@@ -163,7 +180,15 @@ async function readBoundedResponse(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (error) {
+    throw failure(
+      'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+      'Workflow effect shadow response is not valid UTF-8.',
+      error,
+    );
+  }
 }
 
 async function readJournalEnvelope(
@@ -182,6 +207,7 @@ async function readJournalEnvelope(
     }
     return envelope;
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw error;
     if (
       error instanceof WorkflowEffectShadowRuntimeError &&
       error.code === 'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID'
@@ -200,6 +226,7 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
   readonly #approvalRoot: string;
   readonly #entries: string;
   readonly #locks: string;
+  readonly #quarantine: string;
   readonly #publisher: WorkflowEffectShadowPublisherPort;
   readonly #diagnostic?: DiagnosticSink;
   readonly #security: WorkflowControlShadowJournalSecurityDependencies;
@@ -207,11 +234,24 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
   #deliveryTail: Promise<void> = Promise.resolve();
   readonly #retryAttempts = new Map<string, number>();
   readonly #retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  readonly #queuedDeliveries = new Set<string>();
+  readonly #parked = new Set<string>();
+  readonly #prepared = new Map<string, PreparedEffectDelivery>();
+  readonly #diagnosticScopes = new Map<
+    string,
+    { readonly runId: string; readonly approvalId: string; readonly observationHash: string }
+  >();
+  #authorityIdentity: string | undefined;
+  #authorityRecordIndex = new Map<string, WorkflowEffectAuthorityObservationRecordIdentity>();
+  #inventory:
+    | { identity: string; readonly entries: Map<string, number>; bytes: number }
+    | undefined;
 
   constructor(
     approvalRoot: string,
     entries: string,
     locks: string,
+    quarantine: string,
     publisher: WorkflowEffectShadowPublisherPort,
     security: WorkflowControlShadowJournalSecurityDependencies,
     diagnostic?: DiagnosticSink,
@@ -219,56 +259,84 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
     this.#approvalRoot = approvalRoot;
     this.#entries = entries;
     this.#locks = locks;
+    this.#quarantine = quarantine;
     this.#publisher = publisher;
     this.#security = security;
     this.#diagnostic = diagnostic;
   }
 
-  observeAuthority(runId: string, approvalId: string): void {
-    const task = this.#journalTail.then(async () => {
+  observeAuthority(scope: WorkflowEffectShadowObservationScope): void {
+    const task = this.#enqueueJournal(async () => {
       const prefix = await recoverWorkflowEffectAuthorityObservationPrefix(
         this.#approvalRoot,
-        runId,
-        approvalId,
+        scope.runId,
+        scope.approvalId,
+        scope.evaluationIndex,
       );
       for (const observation of prefix) {
         const path = await this.#journal(observation);
         this.#queueDelivery(path, observation);
       }
     });
-    this.#journalTail = task.catch((error) =>
-      this.#report('failed', runId, approvalId, null, errorCode(error)),
+    void task.catch((error) =>
+      this.#report('failed', scope.runId, scope.approvalId, null, errorCode(error)),
     );
   }
 
   async synchronize(): Promise<void> {
-    const task = this.#journalTail.then(async () => {
-      for (const prefix of await recoverAllWorkflowEffectAuthorityObservationPrefixes(
+    const task = this.#enqueueJournal(async () => {
+      const identity = await workflowEffectAuthorityObservationRevisionToken(this.#approvalRoot);
+      if (identity === this.#authorityIdentity) return;
+      const scan = await scanWorkflowEffectAuthorityObservationPrefixes(
         this.#approvalRoot,
-      )) {
+        this.#authorityRecordIndex,
+      );
+      for (const failureValue of scan.failures) {
+        await this.#report(
+          'failed',
+          'unavailable',
+          'unavailable',
+          failureValue.recordHash,
+          failureValue.code,
+        );
+      }
+      for (const prefix of scan.prefixes) {
         for (const observation of prefix.observations) {
           const path = await this.#journal(observation);
           this.#queueDelivery(path, observation);
         }
       }
+      this.#authorityRecordIndex = new Map(scan.recordIndex);
+      this.#authorityIdentity = identity;
     });
-    this.#journalTail = task.catch(() => undefined);
     await task;
   }
 
   async replay(): Promise<void> {
-    const scan = this.#journalTail.then(() => readdir(this.#entries));
-    this.#journalTail = scan.then(() => undefined);
-    for (const name of (await scan).sort()) {
-      if (!JOURNAL_FILE.test(name)) {
-        throw failure(
-          'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID',
-          'Workflow effect shadow journal inventory is invalid.',
-        );
+    const paths = await this.#enqueueJournal(async () => {
+      const result: string[] = [];
+      for (const entry of (await readdir(this.#entries, { withFileTypes: true })).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      )) {
+        const path = join(this.#entries, entry.name);
+        if (entry.isFile() && !entry.isSymbolicLink() && JOURNAL_FILE.test(entry.name)) {
+          result.push(path);
+        } else {
+          await this.#quarantineEntry(path, 'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID');
+        }
       }
-      this.#queueDelivery(join(this.#entries, name));
-    }
-    await this.#deliveryTail;
+      return result;
+    });
+    await Promise.all(paths.map((path) => this.#queueDelivery(path)));
+  }
+
+  #enqueueJournal<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.#journalTail.then(operation);
+    this.#journalTail = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
   }
 
   async flush(): Promise<void> {
@@ -308,21 +376,12 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
       );
     }
     try {
-      const entries = await readdir(this.#entries);
-      let bytes = 0;
-      for (const name of entries) {
-        if (!JOURNAL_FILE.test(name)) {
-          throw failure(
-            'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID',
-            'Workflow effect shadow journal entry name is invalid.',
-          );
-        }
-        bytes += Number((await assertOwnerFile(join(this.#entries, name), this.#security)).size);
-      }
+      const inventory = await this.#loadInventory();
+      const exists = inventory.entries.has(path);
       if (
-        !entries.includes(fileName) &&
-        (entries.length >= WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalEntries ||
-          bytes + Buffer.byteLength(prepared.body, 'utf8') >
+        !exists &&
+        (inventory.entries.size >= WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalEntries ||
+          inventory.bytes + Buffer.byteLength(prepared.body, 'utf8') >
             WORKFLOW_CONTROL_SHADOW_POLICY.maxJournalBytes)
       ) {
         throw failure(
@@ -330,9 +389,13 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
           'Workflow effect shadow journal capacity is exceeded.',
         );
       }
-      if (!entries.includes(fileName)) {
+      if (!exists) {
         await writeExclusive(path, prepared.body, this.#security);
         await syncDirectory(this.#entries);
+        const size = Buffer.byteLength(prepared.body, 'utf8');
+        inventory.entries.set(path, size);
+        inventory.bytes += size;
+        inventory.identity = await this.#inventoryIdentity();
       } else {
         const prior = await readJournalEnvelope(path, this.#security);
         if (prepareWorkflowEffectControlEnvelope(prior).body !== prepared.body) {
@@ -352,6 +415,7 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
             error,
           );
         }
+        this.#inventory = undefined;
       } else if (error instanceof WorkflowEffectShadowRuntimeError) {
         throw error;
       } else {
@@ -364,6 +428,12 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
     } finally {
       await release();
     }
+    this.#prepared.set(path, prepared);
+    this.#diagnosticScopes.set(path, {
+      runId: observation.runId,
+      approvalId: observation.approvalId,
+      observationHash: envelope.observationHash,
+    });
     await this.#report(
       'journaled',
       observation.runId,
@@ -373,36 +443,60 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
     return path;
   }
 
-  #queueDelivery(path: string, observation?: WorkflowEffectControlObservation): void {
-    this.#deliveryTail = this.#deliveryTail
-      .then(() => this.#deliverFile(path))
+  #queueDelivery(path: string, observation?: WorkflowEffectControlObservation): Promise<void> {
+    if (this.#parked.has(path) || this.#queuedDeliveries.has(path)) return Promise.resolve();
+    this.#queuedDeliveries.add(path);
+    const task = this.#deliveryTail.then(() => this.#deliverFile(path));
+    this.#deliveryTail = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    const result = task
       .catch(async (error) => {
-        if (observation) {
+        const scope = observation
+          ? {
+              runId: observation.runId,
+              approvalId: observation.approvalId,
+              observationHash: hashWorkflowEffectControlObservation(observation),
+            }
+          : this.#diagnosticScopes.get(path);
+        if (scope) {
           await this.#report(
             'failed',
-            observation.runId,
-            observation.approvalId,
-            hashWorkflowEffectControlObservation(observation),
+            scope.runId,
+            scope.approvalId,
+            scope.observationHash,
             errorCode(error),
           );
         } else {
           await this.#reportUnreadable(path, errorCode(error));
         }
-        if (
+        if (error instanceof WorkflowEffectShadowRuntimeError && error.retryable) {
+          this.#scheduleRetry(path);
+        } else if (
           error instanceof WorkflowEffectShadowRuntimeError &&
           error.code === 'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID'
         ) {
-          this.#scheduleRetry(path);
+          this.#parked.add(path);
+        } else if (
+          error instanceof WorkflowEffectShadowRuntimeError &&
+          error.code === 'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID'
+        ) {
+          await this.#quarantineEntry(path, error.code);
         }
-      });
+        throw error;
+      })
+      .finally(() => this.#queuedDeliveries.delete(path));
+    void result.catch(() => undefined);
+    return result;
   }
 
   #scheduleRetry(path: string): void {
     if (this.#retryTimers.has(path)) return;
     const attempt = (this.#retryAttempts.get(path) ?? 0) + 1;
-    this.#retryAttempts.set(path, attempt);
-    if (attempt > MAX_DELIVERY_RETRIES) return;
-    const delay = Math.min(MAX_RETRY_DELAY_MS, 250 * 2 ** (attempt - 1));
+    const saturated = Math.min(attempt, MAX_RETRY_EXPONENT);
+    this.#retryAttempts.set(path, saturated);
+    const delay = Math.min(MAX_RETRY_DELAY_MS, 250 * 2 ** (saturated - 1));
     const timer = setTimeout(() => {
       this.#retryTimers.delete(path);
       this.#queueDelivery(path);
@@ -416,21 +510,36 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
     if (timer) clearTimeout(timer);
     this.#retryTimers.delete(path);
     this.#retryAttempts.delete(path);
+    this.#parked.delete(path);
   }
 
   async #deliverFile(path: string): Promise<void> {
     let envelope: WorkflowEffectControlEnvelope;
+    let prepared = this.#prepared.get(path);
     try {
-      envelope = await readJournalEnvelope(path, this.#security);
+      if (prepared) {
+        envelope = prepared.envelope;
+      } else {
+        const recovered = await readJournalEnvelope(path, this.#security);
+        prepared = prepareWorkflowEffectControlEnvelope(recovered);
+        envelope = prepared.envelope;
+        this.#prepared.set(path, prepared);
+      }
+      this.#diagnosticScopes.set(path, {
+        runId: envelope.observation.runId,
+        approvalId: envelope.observation.approvalId,
+        observationHash: envelope.observationHash,
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         this.#clearRetry(path);
+        this.#prepared.delete(path);
+        this.#diagnosticScopes.delete(path);
         return;
       }
       throw error;
     }
-    const receipt = await this.#publisher.publish(envelope);
-    const prepared = prepareWorkflowEffectControlEnvelope(envelope);
+    const receipt = await this.#publisher.publish(envelope, prepared);
     if (
       receipt.idempotencyKey !== prepared.idempotencyKey ||
       receipt.workspaceId !== envelope.observation.workspaceId ||
@@ -447,27 +556,134 @@ class ObservationPort implements WorkflowEffectShadowObservationPort {
         'Workflow effect shadow receipt is mismatched.',
       );
     }
-    if (receipt.status === 'reconciliation_required') {
-      this.#clearRetry(path);
-      await this.#report(
-        'failed',
-        envelope.observation.runId,
-        envelope.observation.approvalId,
-        envelope.observationHash,
+    if (receipt.status === 'reconciliation_required')
+      throw failure(
         'WORKFLOW_EFFECT_SHADOW_RECONCILIATION_REQUIRED',
+        'Workflow effect shadow reconciliation remains open.',
+        undefined,
+        undefined,
+        true,
       );
-      return;
-    }
-    await unlink(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-    });
+    await this.#removeJournal(path);
     this.#clearRetry(path);
+    this.#prepared.delete(path);
+    this.#diagnosticScopes.delete(path);
     await this.#report(
       'delivered',
       envelope.observation.runId,
       envelope.observation.approvalId,
       envelope.observationHash,
     );
+  }
+
+  async #loadInventory(): Promise<{
+    identity: string;
+    readonly entries: Map<string, number>;
+    bytes: number;
+  }> {
+    const identity = await this.#inventoryIdentity();
+    if (this.#inventory?.identity === identity) return this.#inventory;
+    const entries = new Map<string, number>();
+    let bytes = 0;
+    for (const directory of [this.#entries, this.#quarantine]) {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || entry.isSymbolicLink()) continue;
+        const path = join(directory, entry.name);
+        const size = Number((await assertOwnerFile(path, this.#security)).size);
+        entries.set(path, size);
+        bytes += size;
+      }
+    }
+    this.#inventory = { identity, entries, bytes };
+    return this.#inventory;
+  }
+
+  async #inventoryIdentity(): Promise<string> {
+    const [entriesStat, quarantineStat] = await Promise.all([
+      lstat(this.#entries),
+      lstat(this.#quarantine),
+    ]);
+    return [
+      entriesStat.dev,
+      entriesStat.ino,
+      entriesStat.size,
+      entriesStat.mtimeMs,
+      entriesStat.ctimeMs,
+      quarantineStat.dev,
+      quarantineStat.ino,
+      quarantineStat.size,
+      quarantineStat.mtimeMs,
+      quarantineStat.ctimeMs,
+    ].join(':');
+  }
+
+  async #removeJournal(path: string): Promise<void> {
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await acquireOwnerJournalLock(
+        this.#locks,
+        hashText('workflow-effect-shadow-capacity'),
+        this.#security,
+      );
+      const inventory = await this.#loadInventory();
+      const size = inventory.entries.get(path);
+      await unlink(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+      if (size !== undefined) {
+        inventory.entries.delete(path);
+        inventory.bytes -= size;
+      }
+      await syncDirectory(this.#entries);
+      inventory.identity = await this.#inventoryIdentity();
+    } catch (error) {
+      throw failure(
+        'WORKFLOW_EFFECT_SHADOW_JOURNAL_INVALID',
+        'Workflow effect shadow journal removal failed.',
+        error,
+        undefined,
+        true,
+      );
+    } finally {
+      await release?.();
+    }
+  }
+
+  async #quarantineEntry(path: string, code: string): Promise<void> {
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await acquireOwnerJournalLock(
+        this.#locks,
+        hashText('workflow-effect-shadow-capacity'),
+        this.#security,
+      );
+      const stat = await lstat(path, { bigint: true });
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        await this.#reportUnreadable(path, code);
+        return;
+      }
+      await assertOwnerFile(path, this.#security);
+      const target = join(
+        this.#quarantine,
+        `${hashText([basename(path), stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':'))}.json`,
+      );
+      const inventory = await this.#loadInventory();
+      await rename(path, target);
+      await Promise.all([syncDirectory(this.#entries), syncDirectory(this.#quarantine)]);
+      const size = inventory.entries.get(path) ?? Number(stat.size);
+      inventory.entries.delete(path);
+      inventory.entries.set(target, size);
+      inventory.identity = await this.#inventoryIdentity();
+      this.#prepared.delete(path);
+      this.#diagnosticScopes.delete(path);
+      this.#clearRetry(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        await this.#reportUnreadable(path, errorCode(error));
+      }
+    } finally {
+      await release?.();
+    }
   }
 
   async #report(
@@ -503,11 +719,6 @@ const NOOP_PORT = registerWorkflowEffectShadowObservationPort({
   async flush() {},
 });
 
-function pathWithin(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-}
-
 export async function createWorkflowEffectShadowObservationPort(
   options: CreateWorkflowEffectShadowObservationPortOptions = {},
 ): Promise<WorkflowEffectShadowObservationPort> {
@@ -529,33 +740,30 @@ export async function createWorkflowEffectShadowObservationPort(
     );
   }
   const localRoot = join(options.workspaceRoot, '.openslack.local');
-  const journalRelative = relative(localRoot, options.journalRoot);
-  const protectedRoots = [
-    join(localRoot, 'workflows', 'effect-approvals'),
-    join(localRoot, 'workflows', 'effect-authority'),
-  ];
-  if (
-    journalRelative.length === 0 ||
-    journalRelative.startsWith('..') ||
-    isAbsolute(journalRelative) ||
-    protectedRoots.some(
-      (protectedRoot) =>
-        pathWithin(protectedRoot, options.journalRoot!) ||
-        pathWithin(options.journalRoot!, protectedRoot),
-    )
-  ) {
+  try {
+    validateWorkflowLocalShadowJournalRoot({
+      workspaceRoot: options.workspaceRoot,
+      journalRoot: options.journalRoot,
+      protectedRelativeRoots: [
+        join('workflows', 'effect-approvals'),
+        join('workflows', 'effect-authority'),
+      ],
+    });
+  } catch (error) {
     throw failure(
       'WORKFLOW_EFFECT_SHADOW_CONFIG_INVALID',
       'Workflow effect shadow journal must be workspace-local.',
+      error,
     );
   }
   const security = productionJournalSecurity();
   const root = await ensureOwnerDirectory(options.journalRoot, security);
   const entries = await ensureOwnerDirectory(join(root, 'entries'), security, root);
   const locks = await ensureOwnerDirectory(join(root, 'locks'), security, root);
+  const quarantine = await ensureOwnerDirectory(join(root, 'quarantine'), security, root);
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (
-      !['entries', 'locks'].includes(entry.name) ||
+      !['entries', 'locks', 'quarantine'].includes(entry.name) ||
       !entry.isDirectory() ||
       entry.isSymbolicLink()
     ) {
@@ -570,6 +778,7 @@ export async function createWorkflowEffectShadowObservationPort(
       join(localRoot, 'workflows', 'effect-approvals'),
       entries,
       locks,
+      quarantine,
       options.publisher!,
       security,
       options.diagnosticSink,
@@ -590,7 +799,9 @@ export function createWorkflowEffectShadowHttpPublisher(
 ): WorkflowEffectShadowPublisherPort {
   let endpoint: URL;
   try {
-    endpoint = new URL(options.endpoint);
+    endpoint = validateWorkflowLocalShadowEndpoint(options.endpoint, [
+      WORKFLOW_EFFECT_CONTROL_ROUTE,
+    ]);
   } catch (error) {
     throw failure(
       'WORKFLOW_EFFECT_SHADOW_CONFIG_INVALID',
@@ -598,15 +809,8 @@ export function createWorkflowEffectShadowHttpPublisher(
       error,
     );
   }
-  const timeoutMs = options.timeoutMs ?? WORKFLOW_CONTROL_SHADOW_POLICY.defaultTimeoutMs;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_EFFECT_SHADOW_TIMEOUT_MS;
   if (
-    endpoint.protocol !== 'http:' ||
-    !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-    endpoint.pathname !== WORKFLOW_EFFECT_CONTROL_ROUTE ||
-    endpoint.username !== '' ||
-    endpoint.password !== '' ||
-    endpoint.search !== '' ||
-    endpoint.hash !== '' ||
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
     !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(options.callerId) ||
@@ -622,97 +826,151 @@ export function createWorkflowEffectShadowHttpPublisher(
   }
   const fetchImpl = options.fetchImpl ?? fetch;
   const publisher: WorkflowEffectShadowPublisherPort = Object.freeze({
-    async publish(envelopeValue: WorkflowEffectControlEnvelope) {
-      const envelope = validateWorkflowEffectControlEnvelope(envelopeValue);
-      const prepared = prepareWorkflowEffectControlEnvelope(envelope);
-      const controller = new AbortController();
-      const timer = setTimeout(
-        () =>
-          controller.abort(
-            failure(
-              'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-              'Workflow effect shadow request timed out.',
-            ),
-          ),
-        timeoutMs,
-      );
-      try {
-        const response = await fetchImpl(endpoint, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${options.bearerToken}`,
-            'Content-Type': 'application/json',
-            'Idempotency-Key': prepared.idempotencyKey,
-            'X-OpenSlack-Caller-ID': options.callerId,
-            'X-OpenSlack-Workspace-ID': envelope.observation.workspaceId,
-          },
-          body: prepared.body,
-          signal: controller.signal,
-        });
-        const body = await readBoundedResponse(
-          response,
-          controller.signal,
-          [200, 201, 202].includes(response.status)
-            ? WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES
-            : WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
+    async publish(
+      envelopeValue: WorkflowEffectControlEnvelope,
+      preparedValue?: PreparedEffectDelivery,
+    ) {
+      if (preparedValue && preparedValue.envelope !== envelopeValue) {
+        throw failure(
+          'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+          'Workflow effect shadow prepared delivery is mismatched.',
         );
-        if (!/^application\/json(?:\s*;.*)?$/iu.test(response.headers.get('content-type') ?? '')) {
-          throw failure(
-            'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-            'Workflow effect shadow response content type is invalid.',
+      }
+      const envelope =
+        preparedValue?.envelope ?? validateWorkflowEffectControlEnvelope(envelopeValue);
+      const prepared = preparedValue ?? prepareWorkflowEffectControlEnvelope(envelope);
+      try {
+        const send = async (target: URL, resolving: boolean) => {
+          const controller = new AbortController();
+          const timer = setTimeout(
+            () =>
+              controller.abort(
+                failure(
+                  'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                  'Workflow effect shadow request timed out.',
+                  undefined,
+                  undefined,
+                  true,
+                ),
+              ),
+            timeoutMs,
           );
-        }
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(body);
-        } catch (error) {
-          throw failure(
-            'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-            'Workflow effect shadow response is not JSON.',
-            error,
-          );
-        }
-        if (![200, 201, 202].includes(response.status)) {
-          let problem;
           try {
-            problem = validateWorkflowEffectShadowError(parsed);
-          } catch (error) {
-            throw failure(
-              'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-              'Workflow effect shadow error response is invalid.',
-              error,
+            const response = await fetchImpl(target, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${options.bearerToken}`,
+                'Content-Type': 'application/json',
+                'Idempotency-Key': prepared.idempotencyKey,
+                'X-OpenSlack-Caller-ID': options.callerId,
+                'X-OpenSlack-Workspace-ID': envelope.observation.workspaceId,
+              },
+              body: prepared.body,
+              signal: controller.signal,
+            });
+            const acceptedStatuses = resolving ? [200, 201] : [200, 201, 202];
+            const retryableStatus =
+              [408, 425, 429].includes(response.status) || response.status >= 500;
+            const body = await readBoundedResponse(
+              response,
+              controller.signal,
+              acceptedStatuses.includes(response.status)
+                ? WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES
+                : WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
             );
+            if (
+              !/^application\/json(?:\s*;.*)?$/iu.test(response.headers.get('content-type') ?? '')
+            ) {
+              throw failure(
+                'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                'Workflow effect shadow response content type is invalid.',
+                undefined,
+                undefined,
+                retryableStatus,
+              );
+            }
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(body);
+            } catch (error) {
+              throw failure(
+                'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                'Workflow effect shadow response is not JSON.',
+                error,
+                undefined,
+                retryableStatus,
+              );
+            }
+            if (!acceptedStatuses.includes(response.status)) {
+              let problem;
+              try {
+                problem = validateWorkflowEffectShadowError(parsed);
+              } catch (error) {
+                throw failure(
+                  'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                  'Workflow effect shadow error response is invalid.',
+                  error,
+                  undefined,
+                  retryableStatus,
+                );
+              }
+              const retryableCode = ['WORKFLOW_EFFECT_SHADOW_REQUEST_TIMEOUT'].includes(
+                problem.code,
+              );
+              throw failure(
+                'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                `Workflow effect shadow returned HTTP ${response.status}.`,
+                undefined,
+                problem.code,
+                retryableStatus || retryableCode,
+              );
+            }
+            let receipt: WorkflowEffectShadowReceipt;
+            try {
+              receipt = validateWorkflowEffectShadowReceipt(parsed, envelope);
+            } catch (error) {
+              throw failure(
+                'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                'Workflow effect shadow receipt is invalid.',
+                error,
+              );
+            }
+            const replay = response.headers.get('Idempotency-Replayed');
+            if (
+              (response.status === 200 && (receipt.status !== 'accepted' || replay !== 'true')) ||
+              (response.status === 201 && (receipt.status !== 'accepted' || replay !== null)) ||
+              (!resolving &&
+                response.status === 202 &&
+                receipt.status !== 'reconciliation_required') ||
+              (!resolving && response.status === 202 && replay !== null && replay !== 'true')
+            ) {
+              throw failure(
+                'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
+                'Workflow effect shadow status and replay metadata disagree.',
+              );
+            }
+            return receipt;
+          } finally {
+            clearTimeout(timer);
           }
-          throw failure(
-            'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-            `Workflow effect shadow returned HTTP ${response.status}.`,
-            undefined,
-            problem.code,
-          );
-        }
-        const receipt = validateWorkflowEffectShadowReceipt(parsed, envelope);
-        const replay = response.headers.get('Idempotency-Replayed');
-        if (
-          (response.status === 200 && (receipt.status !== 'accepted' || replay !== 'true')) ||
-          (response.status === 201 && (receipt.status !== 'accepted' || replay !== null)) ||
-          (response.status === 202 && receipt.status !== 'reconciliation_required') ||
-          (response.status === 202 && replay !== null && replay !== 'true')
-        ) {
-          throw failure(
-            'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
-            'Workflow effect shadow status and replay metadata disagree.',
-          );
-        }
-        return receipt;
+        };
+        const receipt = await send(endpoint, false);
+        if (receipt.status !== 'reconciliation_required') return receipt;
+        const token = receipt.reconciliationToken!;
+        const resolveEndpoint = new URL(
+          `${WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX}${encodeURIComponent(token)}${WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX}`,
+          endpoint.origin,
+        );
+        return await send(resolveEndpoint, true);
       } catch (error) {
         if (error instanceof WorkflowEffectShadowRuntimeError) throw error;
         throw failure(
           'WORKFLOW_EFFECT_SHADOW_TRANSPORT_INVALID',
           'Workflow effect shadow request failed.',
           error,
+          undefined,
+          true,
         );
-      } finally {
-        clearTimeout(timer);
       }
     },
   });

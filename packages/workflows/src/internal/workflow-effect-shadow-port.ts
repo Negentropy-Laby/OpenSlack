@@ -1,8 +1,14 @@
 import { types as nodeTypes } from 'node:util';
 
+export interface WorkflowEffectShadowObservationScope {
+  readonly runId: string;
+  readonly approvalId: string;
+  readonly evaluationIndex: number;
+}
+
 export interface WorkflowEffectShadowObservationPort {
   /** Fire-and-forget: transport failure never changes TypeScript authority. */
-  observeAuthority(runId: string, approvalId: string): void;
+  observeAuthority(scope: WorkflowEffectShadowObservationScope): void;
   /** Rebuilds journal entries for every durable authority record. */
   synchronize(): Promise<void>;
   /** Revalidates and drains every complete durable journal prefix. */

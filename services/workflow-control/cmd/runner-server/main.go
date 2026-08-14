@@ -31,9 +31,6 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
-const minimumSchemaVersion int64 = 2
-const maximumSchemaVersion int64 = 5
-
 const workspaceLockDomain = "openslack.workflow-runner.workspace-singleton.v1\x00"
 
 var supervisorPrefixPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@-]{0,215}$`)
@@ -59,14 +56,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	minimumRequiredSchema := minimumSchemaVersion
-	if config.CheckpointShadowEnabled {
-		minimumRequiredSchema = 4
-	}
-	if config.EffectShadowEnabled {
-		minimumRequiredSchema = 5
-	}
-	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumRequiredSchema, Maximum: maximumSchemaVersion}); err != nil {
+	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.RunnerRange(config.CheckpointShadowEnabled, config.EffectShadowEnabled)); err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}

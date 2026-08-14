@@ -473,8 +473,12 @@ endpoints, transcripts, commands, and local paths are excluded from both wire an
 
 The read-only decision/audit outbox is traversed by an opaque `(recorded_at,event_id)` keyset
 cursor that preserves PostgreSQL timestamp precision. The TypeScript publisher keeps failed
-entries durable, validates the closed remote error contract, and applies only bounded retry; it
-never turns observer availability into effect authority.
+entries durable, validates the closed remote error contract, retries only explicit transient
+classes with delay capped at 30 seconds, and parks deterministic client failures until restart. A
+202 receipt is immutable; an internal observer-only resolve route records separate accepted
+closure evidence before the publisher removes its journal entry. Receipt `committedAt` is the
+database transaction's acceptance timestamp, not a claim about post-COMMIT external visibility.
+None of these recovery mechanics turns observer availability into effect authority.
 
 GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a

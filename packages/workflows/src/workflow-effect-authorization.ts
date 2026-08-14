@@ -35,6 +35,7 @@ import {
 import {
   isWorkflowEffectShadowObservationPort,
   type WorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowObservationScope,
 } from './internal/workflow-effect-shadow-port.js';
 import {
   registerWorkflowEffectAuthorizationPort,
@@ -74,6 +75,7 @@ interface PreparedState {
 interface ClaimState {
   readonly port: WorkflowEffectAuthorizationPort;
   readonly storeAuthority: { readonly executionId: string };
+  readonly observationScope: WorkflowEffectShadowObservationScope;
 }
 
 const PREPARED = new WeakMap<object, PreparedState>();
@@ -146,9 +148,9 @@ export function createWorkflowEffectAuthorizationPort(options: {
     'effect-approvals',
   );
   const store = new LocalWorkflowEffectAuthorityStore(approvalRoot, now);
-  const observeAuthority = (approvalId: string) => {
+  const observeAuthority = (scope: WorkflowEffectShadowObservationScope) => {
     try {
-      options.effectShadowObservationPort?.observeAuthority(binding.runId, approvalId);
+      options.effectShadowObservationPort?.observeAuthority(scope);
     } catch {
       // The Go shadow is non-authorizing and never changes TypeScript authority.
     }
@@ -378,14 +380,22 @@ export function createWorkflowEffectAuthorizationPort(options: {
           const pending = artifact.approval;
           await persistPending(pending);
         }
-        observeAuthority(artifact.approval.approvalId);
+        observeAuthority({
+          runId: binding.runId,
+          approvalId: artifact.approval.approvalId,
+          evaluationIndex: occurrence.record.evaluationIndex,
+        });
         throw new WorkflowEffectApprovalPendingError(binding.runId, artifact.approval.approvalId);
       }
       if (
         artifact?.kind === 'effect_decision_committed' ||
         artifact?.kind === 'effect_audit_recorded'
       ) {
-        observeAuthority(artifact.approval.approvalId);
+        observeAuthority({
+          runId: binding.runId,
+          approvalId: artifact.approval.approvalId,
+          evaluationIndex: occurrence.record.evaluationIndex,
+        });
       }
       if (
         (artifact?.kind === 'effect_decision_committed' ||
@@ -419,6 +429,11 @@ export function createWorkflowEffectAuthorizationPort(options: {
         CLAIMS.set(authority, {
           port,
           storeAuthority: result.authority,
+          observationScope: {
+            runId: binding.runId,
+            approvalId: result.artifact.approval.approvalId,
+            evaluationIndex: occurrence.record.evaluationIndex,
+          },
         });
         return Object.freeze({
           disposition: 'claimed' as const,
@@ -442,6 +457,8 @@ export function createWorkflowEffectAuthorizationPort(options: {
       } catch (error) {
         CLAIMS.delete(authority);
         mapStoreError(error);
+      } finally {
+        observeAuthority(state.observationScope);
       }
     },
 
@@ -456,6 +473,8 @@ export function createWorkflowEffectAuthorizationPort(options: {
       } catch (error) {
         CLAIMS.delete(authority);
         mapStoreError(error);
+      } finally {
+        observeAuthority(state.observationScope);
       }
     },
   });

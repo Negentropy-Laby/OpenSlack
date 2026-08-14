@@ -37,6 +37,7 @@ import {
 } from './workflow-effect-shadow.js';
 import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
+import { validateWorkflowLocalShadowConfig } from './internal/workflow-local-shadow-config.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -226,21 +227,14 @@ export function loadWorkflowRunnerWorkerConfig(
     );
   }
   if (checkpointShadow) {
-    let endpoint: URL;
     try {
-      endpoint = new URL(checkpointShadow.endpoint);
+      validateWorkflowLocalShadowConfig({
+        workspaceRoot,
+        journalRoot: checkpointShadow.journalRoot,
+        endpoint: checkpointShadow.endpoint,
+        routes: ['/', '/v1/shadow/workflow-control/checkpoints'],
+      });
     } catch {
-      throw new WorkflowRunnerWorkerConfigError('Workflow checkpoint shadow endpoint is invalid.');
-    }
-    const localRoot = join(workspaceRoot, '.openslack.local');
-    const journalRelative = relative(localRoot, checkpointShadow.journalRoot);
-    if (
-      endpoint.protocol !== 'http:' ||
-      !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-      journalRelative.length === 0 ||
-      journalRelative.startsWith('..') ||
-      isAbsolute(journalRelative)
-    ) {
       throw new WorkflowRunnerWorkerConfigError(
         'Workflow checkpoint shadow must use loopback and a workspace-local journal.',
       );
@@ -286,35 +280,18 @@ export function loadWorkflowRunnerWorkerConfig(
     throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow configuration is invalid.');
   }
   if (effectShadow) {
-    let endpoint: URL;
     try {
-      endpoint = new URL(effectShadow.endpoint);
+      validateWorkflowLocalShadowConfig({
+        workspaceRoot,
+        journalRoot: effectShadow.journalRoot,
+        endpoint: effectShadow.endpoint,
+        routes: [WORKFLOW_EFFECT_CONTROL_ROUTE],
+        protectedRelativeRoots: [
+          join('workflows', 'effect-approvals'),
+          join('workflows', 'effect-authority'),
+        ],
+      });
     } catch {
-      throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow endpoint is invalid.');
-    }
-    const localRoot = join(workspaceRoot, '.openslack.local');
-    const journalRelative = relative(localRoot, effectShadow.journalRoot);
-    const protectedRoots = [
-      join(localRoot, 'workflows', 'effect-approvals'),
-      join(localRoot, 'workflows', 'effect-authority'),
-    ];
-    if (
-      endpoint.protocol !== 'http:' ||
-      !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-      endpoint.pathname !== WORKFLOW_EFFECT_CONTROL_ROUTE ||
-      endpoint.username !== '' ||
-      endpoint.password !== '' ||
-      endpoint.search !== '' ||
-      endpoint.hash !== '' ||
-      journalRelative.length === 0 ||
-      journalRelative.startsWith('..') ||
-      isAbsolute(journalRelative) ||
-      protectedRoots.some(
-        (protectedRoot) =>
-          within(protectedRoot, effectShadow.journalRoot) ||
-          within(effectShadow.journalRoot, protectedRoot),
-      )
-    ) {
       throw new WorkflowRunnerWorkerConfigError(
         'Workflow effect shadow must use its exact loopback route and a workspace-local journal.',
       );
@@ -587,21 +564,35 @@ export async function runWorkflowRunnerWorker(
           diagnosticSink: writeCheckpointDiagnostic,
         })
       : undefined);
-  const effectiveEffectShadowObservationPort =
-    effectShadowObservationPort ??
-    (config.effectShadow
-      ? await createWorkflowEffectShadowObservationPort({
-          enabled: true,
-          workspaceRoot: config.workspaceRoot,
-          journalRoot: config.effectShadow.journalRoot,
-          publisher: createWorkflowEffectShadowHttpPublisher({
-            endpoint: config.effectShadow.endpoint,
-            bearerToken: config.effectShadow.bearerToken,
-            callerId: config.effectShadow.callerId,
-          }),
-          diagnosticSink: writeEffectShadowDiagnostic,
-        })
-      : undefined);
+  let effectiveEffectShadowObservationPort = effectShadowObservationPort;
+  if (!effectiveEffectShadowObservationPort && config.effectShadow) {
+    try {
+      effectiveEffectShadowObservationPort = await createWorkflowEffectShadowObservationPort({
+        enabled: true,
+        workspaceRoot: config.workspaceRoot,
+        journalRoot: config.effectShadow.journalRoot,
+        publisher: createWorkflowEffectShadowHttpPublisher({
+          endpoint: config.effectShadow.endpoint,
+          bearerToken: config.effectShadow.bearerToken,
+          callerId: config.effectShadow.callerId,
+        }),
+        diagnosticSink: writeEffectShadowDiagnostic,
+      });
+    } catch (error) {
+      writeEffectShadowDiagnostic({
+        outcome: 'failed',
+        runIdHash: 'unavailable',
+        approvalIdHash: 'unavailable',
+        observationHash: null,
+        code:
+          error &&
+          typeof error === 'object' &&
+          typeof (error as { readonly code?: unknown }).code === 'string'
+            ? String((error as { readonly code: string }).code).slice(0, 128)
+            : 'WORKFLOW_EFFECT_SHADOW_INITIALIZATION_FAILED',
+      });
+    }
+  }
   if (effectiveEffectShadowObservationPort) {
     void (async () => {
       await effectiveEffectShadowObservationPort.replay();
@@ -624,12 +615,17 @@ export async function runWorkflowRunnerWorker(
   const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
   await descriptorStore.initialize();
   let closed = false;
-  const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
+  const timers: {
+    heartbeat?: NodeJS.Timeout;
+    retry?: NodeJS.Timeout;
+    effectShadowSync?: NodeJS.Timeout;
+  } = {};
   const close = async (exitCode: number) => {
     if (closed) return;
     closed = true;
     if (timers.heartbeat) clearInterval(timers.heartbeat);
     if (timers.retry) clearInterval(timers.retry);
+    if (timers.effectShadowSync) clearInterval(timers.effectShadowSync);
     process.stdin.pause();
     process.exitCode = exitCode;
   };
@@ -706,6 +702,31 @@ export async function runWorkflowRunnerWorker(
   timers.retry = setInterval(() => {
     void session.retryOutstanding().catch(fatal);
   }, 2_000);
+  if (effectiveEffectShadowObservationPort) {
+    let synchronizationInFlight: Promise<void> | undefined;
+    timers.effectShadowSync = setInterval(() => {
+      if (synchronizationInFlight) return;
+      synchronizationInFlight = effectiveEffectShadowObservationPort!
+        .synchronize()
+        .catch((error) => {
+          writeEffectShadowDiagnostic({
+            outcome: 'failed',
+            runIdHash: 'unavailable',
+            approvalIdHash: 'unavailable',
+            observationHash: null,
+            code:
+              error &&
+              typeof error === 'object' &&
+              typeof (error as { readonly code?: unknown }).code === 'string'
+                ? String((error as { readonly code: string }).code).slice(0, 128)
+                : 'WORKFLOW_EFFECT_SHADOW_SYNCHRONIZATION_FAILED',
+          });
+        })
+        .finally(() => {
+          synchronizationInFlight = undefined;
+        });
+    }, 2_000);
+  }
 }
 
 async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {

@@ -129,11 +129,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 		},
 		"effectShadowMigrationUp": {
 			Path:   "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.up.sql",
-			SHA256: "697afe8a2008cdcc9ce23a25a4b0684fada63cdba5b29049ba4f11e7980dc3dc",
+			SHA256: "999f63ac6440929c70b574227aea55b521c1afb3233363e32522c4cb1be7a1ad",
 		},
 		"effectShadowMigrationDown": {
 			Path:   "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.down.sql",
-			SHA256: "cf8e1497494ea7a17771403c9efe02b0faacf327705e75e5525926a375fb5a14",
+			SHA256: "f603d2039c3dbd63ef0e2012242791ccd64fbeaa2c8cd8f427443d4dd50664b8",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
@@ -166,7 +166,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 		},
 		"workflowEffectShadowContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
-			SHA256: "25083813a5e43f17aa2b26439532018d72c0d47a996a07f1ebe87ee7c9e8ce11",
+			SHA256: "72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e",
 		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
@@ -186,7 +186,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 		},
 		"effectShadowOpenapi": {
 			Path:   "services/workflow-control/docs/api/effect-shadow-openapi.yaml",
-			SHA256: "8b180a28ff8f1f0aa9fb70384fa2f6531b984bceaa77780728416eb31bfab656",
+			SHA256: "9d279805c2dca29d55b070b90f87576d6f663b95aefda3b286eecb4dde726876",
 		},
 	}
 	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {

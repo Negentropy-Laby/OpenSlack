@@ -8,24 +8,26 @@ import (
 )
 
 const (
-	ContractVersion     = "v1"
-	ObservationSchema   = "openslack.workflow_effect_control_observation.v1"
-	EnvelopeSchema      = "openslack.workflow_effect_control_envelope.v1"
-	ReceiptSchema       = "openslack.workflow_effect_shadow_receipt.v1"
-	HeadSchema          = "openslack.workflow_effect_shadow_head.v1"
-	OutboxPayloadSchema = "openslack.workflow_effect_shadow_outbox_payload.v1"
-	OutboxReadSchema    = "openslack.workflow_effect_shadow_outbox_read.v1"
-	OutboxPageSchema    = "openslack.workflow_effect_shadow_outbox_page.v1"
-	HumanSchema         = "openslack.workflow_effect_control_human_decision_projection.v1"
-	Route               = "/v1/shadow/workflow-control/effect-events"
-	OutboxRoute         = "/v1/shadow/workflow-control/outbox:pending"
-	IdempotencyPrefix   = "openslack.workflow-effect-control-shadow.v1."
-	MaxRequestBytes     = 512 * 1024
-	MaxReceiptBytes     = 64 * 1024
-	MaxObservationBytes = 256 * 1024
-	MaxOutboxBytes      = 64 * 1024
-	MaxOutboxReadLimit  = 100
-	MaxSourceSequence   = int64(3)
+	ContractVersion                  = "v1"
+	ObservationSchema                = "openslack.workflow_effect_control_observation.v1"
+	EnvelopeSchema                   = "openslack.workflow_effect_control_envelope.v1"
+	ReceiptSchema                    = "openslack.workflow_effect_shadow_receipt.v1"
+	HeadSchema                       = "openslack.workflow_effect_shadow_head.v1"
+	OutboxPayloadSchema              = "openslack.workflow_effect_shadow_outbox_payload.v1"
+	OutboxReadSchema                 = "openslack.workflow_effect_shadow_outbox_read.v1"
+	OutboxPageSchema                 = "openslack.workflow_effect_shadow_outbox_page.v1"
+	HumanSchema                      = "openslack.workflow_effect_control_human_decision_projection.v1"
+	Route                            = "/v1/shadow/workflow-control/effect-events"
+	OutboxRoute                      = "/v1/shadow/workflow-control/outbox:pending"
+	ReconciliationResolveRoutePrefix = "/v1/shadow/workflow-control/effect-reconciliations/"
+	ReconciliationResolveRouteSuffix = "/resolve"
+	IdempotencyPrefix                = "openslack.workflow-effect-control-shadow.v1."
+	MaxRequestBytes                  = 512 * 1024
+	MaxReceiptBytes                  = 64 * 1024
+	MaxObservationBytes              = 256 * 1024
+	MaxOutboxBytes                   = 64 * 1024
+	MaxOutboxReadLimit               = 100
+	MaxSourceSequence                = int64(3)
 )
 
 type Operation string
@@ -119,6 +121,11 @@ type ObserveInput struct {
 	ServiceBuildHash   string
 }
 
+type ResolveInput struct {
+	ReconciliationToken string
+	ObserveInput
+}
+
 type ReceiptValue struct {
 	Schema              string    `json:"schema"`
 	Status              string    `json:"status"`
@@ -147,22 +154,23 @@ type Receipt struct {
 }
 
 type Head struct {
-	Schema                 string       `json:"schema"`
-	WorkspaceID            string       `json:"workspaceId"`
-	RunID                  string       `json:"runId"`
-	OccurrenceID           string       `json:"occurrenceId"`
-	ApprovalID             string       `json:"approvalId"`
-	SourceSequence         int64        `json:"lastSourceSequence"`
-	Operation              Operation    `json:"lastOperation"`
-	LastObservationHash    string       `json:"lastObservationHash"`
-	MatchedSourceSequence  *int64       `json:"matchedSourceSequence"`
-	MatchedOperation       *Operation   `json:"matchedOperation"`
-	MatchedObservationHash *string      `json:"matchedObservationHash"`
-	MismatchLatched        bool         `json:"mismatchLatched"`
-	MismatchCode           *string      `json:"mismatchCode"`
-	ServiceBuildHash       string       `json:"serviceBuildHash"`
-	UpdatedAt              string       `json:"updatedAt"`
-	Observation            *Observation `json:"-"`
+	Schema                  string       `json:"schema"`
+	WorkspaceID             string       `json:"workspaceId"`
+	RunID                   string       `json:"runId"`
+	OccurrenceID            string       `json:"occurrenceId"`
+	ApprovalID              string       `json:"approvalId"`
+	SourceSequence          int64        `json:"lastSourceSequence"`
+	Operation               Operation    `json:"lastOperation"`
+	LastObservationHash     string       `json:"lastObservationHash"`
+	MatchedSourceSequence   *int64       `json:"matchedSourceSequence"`
+	MatchedOperation        *Operation   `json:"matchedOperation"`
+	MatchedObservationHash  *string      `json:"matchedObservationHash"`
+	MismatchLatched         bool         `json:"mismatchLatched"`
+	MismatchCode            *string      `json:"mismatchCode"`
+	ServiceBuildHash        string       `json:"serviceBuildHash"`
+	UpdatedAt               string       `json:"updatedAt"`
+	Observation             *Observation `json:"-"`
+	MatchedObservationBytes []byte       `json:"-"`
 }
 
 // OutboxPayload is a sanitized, non-authorizing projection. It deliberately
@@ -227,6 +235,7 @@ type Statistics struct {
 
 type Store interface {
 	Observe(context.Context, ObserveInput) (Receipt, error)
+	ResolveReconciliation(context.Context, ResolveInput) (Receipt, error)
 	ReadHead(context.Context, string, string, string, string) (Head, error)
 	ReadReceipt(context.Context, string, string) (Receipt, error)
 	ReadPendingOutbox(context.Context, string, int, string) (OutboxPage, error)

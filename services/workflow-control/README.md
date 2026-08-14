@@ -142,7 +142,10 @@ TypeScript remains the sole effect decision, approval, execution-claim, outcome,
 It durably journals only the sanitized `approval_created`, `approval_decided`, and
 `audit_recorded` projections after the owner-local transition. Go stores differential parity,
 byte-exact receipts, matched decision/audit outbox evidence, and unknown-commit reconciliation in
-the isolated `workflow_control_effect_shadow_*` namespace. The outbox is read-only and cannot
+the isolated `workflow_control_effect_shadow_*` namespace. Immutable 202 receipts are closed only
+through the internal observer resolve route using the original envelope and idempotency key;
+accepted closure evidence is stored separately, and `committedAt` denotes transaction acceptance
+rather than an externally visible post-COMMIT instant. The outbox is read-only and cannot
 publish, acknowledge, grant, or execute an effect; callers traverse it with the opaque keyset
 cursor returned by each bounded page.
 

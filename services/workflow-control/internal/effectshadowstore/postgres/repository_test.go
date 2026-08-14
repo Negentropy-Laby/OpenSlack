@@ -351,6 +351,32 @@ func TestGS9DEffectShadowCommitUnknownReconciliationAndDoubleUnknown(t *testing.
 		if err != nil || len(pending.Items) != 0 {
 			t.Fatalf("reconciliation outbox=%#v err=%v", pending, err)
 		}
+		resolver := New(pool)
+		resolver.commitResolution = func(ctx context.Context, tx pgx.Tx) error {
+			if err := tx.Commit(ctx); err != nil {
+				return err
+			}
+			return errors.New("resolution response lost")
+		}
+		resolved, err := resolver.ResolveReconciliation(context.Background(), effectshadowstore.ResolveInput{ReconciliationToken: *receipt.Value.ReconciliationToken, ObserveInput: input})
+		if err != nil || resolved.Value.Status != "accepted" || !resolved.Replay {
+			t.Fatalf("resolved reconciliation=%#v replay=%t err=%v", resolved.Value, resolved.Replay, err)
+		}
+		resolvedReplay, err := New(pool).ResolveReconciliation(context.Background(), effectshadowstore.ResolveInput{ReconciliationToken: *receipt.Value.ReconciliationToken, ObserveInput: input})
+		if err != nil || !resolvedReplay.Replay || !bytes.Equal(resolved.ExactBytes, resolvedReplay.ExactBytes) {
+			t.Fatalf("resolution replay=%#v replay=%t err=%v", resolvedReplay.Value, resolvedReplay.Replay, err)
+		}
+		originalReplay, err := New(pool).Observe(context.Background(), input)
+		if err != nil || originalReplay.Value.Status != "reconciliation_required" || !bytes.Equal(receipt.ExactBytes, originalReplay.ExactBytes) {
+			t.Fatalf("original receipt changed=%#v err=%v", originalReplay.Value, err)
+		}
+		if _, err := New(pool).Observe(context.Background(), effectInput(effectPrepared(t, "approvalDecided"), "1")); err != nil {
+			t.Fatalf("next source sequence after resolution: %v", err)
+		}
+		statistics, err := New(pool).Statistics(context.Background())
+		if err != nil || statistics.ReconciliationPending != 0 || statistics.Observations != 2 {
+			t.Fatalf("resolution statistics=%#v err=%v", statistics, err)
+		}
 	})
 
 	t.Run("double unknown fails closed", func(t *testing.T) {
