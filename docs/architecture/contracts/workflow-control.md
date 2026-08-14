@@ -19,12 +19,12 @@ sources:
 
 Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
-checkpoint/resume differential, and the GS9-D effect-control seam plus default-off parity shadow.
-TypeScript remains the sole workflow writer, runner, approval, budget, effect, resume, and
-user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision and
-one-time claim, and D3 observes only the three credential-free decision/audit projections. The
-evidence ceiling is `GS9-D LOCAL_PASS / Go effect authority NOT_CLAIMED` after the reviewed D3
-exact-head gates pass.
+checkpoint/resume differential, the GS9-D effect-control seam plus default-off parity shadow, and
+the GS9-E1 contract-only budget operational bundle. TypeScript remains the sole workflow writer,
+runner, approval, budget, effect, resume, and user-visible read authority. D1 freezes the closed
+bundle, D2 enforces the owner-local decision and one-time claim, and D3 observes only the three
+credential-free decision/audit projections. E1 freezes validation and fold semantics only; it does
+not establish a durable Go budget authority.
 
 ## Authority boundary
 
@@ -480,8 +480,38 @@ closure evidence before the publisher removes its journal entry. Receipt `commit
 database transaction's acceptance timestamp, not a claim about post-COMMIT external visibility.
 None of these recovery mechanics turns observer availability into effect authority.
 
-GS9-E adds cumulative-budget authority. GS9-F delivers runner v2. GS9-G owns new-record routing,
+## GS9-E1 budget operational contract freeze
+
+GS9-E1 adds the TypeScript-owned `workflow-budget-authority/v1` exact-byte bundle and a Go exact
+mirror whose role is validator-only. The closed contract covers the account, reserve request and
+decision, provider usage evidence, settlement, ledger entry, exact receipt, and reconciliation.
+Tokens, `nano_usd`, and calls use canonical non-negative signed-int64 decimal strings; operational
+folds use integer arithmetic and never promote the existing local `costUsd` estimate to authority.
+The frozen GS9-A authority v2 and Runner v1 bundles remain source-locked and byte-identical.
+
+Provider evidence is bounded and hash-only. Each billable provider turn is distinct from a whole
+agent invocation and binds its model, turn, usage, reservation, and call identity without storing
+the prompt, response, endpoint, credential, or transcript. Missing, untrusted, unknown, or
+overrun usage produces provider-outcome reconciliation and cannot silently release a reservation.
+That condition remains distinct from a future database commit-unknown reconciliation.
+
+The adapter treats `total_tokens` as the required authoritative quantity. Optional prompt and
+completion splits are included only when present values are valid non-negative safe integers and,
+when both are present, sum to the total. An invalid split or inconsistent pair omits both while the
+exact total remains chargeable. Budget failure
+therefore precedes later choice, finish-reason, or tool-shape errors for the same provider response.
+The v1 account and run revisions are intentionally retained as two lockstep fields, and settlement
+must not present revisions earlier than the reservation's opened revisions.
+
+E1 has no database, migration, repository, HTTP API, route, server, runtime authority client,
+production worker wiring, canary, or routing change. TypeScript remains the only production budget
+authority and the Go mirror cannot reserve, settle, authorize, or persist anything. GS9-E2 remains
+pending and is the first stage allowed to add a default-off PostgreSQL budget qualification
+authority.
+
+GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
 read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
 drain. D1, D2, or D3 does not establish live qualification, release readiness, production
-activation, npm or tag publication, authenticated external-host evidence, or Go Workflow authority.
+activation, npm or tag publication, authenticated external-host evidence, durable Go budget
+authority, or Go Workflow authority. E1 establishes none of those claims either.

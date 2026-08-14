@@ -9,7 +9,10 @@ import {
   requestAgentRunCancellation,
   requestAgentRunRestart,
   AgentRunRestartRequestedError,
+  attachProviderUsageEvidence,
+  buildProviderUsageReceipt,
   LocalExecutionAdapter,
+  getProviderUsageEvidence,
   RuntimeNotConfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
@@ -233,6 +236,147 @@ describe('createOpenSlackAgentLauncher', () => {
     const evidence = JSON.stringify({ failure, run, transcript: readTranscript(run.runId, root) });
     expect(evidence).not.toContain(canary);
     expect(readTranscript(run.runId, root).some((event) => event.type === 'complete')).toBe(false);
+  });
+
+  it('preserves charged usage receipts across the safe launcher failure wrapper', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: {
+        adapterId: 'usage-reporting-provider',
+        async execute(context) {
+          const receipt = buildProviderUsageReceipt({
+            providerId: 'openai-compatible',
+            modelId: 'qualification-model',
+            runId: context.runId,
+            attempt: 1,
+            status: 'reported',
+            usage: { totalTokens: 5 },
+            outcome: 'provider_response_accepted',
+            requestBytes: 'raw request stays hash-only',
+            outcomeBytes: 'raw response stays hash-only',
+          });
+          context.recorder.chargeUsage(context.runId, 5);
+          const error = new Error('provider result failed downstream validation');
+          attachProviderUsageEvidence(error, [receipt]);
+          throw error;
+        },
+      },
+    });
+
+    let failure: unknown;
+    try {
+      await launcher('execute safely', { label: 'usage-agent', phase: 'execute' });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect((failure as { tokenUsage?: unknown }).tokenUsage).toBe(5);
+    expect(getProviderUsageEvidence(failure)).toHaveLength(1);
+    expect(getProviderUsageEvidence(failure)[0]?.totalTokens).toBe('5');
+    expect(Object.keys(failure as object)).not.toContain('usageEvidence');
+    expect(Object.keys(failure as object)).not.toContain('tokenUsage');
+    expect(store.listRuns()[0]).toMatchObject({ tokensUsed: 5 });
+  });
+
+  it('keeps a successful adapter result when optional usage evidence is malformed', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: {
+        adapterId: 'malformed-success-evidence',
+        async execute<T>(context: AdapterExecutionContext) {
+          context.recorder.chargeUsage(context.runId, 4);
+          return {
+            data: { ok: true } as T,
+            tokenUsage: 4,
+            tokenUsageRecorded: true,
+            usageEvidence: [{ schema: 'not-a-provider-receipt' }] as never,
+          };
+        },
+      },
+    });
+
+    const result = await launcher<{ ok: boolean }>('execute safely', {
+      label: 'usage-agent',
+      phase: 'execute',
+    });
+
+    expect(result).toMatchObject({ data: { ok: true }, tokenUsage: 4 });
+    expect(result.usageEvidence).toBeUndefined();
+    expect(store.getRun(result.runId)).toMatchObject({ status: 'completed', tokensUsed: 4 });
+    expect(readTranscript(result.runId, root)).toContainEqual(
+      expect.objectContaining({
+        type: 'progress',
+        data: { step: 'provider_usage_evidence_invalid', source: 'adapter_result' },
+      }),
+    );
+  });
+
+  it('terminates runs without masking hostile thrown errors or malformed evidence', async () => {
+    const hostileErrors = (() => {
+      const frozen = new Error('frozen provider failure');
+      Object.defineProperty(frozen, 'usageEvidence', {
+        value: [{ schema: 'invalid-frozen-evidence' }],
+        configurable: true,
+      });
+      const nonExtensible = new Error('non-extensible provider failure');
+      Object.defineProperty(nonExtensible, 'usageEvidence', {
+        value: [{ schema: 'invalid-non-extensible-evidence' }],
+        configurable: true,
+      });
+      const proxiedTarget = new Error('proxied provider failure');
+      Object.defineProperty(proxiedTarget, 'usageEvidence', {
+        value: [{ schema: 'invalid-proxy-evidence' }],
+        configurable: true,
+      });
+      return [
+        Object.freeze(frozen),
+        Object.preventExtensions(nonExtensible),
+        new Proxy(proxiedTarget, {
+          defineProperty() {
+            throw new Error('defineProperty trap must not escape');
+          },
+          getPrototypeOf() {
+            throw new Error('getPrototypeOf trap must not escape');
+          },
+        }),
+      ];
+    })();
+
+    for (const hostile of hostileErrors) {
+      const store = createRunStore(root);
+      const launcher = createOpenSlackAgentLauncher({
+        runStore: store,
+        rootDir: root,
+        adapter: {
+          adapterId: 'hostile-error-evidence',
+          async execute(context) {
+            context.recorder.chargeUsage(context.runId, 3);
+            throw hostile;
+          },
+        },
+      });
+      let failure: unknown;
+      try {
+        await launcher('execute safely', { label: 'usage-agent', phase: 'execute' });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toMatchObject({ code: 'EXECUTION_FAILED', tokenUsage: 3 });
+      const runId = (failure as { runId: string }).runId;
+      expect(store.getRun(runId)).toMatchObject({ status: 'failed', tokensUsed: 3 });
+      expect(readTranscript(runId, root)).toContainEqual(
+        expect.objectContaining({
+          type: 'progress',
+          data: { step: 'provider_usage_evidence_invalid', source: 'thrown_error' },
+        }),
+      );
+    }
   });
 
   it('creates a run record', async () => {

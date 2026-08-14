@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-prepared-request.v1.schema.json",
+  "title": "OpenSlack GS9-E1 canonical prepared budget request",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_budget_prepared_request.v1" },
+        "operation": { "const": "reserve" },
+        "method": { "const": "POST" },
+        "path": { "const": "/v1/authority/workflow-budgets:reserve" },
+        "callerId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "body": { "type": "string", "pattern": "\\n$", "maxLength": 262144 },
+        "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^openslack\\.workflow-budget-authority\\.v1\\.[0-9a-f]{64}$"
+        },
+        "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "operation",
+        "method",
+        "path",
+        "callerId",
+        "body",
+        "requestHash",
+        "idempotencyKey",
+        "requestFingerprint"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_budget_prepared_request.v1" },
+        "operation": { "const": "settle" },
+        "method": { "const": "POST" },
+        "path": { "const": "/v1/authority/workflow-budgets:settle" },
+        "callerId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+          "maxLength": 256
+        },
+        "body": { "type": "string", "pattern": "\\n$", "maxLength": 262144 },
+        "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^openslack\\.workflow-budget-authority\\.v1\\.[0-9a-f]{64}$"
+        },
+        "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "required": [
+        "schema",
+        "operation",
+        "method",
+        "path",
+        "callerId",
+        "body",
+        "requestHash",
+        "idempotencyKey",
+        "requestFingerprint"
+      ]
+    }
+  ]
+}

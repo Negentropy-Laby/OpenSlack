@@ -5,6 +5,7 @@ import type { RunRecorder } from './recorder.js';
 import type { BridgeContract } from './bridge-contract.js';
 import { normalizeToolName } from './tool-name.js';
 import type { ToolExecutor } from './tool-executor.js';
+import type { ProviderUsageReceipt } from './provider-usage-evidence.js';
 
 /**
  * Tool guard provided to execution adapters. Adapters MUST call
@@ -119,6 +120,8 @@ export interface AdapterExecutionResult<T = unknown> {
   tokenUsage?: number;
   /** True when the adapter charged usage incrementally through RunRecorder. */
   tokenUsageRecorded?: boolean;
+  /** Ordered, bounded evidence for each real provider attempt. */
+  usageEvidence?: readonly ProviderUsageReceipt[];
 }
 
 /**

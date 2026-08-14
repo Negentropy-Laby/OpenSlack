@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-settlement.v1.schema.json",
+  "title": "OpenSlack GS9-E1 budget settlement result",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_budget_settlement.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "request": {
+          "allOf": [
+            {
+              "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-settlement-request.v1.schema.json"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "usageEvidenceStatus": { "const": "trusted" },
+                "providerUsage": {
+                  "type": "object",
+                  "properties": { "outcome": { "const": "provider_response_accepted" } },
+                  "required": ["outcome"]
+                }
+              },
+              "required": ["usageEvidenceStatus", "providerUsage"]
+            }
+          ]
+        },
+        "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "reservation": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-reservation.v1.schema.json"
+        },
+        "reservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "beforeAccountHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "afterAccount": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-account.v1.schema.json"
+        },
+        "providerRetryAuthorized": { "const": false },
+        "legacyBudgetApprovalAuthority": { "const": false },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "status": { "const": "settled" },
+        "released": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "nanoUsd": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "calls": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            }
+          },
+          "required": ["tokens", "nanoUsd", "calls"]
+        },
+        "reasonCode": { "type": "null" },
+        "reservationRemainsOpen": { "const": false },
+        "runReconciliationLatched": { "const": false },
+        "cachePublishAuthorized": { "const": true }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "request",
+        "requestHash",
+        "reservation",
+        "reservationHash",
+        "beforeAccountHash",
+        "afterAccount",
+        "providerRetryAuthorized",
+        "legacyBudgetApprovalAuthority",
+        "committedAt",
+        "status",
+        "released",
+        "reasonCode",
+        "reservationRemainsOpen",
+        "runReconciliationLatched",
+        "cachePublishAuthorized"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_budget_settlement.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "request": {
+          "allOf": [
+            {
+              "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-settlement-request.v1.schema.json"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "usageEvidenceStatus": { "const": "trusted" },
+                "providerUsage": {
+                  "type": "object",
+                  "properties": { "outcome": { "const": "provider_attempt_failed" } },
+                  "required": ["outcome"]
+                }
+              },
+              "required": ["usageEvidenceStatus", "providerUsage"]
+            }
+          ]
+        },
+        "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "reservation": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-reservation.v1.schema.json"
+        },
+        "reservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "beforeAccountHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "afterAccount": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-account.v1.schema.json"
+        },
+        "providerRetryAuthorized": { "const": false },
+        "legacyBudgetApprovalAuthority": { "const": false },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "status": { "const": "settled" },
+        "released": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "nanoUsd": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            },
+            "calls": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+              "maxLength": 19,
+              "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+            }
+          },
+          "required": ["tokens", "nanoUsd", "calls"]
+        },
+        "reasonCode": { "type": "null" },
+        "reservationRemainsOpen": { "const": false },
+        "runReconciliationLatched": { "const": false },
+        "cachePublishAuthorized": { "const": false }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "request",
+        "requestHash",
+        "reservation",
+        "reservationHash",
+        "beforeAccountHash",
+        "afterAccount",
+        "providerRetryAuthorized",
+        "legacyBudgetApprovalAuthority",
+        "committedAt",
+        "status",
+        "released",
+        "reasonCode",
+        "reservationRemainsOpen",
+        "runReconciliationLatched",
+        "cachePublishAuthorized"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openslack.workflow_budget_settlement.v1" },
+        "contractVersion": { "const": "v1" },
+        "authority": { "const": "typescript" },
+        "writer": { "const": "@openslack/workflows" },
+        "goRole": { "const": "validator_only" },
+        "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+        "goAuthorityEligible": { "const": false },
+        "request": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-settlement-request.v1.schema.json"
+        },
+        "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "reservation": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-reservation.v1.schema.json"
+        },
+        "reservationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "beforeAccountHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "afterAccount": {
+          "$ref": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-account.v1.schema.json"
+        },
+        "providerRetryAuthorized": { "const": false },
+        "legacyBudgetApprovalAuthority": { "const": false },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
+        },
+        "status": { "const": "reconciliation_required" },
+        "released": { "type": "null" },
+        "reasonCode": {
+          "enum": [
+            "provider_outcome_unknown",
+            "usage_receipt_missing",
+            "usage_receipt_untrusted",
+            "usage_overrun"
+          ]
+        },
+        "reservationRemainsOpen": { "const": true },
+        "runReconciliationLatched": { "const": true },
+        "cachePublishAuthorized": { "const": false }
+      },
+      "required": [
+        "schema",
+        "contractVersion",
+        "authority",
+        "writer",
+        "goRole",
+        "goAuthorityClaim",
+        "goAuthorityEligible",
+        "request",
+        "requestHash",
+        "reservation",
+        "reservationHash",
+        "beforeAccountHash",
+        "afterAccount",
+        "providerRetryAuthorized",
+        "legacyBudgetApprovalAuthority",
+        "committedAt",
+        "status",
+        "released",
+        "reasonCode",
+        "reservationRemainsOpen",
+        "runReconciliationLatched",
+        "cachePublishAuthorized"
+      ]
+    }
+  ]
+}

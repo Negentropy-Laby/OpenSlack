@@ -132,12 +132,22 @@ const triggerPaths = [
   'services/workflow-control/**',
   'services/*/go.mod',
   'services/*/go.sum',
+  'packages/agent-runtime/src/adapter.ts',
+  'packages/agent-runtime/src/index.ts',
+  'packages/agent-runtime/src/launcher.ts',
+  'packages/agent-runtime/src/openai-compatible-runtime.ts',
+  'packages/agent-runtime/src/provider-usage-evidence.ts',
+  'packages/agent-runtime/src/types.ts',
+  'packages/agent-runtime/src/__tests__/launcher.test.ts',
+  'packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts',
+  'packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts',
   'packages/organization-graph/**',
   'packages/operator/contracts/governed-plan/**',
   'packages/operator/contracts/governed-plan-authority/**',
   'packages/operator/src/governed-plan*.ts',
   'packages/workflows/contracts/workflow-control/**',
   'packages/workflows/contracts/workflow-control-authority/**',
+  'packages/workflows/contracts/workflow-budget-authority/**',
   'packages/workflows/contracts/workflow-control-shadow/**',
   'packages/workflows/contracts/workflow-checkpoint-shadow/**',
   'packages/workflows/contracts/workflow-effect-control/**',
@@ -145,6 +155,7 @@ const triggerPaths = [
   'packages/workflows/contracts/workflow-runner/**',
   'packages/workflows/src/workflow-control-contract.ts',
   'packages/workflows/src/workflow-control-authority-contract.ts',
+  'packages/workflows/src/workflow-budget-authority-contract.ts',
   'packages/workflows/src/workflow-control-observation.ts',
   'packages/workflows/src/workflow-control-shadow*.ts',
   'packages/workflows/src/workflow-checkpoint-shadow*.ts',
@@ -152,6 +163,7 @@ const triggerPaths = [
   'packages/workflows/src/internal/workflow-effect-*.ts',
   'packages/workflows/src/__tests__/workflow-control-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
+  'packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts',
   'packages/workflows/src/__tests__/workflow-control-shadow*.ts',
   'packages/workflows/src/__tests__/workflow-checkpoint-shadow*.test.ts',
   'packages/workflows/src/__tests__/workflow-effect-*.test.ts',
@@ -197,6 +209,7 @@ const triggerPaths = [
   'scripts/governance-control-contracts/**',
   'scripts/workflow-control-contracts/**',
   'scripts/workflow-authority-contracts/**',
+  'scripts/workflow-budget-authority-contracts/**',
   'scripts/workflow-control-shadow-contracts/**',
   'scripts/workflow-checkpoint-shadow-contracts/**',
   'scripts/workflow-effect-control-contracts/**',
@@ -358,6 +371,13 @@ describe('notification delivery service workflow', () => {
     );
     const workflowAuthorityTsIndex = stepIndex('Qualify GS9-A TypeScript authority contract');
     const workflowAuthorityGoIndex = stepIndex('Qualify GS9-A Go authority contract mirror');
+    const workflowBudgetGoldenIndex = stepIndex(
+      'Verify Workflow Budget authority golden contracts',
+    );
+    const workflowBudgetTsIndex = stepIndex(
+      'Qualify GS9-E1 TypeScript budget operational contract',
+    );
+    const workflowBudgetGoIndex = stepIndex('Qualify GS9-E1 Go budget contract mirror');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
     const workflowCheckpointGoldenIndex = stepIndex(
@@ -404,7 +424,10 @@ describe('notification delivery service workflow', () => {
     expect(workflowAuthorityGoldenIndex).toBe(workflowGoldenIndex + 1);
     expect(workflowAuthorityTsIndex).toBe(workflowAuthorityGoldenIndex + 1);
     expect(workflowAuthorityGoIndex).toBe(workflowAuthorityTsIndex + 1);
-    expect(workflowShadowGoldenIndex).toBe(workflowAuthorityGoIndex + 1);
+    expect(workflowBudgetGoldenIndex).toBe(workflowAuthorityGoIndex + 1);
+    expect(workflowBudgetTsIndex).toBe(workflowBudgetGoldenIndex + 1);
+    expect(workflowBudgetGoIndex).toBe(workflowBudgetTsIndex + 1);
+    expect(workflowShadowGoldenIndex).toBe(workflowBudgetGoIndex + 1);
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
     expect(workflowCheckpointGoldenIndex).toBe(workflowRunnerGoldenIndex + 1);
     expect(workflowCheckpointTsIndex).toBe(workflowCheckpointGoldenIndex + 1);
@@ -500,6 +523,29 @@ describe('notification delivery service workflow', () => {
       name: 'Qualify GS9-A Go authority contract mirror',
       'working-directory': 'services/workflow-control',
       run: 'go test -race ./authoritycontract -count=1',
+    });
+    expect(job.steps[workflowBudgetGoldenIndex]).toEqual({
+      name: 'Verify Workflow Budget authority golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:budget-authority-golden -- --check',
+    });
+    expect(job.steps[workflowBudgetTsIndex]).toEqual({
+      name: 'Qualify GS9-E1 TypeScript budget operational contract',
+      'working-directory': '.',
+      run: lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/launcher.test.ts',
+      ),
+    });
+    expect(job.steps[workflowBudgetGoIndex]).toEqual({
+      name: 'Qualify GS9-E1 Go budget contract mirror',
+      'working-directory': 'services/workflow-control',
+      run: 'go test -race ./budgetcontract -count=1',
     });
     expect(job.steps[workflowShadowGoldenIndex]).toEqual({
       name: 'Verify Workflow Control shadow golden contracts',
@@ -658,6 +704,9 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control authority golden contracts',
       'Qualify GS9-A TypeScript authority contract',
       'Qualify GS9-A Go authority contract mirror',
+      'Verify Workflow Budget authority golden contracts',
+      'Qualify GS9-E1 TypeScript budget operational contract',
+      'Qualify GS9-E1 Go budget contract mirror',
       'Verify Workflow Control shadow golden contracts',
       'Verify Workflow Runner golden contracts',
       'Verify Workflow Checkpoint shadow golden contracts',
@@ -717,6 +766,18 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-A TypeScript authority contract':
         'bunx vitest run packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts',
       'Qualify GS9-A Go authority contract mirror': 'go test -race ./authoritycontract -count=1',
+      'Verify Workflow Budget authority golden contracts':
+        'bun run workflow:budget-authority-golden -- --check',
+      'Qualify GS9-E1 TypeScript budget operational contract': lines(
+        'set -euo pipefail',
+        'bun run build',
+        'bunx vitest run \\',
+        '  packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts \\',
+        '  packages/agent-runtime/src/__tests__/launcher.test.ts',
+      ),
+      'Qualify GS9-E1 Go budget contract mirror': 'go test -race ./budgetcontract -count=1',
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
@@ -818,6 +879,15 @@ describe('notification delivery service workflow', () => {
     );
     expect(rootPackage.scripts.typecheck).toContain(
       'tsc --noEmit -p scripts/workflow-authority-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts['workflow:budget-authority-golden']).toBe(
+      'bun scripts/workflow-budget-authority-contracts/index.ts',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'tsc --noEmit -p scripts/workflow-budget-authority-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'bun run workflow:budget-authority-golden -- --check',
     );
     expect(rootPackage.scripts['workflow:checkpoint-shadow-golden']).toBe(
       'bun scripts/workflow-checkpoint-shadow-contracts/index.ts',

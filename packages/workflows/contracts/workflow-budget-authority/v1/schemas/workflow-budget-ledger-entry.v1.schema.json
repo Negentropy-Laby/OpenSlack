@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-budget-authority/v1/schemas/workflow-budget-ledger-entry.v1.schema.json",
+  "title": "OpenSlack GS9-E1 append-only budget ledger entry",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_budget_ledger_entry.v1" },
+    "contractVersion": { "const": "v1" },
+    "authority": { "const": "typescript" },
+    "writer": { "const": "@openslack/workflows" },
+    "goRole": { "const": "validator_only" },
+    "goAuthorityClaim": { "const": "NO_AUTHORITY" },
+    "goAuthorityEligible": { "const": false },
+    "kind": {
+      "enum": [
+        "reserve_reserved",
+        "reserve_rejected",
+        "settlement_settled",
+        "settlement_reconciliation_required"
+      ]
+    },
+    "entryId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "accountId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "reservationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "callId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "accountRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "previousAccountHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "accountHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "decisionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "encumbered": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "nanoUsd": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "calls": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        }
+      },
+      "required": ["tokens", "nanoUsd", "calls"]
+    },
+    "settled": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "nanoUsd": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "calls": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        }
+      },
+      "required": ["tokens", "nanoUsd", "calls"]
+    },
+    "released": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "nanoUsd": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        },
+        "calls": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,18})$",
+          "maxLength": 19,
+          "$comment": "Runtime validation additionally enforces <= 9223372036854775807."
+        }
+      },
+      "required": ["tokens", "nanoUsd", "calls"]
+    },
+    "providerUsageHash": {
+      "oneOf": [{ "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, { "type": "null" }]
+    },
+    "reasonCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "provider_outcome_unknown",
+            "usage_receipt_missing",
+            "usage_receipt_untrusted",
+            "usage_overrun"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "recordedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema",
+    "contractVersion",
+    "authority",
+    "writer",
+    "goRole",
+    "goAuthorityClaim",
+    "goAuthorityEligible",
+    "kind",
+    "entryId",
+    "workspaceId",
+    "runId",
+    "accountId",
+    "reservationId",
+    "callId",
+    "accountRevision",
+    "runRevision",
+    "previousAccountHash",
+    "accountHash",
+    "decisionHash",
+    "encumbered",
+    "settled",
+    "released",
+    "providerUsageHash",
+    "reasonCode",
+    "recordedAt"
+  ]
+}
