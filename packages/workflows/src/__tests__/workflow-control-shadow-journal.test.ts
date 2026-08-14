@@ -490,7 +490,7 @@ describe('Workflow Control GS7-B durable observation journal', () => {
           },
           windowsSecurity({ readWindowsPathSecurity }),
         ),
-      ).rejects.toThrow(/directory must be owner-only/u);
+      ).rejects.toThrow(/path contains a reparse component/u);
       expect(readWindowsPathSecurity).not.toHaveBeenCalled();
     },
   );
