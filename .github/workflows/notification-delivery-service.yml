@@ -272,6 +272,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          bun run build
           bunx vitest run \
             packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts \
             packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts \

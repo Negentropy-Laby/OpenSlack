@@ -526,6 +526,7 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: lines(
         'set -euo pipefail',
+        'bun run build',
         'bunx vitest run \\',
         '  packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts \\',
         '  packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts \\',
@@ -761,6 +762,7 @@ describe('notification delivery service workflow', () => {
         'bun run workflow:budget-authority-golden -- --check',
       'Qualify GS9-E1 TypeScript budget operational contract': lines(
         'set -euo pipefail',
+        'bun run build',
         'bunx vitest run \\',
         '  packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts \\',
         '  packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts \\',
