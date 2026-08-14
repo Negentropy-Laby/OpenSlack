@@ -1,0 +1,101 @@
+{
+  "schema": "openslack.workflow_effect_shadow_contract_manifest.v1",
+  "contractVersion": "v1",
+  "authority": "typescript",
+  "authorityBoundary": {
+    "writer": "@openslack/workflows",
+    "goRole": "observer_only",
+    "goEffectDecisionAuthority": false,
+    "goEffectExecutionAuthority": false,
+    "nonAuthorizingObservation": true,
+    "defaultMode": "disabled"
+  },
+  "sourceLocks": {
+    "effectControlManifest": "36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65",
+    "effectControlGolden": "2ec002b70d27c9658d692bac233ac7c28cd25faf5e1d789bfb055411597aa329"
+  },
+  "operations": ["approval_created", "approval_decided", "audit_recorded"],
+  "transport": {
+    "method": "POST",
+    "path": "/v1/shadow/workflow-control/effect-events",
+    "idempotencyKey": "openslack.workflow-effect-control-shadow.v1.{sha256(exact-envelope-bytes)}",
+    "acceptedStatuses": [200, 201],
+    "reconciliationStatus": 202,
+    "replayHeader": "Idempotency-Replayed: true"
+  },
+  "variants": { "receipt": ["accepted_matched", "accepted_mismatched", "reconciliation_required"] },
+  "limits": {
+    "maxReceiptBytes": 65536,
+    "maxErrorBytes": 16384,
+    "maxSourceSequence": 3,
+    "maxJournalEntries": 16384,
+    "maxJournalBytes": 536870912
+  },
+  "rawDataForbidden": [
+    "effectDetail",
+    "workflowInput",
+    "prompt",
+    "providerRequest",
+    "providerResponse",
+    "effectPayload",
+    "effectResult",
+    "humanReason",
+    "attestationNonce",
+    "credential",
+    "bearerToken",
+    "keychainReference",
+    "endpoint",
+    "transcript",
+    "stack",
+    "command",
+    "absolutePath"
+  ],
+  "crossLanguageSchemas": [
+    "schemas/workflow-effect-shadow-accepted-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-head.v1.schema.json",
+    "schemas/workflow-effect-shadow-error.v1.schema.json"
+  ],
+  "artifacts": {
+    "schemas/workflow-effect-shadow-accepted-receipt.v1.schema.json": {
+      "path": "schemas/workflow-effect-shadow-accepted-receipt.v1.schema.json",
+      "byteLength": 2566,
+      "sha256": "ac1ecbb1ee3d0e71f34cf5846435f8fabbb1dc86d4891cf2a9662e00c30adb19"
+    },
+    "schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json": {
+      "path": "schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json",
+      "byteLength": 2074,
+      "sha256": "8e616f85a3bd9ddd9b9cbeb3c45da426543c4aac4cb54f3a066b54a23eb8886b"
+    },
+    "schemas/workflow-effect-shadow-receipt.v1.schema.json": {
+      "path": "schemas/workflow-effect-shadow-receipt.v1.schema.json",
+      "byteLength": 417,
+      "sha256": "80a59c4e93f675b5f1919ea298644b73bce551e5678cebf5aacaf024d7c2c70a"
+    },
+    "schemas/workflow-effect-shadow-head.v1.schema.json": {
+      "path": "schemas/workflow-effect-shadow-head.v1.schema.json",
+      "byteLength": 4038,
+      "sha256": "7e6ca5f3bdc8797fab4f212a19f0e2657fa7fd474dcb44da49708e1c0f76a278"
+    },
+    "schemas/workflow-effect-shadow-error.v1.schema.json": {
+      "path": "schemas/workflow-effect-shadow-error.v1.schema.json",
+      "byteLength": 1347,
+      "sha256": "53a20585fc0cf6153afb297ff4175f8fad6fc5f663892620d75cbf05440b259f"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 27574,
+      "sha256": "f2e6ac90b176d67a1203872e8c9b751ad5662a119a21aed41581407564ba8c4c"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-effect-shadow-accepted-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-receipt.v1.schema.json",
+    "schemas/workflow-effect-shadow-head.v1.schema.json",
+    "schemas/workflow-effect-shadow-error.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ]
+}

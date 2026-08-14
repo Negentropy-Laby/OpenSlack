@@ -12,7 +12,7 @@ import {
   unlink,
   type FileHandle,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
   canonicalWorkflowControlJson,
@@ -419,8 +419,14 @@ export function isWorkflowControlShadowPublisherPort(
   );
 }
 
-function contained(root: string, candidate: string): boolean {
-  const value = relative(root, candidate);
+function containedCanonicalPath(
+  root: string,
+  candidate: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): boolean {
+  const normalize = (value: string) =>
+    security.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
+  const value = relative(normalize(root), normalize(candidate));
   return value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
@@ -429,9 +435,47 @@ function sameCanonicalPath(
   right: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): boolean {
-  const normalize = (value: string) =>
-    security.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
-  return normalize(left) === normalize(right);
+  // Windows aliases are accepted only after every component has been proved to
+  // resolve to the same filesystem object by assertNoWindowsReparseComponents.
+  if (security.platform === 'win32') {
+    return parse(resolve(left)).root.toLowerCase() === parse(resolve(right)).root.toLowerCase();
+  }
+  return resolve(left) === resolve(right);
+}
+
+function sameFilesystemObject(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+/** Reject ancestor junctions, symlinks and drive remaps while allowing safe 8.3 aliases. */
+export async function assertNoWindowsReparseComponents(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
+  if (security.platform !== 'win32') return;
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  const canonicalRoot = await realpath(root);
+  if (parse(canonicalRoot).root.toLowerCase() !== root.toLowerCase()) {
+    throw new TypeError('Workflow Control shadow journal drive mapping is unsafe.');
+  }
+  const components = relative(root, absolute).split(sep).filter(Boolean);
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    let linked: BigIntStats;
+    try {
+      linked = await lstat(current, { bigint: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    const canonical = await realpath(current);
+    const resolved = await lstat(canonical, { bigint: true });
+    if (linked.isSymbolicLink() || !sameFilesystemObject(linked, resolved)) {
+      throw new TypeError('Workflow Control shadow journal path contains a reparse component.');
+    }
+  }
 }
 
 function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
@@ -647,6 +691,7 @@ export async function ensureOwnerDirectory(
   security: WorkflowControlShadowJournalSecurityDependencies,
   parent?: string,
 ): Promise<string> {
+  await assertNoWindowsReparseComponents(parent ?? dirname(path), security);
   let created = false;
   try {
     const firstCreated = await mkdir(path, { recursive: parent === undefined, mode: 0o700 });
@@ -655,6 +700,7 @@ export async function ensureOwnerDirectory(
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
   if (created) security.hardenPath(path, true);
+  await assertNoWindowsReparseComponents(path, security);
   const before = await lstat(path, { bigint: true });
   if (!before.isDirectory() || before.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
@@ -663,10 +709,11 @@ export async function ensureOwnerDirectory(
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
-    (parent !== undefined && !contained(parent, canonical))
+    (parent !== undefined && !containedCanonicalPath(parent, canonical, security))
   ) {
     throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
   }
+  await assertNoWindowsReparseComponents(path, security);
   const after = await lstat(path, { bigint: true });
   if (!sameIdentity(before, after)) {
     throw new TypeError('Workflow Control shadow journal directory changed during validation.');
@@ -680,6 +727,7 @@ export async function assertOwnerDirectory(
   security: WorkflowControlShadowJournalSecurityDependencies,
   parent?: string,
 ): Promise<string> {
+  await assertNoWindowsReparseComponents(path, security);
   const stat = await lstat(path, { bigint: true });
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal directory must be owner-only.');
@@ -688,9 +736,14 @@ export async function assertOwnerDirectory(
   const canonical = await realpath(path);
   if (
     !sameCanonicalPath(canonical, path, security) ||
-    (parent !== undefined && !contained(parent, canonical))
+    (parent !== undefined && !containedCanonicalPath(parent, canonical, security))
   ) {
     throw new TypeError('Workflow Control shadow journal directory is non-canonical.');
+  }
+  await assertNoWindowsReparseComponents(path, security);
+  const after = await lstat(path, { bigint: true });
+  if (!sameIdentity(stat, after)) {
+    throw new TypeError('Workflow Control shadow journal directory changed during validation.');
   }
   return canonical;
 }
@@ -734,6 +787,7 @@ export async function assertOwnerFile(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<BigIntStats> {
+  await assertNoWindowsReparseComponents(path, security);
   const before = await lstat(path, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new TypeError('Workflow Control shadow journal file is unsafe.');
@@ -743,6 +797,7 @@ export async function assertOwnerFile(
   if (!sameCanonicalPath(canonical, path, security)) {
     throw new TypeError('Workflow Control shadow journal file is non-canonical.');
   }
+  await assertNoWindowsReparseComponents(path, security);
   const after = await lstat(path, { bigint: true });
   if (!sameIdentity(before, after)) {
     throw new TypeError('Workflow Control shadow journal file changed during validation.');

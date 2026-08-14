@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-shadow/v1/schemas/workflow-effect-shadow-receipt.v1.schema.json",
+  "title": "OpenSlack Workflow effect shadow receipt v1",
+  "oneOf": [
+    { "$ref": "workflow-effect-shadow-accepted-receipt.v1.schema.json" },
+    { "$ref": "workflow-effect-shadow-reconciliation-receipt.v1.schema.json" }
+  ]
+}

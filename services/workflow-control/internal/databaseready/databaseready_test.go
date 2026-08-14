@@ -73,3 +73,27 @@ func TestRequireCleanSchemaPreservesDatabaseFailuresAndRejectsBadRanges(t *testi
 		}
 	}
 }
+
+func TestSchemaProfilesShareOneCurrentVersionWithoutRaisingCheckpointMinimum(t *testing.T) {
+	profiles := []struct {
+		name string
+		got  Range
+		want Range
+	}{
+		{name: "shadow", got: ShadowProfile, want: Range{Minimum: 1, Maximum: 5}},
+		{name: "runner", got: RunnerRange(false, false), want: Range{Minimum: 2, Maximum: 5}},
+		{name: "authority", got: AuthorityProfile, want: Range{Minimum: 3, Maximum: 5}},
+		{name: "checkpoint", got: RunnerRange(true, false), want: Range{Minimum: 4, Maximum: 5}},
+		{name: "effect", got: RunnerRange(true, true), want: Range{Minimum: 5, Maximum: 5}},
+	}
+	if CurrentSchemaVersion != 5 {
+		t.Fatalf("current schema version = %d", CurrentSchemaVersion)
+	}
+	for _, profile := range profiles {
+		t.Run(profile.name, func(t *testing.T) {
+			if profile.got != profile.want {
+				t.Fatalf("profile = %+v, want %+v", profile.got, profile.want)
+			}
+		})
+	}
+}

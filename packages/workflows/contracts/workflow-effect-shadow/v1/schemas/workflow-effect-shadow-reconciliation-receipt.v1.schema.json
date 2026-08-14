@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-effect-shadow/v1/schemas/workflow-effect-shadow-reconciliation-receipt.v1.schema.json",
+  "title": "OpenSlack reconciliation-required Workflow effect shadow receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "idempotencyKey",
+    "receiptId",
+    "workspaceId",
+    "runId",
+    "occurrenceId",
+    "approvalId",
+    "sourceSequence",
+    "operation",
+    "envelopeHash",
+    "observationHash",
+    "serviceBuildHash",
+    "status",
+    "observationId",
+    "parity",
+    "mismatchCode",
+    "reconciliationToken",
+    "committedAt"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.workflow_effect_shadow_receipt.v1" },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^openslack\\.workflow-effect-control-shadow\\.v1\\.[0-9a-f]{64}$"
+    },
+    "receiptId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "occurrenceId": { "type": "string", "pattern": "^WFOCCURRENCE-[0-9a-f]{64}$" },
+    "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "operation": { "enum": ["approval_created", "approval_decided", "audit_recorded"] },
+    "envelopeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "observationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "serviceBuildHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "status": { "const": "reconciliation_required" },
+    "observationId": { "type": "null" },
+    "parity": { "const": "unknown" },
+    "mismatchCode": { "type": "null" },
+    "reconciliationToken": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+    "committedAt": { "type": "null" }
+  }
+}

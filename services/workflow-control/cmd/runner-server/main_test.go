@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 )
 
@@ -42,8 +43,8 @@ func TestRunCancelsHTTPWhenSchedulerFails(t *testing.T) {
 }
 
 func TestRunnerServerRequiresSchemaVersionThree(t *testing.T) {
-	if minimumSchemaVersion != 2 || maximumSchemaVersion != 4 {
-		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
+	if databaseready.RunnerProfile.Minimum != 2 || databaseready.RunnerProfile.Maximum != databaseready.CurrentSchemaVersion {
+		t.Fatalf("schema range=%d..%d", databaseready.RunnerProfile.Minimum, databaseready.RunnerProfile.Maximum)
 	}
 }
 

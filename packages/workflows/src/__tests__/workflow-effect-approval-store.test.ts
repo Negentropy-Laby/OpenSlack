@@ -94,6 +94,19 @@ afterEach(async () => {
 });
 
 describe('LocalWorkflowEffectApprovalStore', () => {
+  it('treats an absent owner-only store as empty but rejects a partial tree', async () => {
+    const workspaceRoot = await root();
+    const storeRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
+    const store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
+
+    expect(await store.read('run-001', 'approval-001')).toBeUndefined();
+    await store.createPending(pending(Date.now()));
+    await rm(join(storeRoot, 'records'), { recursive: true, force: true });
+    await expect(store.read('run-001', 'approval-001')).rejects.toMatchObject({
+      code: 'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+    });
+  }, 10_000);
+
   it('persists canonical v2 records outside the workflow run store', async () => {
     const now = Date.now();
     const storeRoot = await root();

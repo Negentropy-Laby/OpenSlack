@@ -18,9 +18,6 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 )
 
-const minimumSchemaVersion int64 = 4
-const maximumSchemaVersion int64 = 4
-
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	configuration, err := config.LoadCheckpointShadow()
@@ -41,7 +38,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
-		if err := databaseready.RequireCleanSchema(startup, pool, databaseready.Range{Minimum: minimumSchemaVersion, Maximum: maximumSchemaVersion}); err != nil {
+		if err := databaseready.RequireCleanSchema(startup, pool, databaseready.CheckpointProfile); err != nil {
 			logger.Error("workflow_checkpoint_shadow_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 			os.Exit(1)
 		}

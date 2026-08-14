@@ -116,6 +116,73 @@ describe('GS8-B workflow runner worker', () => {
     ).toThrowError(/workspace-local journal/u);
   });
 
+  it('keeps the effect shadow default-off and confines its exact route and journal', () => {
+    const workspaceRoot = resolve('workflow-runner-effect-shadow-workspace');
+    const base = {
+      OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.test',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
+      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors'),
+      OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
+    } satisfies NodeJS.ProcessEnv;
+    const enabled = {
+      ...base,
+      OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED: '1',
+      OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT:
+        'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
+      OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID: 'runner.test',
+      OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: join(
+        workspaceRoot,
+        '.openslack.local',
+        'workflow-effect-shadow',
+      ),
+    } satisfies NodeJS.ProcessEnv;
+
+    expect(loadWorkflowRunnerWorkerConfig(base).effectShadow).toBeUndefined();
+    expect(loadWorkflowRunnerWorkerConfig(enabled).effectShadow).toMatchObject({
+      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      journalRoot: join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow'),
+    });
+    expect(() =>
+      loadWorkflowRunnerWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
+      }),
+    ).toThrowError(/Disabled Workflow effect shadow configuration must be empty/u);
+    for (const endpoint of [
+      'https://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+      'http://example.com:8084/v1/shadow/workflow-control/effect-events',
+      'http://127.0.0.1:8084/v1/shadow/workflow-control/checkpoints',
+      'http://user:pass@127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
+    ]) {
+      expect(() =>
+        loadWorkflowRunnerWorkerConfig({
+          ...enabled,
+          OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT: endpoint,
+        }),
+      ).toThrowError(/exact loopback route/u);
+    }
+    expect(() =>
+      loadWorkflowRunnerWorkerConfig({
+        ...enabled,
+        OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: join(workspaceRoot, 'outside-local-state'),
+      }),
+    ).toThrowError(/workspace-local journal/u);
+    for (const journalRoot of [
+      join(workspaceRoot, '.openslack.local', 'workflows'),
+      join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals', 'shadow'),
+      join(workspaceRoot, '.openslack.local', 'workflows', 'effect-authority', 'shadow'),
+    ]) {
+      expect(() =>
+        loadWorkflowRunnerWorkerConfig({
+          ...enabled,
+          OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: journalRoot,
+        }),
+      ).toThrowError(/workspace-local journal/u);
+    }
+  });
+
   it('reads and hashes the sealed source during prepare without dynamically importing it', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));
     roots.push(workspaceRoot);

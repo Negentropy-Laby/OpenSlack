@@ -28,8 +28,16 @@ import {
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
 import { createWorkflowEffectAuthorizationPort } from './workflow-effect-authorization.js';
+import { WORKFLOW_EFFECT_CONTROL_ROUTE } from './workflow-effect-control-contract.js';
+import {
+  createWorkflowEffectShadowHttpPublisher,
+  createWorkflowEffectShadowObservationPort,
+  type WorkflowEffectShadowDiagnostic,
+  type WorkflowEffectShadowObservationPort,
+} from './workflow-effect-shadow.js';
 import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
+import { validateWorkflowLocalShadowConfig } from './internal/workflow-local-shadow-config.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 
@@ -40,6 +48,12 @@ export interface WorkflowRunnerWorkerConfig {
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
   readonly checkpointShadow?: {
+    readonly endpoint: string;
+    readonly bearerToken: string;
+    readonly callerId: string;
+    readonly journalRoot: string;
+  };
+  readonly effectShadow?: {
     readonly endpoint: string;
     readonly bearerToken: string;
     readonly callerId: string;
@@ -213,23 +227,73 @@ export function loadWorkflowRunnerWorkerConfig(
     );
   }
   if (checkpointShadow) {
-    let endpoint: URL;
     try {
-      endpoint = new URL(checkpointShadow.endpoint);
+      validateWorkflowLocalShadowConfig({
+        workspaceRoot,
+        journalRoot: checkpointShadow.journalRoot,
+        endpoint: checkpointShadow.endpoint,
+        routes: ['/', '/v1/shadow/workflow-control/checkpoints'],
+      });
     } catch {
-      throw new WorkflowRunnerWorkerConfigError('Workflow checkpoint shadow endpoint is invalid.');
-    }
-    const localRoot = join(workspaceRoot, '.openslack.local');
-    const journalRelative = relative(localRoot, checkpointShadow.journalRoot);
-    if (
-      endpoint.protocol !== 'http:' ||
-      !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-      journalRelative.length === 0 ||
-      journalRelative.startsWith('..') ||
-      isAbsolute(journalRelative)
-    ) {
       throw new WorkflowRunnerWorkerConfigError(
         'Workflow checkpoint shadow must use loopback and a workspace-local journal.',
+      );
+    }
+  }
+  const effectKeys = [
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT',
+  ] as const;
+  const effectEnabledValue = environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED;
+  if (
+    effectEnabledValue !== undefined &&
+    effectEnabledValue !== '0' &&
+    effectEnabledValue !== '1'
+  ) {
+    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow enablement is invalid.');
+  }
+  const effectEnabled = effectEnabledValue === '1';
+  if (!effectEnabled && effectKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled Workflow effect shadow configuration must be empty.',
+    );
+  }
+  const effectShadow = effectEnabled
+    ? {
+        endpoint: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT ?? '',
+        bearerToken: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN ?? '',
+        callerId: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID ?? '',
+        journalRoot: absolutePath(
+          environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT,
+          'Workflow effect shadow journal root',
+        ),
+      }
+    : undefined;
+  if (
+    effectEnabled &&
+    (!effectShadow?.endpoint ||
+      effectShadow.bearerToken.length < 32 ||
+      !SAFE_ID.test(effectShadow.callerId))
+  ) {
+    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow configuration is invalid.');
+  }
+  if (effectShadow) {
+    try {
+      validateWorkflowLocalShadowConfig({
+        workspaceRoot,
+        journalRoot: effectShadow.journalRoot,
+        endpoint: effectShadow.endpoint,
+        routes: [WORKFLOW_EFFECT_CONTROL_ROUTE],
+        protectedRelativeRoots: [
+          join('workflows', 'effect-approvals'),
+          join('workflows', 'effect-authority'),
+        ],
+      });
+    } catch {
+      throw new WorkflowRunnerWorkerConfigError(
+        'Workflow effect shadow must use its exact loopback route and a workspace-local journal.',
       );
     }
   }
@@ -243,6 +307,7 @@ export function loadWorkflowRunnerWorkerConfig(
     ),
     runnerBuildHash,
     ...(checkpointShadow ? { checkpointShadow: Object.freeze(checkpointShadow) } : {}),
+    ...(effectShadow ? { effectShadow: Object.freeze(effectShadow) } : {}),
   });
 }
 
@@ -404,6 +469,15 @@ function writeCheckpointDiagnostic(diagnostic: WorkflowCheckpointShadowDiagnosti
   );
 }
 
+function writeEffectShadowDiagnostic(diagnostic: WorkflowEffectShadowDiagnostic): void {
+  writeSync(
+    2,
+    `${JSON.stringify({ schema: 'openslack.workflow_effect_shadow_diagnostic.v1', ...diagnostic })}\n`,
+    undefined,
+    'utf8',
+  );
+}
+
 /**
  * Dispatch one accepted runner job without ever treating an existing run as a
  * fresh execution. Only paused/resuming runs enter the strict resume path;
@@ -416,6 +490,7 @@ async function executeWorkflowRunnerJob(
   workspaceRoot: string,
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
   observationPort?: WorkflowControlObservationPort,
+  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
 ): Promise<RunResult> {
   const store = new RunStore({
     baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
@@ -448,6 +523,7 @@ async function executeWorkflowRunnerJob(
     effectBoundary: context.effectBoundary,
     leaseAuthority: workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
     observationPort,
+    effectShadowObservationPort,
   });
 
   return disposition === 'initialize'
@@ -471,6 +547,7 @@ export async function runWorkflowRunnerWorker(
   config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
   checkpointObservationPort?: WorkflowCheckpointObservationPort,
   observationPort?: WorkflowControlObservationPort,
+  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
 ): Promise<void> {
   installProtocolOnlyStreams();
   const effectiveCheckpointObservationPort =
@@ -487,15 +564,68 @@ export async function runWorkflowRunnerWorker(
           diagnosticSink: writeCheckpointDiagnostic,
         })
       : undefined);
+  let effectiveEffectShadowObservationPort = effectShadowObservationPort;
+  if (!effectiveEffectShadowObservationPort && config.effectShadow) {
+    try {
+      effectiveEffectShadowObservationPort = await createWorkflowEffectShadowObservationPort({
+        enabled: true,
+        workspaceRoot: config.workspaceRoot,
+        journalRoot: config.effectShadow.journalRoot,
+        publisher: createWorkflowEffectShadowHttpPublisher({
+          endpoint: config.effectShadow.endpoint,
+          bearerToken: config.effectShadow.bearerToken,
+          callerId: config.effectShadow.callerId,
+        }),
+        diagnosticSink: writeEffectShadowDiagnostic,
+      });
+    } catch (error) {
+      writeEffectShadowDiagnostic({
+        outcome: 'failed',
+        runIdHash: 'unavailable',
+        approvalIdHash: 'unavailable',
+        observationHash: null,
+        code:
+          error &&
+          typeof error === 'object' &&
+          typeof (error as { readonly code?: unknown }).code === 'string'
+            ? String((error as { readonly code: string }).code).slice(0, 128)
+            : 'WORKFLOW_EFFECT_SHADOW_INITIALIZATION_FAILED',
+      });
+    }
+  }
+  if (effectiveEffectShadowObservationPort) {
+    void (async () => {
+      await effectiveEffectShadowObservationPort.replay();
+      await effectiveEffectShadowObservationPort.synchronize();
+    })().catch((error) => {
+      writeEffectShadowDiagnostic({
+        outcome: 'failed',
+        runIdHash: 'unavailable',
+        approvalIdHash: 'unavailable',
+        observationHash: null,
+        code:
+          error &&
+          typeof error === 'object' &&
+          typeof (error as { readonly code?: unknown }).code === 'string'
+            ? String((error as { readonly code: string }).code).slice(0, 128)
+            : 'WORKFLOW_EFFECT_SHADOW_REPLAY_FAILED',
+      });
+    });
+  }
   const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
   await descriptorStore.initialize();
   let closed = false;
-  const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
+  const timers: {
+    heartbeat?: NodeJS.Timeout;
+    retry?: NodeJS.Timeout;
+    effectShadowSync?: NodeJS.Timeout;
+  } = {};
   const close = async (exitCode: number) => {
     if (closed) return;
     closed = true;
     if (timers.heartbeat) clearInterval(timers.heartbeat);
     if (timers.retry) clearInterval(timers.retry);
+    if (timers.effectShadowSync) clearInterval(timers.effectShadowSync);
     process.stdin.pause();
     process.exitCode = exitCode;
   };
@@ -522,6 +652,7 @@ export async function runWorkflowRunnerWorker(
         config.workspaceRoot,
         effectiveCheckpointObservationPort,
         observationPort,
+        effectiveEffectShadowObservationPort,
       );
     },
   });
@@ -571,6 +702,31 @@ export async function runWorkflowRunnerWorker(
   timers.retry = setInterval(() => {
     void session.retryOutstanding().catch(fatal);
   }, 2_000);
+  if (effectiveEffectShadowObservationPort) {
+    let synchronizationInFlight: Promise<void> | undefined;
+    timers.effectShadowSync = setInterval(() => {
+      if (synchronizationInFlight) return;
+      synchronizationInFlight = effectiveEffectShadowObservationPort!
+        .synchronize()
+        .catch((error) => {
+          writeEffectShadowDiagnostic({
+            outcome: 'failed',
+            runIdHash: 'unavailable',
+            approvalIdHash: 'unavailable',
+            observationHash: null,
+            code:
+              error &&
+              typeof error === 'object' &&
+              typeof (error as { readonly code?: unknown }).code === 'string'
+                ? String((error as { readonly code: string }).code).slice(0, 128)
+                : 'WORKFLOW_EFFECT_SHADOW_SYNCHRONIZATION_FAILED',
+          });
+        })
+        .finally(() => {
+          synchronizationInFlight = undefined;
+        });
+    }, 2_000);
+  }
 }
 
 async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {

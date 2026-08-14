@@ -19,16 +19,21 @@ on:
       - packages/workflows/contracts/workflow-control-authority/**
       - packages/workflows/contracts/workflow-control-shadow/**
       - packages/workflows/contracts/workflow-checkpoint-shadow/**
+      - packages/workflows/contracts/workflow-effect-control/**
+      - packages/workflows/contracts/workflow-effect-shadow/**
       - packages/workflows/contracts/workflow-runner/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-control-observation.ts
       - packages/workflows/src/workflow-control-shadow*.ts
       - packages/workflows/src/workflow-checkpoint-shadow*.ts
+      - packages/workflows/src/workflow-effect-*.ts
+      - packages/workflows/src/internal/workflow-effect-*.ts
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
       - packages/workflows/src/__tests__/workflow-checkpoint-shadow*.test.ts
+      - packages/workflows/src/__tests__/workflow-effect-*.test.ts
       - packages/workflows/src/workflow-runner-contract.ts
       - packages/workflows/src/workflow-runner*.ts
       - packages/workflows/src/__tests__/workflow-runner*.test.ts
@@ -38,7 +43,6 @@ on:
       - packages/workflows/src/runtime.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
-      - packages/workflows/src/workflow-effect-approval-store.ts
       - packages/workflows/src/index.ts
       - README.md
       - docs/README.md
@@ -74,6 +78,8 @@ on:
       - scripts/workflow-authority-contracts/**
       - scripts/workflow-control-shadow-contracts/**
       - scripts/workflow-checkpoint-shadow-contracts/**
+      - scripts/workflow-effect-control-contracts/**
+      - scripts/workflow-effect-shadow-contracts/**
       - scripts/workflow-runner-contracts/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
@@ -101,16 +107,21 @@ on:
       - packages/workflows/contracts/workflow-control-authority/**
       - packages/workflows/contracts/workflow-control-shadow/**
       - packages/workflows/contracts/workflow-checkpoint-shadow/**
+      - packages/workflows/contracts/workflow-effect-control/**
+      - packages/workflows/contracts/workflow-effect-shadow/**
       - packages/workflows/contracts/workflow-runner/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-control-observation.ts
       - packages/workflows/src/workflow-control-shadow*.ts
       - packages/workflows/src/workflow-checkpoint-shadow*.ts
+      - packages/workflows/src/workflow-effect-*.ts
+      - packages/workflows/src/internal/workflow-effect-*.ts
       - packages/workflows/src/__tests__/workflow-control-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts
       - packages/workflows/src/__tests__/workflow-control-shadow*.ts
       - packages/workflows/src/__tests__/workflow-checkpoint-shadow*.test.ts
+      - packages/workflows/src/__tests__/workflow-effect-*.test.ts
       - packages/workflows/src/workflow-runner-contract.ts
       - packages/workflows/src/workflow-runner*.ts
       - packages/workflows/src/__tests__/workflow-runner*.test.ts
@@ -120,7 +131,6 @@ on:
       - packages/workflows/src/runtime.ts
       - packages/workflows/src/run-store.ts
       - packages/workflows/src/workflow-runs.ts
-      - packages/workflows/src/workflow-effect-approval-store.ts
       - packages/workflows/src/index.ts
       - README.md
       - docs/README.md
@@ -156,6 +166,8 @@ on:
       - scripts/workflow-authority-contracts/**
       - scripts/workflow-control-shadow-contracts/**
       - scripts/workflow-checkpoint-shadow-contracts/**
+      - scripts/workflow-effect-control-contracts/**
+      - scripts/workflow-effect-shadow-contracts/**
       - scripts/workflow-runner-contracts/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
@@ -262,6 +274,22 @@ jobs:
             packages/workflows/src/__tests__/workflow-runner-session.test.ts \
             packages/workflows/src/__tests__/workflow-runner-worker.test.ts \
             packages/workflows/src/__tests__/run-store.test.ts
+      - name: Verify Workflow Effect Control golden contracts
+        working-directory: .
+        run: bun run workflow:effect-control-golden -- --check
+      - name: Verify Workflow Effect shadow golden contracts
+        working-directory: .
+        run: bun run workflow:effect-shadow-golden -- --check
+      - name: Qualify GS9-D TypeScript effect decision observer
+        working-directory: .
+        run: |
+          set -euo pipefail
+          bun run build
+          bunx vitest run \
+            packages/workflows/src/__tests__/workflow-effect-control-contract.test.ts \
+            packages/workflows/src/__tests__/workflow-effect-authorization.test.ts \
+            packages/workflows/src/__tests__/workflow-effect-shadow.test.ts \
+            packages/workflows/src/__tests__/workflow-runner-worker.test.ts
       - name: Qualify the sealed TypeScript Workflow Runner on Linux
         working-directory: .
         run: |
@@ -437,6 +465,9 @@ jobs:
       - name: Qualify GS9-C Workflow checkpoint shadow
         working-directory: .
         run: bash scripts/qualification/workflow-control-postgres-gate.sh gs9c-checkpoint
+      - name: Qualify GS9-D Workflow effect shadow
+        working-directory: .
+        run: bash scripts/qualification/workflow-control-postgres-gate.sh gs9d-effect
       - name: Run reviewed Go workspace verifier
         working-directory: .
         run: bash scripts/go-check.sh --all
@@ -510,7 +541,8 @@ jobs:
             packages/workflows/src/__tests__/workflow-runner-cancellation-boundaries.test.ts `
             packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts `
             packages/workflows/src/__tests__/workflow-runner-execute.test.ts `
-            packages/workflows/src/__tests__/workflow-runner-framing.test.ts
+            packages/workflows/src/__tests__/workflow-runner-framing.test.ts `
+            packages/workflows/src/__tests__/workflow-effect-shadow.test.ts
       - name: Qualify native Windows Job Object process trees
         working-directory: services/workflow-control
         shell: pwsh

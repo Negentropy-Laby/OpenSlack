@@ -14,17 +14,20 @@ import {
   hashWorkflowEffectApprovalRecord,
   hashWorkflowEffectControlDomain,
   hashWorkflowEffectIntentBinding,
+  projectWorkflowEffectControlObservation,
   projectWorkflowEffectHumanDecision,
   validateWorkflowEffectControlArtifact,
   type WorkflowEffectAuditRecordedArtifact,
   type WorkflowEffectApprovalPendingArtifact,
   type WorkflowEffectControlHumanDecisionProjection,
+  type WorkflowEffectControlObservation,
   type WorkflowEffectControlValidationContext,
   type WorkflowEffectDecisionCommittedArtifact,
   type WorkflowEffectExecutionClaimArtifact,
   type WorkflowEffectIntentArtifact,
 } from './workflow-effect-control-contract.js';
 import {
+  createPendingWorkflowEffectApproval,
   validateWorkflowEffectApproval,
   workflowEffectApprovalBytes,
   type HumanWorkflowEffectDecisionBinding,
@@ -298,25 +301,29 @@ async function preparePathsUncached(
       'Approval evidence exists but its authority lineage is missing.',
     );
   }
+  let canonicalRoot: string;
   try {
-    await ensureOwnerDirectory(root, JOURNAL_SECURITY);
+    canonicalRoot = await ensureOwnerDirectory(root, JOURNAL_SECURITY);
   } catch (error) {
     return fail('WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE', 'Authority root is unsafe.', error);
   }
   const paths = {
     root,
-    records: join(root, 'records'),
-    claims: join(root, 'claims'),
+    // Windows realpath may expand a safe 8.3 workspace path. Anchor child
+    // creation to the verified canonical root so containment never compares
+    // the host spelling with its expanded spelling.
+    records: join(canonicalRoot, 'records'),
+    claims: join(canonicalRoot, 'claims'),
     // Anchors and immutable replay artifacts share the owner-only claim
     // directory. Their domain-separated hash keys cannot collide, and this
     // avoids two extra Windows ACL processes for every new authority root.
-    anchors: join(root, 'claims'),
-    replays: join(root, 'claims'),
-    locks: join(root, 'locks'),
+    anchors: join(canonicalRoot, 'claims'),
+    replays: join(canonicalRoot, 'claims'),
+    locks: join(canonicalRoot, 'locks'),
   };
   for (const path of [paths.records, paths.claims, paths.locks]) {
     try {
-      await ensureOwnerDirectory(path, JOURNAL_SECURITY, root);
+      await ensureOwnerDirectory(path, JOURNAL_SECURITY, canonicalRoot);
     } catch (error) {
       return fail(
         'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
@@ -3616,4 +3623,407 @@ export async function updateWorkflowEffectAuthorityAudit(
       return;
     }
   });
+}
+
+export type WorkflowEffectAuthorityObservationArtifact =
+  | WorkflowEffectApprovalPendingArtifact
+  | WorkflowEffectDecisionCommittedArtifact
+  | WorkflowEffectAuditRecordedArtifact;
+
+function observationArtifactBase(
+  artifact:
+    | WorkflowEffectApprovalPendingArtifact
+    | WorkflowEffectDecisionCommittedArtifact
+    | WorkflowEffectAuditRecordedArtifact
+    | WorkflowEffectExecutionClaimArtifact,
+) {
+  return {
+    schema: artifact.schema,
+    contractVersion: artifact.contractVersion,
+    authority: artifact.authority,
+    writer: artifact.writer,
+    goRole: artifact.goRole,
+    goAuthorityClaim: artifact.goAuthorityClaim,
+    goAuthorityEligible: artifact.goAuthorityEligible,
+    workspaceId: artifact.workspaceId,
+    runId: artifact.runId,
+    occurrenceIndex: artifact.occurrenceIndex,
+    occurrenceId: artifact.occurrenceId,
+    intentArtifact: artifact.intentArtifact,
+    intentBindingHash: artifact.intentBindingHash,
+    intentEffectId: artifact.intentEffectId,
+    intentEffectHash: artifact.intentEffectHash,
+    correlationId: artifact.correlationId,
+    approvalGeneration: artifact.approvalGeneration,
+  } as const;
+}
+
+function projectAuthorityObservationPrefix(
+  record: AuthorityRecord,
+): readonly WorkflowEffectAuthorityObservationArtifact[] {
+  const artifact = record.artifact;
+  if (!artifact || artifact.kind === 'effect_intent') return Object.freeze([]);
+  const current = artifact as
+    | WorkflowEffectApprovalPendingArtifact
+    | WorkflowEffectDecisionCommittedArtifact
+    | WorkflowEffectAuditRecordedArtifact
+    | WorkflowEffectExecutionClaimArtifact;
+  const base = observationArtifactBase(current);
+  const approval = current.approval;
+  const pendingApproval = createPendingWorkflowEffectApproval({
+    runId: approval.runId,
+    approvalId: approval.approvalId,
+    correlationId: approval.correlationId,
+    workflowId: approval.workflowId,
+    workflowVersion: approval.workflowVersion,
+    workflowHash: approval.workflowHash,
+    inputHash: approval.inputHash,
+    effectId: approval.effectId,
+    effectHash: approval.effectHash,
+    requiredCapability: approval.requiredCapability,
+    createdAt: approval.createdAt,
+    expiresAt: approval.expiresAt,
+  });
+  const pendingValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_approval_pending',
+      approval: pendingApproval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(pendingApproval),
+      approvalDecisionHash: null,
+    },
+    record.validationContext,
+  );
+  if (pendingValue.kind !== 'effect_approval_pending') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed pending artifact kind.',
+    );
+  }
+  if (current.kind === 'effect_approval_pending') return Object.freeze([pendingValue]);
+  const humanDecision = current.humanDecision;
+  const auditProjection = approval.auditProjection;
+  if (!auditProjection) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered terminal approval has no audit projection.',
+    );
+  }
+  const decisionApproval = validateWorkflowEffectApproval({
+    ...approval,
+    revision: 1,
+    auditProjection: { status: 'pending', eventId: auditProjection.eventId },
+  });
+  const decisionValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_decision_committed',
+      approval: decisionApproval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(decisionApproval),
+      approvalDecisionHash: hashWorkflowEffectApprovalDecision(decisionApproval, humanDecision),
+      humanDecision,
+    },
+    record.validationContext,
+  );
+  if (decisionValue.kind !== 'effect_decision_committed') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed decision artifact kind.',
+    );
+  }
+  if (approval.revision === 1) return Object.freeze([pendingValue, decisionValue]);
+  const auditValue = validateWorkflowEffectControlArtifact(
+    {
+      ...base,
+      kind: 'effect_audit_recorded',
+      approval,
+      approvalRecordHash: hashWorkflowEffectApprovalRecord(approval),
+      approvalDecisionHash: hashWorkflowEffectApprovalDecision(approval, humanDecision),
+      humanDecision,
+    },
+    record.validationContext,
+  );
+  if (auditValue.kind !== 'effect_audit_recorded') {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Recovered observer prefix changed audit artifact kind.',
+    );
+  }
+  return Object.freeze([pendingValue, decisionValue, auditValue]);
+}
+
+/**
+ * Rebuilds the exact observer prefix from the current durable D2 authority
+ * artifact. It never reads the caller-facing approval store as authority and
+ * never changes effect decision or execution state.
+ */
+export async function recoverWorkflowEffectAuthorityObservationPrefix(
+  approvalStoreRoot: string,
+  runId: string,
+  approvalId: string,
+  evaluationIndex: number,
+): Promise<readonly WorkflowEffectControlObservation[]> {
+  if (
+    !SAFE_ID.test(runId) ||
+    !SAFE_ID.test(approvalId) ||
+    !Number.isSafeInteger(evaluationIndex) ||
+    evaluationIndex < 1
+  ) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_IDENTITY_MISMATCH',
+      'Observer recovery scope is invalid.',
+    );
+  }
+  const root = authorityRoot(approvalStoreRoot)!;
+  if (!(await present(root))) {
+    if (await approvalEvidenceExists(approvalStoreRoot)) {
+      return fail(
+        'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+        'Approval evidence exists but its authority lineage is missing.',
+      );
+    }
+    return Object.freeze([]);
+  }
+  const paths = await preparePaths(approvalStoreRoot, false);
+  return withLock(paths, async () => {
+    const recovered = await readAuthority(paths, approvalStoreRoot, runId, evaluationIndex);
+    const artifact = recovered?.artifact;
+    if (!recovered || !artifact || artifact.kind === 'effect_intent') return Object.freeze([]);
+    if (artifact.approval.approvalId !== approvalId) {
+      return fail(
+        'WORKFLOW_EFFECT_AUTHORITY_IDENTITY_MISMATCH',
+        'Observer recovery approval identity changed.',
+      );
+    }
+    return Object.freeze(
+      projectAuthorityObservationPrefix(recovered).map((value) =>
+        projectWorkflowEffectControlObservation(value, recovered.validationContext),
+      ),
+    );
+  });
+}
+
+export interface WorkflowEffectAuthorityObservationFailure {
+  readonly recordHash: string;
+  readonly code: string;
+}
+
+export interface WorkflowEffectAuthorityObservationScan {
+  readonly prefixes: readonly WorkflowEffectAuthorityObservationPrefix[];
+  readonly failures: readonly WorkflowEffectAuthorityObservationFailure[];
+  readonly recordIndex: ReadonlyMap<string, WorkflowEffectAuthorityObservationRecordIdentity>;
+}
+
+export interface WorkflowEffectAuthorityObservationRecordIdentity {
+  readonly identity: string;
+  readonly approvalScope: string | null;
+}
+
+function observerFailure(
+  recordName: string,
+  error: unknown,
+): WorkflowEffectAuthorityObservationFailure {
+  return Object.freeze({
+    recordHash: hashWorkflowEffectControlDomain('observer-record-name', recordName),
+    code:
+      error instanceof WorkflowEffectAuthorityStoreError
+        ? error.code
+        : 'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+  });
+}
+
+/** A directory identity token lets the non-authorizing worker avoid unchanged full scans. */
+export async function workflowEffectAuthorityObservationRevisionToken(
+  approvalStoreRoot: string,
+): Promise<string> {
+  const root = authorityRoot(approvalStoreRoot);
+  if (!root) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
+      'Approval store root is not the authenticated workflow authority root.',
+    );
+  }
+  const records = join(root, 'records');
+  const stat = await present(records);
+  if (!stat) return 'missing';
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    return fail('WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE', 'Authority records directory is unsafe.');
+  }
+  return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+}
+
+export interface WorkflowEffectAuthorityObservationPrefix {
+  readonly runId: string;
+  readonly approvalId: string;
+  readonly observations: readonly WorkflowEffectControlObservation[];
+}
+
+/** Rebuilds every observer prefix under one owner-safe authority-store lock. */
+export async function recoverAllWorkflowEffectAuthorityObservationPrefixes(
+  approvalStoreRoot: string,
+): Promise<readonly WorkflowEffectAuthorityObservationPrefix[]> {
+  const scan = await scanWorkflowEffectAuthorityObservationPrefixes(approvalStoreRoot);
+  if (scan.failures.length > 0) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_RECORD_INVALID',
+      'Authority observer recovery found invalid record evidence.',
+    );
+  }
+  return scan.prefixes;
+}
+
+/** Observer-only best-effort scan; it never weakens authoritative reads or writes. */
+export async function scanWorkflowEffectAuthorityObservationPrefixes(
+  approvalStoreRoot: string,
+  priorIndex: ReadonlyMap<string, WorkflowEffectAuthorityObservationRecordIdentity> = new Map(),
+): Promise<WorkflowEffectAuthorityObservationScan> {
+  const root = authorityRoot(approvalStoreRoot);
+  if (!root) {
+    return fail(
+      'WORKFLOW_EFFECT_AUTHORITY_PATH_UNSAFE',
+      'Approval store root is not the authenticated workflow authority root.',
+    );
+  }
+  if (!(await present(root))) {
+    if (await approvalEvidenceExists(approvalStoreRoot)) {
+      return fail(
+        'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+        'Approval evidence exists but its authority lineage is missing.',
+      );
+    }
+    return Object.freeze({
+      prefixes: Object.freeze([]),
+      failures: Object.freeze([]),
+      recordIndex: new Map(),
+    });
+  }
+  const paths = await preparePaths(approvalStoreRoot, false);
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await acquireOwnerJournalLock(paths.locks, 'authority', JOURNAL_SECURITY);
+    const prefixes: WorkflowEffectAuthorityObservationPrefix[] = [];
+    const failures: WorkflowEffectAuthorityObservationFailure[] = [];
+    const seenApprovals = new Set<string>();
+    const recordIndex = new Map<string, WorkflowEffectAuthorityObservationRecordIdentity>();
+    try {
+      await recoverAuthorityTemporaries(paths);
+    } catch (error) {
+      failures.push(observerFailure('temporary-recovery', error));
+    }
+    const recordEntries = (await readdir(paths.records, { withFileTypes: true })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    if (recordEntries.length > MAX_ENTRIES) {
+      failures.push(
+        observerFailure(
+          'record-capacity',
+          new WorkflowEffectAuthorityStoreError(
+            'WORKFLOW_EFFECT_AUTHORITY_LIMIT_EXCEEDED',
+            'Authority observer record inventory exceeds its bound.',
+          ),
+        ),
+      );
+    }
+    for (const entry of recordEntries.slice(0, MAX_ENTRIES)) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !AUTHORITY_FILE.test(entry.name)) {
+        failures.push(
+          observerFailure(
+            entry.name,
+            new WorkflowEffectAuthorityStoreError(
+              'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE',
+              'Authority observer recovery found an unsafe record entry.',
+            ),
+          ),
+        );
+        continue;
+      }
+      try {
+        const path = join(paths.records, entry.name);
+        const stat = await lstat(path);
+        const identity = [
+          stat.dev,
+          stat.ino,
+          stat.size,
+          stat.birthtimeMs,
+          stat.mtimeMs,
+          stat.ctimeMs,
+          stat.mode,
+        ].join(':');
+        const prior = priorIndex.get(entry.name);
+        if (prior?.identity === identity) {
+          recordIndex.set(entry.name, prior);
+          if (prior.approvalScope !== null) {
+            if (seenApprovals.has(prior.approvalScope)) {
+              failures.push(
+                observerFailure(
+                  entry.name,
+                  new WorkflowEffectAuthorityStoreError(
+                    'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+                    'Observer recovery found duplicate approval authority records.',
+                  ),
+                ),
+              );
+            }
+            seenApprovals.add(prior.approvalScope);
+          }
+          continue;
+        }
+        const bytes = await readBounded(path, paths.records, MAX_AUTHORITY_BYTES);
+        if (!bytes) {
+          recordIndex.set(entry.name, Object.freeze({ identity, approvalScope: null }));
+          continue;
+        }
+        const candidate = parseAuthorityRecord(bytes);
+        const recovered = await readAuthority(
+          paths,
+          approvalStoreRoot,
+          candidate.runId,
+          candidate.evaluationIndex,
+        );
+        const artifact = recovered?.artifact;
+        if (!recovered || !artifact || artifact.kind === 'effect_intent') {
+          recordIndex.set(entry.name, Object.freeze({ identity, approvalScope: null }));
+          continue;
+        }
+        const approvalId = artifact.approval.approvalId;
+        const scope = `${recovered.runId}\0${approvalId}`;
+        recordIndex.set(entry.name, Object.freeze({ identity, approvalScope: scope }));
+        if (seenApprovals.has(scope)) {
+          failures.push(
+            observerFailure(
+              entry.name,
+              new WorkflowEffectAuthorityStoreError(
+                'WORKFLOW_EFFECT_RECONCILIATION_REQUIRED',
+                'Observer recovery found duplicate approval authority records.',
+              ),
+            ),
+          );
+          continue;
+        }
+        seenApprovals.add(scope);
+        prefixes.push(
+          Object.freeze({
+            runId: recovered.runId,
+            approvalId,
+            observations: Object.freeze(
+              projectAuthorityObservationPrefix(recovered).map((value) =>
+                projectWorkflowEffectControlObservation(value, recovered.validationContext),
+              ),
+            ),
+          }),
+        );
+      } catch (error) {
+        failures.push(observerFailure(entry.name, error));
+        recordIndex.delete(entry.name);
+        continue;
+      }
+    }
+    return Object.freeze({
+      prefixes: Object.freeze(prefixes),
+      failures: Object.freeze(failures),
+      recordIndex,
+    });
+  } finally {
+    await release?.();
+  }
 }

@@ -29,6 +29,7 @@ import {
 } from './workflow-effect-approval.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
+  assertOwnerDirectory,
   assertOwnerFile,
   ensureOwnerDirectory,
   isWorkflowControlObservationPort,
@@ -270,6 +271,45 @@ async function assertDirectory(path: string): Promise<{ stat: Stats; real: strin
   return { stat, real };
 }
 
+async function assertAuthorityDirectory(
+  path: string,
+  create: boolean,
+  parent?: string,
+  missingIsNotFound = false,
+): Promise<{ stat: Stats; real: string }> {
+  if (!create && !(await lstatIfPresent(path))) {
+    return fail(
+      missingIsNotFound
+        ? 'WORKFLOW_EFFECT_APPROVAL_STORE_NOT_FOUND'
+        : 'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+      missingIsNotFound
+        ? 'Approval-store directory is missing.'
+        : 'Approval-store directory structure is incomplete.',
+      path,
+    );
+  }
+  try {
+    const real = create
+      ? await ensureOwnerDirectory(path, AUTHORITY_STORE_SECURITY, parent)
+      : await assertOwnerDirectory(path, AUTHORITY_STORE_SECURITY, parent);
+    const stat = await lstat(path);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+        'Approval-store path must be a real owner-only directory.',
+        path,
+      );
+    }
+    return { stat, real };
+  } catch (error) {
+    return fail(
+      'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
+      `Approval-store path is not owner-only: ${String(error)}`,
+      path,
+    );
+  }
+}
+
 async function ensureFixedChild(parentReal: string, path: string): Promise<void> {
   const existing = await lstatIfPresent(path);
   if (!existing) await mkdir(path, { recursive: false, mode: 0o700 });
@@ -376,31 +416,21 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
     );
   }
   const ownerOnly = hasWorkflowEffectAuthorityRoot(configuredRoot);
-  if (ownerOnly) {
-    try {
-      await ensureOwnerDirectory(configuredRoot, AUTHORITY_STORE_SECURITY);
-    } catch (error) {
-      return fail(
-        'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
-        `Approval-store root is not owner-only: ${String(error)}`,
-        configuredRoot,
-      );
-    }
-  }
-  const root = await assertDirectory(configuredRoot);
+  const root = ownerOnly
+    ? await assertAuthorityDirectory(configuredRoot, create, undefined, !create)
+    : await assertDirectory(configuredRoot);
   const recordsPath = join(configuredRoot, 'records');
   const locksPath = join(configuredRoot, 'locks');
-  if (create) {
-    if (ownerOnly) {
-      await ensureOwnerDirectory(recordsPath, AUTHORITY_STORE_SECURITY, root.real);
-      await ensureOwnerDirectory(locksPath, AUTHORITY_STORE_SECURITY, root.real);
-    } else {
-      await ensureFixedChild(root.real, recordsPath);
-      await ensureFixedChild(root.real, locksPath);
-    }
+  if (create && !ownerOnly) {
+    await ensureFixedChild(root.real, recordsPath);
+    await ensureFixedChild(root.real, locksPath);
   }
-  const records = await assertDirectory(recordsPath);
-  const locks = await assertDirectory(locksPath);
+  const records = ownerOnly
+    ? await assertAuthorityDirectory(recordsPath, create, root.real)
+    : await assertDirectory(recordsPath);
+  const locks = ownerOnly
+    ? await assertAuthorityDirectory(locksPath, create, root.real)
+    : await assertDirectory(locksPath);
   if (!contained(root.real, records.real) || !contained(root.real, locks.real)) {
     return fail(
       'WORKFLOW_EFFECT_APPROVAL_STORE_PATH_UNSAFE',
@@ -411,20 +441,31 @@ async function prepare(configuredRoot: string, create: boolean): Promise<Prepare
     root: configuredRoot,
     rootReal: root.real,
     rootStat: root.stat,
-    records: recordsPath,
+    // Keep all durable child and file operations rooted in the verified
+    // canonical directories. Windows may expand a safe 8.3 configured root,
+    // and reusing the host spelling would make later exact-path checks reject
+    // the store's own owner-checked temporaries.
+    records: records.real,
     recordsReal: records.real,
     recordsStat: records.stat,
-    locks: locksPath,
+    locks: locks.real,
     locksReal: locks.real,
     locksStat: locks.stat,
-    ...(await scanStore(configuredRoot, ownerOnly)),
+    ...(await scanStore(root.real, ownerOnly)),
   };
 }
 
 async function assertPreparedStable(prepared: PreparedStore): Promise<void> {
-  const root = await assertDirectory(prepared.root);
-  const records = await assertDirectory(prepared.records);
-  const locks = await assertDirectory(prepared.locks);
+  const ownerOnly = hasWorkflowEffectAuthorityRoot(prepared.root);
+  const root = ownerOnly
+    ? await assertAuthorityDirectory(prepared.root, false)
+    : await assertDirectory(prepared.root);
+  const records = ownerOnly
+    ? await assertAuthorityDirectory(prepared.records, false, root.real)
+    : await assertDirectory(prepared.records);
+  const locks = ownerOnly
+    ? await assertAuthorityDirectory(prepared.locks, false, root.real)
+    : await assertDirectory(prepared.locks);
   if (
     !sameIdentity(prepared.rootStat, root.stat) ||
     !sameIdentity(prepared.recordsStat, records.stat) ||

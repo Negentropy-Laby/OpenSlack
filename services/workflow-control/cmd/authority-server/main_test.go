@@ -1,9 +1,13 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
+)
 
 func TestAuthorityServerRequiresSchemaVersionThree(t *testing.T) {
-	if minimumSchemaVersion != 3 || maximumSchemaVersion != 4 {
-		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
+	if databaseready.AuthorityProfile.Minimum != 3 || databaseready.AuthorityProfile.Maximum != databaseready.CurrentSchemaVersion {
+		t.Fatalf("schema range=%d..%d", databaseready.AuthorityProfile.Minimum, databaseready.AuthorityProfile.Maximum)
 	}
 }

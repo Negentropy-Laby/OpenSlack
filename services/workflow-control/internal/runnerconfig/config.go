@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
 )
 
@@ -46,6 +47,11 @@ type Config struct {
 	CheckpointShadowBearerToken string
 	CheckpointShadowCallerID    string
 	CheckpointShadowJournalRoot string
+	EffectShadowEnabled         bool
+	EffectShadowEndpoint        string
+	EffectShadowBearerToken     string
+	EffectShadowCallerID        string
+	EffectShadowJournalRoot     string
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -121,6 +127,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	effectEnabled, effectEndpoint, effectToken, effectCaller, effectJournal, err := effectShadowConfig(values, workspaceRoot)
+	if err != nil {
+		return Config{}, err
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -137,7 +147,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 		CheckpointShadowEnabled: checkpointEnabled, CheckpointShadowEndpoint: checkpointEndpoint,
 		CheckpointShadowBearerToken: checkpointToken, CheckpointShadowCallerID: checkpointCaller,
 		CheckpointShadowJournalRoot: checkpointJournal,
-		ShutdownDeadline:            30 * time.Second, MaxProcesses: maxProcesses,
+		EffectShadowEnabled:         effectEnabled, EffectShadowEndpoint: effectEndpoint,
+		EffectShadowBearerToken: effectToken, EffectShadowCallerID: effectCaller,
+		EffectShadowJournalRoot: effectJournal,
+		ShutdownDeadline:        30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
@@ -165,6 +178,11 @@ func parse(environment []string) (map[string]string, error) {
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID":    {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED":          {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT":         {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN":     {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID":        {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT":     {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {
@@ -186,44 +204,67 @@ func parse(environment []string) (map[string]string, error) {
 }
 
 func checkpointShadowConfig(values map[string]string, workspaceRoot string) (bool, string, string, string, string, error) {
-	enabled := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED"])
-	fields := []string{"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID", "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT"}
+	return localShadowConfig(values, workspaceRoot, localShadowOptions{
+		enabled: "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED", endpoint: "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT", token: "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN", caller: "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID", journal: "WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT", routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}, label: "checkpoint shadow",
+	})
+}
+
+func effectShadowConfig(values map[string]string, workspaceRoot string) (bool, string, string, string, string, error) {
+	return localShadowConfig(values, workspaceRoot, localShadowOptions{
+		enabled:  "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED",
+		endpoint: "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT",
+		token:    "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN",
+		caller:   "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID",
+		journal:  "WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT",
+		routes:   []string{"/v1/shadow/workflow-control/effect-events"},
+		label:    "effect shadow",
+	})
+}
+
+type localShadowOptions struct {
+	enabled  string
+	endpoint string
+	token    string
+	caller   string
+	journal  string
+	routes   []string
+	label    string
+}
+
+func localShadowConfig(values map[string]string, workspaceRoot string, options localShadowOptions) (bool, string, string, string, string, error) {
+	enabled := strings.TrimSpace(values[options.enabled])
+	fields := []string{options.endpoint, options.token, options.caller, options.journal}
 	if enabled == "" || enabled == "0" {
 		for _, name := range fields {
 			if strings.TrimSpace(values[name]) != "" {
-				return false, "", "", "", "", fmt.Errorf("%s requires checkpoint shadow enablement", name)
+				return false, "", "", "", "", fmt.Errorf("%s requires %s enablement", name, options.label)
 			}
 		}
 		return false, "", "", "", "", nil
 	}
 	if enabled != "1" {
-		return false, "", "", "", "", fmt.Errorf("WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED must be 0 or 1")
+		return false, "", "", "", "", fmt.Errorf("%s must be 0 or 1", options.enabled)
 	}
-	endpoint := strings.TrimSpace(values[fields[0]])
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "/v1/shadow/workflow-control/checkpoints" || parsed.Port() == "" {
-		return false, "", "", "", "", fmt.Errorf("checkpoint shadow endpoint must be an exact loopback HTTP observation URL")
-	}
-	host := parsed.Hostname()
-	if host != "127.0.0.1" && host != "::1" {
-		return false, "", "", "", "", fmt.Errorf("checkpoint shadow endpoint must be loopback")
-	}
-	token := values[fields[1]]
+	endpoint := strings.TrimSpace(values[options.endpoint])
+	token := values[options.token]
 	if token != strings.TrimSpace(token) || len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, "\r\n\x00") {
-		return false, "", "", "", "", fmt.Errorf("checkpoint shadow bearer token is invalid")
+		return false, "", "", "", "", fmt.Errorf("%s bearer token is invalid", options.label)
 	}
-	caller := strings.TrimSpace(values[fields[2]])
+	caller := strings.TrimSpace(values[options.caller])
 	if !safeID.MatchString(caller) {
-		return false, "", "", "", "", fmt.Errorf("checkpoint shadow caller identity is invalid")
+		return false, "", "", "", "", fmt.Errorf("%s caller identity is invalid", options.label)
 	}
-	journal, err := absolutePath(values[fields[3]], fields[3])
+	journal, err := absolutePath(values[options.journal], options.journal)
 	if err != nil {
 		return false, "", "", "", "", err
 	}
-	localRoot := filepath.Join(workspaceRoot, ".openslack.local")
-	relative, relativeErr := filepath.Rel(localRoot, journal)
-	if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return false, "", "", "", "", fmt.Errorf("checkpoint shadow journal root must be inside workspace .openslack.local")
+	protected := []string(nil)
+	if options.label == "effect shadow" {
+		localRoot := filepath.Join(workspaceRoot, ".openslack.local", "workflows")
+		protected = []string{filepath.Join(localRoot, "effect-approvals"), filepath.Join(localRoot, "effect-authority")}
+	}
+	if err := localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: journal, Endpoint: endpoint, Routes: options.routes, ProtectedRoots: protected}); err != nil {
+		return false, "", "", "", "", fmt.Errorf("%s configuration is invalid: %w", options.label, err)
 	}
 	return true, endpoint, token, caller, journal, nil
 }

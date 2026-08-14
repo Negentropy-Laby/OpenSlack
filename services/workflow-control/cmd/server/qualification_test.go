@@ -17,6 +17,7 @@ import (
 
 	workflowcontrol "github.com/Negentropy-Laby/OpenSlack/services/workflow-control"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/app"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore"
 	shadowpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
@@ -25,8 +26,8 @@ import (
 const qualificationBuildSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestShadowServerRequiresSchemaVersionThree(t *testing.T) {
-	if minimumSchemaVersion != 1 || maximumSchemaVersion != 4 {
-		t.Fatalf("minimum schema version=%d", minimumSchemaVersion)
+	if databaseready.ShadowProfile.Minimum != 1 || databaseready.ShadowProfile.Maximum != databaseready.CurrentSchemaVersion {
+		t.Fatalf("schema range=%d..%d", databaseready.ShadowProfile.Minimum, databaseready.ShadowProfile.Maximum)
 	}
 }
 

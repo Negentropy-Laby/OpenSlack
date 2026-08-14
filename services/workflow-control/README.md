@@ -2,9 +2,10 @@
 
 This module contains the GS7-A pure Go consumer of the TypeScript-owned Workflow Control v1
 contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B runner-lifecycle
-control plane, the GS9-B default-off PostgreSQL authority qualification spine, and the GS9-C
-checkpoint/resume differential observer. The four servers are separate entry points and have
-separate configuration and authority boundaries.
+control plane, the GS9-B default-off PostgreSQL authority qualification spine, the GS9-C
+checkpoint/resume differential observer, and the GS9-D effect decision/audit differential
+observer. The five servers are separate entry points and have separate configuration and authority
+boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -120,3 +121,35 @@ are documented in `docs/architecture/checkpoint-shadow.md` and
 `docs/testing/gs9c-qualification.md`. This batch does not activate runner v2, Go Workflow
 authority, routing, canary, approval/effect authority, durable budget authority, or production
 cutover.
+
+## Explicit GS9-D effect shadow qualification mode
+
+The image also contains `/effect-shadow-server`; the default entry point remains `/server`.
+Without `WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1`, the effect-shadow binary is
+health-only and does not register observation or read routes. Explicit qualification requires a
+loopback bind, database, exact service-build SHA-256, bearer-token SHA-256, workspace, and caller:
+
+```text
+WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1
+WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084
+WORKFLOW_CONTROL_EFFECT_SHADOW_SERVICE_BUILD_SHA=<64 lowercase hex>
+WORKFLOW_CONTROL_EFFECT_SHADOW_BEARER_TOKEN_SHA256=<sha256 of bearer token>
+WORKFLOW_CONTROL_EFFECT_SHADOW_WORKSPACE_ID=<workspace id>
+WORKFLOW_CONTROL_EFFECT_SHADOW_CALLER_ID=<caller id>
+```
+
+TypeScript remains the sole effect decision, approval, execution-claim, outcome, and audit writer.
+It durably journals only the sanitized `approval_created`, `approval_decided`, and
+`audit_recorded` projections after the owner-local transition. Go stores differential parity,
+byte-exact receipts, matched decision/audit outbox evidence, and unknown-commit reconciliation in
+the isolated `workflow_control_effect_shadow_*` namespace. Immutable 202 receipts are closed only
+through the internal observer resolve route using the original envelope and idempotency key;
+accepted closure evidence is stored separately, and `committedAt` denotes transaction acceptance
+rather than an externally visible post-COMMIT instant. The outbox is read-only and cannot
+publish, acknowledge, grant, or execute an effect; callers traverse it with the opaque keyset
+cursor returned by each bounded page.
+
+The API is frozen in `docs/api/effect-shadow-openapi.yaml`; the boundary and evidence ceiling are
+documented in `docs/architecture/effect-shadow.md` and `docs/testing/gs9d-qualification.md`. This
+batch does not activate runner v2, Go effect authority, routing, canary, production, release, or
+TypeScript writer retirement.

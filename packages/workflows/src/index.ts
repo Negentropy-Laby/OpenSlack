@@ -187,6 +187,43 @@ export type {
   WorkflowEffectOccurrenceBinding,
   WorkflowLegacyRunGateObservationArtifact,
 } from './workflow-effect-control-contract.js';
+export {
+  validateWorkflowEffectShadowError,
+  validateWorkflowEffectShadowHead,
+  validateWorkflowEffectShadowReceipt,
+  workflowEffectShadowCanonicalJson,
+  WORKFLOW_EFFECT_SHADOW_ERROR_CODES,
+  WORKFLOW_EFFECT_SHADOW_ERROR_SCHEMA,
+  WORKFLOW_EFFECT_SHADOW_HEAD_SCHEMA,
+  WORKFLOW_EFFECT_SHADOW_IDEMPOTENCY_PREFIX,
+  WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
+  WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES,
+  WORKFLOW_EFFECT_SHADOW_RECEIPT_SCHEMA,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX,
+  WORKFLOW_EFFECT_SHADOW_ROUTE,
+  WorkflowEffectShadowContractError,
+} from './workflow-effect-shadow-contract.js';
+export type {
+  WorkflowEffectShadowError,
+  WorkflowEffectShadowErrorCode,
+  WorkflowEffectShadowHead,
+  WorkflowEffectShadowReceipt,
+} from './workflow-effect-shadow-contract.js';
+export {
+  createWorkflowEffectShadowHttpPublisher,
+  createWorkflowEffectShadowObservationPort,
+  isWorkflowEffectShadowObservationPort,
+  isWorkflowEffectShadowPublisherPort,
+  WorkflowEffectShadowRuntimeError,
+} from './workflow-effect-shadow.js';
+export type {
+  CreateWorkflowEffectShadowHttpPublisherOptions,
+  CreateWorkflowEffectShadowObservationPortOptions,
+  WorkflowEffectShadowDiagnostic,
+  WorkflowEffectShadowObservationPort,
+  WorkflowEffectShadowPublisherPort,
+} from './workflow-effect-shadow.js';
 export type {
   WorkflowControlAuthorityDirection,
   WorkflowControlAuthorityErrorCode,

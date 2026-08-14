@@ -43,6 +43,12 @@ ORDER BY table_name`)
 		"workflow_control_checkpoint_shadow_observations",
 		"workflow_control_checkpoint_shadow_receipts",
 		"workflow_control_checkpoint_shadow_reconciliations",
+		"workflow_control_effect_shadow_heads",
+		"workflow_control_effect_shadow_observations",
+		"workflow_control_effect_shadow_outbox",
+		"workflow_control_effect_shadow_receipts",
+		"workflow_control_effect_shadow_reconciliation_resolutions",
+		"workflow_control_effect_shadow_reconciliations",
 		"workflow_control_outbox",
 		"workflow_control_reconciliations",
 		"workflow_control_runs",
@@ -85,6 +91,11 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_checkpoint_shadow_observations',
 	      'workflow_control_checkpoint_shadow_receipts',
 	      'workflow_control_checkpoint_shadow_reconciliations',
+	      'workflow_control_effect_shadow_observations',
+	      'workflow_control_effect_shadow_receipts',
+	      'workflow_control_effect_shadow_outbox',
+	      'workflow_control_effect_shadow_reconciliations',
+	      'workflow_control_effect_shadow_reconciliation_resolutions',
 	      'workflow_control_shadow_observations',
 	      'workflow_control_shadow_receipts',
 	      'workflow_runner_job_receipts',
@@ -97,9 +108,40 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 27 {
-		t.Fatalf("immutable trigger coverage = %d, want 27 event rows", triggerEvents)
+	if triggerEvents != 37 {
+		t.Fatalf("immutable trigger coverage = %d, want 37 event rows", triggerEvents)
 	}
+}
+
+func TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
+	t.Run("empty namespace is independently removable", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		if _, err := pool.Exec(context.Background(), effectShadowDownMigration(t)); err != nil {
+			t.Fatal(err)
+		}
+		var effectTables, priorTables int
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name LIKE 'workflow_control_effect_shadow_%'`).Scan(&effectTables); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('workflow_control_checkpoint_shadow_heads','workflow_control_runs','workflow_runner_jobs')`).Scan(&priorTables); err != nil {
+			t.Fatal(err)
+		}
+		if effectTables != 0 || priorTables != 3 {
+			t.Fatalf("effect=%d prior=%d", effectTables, priorTables)
+		}
+	})
+	t.Run("evidence prevents destructive rollback", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		_, err := pool.Exec(context.Background(), `INSERT INTO workflow_control_effect_shadow_heads (workspace_id,run_id,occurrence_id,approval_id,last_source_sequence,last_operation,last_observation_hash,mismatch_latched,mismatch_code,service_build_hash) VALUES ('workspace','run','WFOCCURRENCE-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','WFAPPROVAL-test',1,'approval_created',decode(repeat('11',32),'hex'),true,'INITIAL_SEQUENCE_MISMATCH',decode(repeat('22',32),'hex'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(context.Background(), effectShadowDownMigration(t)); err == nil {
+			t.Fatal("non-empty effect shadow rollback unexpectedly succeeded")
+		} else {
+			requireSQLState(t, err, "P0001")
+		}
+	})
 }
 
 func TestCheckpointShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
@@ -408,6 +450,20 @@ func checkpointShadowDownMigration(t *testing.T) string {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read GS9-C down migration: %v", err)
+	}
+	return string(body)
+}
+
+func effectShadowDownMigration(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve migration test source path")
+	}
+	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000005_create_workflow_control_effect_shadow.down.sql"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read GS9-D down migration: %v", err)
 	}
 	return string(body)
 }

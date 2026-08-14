@@ -3,9 +3,9 @@ set -euo pipefail
 
 profile="${1:-}"
 case "$profile" in
-  gs9b-authority|gs9c-checkpoint) ;;
+  gs9b-authority|gs9c-checkpoint|gs9d-effect) ;;
   *)
-    echo "usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint}" >&2
+    echo "usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect}" >&2
     exit 2
     ;;
 esac
@@ -85,6 +85,19 @@ case "$profile" in
     WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA="$restart_schema" \
       go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CRestartQualification$' -count=1
     ;;
+  gs9d-effect)
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_WORKSPACE_ID=workspace.demo
+    export WORKFLOW_CONTROL_EFFECT_SHADOW_CALLER_ID=typescript:workflow-effect-shadow
+    go test -race ./internal/effectshadowapp ./internal/effectshadowstore/... ./internal/config ./tests/contracts ./tests/integration -count=1
+    WORKFLOW_CONTROL_GS9D_QUALIFICATION=1 go test -race ./cmd/effect-shadow-server -run '^TestGS9DQualification$' -count=1
+    restart_schema="workflow_control_gs9d_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+    WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA="$restart_schema" \
+      go test -race ./cmd/effect-shadow-server -run '^TestGS9DRestartQualification$' -count=1
+    ;;
 esac
 
 docker restart "$postgres_container" >/dev/null
@@ -99,5 +112,9 @@ case "$profile" in
   gs9c-checkpoint)
     WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA="$restart_schema" \
       go test -race ./cmd/checkpoint-shadow-server -run '^TestGS9CRestartQualification$' -count=1
+    ;;
+  gs9d-effect)
+    WORKFLOW_CONTROL_GS9D_RESTART_PHASE=verify WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA="$restart_schema" \
+      go test -race ./cmd/effect-shadow-server -run '^TestGS9DRestartQualification$' -count=1
     ;;
 esac
