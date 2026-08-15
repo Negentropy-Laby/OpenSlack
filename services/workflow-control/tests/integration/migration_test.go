@@ -257,7 +257,7 @@ func budgetMigrationAccount(t *testing.T, accountRevision int64) ([]byte, []byte
 			"authorityBuildHash": strings.Repeat("1", 64),
 		},
 		"accountRevision": accountRevision, "runRevision": int64(1),
-		"limit": budgetcontract.Record{"tokens": "1", "nanoUsd": "1", "calls": "1"},
+		"limit":    budgetcontract.Record{"tokens": "1", "nanoUsd": "1", "calls": "1"},
 		"reserved": zero, "settled": zero, "updatedAt": "2026-08-15T00:00:00.000Z",
 	})
 	if err != nil {
