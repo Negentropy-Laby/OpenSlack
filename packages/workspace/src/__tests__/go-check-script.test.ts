@@ -2108,7 +2108,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   writeFileSync(join(moduleRoot, 'cmd/budget-authority-server/main.go'), 'package main\n', 'utf8');
   writeFileSync(
     join(moduleRoot, 'cmd/budget-authority-server/main_test.go'),
-    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerRequiresSchemaVersionSixOnly(t *testing.T) {}\n',
+    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughSeven(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
