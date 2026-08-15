@@ -2256,7 +2256,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   );
   writeFileSync(
     join(moduleRoot, 'internal/databaseready/databaseready_test.go'),
-    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationSixWithoutRaisingExistingMinimums(t *testing.T) {}\n',
+    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationSevenWithoutRaisingExistingMinimums(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
