@@ -127,7 +127,7 @@ DROP TABLE workflow_control_budget_ledger;
 DROP TABLE workflow_control_budget_accounts;`); err != nil {
 		t.Fatalf("remove empty later budget namespace: %v", err)
 	}
-	repository := New(pool)
+	repository := New(pool, 3)
 	accept := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
 	if _, err := repository.Mutate(context.Background(), accept); err != nil {
 		t.Fatalf("accept without budget namespace: %v", err)
