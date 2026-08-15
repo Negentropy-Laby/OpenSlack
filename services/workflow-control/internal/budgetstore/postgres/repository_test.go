@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -339,6 +340,59 @@ func TestBudgetStoreResponseLossRecovery(t *testing.T) {
 	}
 }
 
+func TestBudgetStoreDatabaseReconciliationResponseLossReplaysLatchedRun(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	seedRun(t, pool, 4)
+	rollbackUnknown := func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.Rollback(ctx); err != nil {
+			return err
+		}
+		return errors.New("database outcome unavailable")
+	}
+	commitThenLoseResponse := func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
+		return errors.New("database reconciliation response lost")
+	}
+	input := reserveInput(t, testSeed, 0, 4, "1", "100")
+	result, err := NewWithCommitters(pool, rollbackUnknown, commitThenLoseResponse).Reserve(context.Background(), input)
+	if err != nil || result.Status != "database_reconciliation_required" {
+		t.Fatalf("database reconciliation response-loss result=%#v err=%v", result, err)
+	}
+	replay, err := New(pool).Reserve(context.Background(), input)
+	if err != nil || !replay.Replay || replay.ReceiptID != result.ReceiptID ||
+		!bytes.Equal(replay.ExactReceiptBytes, result.ExactReceiptBytes) || !bytes.Equal(replay.ExactResponseBytes, result.ExactResponseBytes) {
+		t.Fatalf("database reconciliation exact replay=%#v err=%v", replay, err)
+	}
+	assertRunRecord(t, pool, 5, authoritycontract.RunReconciliationRequired)
+}
+
+func TestBudgetStoreDatabaseReconciliationRejectsRunDriftWithoutLatch(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	seedRun(t, pool, 4)
+	input := reserveInput(t, testSeed, 0, 4, "1", "100")
+	repository := NewWithCommitter(pool, func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.Rollback(ctx); err != nil {
+			return err
+		}
+		transition := authorityTransitionInput(t, 4, authoritycontract.RunRunning, authoritycontract.RunCompleted)
+		if _, err := authoritypostgres.New(pool).Mutate(context.Background(), transition); err != nil {
+			return err
+		}
+		return errors.New("database outcome unavailable after run drift")
+	})
+	result, err := repository.Reserve(context.Background(), input)
+	if !budgetstore.IsCode(err, budgetstore.ErrorCommitUnknown) || result.Receipt != nil {
+		t.Fatalf("run-drift reconciliation result=%#v err=%v", result, err)
+	}
+	statistics, statsErr := New(pool).Statistics(context.Background())
+	if statsErr != nil || statistics != (budgetstore.Statistics{}) {
+		t.Fatalf("run-drift reconciliation left budget evidence: %#v err=%v", statistics, statsErr)
+	}
+	assertRunRecord(t, pool, 5, authoritycontract.RunCompleted)
+}
+
 func TestBudgetStoreProviderAndDatabaseUnknownAreSeparate(t *testing.T) {
 	t.Run("provider unknown advances and latches run", func(t *testing.T) {
 		pool := openBudgetPostgres(t)
@@ -387,16 +441,16 @@ func TestBudgetStoreProviderAndDatabaseUnknownAreSeparate(t *testing.T) {
 		if statistics.Accounts != 0 || statistics.LedgerEntries != 0 || statistics.OpenDatabaseReconciliations != 1 || statistics.ProviderReconciliations != 0 {
 			t.Fatalf("database unknown crossed mutation boundary: %#v", statistics)
 		}
-		assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
-		blocked := reserveInput(t, testSeed, 0, 4, "2", "100")
+		assertRunRecord(t, pool, 5, authoritycontract.RunReconciliationRequired)
+		blocked := reserveInput(t, testSeed, 0, 5, "2", "100")
 		if _, err := New(pool).Reserve(context.Background(), blocked); !budgetstore.IsCode(err, budgetstore.ErrorReconciliation) {
 			t.Fatalf("open database reconciliation did not gate run: %v", err)
 		}
-		transition := authorityTransitionInput(t, 4, authoritycontract.RunRunning, authoritycontract.RunCompleted)
+		transition := authorityTransitionInput(t, 5, authoritycontract.RunReconciliationRequired, authoritycontract.RunFailed)
 		if _, err := authoritypostgres.New(pool).Mutate(context.Background(), transition); !authoritystore.IsCode(err, authoritystore.ErrorConflict) {
 			t.Fatalf("open budget database reconciliation did not gate the shared run authority: %v", err)
 		}
-		assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
+		assertRunRecord(t, pool, 5, authoritycontract.RunReconciliationRequired)
 	})
 }
 
@@ -417,6 +471,7 @@ func TestBudgetStoreDoubleUnknownFailsClosed(t *testing.T) {
 	if statistics.Accounts != 0 || statistics.LedgerEntries != 0 || statistics.Receipts != 0 || statistics.OpenDatabaseReconciliations != 0 {
 		t.Fatalf("double unknown left unproven durable evidence: %#v", statistics)
 	}
+	assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
 }
 
 func TestBudgetStoreSettledReservationCannotSettleTwice(t *testing.T) {
@@ -707,6 +762,64 @@ func TestBudgetStoreReservationCloseTimeBindsTerminalLedger(t *testing.T) {
 	}
 }
 
+func TestBudgetStoreRebuildQueryCountIsIndependentOfLedgerLength(t *testing.T) {
+	measure := func(entries int) int64 {
+		tracer := &queryCountTracer{}
+		pool := testsupport.OpenPostgresWithTracer(t, tracer)
+		seedRun(t, pool, 4)
+		repository := New(pool)
+		for index := 1; index <= entries; index++ {
+			if _, err := repository.Reserve(context.Background(), reserveInput(t, testSeed, int64(index-1), int64(index+3), strconv.Itoa(index), "100")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tracer.count.Store(0)
+		if _, err := repository.RebuildAccount(context.Background(), testWorkspace, testRun); err != nil {
+			t.Fatal(err)
+		}
+		return tracer.count.Load()
+	}
+	one := measure(1)
+	three := measure(3)
+	if one == 0 || three != one {
+		t.Fatalf("rebuild query count grew with ledger length: one=%d three=%d", one, three)
+	}
+}
+
+func TestBudgetStoreMigrationIndexesMatchPointReadAndRebuildAccess(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	rows, err := pool.Query(context.Background(), `
+SELECT indexname,indexdef
+FROM pg_indexes
+WHERE schemaname=current_schema()
+  AND tablename IN ('workflow_control_budget_ledger','workflow_control_budget_receipts')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	indexes := map[string]string{}
+	for rows.Next() {
+		var name, definition string
+		if err := rows.Scan(&name, &definition); err != nil {
+			t.Fatal(err)
+		}
+		indexes[name] = definition
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := indexes["workflow_control_budget_ledger_run_idx"]; exists {
+		t.Fatal("redundant workflow budget ledger run index is still present")
+	}
+	if definition := indexes["workflow_control_budget_ledger_hash_key"]; !strings.Contains(definition, "UNIQUE") || !strings.Contains(definition, "(ledger_hash)") {
+		t.Fatalf("ledger hash point-read index=%q", definition)
+	}
+	if definition := indexes["workflow_control_budget_receipts_ledger_binding_idx"]; !strings.Contains(definition, "UNIQUE") ||
+		!strings.Contains(definition, "(workspace_id, run_id, ledger_entry_hash)") || !strings.Contains(definition, "ledger_entry_hash IS NOT NULL") {
+		t.Fatalf("receipt ledger binding index=%q", definition)
+	}
+}
+
 func TestBudgetStoreReservationTerminalShapeIsClosed(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -744,6 +857,46 @@ func TestBudgetStoreInt64RoundingAndOverflow(t *testing.T) {
 	}
 	if err := budgetstore.ValidateQualificationSeed(budgetstore.QualificationSeed{PolicyHash: testPolicy, Limit: budgetstore.Quantities{Tokens: "9223372036854775808", NanoUSD: "1", Calls: "1"}}); err == nil {
 		t.Fatal("overflowing qualification seed was accepted")
+	}
+}
+
+func TestBudgetStoreAccountRunRevisionDriftIsAConflict(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	seedRun(t, pool, 4)
+	repository := New(pool)
+	if _, err := repository.Reserve(context.Background(), reserveInput(t, testSeed, 0, 4, "1", "100")); err != nil {
+		t.Fatal(err)
+	}
+	rewriteRunRevision(t, pool, 6)
+	if _, err := repository.Reserve(context.Background(), reserveInput(t, testSeed, 1, 6, "2", "100")); !budgetstore.IsCode(err, budgetstore.ErrorConflict) || budgetstore.IsCode(err, budgetstore.ErrorIntegrity) {
+		t.Fatalf("account/run revision drift err=%v, want conflict", err)
+	}
+	assertRunRecord(t, pool, 6, authoritycontract.RunRunning)
+}
+
+func TestBudgetStoreImmutableAccountBindingDriftIsIntegrityFailure(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	seedRun(t, pool, 4)
+	repository := New(pool)
+	if _, err := repository.Reserve(context.Background(), reserveInput(t, testSeed, 0, 4, "1", "100")); err != nil {
+		t.Fatal(err)
+	}
+	account, err := repository.ReadAccount(context.Background(), testWorkspace, testRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account.Value["policyHash"] = strings.Repeat("9", 64)
+	_, exact, hash, err := exactDurableRecord(budgetstore.RecordKindAccount, account.Value, testBuild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamper(t, pool,
+		`ALTER TABLE workflow_control_budget_accounts DISABLE TRIGGER workflow_control_budget_accounts_transition`,
+		`UPDATE workflow_control_budget_accounts SET policy_hash=$1,account_hash=$2,canonical_account_bytes=$3 WHERE workspace_id=$4 AND run_id=$5`,
+		`ALTER TABLE workflow_control_budget_accounts ENABLE TRIGGER workflow_control_budget_accounts_transition`,
+		mustDecodeHash(strings.Repeat("9", 64)), mustDecodeHash(hash), exact, testWorkspace, testRun)
+	if _, err := repository.Reserve(context.Background(), reserveInput(t, testSeed, 1, 5, "2", "100")); !budgetstore.IsCode(err, budgetstore.ErrorIntegrity) {
+		t.Fatalf("immutable account binding drift err=%v, want integrity", err)
 	}
 }
 
@@ -940,6 +1093,23 @@ func TestBudgetStoreIntegrityFailure(t *testing.T) {
 			`ALTER TABLE workflow_control_runs ENABLE TRIGGER workflow_control_runs_transition`, testWorkspace, testRun)
 		if _, err := New(pool).Reserve(context.Background(), reserveInput(t, testSeed, 0, 4, "1", "100")); !budgetstore.IsCode(err, budgetstore.ErrorIntegrity) {
 			t.Fatalf("corrupt run err=%v", err)
+		}
+	})
+	t.Run("run trailing JSON value", func(t *testing.T) {
+		pool := openBudgetPostgres(t)
+		seedRun(t, pool, 4)
+		var exact []byte
+		if err := pool.QueryRow(context.Background(), `SELECT canonical_record_bytes FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, testWorkspace, testRun).Scan(&exact); err != nil {
+			t.Fatal(err)
+		}
+		exact = append(exact, []byte("{}\n")...)
+		digest := sha256.Sum256(exact)
+		tamper(t, pool,
+			`ALTER TABLE workflow_control_runs DISABLE TRIGGER workflow_control_runs_transition`,
+			`UPDATE workflow_control_runs SET record_hash=$1,canonical_record_bytes=$2 WHERE workspace_id=$3 AND run_id=$4`,
+			`ALTER TABLE workflow_control_runs ENABLE TRIGGER workflow_control_runs_transition`, digest[:], exact, testWorkspace, testRun)
+		if _, err := New(pool).Reserve(context.Background(), reserveInput(t, testSeed, 0, 4, "1", "100")); !budgetstore.IsCode(err, budgetstore.ErrorIntegrity) || !strings.Contains(err.Error(), "trailing content") {
+			t.Fatalf("run trailing JSON err=%v", err)
 		}
 	})
 }
@@ -1142,6 +1312,38 @@ func assertRunRecord(t testing.TB, pool *pgxpool.Pool, revision int64, state aut
 		t.Fatalf("run record scalar/exact mismatch: scalar=(%d,%s) record=%#v", scalarRevision, scalarState, record)
 	}
 }
+
+func rewriteRunRevision(t testing.TB, pool *pgxpool.Pool, revision int64) {
+	t.Helper()
+	var exact []byte
+	if err := pool.QueryRow(context.Background(), `SELECT canonical_record_bytes FROM workflow_control_runs WHERE workspace_id=$1 AND run_id=$2`, testWorkspace, testRun).Scan(&exact); err != nil {
+		t.Fatal(err)
+	}
+	var record authoritystore.RunRecord
+	if err := strictJSON(exact, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.Revision = revision
+	canonical, err := canonicaljson.Encode(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical = append(canonical, '\n')
+	digest := sha256.Sum256(canonical)
+	tamper(t, pool,
+		`ALTER TABLE workflow_control_runs DISABLE TRIGGER workflow_control_runs_transition`,
+		`UPDATE workflow_control_runs SET revision=$1,record_hash=$2,canonical_record_bytes=$3 WHERE workspace_id=$4 AND run_id=$5`,
+		`ALTER TABLE workflow_control_runs ENABLE TRIGGER workflow_control_runs_transition`, revision, digest[:], canonical, testWorkspace, testRun)
+}
+
+type queryCountTracer struct{ count atomic.Int64 }
+
+func (tracer *queryCountTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+	tracer.count.Add(1)
+	return ctx
+}
+
+func (*queryCountTracer) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
 func strictJSON(exact []byte, destination any) error {
 	if len(exact) == 0 || exact[len(exact)-1] != '\n' {

@@ -1030,6 +1030,11 @@ run head as the global CAS boundary while maintaining an independent account rev
 reserve, durable rejection, and settlement advances both revisions exactly once and writes a
 budget ledger entry as the source for the accepted run revision; it does not write a transition
 event or reuse runner/checkpoint/effect state.
+
+If another writer advances a running run without advancing the E2 account, the account/run
+revision mismatch is a conflict and E2 does not rebase it. GS9-F must explicitly coordinate that
+future writer.
+
 The account preserves a canonical genesis anchor. Restart recovery folds every closed ledger kind
 from that anchor, verifies each provider-attempt ledger entry against its exact provider-usage
 receipt, and requires the rebuilt account bytes/hash to match the current head.
@@ -1047,8 +1052,10 @@ reservation locks, route/state/revision/policy/limit checks, reservation plus le
 run CAS, exact receipt/response, then commit. Same-key replay is byte-identical and mutation-free;
 that replay is returned before the active build and policy checks;
 same-key fingerprint drift and new-key semantic provider-turn duplication conflict. Unprovable
-commit outcomes first point-read the receipt and otherwise leave immutable reconciliation rather
-than speculative budget state.
+database commit recovery rereads the run under the shared lock and atomically latches it at the
+next revision in `reconciliation_required` only when the original mutation is absent and the run
+still matches the request. Its receipt keeps accepted revisions null; drift or a second unknown
+commit leaves no unproved latch.
 
 The first qualification account is initialized from a fixed, non-secret process `BudgetSeed`
 (policy hash and three canonical limits), never from an HTTP request. A production initial-policy

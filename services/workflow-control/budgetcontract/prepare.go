@@ -18,19 +18,55 @@ func operationPath(operation string) (string, error) {
 }
 
 func PrepareRequest(operation string, requestValue any, callerIDValue string) (PreparedRequest, error) {
-	var request Record
-	var err error
-	switch operation {
-	case "reserve":
-		request, err = ValidateReserveRequest(requestValue)
-	case "settle":
-		request, err = ValidateSettlementRequest(requestValue)
-	default:
-		return PreparedRequest{}, failure(ErrorInvalid, "$/operation", "$/operation is outside the closed vocabulary.")
-	}
+	request, err := validateOperationRequest(operation, requestValue)
 	if err != nil {
 		return PreparedRequest{}, err
 	}
+	return prepareValidatedRequest(operation, request, callerIDValue)
+}
+
+// PrepareRequestBytes validates an exact canonical request body once and
+// returns both the prepared transport binding and its validated record. This
+// is the HTTP trust-boundary entry point; callers do not need to parse or
+// validate the same body again before handing it to the durable store.
+func PrepareRequestBytes(operation string, bodyBytes []byte, callerIDValue string) (PreparedRequest, Record, error) {
+	if len(bodyBytes) == 0 || len(bodyBytes) > MaxRecordBytes || bodyBytes[len(bodyBytes)-1] != '\n' || (len(bodyBytes) > 1 && bodyBytes[len(bodyBytes)-2] == '\n') {
+		return PreparedRequest{}, nil, failure(ErrorInvalid, "$/body", "Prepared request body framing is invalid.")
+	}
+	parsed, err := ParseBytes(bodyBytes[:len(bodyBytes)-1])
+	if err != nil {
+		return PreparedRequest{}, nil, err
+	}
+	request, err := validateOperationRequest(operation, parsed)
+	if err != nil {
+		return PreparedRequest{}, nil, err
+	}
+	canonical, err := CanonicalJSON(request)
+	if err != nil {
+		return PreparedRequest{}, nil, err
+	}
+	if canonical+"\n" != string(bodyBytes) {
+		return PreparedRequest{}, nil, failure(ErrorHashMismatch, "$/body", "Prepared request body is not canonical.")
+	}
+	prepared, err := prepareValidatedRequest(operation, request, callerIDValue)
+	if err != nil {
+		return PreparedRequest{}, nil, err
+	}
+	return prepared, request, nil
+}
+
+func validateOperationRequest(operation string, requestValue any) (Record, error) {
+	switch operation {
+	case "reserve":
+		return ValidateReserveRequest(requestValue)
+	case "settle":
+		return ValidateSettlementRequest(requestValue)
+	default:
+		return nil, failure(ErrorInvalid, "$/operation", "$/operation is outside the closed vocabulary.")
+	}
+}
+
+func prepareValidatedRequest(operation string, request Record, callerIDValue string) (PreparedRequest, error) {
 	callerID, err := identifier(callerIDValue, "$/callerId")
 	if err != nil {
 		return PreparedRequest{}, err
@@ -44,10 +80,17 @@ func PrepareRequest(operation string, requestValue any, callerIDValue string) (P
 	requestHash := hex.EncodeToString(digest[:])
 	path, _ := operationPath(operation)
 	fingerprintHash, _ := hashValue("request-fingerprint", Record{"callerId": callerID, "method": "POST", "operation": operation, "path": path, "requestHash": requestHash, "workspaceId": request["workspaceId"]})
-	return ValidatePreparedRequest(PreparedRequest{Schema: SchemaPreparedRequest, Operation: operation, Method: "POST", Path: path, CallerID: callerID, Body: body, RequestHash: requestHash, IdempotencyKey: IdempotencyPrefix + requestHash, RequestFingerprint: "sha256:" + fingerprintHash})
+	return PreparedRequest{Schema: SchemaPreparedRequest, Operation: operation, Method: "POST", Path: path, CallerID: callerID, Body: body, RequestHash: requestHash, IdempotencyKey: IdempotencyPrefix + requestHash, RequestFingerprint: "sha256:" + fingerprintHash}, nil
 }
 
 func ValidatePreparedRequest(value any) (PreparedRequest, error) {
+	prepared, _, err := ValidatePreparedRequestRecord(value)
+	return prepared, err
+}
+
+// ValidatePreparedRequestRecord validates a prepared request and returns the
+// exact request record decoded from its canonical body in the same pass.
+func ValidatePreparedRequestRecord(value any) (PreparedRequest, Record, error) {
 	var raw Record
 	switch value := value.(type) {
 	case PreparedRequest:
@@ -59,80 +102,75 @@ func ValidatePreparedRequest(value any) (PreparedRequest, error) {
 		}
 	case *PreparedRequest:
 		if value == nil {
-			return PreparedRequest{}, failure(ErrorInvalid, "$", "$ must be a data object.")
+			return PreparedRequest{}, nil, failure(ErrorInvalid, "$", "$ must be a data object.")
 		}
-		return ValidatePreparedRequest(*value)
+		return ValidatePreparedRequestRecord(*value)
 	default:
 		var err error
 		raw, err = asRecord(value, "$")
 		if err != nil {
-			return PreparedRequest{}, err
+			return PreparedRequest{}, nil, err
 		}
 	}
 	root, err := closed(raw, []string{"schema", "operation", "method", "path", "callerId", "body", "requestHash", "idempotencyKey", "requestFingerprint"}, "$")
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	operation, err := enumString(root["operation"], []string{"reserve", "settle"}, "$/operation")
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	path, _ := operationPath(operation)
 	if _, err := literalString(root["path"], path, "$/path"); err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	callerID, err := identifier(root["callerId"], "$/callerId")
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	body, err := stringValue(root["body"], "$/body")
 	if err != nil || len([]byte(body)) > MaxRecordBytes || !strings.HasSuffix(body, "\n") || strings.HasSuffix(body, "\n\n") {
-		return PreparedRequest{}, failure(ErrorInvalid, "$/body", "Prepared request body framing is invalid.")
+		return PreparedRequest{}, nil, failure(ErrorInvalid, "$/body", "Prepared request body framing is invalid.")
 	}
 	parsed, err := ParseBytes([]byte(strings.TrimSuffix(body, "\n")))
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
-	var request Record
-	if operation == "reserve" {
-		request, err = ValidateReserveRequest(parsed)
-	} else {
-		request, err = ValidateSettlementRequest(parsed)
-	}
+	request, err := validateOperationRequest(operation, parsed)
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	canonical, _ := CanonicalJSON(request)
 	if canonical+"\n" != body {
-		return PreparedRequest{}, failure(ErrorHashMismatch, "$/body", "Prepared request body is not canonical.")
+		return PreparedRequest{}, nil, failure(ErrorHashMismatch, "$/body", "Prepared request body is not canonical.")
 	}
 	requestHash, err := hash(root["requestHash"], "$/requestHash")
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	digest := sha256.Sum256([]byte(body))
 	if hex.EncodeToString(digest[:]) != requestHash {
-		return PreparedRequest{}, failure(ErrorHashMismatch, "$/requestHash", "Prepared request hash drifted.")
+		return PreparedRequest{}, nil, failure(ErrorHashMismatch, "$/requestHash", "Prepared request hash drifted.")
 	}
 	idempotency, err := stringValue(root["idempotencyKey"], "$/idempotencyKey")
 	if err != nil || idempotency != IdempotencyPrefix+requestHash {
-		return PreparedRequest{}, failure(ErrorHashMismatch, "$/idempotencyKey", "Idempotency key drifted.")
+		return PreparedRequest{}, nil, failure(ErrorHashMismatch, "$/idempotencyKey", "Idempotency key drifted.")
 	}
 	fingerprint, err := prefixedHash(root["requestFingerprint"], "$/requestFingerprint")
 	if err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	fingerprintHash, _ := hashValue("request-fingerprint", Record{"callerId": callerID, "method": "POST", "operation": operation, "path": path, "requestHash": requestHash, "workspaceId": request["workspaceId"]})
 	if fingerprint != "sha256:"+fingerprintHash {
-		return PreparedRequest{}, failure(ErrorHashMismatch, "$/requestFingerprint", "Request fingerprint drifted.")
+		return PreparedRequest{}, nil, failure(ErrorHashMismatch, "$/requestFingerprint", "Request fingerprint drifted.")
 	}
 	if _, err := literalString(root["schema"], SchemaPreparedRequest, "$/schema"); err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
 	if _, err := literalString(root["method"], "POST", "$/method"); err != nil {
-		return PreparedRequest{}, err
+		return PreparedRequest{}, nil, err
 	}
-	return PreparedRequest{Schema: SchemaPreparedRequest, Operation: operation, Method: "POST", Path: path, CallerID: callerID, Body: body, RequestHash: requestHash, IdempotencyKey: idempotency, RequestFingerprint: fingerprint}, nil
+	return PreparedRequest{Schema: SchemaPreparedRequest, Operation: operation, Method: "POST", Path: path, CallerID: callerID, Body: body, RequestHash: requestHash, IdempotencyKey: idempotency, RequestFingerprint: fingerprint}, request, nil
 }
 
 func ValidateReceiptForRequest(receiptValue, preparedValue any) (Record, error) {
@@ -140,20 +178,7 @@ func ValidateReceiptForRequest(receiptValue, preparedValue any) (Record, error) 
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := ValidatePreparedRequest(preparedValue)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := ParseBytes([]byte(strings.TrimSuffix(prepared.Body, "\n")))
-	if err != nil {
-		return nil, err
-	}
-	var request Record
-	if prepared.Operation == "reserve" {
-		request, err = ValidateReserveRequest(parsed)
-	} else {
-		request, err = ValidateSettlementRequest(parsed)
-	}
+	prepared, request, err := ValidatePreparedRequestRecord(preparedValue)
 	if err != nil {
 		return nil, err
 	}

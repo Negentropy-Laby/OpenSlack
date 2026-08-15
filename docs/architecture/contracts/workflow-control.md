@@ -535,6 +535,9 @@ independent account revision by one. The append-only budget ledger is the source
 revision, so no Workflow transition event is emitted. Ledger, receipt, and any known provider
 reconciliation commit together.
 
+An account/run revision mismatch caused by another run writer is a conflict, not an integrity
+alarm, and E2 does not rebase it; GS9-F must coordinate future running-run revision writers.
+
 That first account is initialized only from a fixed, non-secret `BudgetSeed` in the
 `local-qualification-v1` process composition: policy hash plus token, nano-USD, and call limits.
 The seed is not part of the HTTP wire and is not a production initial-policy source.
@@ -544,8 +547,10 @@ the original response bytes before active build or policy checks and without add
 evidence; a different fingerprint conflicts.
 Semantic uniqueness on reservation, call, and provider attempt rejects a duplicate provider turn
 under a new key. An ambiguous database commit first recovers the exact receipt and otherwise records
-an immutable database reconciliation that blocks later mutations for that run. Provider-outcome
-reconciliation remains a distinct, known transaction result.
+an immutable database reconciliation only after rereading the request-bound run head under the
+shared lock. That transaction advances the run once to `reconciliation_required` while leaving the
+receipt's accepted revisions null; run drift or a second unknown recovery commit leaves no
+unproved latch. Provider-outcome reconciliation remains a distinct, known transaction result.
 It keeps the unresolved reservation open and latches the run. A settled reservation's close time
 must equal its terminal ledger time. The shared GS9-B run writer checks an open budget
 database-commit reconciliation under the same run lock, preventing another authority path from

@@ -133,18 +133,9 @@ func readMutationResult(ctx context.Context, source queryer, key string, optiona
 			return budgetstore.MutationResult{}, nil, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget receipt digest length is invalid", nil)
 		}
 	}
-	receiptOuter, err := budgetstore.DecodeDurableRecord(result.ExactReceiptBytes)
-	if err != nil || receiptOuter.RecordKind != budgetstore.RecordKindReceipt {
-		return budgetstore.MutationResult{}, nil, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget receipt bytes are invalid", err)
-	}
-	receipt := receiptOuter.OperationalProjection
-	response, err := budgetstore.DecodeMutationResponse(result.ExactResponseBytes)
+	receiptOuter, receipt, response, err := decodeReceiptAndResponse(result.ExactReceiptBytes, result.ExactResponseBytes)
 	if err != nil {
 		return budgetstore.MutationResult{}, nil, err
-	}
-	receiptCanonical, _ := budgetstore.EncodeDurableRecord(response.Receipt)
-	if !bytes.Equal(receiptCanonical, result.ExactReceiptBytes) {
-		return budgetstore.MutationResult{}, nil, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget response receipt differs from exact receipt", nil)
 	}
 	if operation != receipt["operation"] || status != receipt["status"] || idempotencyKey != receipt["idempotencyKey"] ||
 		"sha256:"+hex.EncodeToString(fingerprint) != receipt["requestFingerprint"] || hex.EncodeToString(requestHash) != receipt["requestHash"] ||
@@ -245,6 +236,22 @@ func readMutationResult(ctx context.Context, source queryer, key string, optiona
 		result.Status = status
 	}
 	return result, append([]byte(nil), fingerprint...), nil
+}
+
+func decodeReceiptAndResponse(exactReceipt, exactResponse []byte) (budgetstore.DurableRecord, budgetcontract.Record, budgetstore.MutationResponse, error) {
+	receiptOuter, err := budgetstore.DecodeDurableRecord(exactReceipt)
+	if err != nil || receiptOuter.RecordKind != budgetstore.RecordKindReceipt {
+		return budgetstore.DurableRecord{}, nil, budgetstore.MutationResponse{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget receipt bytes are invalid", err)
+	}
+	response, err := budgetstore.DecodeMutationResponse(exactResponse)
+	if err != nil {
+		return budgetstore.DurableRecord{}, nil, budgetstore.MutationResponse{}, err
+	}
+	receiptCanonical, encodeErr := budgetstore.EncodeDurableRecord(response.Receipt)
+	if encodeErr != nil || !bytes.Equal(receiptCanonical, exactReceipt) {
+		return budgetstore.DurableRecord{}, nil, budgetstore.MutationResponse{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget response receipt differs from exact receipt", encodeErr)
+	}
+	return receiptOuter, receiptOuter.OperationalProjection, response, nil
 }
 
 func mapPointReadFailure(operation string, err error) error {

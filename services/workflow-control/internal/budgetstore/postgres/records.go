@@ -128,11 +128,14 @@ func initialAccountFromSeed(run runHead, request budgetcontract.Record, seed bud
 func validateAccountRunBinding(account budgetcontract.Record, run runHead, seed budgetstore.QualificationSeed) error {
 	limit := account["limit"].(budgetcontract.Record)
 	route := account["route"].(budgetcontract.Record)
-	if account["workspaceId"] != run.record.WorkspaceID || account["runId"] != run.record.RunID || account["runRevision"] != run.record.Revision ||
+	if account["workspaceId"] != run.record.WorkspaceID || account["runId"] != run.record.RunID ||
 		account["policyHash"] != seed.PolicyHash || route["backend"] != run.record.Route.Backend || route["authority"] != run.record.Route.Authority ||
 		route["routingEpoch"] != run.record.Route.RoutingEpoch || route["authorityBuildHash"] != run.record.Route.AuthorityBuildHash ||
 		limit["tokens"] != seed.Limit.Tokens || limit["nanoUsd"] != seed.Limit.NanoUSD || limit["calls"] != seed.Limit.Calls {
 		return budgetstore.Failure(budgetstore.ErrorIntegrity, "budget account does not match the workflow run and qualification seed", nil)
+	}
+	if account["runRevision"] != run.record.Revision {
+		return budgetstore.Failure(budgetstore.ErrorConflict, "workflow budget account revision does not match the workflow run revision", nil)
 	}
 	return nil
 }
@@ -160,11 +163,14 @@ func projectRunHead(current authoritystore.RunRecord, account budgetcontract.Rec
 
 func requireRunEOF(decoder *json.Decoder) error {
 	var extra any
-	if err := decoder.Decode(&extra); errors.Is(err, io.EOF) {
+	err := decoder.Decode(&extra)
+	if errors.Is(err, io.EOF) {
 		return nil
-	} else {
+	}
+	if err != nil {
 		return err
 	}
+	return fmt.Errorf("unexpected trailing JSON value")
 }
 
 func validRunRecord(value authoritystore.RunRecord) bool {
@@ -318,7 +324,7 @@ func insertReservation(ctx context.Context, tx pgx.Tx, value budgetcontract.Reco
 	openedAt, _ := time.Parse("2006-01-02T15:04:05.000Z", recordString(value, "openedAt"))
 	_, err = tx.Exec(ctx, reservationInsertSQL,
 		value["workspaceId"], value["runId"], value["accountId"], value["reservationId"], value["callId"], providerAttempt,
-		mustPrefixedHash(recordString(value, "expectedProviderHash")), mustPrefixedHash(recordString(value, "expectedModelHash")), mustPrefixedHash(recordString(value, "expectedProviderRunHash")),
+		mustDecodeHash(recordString(value, "expectedProviderHash")), mustDecodeHash(recordString(value, "expectedModelHash")), mustDecodeHash(recordString(value, "expectedProviderRunHash")),
 		mustDecodeHash(recordString(value, "policyHash")), route["backend"], route["authority"], route["routingEpoch"], mustDecodeHash(recordString(route, "authorityBuildHash")),
 		value["rateNanoUsdPerToken"], decimalInt64(reserved["tokens"]), decimalInt64(reserved["nanoUsd"]), decimalInt64(reserved["calls"]),
 		mustDecodeHash(recordString(value, "reserveDecisionHash")), value["openedAccountRevision"], value["openedRunRevision"], mustDecodeHash(hash), exact, openedAt,
@@ -391,7 +397,7 @@ func insertReceipt(ctx context.Context, tx pgx.Tx, receiptID string, prepared bu
 		committedAt, _ = time.Parse("2006-01-02T15:04:05.000Z", recordString(receipt, "committedAt"))
 	}
 	return tx.QueryRow(ctx, receiptInsertSQL,
-		receiptID, receipt["operation"], receipt["status"], prepared.IdempotencyKey, mustPrefixedHash(prepared.RequestFingerprint), mustDecodeHash(prepared.RequestHash),
+		receiptID, receipt["operation"], receipt["status"], prepared.IdempotencyKey, mustDecodeHash(prepared.RequestFingerprint), mustDecodeHash(prepared.RequestHash),
 		receipt["workspaceId"], receipt["runId"], receipt["accountId"], receipt["reservationId"], receipt["callId"], receipt["expectedAccountRevision"], acceptedAccount,
 		receipt["expectedRunRevision"], acceptedRun, recordHash, ledgerHash, receipt["correlationId"], mustDecodeHash(serviceBuildHash), committedAt, receipt["reconciliationToken"], exactReceipt, exactResponse,
 	)
@@ -402,7 +408,7 @@ func insertReconciliation(ctx context.Context, tx pgx.Tx, receiptID string, prep
 	observedAt, _ := time.Parse("2006-01-02T15:04:05.000Z", recordString(value, "observedAt"))
 	_, err := tx.Exec(ctx, reconciliationInsertSQL,
 		value["reconciliationToken"], receiptID, value["evidenceType"], value["reasonCode"], prepared.IdempotencyKey,
-		mustPrefixedHash(prepared.RequestFingerprint), mustDecodeHash(prepared.RequestHash), digest[:], value["workspaceId"], value["runId"], value["accountId"], value["reservationId"], value["callId"],
+		mustDecodeHash(prepared.RequestFingerprint), mustDecodeHash(prepared.RequestHash), digest[:], value["workspaceId"], value["runId"], value["accountId"], value["reservationId"], value["callId"],
 		mustDecodeHash(recordString(value, "accountHash")), mustDecodeHash(recordString(value, "reservationHash")), exact, observedAt,
 	)
 	if err != nil {

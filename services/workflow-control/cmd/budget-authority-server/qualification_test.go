@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,19 +30,67 @@ import (
 )
 
 const (
-	qualificationBuildSHA        = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	qualificationPolicySHA       = "89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef"
-	qualificationBearer          = "openslack-workflow-budget-gs9e-local-qualification"
-	qualificationCaller          = "typescript:workflow-budget-qualification"
-	qualificationWorkspace       = "workspace.gs9e"
-	qualificationRunID           = "run-gs9e-budget"
-	qualificationAccountID       = "account-gs9e-budget"
-	qualificationEpoch     int64 = 9
+	qualificationBearer    = "openslack-workflow-budget-gs9e-local-qualification"
+	qualificationRunID     = "run-gs9e-budget"
+	qualificationAccountID = "account-gs9e-budget"
 )
 
+var qualificationFixture = mustLoadQualificationFixture()
+var qualificationBuildSHA = qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA"]
+var qualificationPolicySHA = qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH"]
+var qualificationCaller = qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID"]
+var qualificationWorkspace = qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID"]
+var qualificationEpoch = mustFixtureInt64("WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH")
 var qualificationSeed = budgetstore.QualificationSeed{
 	PolicyHash: qualificationPolicySHA,
-	Limit:      budgetstore.Quantities{Tokens: "100000", NanoUSD: "1000000000", Calls: "100"},
+	Limit: budgetstore.Quantities{
+		Tokens:  qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS"],
+		NanoUSD: qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD"],
+		Calls:   qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS"],
+	},
+}
+
+func mustLoadQualificationFixture() map[string]string {
+	expected := []string{
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD",
+		"WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS",
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "gs9e-qualification.conf"))
+	if err != nil {
+		panic(err)
+	}
+	values := make(map[string]string, len(expected))
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || key == "" || value == "" || values[key] != "" {
+			panic("GS9-E qualification fixture is malformed")
+		}
+		values[key] = value
+	}
+	if len(values) != len(expected) {
+		panic("GS9-E qualification fixture is not closed")
+	}
+	for _, key := range expected {
+		if values[key] == "" {
+			panic("GS9-E qualification fixture is missing " + key)
+		}
+	}
+	return values
+}
+
+func mustFixtureInt64(key string) int64 {
+	value, err := strconv.ParseInt(qualificationFixture[key], 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	return value
 }
 
 func TestGS9EQualification(t *testing.T) {
@@ -100,7 +149,8 @@ func TestGS9EQualification(t *testing.T) {
 	}
 	ready := qualificationReadUnprotected(t, service.Handler(), budgetapp.RouteReady)
 	metrics := qualificationRead(t, service.Handler(), budgetapp.RouteMetrics)
-	if ready.Code != http.StatusOK || metrics.Code != http.StatusOK || strings.Count(metrics.Body.String(), "# TYPE ") != 15 {
+	metricValues := qualificationMetricValues(t, metrics.Body.String())
+	if ready.Code != http.StatusOK || metrics.Code != http.StatusOK || len(metricValues) != len(budgetapp.MetricNames()) {
 		t.Fatalf("qualification probe drift: ready=%d %s metrics=%d %s", ready.Code, ready.Body.String(), metrics.Code, metrics.Body.String())
 	}
 }
@@ -136,8 +186,9 @@ func TestGS9ERestartQualification(t *testing.T) {
 		}
 		account := qualificationRead(t, service.Handler(), "/v1/authority/workflow-budgets/runs/"+qualificationRunID+"/account")
 		metrics := qualificationRead(t, service.Handler(), budgetapp.RouteMetrics)
+		metricValues := qualificationMetricValues(t, metrics.Body.String())
 		if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), `"accountRevision":1`) ||
-			metrics.Code != http.StatusOK || !strings.Contains(metrics.Body.String(), "openslack_workflow_control_budget_ledger_entries 1\n") {
+			metrics.Code != http.StatusOK || metricValues["openslack_workflow_control_budget_ledger_entries"] != 1 {
 			t.Fatalf("restart durable rebuild failed: account=%d %s metrics=%d %s", account.Code, account.Body.String(), metrics.Code, metrics.Body.String())
 		}
 		pool.Close()
@@ -145,6 +196,30 @@ func TestGS9ERestartQualification(t *testing.T) {
 	default:
 		t.Fatalf("unknown GS9-E2 restart phase %q", phase)
 	}
+}
+
+func qualificationMetricValues(t testing.TB, body string) map[string]int64 {
+	t.Helper()
+	expectedNames := budgetapp.MetricNames()
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	if len(lines) != len(expectedNames)*2 {
+		t.Fatalf("metric line count=%d, want %d: %q", len(lines), len(expectedNames)*2, body)
+	}
+	values := make(map[string]int64, len(expectedNames))
+	for index, name := range expectedNames {
+		typeFields := strings.Fields(lines[index*2])
+		valueFields := strings.Fields(lines[index*2+1])
+		if len(typeFields) != 4 || typeFields[0] != "#" || typeFields[1] != "TYPE" || typeFields[2] != name ||
+			(typeFields[3] != "counter" && typeFields[3] != "gauge") || len(valueFields) != 2 || valueFields[0] != name {
+			t.Fatalf("metric %q has invalid definition/value lines", name)
+		}
+		value, err := strconv.ParseInt(valueFields[1], 10, 64)
+		if err != nil || value < 0 {
+			t.Fatalf("metric %q value=%q err=%v", name, valueFields[1], err)
+		}
+		values[name] = value
+	}
+	return values
 }
 
 func TestGS9EImageDefaultOff(t *testing.T) {
@@ -172,6 +247,9 @@ func TestGS9EImageDefaultOff(t *testing.T) {
 func qualificationService(t *testing.T, repository budgetstore.Repository) *budgetapp.Service {
 	t.Helper()
 	digest := sha256.Sum256([]byte(qualificationBearer))
+	if hex.EncodeToString(digest[:]) != qualificationFixture["WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256"] {
+		t.Fatal("qualification bearer digest drifted from the shared fixture")
+	}
 	service, err := budgetapp.New(budgetapp.Options{
 		Repository: repository, QualificationMode: true, BuildSHA: qualificationBuildSHA,
 		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: qualificationWorkspace,

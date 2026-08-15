@@ -81,5 +81,32 @@ func TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation(t *test
 	case <-time.After(5 * time.Second):
 		t.Fatal("authority mutation did not resume after reconciliation commit")
 	}
-	assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
+	assertRunRecord(t, pool, 5, authoritycontract.RunReconciliationRequired)
+}
+
+func TestAuthorityBudgetGateUsesValidatedStartupSchemaVersion(t *testing.T) {
+	t.Run("schema 3 skips the absent GS9-E table", func(t *testing.T) {
+		pool := openBudgetPostgres(t)
+		seedRun(t, pool, 4)
+		if _, err := pool.Exec(context.Background(), `ALTER TABLE workflow_control_budget_reconciliations RENAME TO workflow_control_budget_reconciliations_hidden`); err != nil {
+			t.Fatal(err)
+		}
+		transition := authorityTransitionInput(t, 4, authoritycontract.RunRunning, authoritycontract.RunCompleted)
+		if _, err := authoritypostgres.New(pool, 3).Mutate(context.Background(), transition); err != nil {
+			t.Fatalf("schema-3 authority unexpectedly queried the GS9-E gate: %v", err)
+		}
+		assertRunRecord(t, pool, 5, authoritycontract.RunCompleted)
+	})
+	t.Run("schema 6 fails if the required GS9-E table is absent", func(t *testing.T) {
+		pool := openBudgetPostgres(t)
+		seedRun(t, pool, 4)
+		if _, err := pool.Exec(context.Background(), `ALTER TABLE workflow_control_budget_reconciliations RENAME TO workflow_control_budget_reconciliations_hidden`); err != nil {
+			t.Fatal(err)
+		}
+		transition := authorityTransitionInput(t, 4, authoritycontract.RunRunning, authoritycontract.RunCompleted)
+		if _, err := authoritypostgres.New(pool, 6).Mutate(context.Background(), transition); !authoritystore.IsCode(err, authoritystore.ErrorDatabase) {
+			t.Fatalf("schema-6 authority missing-table err=%v, want %s", err, authoritystore.ErrorDatabase)
+		}
+		assertRunRecord(t, pool, 4, authoritycontract.RunRunning)
+	})
 }

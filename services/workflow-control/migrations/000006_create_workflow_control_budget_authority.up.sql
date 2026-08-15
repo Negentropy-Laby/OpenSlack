@@ -169,6 +169,7 @@ CREATE TABLE workflow_control_budget_ledger (
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
 	CONSTRAINT workflow_control_budget_ledger_account_revision_key UNIQUE (workspace_id, run_id, account_revision),
 	CONSTRAINT workflow_control_budget_ledger_run_revision_key UNIQUE (workspace_id, run_id, run_revision),
+	CONSTRAINT workflow_control_budget_ledger_hash_key UNIQUE (ledger_hash),
 	CONSTRAINT workflow_control_budget_ledger_account_fk FOREIGN KEY (workspace_id, run_id)
 		REFERENCES workflow_control_budget_accounts (workspace_id, run_id)
         DEFERRABLE INITIALLY DEFERRED
@@ -261,8 +262,9 @@ CREATE INDEX workflow_control_budget_receipts_run_idx
     ON workflow_control_budget_receipts (workspace_id, run_id, recorded_at);
 CREATE INDEX workflow_control_budget_reservations_open_idx
     ON workflow_control_budget_reservations (workspace_id, run_id, opened_at) WHERE status = 'open';
-CREATE INDEX workflow_control_budget_ledger_run_idx
-    ON workflow_control_budget_ledger (workspace_id, run_id, run_revision);
+CREATE UNIQUE INDEX workflow_control_budget_receipts_ledger_binding_idx
+    ON workflow_control_budget_receipts (workspace_id, run_id, ledger_entry_hash)
+    WHERE ledger_entry_hash IS NOT NULL;
 CREATE UNIQUE INDEX workflow_control_budget_ledger_reserve_reservation_idx
     ON workflow_control_budget_ledger (workspace_id, run_id, reservation_id)
     WHERE kind IN ('reserve_reserved', 'reserve_rejected');

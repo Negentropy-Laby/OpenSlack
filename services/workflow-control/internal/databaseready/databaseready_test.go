@@ -38,6 +38,10 @@ func TestRequireCleanSchemaAcceptsOneCleanVersionInRange(t *testing.T) {
 	if err := RequireCleanSchema(context.Background(), database, Range{Minimum: 2, Maximum: 4}); err != nil {
 		t.Fatal(err)
 	}
+	version, err := RequireCleanSchemaVersion(context.Background(), database, Range{Minimum: 2, Maximum: 4})
+	if err != nil || version != 3 {
+		t.Fatalf("schema version=%d err=%v", version, err)
+	}
 }
 
 func TestRequireCleanSchemaRejectsInvalidDatabaseStates(t *testing.T) {

@@ -19,6 +19,15 @@ const containerGateSource = readFileSync(
   join(repositoryRoot, 'scripts/go-check/container-gate.sh'),
   'utf8',
 );
+const gs9eQualificationFixture = Object.fromEntries(
+  readFileSync(
+    join(repositoryRoot, 'services/workflow-control/testdata/gs9e-qualification.conf'),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map((line) => line.split('=', 2) as [string, string]),
+);
 const temporaryRoots: string[] = [];
 const describeOnBashHosts = process.platform === 'win32' ? describe.skip : describe;
 
@@ -817,13 +826,22 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('WORKFLOW_CONTROL_GS9D_QUALIFICATION=1');
     expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1');
     expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085');
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10');
     expect(log).toContain(
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef',
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}`,
     );
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000');
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000');
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100');
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}`,
+    );
+    expect(goCheckSource).toContain('services/workflow-control/testdata/gs9e-qualification.conf');
     expect(log).toContain('WORKFLOW_CONTROL_GS9E_QUALIFICATION=1');
     expect(log).toContain('-run \\^TestGS9EQualification\\$');
     expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');
@@ -1973,9 +1991,17 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
     'internal/budgetstore/postgres',
     'internal/config',
     'internal/databaseready',
+    'testdata',
   ]) {
     mkdirSync(join(moduleRoot, directory), { recursive: true });
   }
+  writeFileSync(
+    join(moduleRoot, 'testdata/gs9e-qualification.conf'),
+    [...Object.entries(gs9eQualificationFixture).map(([key, value]) => `${key}=${value}`), ''].join(
+      '\n',
+    ),
+    'utf8',
+  );
   writeFileSync(join(moduleRoot, 'cmd/budget-authority-server/main.go'), 'package main\n', 'utf8');
   writeFileSync(
     join(moduleRoot, 'cmd/budget-authority-server/main_test.go'),
@@ -2051,6 +2077,8 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
       'func TestBudgetStoreRejectsNonzeroResumeGeneration(t *testing.T) {}',
       'func TestBudgetStoreRouteEpochAndBuildDriftConflictWithoutMutation(t *testing.T) {}',
       'func TestBudgetStoreResponseLossRecovery(t *testing.T) {}',
+      'func TestBudgetStoreDatabaseReconciliationResponseLossReplaysLatchedRun(t *testing.T) {}',
+      'func TestBudgetStoreDatabaseReconciliationRejectsRunDriftWithoutLatch(t *testing.T) {}',
       'func TestBudgetStoreProviderAndDatabaseUnknownAreSeparate(t *testing.T) {}',
       'func TestBudgetStoreDoubleUnknownFailsClosed(t *testing.T) {}',
       'func TestBudgetStoreSettledReservationCannotSettleTwice(t *testing.T) {}',
@@ -2060,8 +2088,12 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
       'func TestBudgetStoreGenesisAnchorIsImmutable(t *testing.T) {}',
       'func TestBudgetStoreKnownReceiptRequiresSafeAcceptedRevisions(t *testing.T) {}',
       'func TestBudgetStoreReservationCloseTimeBindsTerminalLedger(t *testing.T) {}',
+      'func TestBudgetStoreRebuildQueryCountIsIndependentOfLedgerLength(t *testing.T) {}',
+      'func TestBudgetStoreMigrationIndexesMatchPointReadAndRebuildAccess(t *testing.T) {}',
       'func TestBudgetStoreReservationTerminalShapeIsClosed(t *testing.T) {}',
       'func TestBudgetStoreInt64RoundingAndOverflow(t *testing.T) {}',
+      'func TestBudgetStoreAccountRunRevisionDriftIsAConflict(t *testing.T) {}',
+      'func TestBudgetStoreImmutableAccountBindingDriftIsIntegrityFailure(t *testing.T) {}',
       'func TestBudgetStoreIntegrityFailure(t *testing.T) {}',
       'func TestBudgetStoreLegacyApprovalCannotReserve(t *testing.T) {}',
       'var concurrencyCases = []struct { name string }{{name: "tokens only"}, {name: "nano usd only"}, {name: "calls only"}, {name: "combined"}}',
@@ -2072,7 +2104,15 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   );
   writeFileSync(
     join(moduleRoot, 'internal/budgetstore/postgres/cross_authority_test.go'),
-    'package postgres\n\nimport "testing"\n\nfunc TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation(t *testing.T) {}\n',
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation(t *testing.T) {}',
+      'func TestAuthorityBudgetGateUsesValidatedStartupSchemaVersion(t *testing.T) {}',
+      '',
+    ].join('\n'),
     'utf8',
   );
   writeFileSync(

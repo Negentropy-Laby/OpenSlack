@@ -58,11 +58,24 @@ func (repository *Repository) persistDatabaseReconciliation(ctx context.Context,
 	} else if !budgetstore.IsCode(readErr, budgetstore.ErrorNotFound) {
 		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "read workflow budget database reconciliation receipt", errors.Join(commitErr, readErr))
 	}
+	run, err := readRunHead(ctx, tx, recordString(request, "workspaceId"), recordString(request, "runId"))
+	if err != nil {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "lock workflow run for database reconciliation", errors.Join(commitErr, err))
+	}
+	if err := validateRunBinding(run, request, input.ServiceBuildHash); err != nil {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "workflow run drifted before database reconciliation could be proven", errors.Join(commitErr, err))
+	}
 	var observedAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT date_trunc('milliseconds', clock_timestamp())`).Scan(&observedAt); err != nil {
 		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "read workflow budget database reconciliation timestamp", errors.Join(commitErr, err))
 	}
 	observedText := canonicalTimestamp(observedAt)
+	projectedRun, runBytes, runHash, err := projectRunHead(run.record, budgetcontract.Record{
+		"runRevision": run.record.Revision + 1,
+	}, true)
+	if err != nil {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "project workflow run database reconciliation latch", errors.Join(commitErr, err))
+	}
 	reconciliation := authorityEnvelope()
 	for key, value := range (budgetcontract.Record{
 		"schema": budgetcontract.SchemaReconciliation, "evidenceType": "database_commit", "reasonCode": "database_commit_outcome_unknown",
@@ -114,6 +127,13 @@ func (repository *Repository) persistDatabaseReconciliation(ctx context.Context,
 	}
 	if err := insertReconciliation(ctx, tx, receiptID, input.Prepared, validatedReconciliation, reconciliationBytes); err != nil {
 		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "insert workflow budget database reconciliation evidence", errors.Join(commitErr, err))
+	}
+	tag, err := tx.Exec(ctx, runCASUpdateSQL, recordString(request, "workspaceId"), recordString(request, "runId"), run.record.Revision, string(run.record.State), mustDecodeHash(run.recordHash), string(projectedRun.State), projectedRun.Revision, mustDecodeHash(runHash), runBytes, observedAt)
+	if err != nil {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "latch workflow run database reconciliation", errors.Join(commitErr, err))
+	}
+	if tag.RowsAffected() != 1 {
+		return budgetstore.MutationResult{}, budgetstore.Failure(budgetstore.ErrorCommitUnknown, "workflow run database reconciliation compare-and-swap lost", commitErr)
 	}
 	result := budgetstore.MutationResult{
 		Operation: input.Prepared.Operation, Status: "database_reconciliation_required",

@@ -12,6 +12,33 @@ readonly BUILD_CACHE_VOLUME="openslack-go-check-build-go1-26-5-3aff6657219a"
 
 script_dir="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
 repo_root="$(cd -- "${script_dir}/.." && pwd -P)"
+
+load_workflow_budget_qualification_fixture() {
+  local fixture="${repo_root}/services/workflow-control/testdata/gs9e-qualification.conf"
+  local count key
+  local -a keys=(
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS
+  )
+  [[ -f "${fixture}" ]] || fail "Workflow Control GS9-E qualification fixture is missing"
+  [[ "$(grep -Ec '^[^[:space:]]' "${fixture}")" -eq "${#keys[@]}" ]] || fail "Workflow Control GS9-E qualification fixture contains unexpected entries"
+  count="$(grep -Ec '^[A-Z0-9_]+=[A-Za-z0-9:._-]+$' "${fixture}")"
+  [[ "${count}" -eq "${#keys[@]}" ]] || fail "Workflow Control GS9-E qualification fixture is not closed"
+  for key in "${keys[@]}"; do
+    [[ "$(grep -Ec "^${key}=" "${fixture}")" -eq 1 ]] || fail "Workflow Control GS9-E qualification fixture key drifted: ${key}"
+  done
+  set -a
+  # shellcheck disable=SC1090 -- the path and closed keys are validated above.
+  source "${fixture}"
+  set +a
+}
 readonly script_dir repo_root
 readonly workspace_file="${repo_root}/go.work"
 readonly workspace_parser="${repo_root}/scripts/go-check/parse-work-json.go"
@@ -988,6 +1015,7 @@ detect_capabilities() {
       internal/budgetstore/response_test.go \
       internal/config/budget_authority_test.go \
       internal/databaseready/databaseready_test.go \
+      testdata/gs9e-qualification.conf \
       migrations/000006_create_workflow_control_budget_authority.up.sql \
       migrations/000006_create_workflow_control_budget_authority.down.sql \
       tests/contracts/budget_authority_openapi_contract_test.go \
@@ -1033,6 +1061,7 @@ detect_capabilities() {
       'internal/budgetstore/durable_test.go|TestDurableRecordExactAuthorityAndProjectionBinding' \
       'internal/budgetstore/response_test.go|TestMutationResponseExactEnvelopeAndCrossSpliceRejection' \
       'internal/budgetstore/postgres/cross_authority_test.go|TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation' \
+      'internal/budgetstore/postgres/cross_authority_test.go|TestAuthorityBudgetGateUsesValidatedStartupSchemaVersion' \
       'internal/budgetstore/postgres/replay_order_test.go|TestBudgetStoreExactReplayPrecedesActiveBuildAndPolicyChecks' \
       'internal/budgetstore/postgres/replay_order_test.go|TestBudgetStoreFreshPolicyDriftConflictsWithoutMutation' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreQualification' \
@@ -1044,6 +1073,8 @@ detect_capabilities() {
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRejectsNonzeroResumeGeneration' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRouteEpochAndBuildDriftConflictWithoutMutation' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreResponseLossRecovery' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDatabaseReconciliationResponseLossReplaysLatchedRun' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDatabaseReconciliationRejectsRunDriftWithoutLatch' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreProviderAndDatabaseUnknownAreSeparate' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDoubleUnknownFailsClosed' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreSettledReservationCannotSettleTwice' \
@@ -1053,8 +1084,12 @@ detect_capabilities() {
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreGenesisAnchorIsImmutable' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreKnownReceiptRequiresSafeAcceptedRevisions' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreReservationCloseTimeBindsTerminalLedger' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRebuildQueryCountIsIndependentOfLedgerLength' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreMigrationIndexesMatchPointReadAndRebuildAccess' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreReservationTerminalShapeIsClosed' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreInt64RoundingAndOverflow' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreAccountRunRevisionDriftIsAConflict' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreImmutableAccountBindingDriftIsIntegrityFailure' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreIntegrityFailure' \
       'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreLegacyApprovalCannotReserve' \
       'tests/integration/migration_test.go|TestBudgetAuthorityMigrationLocksSemanticIndexInventory' \
@@ -1344,18 +1379,19 @@ run_module_gate() {
       )
     fi
     if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
+      load_workflow_budget_qualification_fixture
       run_args+=(
         --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
-        --env 'WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=workspace.demo
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=typescript:workflow-budget-qualification
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000
-        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}"
       )
     fi
   fi
@@ -2097,6 +2133,7 @@ run_workflow_budget_authority_test_container() {
   local container="${resource_prefix}-qualification-${label}"
   local repository_mount
   repository_mount="$(docker_path "${staged_repository_dir}")"
+  load_workflow_budget_qualification_fixture
   local -a run_args=(
     run --rm --pull=never
     --name "${container}"
@@ -2109,15 +2146,15 @@ run_workflow_budget_authority_test_container() {
     --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
     --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
     --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
-    --env 'WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=workspace.demo
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=typescript:workflow-budget-qualification
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000
-    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}"
     --mount "type=bind,source=${repository_mount},target=/source,readonly"
     --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
     --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"

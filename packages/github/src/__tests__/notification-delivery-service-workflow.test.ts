@@ -75,6 +75,18 @@ const workflowControlPostgresGateUrl = new URL(
   import.meta.url,
 );
 const workflowControlPostgresGateSource = readFileSync(workflowControlPostgresGateUrl, 'utf8');
+const gs9eQualificationFixture = Object.fromEntries(
+  readFileSync(
+    new URL(
+      '../../../../services/workflow-control/testdata/gs9e-qualification.conf',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map((line) => line.split('=', 2) as [string, string]),
+);
 const rootPackageUrl = new URL('../../../../package.json', import.meta.url);
 const rootPackage = JSON.parse(readFileSync(rootPackageUrl, 'utf8')) as {
   scripts: Record<string, string>;
@@ -1303,11 +1315,12 @@ describe('notification delivery service workflow', () => {
       'trap cleanup EXIT',
       'WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1',
       'WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085',
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10',
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef',
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000',
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000',
-      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS',
+      'services/workflow-control/testdata/gs9e-qualification.conf',
       './internal/budgetapp',
       './internal/budgetstore/...',
       './tests/contracts',
@@ -1320,6 +1333,17 @@ describe('notification delivery service workflow', () => {
     ]) {
       expect(workflowControlPostgresGateSource).toContain(evidence);
     }
+    expect(Object.keys(gs9eQualificationFixture).sort()).toEqual([
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID',
+    ]);
     expect(workflowControlPostgresGateSource).not.toMatch(
       /runner.?v2.*(?:enabled|delivered)|accept_new_records|accept-new-records/iu,
     );

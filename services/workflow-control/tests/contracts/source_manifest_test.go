@@ -143,7 +143,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 		},
 		"budgetAuthorityMigrationUp": {
 			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.up.sql",
-			SHA256: "2fb84d8dca802fb244bb845e44864e7c160bc3a63255f9f7499033fd8ed4b74d",
+			SHA256: "c5d461de2066aa657812a78676c3919d00320b85617a154ce62868c70925020c",
 		},
 		"budgetAuthorityMigrationDown": {
 			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.down.sql",

@@ -43,6 +43,39 @@ refresh_database_url() {
   export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"
 }
 
+load_gs9e_fixture() {
+  local fixture="$GITHUB_WORKSPACE/services/workflow-control/testdata/gs9e-qualification.conf"
+  local expected key
+  local -a keys=(
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS
+  )
+  [[ -f "$fixture" ]] || { echo "missing GS9-E qualification fixture" >&2; return 1; }
+  [[ "$(grep -Ec '^[^[:space:]]' "$fixture")" -eq "${#keys[@]}" ]] || {
+    echo "GS9-E qualification fixture contains unexpected entries" >&2
+    return 1
+  }
+  [[ "$(grep -Ec '^[A-Z0-9_]+=[A-Za-z0-9:._-]+$' "$fixture")" -eq "${#keys[@]}" ]] || {
+    echo "GS9-E qualification fixture is not closed" >&2
+    return 1
+  }
+  for key in "${keys[@]}"; do
+    expected="$(grep -Ec "^${key}=" "$fixture")"
+    [[ "$expected" -eq 1 ]] || { echo "GS9-E qualification fixture key drifted: $key" >&2; return 1; }
+  done
+  set -a
+  # shellcheck disable=SC1090 -- the path and closed keys are validated above.
+  source "$fixture"
+  set +a
+}
+
 trap cleanup EXIT
 cleanup
 docker run --detach \
@@ -99,17 +132,9 @@ case "$profile" in
       go test -race ./cmd/effect-shadow-server -run '^TestGS9DRestartQualification$' -count=1
     ;;
   gs9e-budget)
+    load_gs9e_fixture
     export WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
     export WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=workspace.demo
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=typescript:workflow-budget-qualification
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000
-    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100
     go test -race ./internal/budgetapp ./internal/budgetstore/... ./internal/config ./tests/contracts ./tests/integration -count=1
     WORKFLOW_CONTROL_GS9E_QUALIFICATION=1 go test -race ./cmd/budget-authority-server -run '^TestGS9EQualification$' -count=1
     restart_schema="workflow_control_gs9e_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"

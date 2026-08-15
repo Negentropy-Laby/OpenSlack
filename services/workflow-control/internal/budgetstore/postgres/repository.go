@@ -60,7 +60,7 @@ func (repository *Repository) mutate(ctx context.Context, operation string, inpu
 	if err != nil {
 		return budgetstore.MutationResult{}, err
 	}
-	fingerprint := mustPrefixedHash(prepared.RequestFingerprint)
+	fingerprint := mustDecodeHash(prepared.RequestFingerprint)
 	workspaceID := recordString(request, "workspaceId")
 	runID := recordString(request, "runId")
 
@@ -266,25 +266,12 @@ func validateMutationInput(operation string, input budgetstore.MutationInput) (b
 	if err := budgetstore.ValidateQualificationSeed(input.Seed); err != nil {
 		return budgetcontract.PreparedRequest{}, nil, err
 	}
-	prepared, err := budgetcontract.ValidatePreparedRequest(input.Prepared)
+	prepared, request, err := budgetcontract.ValidatePreparedRequestRecord(input.Prepared)
 	if err != nil {
 		return budgetcontract.PreparedRequest{}, nil, budgetstore.Failure(budgetstore.ErrorInputInvalid, "prepared workflow budget request is invalid", err)
 	}
 	if prepared.Operation != operation || prepared.Method != "POST" || !isHash(input.ServiceBuildHash) {
 		return budgetcontract.PreparedRequest{}, nil, budgetstore.Failure(budgetstore.ErrorInputInvalid, "workflow budget mutation binding is invalid", nil)
-	}
-	parsed, err := budgetcontract.ParseBytes([]byte(strings.TrimSuffix(prepared.Body, "\n")))
-	if err != nil {
-		return budgetcontract.PreparedRequest{}, nil, budgetstore.Failure(budgetstore.ErrorContentInvalid, "workflow budget request body is invalid", err)
-	}
-	var request budgetcontract.Record
-	if operation == "reserve" {
-		request, err = budgetcontract.ValidateReserveRequest(parsed)
-	} else {
-		request, err = budgetcontract.ValidateSettlementRequest(parsed)
-	}
-	if err != nil {
-		return budgetcontract.PreparedRequest{}, nil, budgetstore.Failure(budgetstore.ErrorContentInvalid, "workflow budget request is invalid", err)
 	}
 	return prepared, request, nil
 }
@@ -366,11 +353,6 @@ func authorityEnvelope() budgetcontract.Record {
 
 func recordString(value budgetcontract.Record, key string) string { return value[key].(string) }
 func recordInt64(value budgetcontract.Record, key string) int64   { return value[key].(int64) }
-
-func mustPrefixedHash(value string) []byte {
-	decoded, _ := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
-	return decoded
-}
 
 func mustDecodeHash(value string) []byte {
 	decoded, _ := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))

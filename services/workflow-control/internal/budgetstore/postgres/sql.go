@@ -154,16 +154,19 @@ SELECT ledger.entry_id, ledger.kind, ledger.workspace_id, ledger.run_id,
        ledger.provider_attempt, ledger.account_revision, ledger.run_revision,
        ledger.previous_account_hash, ledger.account_hash, ledger.decision_hash,
        ledger.ledger_hash, ledger.canonical_ledger_bytes, ledger.recorded_at,
-       receipt_binding.receipt_count, receipt_binding.idempotency_key
+	   receipt.idempotency_key, receipt.operation, receipt.status,
+	   receipt.account_id, receipt.reservation_id, receipt.call_id,
+	   receipt.accepted_account_revision, receipt.accepted_run_revision,
+	   receipt.record_hash, receipt.committed_at,
+	   receipt.exact_receipt_bytes, receipt.exact_response_bytes,
+	   reconciliation.exact_reconciliation_bytes
 FROM workflow_control_budget_ledger AS ledger
-CROSS JOIN LATERAL (
-    SELECT count(*) AS receipt_count,
-           COALESCE(min(receipt.idempotency_key), '') AS idempotency_key
-    FROM workflow_control_budget_receipts AS receipt
-    WHERE receipt.workspace_id=ledger.workspace_id
-      AND receipt.run_id=ledger.run_id
-      AND receipt.ledger_entry_hash=ledger.ledger_hash
-) AS receipt_binding
+JOIN workflow_control_budget_receipts AS receipt
+  ON receipt.workspace_id=ledger.workspace_id
+ AND receipt.run_id=ledger.run_id
+ AND receipt.ledger_entry_hash=ledger.ledger_hash
+LEFT JOIN workflow_control_budget_reconciliations AS reconciliation
+  ON reconciliation.receipt_id=receipt.receipt_id
 WHERE ledger.workspace_id=$1 AND ledger.run_id=$2
 ORDER BY ledger.account_revision ASC`
 

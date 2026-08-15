@@ -17,13 +17,25 @@ import (
 )
 
 type ledgerRebuildEntry struct {
-	value           budgetcontract.Record
-	durable         budgetstore.DurableRecord
-	exactBytes      []byte
-	recordHash      string
-	providerAttempt int64
-	receiptKey      string
-	recordedAt      time.Time
+	value                  budgetcontract.Record
+	durable                budgetstore.DurableRecord
+	exactBytes             []byte
+	recordHash             string
+	providerAttempt        int64
+	receiptKey             string
+	receiptOperation       string
+	receiptStatus          string
+	receiptAccount         string
+	receiptReservation     string
+	receiptCall            string
+	receiptAccountRevision int64
+	receiptRunRevision     int64
+	receiptRecordHash      []byte
+	receiptCommittedAt     time.Time
+	exactReceipt           []byte
+	exactResponse          []byte
+	exactReconciliation    []byte
+	recordedAt             time.Time
 }
 
 // RebuildAccount is a qualification-only restart proof. It reconstructs the
@@ -48,7 +60,7 @@ func (repository *Repository) RebuildAccount(ctx context.Context, workspaceID, r
 	if err != nil {
 		return budgetstore.Account{}, err
 	}
-	if err := validateLedgerReceiptBindings(ctx, tx, workspaceID, entries); err != nil {
+	if err := validateLedgerReceiptBindings(entries); err != nil {
 		return budgetstore.Account{}, err
 	}
 	rebuilt, err := rebuildAccountFromLedger(genesis, head, entries)
@@ -84,14 +96,20 @@ func readLedgerRebuildEntries(ctx context.Context, tx pgx.Tx, workspaceID, runID
 func scanLedgerRebuildEntry(row rowScanner, workspaceID, runID string) (ledgerRebuildEntry, error) {
 	var entryID, kind, storedWorkspace, storedRun, accountID, reservationID, callID string
 	var providerAttempt, accountRevision, runRevision int64
-	var receiptCount int64
 	var receiptKey string
+	var receiptOperation, receiptStatus, receiptAccount, receiptReservation, receiptCall string
+	var receiptAccountRevision, receiptRunRevision int64
+	var receiptRecordHash, exactReceipt, exactResponse, exactReconciliation []byte
+	var receiptCommittedAt time.Time
 	var previousAccountHash, accountHash, decisionHash, ledgerHash, exact []byte
 	var recordedAt time.Time
 	if err := row.Scan(
 		&entryID, &kind, &storedWorkspace, &storedRun, &accountID, &reservationID, &callID,
 		&providerAttempt, &accountRevision, &runRevision, &previousAccountHash,
-		&accountHash, &decisionHash, &ledgerHash, &exact, &recordedAt, &receiptCount, &receiptKey,
+		&accountHash, &decisionHash, &ledgerHash, &exact, &recordedAt,
+		&receiptKey, &receiptOperation, &receiptStatus, &receiptAccount, &receiptReservation, &receiptCall,
+		&receiptAccountRevision, &receiptRunRevision, &receiptRecordHash, &receiptCommittedAt,
+		&exactReceipt, &exactResponse, &exactReconciliation,
 	); err != nil {
 		return ledgerRebuildEntry{}, databaseFailure("scan workflow budget ledger rebuild entry", err)
 	}
@@ -105,7 +123,7 @@ func scanLedgerRebuildEntry(row rowScanner, workspaceID, runID string) (ledgerRe
 		return ledgerRebuildEntry{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "stored workflow budget rebuild ledger bytes are invalid", err)
 	}
 	value := outer.OperationalProjection
-	if receiptCount != 1 || receiptKey == "" || providerAttempt < 1 || providerAttempt > budgetcontract.MaxSafeInteger ||
+	if receiptKey == "" || providerAttempt < 1 || providerAttempt > budgetcontract.MaxSafeInteger ||
 		storedWorkspace != workspaceID || storedRun != runID ||
 		value["entryId"] != entryID || value["kind"] != kind || value["workspaceId"] != storedWorkspace || value["runId"] != storedRun ||
 		value["accountId"] != accountID || value["reservationId"] != reservationID || value["callId"] != callID ||
@@ -118,22 +136,52 @@ func scanLedgerRebuildEntry(row rowScanner, workspaceID, runID string) (ledgerRe
 	return ledgerRebuildEntry{
 		value: value, durable: outer, exactBytes: append([]byte(nil), exact...),
 		recordHash: outer.OperationalProjectionHash, providerAttempt: providerAttempt,
-		receiptKey: receiptKey, recordedAt: recordedAt,
+		receiptKey: receiptKey, receiptOperation: receiptOperation, receiptStatus: receiptStatus,
+		receiptAccount: receiptAccount, receiptReservation: receiptReservation, receiptCall: receiptCall,
+		receiptAccountRevision: receiptAccountRevision, receiptRunRevision: receiptRunRevision,
+		receiptRecordHash: append([]byte(nil), receiptRecordHash...), receiptCommittedAt: receiptCommittedAt,
+		exactReceipt: append([]byte(nil), exactReceipt...), exactResponse: append([]byte(nil), exactResponse...),
+		exactReconciliation: append([]byte(nil), exactReconciliation...), recordedAt: recordedAt,
 	}, nil
 }
 
-func validateLedgerReceiptBindings(ctx context.Context, tx pgx.Tx, workspaceID string, entries []ledgerRebuildEntry) error {
+func validateLedgerReceiptBindings(entries []ledgerRebuildEntry) error {
 	for _, entry := range entries {
-		result, _, err := readMutationResult(ctx, tx, entry.receiptKey, workspaceID)
+		receiptOuter, receipt, response, err := decodeReceiptAndResponse(entry.exactReceipt, entry.exactResponse)
 		if err != nil {
 			return budgetstore.Failure(budgetstore.ErrorIntegrity, "validate workflow budget rebuild ledger receipt binding", err)
 		}
-		if result.DurableLedgerEntry == nil || result.Record == nil ||
-			result.DurableLedgerEntry.OperationalProjectionHash != entry.recordHash ||
-			!bytes.Equal(result.ExactLedgerBytes, entry.exactBytes) ||
-			recordString(result.LedgerEntry, "entryId") != recordString(entry.value, "entryId") ||
-			recordString(result.Record["request"].(budgetcontract.Record), "providerAttempt") != strconv.FormatInt(entry.providerAttempt, 10) {
+		if response.Record == nil {
 			return budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild ledger is not uniquely bound to its exact receipt response", nil)
+		}
+		record := response.Record.OperationalProjection
+		request := record["request"].(budgetcontract.Record)
+		after := record["afterAccount"].(budgetcontract.Record)
+		operation := "settle"
+		if record["schema"] == budgetcontract.SchemaReserveDecision {
+			operation = "reserve"
+		}
+		accountHash, _ := budgetcontract.HashValue("account", after)
+		if receiptOuter.AuthorityBuildHash != entry.durable.AuthorityBuildHash ||
+			receipt["idempotencyKey"] != entry.receiptKey || receipt["operation"] != entry.receiptOperation || entry.receiptOperation != operation ||
+			receipt["status"] != entry.receiptStatus || receipt["accountId"] != entry.receiptAccount || receipt["reservationId"] != entry.receiptReservation || receipt["callId"] != entry.receiptCall ||
+			receipt["acceptedAccountRevision"] != entry.receiptAccountRevision || receipt["acceptedRunRevision"] != entry.receiptRunRevision ||
+			receipt["recordHash"] != hex.EncodeToString(entry.receiptRecordHash) || receipt["committedAt"] != canonicalTimestamp(entry.receiptCommittedAt) ||
+			receipt["ledgerEntryHash"] != entry.recordHash || entry.value["decisionHash"] != receipt["recordHash"] || entry.value["accountHash"] != accountHash ||
+			entry.value["accountRevision"] != entry.receiptAccountRevision || entry.value["runRevision"] != entry.receiptRunRevision || entry.value["recordedAt"] != receipt["committedAt"] ||
+			entry.value["accountId"] != entry.receiptAccount || entry.value["reservationId"] != entry.receiptReservation || entry.value["callId"] != entry.receiptCall ||
+			record["beforeAccountHash"] != entry.value["previousAccountHash"] || recordString(request, "providerAttempt") != strconv.FormatInt(entry.providerAttempt, 10) {
+			return budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild ledger is not uniquely bound to its exact receipt response", nil)
+		}
+		if response.Reconciliation == nil {
+			if len(entry.exactReconciliation) != 0 {
+				return budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild receipt has unexpected reconciliation evidence", nil)
+			}
+		} else {
+			exact, encodeErr := budgetstore.EncodeDurableRecord(*response.Reconciliation)
+			if encodeErr != nil || !bytes.Equal(exact, entry.exactReconciliation) {
+				return budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild reconciliation evidence differs from its response", encodeErr)
+			}
 		}
 	}
 	return nil

@@ -54,30 +54,18 @@ func (service *Service) handleMutation(w http.ResponseWriter, request *http.Requ
 		}
 		return
 	}
-	parsed, err := budgetcontract.ParseBytes(body)
+	prepared, validatedRequest, err := budgetcontract.PrepareRequestBytes(operation, body, service.callerID)
 	if err != nil {
 		writeContractError(w, err)
 		return
 	}
-	prepared, err := budgetcontract.PrepareRequest(operation, parsed, service.callerID)
-	if err != nil {
-		writeContractError(w, err)
-		return
-	}
-	if prepared.Body != string(body) || prepared.Path != request.URL.Path || prepared.IdempotencyKey != key || prepared.RequestFingerprint != fingerprint {
+	if prepared.Path != request.URL.Path || prepared.IdempotencyKey != key || prepared.RequestFingerprint != fingerprint {
 		writeFailure(w, http.StatusUnprocessableEntity, string(budgetstore.ErrorContentInvalid), "budget request is not exact canonical JSON plus LF or its headers drifted")
 		return
 	}
-	validatedRequest, err := validateQualificationRequest(parsed, operation, service.workspaceID)
+	validatedRequest, err = validateQualificationRequest(validatedRequest, service.workspaceID)
 	if err != nil {
 		service.writeStoreError(w, err)
-		return
-	}
-	// Re-prepare the validated record to ensure the exact body did not acquire a
-	// distinct representation while qualification bindings were checked.
-	prepared, err = budgetcontract.PrepareRequest(operation, validatedRequest, service.callerID)
-	if err != nil || prepared.Body != string(body) {
-		writeFailure(w, http.StatusUnprocessableEntity, string(budgetstore.ErrorContentInvalid), "budget request binding is invalid")
 		return
 	}
 	input := budgetstore.MutationInput{Prepared: prepared, ServiceBuildHash: service.buildSHA, Seed: service.seed}
@@ -159,19 +147,7 @@ func classifyFreshMutation(operation string, response budgetstore.MutationRespon
 	}
 }
 
-func validateQualificationRequest(value any, operation, workspaceID string) (budgetcontract.Record, error) {
-	var (
-		request budgetcontract.Record
-		err     error
-	)
-	if operation == "reserve" {
-		request, err = budgetcontract.ValidateReserveRequest(value)
-	} else {
-		request, err = budgetcontract.ValidateSettlementRequest(value)
-	}
-	if err != nil {
-		return nil, contractStoreFailure(err)
-	}
+func validateQualificationRequest(request budgetcontract.Record, workspaceID string) (budgetcontract.Record, error) {
 	if request["workspaceId"] != workspaceID {
 		return nil, budgetstore.Failure(budgetstore.ErrorContentInvalid, "budget request workspace binding is invalid", nil)
 	}
@@ -388,43 +364,50 @@ func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Reque
 		_, _ = w.Write([]byte("metrics unavailable\n"))
 		return
 	}
-	lines := []string{
-		"# TYPE openslack_workflow_control_budget_http_requests_total counter",
-		"openslack_workflow_control_budget_http_requests_total " + strconv.FormatInt(service.requests.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_http_unauthorized_total counter",
-		"openslack_workflow_control_budget_http_unauthorized_total " + strconv.FormatInt(service.unauthorized.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_reserves_reserved_total counter",
-		"openslack_workflow_control_budget_reserves_reserved_total " + strconv.FormatInt(service.reservesReserved.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_reserves_rejected_total counter",
-		"openslack_workflow_control_budget_reserves_rejected_total " + strconv.FormatInt(service.reservesRejected.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_settlements_settled_total counter",
-		"openslack_workflow_control_budget_settlements_settled_total " + strconv.FormatInt(service.settlementsSettled.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_provider_reconciliation_total counter",
-		"openslack_workflow_control_budget_provider_reconciliation_total " + strconv.FormatInt(service.providerReconciliations.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_database_reconciliation_total counter",
-		"openslack_workflow_control_budget_database_reconciliation_total " + strconv.FormatInt(service.databaseReconciliations.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_replays_total counter",
-		"openslack_workflow_control_budget_replays_total " + strconv.FormatInt(service.replays.Load(), 10),
-		"# TYPE openslack_workflow_control_budget_accounts gauge",
-		"openslack_workflow_control_budget_accounts " + strconv.FormatInt(statistics.Accounts, 10),
-		"# TYPE openslack_workflow_control_budget_reservations gauge",
-		"openslack_workflow_control_budget_reservations " + strconv.FormatInt(statistics.Reservations, 10),
-		"# TYPE openslack_workflow_control_budget_open_reservations gauge",
-		"openslack_workflow_control_budget_open_reservations " + strconv.FormatInt(statistics.OpenReservations, 10),
-		"# TYPE openslack_workflow_control_budget_ledger_entries gauge",
-		"openslack_workflow_control_budget_ledger_entries " + strconv.FormatInt(statistics.LedgerEntries, 10),
-		"# TYPE openslack_workflow_control_budget_receipts gauge",
-		"openslack_workflow_control_budget_receipts " + strconv.FormatInt(statistics.Receipts, 10),
-		"# TYPE openslack_workflow_control_budget_database_reconciliation_pending gauge",
-		"openslack_workflow_control_budget_database_reconciliation_pending " + strconv.FormatInt(statistics.OpenDatabaseReconciliations, 10),
-		"# TYPE openslack_workflow_control_budget_provider_reconciliations gauge",
-		"openslack_workflow_control_budget_provider_reconciliations " + strconv.FormatInt(statistics.ProviderReconciliations, 10),
+	lines := make([]string, 0, len(budgetMetricDefinitions)*2)
+	for _, metric := range budgetMetricDefinitions {
+		lines = append(lines, "# TYPE "+metric.name+" "+metric.kind, metric.name+" "+strconv.FormatInt(metric.value(service, statistics), 10))
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(joinLines(lines)))
+}
+
+type budgetMetricDefinition struct {
+	name  string
+	kind  string
+	value func(*Service, budgetstore.Statistics) int64
+}
+
+var budgetMetricDefinitions = []budgetMetricDefinition{
+	{name: "openslack_workflow_control_budget_http_requests_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.requests.Load() }},
+	{name: "openslack_workflow_control_budget_http_unauthorized_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.unauthorized.Load() }},
+	{name: "openslack_workflow_control_budget_reserves_reserved_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.reservesReserved.Load() }},
+	{name: "openslack_workflow_control_budget_reserves_rejected_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.reservesRejected.Load() }},
+	{name: "openslack_workflow_control_budget_settlements_settled_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.settlementsSettled.Load() }},
+	{name: "openslack_workflow_control_budget_provider_reconciliation_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.providerReconciliations.Load() }},
+	{name: "openslack_workflow_control_budget_database_reconciliation_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.databaseReconciliations.Load() }},
+	{name: "openslack_workflow_control_budget_replays_total", kind: "counter", value: func(service *Service, _ budgetstore.Statistics) int64 { return service.replays.Load() }},
+	{name: "openslack_workflow_control_budget_accounts", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.Accounts }},
+	{name: "openslack_workflow_control_budget_reservations", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.Reservations }},
+	{name: "openslack_workflow_control_budget_open_reservations", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.OpenReservations }},
+	{name: "openslack_workflow_control_budget_ledger_entries", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.LedgerEntries }},
+	{name: "openslack_workflow_control_budget_receipts", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.Receipts }},
+	{name: "openslack_workflow_control_budget_database_reconciliation_pending", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 {
+		return statistics.OpenDatabaseReconciliations
+	}},
+	{name: "openslack_workflow_control_budget_provider_reconciliations", kind: "gauge", value: func(_ *Service, statistics budgetstore.Statistics) int64 { return statistics.ProviderReconciliations }},
+}
+
+// MetricNames returns the closed Prometheus metric vocabulary in wire order.
+func MetricNames() []string {
+	names := make([]string, len(budgetMetricDefinitions))
+	for index, metric := range budgetMetricDefinitions {
+		names[index] = metric.name
+	}
+	return names
 }
 
 func requireNoQuery(w http.ResponseWriter, request *http.Request) bool {
@@ -510,14 +493,6 @@ func validReservationReadMetadata(value budgetstore.Reservation) bool {
 
 func canonicalTimestamp(value time.Time) string {
 	return value.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
-}
-
-func contractStoreFailure(err error) error {
-	var failure *budgetcontract.ContractError
-	if errors.As(err, &failure) {
-		return budgetstore.Failure(budgetstore.ErrorContentInvalid, "budget contract validation failed", err)
-	}
-	return budgetstore.Failure(budgetstore.ErrorContentInvalid, "budget contract validation failed", err)
 }
 
 func writeContractError(w http.ResponseWriter, err error) {

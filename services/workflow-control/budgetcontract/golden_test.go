@@ -327,6 +327,21 @@ func assertFoldReceipt(t *testing.T, operation string, fold map[string]any, reco
 	}
 }
 
+func TestPrepareRequestBytesReturnsTheValidatedCanonicalRecord(t *testing.T) {
+	request := loadGolden(t).Vectors.Folds["reserve"]["request"]
+	prepared, err := PrepareRequest("reserve", request, "qualification-caller")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromBytes, record, err := PrepareRequestBytes("reserve", []byte(prepared.Body), "qualification-caller")
+	if err != nil || fromBytes != prepared || !exactEqual(record, request) {
+		t.Fatalf("prepared bytes=%#v record=%#v err=%v", fromBytes, record, err)
+	}
+	if _, _, err := PrepareRequestBytes("reserve", []byte(prepared.Body+"{}\n"), "qualification-caller"); err == nil {
+		t.Fatal("prepared request accepted a second JSON value")
+	}
+}
+
 func replayNegative(operation string, input any) error {
 	switch operation {
 	case "validate_account", "validateWorkflowBudgetAccount":

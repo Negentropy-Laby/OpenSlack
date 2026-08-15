@@ -367,11 +367,35 @@ func TestBudgetQualificationReadinessIsLightweightAndMetricsAreTyped(t *testing.
 		t.Fatalf("readiness drifted: %d %s calls=%d", ready.Code, ready.Body.String(), readyCalls)
 	}
 	metrics := perform(t, service.Handler(), http.MethodGet, RouteMetrics, nil, readHeaders())
-	if metrics.Code != http.StatusOK || metrics.Header().Get("Content-Type") != "text/plain; version=0.0.4" || strings.Count(metrics.Body.String(), "# TYPE ") != 15 ||
-		!strings.Contains(metrics.Body.String(), "openslack_workflow_control_budget_accounts 1\n") ||
-		!strings.Contains(metrics.Body.String(), "openslack_workflow_control_budget_provider_reconciliations 6\n") {
+	values := parseBudgetMetricValues(t, metrics.Body.String(), MetricNames())
+	if metrics.Code != http.StatusOK || metrics.Header().Get("Content-Type") != "text/plain; version=0.0.4" ||
+		values["openslack_workflow_control_budget_accounts"] != 1 ||
+		values["openslack_workflow_control_budget_provider_reconciliations"] != 6 {
 		t.Fatalf("metrics drifted: %d %s", metrics.Code, metrics.Body.String())
 	}
+}
+
+func parseBudgetMetricValues(t testing.TB, body string, expectedNames []string) map[string]int64 {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	if len(lines) != len(expectedNames)*2 {
+		t.Fatalf("metric line count=%d, want %d: %q", len(lines), len(expectedNames)*2, body)
+	}
+	values := make(map[string]int64, len(expectedNames))
+	for index, name := range expectedNames {
+		typeFields := strings.Fields(lines[index*2])
+		valueFields := strings.Fields(lines[index*2+1])
+		if len(typeFields) != 4 || typeFields[0] != "#" || typeFields[1] != "TYPE" || typeFields[2] != name ||
+			(typeFields[3] != "counter" && typeFields[3] != "gauge") || len(valueFields) != 2 || valueFields[0] != name {
+			t.Fatalf("metric %q has invalid definition/value lines: %q / %q", name, lines[index*2], lines[index*2+1])
+		}
+		value, err := strconv.ParseInt(valueFields[1], 10, 64)
+		if err != nil || value < 0 {
+			t.Fatalf("metric %q value=%q err=%v", name, valueFields[1], err)
+		}
+		values[name] = value
+	}
+	return values
 }
 
 func TestBudgetQualificationReadinessFailureReturns503(t *testing.T) {

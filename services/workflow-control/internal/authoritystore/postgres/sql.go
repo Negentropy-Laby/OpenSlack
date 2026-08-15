@@ -105,9 +105,6 @@ SELECT EXISTS (
     WHERE workspace_id=$1 AND run_id=$2 AND status='open'
 )`
 
-	budgetReconciliationTableExistsSQL = `
-SELECT to_regclass('workflow_control_budget_reconciliations') IS NOT NULL`
-
 	openBudgetDatabaseReconciliationSQL = `
 SELECT EXISTS (
     SELECT 1 FROM workflow_control_budget_reconciliations

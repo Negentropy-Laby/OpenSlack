@@ -24,9 +24,11 @@ Required evidence includes:
   uniqueness, byte-identical response-loss recovery, and exact replay before active build/policy
   drift checks;
 - successful and failed provider usage settlement, provider-outcome reconciliation, and database
-  commit-unknown reconciliation without speculative mutation;
+  commit-unknown reconciliation that atomically latches the run only after proving the original
+  mutation absent and the request-bound run head unchanged;
 - concurrent three-dimensional token, `nano_usd`, and call reservations that never overspend;
-- signed-int64 boundaries, half-up non-negative rounding, overflow rejection, and ledger rebuild
+- account/run revision drift as a conflict distinct from immutable evidence drift, strict trailing
+  JSON rejection, signed-int64 boundaries, half-up non-negative rounding, overflow rejection, and ledger rebuild
   from the immutable genesis account after PostgreSQL restart, covering every closed ledger kind
   and rejecting anchor, chain, fold, or provider-attempt/usage-receipt binding drift;
 - cache-hit zero mutation and qualification ordering that makes reserve durable before provider
@@ -42,8 +44,9 @@ Required evidence includes:
 
 Credential values, prompts, provider request/response content, endpoints, transcripts, stack
 traces, and absolute local paths are excluded from checked-in evidence.
-The qualification profile supplies a fixed, non-secret policy hash and three canonical int64
-limits as the first-account `BudgetSeed`; the seed is process composition, not an HTTP field.
+The qualification profile supplies service/build identity, bearer digest, workspace, caller,
+routing epoch, policy hash, and three canonical int64 limits from the closed, non-secret
+`testdata/gs9e-qualification.conf` fixture. The seed is process composition, not an HTTP field.
 
 Passing the gate establishes only:
 

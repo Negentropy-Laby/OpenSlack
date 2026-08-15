@@ -29,7 +29,8 @@ Migration `000006_create_workflow_control_budget_authority` creates five tables:
   revision, and its immutable canonical genesis hash and bytes;
 - `workflow_control_budget_reservations` binds one semantic provider attempt by reservation,
   call, and attempt identity;
-- `workflow_control_budget_ledger` is the append-only source for every budget-owned run revision;
+- `workflow_control_budget_ledger` is the append-only source for every accepted budget mutation
+  revision; a database-commit reconciliation latch is the one deliberate non-ledger run revision;
 - `workflow_control_budget_receipts` retains byte-exact request outcomes and response bodies;
 - `workflow_control_budget_reconciliations` retains immutable provider-outcome or database-commit
   uncertainty.
@@ -41,6 +42,11 @@ is the source for that run revision; a Workflow transition event is neither requ
 Ledger, receipt, and any known provider reconciliation commit in the same transaction. Ledger,
 receipt, and reconciliation rows are append-only, and the down migration refuses to remove the
 namespace while evidence exists.
+
+If another authority advances the run while its E2 account remains at an older revision, a fresh
+budget mutation returns a conflict and does not report stored-data corruption or rebase the
+account. E2 remains fail-closed in that state. GS9-F must coordinate any new running-to-running
+writer with the budget account revision; E2 does not invent that recovery protocol.
 
 Every exact durable value uses a Go-owned companion envelope with these closed fields:
 
@@ -78,9 +84,12 @@ The same idempotency key and fingerprint replays the original response bytes bef
 build or policy checks and without adding a ledger row. The same key with a different fingerprint
 conflicts. Semantic uniqueness on
 reservation, call, and provider attempt prevents a new key from reserving the same provider turn.
-A response-loss retry first point-reads the exact receipt. If the database outcome remains
-unprovable, an immutable database reconciliation blocks further mutations for that run instead of
-speculating.
+A response-loss retry first point-reads the exact receipt. If the original mutation remains absent,
+the recovery transaction rereads and locks the exact run head, proves that it still matches the
+request, advances it once to `reconciliation_required`, and atomically writes the immutable
+database reconciliation and exact receipt. The receipt's accepted revisions remain null because
+no budget mutation was accepted; the reconciliation row and latched run revision are the recovery
+evidence. Run drift or a second unprovable commit leaves no receipt, reconciliation, or latch.
 
 Provider outcome uncertainty is separate: missing, untrusted, unknown, or overrun usage settles
 the ledger to a durable provider reconciliation when the database transaction is known, keeps the
@@ -99,7 +108,9 @@ provider-attempt ledger entry must also bind the same attempt as its exact provi
 A settled
 reservation binds its `closedAt` to its terminal ledger `recordedAt`. Because budget and GS9-B
 authority share the run head, an open budget database-commit reconciliation is checked under the
-same run advisory lock by both writers and blocks either mutation path.
+same run advisory lock by both writers and blocks either mutation path. Schema readiness is
+validated once at startup: authority schemas 3 through 5 skip this not-yet-present gate, while
+schema 6 queries the required table directly and fails if it is absent.
 
 ## Service boundary
 
