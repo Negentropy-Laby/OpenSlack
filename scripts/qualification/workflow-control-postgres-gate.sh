@@ -3,9 +3,9 @@ set -euo pipefail
 
 profile="${1:-}"
 case "$profile" in
-  gs9b-authority|gs9c-checkpoint|gs9d-effect) ;;
+  gs9b-authority|gs9c-checkpoint|gs9d-effect|gs9e-budget) ;;
   *)
-    echo "usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect}" >&2
+    echo "usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect|gs9e-budget}" >&2
     exit 2
     ;;
 esac
@@ -98,6 +98,24 @@ case "$profile" in
     WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA="$restart_schema" \
       go test -race ./cmd/effect-shadow-server -run '^TestGS9DRestartQualification$' -count=1
     ;;
+  gs9e-budget)
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=workspace.demo
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=typescript:workflow-budget-qualification
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=10
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef89abcdef
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=100000
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=1000000000
+    export WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=100
+    go test -race ./internal/budgetapp ./internal/budgetstore/... ./internal/config ./tests/contracts ./tests/integration -count=1
+    WORKFLOW_CONTROL_GS9E_QUALIFICATION=1 go test -race ./cmd/budget-authority-server -run '^TestGS9EQualification$' -count=1
+    restart_schema="workflow_control_gs9e_restart_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+    WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA="$restart_schema" \
+      go test -race ./cmd/budget-authority-server -run '^TestGS9ERestartQualification$' -count=1
+    ;;
 esac
 
 docker restart "$postgres_container" >/dev/null
@@ -116,5 +134,9 @@ case "$profile" in
   gs9d-effect)
     WORKFLOW_CONTROL_GS9D_RESTART_PHASE=verify WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA="$restart_schema" \
       go test -race ./cmd/effect-shadow-server -run '^TestGS9DRestartQualification$' -count=1
+    ;;
+  gs9e-budget)
+    WORKFLOW_CONTROL_GS9E_RESTART_PHASE=verify WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA="$restart_schema" \
+      go test -race ./cmd/budget-authority-server -run '^TestGS9ERestartQualification$' -count=1
     ;;
 esac

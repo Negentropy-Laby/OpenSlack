@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-14
+updated: 2026-08-15
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -20,11 +20,11 @@ sources:
 Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
 checkpoint/resume differential, the GS9-D effect-control seam plus default-off parity shadow, and
-the GS9-E1 contract-only budget operational bundle. TypeScript remains the sole workflow writer,
-runner, approval, budget, effect, resume, and user-visible read authority. D1 freezes the closed
-bundle, D2 enforces the owner-local decision and one-time claim, and D3 observes only the three
-credential-free decision/audit projections. E1 freezes validation and fold semantics only; it does
-not establish a durable Go budget authority.
+the GS9-E1 budget operational bundle plus GS9-E2 default-off durable qualification authority.
+TypeScript remains the sole production workflow writer, runner, approval, budget, effect, resume,
+and user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision
+and one-time claim, and D3 observes only the three credential-free decision/audit projections. E1
+freezes validation and fold semantics; E2 persists only isolated qualification records.
 
 ## Authority boundary
 
@@ -503,15 +503,76 @@ therefore precedes later choice, finish-reason, or tool-shape errors for the sam
 The v1 account and run revisions are intentionally retained as two lockstep fields, and settlement
 must not present revisions earlier than the reservation's opened revisions.
 
-E1 has no database, migration, repository, HTTP API, route, server, runtime authority client,
-production worker wiring, canary, or routing change. TypeScript remains the only production budget
-authority and the Go mirror cannot reserve, settle, authorize, or persist anything. GS9-E2 remains
-pending and is the first stage allowed to add a default-off PostgreSQL budget qualification
-authority.
+E1 itself has no database, migration, repository, HTTP API, route, server, runtime authority client,
+production worker wiring, canary, or routing change. Its pure Go mirror cannot reserve, settle,
+authorize, or persist anything. E2 consumes that mirror only inside a separately configured
+qualification service.
+
+## GS9-E2 durable budget qualification authority
+
+GS9-E2 adds migration `000006_create_workflow_control_budget_authority` and five isolated
+`workflow_control_budget_*` tables for account heads, semantic provider-turn reservations,
+append-only ledger entries, exact receipts, and reconciliation evidence. It does not reuse or
+modify the GS8 runner, GS9-B transition event, GS9-C checkpoint, or GS9-D effect tables. Existing
+service profiles accept schema 6 while retaining their original minimum; the budget profile accepts
+exactly schema 6.
+The account head also stores an immutable canonical genesis account/hash. Recovery folds every
+closed ledger kind from that anchor and must reproduce the current canonical account exactly.
+
+The frozen E1 records remain non-authorizing operational projections with their original
+TypeScript writer and `validator_only` Go role. E2 never stores or serves one as a standalone Go
+authority record. Instead, every durable record is the canonical Go-owned companion envelope
+`openslack.workflow_control_budget_durable_record.v1`, binding `workflow-control`,
+`workflow-control/budget-authority-server`, `local-qualification-v1`,
+`productionAuthority=false`, the exact E1 manifest SHA-256, trusted authority build hash, a closed
+record kind, the embedded E1 projection, and its domain hash. Database columns and HTTP responses
+must agree with both layers; cross-splicing either layer is an integrity failure.
+
+The first reserve may create an account only from `expectedAccountRevision=0`. Reserve, durable
+rejection, and settlement lock the GS9-B run head plus account/reservation rows in stable order,
+validate the immutable route and `running` state, then advance the global run revision and the
+independent account revision by one. The append-only budget ledger is the source for that run
+revision, so no Workflow transition event is emitted. Ledger, receipt, and any known provider
+reconciliation commit together.
+
+That first account is initialized only from a fixed, non-secret `BudgetSeed` in the
+`local-qualification-v1` process composition: policy hash plus token, nano-USD, and call limits.
+The seed is not part of the HTTP wire and is not a production initial-policy source.
+
+Exact receipt point-read precedes state mutation. The same idempotency key and fingerprint returns
+the original response bytes before active build or policy checks and without adding ledger
+evidence; a different fingerprint conflicts.
+Semantic uniqueness on reservation, call, and provider attempt rejects a duplicate provider turn
+under a new key. An ambiguous database commit first recovers the exact receipt and otherwise records
+an immutable database reconciliation that blocks later mutations for that run. Provider-outcome
+reconciliation remains a distinct, known transaction result.
+It keeps the unresolved reservation open and latches the run. A settled reservation's close time
+must equal its terminal ledger time. The shared GS9-B run writer checks an open budget
+database-commit reconciliation under the same run lock, preventing another authority path from
+bypassing ambiguity.
+Restart rebuild also requires every provider-attempt ledger row to agree with the exact
+provider-usage receipt bound by that row; drift is an integrity failure.
+
+The standalone `/budget-authority-server` is health-only unless an exact loopback
+`local-qualification-v1` binding fixes PostgreSQL, bearer, workspace, caller, routing epoch, and
+service build. Its data surface is closed to reserve, settle, account, reservation, and receipt
+operations. The default image entry point remains `/server`.
+
+The qualification harness proves that a cache hit creates no budget mutation, provider execution
+starts only after durable reserve, and cache visibility follows durable settlement. These are
+qualification invariants only: GS9-E2 adds no production budget client or provider routing.
+E2 also rejects every nonzero `resumeGeneration` without mutation; Runner v2 owns future resumed-run
+budget delivery and is not part of this authority.
+
+Its exact evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget qualification authority / Go
+production Workflow budget authority NOT_CLAIMED / Runner v2 NOT_DELIVERED / routing / canary /
+cutover NOT_ACTIVATED`.
+`WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` remains a separate non-claim.
 
 GS9-F delivers runner v2. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
 read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
 drain. D1, D2, or D3 does not establish live qualification, release readiness, production
-activation, npm or tag publication, authenticated external-host evidence, durable Go budget
-authority, or Go Workflow authority. E1 establishes none of those claims either.
+activation, npm or tag publication, authenticated external-host evidence, production Go budget
+authority, or Go Workflow authority. E1 establishes none of those claims; E2 establishes only the
+bounded durable qualification authority stated above.
