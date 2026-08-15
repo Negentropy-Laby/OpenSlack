@@ -841,7 +841,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain(
       `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}`,
     );
-    expect(goCheckSource).toContain('services/workflow-control/testdata/gs9e-qualification.conf');
+    expect(goCheckSource).toContain('${staged_module_dir}/testdata/gs9e-qualification.conf');
     expect(log).toContain('WORKFLOW_CONTROL_GS9E_QUALIFICATION=1');
     expect(log).toContain('-run \\^TestGS9EQualification\\$');
     expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');

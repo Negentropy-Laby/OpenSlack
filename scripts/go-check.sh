@@ -14,7 +14,7 @@ script_dir="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
 repo_root="$(cd -- "${script_dir}/.." && pwd -P)"
 
 load_workflow_budget_qualification_fixture() {
-  local fixture="${repo_root}/services/workflow-control/testdata/gs9e-qualification.conf"
+  local fixture="${staged_module_dir}/testdata/gs9e-qualification.conf"
   local count key
   local -a keys=(
     WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA
