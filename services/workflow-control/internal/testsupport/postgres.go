@@ -34,6 +34,13 @@ var schemaPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 // returns a pool whose search path is pinned to that schema. Tests that need a
 // live database skip explicitly when DATABASE_URL is absent.
 func OpenPostgres(t testing.TB) *pgxpool.Pool {
+	return OpenPostgresWithTracer(t, nil)
+}
+
+// OpenPostgresWithTracer is the query-observable variant used by bounded-I/O
+// qualification tests. The tracer observes only the isolated test pool; the
+// administrative connection remains outside the measurement.
+func OpenPostgresWithTracer(t testing.TB, tracer pgx.QueryTracer) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" {
@@ -59,6 +66,7 @@ func OpenPostgres(t testing.TB) *pgxpool.Pool {
 	}
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	config.ConnConfig.RuntimeParams["search_path"] = schema
+	config.ConnConfig.Tracer = tracer
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		_, _ = admin.Exec(ctx, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
@@ -254,6 +262,7 @@ func migrationPaths(t testing.TB) []string {
 		filepath.Join(migrationRoot, "000003_create_workflow_control_authority.up.sql"),
 		filepath.Join(migrationRoot, "000004_create_workflow_control_checkpoint_shadow.up.sql"),
 		filepath.Join(migrationRoot, "000005_create_workflow_control_effect_shadow.up.sql"),
+		filepath.Join(migrationRoot, "000006_create_workflow_control_budget_authority.up.sql"),
 	}
 }
 

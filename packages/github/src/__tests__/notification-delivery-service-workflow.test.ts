@@ -75,6 +75,18 @@ const workflowControlPostgresGateUrl = new URL(
   import.meta.url,
 );
 const workflowControlPostgresGateSource = readFileSync(workflowControlPostgresGateUrl, 'utf8');
+const gs9eQualificationFixture = Object.fromEntries(
+  readFileSync(
+    new URL(
+      '../../../../services/workflow-control/testdata/gs9e-qualification.conf',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map((line) => line.split('=', 2) as [string, string]),
+);
 const rootPackageUrl = new URL('../../../../package.json', import.meta.url);
 const rootPackage = JSON.parse(readFileSync(rootPackageUrl, 'utf8')) as {
   scripts: Record<string, string>;
@@ -316,6 +328,10 @@ function gs9dEffectRun(): string {
   return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9d-effect';
 }
 
+function gs9eBudgetRun(): string {
+  return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9e-budget';
+}
+
 describe('notification delivery service workflow', () => {
   it('runs only for the service contract on main and manual dispatch', () => {
     expect(workflow.name).toBe('Notification Delivery Service CI');
@@ -405,6 +421,7 @@ describe('notification delivery service workflow', () => {
     const gs9bAuthorityIndex = stepIndex('Qualify GS9-B Workflow Control authority');
     const gs9cCheckpointIndex = stepIndex('Qualify GS9-C Workflow checkpoint shadow');
     const gs9dEffectIndex = stepIndex('Qualify GS9-D Workflow effect shadow');
+    const gs9eBudgetIndex = stepIndex('Qualify GS9-E Workflow budget authority');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -446,7 +463,8 @@ describe('notification delivery service workflow', () => {
     expect(gs9bAuthorityIndex).toBe(gs8bRunnerIndex + 1);
     expect(gs9cCheckpointIndex).toBe(gs9bAuthorityIndex + 1);
     expect(gs9dEffectIndex).toBe(gs9cCheckpointIndex + 1);
-    expect(goCheckIndex).toBe(gs9dEffectIndex + 1);
+    expect(gs9eBudgetIndex).toBe(gs9dEffectIndex + 1);
+    expect(goCheckIndex).toBe(gs9eBudgetIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -656,6 +674,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: gs9dEffectRun(),
     });
+    expect(job.steps[gs9eBudgetIndex]).toEqual({
+      name: 'Qualify GS9-E Workflow budget authority',
+      'working-directory': '.',
+      run: gs9eBudgetRun(),
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -726,6 +749,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-B Workflow Control authority',
       'Qualify GS9-C Workflow checkpoint shadow',
       'Qualify GS9-D Workflow effect shadow',
+      'Qualify GS9-E Workflow budget authority',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -833,6 +857,7 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-B Workflow Control authority': gs9bAuthorityRun(),
       'Qualify GS9-C Workflow checkpoint shadow': gs9cCheckpointRun(),
       'Qualify GS9-D Workflow effect shadow': gs9dEffectRun(),
+      'Qualify GS9-E Workflow budget authority': gs9eBudgetRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -1181,7 +1206,7 @@ describe('notification delivery service workflow', () => {
     ).toHaveLength(1);
     expect(workflowControlPostgresGateSource).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
     expect(workflowControlPostgresGateSource).toContain(
-      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect}',
+      'usage: workflow-control-postgres-gate.sh {gs9b-authority|gs9c-checkpoint|gs9d-effect|gs9e-budget}',
     );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
@@ -1276,9 +1301,65 @@ describe('notification delivery service workflow', () => {
     );
   });
 
-  it('binds the shared PostgreSQL gate to the three reviewed profiles', () => {
+  it('qualifies the GS9-E budget authority against pinned PostgreSQL without production cutover', () => {
+    const step = workflow.jobs.validate.steps.find(
+      (candidate) => candidate.name === 'Qualify GS9-E Workflow budget authority',
+    );
+    expect(step).toEqual({
+      name: 'Qualify GS9-E Workflow budget authority',
+      'working-directory': '.',
+      run: gs9eBudgetRun(),
+    });
+    for (const evidence of [
+      postgresImage,
+      'trap cleanup EXIT',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS',
+      'services/workflow-control/testdata/gs9e-qualification.conf',
+      './internal/budgetapp',
+      './internal/budgetstore/...',
+      './tests/contracts',
+      './tests/integration',
+      'WORKFLOW_CONTROL_GS9E_QUALIFICATION=1',
+      "-run '^TestGS9EQualification$'",
+      'WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed',
+      'docker restart "$postgres_container"',
+      'WORKFLOW_CONTROL_GS9E_RESTART_PHASE=verify',
+    ]) {
+      expect(workflowControlPostgresGateSource).toContain(evidence);
+    }
+    expect(Object.keys(gs9eQualificationFixture).sort()).toEqual([
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA',
+      'WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID',
+    ]);
+    expect(workflowControlPostgresGateSource).not.toMatch(
+      /runner.?v2.*(?:enabled|delivered)|accept_new_records|accept-new-records/iu,
+    );
+
+    const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
+    expect(names.indexOf('Qualify GS9-D Workflow effect shadow')).toBeLessThan(
+      names.indexOf('Qualify GS9-E Workflow budget authority'),
+    );
+    expect(names.indexOf('Qualify GS9-E Workflow budget authority')).toBeLessThan(
+      names.indexOf('Run reviewed Go workspace verifier'),
+    );
+  });
+
+  it('binds the shared PostgreSQL gate to the four reviewed profiles', () => {
     expect(workflowControlPostgresGateSource).toContain(
-      'gs9b-authority|gs9c-checkpoint|gs9d-effect) ;;',
+      'gs9b-authority|gs9c-checkpoint|gs9d-effect|gs9e-budget) ;;',
     );
     expect(workflowControlPostgresGateSource).toContain('exit 2');
     expect(workflowControlPostgresGateSource).toContain('for attempt in $(seq 1 60)');

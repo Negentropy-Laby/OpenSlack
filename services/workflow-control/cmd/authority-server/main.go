@@ -44,11 +44,12 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
-		if err := databaseready.RequireCleanSchema(startup, pool, databaseready.AuthorityProfile); err != nil {
+		schemaVersion, schemaErr := databaseready.RequireCleanSchemaVersion(startup, pool, databaseready.AuthorityProfile)
+		if schemaErr != nil {
 			logger.Error("workflow_control_authority_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 			os.Exit(1)
 		}
-		options.Repository = authoritypostgres.New(pool)
+		options.Repository = authoritypostgres.New(pool, schemaVersion)
 	}
 	service, err := authorityapp.New(options)
 	if err != nil {

@@ -25,7 +25,7 @@ import (
 
 const qualificationBuildSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-func TestShadowServerRequiresSchemaVersionThree(t *testing.T) {
+func TestShadowServerSupportsSchemaThroughVersionSix(t *testing.T) {
 	if databaseready.ShadowProfile.Minimum != 1 || databaseready.ShadowProfile.Maximum != databaseready.CurrentSchemaVersion {
 		t.Fatalf("schema range=%d..%d", databaseready.ShadowProfile.Minimum, databaseready.ShadowProfile.Maximum)
 	}

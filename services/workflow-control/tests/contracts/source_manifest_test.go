@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,7 +71,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-D" ||
+		manifest.Service.MigrationPhase != "GS9-E" ||
 		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
@@ -91,17 +91,23 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 			"WORKFLOW_CONTROL_EFFECT_SHADOW_EXACT_RECEIPT",
 			"WORKFLOW_CONTROL_EFFECT_SHADOW_OUTBOX",
 			"WORKFLOW_CONTROL_EFFECT_SHADOW_RECONCILIATION",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_DURABLE_ENVELOPE",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_ACCOUNT",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RESERVATION",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_LEDGER",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
+			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RECONCILIATION",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.ContractInputs) != 12 {
+		len(manifest.SourceInputs) != 11 || len(manifest.ContractInputs) != 14 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",
-			SHA256: "a51554c67d80367eaa8564aca6e08561aab8bf3296970542014e36b4e1b90d7f",
+			SHA256: "f353d33bea5d87c25402839cf9cf0a5a9bf86a8b696508ccb2834936f21abacc",
 		},
 		"goMod": {
 			Path:   "services/workflow-control/go.mod",
@@ -134,6 +140,14 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 		"effectShadowMigrationDown": {
 			Path:   "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.down.sql",
 			SHA256: "f603d2039c3dbd63ef0e2012242791ccd64fbeaa2c8cd8f427443d4dd50664b8",
+		},
+		"budgetAuthorityMigrationUp": {
+			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.up.sql",
+			SHA256: "c5d461de2066aa657812a78676c3919d00320b85617a154ce62868c70925020c",
+		},
+		"budgetAuthorityMigrationDown": {
+			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.down.sql",
+			SHA256: "e3548650dc03cafc3cd70c90ab3cf76af2f8aaf905390917bf93b576d4be5ea7",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
@@ -168,6 +182,10 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 			Path:   "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
 			SHA256: "72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e",
 		},
+		"workflowBudgetAuthorityContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
+			SHA256: "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714",
+		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
 			SHA256: "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f",
@@ -188,6 +206,10 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 			Path:   "services/workflow-control/docs/api/effect-shadow-openapi.yaml",
 			SHA256: "9d279805c2dca29d55b070b90f87576d6f663b95aefda3b286eecb4dde726876",
 		},
+		"budgetAuthorityOpenapi": {
+			Path:   "services/workflow-control/docs/api/budget-authority-openapi.yaml",
+			SHA256: "e3560807d3de6656167a93a11d1abbeb1fa39017f9835c0f0a70423dd98cd1e0",
+		},
 	}
 	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {
 		t.Fatalf("source manifest contract inputs drifted: %#v", manifest.ContractInputs)
@@ -195,10 +217,12 @@ func TestSourceManifestBindsOnlyUnreleasedGS9DInputs(t *testing.T) {
 	wantNonClaims := []string{
 		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",
 		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "REMOTE_CONNECTOR",
-		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_AUTHORITY",
+		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_PRODUCTION_AUTHORITY",
+		"WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE", "WORKFLOW_BUDGET_RUNTIME_CLIENT",
 		"WORKFLOW_CONTROL_AUTHORITY_CUTOVER", "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
 		"WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
-		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_RUNSTORE_AUTHORITY",
+		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_ROUTING_CANARY_CUTOVER",
+		"WORKFLOW_RUNNER_V2_DELIVERY", "WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)
 	sort.Strings(actualNonClaims)

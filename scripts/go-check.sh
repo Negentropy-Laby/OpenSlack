@@ -12,6 +12,33 @@ readonly BUILD_CACHE_VOLUME="openslack-go-check-build-go1-26-5-3aff6657219a"
 
 script_dir="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
 repo_root="$(cd -- "${script_dir}/.." && pwd -P)"
+
+load_workflow_budget_qualification_fixture() {
+  local fixture="${staged_module_dir}/testdata/gs9e-qualification.conf"
+  local count key
+  local -a keys=(
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD
+    WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS
+  )
+  [[ -f "${fixture}" ]] || fail "Workflow Control GS9-E qualification fixture is missing"
+  [[ "$(grep -Ec '^[^[:space:]]' "${fixture}")" -eq "${#keys[@]}" ]] || fail "Workflow Control GS9-E qualification fixture contains unexpected entries"
+  count="$(grep -Ec '^[A-Z0-9_]+=[A-Za-z0-9:._-]+$' "${fixture}")"
+  [[ "${count}" -eq "${#keys[@]}" ]] || fail "Workflow Control GS9-E qualification fixture is not closed"
+  for key in "${keys[@]}"; do
+    [[ "$(grep -Ec "^${key}=" "${fixture}")" -eq 1 ]] || fail "Workflow Control GS9-E qualification fixture key drifted: ${key}"
+  done
+  set -a
+  # shellcheck disable=SC1090 -- the path and closed keys are validated above.
+  source "${fixture}"
+  set +a
+}
 readonly script_dir repo_root
 readonly workspace_file="${repo_root}/go.work"
 readonly workspace_parser="${repo_root}/scripts/go-check/parse-work-json.go"
@@ -477,7 +504,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2 | workflow-control-checkpoint-shadow-v1 | workflow-control-effect-shadow-v1) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2 | workflow-control-checkpoint-shadow-v1 | workflow-control-effect-shadow-v1 | workflow-control-budget-authority-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -523,6 +550,13 @@ validate_dockerignore() {
       '!authoritycontract/generated/v2/*.json' | \
       '!authoritycontract/generated/v2/schemas/' | \
       '!authoritycontract/generated/v2/schemas/*.json' | \
+      '!budgetcontract/' | \
+      '!budgetcontract/*.go' | \
+      '!budgetcontract/generated/' | \
+      '!budgetcontract/generated/v1/' | \
+      '!budgetcontract/generated/v1/*.json' | \
+      '!budgetcontract/generated/v1/schemas/' | \
+      '!budgetcontract/generated/v1/schemas/*.json' | \
       '!LICENSE' | \
       '!NOTICE' | \
       '!THIRD_PARTY_NOTICES.md' | \
@@ -669,7 +703,8 @@ detect_capabilities() {
     elif [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
       "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
       "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
       local runner_evidence
       for runner_evidence in \
         cmd/runner-server/main.go \
@@ -702,7 +737,8 @@ detect_capabilities() {
   if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
     "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]] &&
+    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]] &&
     ! has_capability "${capabilities}" "worker"; then
     fail "Workflow Control runner runtime profile requires the worker capability"
   fi
@@ -729,7 +765,8 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
     "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
     local workflow_control_evidence
     for workflow_control_evidence in \
       cmd/server/qualification_test.go \
@@ -762,7 +799,8 @@ detect_capabilities() {
   if [[ "${runtime_profile_ref}" == "workflow-control-runner-v1" ||
     "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
     local workflow_runner_evidence
     for workflow_runner_evidence in \
       cmd/runner-server/qualification_test.go \
@@ -784,7 +822,8 @@ detect_capabilities() {
 
   if [[ "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
     local workflow_authority_evidence
     for workflow_authority_evidence in \
       cmd/authority-server/main.go \
@@ -849,7 +888,8 @@ detect_capabilities() {
   fi
 
   if [[ "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
     local checkpoint_shadow_root_evidence
     for checkpoint_shadow_root_evidence in \
       scripts/workflow-checkpoint-shadow-contracts/index.ts \
@@ -886,7 +926,8 @@ detect_capabilities() {
       fail "Workflow Control checkpoint shadow runtime profile is missing TestCheckpointShadowOpenAPIIsClosedAndValid"
   fi
 
-  if [[ "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ]]; then
+  if [[ "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
     local effect_shadow_root_evidence
     for effect_shadow_root_evidence in \
       scripts/workflow-effect-shadow-contracts/index.ts \
@@ -947,6 +988,130 @@ detect_capabilities() {
     grep -Eq '^func[[:space:]]+TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence\(' \
       "${module_dir}/tests/integration/migration_test.go" ||
       fail "Workflow Control effect shadow runtime profile is missing TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence"
+  fi
+
+  if [[ "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ]]; then
+    local budget_authority_root_evidence
+    for budget_authority_root_evidence in \
+      scripts/workflow-budget-authority-contracts/index.ts \
+      scripts/workflow-budget-authority-contracts/tsconfig.json \
+      packages/workflows/contracts/workflow-budget-authority/v1/manifest.json \
+      packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json; do
+      [[ -f "${repo_root}/${budget_authority_root_evidence}" ]] ||
+        fail "Workflow Control budget authority runtime profile is missing ${budget_authority_root_evidence}"
+    done
+    local budget_authority_evidence
+    for budget_authority_evidence in \
+      cmd/budget-authority-server/main.go \
+      cmd/budget-authority-server/main_test.go \
+      cmd/budget-authority-server/qualification_test.go \
+      docs/api/budget-authority-openapi.yaml \
+      internal/budgetapp/qualification_ordering_test.go \
+      internal/budgetapp/server_test.go \
+      internal/budgetstore/durable_test.go \
+      internal/budgetstore/postgres/cross_authority_test.go \
+      internal/budgetstore/postgres/replay_order_test.go \
+      internal/budgetstore/postgres/repository_test.go \
+      internal/budgetstore/response_test.go \
+      internal/config/budget_authority_test.go \
+      internal/databaseready/databaseready_test.go \
+      testdata/gs9e-qualification.conf \
+      migrations/000006_create_workflow_control_budget_authority.up.sql \
+      migrations/000006_create_workflow_control_budget_authority.down.sql \
+      tests/contracts/budget_authority_openapi_contract_test.go \
+      tests/integration/migration_test.go; do
+      [[ -f "${module_dir}/${budget_authority_evidence}" ]] ||
+        fail "Workflow Control budget authority runtime profile is missing ${budget_authority_evidence}"
+    done
+    local budget_authority_test
+    for budget_authority_test in \
+      TestGS9EQualification \
+      TestGS9ERestartQualification \
+      TestGS9EImageDefaultOff; do
+      grep -Eq "^func[[:space:]]+${budget_authority_test}\\(" \
+        "${module_dir}"/cmd/budget-authority-server/*_test.go ||
+        fail "Workflow Control budget authority runtime profile is missing ${budget_authority_test}"
+    done
+    grep -Eq '^func[[:space:]]+TestBudgetAuthorityOpenAPIContract\(' \
+      "${module_dir}/tests/contracts/budget_authority_openapi_contract_test.go" ||
+      fail "Workflow Control budget authority runtime profile is missing TestBudgetAuthorityOpenAPIContract"
+    local budget_authority_named_test test_path test_function
+    for budget_authority_named_test in \
+      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerRequiresSchemaVersionSixOnly' \
+      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationSixWithoutRaisingExistingMinimums' \
+      'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
+      'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceRejectsIncompleteComposition' \
+      'internal/budgetapp/server_test.go|TestBudgetServicePinsBearerAndAllQualificationBindings' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceEnforcesCanonicalContentAndExactHeaders' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceReturnsClosedExactOriginalResponseOnReplay' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceFreshRejectedReserveStillReturnsDurableCreatedResponse' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceClassifiesAllClosedFreshMutationStatuses' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceReadEndpointsReturnExactDurableRecords' \
+      'internal/budgetapp/server_test.go|TestBudgetServiceMapsStableStoreErrors' \
+      'internal/budgetapp/server_test.go|TestBudgetQualificationRouteDriftReturnsRepositoryConflict' \
+      'internal/budgetapp/server_test.go|TestBudgetQualificationExactReplaySurvivesActiveBuildDrift' \
+      'internal/budgetapp/server_test.go|TestBudgetQualificationReadinessIsLightweightAndMetricsAreTyped' \
+      'internal/budgetapp/server_test.go|TestBudgetQualificationReadinessFailureReturns503' \
+      'internal/budgetapp/server_test.go|TestBudgetAuthorityTimeoutBudgetsLeaveResponseSlack' \
+      'internal/budgetapp/qualification_ordering_test.go|TestQualificationOnlyOrderingHarnessGatesProviderAndCachePublishOnDurability' \
+      'internal/budgetapp/qualification_ordering_test.go|TestQualificationOnlyOrderingHarnessCacheHitPerformsNoRepositoryMutation' \
+      'internal/budgetapp/qualification_ordering_test.go|TestQualificationOnlyOrderingHarnessFailsClosedBeforeCallbacks' \
+      'internal/budgetstore/durable_test.go|TestDurableRecordExactAuthorityAndProjectionBinding' \
+      'internal/budgetstore/response_test.go|TestMutationResponseExactEnvelopeAndCrossSpliceRejection' \
+      'internal/budgetstore/postgres/cross_authority_test.go|TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation' \
+      'internal/budgetstore/postgres/cross_authority_test.go|TestAuthorityBudgetGateUsesValidatedStartupSchemaVersion' \
+      'internal/budgetstore/postgres/replay_order_test.go|TestBudgetStoreExactReplayPrecedesActiveBuildAndPolicyChecks' \
+      'internal/budgetstore/postgres/replay_order_test.go|TestBudgetStoreFreshPolicyDriftConflictsWithoutMutation' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreQualification' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRejectedReserveExactReplay' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreConcurrentNoOverspend' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreFingerprintAndSemanticConflicts' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreSuccessfulAndFailedUsageSettlement' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreCacheHitHasZeroMutation' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRejectsNonzeroResumeGeneration' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRouteEpochAndBuildDriftConflictWithoutMutation' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreResponseLossRecovery' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDatabaseReconciliationResponseLossReplaysLatchedRun' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDatabaseReconciliationRejectsRunDriftWithoutLatch' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreProviderAndDatabaseUnknownAreSeparate' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreDoubleUnknownFailsClosed' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreSettledReservationCannotSettleTwice' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRestartRebuild' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRebuildCoversClosedLedgerKinds' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRebuildFailsClosedOnAnchorAndLedgerDrift' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreGenesisAnchorIsImmutable' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreKnownReceiptRequiresSafeAcceptedRevisions' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreReservationCloseTimeBindsTerminalLedger' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreRebuildQueryCountIsIndependentOfLedgerLength' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreMigrationIndexesMatchPointReadAndRebuildAccess' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreReservationTerminalShapeIsClosed' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreInt64RoundingAndOverflow' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreAccountRunRevisionDriftIsAConflict' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreImmutableAccountBindingDriftIsIntegrityFailure' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreIntegrityFailure' \
+      'internal/budgetstore/postgres/repository_test.go|TestBudgetStoreLegacyApprovalCannotReserve' \
+      'tests/integration/migration_test.go|TestBudgetAuthorityMigrationLocksSemanticIndexInventory' \
+      'tests/integration/migration_test.go|TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence' \
+      'internal/authoritystore/postgres/repository_test.go|TestGS9BAuthorityMutationRemainsCompatibleWithoutBudgetNamespace'; do
+      test_path="${budget_authority_named_test%%|*}"
+      test_function="${budget_authority_named_test#*|}"
+      grep -Eq "^func[[:space:]]+${test_function}\\(" "${module_dir}/${test_path}" ||
+        fail "Workflow Control budget authority runtime profile is missing ${test_function}"
+    done
+    for budget_authority_semantic_case in \
+      'tokens only' \
+      'nano usd only' \
+      'calls only' \
+      'combined'; do
+      grep -Fq "name: \"${budget_authority_semantic_case}\"" \
+        "${module_dir}/internal/budgetstore/postgres/repository_test.go" ||
+        fail "Workflow Control budget authority runtime profile is missing the ${budget_authority_semantic_case} concurrency bound"
+    done
+    grep -Fq 't.Run("ledger provider attempt receipt binding"' \
+      "${module_dir}/internal/budgetstore/postgres/repository_test.go" ||
+      fail "Workflow Control budget authority runtime profile is missing the provider-attempt receipt-binding rebuild case"
   fi
 
   if ((http_ref)); then
@@ -1169,7 +1334,8 @@ run_module_gate() {
     "${runtime_profile}" == "workflow-control-runner-v1" ||
     "${runtime_profile}" == "workflow-control-authority-v2" ||
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=127.0.0.1:8080
@@ -1177,7 +1343,8 @@ run_module_gate() {
     )
     if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082
@@ -1189,7 +1356,8 @@ run_module_gate() {
       )
     fi
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083
@@ -1199,7 +1367,8 @@ run_module_gate() {
         --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_CALLER_ID=typescript:workflow-checkpoint-shadow
       )
     fi
-    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084
@@ -1207,6 +1376,22 @@ run_module_gate() {
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_BEARER_TOKEN_SHA256=047ec1226bb42811637335e29130c659653eca181acad0015ae3fbe35c6d379d
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_WORKSPACE_ID=workspace.demo
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_CALLER_ID=typescript:workflow-effect-shadow
+      )
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
+      load_workflow_budget_qualification_fixture
+      run_args+=(
+        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
+        --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}"
+        --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}"
       )
     fi
   fi
@@ -1247,7 +1432,8 @@ run_module_gate() {
     "${runtime_profile}" == "workflow-control-runner-v1" ||
     "${runtime_profile}" == "workflow-control-authority-v2" ||
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
     ((has_database)) || fail "Workflow Control shadow qualification requires PostgreSQL"
     run_workflow_control_qualification \
       "${resource_prefix}" \
@@ -1259,7 +1445,8 @@ run_module_gate() {
     if [[ "${runtime_profile}" == "workflow-control-runner-v1" ||
       "${runtime_profile}" == "workflow-control-authority-v2" ||
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_workflow_runner_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1270,7 +1457,8 @@ run_module_gate() {
     fi
     if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_workflow_authority_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1280,7 +1468,8 @@ run_module_gate() {
         "${run_token}"
     fi
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_workflow_checkpoint_shadow_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1289,8 +1478,18 @@ run_module_gate() {
         "${resource_owner}" \
         "${run_token}"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       run_workflow_effect_shadow_qualification \
+        "${resource_prefix}" \
+        "${network}" \
+        "${database_container}" \
+        "${database_name}" \
+        "${resource_owner}" \
+        "${run_token}"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
+      run_workflow_budget_authority_qualification \
         "${resource_prefix}" \
         "${network}" \
         "${database_container}" \
@@ -1923,6 +2122,88 @@ run_workflow_effect_shadow_qualification() {
     "WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_workflow_budget_authority_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local test_name="$6"
+  shift 6
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  load_workflow_budget_qualification_fixture
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
+    --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}"
+    --env "WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}"
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/workflow-control
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/budget-authority-server -run "^${test_name}$" -count=1
+}
+
+run_workflow_budget_authority_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="workflow_control_gs9e_restart_${restart_token//-/}"
+
+  log "qualifying Workflow Control GS9-E PostgreSQL budget authority and failure bounds"
+  run_workflow_budget_authority_test_container \
+    "${resource_prefix}" budget-bounds "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9EQualification \
+    WORKFLOW_CONTROL_GS9E_QUALIFICATION=1
+
+  log "seeding Workflow Control GS9-E budget ledger restart qualification"
+  run_workflow_budget_authority_test_container \
+    "${resource_prefix}" budget-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9ERestartQualification \
+    WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed \
+    "WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS9-E budget authority restart"
+
+  log "verifying Workflow Control GS9-E durable budget ledger after PostgreSQL restart"
+  run_workflow_budget_authority_test_container \
+    "${resource_prefix}" budget-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    TestGS9ERestartQualification \
+    WORKFLOW_CONTROL_GS9E_RESTART_PHASE=verify \
+    "WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -2092,6 +2373,49 @@ run_workflow_effect_shadow_image_default_off() {
     go test -race ./cmd/effect-shadow-server -run '^TestGS9DImageDefaultOff$' -count=1
 }
 
+run_workflow_budget_authority_image_default_off() {
+  local resource_prefix="$1"
+  local image_tag="$2"
+  local resource_owner="$3"
+  local budget_container="${resource_prefix}-budget-authority-default-off"
+  local test_container="${resource_prefix}-qualification-budget-image-default-off"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+
+  cleanup_containers+=("${resource_owner}|${budget_container}")
+  docker_cmd_interruptible run -d --pull=never \
+    --name "${budget_container}" \
+    --label "com.openslack.go-check.run=${resource_owner}" \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+    --network none \
+    --health-cmd 'kill -0 1' \
+    --health-interval 1s \
+    --health-timeout 1s \
+    --health-retries 30 \
+    --entrypoint /budget-authority-server \
+    "${image_tag}" >/dev/null
+  require_resource_owned container "${budget_container}" "${resource_owner}"
+  wait_for_healthy_container "${budget_container}" "Workflow Control budget authority default-off"
+
+  cleanup_containers+=("${resource_owner}|${test_container}")
+  docker_cmd_interruptible run --rm --pull=never \
+    --name "${test_container}" \
+    --label "com.openslack.go-check.run=${resource_owner}" \
+    --network "container:${budget_container}" \
+    --env GOTOOLCHAIN=local \
+    --env GOWORK=off \
+    --env GOMODCACHE=/go/pkg/mod \
+    --env GOCACHE=/root/.cache/go-build \
+    --env WORKFLOW_CONTROL_GS9E_DEFAULT_ORIGIN=http://127.0.0.1:8085 \
+    --mount "type=bind,source=${repository_mount},target=/source,readonly" \
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod" \
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build" \
+    --workdir /source/services/workflow-control \
+    "${GO_IMAGE}" \
+    go test -race ./cmd/budget-authority-server -run '^TestGS9EImageDefaultOff$' -count=1
+}
+
 run_http_smoke() {
   local resource_prefix="$1"
   local image_tag="$2"
@@ -2157,7 +2481,8 @@ run_http_smoke() {
     "${runtime_profile}" == "workflow-control-runner-v1" ||
     "${runtime_profile}" == "workflow-control-authority-v2" ||
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=:8080
@@ -2193,7 +2518,8 @@ run_http_smoke() {
     "${runtime_profile}" == "workflow-control-runner-v1" ||
     "${runtime_profile}" == "workflow-control-authority-v2" ||
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+    "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
     log "verifying Workflow Control GS7-B image API responses"
     run_workflow_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
@@ -2202,7 +2528,8 @@ run_http_smoke() {
     if [[ "${runtime_profile}" == "workflow-control-runner-v1" ||
       "${runtime_profile}" == "workflow-control-authority-v2" ||
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       log "verifying Workflow Control GS8-B default image keeps runner disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
@@ -2211,20 +2538,28 @@ run_http_smoke() {
     fi
     if [[ "${runtime_profile}" == "workflow-control-authority-v2" ||
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       log "verifying Workflow Control GS9-B authority image defaults to mutation-off"
       run_workflow_authority_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
-      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       log "verifying Workflow Control GS9-C checkpoint shadow image defaults to observation-off"
       run_workflow_checkpoint_shadow_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
+      "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
       log "verifying Workflow Control GS9-D effect shadow image defaults to observation-off"
       run_workflow_effect_shadow_image_default_off \
+        "${resource_prefix}" "${image_tag}" "${resource_owner}"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ]]; then
+      log "verifying Workflow Control GS9-E budget authority image defaults to mutation-off"
+      run_workflow_budget_authority_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
   fi

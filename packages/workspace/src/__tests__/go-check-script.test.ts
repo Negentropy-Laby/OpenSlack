@@ -19,6 +19,15 @@ const containerGateSource = readFileSync(
   join(repositoryRoot, 'scripts/go-check/container-gate.sh'),
   'utf8',
 );
+const gs9eQualificationFixture = Object.fromEntries(
+  readFileSync(
+    join(repositoryRoot, 'services/workflow-control/testdata/gs9e-qualification.conf'),
+    'utf8',
+  )
+    .trim()
+    .split('\n')
+    .map((line) => line.split('=', 2) as [string, string]),
+);
 const temporaryRoots: string[] = [];
 const describeOnBashHosts = process.platform === 'win32' ? describe.skip : describe;
 
@@ -76,7 +85,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-effect-shadow-v1',
+        'runtime_profile=workflow-control-budget-authority-v1',
         '',
       ].join('\n'),
     );
@@ -103,6 +112,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       "'!authoritycontract/'",
       "'!authoritycontract/*.go'",
       "'!authoritycontract/generated/v2/schemas/*.json'",
+      "'!budgetcontract/'",
+      "'!budgetcontract/*.go'",
+      "'!budgetcontract/generated/v1/schemas/*.json'",
     ]) {
       expect(goCheckSource).toContain(reviewedWorkflowAuthoritySource);
     }
@@ -785,6 +797,98 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
     expect(failureLog).toContain('-qualification-effect-bounds');
     expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed');
+  }, 30_000);
+
+  it('runs the Workflow Control GS9-E budget profile as a strict GS7/GS8/GS9-B/C/D superset', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    addWorkflowAuthorityEvidence(moduleRoot);
+    addWorkflowCheckpointShadowEvidence(moduleRoot);
+    addWorkflowEffectShadowEvidence(moduleRoot);
+    addWorkflowBudgetAuthorityEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-budget-authority-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9D_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1');
+    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085');
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}`,
+    );
+    expect(log).toContain(
+      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}`,
+    );
+    expect(goCheckSource).toContain('${staged_module_dir}/testdata/gs9e-qualification.conf');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9E_QUALIFICATION=1');
+    expect(log).toContain('-run \\^TestGS9EQualification\\$');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS9ERestartQualification\\$');
+    expect(log).toContain('--entrypoint /budget-authority-server');
+    expect(log).toContain('WORKFLOW_CONTROL_GS9E_DEFAULT_ORIGIN=http://127.0.0.1:8085');
+    expect(log).toContain('-run \\^TestGS9EImageDefaultOff\\$');
+    const budgetDefaultOffRun = log
+      .split('\n')
+      .find((line) => line.includes('--entrypoint /budget-authority-server'));
+    expect(budgetDefaultOffRun).toContain('--network none');
+    expect(budgetDefaultOffRun).not.toContain('DATABASE_URL=');
+    expect(budgetDefaultOffRun).not.toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=');
+    expect(budgetDefaultOffRun).not.toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA=(workflow_control_gs9e_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(6);
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    addWorkflowAuthorityEvidence(failureModuleRoot);
+    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
+    addWorkflowEffectShadowEvidence(failureModuleRoot);
+    addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-budget-authority-v1',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9E_FAIL_PHASE: 'budget-bounds',
+      FAKE_GS9E_FAIL_STATUS: '51',
+    });
+    expect(failure.status).toBe(51);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-budget-bounds');
+    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');
   }, 30_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
@@ -1611,6 +1715,7 @@ function addWorkflowAuthorityEvidence(moduleRoot: string): void {
       'func TestGS9BAuthorityReadRejectsTamperedCanonicalOutboxBytes(t *testing.T) {}',
       'func TestGS9BAuthorityRejectsCorruptStoredReceiptAsIntegrityFailure(t *testing.T) {}',
       'func TestGS9BAuthorityReadyUsesLightweightProbe(t *testing.T) {}',
+      'func TestGS9BAuthorityMutationRemainsCompatibleWithoutBudgetNamespace(t *testing.T) {}',
       'func TestGS9BAuthoritySameKeyDifferentFingerprintConflicts(t *testing.T) {}',
       'func TestGS9BAuthorityTransitionCASAndOutboxAtomicity(t *testing.T) {}',
       'func TestGS9BAuthorityRouteDriftConflicts(t *testing.T) {}',
@@ -1849,6 +1954,236 @@ function addWorkflowEffectShadowEvidence(moduleRoot: string): void {
   );
 }
 
+function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
+  const fixtureRoot = resolve(moduleRoot, '../..');
+  for (const directory of [
+    'scripts/workflow-budget-authority-contracts',
+    'packages/workflows/contracts/workflow-budget-authority/v1',
+  ]) {
+    mkdirSync(join(fixtureRoot, directory), { recursive: true });
+  }
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-budget-authority-contracts/index.ts'),
+    'export {};\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'scripts/workflow-budget-authority-contracts/tsconfig.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(fixtureRoot, 'packages/workflows/contracts/workflow-budget-authority/v1/manifest.json'),
+    '{}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(
+      fixtureRoot,
+      'packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json',
+    ),
+    '{}\n',
+    'utf8',
+  );
+  for (const directory of [
+    'cmd/budget-authority-server',
+    'internal/budgetapp',
+    'internal/budgetstore/postgres',
+    'internal/config',
+    'internal/databaseready',
+    'testdata',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(
+    join(moduleRoot, 'testdata/gs9e-qualification.conf'),
+    [...Object.entries(gs9eQualificationFixture).map(([key, value]) => `${key}=${value}`), ''].join(
+      '\n',
+    ),
+    'utf8',
+  );
+  writeFileSync(join(moduleRoot, 'cmd/budget-authority-server/main.go'), 'package main\n', 'utf8');
+  writeFileSync(
+    join(moduleRoot, 'cmd/budget-authority-server/main_test.go'),
+    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerRequiresSchemaVersionSixOnly(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'cmd/budget-authority-server/qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9EQualification(t *testing.T) {}',
+      'func TestGS9ERestartQualification(t *testing.T) {}',
+      'func TestGS9EImageDefaultOff(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetapp/server_test.go'),
+    [
+      'package budgetapp',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics(t *testing.T) {}',
+      'func TestBudgetServiceRejectsIncompleteComposition(t *testing.T) {}',
+      'func TestBudgetServicePinsBearerAndAllQualificationBindings(t *testing.T) {}',
+      'func TestBudgetServiceEnforcesCanonicalContentAndExactHeaders(t *testing.T) {}',
+      'func TestBudgetServiceReturnsClosedExactOriginalResponseOnReplay(t *testing.T) {}',
+      'func TestBudgetServiceFreshRejectedReserveStillReturnsDurableCreatedResponse(t *testing.T) {}',
+      'func TestBudgetServiceClassifiesAllClosedFreshMutationStatuses(t *testing.T) {}',
+      'func TestBudgetServiceReadEndpointsReturnExactDurableRecords(t *testing.T) {}',
+      'func TestBudgetServiceMapsStableStoreErrors(t *testing.T) {}',
+      'func TestBudgetQualificationRouteDriftReturnsRepositoryConflict(t *testing.T) {}',
+      'func TestBudgetQualificationExactReplaySurvivesActiveBuildDrift(t *testing.T) {}',
+      'func TestBudgetQualificationReadinessIsLightweightAndMetricsAreTyped(t *testing.T) {}',
+      'func TestBudgetQualificationReadinessFailureReturns503(t *testing.T) {}',
+      'func TestBudgetAuthorityTimeoutBudgetsLeaveResponseSlack(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetapp/qualification_ordering_test.go'),
+    [
+      'package budgetapp',
+      '',
+      'import "testing"',
+      '',
+      'func TestQualificationOnlyOrderingHarnessGatesProviderAndCachePublishOnDurability(t *testing.T) {}',
+      'func TestQualificationOnlyOrderingHarnessCacheHitPerformsNoRepositoryMutation(t *testing.T) {}',
+      'func TestQualificationOnlyOrderingHarnessFailsClosedBeforeCallbacks(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/postgres/repository_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetStoreQualification(t *testing.T) {}',
+      'func TestBudgetStoreRejectedReserveExactReplay(t *testing.T) {}',
+      'func TestBudgetStoreConcurrentNoOverspend(t *testing.T) {}',
+      'func TestBudgetStoreFingerprintAndSemanticConflicts(t *testing.T) {}',
+      'func TestBudgetStoreSuccessfulAndFailedUsageSettlement(t *testing.T) {}',
+      'func TestBudgetStoreCacheHitHasZeroMutation(t *testing.T) {}',
+      'func TestBudgetStoreRejectsNonzeroResumeGeneration(t *testing.T) {}',
+      'func TestBudgetStoreRouteEpochAndBuildDriftConflictWithoutMutation(t *testing.T) {}',
+      'func TestBudgetStoreResponseLossRecovery(t *testing.T) {}',
+      'func TestBudgetStoreDatabaseReconciliationResponseLossReplaysLatchedRun(t *testing.T) {}',
+      'func TestBudgetStoreDatabaseReconciliationRejectsRunDriftWithoutLatch(t *testing.T) {}',
+      'func TestBudgetStoreProviderAndDatabaseUnknownAreSeparate(t *testing.T) {}',
+      'func TestBudgetStoreDoubleUnknownFailsClosed(t *testing.T) {}',
+      'func TestBudgetStoreSettledReservationCannotSettleTwice(t *testing.T) {}',
+      'func TestBudgetStoreRestartRebuild(t *testing.T) {}',
+      'func TestBudgetStoreRebuildCoversClosedLedgerKinds(t *testing.T) {}',
+      'func TestBudgetStoreRebuildFailsClosedOnAnchorAndLedgerDrift(t *testing.T) {}',
+      'func TestBudgetStoreGenesisAnchorIsImmutable(t *testing.T) {}',
+      'func TestBudgetStoreKnownReceiptRequiresSafeAcceptedRevisions(t *testing.T) {}',
+      'func TestBudgetStoreReservationCloseTimeBindsTerminalLedger(t *testing.T) {}',
+      'func TestBudgetStoreRebuildQueryCountIsIndependentOfLedgerLength(t *testing.T) {}',
+      'func TestBudgetStoreMigrationIndexesMatchPointReadAndRebuildAccess(t *testing.T) {}',
+      'func TestBudgetStoreReservationTerminalShapeIsClosed(t *testing.T) {}',
+      'func TestBudgetStoreInt64RoundingAndOverflow(t *testing.T) {}',
+      'func TestBudgetStoreAccountRunRevisionDriftIsAConflict(t *testing.T) {}',
+      'func TestBudgetStoreImmutableAccountBindingDriftIsIntegrityFailure(t *testing.T) {}',
+      'func TestBudgetStoreIntegrityFailure(t *testing.T) {}',
+      'func TestBudgetStoreLegacyApprovalCannotReserve(t *testing.T) {}',
+      'var concurrencyCases = []struct { name string }{{name: "tokens only"}, {name: "nano usd only"}, {name: "calls only"}, {name: "combined"}}',
+      'func testProviderAttemptReceiptBinding(t *testing.T) { t.Run("ledger provider attempt receipt binding", func(t *testing.T) {}) }',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/postgres/cross_authority_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetDatabaseReconciliationSerializesAndGatesAuthorityMutation(t *testing.T) {}',
+      'func TestAuthorityBudgetGateUsesValidatedStartupSchemaVersion(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/postgres/replay_order_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetStoreExactReplayPrecedesActiveBuildAndPolicyChecks(t *testing.T) {}',
+      'func TestBudgetStoreFreshPolicyDriftConflictsWithoutMutation(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/durable_test.go'),
+    'package budgetstore\n\nimport "testing"\n\nfunc TestDurableRecordExactAuthorityAndProjectionBinding(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/response_test.go'),
+    'package budgetstore\n\nimport "testing"\n\nfunc TestMutationResponseExactEnvelopeAndCrossSpliceRejection(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/config/budget_authority_test.go'),
+    [
+      'package config',
+      '',
+      'import "testing"',
+      '',
+      'func TestBudgetAuthorityRejectsNonCanonicalQualificationSeed(t *testing.T) {}',
+      'func TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/databaseready/databaseready_test.go'),
+    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationSixWithoutRaisingExistingMinimums(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000006_create_workflow_control_budget_authority.up.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000006_create_workflow_control_budget_authority.down.sql'),
+    'SELECT 1;\n',
+    'utf8',
+  );
+  const migrationTestPath = join(moduleRoot, 'tests/integration/migration_test.go');
+  writeFileSync(
+    migrationTestPath,
+    `${readFileSync(migrationTestPath, 'utf8')}\nfunc TestBudgetAuthorityMigrationLocksSemanticIndexInventory(t *testing.T) {}\nfunc TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {}\n`,
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'tests/contracts/budget_authority_openapi_contract_test.go'),
+    'package contracts\n\nimport "testing"\n\nfunc TestBudgetAuthorityOpenAPIContract(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'docs/api/budget-authority-openapi.yaml'),
+    'openapi: 3.1.0\n',
+    'utf8',
+  );
+}
+
 function createFullServiceFixture(): Fixture {
   const fixture = createFixture();
   addFullServiceCapabilities(join(fixture.root, 'services/pure'));
@@ -2003,6 +2338,9 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS9D_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9D_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS9D_FAIL_STATUS:-50}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS9E_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9E_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS9E_FAIL_STATUS:-51}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

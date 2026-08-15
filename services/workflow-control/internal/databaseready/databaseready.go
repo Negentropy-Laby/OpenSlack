@@ -15,7 +15,7 @@ type Range struct {
 	Maximum int64
 }
 
-const CurrentSchemaVersion int64 = 5
+const CurrentSchemaVersion int64 = 6
 
 var (
 	ShadowProfile     = Range{Minimum: 1, Maximum: CurrentSchemaVersion}
@@ -23,6 +23,7 @@ var (
 	AuthorityProfile  = Range{Minimum: 3, Maximum: CurrentSchemaVersion}
 	CheckpointProfile = Range{Minimum: 4, Maximum: CurrentSchemaVersion}
 	EffectProfile     = Range{Minimum: 5, Maximum: CurrentSchemaVersion}
+	BudgetProfile     = Range{Minimum: 6, Maximum: 6}
 )
 
 func RunnerRange(checkpointShadow, effectShadow bool) Range {
@@ -43,19 +44,28 @@ type Database interface {
 
 // RequireCleanSchema requires exactly one non-dirty migration row in range.
 func RequireCleanSchema(ctx context.Context, database Database, supported Range) error {
+	_, err := RequireCleanSchemaVersion(ctx, database, supported)
+	return err
+}
+
+// RequireCleanSchemaVersion returns the exact schema version after proving the
+// database has one clean migration head in the supported range. Composition
+// roots can pass this trusted startup fact to schema-aware repositories instead
+// of probing catalog state on every mutation.
+func RequireCleanSchemaVersion(ctx context.Context, database Database, supported Range) (int64, error) {
 	if database == nil || supported.Minimum < 1 || supported.Maximum < supported.Minimum {
-		return fmt.Errorf("database schema range is invalid")
+		return 0, fmt.Errorf("database schema range is invalid")
 	}
 	if err := database.Ping(ctx); err != nil {
-		return fmt.Errorf("database ping: %w", err)
+		return 0, fmt.Errorf("database ping: %w", err)
 	}
 	var count, version int64
 	var dirty bool
 	if err := database.QueryRow(ctx, `SELECT count(*), COALESCE(max(version), 0), COALESCE(bool_or(dirty), false) FROM schema_migrations`).Scan(&count, &version, &dirty); err != nil {
-		return fmt.Errorf("read schema_migrations: %w", err)
+		return 0, fmt.Errorf("read schema_migrations: %w", err)
 	}
 	if count != 1 || dirty || version < supported.Minimum || version > supported.Maximum {
-		return fmt.Errorf("database schema version must be one clean row between %d and %d", supported.Minimum, supported.Maximum)
+		return 0, fmt.Errorf("database schema version must be one clean row between %d and %d", supported.Minimum, supported.Maximum)
 	}
-	return nil
+	return version, nil
 }

@@ -2,14 +2,18 @@ package integration_test
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 )
 
@@ -39,6 +43,11 @@ ORDER BY table_name`)
 	}
 	want := []string{
 		"workflow_control_authority_epochs",
+		"workflow_control_budget_accounts",
+		"workflow_control_budget_ledger",
+		"workflow_control_budget_receipts",
+		"workflow_control_budget_reconciliations",
+		"workflow_control_budget_reservations",
 		"workflow_control_checkpoint_shadow_heads",
 		"workflow_control_checkpoint_shadow_observations",
 		"workflow_control_checkpoint_shadow_receipts",
@@ -88,6 +97,11 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_transition_events',
 	      'workflow_control_transition_receipts',
 	      'workflow_control_reconciliations',
+	      'workflow_control_budget_accounts',
+	      'workflow_control_budget_reservations',
+	      'workflow_control_budget_ledger',
+	      'workflow_control_budget_receipts',
+	      'workflow_control_budget_reconciliations',
 	      'workflow_control_checkpoint_shadow_observations',
 	      'workflow_control_checkpoint_shadow_receipts',
 	      'workflow_control_checkpoint_shadow_reconciliations',
@@ -108,9 +122,161 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 37 {
-		t.Fatalf("immutable trigger coverage = %d, want 37 event rows", triggerEvents)
+	if triggerEvents != 47 {
+		t.Fatalf("immutable trigger coverage = %d, want 47 event rows", triggerEvents)
 	}
+}
+
+func TestBudgetAuthorityMigrationLocksSemanticIndexInventory(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	rows, err := pool.Query(context.Background(), `
+SELECT indexname
+FROM pg_indexes
+WHERE schemaname=current_schema() AND tablename LIKE 'workflow_control_budget_%'
+ORDER BY indexname`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, name)
+		if len(name) > 63 {
+			t.Fatalf("PostgreSQL identifier was not explicitly bounded: %q", name)
+		}
+	}
+	want := []string{
+		"workflow_control_budget_accounts_pkey",
+		"workflow_control_budget_accounts_workspace_account_key",
+		"workflow_control_budget_ledger_account_revision_key",
+		"workflow_control_budget_ledger_hash_key",
+		"workflow_control_budget_ledger_pkey",
+		"workflow_control_budget_ledger_reserve_call_attempt_idx",
+		"workflow_control_budget_ledger_reserve_reservation_idx",
+		"workflow_control_budget_ledger_run_revision_key",
+		"workflow_control_budget_ledger_settlement_reservation_idx",
+		"workflow_control_budget_receipts_idempotency_key",
+		"workflow_control_budget_receipts_ledger_binding_idx",
+		"workflow_control_budget_receipts_pkey",
+		"workflow_control_budget_receipts_run_idx",
+		"workflow_control_budget_recon_one_open_db_run_idx",
+		"workflow_control_budget_reconciliations_idem_key",
+		"workflow_control_budget_reconciliations_pkey",
+		"workflow_control_budget_reconciliations_receipt_key",
+		"workflow_control_budget_reconciliations_run_idx",
+		"workflow_control_budget_reservations_call_attempt_key",
+		"workflow_control_budget_reservations_open_idx",
+		"workflow_control_budget_reservations_pkey",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("budget index inventory got=%v want=%v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("budget index inventory got=%v want=%v", got, want)
+		}
+	}
+}
+
+func TestBudgetAuthorityDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
+	t.Run("empty namespace is independently removable", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		if _, err := pool.Exec(context.Background(), budgetAuthorityDownMigration(t)); err != nil {
+			t.Fatal(err)
+		}
+		var budgetTables, priorTables int
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name LIKE 'workflow_control_budget_%'`).Scan(&budgetTables); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('workflow_control_runs','workflow_control_checkpoint_shadow_heads','workflow_control_effect_shadow_heads')`).Scan(&priorTables); err != nil {
+			t.Fatal(err)
+		}
+		if budgetTables != 0 || priorTables != 3 {
+			t.Fatalf("budget=%d prior=%d", budgetTables, priorTables)
+		}
+	})
+	t.Run("evidence prevents destructive rollback", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		ctx := context.Background()
+		genesisHash, genesisBytes := budgetMigrationAccount(t, 0)
+		accountHash, accountBytes := budgetMigrationAccount(t, 1)
+		if _, err := pool.Exec(ctx, `
+INSERT INTO workflow_control_authority_epochs (workspace_id,routing_epoch,backend,authority,authority_build_hash)
+VALUES ('workspace-budget-down',1,'go','workflow-control',decode(repeat('11',32),'hex'));
+INSERT INTO workflow_control_runs (
+ workspace_id,run_id,workflow_id,workflow_version,workflow_source_hash,manifest_hash,input_hash,
+ backend,authority,routing_epoch,authority_build_hash,state,revision,resume_generation,record_hash,canonical_record_bytes
+) VALUES (
+ 'workspace-budget-down','run-budget-down','workflow','v1',decode(repeat('22',32),'hex'),decode(repeat('33',32),'hex'),decode(repeat('44',32),'hex'),
+ 'go','workflow-control',1,decode(repeat('11',32),'hex'),'running',1,0,decode(repeat('55',32),'hex'),convert_to('{}','UTF8')
+);
+INSERT INTO workflow_control_budget_accounts (
+ workspace_id,run_id,account_id,policy_hash,backend,authority,routing_epoch,authority_build_hash,
+ account_revision,run_revision,limit_tokens,limit_nano_usd,limit_calls,reserved_tokens,reserved_nano_usd,reserved_calls,
+ settled_tokens,settled_nano_usd,settled_calls,genesis_account_hash,canonical_genesis_account_bytes,
+ account_hash,canonical_account_bytes,updated_at
+) VALUES (
+ 'workspace-budget-down','run-budget-down','account-budget-down',decode(repeat('66',32),'hex'),'go','workflow-control',1,decode(repeat('11',32),'hex'),
+ 1,1,1,1,1,0,0,0,0,0,0,$1,$2,$3,$4,$5::timestamptz
+)`, genesisHash, genesisBytes, accountHash, accountBytes, "2026-08-15T00:00:00.000Z"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, budgetAuthorityDownMigration(t)); err == nil {
+			t.Fatal("non-empty budget authority rollback unexpectedly succeeded")
+		} else {
+			requireSQLState(t, err, "P0001")
+		}
+		var accounts, runs int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_control_budget_accounts WHERE workspace_id='workspace-budget-down'`).Scan(&accounts); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_control_runs WHERE workspace_id='workspace-budget-down'`).Scan(&runs); err != nil {
+			t.Fatal(err)
+		}
+		if accounts != 1 || runs != 1 {
+			t.Fatalf("accounts=%d runs=%d after refused rollback", accounts, runs)
+		}
+	})
+}
+
+func budgetMigrationAccount(t *testing.T, accountRevision int64) ([]byte, []byte) {
+	t.Helper()
+	zero := budgetcontract.Record{"tokens": "0", "nanoUsd": "0", "calls": "0"}
+	value, err := budgetcontract.ValidateAccount(budgetcontract.Record{
+		"schema": budgetcontract.SchemaAccount, "contractVersion": budgetcontract.ContractVersion,
+		"authority": budgetcontract.Authority, "writer": budgetcontract.Writer,
+		"goRole": budgetcontract.GoRole, "goAuthorityClaim": budgetcontract.GoAuthorityClaim,
+		"goAuthorityEligible": false, "workspaceId": "workspace-budget-down",
+		"runId": "run-budget-down", "accountId": "account-budget-down",
+		"policyHash": strings.Repeat("6", 64),
+		"route": budgetcontract.Record{
+			"backend": "go", "authority": "workflow-control", "routingEpoch": int64(1),
+			"authorityBuildHash": strings.Repeat("1", 64),
+		},
+		"accountRevision": accountRevision, "runRevision": int64(1),
+		"limit":    budgetcontract.Record{"tokens": "1", "nanoUsd": "1", "calls": "1"},
+		"reserved": zero, "settled": zero, "updatedAt": "2026-08-15T00:00:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("build rollback budget account projection: %v", err)
+	}
+	durable, err := budgetstore.NewDurableRecord(budgetstore.RecordKindAccount, value, strings.Repeat("1", 64))
+	if err != nil {
+		t.Fatalf("build rollback durable budget account: %v", err)
+	}
+	exact, err := budgetstore.EncodeDurableRecord(durable)
+	if err != nil {
+		t.Fatalf("encode rollback durable budget account: %v", err)
+	}
+	digest, err := hex.DecodeString(durable.OperationalProjectionHash)
+	if err != nil {
+		t.Fatalf("decode rollback durable budget account hash: %v", err)
+	}
+	return digest, exact
 }
 
 func TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
@@ -464,6 +630,20 @@ func effectShadowDownMigration(t *testing.T) string {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read GS9-D down migration: %v", err)
+	}
+	return string(body)
+}
+
+func budgetAuthorityDownMigration(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve migration test source path")
+	}
+	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000006_create_workflow_control_budget_authority.down.sql"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read GS9-E2 down migration: %v", err)
 	}
 	return string(body)
 }

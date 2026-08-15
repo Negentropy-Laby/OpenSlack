@@ -209,6 +209,16 @@ func TestWorkflowBudgetAuthorityRejectsFramingAndAuthorityDrift(t *testing.T) {
 	if _, err := ValidateReceiptForRequest(receipt, prepared); err != nil {
 		t.Fatalf("bound receipt rejected: %v", err)
 	}
+	var typedNilReconciliation Record
+	if _, err := ValidateReceiptForResult(
+		receipt,
+		prepared,
+		golden.Vectors.Records["reserveReserved"].Value,
+		golden.Vectors.Records["reserveLedger"].Value,
+		typedNilReconciliation,
+	); err != nil {
+		t.Fatalf("typed nil reconciliation rejected an accepted result: %v", err)
+	}
 	driftedReceipt := cloneValue(t, receipt).(map[string]any)
 	driftedReceipt["serviceBuildHash"] = "6" + driftedReceipt["serviceBuildHash"].(string)[1:]
 	if _, err := ValidateReceiptForRequest(driftedReceipt, prepared); !hasCode(err, ErrorIdentityMismatch) {
@@ -314,6 +324,21 @@ func assertFoldReceipt(t *testing.T, operation string, fold map[string]any, reco
 	}
 	if !exactEqual(receipt, fold["receipt"]) || !exactEqual(fold["exactReplay"], fold["receipt"]) {
 		t.Fatalf("%s fold receipt or exact replay drifted", operation)
+	}
+}
+
+func TestPrepareRequestBytesReturnsTheValidatedCanonicalRecord(t *testing.T) {
+	request := loadGolden(t).Vectors.Folds["reserve"]["request"]
+	prepared, err := PrepareRequest("reserve", request, "qualification-caller")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromBytes, record, err := PrepareRequestBytes("reserve", []byte(prepared.Body), "qualification-caller")
+	if err != nil || fromBytes != prepared || !exactEqual(record, request) {
+		t.Fatalf("prepared bytes=%#v record=%#v err=%v", fromBytes, record, err)
+	}
+	if _, _, err := PrepareRequestBytes("reserve", []byte(prepared.Body+"{}\n"), "qualification-caller"); err == nil {
+		t.Fatal("prepared request accepted a second JSON value")
 	}
 }
 

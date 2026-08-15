@@ -27,6 +27,13 @@ internal/testsupport/**
 !authoritycontract/generated/v2/*.json
 !authoritycontract/generated/v2/schemas/
 !authoritycontract/generated/v2/schemas/*.json
+!budgetcontract/
+!budgetcontract/*.go
+!budgetcontract/generated/
+!budgetcontract/generated/v1/
+!budgetcontract/generated/v1/*.json
+!budgetcontract/generated/v1/schemas/
+!budgetcontract/generated/v1/schemas/*.json
 !runnerprotocol/
 !runnerprotocol/*.go
 !migrations/

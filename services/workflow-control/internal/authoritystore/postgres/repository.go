@@ -21,21 +21,28 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runlock"
 )
 
 const (
 	idempotencyLockSalt   int64 = 628239560154201
-	runLockSalt           int64 = 628239560154202
 	reconciliationTimeout       = 5 * time.Second
 )
 
 type Repository struct {
 	pool                 *pgxpool.Pool
+	budgetGateEnabled    bool
 	commitTransaction    func(context.Context, pgx.Tx) error
 	commitReconciliation func(context.Context, pgx.Tx) error
 }
 
-func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+func New(pool *pgxpool.Pool, schemaVersion ...int64) *Repository {
+	version := int64(6)
+	if len(schemaVersion) == 1 {
+		version = schemaVersion[0]
+	}
+	return &Repository{pool: pool, budgetGateEnabled: version == 6}
+}
 
 // NewWithCommitter injects the commit boundary so qualification can prove
 // response-loss recovery and ambiguous uncommitted reconciliation. The
@@ -44,7 +51,7 @@ func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 // Rollback to model an unknown outcome. Returning with an open transaction is
 // invalid because recovery would remain blocked on its locks.
 func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) error) *Repository {
-	return &Repository{pool: pool, commitTransaction: commit}
+	return &Repository{pool: pool, budgetGateEnabled: true, commitTransaction: commit}
 }
 
 // NewWithCommitters additionally applies the same callback contract to the
@@ -55,7 +62,7 @@ func NewWithCommitters(
 	mutationCommit func(context.Context, pgx.Tx) error,
 	reconciliationCommit func(context.Context, pgx.Tx) error,
 ) *Repository {
-	return &Repository{pool: pool, commitTransaction: mutationCommit, commitReconciliation: reconciliationCommit}
+	return &Repository{pool: pool, budgetGateEnabled: true, commitTransaction: mutationCommit, commitReconciliation: reconciliationCommit}
 }
 
 type head struct {
@@ -113,6 +120,13 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 	}
 	if reconciliationOpen {
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "workflow run has an open reconciliation", nil)
+	}
+	budgetReconciliationOpen, err := repository.hasOpenBudgetDatabaseReconciliation(ctx, tx, request.WorkspaceID, request.RunID)
+	if err != nil {
+		return authoritystore.Receipt{}, err
+	}
+	if budgetReconciliationOpen {
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "workflow run has an open budget database reconciliation", nil)
 	}
 
 	current, err := readHead(ctx, tx, request.WorkspaceID, request.RunID)
@@ -645,17 +659,13 @@ func lockScope(ctx context.Context, tx pgx.Tx, key, workspaceID, runID string) e
 		name  string
 	}{
 		{key, idempotencyLockSalt, "lock workflow authority idempotency key"},
-		{runLockKey(workspaceID, runID), runLockSalt, "lock workflow authority run"},
+		{runlock.Key(workspaceID, runID), runlock.AdvisorySalt, "lock workflow authority run"},
 	} {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,$2))`, lock.value, lock.salt); err != nil {
 			return databaseFailure(lock.name, err)
 		}
 	}
 	return nil
-}
-
-func runLockKey(workspaceID, runID string) string {
-	return strconv.Itoa(len(workspaceID)) + ":" + workspaceID + strconv.Itoa(len(runID)) + ":" + runID
 }
 
 func randomToken(prefix string) (string, error) {

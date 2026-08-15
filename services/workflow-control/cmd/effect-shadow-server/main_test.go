@@ -6,7 +6,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 )
 
-func TestEffectShadowRequiresSchemaFive(t *testing.T) {
+func TestEffectShadowSupportsSchemaThroughVersionSix(t *testing.T) {
 	if databaseready.EffectProfile.Minimum != 5 || databaseready.EffectProfile.Maximum != databaseready.CurrentSchemaVersion {
 		t.Fatalf("schema range=%d..%d", databaseready.EffectProfile.Minimum, databaseready.EffectProfile.Maximum)
 	}

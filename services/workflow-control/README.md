@@ -4,9 +4,9 @@ This module contains the GS7-A pure Go consumer of the TypeScript-owned Workflow
 contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B runner-lifecycle
 control plane, the GS9-B default-off PostgreSQL authority qualification spine, the GS9-C
 checkpoint/resume differential observer, and the GS9-D effect decision/audit differential
-observer. It also contains the repository-only GS9-E1 budget operational contract mirror. The five
-servers are separate entry points with separate configuration and authority boundaries; the E1 Go
-package is a validator and has no server entry point.
+observer. It also contains the GS9-E1 budget operational contract mirror and the GS9-E2 default-off
+PostgreSQL budget qualification authority. The six servers are separate entry points with separate
+configuration and authority boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -164,8 +164,56 @@ token, `nano_usd`, and call folds. It is validator-only and cannot reserve, sett
 persist a budget operation. Existing TypeScript floating-point cost estimates remain outside the
 contract authority boundary.
 
-GS9-E1 adds no migration, database repository, HTTP API, route, binary, container entry point,
-runtime budget client, production worker configuration, runner-v2 delivery, routing, or canary.
-TypeScript remains the sole production Workflow and budget authority. The default image and its
-five existing servers do not copy, import, or expose this repository-only package. GS9-E2
-PostgreSQL budget qualification remains pending.
+GS9-E1 itself adds no migration, database repository, HTTP API, route, binary, container entry
+point, runtime budget client, production worker configuration, runner-v2 delivery, routing, or
+canary. GS9-E2 consumes the frozen mirror only inside its separate qualification process.
+
+## Explicit GS9-E2 budget authority qualification mode
+
+The image contains `/budget-authority-server`, but its default entry point remains `/server`.
+Without `WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1`, the budget binary is
+health-only and does not open PostgreSQL or register data routes. Explicit qualification requires:
+
+```text
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_SERVICE_BUILD_SHA=<64 lowercase hex>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_BEARER_TOKEN_SHA256=<sha256 of bearer token>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_WORKSPACE_ID=<workspace id>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_CALLER_ID=<caller id>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=<positive integer>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=<64 lowercase hex>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=<canonical nonnegative int64>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=<canonical nonnegative int64>
+WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=<canonical nonnegative int64>
+```
+
+The isolated store owns only qualification accounts, reservations, append-only ledger, exact
+receipts, and reconciliation. Each durable record uses the Go-owned
+`openslack.workflow_control_budget_durable_record.v1` companion envelope; its embedded frozen E1
+record remains a non-authorizing TypeScript operational projection. The outer envelope binds the
+qualification authority, writer, mode, build, E1 manifest, closed record kind, projection, and
+projection domain hash while declaring `productionAuthority=false`. It locks and CAS-advances an
+existing GS9-B running head while keeping account revision independent; it writes no Workflow
+transition event and does not reuse the GS8 runner or GS9-C/D shadow tables. Same-key replay is
+byte-identical, a different fingerprint conflicts, and an unprovable commit blocks the run through
+durable reconciliation.
+Because Runner v2 and its resume delivery are not present, this E2 qualification authority accepts
+only `resumeGeneration=0`; a resumed run fails closed without creating budget evidence.
+The account retains an immutable canonical genesis snapshot. Restart verification folds every
+closed ledger kind from that anchor and requires byte/hash equality with the current account;
+anchor or ledger drift, including a provider-attempt ledger/usage-receipt mismatch, fails closed.
+Exact same-key replay is returned before active build and policy checks. Provider-outcome
+reconciliation leaves its unresolved
+reservation open and latches the run, while a settled reservation's `closedAt` equals its terminal
+ledger timestamp. An open budget database-commit reconciliation also blocks the shared GS9-B run
+writer, so another authority path cannot bypass ambiguity.
+
+The closed API is frozen in `docs/api/budget-authority-openapi.yaml`. Architecture and qualification
+requirements are in `docs/architecture/budget-authority.md` and
+`docs/testing/gs9e-qualification.md`. The evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget
+qualification authority / Go production Workflow budget authority NOT_CLAIMED / Runner v2
+NOT_DELIVERED / routing / canary / cutover NOT_ACTIVATED`. There is no production runtime budget
+client, provider route, new-record canary, fallback, or TypeScript writer retirement.
+The non-secret qualification seed initializes the first account only and is not accepted on the
+HTTP wire. `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` remains explicit.

@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-14
+updated: 2026-08-15
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -472,12 +472,43 @@ bytes. Missing, untrusted, unknown, or overrun usage fails closed to provider-ou
 reconciliation, distinct from future database commit-unknown evidence.
 
 E1 is contract-only and the Go mirror is validator-only. It adds no database, migration,
-repository, HTTP service or route, runtime budget client, production worker configuration, runner-v2
-delivery, routing, canary, or writer transfer. GS9-E2 remains pending and is the first stage allowed
-to add a default-off PostgreSQL budget qualification authority.
+repository, HTTP service or route, runtime budget client, production worker configuration,
+runner-v2 delivery, routing, canary, or writer transfer.
 
-TypeScript remains the sole writer throughout GS9-D and GS9-E1. Runner protocol v1 bytes and
-behavior remain frozen; neither stage negotiates or delivers runner v2, and a runner message or
+GS9-E2 adds only the default-off PostgreSQL budget qualification authority. Migration `000006`
+creates isolated accounts, reservations, append-only ledger, exact receipts, and reconciliation.
+The budget transaction locks and CAS-advances the existing GS9-B running head together with an
+independent account revision; the budget ledger, not a transition event, is the source for that run
+revision. Same-key replay returns exact prior bytes without a new ledger entry, semantic
+reservation/call/attempt uniqueness rejects new-key duplicates, and an unprovable database commit
+blocks subsequent mutation through durable reconciliation.
+The account stores an immutable canonical genesis anchor; restart qualification folds every closed
+ledger kind, checks provider-attempt ledger rows against their exact usage receipts, and requires
+exact equality with the current account. Provider reconciliation leaves
+the reservation open while latching the run, settlement time binds the terminal ledger, and the
+shared GS9-B writer honors the same open budget database-reconciliation gate.
+
+E2 does not change the E1 record authority, writer, or `validator_only` role. Its durable database
+and HTTP values wrap that non-authorizing operational projection in the closed Go-owned
+`openslack.workflow_control_budget_durable_record.v1` companion envelope. The outer record binds
+qualification authority, writer, mode, `productionAuthority=false`, E1 manifest, trusted build,
+record kind, projection, and projection domain hash; cross-spliced layers fail closed.
+
+The first qualification account uses a fixed, non-secret process `BudgetSeed` containing the
+policy hash and three canonical limits. It is not part of the HTTP wire; the production initial
+policy source remains `NOT_DELIVERED`.
+E2 accepts only generation-zero runs; any nonzero `resumeGeneration` fails closed without budget
+evidence until Runner v2 delivers the reviewed resume path.
+
+The standalone loopback service is health-only without exact qualification configuration. A
+qualification harness proves durable reserve before provider execution, durable settlement before
+cache visibility, and cache-hit zero mutation, but no production client or provider path calls it.
+Its evidence ceiling is `GS9-E LOCAL_PASS / Go durable budget qualification authority / Go
+production Workflow budget authority NOT_CLAIMED / Runner v2 NOT_DELIVERED / routing / canary /
+cutover NOT_ACTIVATED`.
+
+TypeScript remains the sole production writer throughout GS9-D and GS9-E. Runner protocol v1 bytes
+and behavior remain frozen; neither stage negotiates or delivers runner v2, and a runner message or
 durable receipt is never itself an approval decision. GS9-F delivers runner v2. GS9-G owns
 new-record routing, canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes
 TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only after external
@@ -487,9 +518,10 @@ Runner/authority/checkpoint manifest hashes are source locks rather than deploym
 identity. Receipt validation receives the expected runtime `controlBuildHash` from trusted
 composition and does not infer it from the receipt being validated.
 
-No GS9-D or GS9-E1 result claims authenticated external-host qualification, live verification,
-release, tag/npm publication, production activation, durable Go budget authority, or Go Workflow
-authority. Those claims remain independent even when local and hosted contract gates are green.
+No GS9-D or GS9-E result claims authenticated external-host qualification, live verification,
+release, tag/npm publication, production activation, production Go budget authority, or Go
+Workflow authority. Those claims remain independent even when local and hosted qualification gates
+are green.
 
 ### GS10–GS13 — Platform Runtime
 

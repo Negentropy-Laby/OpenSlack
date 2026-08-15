@@ -510,6 +510,9 @@ jobs:
       - name: Qualify GS9-D Workflow effect shadow
         working-directory: .
         run: bash scripts/qualification/workflow-control-postgres-gate.sh gs9d-effect
+      - name: Qualify GS9-E Workflow budget authority
+        working-directory: .
+        run: bash scripts/qualification/workflow-control-postgres-gate.sh gs9e-budget
       - name: Run reviewed Go workspace verifier
         working-directory: .
         run: bash scripts/go-check.sh --all

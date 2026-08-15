@@ -117,6 +117,32 @@ func TestGS9BAuthorityReadyUsesLightweightProbe(t *testing.T) {
 	}
 }
 
+func TestGS9BAuthorityMutationRemainsCompatibleWithoutBudgetNamespace(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	if _, err := pool.Exec(context.Background(), `
+DROP TABLE workflow_control_budget_reconciliations;
+DROP TABLE workflow_control_budget_receipts;
+DROP TABLE workflow_control_budget_reservations;
+DROP TABLE workflow_control_budget_ledger;
+DROP TABLE workflow_control_budget_accounts;`); err != nil {
+		t.Fatalf("remove empty later budget namespace: %v", err)
+	}
+	repository := New(pool, 3)
+	accept := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
+	if _, err := repository.Mutate(context.Background(), accept); err != nil {
+		t.Fatalf("accept without budget namespace: %v", err)
+	}
+	created := authoritycontract.RunCreated
+	transition := mutationInput(t, authoritystore.OperationTransition, &created, authoritycontract.RunRunning, 1)
+	if _, err := repository.Mutate(context.Background(), transition); err != nil {
+		t.Fatalf("transition without budget namespace: %v", err)
+	}
+	head, err := repository.Read(context.Background(), "workspace-test", "run-test")
+	if err != nil || head.Revision != 2 || head.State != authoritycontract.RunRunning {
+		t.Fatalf("head without budget namespace=%#v err=%v", head, err)
+	}
+}
+
 func TestGS9BAuthoritySameKeyDifferentFingerprintConflicts(t *testing.T) {
 	pool := openAuthorityPostgres(t)
 	repository := New(pool)
