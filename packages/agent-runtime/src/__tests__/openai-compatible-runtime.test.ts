@@ -18,13 +18,16 @@ import {
   PermissionDeniedError,
   ProviderInvalidResponseError,
   ProviderTimeoutError,
+  ProviderUnavailableError,
   readTranscript,
   RepositoryToolExecutor,
   requestAgentRunCancellation,
   RuntimeMisconfiguredError,
   ToolArgumentInvalidError,
   ToolGuard,
+  type ProviderAttemptPort,
 } from '../index.js';
+import { createProviderAttemptBoundary } from '../internal/provider-attempt-boundary.js';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -165,6 +168,122 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(requests[0].max_tokens).toBe(40);
     expect(requests[1].max_tokens).toBe(30);
     expect(JSON.stringify(requests[1])).toContain('runtime fixture');
+  });
+
+  it('reserves and settles every real HTTP turn through a host-minted boundary', async () => {
+    const events: string[] = [];
+    const reservations = [
+      { reservationId: 'reservation-1', callId: 'call-1', authorizedTokens: '20' },
+      { reservationId: 'reservation-2', callId: 'call-2', authorizedTokens: '15' },
+    ] as const;
+    const port: ProviderAttemptPort = {
+      async reserve(input) {
+        events.push(`reserve:${input.providerAttempt}:${input.requestedTokens}`);
+        return reservations[Number(input.providerAttempt) - 1]!;
+      },
+      async settle(reservation, usage) {
+        events.push(
+          `settle:${usage.attempt}:${reservation.reservationId}:${usage.outcome}:${usage.totalTokens}`,
+        );
+      },
+    };
+    let turn = 0;
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      turn += 1;
+      const request = JSON.parse(String(init?.body)) as { max_tokens: number };
+      events.push(`fetch:${turn}:${request.max_tokens}`);
+      if (turn === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: { name: 'repo_read', arguments: '{"path":"README.md"}' },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+          usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 },
+        });
+      }
+      return jsonResponse({
+        choices: [{ message: { content: '{"summary":"done"}' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      });
+    }) as unknown as typeof fetch;
+    const { context } = createContext(root, { tokens: 40 });
+
+    await expect(
+      adapter(fetchImpl, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute<{ summary: string }>(context),
+    ).resolves.toMatchObject({ data: { summary: 'done' }, tokenUsage: 17 });
+    expect(events).toEqual([
+      'reserve:1:40',
+      'fetch:1:20',
+      'settle:1:reservation-1:provider_response_accepted:10',
+      'reserve:2:30',
+      'fetch:2:15',
+      'settle:2:reservation-2:provider_response_accepted:7',
+    ]);
+  });
+
+  it('settles a failed real HTTP attempt and does not retry without a new reservation', async () => {
+    const events: string[] = [];
+    const port: ProviderAttemptPort = {
+      async reserve(input) {
+        events.push(`reserve:${input.providerAttempt}`);
+        return { reservationId: 'reservation-1', callId: 'call-1', authorizedTokens: '20' };
+      },
+      async settle(_reservation, usage) {
+        events.push(`settle:${usage.attempt}:${usage.outcome}:${usage.status}`);
+      },
+    };
+    const fetchImpl = vi.fn(async () => {
+      events.push('fetch:1');
+      return jsonResponse({ error: 'unavailable' }, 503);
+    }) as unknown as typeof fetch;
+    const { context } = createContext(root, { tokens: 40 });
+
+    await expect(
+      adapter(fetchImpl, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(events).toEqual(['reserve:1', 'fetch:1', 'settle:1:provider_attempt_failed:unreported']);
+  });
+
+  it('settles an open reservation when local authorization validation fails before fetch', async () => {
+    const events: string[] = [];
+    const port: ProviderAttemptPort = {
+      async reserve(input) {
+        events.push(`reserve:${input.providerAttempt}:${input.requestedTokens}`);
+        return {
+          reservationId: 'reservation-1',
+          callId: 'call-1',
+          authorizedTokens: String(Number(input.requestedTokens) + 1),
+        };
+      },
+      async settle(_reservation, usage) {
+        events.push(`settle:${usage.attempt}:${usage.outcome}:${usage.status}`);
+      },
+    };
+    const fetchImpl = vi.fn(async () => jsonResponse({})) as unknown as typeof fetch;
+    const { context } = createContext(root, { tokens: 40 });
+
+    await expect(
+      adapter(fetchImpl, {
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute(context),
+    ).rejects.toBeInstanceOf(RuntimeMisconfiguredError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(events).toEqual(['reserve:1:40', 'settle:1:provider_attempt_failed:unreported']);
   });
 
   it('redacts known credential shapes before sending the user prompt', async () => {

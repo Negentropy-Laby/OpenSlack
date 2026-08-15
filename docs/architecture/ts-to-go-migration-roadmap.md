@@ -509,7 +509,8 @@ cutover NOT_ACTIVATED`.
 
 TypeScript remains the sole production writer throughout GS9-D and GS9-E. Runner protocol v1 bytes
 and behavior remain frozen; neither stage negotiates or delivers runner v2, and a runner message or
-durable receipt is never itself an approval decision. GS9-F delivers runner v2. GS9-G owns
+durable receipt is never itself an approval decision. GS9-F1 lays the transport foundation and
+GS9-F2 completes runtime delivery. GS9-G owns
 new-record routing, canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes
 TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only after external
 qualification and drain. Existing records stay on their original writer and no stage permits
@@ -517,6 +518,19 @@ per-request fallback.
 Runner/authority/checkpoint manifest hashes are source locks rather than deployment build
 identity. Receipt validation receives the expected runtime `controlBuildHash` from trusted
 composition and does not infer it from the receipt being validated.
+
+GS9-F1 is only the default-off admission/storage, negotiation, and receipt-before-decision transport
+foundation for that already frozen v2 protocol. It pins protocol, route/build/epoch, run revision,
+resume generation, and capabilities; requires exact `[v1, v2]` negotiation with no downgrade; and
+persists a bound event and runner receipt before exposing the later decision boundary. Its local
+provider seam only orders reserve-before-fetch and settle-after-receipt around an opaque call; exact
+provider/model/provider-run identity binding into E authority remains F2 work.
+
+GS9-F1 does not deliver the real checkpoint, TypeScript effect, budget, or resume adapters and does
+not qualify complete runtime delivery or crash-after-authority recovery. GS9-F2 owns those adapters
+and exit gates. Production v2 submission and new-record routing remain disabled, TypeScript remains
+the production Workflow authority, and GS9-G still owns routing, canary, cutover, and higher-epoch
+rollback. Frozen runner-v1 and authority-v2 assets remain byte-identical.
 
 No GS9-D or GS9-E result claims authenticated external-host qualification, live verification,
 release, tag/npm publication, production activation, production Go budget authority, or Go

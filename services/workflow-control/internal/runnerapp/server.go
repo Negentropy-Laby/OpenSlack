@@ -23,18 +23,20 @@ import (
 )
 
 const (
-	RouteJobs                = "/v1/runner/jobs"
-	RouteJob                 = "/v1/runner/jobs/{jobId}"
-	RouteCancellation        = "/v1/runner/jobs/{jobId}/cancellations"
-	RouteLive                = "/health/live"
-	RouteReady               = "/health/ready"
-	RouteVersion             = "/health/version"
-	RouteMetrics             = "/metrics"
-	HeaderWorkspaceID        = "X-OpenSlack-Workspace-ID"
-	HeaderRequestFingerprint = "X-OpenSlack-Request-Fingerprint"
-	MaxResponseBodyBytes     = 2 * 1024 * 1024
-	requestDeadline          = 30 * time.Second
-	readDeadline             = 5 * time.Second
+	RouteJobs                 = "/v1/runner/jobs"
+	RouteV2Jobs               = "/v2/runner/jobs"
+	RouteJob                  = "/v1/runner/jobs/{jobId}"
+	RouteCancellation         = "/v1/runner/jobs/{jobId}/cancellations"
+	RouteLive                 = "/health/live"
+	RouteReady                = "/health/ready"
+	RouteVersion              = "/health/version"
+	RouteMetrics              = "/metrics"
+	HeaderWorkspaceID         = "X-OpenSlack-Workspace-ID"
+	HeaderRequestFingerprint  = "X-OpenSlack-Request-Fingerprint"
+	HeaderIdempotencyReplayed = "Idempotency-Replayed"
+	MaxResponseBodyBytes      = 2 * 1024 * 1024
+	requestDeadline           = 30 * time.Second
+	readDeadline              = 5 * time.Second
 )
 
 var (
@@ -44,6 +46,9 @@ var (
 
 type Options struct {
 	Store             runnerstore.Store
+	V2Store           runnerstore.V2JobStore
+	V2Qualification   bool
+	SchemaVersion     int64
 	BuildSHA          string
 	WorkspaceID       string
 	BearerTokenSHA256 string
@@ -51,12 +56,15 @@ type Options struct {
 }
 
 type Service struct {
-	store       runnerstore.Store
-	buildSHA    string
-	workspaceID string
-	tokenHash   [sha256.Size]byte
-	logger      *slog.Logger
-	handler     http.Handler
+	store         runnerstore.Store
+	v2Store       runnerstore.V2JobStore
+	v2Enabled     bool
+	schemaVersion int64
+	buildSHA      string
+	workspaceID   string
+	tokenHash     [sha256.Size]byte
+	logger        *slog.Logger
+	handler       http.Handler
 
 	requests      atomic.Int64
 	unauthorized  atomic.Int64
@@ -85,7 +93,15 @@ func New(options Options) (*Service, error) {
 	}
 	service := &Service{
 		store: options.Store, buildSHA: options.BuildSHA,
-		workspaceID: options.WorkspaceID, logger: options.Logger,
+		v2Store: options.V2Store, v2Enabled: options.V2Qualification,
+		schemaVersion: options.SchemaVersion,
+		workspaceID:   options.WorkspaceID, logger: options.Logger,
+	}
+	if service.v2Enabled && service.v2Store == nil {
+		return nil, fmt.Errorf("runner v2 qualification Store is required when enabled")
+	}
+	if service.schemaVersion == 0 {
+		service.schemaVersion = 2
 	}
 	copy(service.tokenHash[:], tokenHash)
 	service.handler = service.routes()
@@ -97,6 +113,9 @@ func (service *Service) Handler() http.Handler { return service.handler }
 func (service *Service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST "+RouteJobs, service.requireIdentity(http.HandlerFunc(service.handleSubmit)))
+	if service.v2Enabled {
+		mux.Handle("POST "+RouteV2Jobs, service.requireIdentity(http.HandlerFunc(service.handleV2Submit)))
+	}
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))
 	mux.HandleFunc("GET "+RouteLive, service.handleLive)

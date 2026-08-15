@@ -6,10 +6,18 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
 import { getEmbeddedBuiltin } from '../embedded-builtins.js';
 import {
+  createSealedWorkflowRunnerV2SourceLoader,
   createSealedWorkflowRunnerSourceLoader,
+  loadWorkflowRunnerV2QualificationWorkerConfig,
   loadWorkflowRunnerWorkerConfig,
+  WorkflowRunnerV2RuntimeBoundaryUnavailableError,
   WorkflowRunnerWorkerConfigError,
 } from '../workflow-runner-worker.js';
+import {
+  createWorkflowRunnerV2ExecutionDescriptor,
+  type WorkflowRunnerV2ExecutionDescriptor,
+} from '../workflow-runner-v2-descriptor.js';
+import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import {
   classifyWorkflowRunnerRunState,
   WorkflowRunnerRunStateError,
@@ -66,6 +74,47 @@ function descriptor(workflowSourceBytes: Uint8Array = sourceBytes, workflowRunId
   });
 }
 
+function v2Descriptor(resumeGeneration: number): WorkflowRunnerV2ExecutionDescriptor {
+  return createWorkflowRunnerV2ExecutionDescriptor({
+    descriptorRef: `descriptor.worker.v2.${resumeGeneration}`,
+    workspaceId: 'workspace.test',
+    workflowRunId: `run.worker.v2.${resumeGeneration}`,
+    correlationId: `correlation.worker.v2.${resumeGeneration}`,
+    workflowId: 'sealed-test',
+    workflowVersion: '1.0.0',
+    workflowSource: 'openslack-project',
+    workflowSourceBytes: sourceBytes,
+    manifest,
+    input: {},
+    confirmationPolicy: {
+      mode: 'unattended-explicit',
+      actorId: 'test-actor',
+      runId: `run.worker.v2.${resumeGeneration}`,
+      allowUnattended: true,
+      onUnexpectedEffect: 'fail',
+    },
+    requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
+    authorityRoute: {
+      backend: 'ts-local',
+      authority: 'typescript',
+      routingEpoch: 1,
+      authorityBuildHash: 'a'.repeat(64),
+    },
+    runRevision: 1,
+    resumeGeneration,
+    budgetPolicy: {
+      accountId: 'budget.worker.v2',
+      policyHash: 'b'.repeat(64),
+      rateNanoUsdPerToken: '10',
+      tokenLimit: '1000',
+      costLimitNanoUsd: '10000',
+      callLimit: '2',
+    },
+    createdAt: '2026-08-04T01:00:00.000Z',
+    expiresAt: '2026-08-04T02:00:00.000Z',
+  });
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -76,6 +125,47 @@ describe('GS8-B workflow runner worker', () => {
     expect(() =>
       loadWorkflowRunnerWorkerConfig({ OPENSLACK_WORKFLOW_RUNNER_ENABLED: 'true' }),
     ).toThrowError(/explicit enablement/u);
+  });
+
+  it('keeps v2 qualification default-off and mutually exclusive with v1 execution', () => {
+    const workspaceRoot = resolve('workflow-runner-v2-config-workspace');
+    const base = {
+      OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED: '1',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.v2',
+      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
+      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors-v2'),
+      OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
+    } satisfies NodeJS.ProcessEnv;
+
+    expect(() => loadWorkflowRunnerV2QualificationWorkerConfig({})).toThrowError(/default-off/u);
+    expect(loadWorkflowRunnerV2QualificationWorkerConfig(base)).toMatchObject({
+      enabled: true,
+      qualificationOnly: true,
+      runtimeBoundaryMode: 'provider-attempt-only',
+      workspaceId: 'workspace.v2',
+      workspaceRoot,
+    });
+    expect(() =>
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
+      }),
+    ).toThrowError(/cannot be enabled together/u);
+    expect(() =>
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED: '1',
+      }),
+    ).toThrowError(/cannot configure checkpoint or effect authority boundaries/u);
+  });
+
+  it('rejects v2 resume delivery before source preparation in the F1 worker', async () => {
+    await expect(
+      createSealedWorkflowRunnerV2SourceLoader(resolve('.')).prepare(v2Descriptor(1)),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RUNTIME_BOUNDARY_UNAVAILABLE',
+      name: WorkflowRunnerV2RuntimeBoundaryUnavailableError.name,
+    });
   });
 
   it('confines the checkpoint shadow journal to the canonical local-state root', () => {

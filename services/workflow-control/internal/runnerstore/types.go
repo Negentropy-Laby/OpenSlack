@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
@@ -123,6 +124,7 @@ type ClaimInput struct {
 	LeaseOfferTimeout    time.Duration
 	LeaseDuration        time.Duration
 	Now                  time.Time
+	ProtocolVersions     []string
 }
 
 type AttemptLease struct {
@@ -149,6 +151,13 @@ type AttemptLease struct {
 	WholeDeadline           time.Time
 	LeaseOffer              runnerprotocol.Envelope
 	LeaseOfferBytes         []byte
+	RequiredProtocolVersion string
+	RequiredCapabilities    []string
+	AuthorityRoute          *authoritycontract.Route
+	RunRevision             int64
+	ResumeGeneration        int64
+	V2LeaseOffer            *authoritycontract.Message
+	V2LeaseOfferBytes       []byte
 }
 
 type RecordEventInput struct {

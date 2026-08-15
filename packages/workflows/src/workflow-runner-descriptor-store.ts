@@ -35,6 +35,22 @@ export interface WorkflowRunnerDescriptorPathSecurity {
   assertOwnerOnly(path: string, directory: boolean, stat: BigIntStats): Promise<void>;
 }
 
+/** Closed descriptor codec. V1 remains the default; v2 supplies an additive codec. */
+export interface WorkflowRunnerDescriptorCodec<
+  TDescriptor extends { readonly descriptorRef: string },
+> {
+  validate(value: unknown, now?: string): TDescriptor;
+  canonical(value: TDescriptor): string;
+  hash(value: TDescriptor): string;
+}
+
+const V1_DESCRIPTOR_CODEC: WorkflowRunnerDescriptorCodec<WorkflowRunnerExecutionDescriptor> =
+  Object.freeze({
+    validate: validateWorkflowRunnerExecutionDescriptor,
+    canonical: canonicalWorkflowRunnerDescriptorJson,
+    hash: hashWorkflowRunnerDescriptor,
+  });
+
 const SAFE_FILE = /^[0-9a-f]{64}\.json$/u;
 const TEMP_FILE = /^\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const WINDOWS_SID = /^S-\d(?:-\d+)+$/u;
@@ -419,14 +435,18 @@ async function readBoundedFile(
   }
 }
 
-export class WorkflowRunnerDescriptorStore {
+export class WorkflowRunnerDescriptorStore<
+  TDescriptor extends { readonly descriptorRef: string } = WorkflowRunnerExecutionDescriptor,
+> {
   readonly #root: string;
   readonly #descriptors: string;
   readonly #security: WorkflowRunnerDescriptorPathSecurity;
+  readonly #codec: WorkflowRunnerDescriptorCodec<TDescriptor>;
 
   constructor(
     root: string,
     security: WorkflowRunnerDescriptorPathSecurity = createWorkflowRunnerDescriptorPathSecurity(),
+    codec: WorkflowRunnerDescriptorCodec<TDescriptor> = V1_DESCRIPTOR_CODEC as unknown as WorkflowRunnerDescriptorCodec<TDescriptor>,
   ) {
     if (!isAbsolute(root) || resolve(root) !== root || root.includes('\0')) {
       storeFail(
@@ -438,6 +458,7 @@ export class WorkflowRunnerDescriptorStore {
     this.#root = root;
     this.#descriptors = join(root, 'descriptors');
     this.#security = security;
+    this.#codec = codec;
   }
 
   async initialize(): Promise<void> {
@@ -466,15 +487,15 @@ export class WorkflowRunnerDescriptorStore {
     return join(this.#descriptors, descriptorFileName(descriptorRef));
   }
 
-  async create(descriptorValue: WorkflowRunnerExecutionDescriptor): Promise<{
-    readonly descriptor: WorkflowRunnerExecutionDescriptor;
+  async create(descriptorValue: TDescriptor): Promise<{
+    readonly descriptor: TDescriptor;
     readonly descriptorHash: string;
     readonly duplicate: boolean;
   }> {
-    const descriptor = validateWorkflowRunnerExecutionDescriptor(descriptorValue);
+    const descriptor = this.#codec.validate(descriptorValue);
     await this.initialize();
     const path = this.descriptorPath(descriptor.descriptorRef);
-    const body = Buffer.from(`${canonicalWorkflowRunnerDescriptorJson(descriptor)}\n`, 'utf8');
+    const body = Buffer.from(`${this.#codec.canonical(descriptor)}\n`, 'utf8');
     const existing = await lstat(path, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;
       throw error;
@@ -505,7 +526,7 @@ export class WorkflowRunnerDescriptorStore {
       await assertStablePath(path, false, this.#security);
       return Object.freeze({
         descriptor,
-        descriptorHash: hashWorkflowRunnerDescriptor(descriptor),
+        descriptorHash: this.#codec.hash(descriptor),
         duplicate: false,
       });
     } catch (error) {
@@ -521,9 +542,9 @@ export class WorkflowRunnerDescriptorStore {
   async #compareExisting(
     path: string,
     expectedBytes: Buffer,
-    descriptor: WorkflowRunnerExecutionDescriptor,
+    descriptor: TDescriptor,
   ): Promise<{
-    readonly descriptor: WorkflowRunnerExecutionDescriptor;
+    readonly descriptor: TDescriptor;
     readonly descriptorHash: string;
     readonly duplicate: boolean;
   }> {
@@ -537,12 +558,12 @@ export class WorkflowRunnerDescriptorStore {
     }
     return Object.freeze({
       descriptor,
-      descriptorHash: hashWorkflowRunnerDescriptor(descriptor),
+      descriptorHash: this.#codec.hash(descriptor),
       duplicate: true,
     });
   }
 
-  async read(descriptorRef: string, now?: string): Promise<WorkflowRunnerExecutionDescriptor> {
+  async read(descriptorRef: string, now?: string): Promise<TDescriptor> {
     await this.initialize();
     const path = this.descriptorPath(descriptorRef);
     const bytes = await readBoundedFile(path, this.#security).catch((error) => {
@@ -576,7 +597,7 @@ export class WorkflowRunnerDescriptorStore {
         path,
       );
     }
-    const descriptor = validateWorkflowRunnerExecutionDescriptor(parsed, now);
+    const descriptor = this.#codec.validate(parsed, now);
     if (descriptor.descriptorRef !== descriptorRef) {
       return storeFail(
         'WORKFLOW_RUNNER_DESCRIPTOR_STORE_INVALID',
@@ -584,7 +605,7 @@ export class WorkflowRunnerDescriptorStore {
         path,
       );
     }
-    const canonical = Buffer.from(`${canonicalWorkflowRunnerDescriptorJson(descriptor)}\n`, 'utf8');
+    const canonical = Buffer.from(`${this.#codec.canonical(descriptor)}\n`, 'utf8');
     if (!bytes.equals(canonical)) {
       return storeFail(
         'WORKFLOW_RUNNER_DESCRIPTOR_STORE_INVALID',

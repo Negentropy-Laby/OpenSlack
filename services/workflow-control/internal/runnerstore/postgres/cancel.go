@@ -54,6 +54,21 @@ func (repository *Repository) RequestCancel(ctx context.Context, input runnersto
 	if current.currentAttemptID != input.ExpectedAttemptID {
 		return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorIdentityMismatch, "cancel expected attempt is not current", nil)
 	}
+	var requiredProtocol string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(to_jsonb(j)->>'required_protocol_version','openslack.workflow_runner.v1')
+FROM workflow_runner_jobs j WHERE workspace_id=$1 AND job_id=$2`, input.WorkspaceID, input.JobID).Scan(&requiredProtocol); err != nil {
+		return runnerstore.CancelControl{}, databaseFailure("read cancellation protocol binding", err)
+	}
+	if requiredProtocol == "openslack.workflow_runner.v2" {
+		var authorityLaneBusy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workflow_runner_v2_event_inbox
+WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','reconciliation_required'))`, input.ExpectedAttemptID).Scan(&authorityLaneBusy); err != nil {
+			return runnerstore.CancelControl{}, databaseFailure("read v2 cancellation event lane", err)
+		}
+		if authorityLaneBusy {
+			return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorConflict, "v2 cancellation is blocked by an unsettled authority event", nil)
+		}
+	}
 	var workflowRunID, correlationID, leaseID string
 	if err := tx.QueryRow(ctx, `
 SELECT j.workflow_run_id, j.correlation_id, l.lease_id

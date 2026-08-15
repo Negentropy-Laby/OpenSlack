@@ -20,8 +20,10 @@ var (
 	hashPattern              = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	timestampPattern         = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
 	idempotencyPattern       = regexp.MustCompile(`^openslack\.workflow-runner-job\.v1\.[0-9a-f]{64}$`)
+	v2IdempotencyPattern     = regexp.MustCompile(`^openslack\.workflow-runner-job\.v2\.[0-9a-f]{64}$`)
 	cancelIdempotencyPattern = regexp.MustCompile(`^openslack\.workflow-runner-cancel\.v1\.[0-9a-f]{64}$`)
 	fingerprintPattern       = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	semverPattern            = regexp.MustCompile(`^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 )
 
 func ParseJobSpec(input []byte) (PreparedJobSpec, error) {

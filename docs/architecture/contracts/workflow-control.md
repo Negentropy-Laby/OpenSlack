@@ -325,7 +325,8 @@ claim. A rejected decision creates no claim. An approved revision-1 decision who
 pending or the same decision's revision-2 audit-recorded projection may be consumed; audit-sink
 success is evidence, not a precondition for effect authorization. The claim binds an exact
 `executionId`, immutable decision revision/hash, and one-time substate. D1 deliberately does not
-bind runner job, attempt, lease, or fence; those bindings belong to GS9-F runner-v2 delivery.
+bind runner job, attempt, lease, or fence; the foundation bindings belong to GS9-F1 and the real
+domain adapters remain GS9-F2 work.
 Every terminal decision must name the same workspace as its enclosing artifact. An approved claim
 must begin after the decision and before the approval expires. Once that claim has begun, its
 proved completion or reconciliation record may be committed after approval expiry, but never
@@ -385,7 +386,7 @@ change a TypeScript effect result.
 
 Runner protocol v1 schemas, bytes, kinds, idempotency, receipts, and process lifecycle remain
 frozen. D1-D3 do not deliver runner-v2 `effect_authorization` and do not reinterpret a v1 runner
-message or durable receipt as approval. GS9-F must use a separately negotiated v2 session and
+message or durable receipt as approval. GS9-F2 must use a separately negotiated v2 session and
 preserve v1 unchanged.
 The six runner/authority/checkpoint manifest and golden SHA values in the bundle are source locks,
 not deployment identity. Runtime receipt validation receives the expected `controlBuildHash` from
@@ -536,7 +537,8 @@ revision, so no Workflow transition event is emitted. Ledger, receipt, and any k
 reconciliation commit together.
 
 An account/run revision mismatch caused by another run writer is a conflict, not an integrity
-alarm, and E2 does not rebase it; GS9-F must coordinate future running-run revision writers.
+alarm, and E2 does not rebase it; GS9-F2 must coordinate the real future running-run revision
+writers after the F1 transport foundation.
 
 That first account is initialized only from a fixed, non-secret `BudgetSeed` in the
 `local-qualification-v1` process composition: policy hash plus token, nano-USD, and call limits.
@@ -574,7 +576,29 @@ production Workflow budget authority NOT_CLAIMED / Runner v2 NOT_DELIVERED / rou
 cutover NOT_ACTIVATED`.
 `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` remains a separate non-claim.
 
-GS9-F delivers runner v2. GS9-G owns new-record routing,
+## GS9-F1 runner v2 transport foundation
+
+GS9-F1 adds only the default-off admission, storage, negotiation, and receipt-before-decision
+transport foundation for the frozen authority-v2 runner messages. It does not mutate the frozen
+runner-v1 or authority-v2 source bundles. The v2-required job binding fixes the authority
+route/build/epoch, run revision, resume generation, and capability set before a lease is offered;
+negotiation is exact and cannot downgrade to v1.
+
+The store can bind an admitted event to the current job/attempt/lease/fence and
+run/revision/generation/route, persist the event and exact runner receipt, and hold a later decision
+boundary until that receipt is delivered. The local provider seam orders reserve before fetch and
+settlement after the returned receipt around an opaque call; it does not propagate or bind
+provider, model, or provider-run identity into the E authority contract. GS9-F1 does not call or complete the real GS9-C
+checkpoint, GS9-D effect, GS9-E budget, or resume adapters, and it does not establish complete
+runtime delivery or crash-after-authority recovery. GS9-F2 owns those adapters and exit gates.
+
+The service profile is `workflow-control-runner-v2-foundation-v1`. Its mechanical gate remains a
+strict superset of the earlier GS7-B, GS8-B, and GS9-B/C/D/E repository checks, but its evidence
+ceiling is only `GS9-F1 FOUNDATION LOCAL_PASS / runtime delivery NOT_CLAIMED`. Production v2
+submission/routing, new-record acceptance, canary, TypeScript fallback removal, release, live,
+Qoder, tag, npm, and production remain unclaimed or not activated.
+
+GS9-F1 lays the transport foundation and GS9-F2 must complete runtime delivery before GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
 read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
 drain. D1, D2, or D3 does not establish live qualification, release readiness, production

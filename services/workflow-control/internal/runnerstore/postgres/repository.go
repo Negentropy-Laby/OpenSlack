@@ -34,9 +34,14 @@ type Repository struct {
 	pool              *pgxpool.Pool
 	commitTransaction func(context.Context, pgx.Tx) error
 	staleFenceRejects atomic.Int64
+	v2Authorities     runnerstore.V2AuthorityPorts
 }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+
+func NewWithV2Authorities(pool *pgxpool.Pool, authorities runnerstore.V2AuthorityPorts) *Repository {
+	return &Repository{pool: pool, v2Authorities: authorities}
+}
 
 func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) error) *Repository {
 	return &Repository{pool: pool, commitTransaction: commit}

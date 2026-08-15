@@ -171,3 +171,16 @@ rejects runtime imports without changing the legacy CLI loader. JavaScript impor
 descriptor/source validation and a durable lease-accept receipt. An unprovable effect outcome
 enters reconciliation and cannot be replayed automatically. Existing CLI/TUI run and resume
 commands remain on their TypeScript route until the separately reviewed GS9 cutover.
+
+## GS9-F1 Runner V2 Foundation Boundary
+
+GS9-F1 may use the frozen runner-v2 vocabulary only through an explicit, default-off foundation
+profile. Admission binds protocol, route/build/epoch, run revision, resume generation, and
+capabilities; exact negotiation cannot downgrade to v1. The transport persists the current event
+and exact runner receipt before a later domain-decision adapter may advance.
+
+F1 contains no real checkpoint, TypeScript effect, budget, or resume adapter. Complete runtime
+delivery, their decision ordering, and crash-after-authority recovery remain GS9-F2 exit gates.
+Runner-v1 bytes remain unchanged. Production v2 submission and new-record routing remain disabled;
+TypeScript remains production Workflow, checkpoint/resume, approval, effect, budget, provider,
+RunStore, and read authority.

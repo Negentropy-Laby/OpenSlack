@@ -4,7 +4,7 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
     "targetPath": "services/workflow-control",
-    "migrationPhase": "GS9-E",
+    "migrationPhase": "GS9-F1",
     "authority": "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY"
   },
   "containerInputs": {
@@ -59,6 +59,22 @@
     "budgetAuthorityMigrationDown": {
       "path": "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.down.sql",
       "sha256": "e3548650dc03cafc3cd70c90ab3cf76af2f8aaf905390917bf93b576d4be5ea7"
+    },
+    "runnerV2MigrationUp": {
+      "path": "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql",
+      "sha256": "bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722"
+    },
+    "runnerV2MigrationDown": {
+      "path": "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql",
+      "sha256": "251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7"
+    },
+    "runnerV2EventSource": {
+      "path": "services/workflow-control/internal/runnerstore/postgres/v2_event.go",
+      "sha256": "6ff9c35305a6bd9e730d9e6ee5e6b7705eff756417bd488fbbdc8a8d8606ba04"
+    },
+    "runnerV2FoundationIntegrationTest": {
+      "path": "services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go",
+      "sha256": "29c3e138d1790eed6d782907061e84e1dbe97faa8f6a7ca76c47b061f9afd0f8"
     }
   },
   "contractInputs": {
@@ -100,7 +116,7 @@
     },
     "runnerOpenapi": {
       "path": "services/workflow-control/docs/api/runner-openapi.yaml",
-      "sha256": "8d05d7b08cb1e7a11cf76b6f10b26079e54b546c527efb6325f6bdc42ab3d632"
+      "sha256": "70830c01a17cd51ffbb7aa966c4c7bf63a5c80e92304b5c143a118d95b2ab6fa"
     },
     "authorityOpenapi": {
       "path": "services/workflow-control/docs/api/authority-openapi.yaml",
@@ -164,7 +180,12 @@
       "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RESERVATION",
       "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_LEDGER",
       "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
-      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RECONCILIATION"
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RECONCILIATION",
+      "WORKFLOW_RUNNER_V2_FOUNDATION_ADMISSION",
+      "WORKFLOW_RUNNER_V2_FOUNDATION_STORAGE",
+      "WORKFLOW_RUNNER_V2_FOUNDATION_NEGOTIATION",
+      "WORKFLOW_RUNNER_V2_FOUNDATION_RECEIPT_BEFORE_DECISION_TRANSPORT",
+      "WORKFLOW_RUNNER_V2_LOCAL_PROVIDER_ATTEMPT_ORDERING_SEAM"
     ],
     "nonClaims": [
       "CHECKPOINT_RESUME_AUTHORITY",
@@ -179,7 +200,14 @@
       "USER_VISIBLE_READ_AUTHORITY",
       "WORKFLOW_BUDGET_PRODUCTION_AUTHORITY",
       "WORKFLOW_BUDGET_RUNTIME_CLIENT",
-      "WORKFLOW_RUNNER_V2_DELIVERY",
+      "WORKFLOW_RUNNER_V2_BUDGET_ADAPTER",
+      "WORKFLOW_RUNNER_V2_BUDGET_IDENTITY_BINDING",
+      "WORKFLOW_RUNNER_V2_CHECKPOINT_ADAPTER",
+      "WORKFLOW_RUNNER_V2_EFFECT_ADAPTER",
+      "WORKFLOW_RUNNER_V2_PRODUCTION_ROUTING",
+      "WORKFLOW_RUNNER_V2_PRODUCTION_SUBMISSION",
+      "WORKFLOW_RUNNER_V2_RESUME_ADAPTER",
+      "WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY",
       "WORKFLOW_ROUTING_CANARY_CUTOVER",
       "WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE",
       "WORKFLOW_CONTROL_AUTHORITY_CUTOVER",

@@ -18,8 +18,10 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
 const (
@@ -179,6 +181,13 @@ func Load(bundleRoot, expectedManifestSHA256 string, runtimeConfig Runtime) (*Re
 }
 
 func (registry *Registry) NewSupervisor() (*processsupervisor.Supervisor, error) {
+	return registry.NewSupervisorForProtocol(runnerprotocol.ProtocolVersion)
+}
+
+func (registry *Registry) NewSupervisorForProtocol(protocolVersion string) (*processsupervisor.Supervisor, error) {
+	if protocolVersion != runnerprotocol.ProtocolVersion && protocolVersion != authoritycontract.ProtocolVersion {
+		return nil, fmt.Errorf("trusted worker protocol version is unsupported")
+	}
 	manifestPath := filepath.Join(registry.bundleRoot, ManifestFilename)
 	if err := verifyManifestAnchor(manifestPath, nil, registry.manifestSHA256); err != nil {
 		return nil, err
@@ -186,7 +195,9 @@ func (registry *Registry) NewSupervisor() (*processsupervisor.Supervisor, error)
 	if err := validateClosedBundle(registry.bundleRoot, registry.closedBundleFilenames); err != nil {
 		return nil, err
 	}
-	return processsupervisor.New(processsupervisor.Config{Command: registry.command})
+	command := registry.command
+	command.Environment = selectProtocolEnvironment(command.Environment, protocolVersion)
+	return processsupervisor.New(processsupervisor.Config{Command: command})
 }
 
 func (registry *Registry) BundleID() string        { return registry.manifest.BundleID }
@@ -194,21 +205,22 @@ func (registry *Registry) RunnerBuildHash() string { return registry.runnerBuild
 
 func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buildHash string) ([]string, error) {
 	reserved := map[string]struct{}{
-		"OPENSLACK_WORKFLOW_RUNNER_ENABLED":                 {},
-		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID":            {},
-		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT":          {},
-		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT":         {},
-		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH":              {},
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED":      {},
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT":     {},
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID":    {},
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED":          {},
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT":         {},
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN":     {},
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID":        {},
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT":     {},
+		"OPENSLACK_WORKFLOW_RUNNER_ENABLED":                  {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED": {},
+		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID":             {},
+		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT":           {},
+		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT":          {},
+		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH":               {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED":       {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT":      {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN":  {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID":     {},
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT":  {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED":           {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT":          {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN":      {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID":         {},
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT":      {},
 	}
 	for _, entry := range base {
 		name, _, found := strings.Cut(entry, "=")
@@ -221,7 +233,6 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 	}
 	result := append([]string(nil), base...)
 	result = append(result,
-		"OPENSLACK_WORKFLOW_RUNNER_ENABLED=1",
 		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID="+runtimeConfig.WorkspaceID,
 		"OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT="+workspaceRoot,
 		"OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT="+runtimeConfig.DescriptorRoot,
@@ -252,7 +263,25 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT="+runtimeConfig.EffectShadowJournalRoot,
 		)
 	}
-	return result, nil
+	return selectProtocolEnvironment(result, runnerprotocol.ProtocolVersion), nil
+}
+
+func selectProtocolEnvironment(environment []string, protocolVersion string) []string {
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(strings.ToUpper(entry), "=")
+		if name != "OPENSLACK_WORKFLOW_RUNNER_ENABLED" && name != "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED" {
+			if protocolVersion == authoritycontract.ProtocolVersion &&
+				(strings.HasPrefix(name, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_")) {
+				continue
+			}
+			result = append(result, entry)
+		}
+	}
+	if protocolVersion == authoritycontract.ProtocolVersion {
+		return append(result, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1")
+	}
+	return append(result, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1")
 }
 
 func resolveArtifact(root string, artifact Artifact) (string, string, error) {

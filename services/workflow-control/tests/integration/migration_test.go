@@ -76,6 +76,10 @@ ORDER BY table_name`)
 		"workflow_runner_leases",
 		"workflow_runner_process_sessions",
 		"workflow_runner_reconciliations",
+		"workflow_runner_v2_attempt_bindings",
+		"workflow_runner_v2_cancel_bindings",
+		"workflow_runner_v2_decision_bindings",
+		"workflow_runner_v2_event_inbox",
 		"workflow_runner_worker_events",
 	}
 	if len(tables) != len(want) {
@@ -112,19 +116,77 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_effect_shadow_reconciliation_resolutions',
 	      'workflow_control_shadow_observations',
 	      'workflow_control_shadow_receipts',
-	      'workflow_runner_job_receipts',
-	      'workflow_runner_worker_events',
-	      'workflow_runner_event_receipts',
-	      'workflow_runner_effect_boundaries',
-	      'workflow_runner_reconciliations'
+		      'workflow_runner_job_receipts',
+		      'workflow_runner_jobs',
+		      'workflow_runner_worker_events',
+		      'workflow_runner_event_receipts',
+		      'workflow_runner_effect_boundaries',
+		      'workflow_runner_reconciliations',
+		      'workflow_runner_v2_attempt_bindings',
+		      'workflow_runner_v2_decision_bindings',
+		      'workflow_runner_v2_cancel_bindings'
 	  )
   AND action_timing = 'BEFORE'
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 47 {
-		t.Fatalf("immutable trigger coverage = %d, want 47 event rows", triggerEvents)
+	if triggerEvents != 54 {
+		t.Fatalf("immutable trigger coverage = %d, want 54 event rows", triggerEvents)
 	}
+}
+
+func TestWorkflowRunnerV2DownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
+	t.Run("empty v2 namespace is removable without changing v1 evidence", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		ctx := context.Background()
+		exactV1 := []byte(`{"schema":"v1-preserved"}`)
+		if _, err := pool.Exec(ctx, `INSERT INTO workflow_runner_jobs (
+workspace_id,job_id,workflow_run_id,correlation_id,execution_descriptor_ref,execution_descriptor_hash,
+job_spec_hash,exact_spec_bytes,workflow_id,workflow_version,workflow_source_hash,manifest_hash,input_hash,
+whole_deadline,state,revision,created_at,updated_at
+) VALUES ('workspace-down-v1','job-down-v1','run-down-v1','correlation-down-v1','descriptor-down-v1',decode(repeat('11',32),'hex'),
+decode(repeat('22',32),'hex'),$1,'workflow-down-v1','1.0.0',decode(repeat('33',32),'hex'),decode(repeat('44',32),'hex'),decode(repeat('55',32),'hex'),
+clock_timestamp()+interval '1 hour','queued',1,clock_timestamp(),clock_timestamp())`, exactV1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, workflowRunnerV2DownMigration(t)); err != nil {
+			t.Fatal(err)
+		}
+		var stored []byte
+		var v1Table, v2Table *string
+		if err := pool.QueryRow(ctx, `SELECT exact_spec_bytes FROM workflow_runner_jobs WHERE workspace_id='workspace-down-v1' AND job_id='job-down-v1'`).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT to_regclass('workflow_runner_jobs')::TEXT,to_regclass('workflow_runner_v2_event_inbox')::TEXT`).Scan(&v1Table, &v2Table); err != nil {
+			t.Fatal(err)
+		}
+		if string(stored) != string(exactV1) || v1Table == nil || v2Table != nil {
+			t.Fatalf("v2 down changed prior evidence: stored=%q v1=%v v2=%v", stored, v1Table, v2Table)
+		}
+	})
+
+	t.Run("v2 admission evidence prevents destructive rollback", func(t *testing.T) {
+		pool := testsupport.OpenPostgres(t)
+		ctx := context.Background()
+		if _, err := pool.Exec(ctx, `INSERT INTO workflow_runner_jobs (
+workspace_id,job_id,workflow_run_id,correlation_id,execution_descriptor_ref,execution_descriptor_hash,
+job_spec_hash,exact_spec_bytes,workflow_id,workflow_version,workflow_source_hash,manifest_hash,input_hash,
+whole_deadline,state,revision,created_at,updated_at,required_protocol_version,required_capabilities,
+authority_backend,workflow_authority,routing_epoch,authority_build_hash,required_run_revision,required_resume_generation
+) VALUES ('workspace-down-v2','job-down-v2','run-down-v2','correlation-down-v2','descriptor-down-v2',decode(repeat('11',32),'hex'),
+decode(repeat('22',32),'hex'),convert_to('{}','UTF8'),'workflow-down-v2','1.0.0',decode(repeat('33',32),'hex'),decode(repeat('44',32),'hex'),decode(repeat('55',32),'hex'),
+clock_timestamp()+interval '1 hour','queued',1,clock_timestamp(),clock_timestamp(),'openslack.workflow_runner.v2',
+ARRAY['cancel_ack','effect_receipts','lease_heartbeat']::TEXT[],'ts-local','typescript',1,decode(repeat('66',32),'hex'),1,0)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, workflowRunnerV2DownMigration(t)); err == nil {
+			t.Fatal("v2 admission evidence was destructively removed")
+		}
+		var preserved bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workflow_runner_jobs WHERE required_protocol_version='openslack.workflow_runner.v2')`).Scan(&preserved); err != nil || !preserved {
+			t.Fatalf("failed v2 down was not atomic: preserved=%v err=%v", preserved, err)
+		}
+	})
 }
 
 func TestBudgetAuthorityMigrationLocksSemanticIndexInventory(t *testing.T) {
@@ -376,12 +438,24 @@ WHERE workspace_id='workspace-matched' AND run_id='run-matched'`); err == nil {
 func TestRunnerMigrationDoesNotClaimGS9Authority(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := context.Background()
+	var exactTransportGenerationBindings int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
+WHERE table_schema=current_schema() AND column_name='resume_generation'
+  AND table_name IN ('workflow_runner_v2_cancel_bindings','workflow_runner_v2_event_inbox')`).Scan(&exactTransportGenerationBindings); err != nil {
+		t.Fatal(err)
+	}
+	if exactTransportGenerationBindings != 2 {
+		t.Fatalf("v2 transport generation bindings=%d, want exact two non-authority envelope bindings", exactTransportGenerationBindings)
+	}
 
 	rows, err := pool.Query(ctx, `
 SELECT table_name, column_name
 FROM information_schema.columns
 WHERE table_schema = current_schema()
   AND table_name LIKE 'workflow_runner_%'
+  AND NOT (column_name='resume_generation' AND table_name IN (
+      'workflow_runner_v2_cancel_bindings','workflow_runner_v2_event_inbox'
+  ))
   AND (
       column_name IN ('run_status','checkpoint','resume_cursor','approval','approval_decision','budget','budget_used')
       OR column_name LIKE 'checkpoint_%'
@@ -644,6 +718,20 @@ func budgetAuthorityDownMigration(t *testing.T) string {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read GS9-E2 down migration: %v", err)
+	}
+	return string(body)
+}
+
+func workflowRunnerV2DownMigration(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve migration test source path")
+	}
+	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000007_integrate_workflow_runner_v2.down.sql"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read GS9-F1 down migration: %v", err)
 	}
 	return string(body)
 }

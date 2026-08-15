@@ -10,9 +10,164 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
+
+type fakeV2Store struct {
+	submit func(context.Context, runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error)
+}
+
+func (store fakeV2Store) SubmitV2(ctx context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+	return store.submit(ctx, input)
+}
+
+func TestV2QualificationAdmissionReplaysAcceptedReceiptWithoutActivatingGoRoute(t *testing.T) {
+	base := &fakeStore{
+		submit: func(context.Context, runnerstore.SubmitInput) (runnerstore.JobReceipt, error) {
+			return runnerstore.JobReceipt{}, nil
+		},
+		read: func(context.Context, string, string) (runnerstore.JobView, error) { return runnerstore.JobView{}, nil },
+		cancel: func(context.Context, runnerstore.CancelInput) (runnerstore.CancelControl, error) {
+			return runnerstore.CancelControl{}, nil
+		},
+	}
+	digest := sha256.Sum256([]byte(testToken))
+	spec := runnerstore.V2JobSpec{
+		Schema: runnerstore.V2JobSpecSchema, WorkspaceID: "workspace.test", JobID: "job.v2", WorkflowRunID: "run.v2",
+		CorrelationID: "correlation.v2", ExecutionDescriptorRef: "descriptor.v2", ExecutionDescriptorHash: strings.Repeat("1", 64),
+		WorkflowID: "workflow.v2", WorkflowVersion: "1.0.0", WorkflowSourceHash: strings.Repeat("2", 64),
+		ManifestHash: strings.Repeat("3", 64), InputHash: strings.Repeat("4", 64), WholeTimeoutMS: 60_000,
+		SubmittedAt: "2026-08-15T00:00:00.000Z", RequiredProtocolVersion: authoritycontract.ProtocolVersion,
+		RequiredCapabilities: append([]string(nil), runnerstore.V2RequiredCapabilities...), AuthorityRoute: authoritycontract.Route{
+			Backend: "ts-local", Authority: "typescript", RoutingEpoch: 1, AuthorityBuildHash: strings.Repeat("5", 64),
+		}, RunRevision: 1,
+	}
+	prepared, err := runnerstore.PrepareV2JobSpec(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, fingerprint := runnerstore.V2SubmissionBindings(prepared)
+	calls := 0
+	service, err := New(Options{Store: base, V2Store: fakeV2Store{submit: func(_ context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+		calls++
+		receipt := runnerstore.V2JobReceipt{Schema: runnerstore.V2JobReceiptSchema, Status: runnerstore.ReceiptAccepted,
+			WorkspaceID: spec.WorkspaceID, JobID: spec.JobID, WorkflowRunID: spec.WorkflowRunID, State: runnerstore.JobQueued,
+			Revision: 1, JobSpecHash: prepared.JobSpecHash, IdempotencyKey: input.IdempotencyKey,
+			RequestFingerprint: input.RequestFingerprint, CommittedAt: "2026-08-15T00:00:01.000Z", Replay: calls > 1}
+		receipt.ExactBytes, _ = v2JobReceiptBytes(receipt)
+		return receipt, nil
+	}}, V2Qualification: true, SchemaVersion: 7, BuildSHA: strings.Repeat("a", 64), WorkspaceID: spec.WorkspaceID, BearerTokenSHA256: fmt.Sprintf("%x", digest[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(body []byte) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, RouteV2Jobs, strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		req.Header.Set(HeaderWorkspaceID, spec.WorkspaceID)
+		req.Header.Set("Idempotency-Key", key)
+		req.Header.Set(HeaderRequestFingerprint, fingerprint)
+		response := httptest.NewRecorder()
+		service.Handler().ServeHTTP(response, req)
+		return response
+	}
+	first, replay := request(prepared.ExactBody), request(prepared.ExactBody)
+	if first.Code != http.StatusCreated || replay.Code != http.StatusOK || replay.Header().Get(HeaderIdempotencyReplayed) != "true" || first.Body.String() != replay.Body.String() || !strings.Contains(first.Body.String(), `"status":"accepted"`) {
+		t.Fatalf("v2 replay drifted: first=%d/%q replay=%d/%q/%q", first.Code, first.Body.String(), replay.Code, replay.Header().Get(HeaderIdempotencyReplayed), replay.Body.String())
+	}
+	if service.accepted.Load() != 1 || service.duplicates.Load() != 1 {
+		t.Fatalf("v2 admission metrics drifted: accepted=%d duplicate=%d", service.accepted.Load(), service.duplicates.Load())
+	}
+	goSpec := spec
+	goSpec.AuthorityRoute.Backend, goSpec.AuthorityRoute.Authority = "go", "workflow-control"
+	goPrepared, _ := runnerstore.PrepareV2JobSpec(goSpec)
+	goRequest := httptest.NewRequest(http.MethodPost, RouteV2Jobs, strings.NewReader(string(goPrepared.ExactBody)))
+	goRequest.Header.Set("Content-Type", "application/json")
+	goRequest.Header.Set("Authorization", "Bearer "+testToken)
+	goRequest.Header.Set(HeaderWorkspaceID, spec.WorkspaceID)
+	goKey, goFingerprint := runnerstore.V2SubmissionBindings(goPrepared)
+	goRequest.Header.Set("Idempotency-Key", goKey)
+	goRequest.Header.Set(HeaderRequestFingerprint, goFingerprint)
+	goResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(goResponse, goRequest)
+	if goResponse.Code != http.StatusUnprocessableEntity || calls != 2 {
+		t.Fatalf("Go route reached v2 store: status=%d calls=%d", goResponse.Code, calls)
+	}
+
+	mutations := map[string]func(*runnerstore.V2JobReceipt){
+		"workspace":    func(value *runnerstore.V2JobReceipt) { value.WorkspaceID = "workspace.splice" },
+		"workflow run": func(value *runnerstore.V2JobReceipt) { value.WorkflowRunID = "run.splice" },
+		"idempotency key": func(value *runnerstore.V2JobReceipt) {
+			value.IdempotencyKey = runnerstore.V2JobKeyPrefix + strings.Repeat("f", 64)
+		},
+		"fingerprint": func(value *runnerstore.V2JobReceipt) { value.RequestFingerprint = "sha256:" + strings.Repeat("f", 64) },
+		"status state": func(value *runnerstore.V2JobReceipt) {
+			value.Status = runnerstore.ReceiptReconciliationRequired
+		},
+		"revision": func(value *runnerstore.V2JobReceipt) { value.Revision = 2 },
+	}
+	for name, mutate := range mutations {
+		t.Run("rejects cross-spliced "+name, func(t *testing.T) {
+			badService, serviceErr := New(Options{Store: base, V2Store: fakeV2Store{submit: func(_ context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+				receipt := runnerstore.V2JobReceipt{Schema: runnerstore.V2JobReceiptSchema, Status: runnerstore.ReceiptAccepted,
+					WorkspaceID: spec.WorkspaceID, JobID: spec.JobID, WorkflowRunID: spec.WorkflowRunID, State: runnerstore.JobQueued,
+					Revision: 1, JobSpecHash: prepared.JobSpecHash, IdempotencyKey: input.IdempotencyKey,
+					RequestFingerprint: input.RequestFingerprint, CommittedAt: "2026-08-15T00:00:01.000Z"}
+				mutate(&receipt)
+				receipt.ExactBytes, _ = v2JobReceiptBytes(receipt)
+				return receipt, nil
+			}}, V2Qualification: true, SchemaVersion: 7, BuildSHA: strings.Repeat("a", 64), WorkspaceID: spec.WorkspaceID, BearerTokenSHA256: fmt.Sprintf("%x", digest[:])})
+			if serviceErr != nil {
+				t.Fatal(serviceErr)
+			}
+			req := httptest.NewRequest(http.MethodPost, RouteV2Jobs, strings.NewReader(string(prepared.ExactBody)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			req.Header.Set(HeaderWorkspaceID, spec.WorkspaceID)
+			req.Header.Set("Idempotency-Key", key)
+			req.Header.Set(HeaderRequestFingerprint, fingerprint)
+			response := httptest.NewRecorder()
+			badService.Handler().ServeHTTP(response, req)
+			if response.Code != http.StatusInternalServerError {
+				t.Fatalf("cross-spliced receipt escaped validation: %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	reconciliationID := "reconciliation.v2"
+	reconciliationCalls := 0
+	reconciliationService, err := New(Options{Store: base, V2Store: fakeV2Store{submit: func(_ context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+		reconciliationCalls++
+		receipt := runnerstore.V2JobReceipt{Schema: runnerstore.V2JobReceiptSchema, Status: runnerstore.ReceiptReconciliationRequired,
+			WorkspaceID: spec.WorkspaceID, JobID: spec.JobID, WorkflowRunID: spec.WorkflowRunID, State: runnerstore.JobReconciliationRequired,
+			Revision: 1, JobSpecHash: prepared.JobSpecHash, IdempotencyKey: input.IdempotencyKey,
+			RequestFingerprint: input.RequestFingerprint, CommittedAt: "2026-08-15T00:00:01.000Z", ReconciliationID: &reconciliationID,
+			Replay: reconciliationCalls > 1}
+		receipt.ExactBytes, _ = v2JobReceiptBytes(receipt)
+		return receipt, nil
+	}}, V2Qualification: true, SchemaVersion: 7, BuildSHA: strings.Repeat("a", 64), WorkspaceID: spec.WorkspaceID, BearerTokenSHA256: fmt.Sprintf("%x", digest[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciliationRequest := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, RouteV2Jobs, strings.NewReader(string(prepared.ExactBody)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		req.Header.Set(HeaderWorkspaceID, spec.WorkspaceID)
+		req.Header.Set("Idempotency-Key", key)
+		req.Header.Set(HeaderRequestFingerprint, fingerprint)
+		response := httptest.NewRecorder()
+		reconciliationService.Handler().ServeHTTP(response, req)
+		return response
+	}
+	reconciliation, reconciliationReplay := reconciliationRequest(), reconciliationRequest()
+	if reconciliation.Code != http.StatusAccepted || reconciliationReplay.Code != http.StatusOK ||
+		reconciliationReplay.Header().Get(HeaderIdempotencyReplayed) != "true" || reconciliation.Body.String() != reconciliationReplay.Body.String() {
+		t.Fatalf("v2 reconciliation response drifted: first=%d replay=%d/%q", reconciliation.Code, reconciliationReplay.Code, reconciliationReplay.Header().Get(HeaderIdempotencyReplayed))
+	}
+}
 
 const testToken = "0123456789abcdef0123456789abcdef"
 
