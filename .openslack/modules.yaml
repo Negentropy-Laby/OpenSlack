@@ -453,6 +453,7 @@ modules:
       - test:services/workflow-control/internal/budgetstore/postgres/repository_test.go
       - test:services/workflow-control/tests/contracts/budget_authority_openapi_contract_test.go
       - repo:services/workflow-control/docs/testing/gs9e-qualification.md
+      - commit:21b74ace
       - test:packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
       - test:packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts
       - test:packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts
