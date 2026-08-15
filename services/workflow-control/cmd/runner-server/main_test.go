@@ -42,7 +42,7 @@ func TestRunCancelsHTTPWhenSchedulerFails(t *testing.T) {
 	}
 }
 
-func TestRunnerServerRequiresSchemaVersionThree(t *testing.T) {
+func TestRunnerServerSupportsSchemaThroughVersionSix(t *testing.T) {
 	if databaseready.RunnerProfile.Minimum != 2 || databaseready.RunnerProfile.Maximum != databaseready.CurrentSchemaVersion {
 		t.Fatalf("schema range=%d..%d", databaseready.RunnerProfile.Minimum, databaseready.RunnerProfile.Maximum)
 	}

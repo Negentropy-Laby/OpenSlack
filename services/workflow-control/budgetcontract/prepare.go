@@ -232,8 +232,26 @@ func ValidateReceiptForResult(receiptValue, preparedValue, recordValue, ledgerVa
 			reconciliation["observedAt"] != record["committedAt"] {
 			return nil, failure(ErrorIdentityMismatch, "$/reconciliationToken", "Provider reconciliation receipt binding drifted.")
 		}
-	} else if receipt["status"] != "accepted" || reconciliationValue != nil {
+	} else if receipt["status"] != "accepted" || !nilBudgetRecord(reconciliationValue) {
 		return nil, failure(ErrorIdentityMismatch, "$/status", "Accepted result receipt status drifted.")
 	}
 	return receipt, nil
+}
+
+// nilBudgetRecord treats a typed nil Record passed through an interface as the
+// absent reconciliation value represented by JSON null. Store and HTTP
+// composition paths naturally carry optional records as Record(nil); requiring
+// callers to erase that type before validation would make the exact contract
+// depend on a Go interface representation detail.
+func nilBudgetRecord(value any) bool {
+	switch value := value.(type) {
+	case nil:
+		return true
+	case Record:
+		return value == nil
+	case map[string]any:
+		return value == nil
+	default:
+		return false
+	}
 }

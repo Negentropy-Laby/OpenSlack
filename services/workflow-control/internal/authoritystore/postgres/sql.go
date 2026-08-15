@@ -105,6 +105,16 @@ SELECT EXISTS (
     WHERE workspace_id=$1 AND run_id=$2 AND status='open'
 )`
 
+	budgetReconciliationTableExistsSQL = `
+SELECT to_regclass('workflow_control_budget_reconciliations') IS NOT NULL`
+
+	openBudgetDatabaseReconciliationSQL = `
+SELECT EXISTS (
+    SELECT 1 FROM workflow_control_budget_reconciliations
+    WHERE workspace_id=$1 AND run_id=$2
+      AND evidence_type='database_commit' AND status='open'
+)`
+
 	readSQL = `
 SELECT workflow_id, workflow_version, encode(workflow_source_hash,'hex'),
        encode(manifest_hash,'hex'), encode(input_hash,'hex'), backend, authority,

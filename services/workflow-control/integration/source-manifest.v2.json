@@ -4,7 +4,7 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/workflow-control",
     "targetPath": "services/workflow-control",
-    "migrationPhase": "GS9-D",
+    "migrationPhase": "GS9-E",
     "authority": "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY"
   },
   "containerInputs": {
@@ -18,7 +18,7 @@
   "sourceInputs": {
     "dockerfile": {
       "path": "services/workflow-control/Dockerfile",
-      "sha256": "a51554c67d80367eaa8564aca6e08561aab8bf3296970542014e36b4e1b90d7f"
+      "sha256": "f353d33bea5d87c25402839cf9cf0a5a9bf86a8b696508ccb2834936f21abacc"
     },
     "goMod": {
       "path": "services/workflow-control/go.mod",
@@ -51,6 +51,14 @@
     "effectShadowMigrationDown": {
       "path": "services/workflow-control/migrations/000005_create_workflow_control_effect_shadow.down.sql",
       "sha256": "f603d2039c3dbd63ef0e2012242791ccd64fbeaa2c8cd8f427443d4dd50664b8"
+    },
+    "budgetAuthorityMigrationUp": {
+      "path": "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.up.sql",
+      "sha256": "2fb84d8dca802fb244bb845e44864e7c160bc3a63255f9f7499033fd8ed4b74d"
+    },
+    "budgetAuthorityMigrationDown": {
+      "path": "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.down.sql",
+      "sha256": "e3548650dc03cafc3cd70c90ab3cf76af2f8aaf905390917bf93b576d4be5ea7"
     }
   },
   "contractInputs": {
@@ -82,6 +90,10 @@
       "path": "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
       "sha256": "72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e"
     },
+    "workflowBudgetAuthorityContractManifest": {
+      "path": "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
+      "sha256": "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714"
+    },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
       "sha256": "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f"
@@ -101,6 +113,10 @@
     "effectShadowOpenapi": {
       "path": "services/workflow-control/docs/api/effect-shadow-openapi.yaml",
       "sha256": "9d279805c2dca29d55b070b90f87576d6f663b95aefda3b286eecb4dde726876"
+    },
+    "budgetAuthorityOpenapi": {
+      "path": "services/workflow-control/docs/api/budget-authority-openapi.yaml",
+      "sha256": "e3560807d3de6656167a93a11d1abbeb1fa39017f9835c0f0a70423dd98cd1e0"
     }
   },
   "legalInputs": {
@@ -142,7 +158,13 @@
       "WORKFLOW_CONTROL_EFFECT_SHADOW_OBSERVATION",
       "WORKFLOW_CONTROL_EFFECT_SHADOW_EXACT_RECEIPT",
       "WORKFLOW_CONTROL_EFFECT_SHADOW_OUTBOX",
-      "WORKFLOW_CONTROL_EFFECT_SHADOW_RECONCILIATION"
+      "WORKFLOW_CONTROL_EFFECT_SHADOW_RECONCILIATION",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_DURABLE_ENVELOPE",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_ACCOUNT",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RESERVATION",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_LEDGER",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
+      "WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RECONCILIATION"
     ],
     "nonClaims": [
       "CHECKPOINT_RESUME_AUTHORITY",
@@ -155,7 +177,11 @@
       "REMOTE_CONNECTOR",
       "SIGNED_PROVENANCE",
       "USER_VISIBLE_READ_AUTHORITY",
-      "WORKFLOW_BUDGET_AUTHORITY",
+      "WORKFLOW_BUDGET_PRODUCTION_AUTHORITY",
+      "WORKFLOW_BUDGET_RUNTIME_CLIENT",
+      "WORKFLOW_RUNNER_V2_DELIVERY",
+      "WORKFLOW_ROUTING_CANARY_CUTOVER",
+      "WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE",
       "WORKFLOW_CONTROL_AUTHORITY_CUTOVER",
       "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
       "WORKFLOW_EFFECT_APPROVAL_AUTHORITY",

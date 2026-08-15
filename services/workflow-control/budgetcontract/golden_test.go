@@ -209,6 +209,16 @@ func TestWorkflowBudgetAuthorityRejectsFramingAndAuthorityDrift(t *testing.T) {
 	if _, err := ValidateReceiptForRequest(receipt, prepared); err != nil {
 		t.Fatalf("bound receipt rejected: %v", err)
 	}
+	var typedNilReconciliation Record
+	if _, err := ValidateReceiptForResult(
+		receipt,
+		prepared,
+		golden.Vectors.Records["reserveReserved"].Value,
+		golden.Vectors.Records["reserveLedger"].Value,
+		typedNilReconciliation,
+	); err != nil {
+		t.Fatalf("typed nil reconciliation rejected an accepted result: %v", err)
+	}
 	driftedReceipt := cloneValue(t, receipt).(map[string]any)
 	driftedReceipt["serviceBuildHash"] = "6" + driftedReceipt["serviceBuildHash"].(string)[1:]
 	if _, err := ValidateReceiptForRequest(driftedReceipt, prepared); !hasCode(err, ErrorIdentityMismatch) {

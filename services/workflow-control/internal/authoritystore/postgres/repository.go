@@ -21,11 +21,11 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runlock"
 )
 
 const (
 	idempotencyLockSalt   int64 = 628239560154201
-	runLockSalt           int64 = 628239560154202
 	reconciliationTimeout       = 5 * time.Second
 )
 
@@ -113,6 +113,13 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 	}
 	if reconciliationOpen {
 		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "workflow run has an open reconciliation", nil)
+	}
+	budgetReconciliationOpen, err := hasOpenBudgetDatabaseReconciliation(ctx, tx, request.WorkspaceID, request.RunID)
+	if err != nil {
+		return authoritystore.Receipt{}, err
+	}
+	if budgetReconciliationOpen {
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "workflow run has an open budget database reconciliation", nil)
 	}
 
 	current, err := readHead(ctx, tx, request.WorkspaceID, request.RunID)
@@ -645,17 +652,13 @@ func lockScope(ctx context.Context, tx pgx.Tx, key, workspaceID, runID string) e
 		name  string
 	}{
 		{key, idempotencyLockSalt, "lock workflow authority idempotency key"},
-		{runLockKey(workspaceID, runID), runLockSalt, "lock workflow authority run"},
+		{runlock.Key(workspaceID, runID), runlock.AdvisorySalt, "lock workflow authority run"},
 	} {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,$2))`, lock.value, lock.salt); err != nil {
 			return databaseFailure(lock.name, err)
 		}
 	}
 	return nil
-}
-
-func runLockKey(workspaceID, runID string) string {
-	return strconv.Itoa(len(workspaceID)) + ":" + workspaceID + strconv.Itoa(len(runID)) + ":" + runID
 }
 
 func randomToken(prefix string) (string, error) {
