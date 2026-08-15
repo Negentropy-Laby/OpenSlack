@@ -446,7 +446,11 @@ func TestBudgetStoreProviderAndDatabaseUnknownAreSeparate(t *testing.T) {
 		if _, err := New(pool).Reserve(context.Background(), blocked); !budgetstore.IsCode(err, budgetstore.ErrorReconciliation) {
 			t.Fatalf("open database reconciliation did not gate run: %v", err)
 		}
-		transition := authorityTransitionInput(t, 5, authoritycontract.RunReconciliationRequired, authoritycontract.RunFailed)
+		// The request itself must remain contract-valid so the open budget
+		// reconciliation gate, rather than transition validation, is the reason
+		// authority refuses it. Its stale expected state is intentionally never
+		// reached because the shared gate is checked first.
+		transition := authorityTransitionInput(t, 5, authoritycontract.RunRunning, authoritycontract.RunCompleted)
 		if _, err := authoritypostgres.New(pool).Mutate(context.Background(), transition); !authoritystore.IsCode(err, authoritystore.ErrorConflict) {
 			t.Fatalf("open budget database reconciliation did not gate the shared run authority: %v", err)
 		}
