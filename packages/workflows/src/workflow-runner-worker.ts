@@ -19,7 +19,7 @@ import {
   type WorkflowRunnerSourceLoader,
 } from './workflow-runner-session.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
-import type { RunResult, WorkflowModule } from './types.js';
+import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import {
@@ -417,7 +417,7 @@ function within(root: string, candidate: string): boolean {
 }
 
 async function sourceRoot(
-  descriptor: WorkflowRunnerExecutionDescriptor,
+  descriptor: Pick<WorkflowRunnerExecutionDescriptor, 'workflowSource'>,
   workspaceRoot: string,
 ): Promise<string> {
   switch (descriptor.workflowSource) {
@@ -432,16 +432,49 @@ async function sourceRoot(
   }
 }
 
-export function createSealedWorkflowRunnerSourceLoader(
+interface SealedWorkflowDescriptor {
+  readonly workflowSource: WorkflowRunnerExecutionDescriptor['workflowSource'];
+  readonly workflowId: string;
+  readonly workflowVersion: string;
+  readonly workflowSourceHash: string;
+  readonly manifestHash: string;
+}
+
+interface SealedSourcePolicy<TDescriptor extends SealedWorkflowDescriptor> {
+  readonly hashSource: (bytes: Uint8Array) => string;
+  readonly hashManifest: (manifest: WorkflowMeta) => string;
+  readonly beforePrepare?: (descriptor: TDescriptor) => void;
+  readonly messages: {
+    readonly unsafeRoot: string;
+    readonly nonCanonicalRoot: string;
+    readonly ambiguousEntry: string;
+    readonly unsafeSource: string;
+    readonly escapedSource: string;
+    readonly changedRoot: string;
+    readonly sourceHash: string;
+    readonly changedSource: string;
+    readonly loadedIdentity: string;
+  };
+}
+
+function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflowDescriptor>(
   workspaceRoot: string,
-): WorkflowRunnerSourceLoader<PreparedWorkflowSource> {
+  policy: SealedSourcePolicy<TDescriptor>,
+): {
+  readonly prepare: (descriptor: TDescriptor) => Promise<PreparedWorkflowSource>;
+  readonly load: (
+    prepared: PreparedWorkflowSource,
+    descriptor: TDescriptor,
+  ) => Promise<WorkflowModule>;
+} {
   return Object.freeze({
-    async prepare(descriptor: WorkflowRunnerExecutionDescriptor): Promise<PreparedWorkflowSource> {
+    async prepare(descriptor: TDescriptor): Promise<PreparedWorkflowSource> {
+      policy.beforePrepare?.(descriptor);
       const root = await sourceRoot(descriptor, workspaceRoot);
       await assertNoWindowsReparseComponents(root);
       const rootBefore = await lstat(root, { bigint: true });
       if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
-        throw new Error('Sealed workflow catalog root is unsafe.');
+        throw new Error(policy.messages.unsafeRoot);
       }
       const rootReal = await realpath(root);
       const rootCanonical = await lstat(rootReal, { bigint: true });
@@ -452,19 +485,19 @@ export function createSealedWorkflowRunnerSourceLoader(
           ? !sameFilesystemObject(rootBefore, rootCanonical)
           : rootReal !== resolve(root))
       ) {
-        throw new Error('Sealed workflow catalog root must be canonical and non-symlinked.');
+        throw new Error(policy.messages.nonCanonicalRoot);
       }
       const entries = new Set(await readdir(root));
       const candidates = SOURCE_EXTENSIONS.filter((extension) =>
         entries.has(`${descriptor.workflowId}${extension}`),
       ).map((extension) => join(rootReal, `${descriptor.workflowId}${extension}`));
       if (candidates.length !== 1) {
-        throw new Error('Sealed workflow catalog entry is missing or ambiguous.');
+        throw new Error(policy.messages.ambiguousEntry);
       }
       const path = candidates[0]!;
       const pathBefore = await lstat(path, { bigint: true });
       if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
-        throw new Error('Sealed workflow source has an unsafe type.');
+        throw new Error(policy.messages.unsafeSource);
       }
       const canonical = await realpath(path);
       const canonicalStat = await lstat(canonical, { bigint: true });
@@ -476,15 +509,15 @@ export function createSealedWorkflowRunnerSourceLoader(
           : canonical !== path) ||
         !within(rootReal, canonical)
       ) {
-        throw new Error('Sealed workflow source escapes its catalog root.');
+        throw new Error(policy.messages.escapedSource);
       }
       const source = await readSealedWorkflowSource(canonical);
       const rootAfter = await lstat(root, { bigint: true });
       if (!sameSourceIdentity(rootBefore, rootAfter)) {
-        throw new Error('Sealed workflow catalog root changed during validation.');
+        throw new Error(policy.messages.changedRoot);
       }
-      if (hashWorkflowRunnerSource(source.bytes) !== descriptor.workflowSourceHash) {
-        throw new Error('Sealed workflow source hash does not match the descriptor.');
+      if (policy.hashSource(source.bytes) !== descriptor.workflowSourceHash) {
+        throw new Error(policy.messages.sourceHash);
       }
       // Project and user catalogs accept only one hash-bound source object.
       // Builtins are reviewed code inside the sealed runner distribution: the
@@ -499,19 +532,16 @@ export function createSealedWorkflowRunnerSourceLoader(
         identity: sourceIdentity(source.stat),
       });
     },
-    async load(
-      descriptor: WorkflowRunnerExecutionDescriptor,
-      prepared: PreparedWorkflowSource,
-    ): Promise<WorkflowModule> {
+    async load(prepared: PreparedWorkflowSource, descriptor: TDescriptor): Promise<WorkflowModule> {
       // This is the first dynamic import on the worker execution path and the
       // session invokes it only after lease_accept has an advancing receipt.
       const beforeImport = await readSealedWorkflowSource(prepared.path);
       if (
         sourceIdentity(beforeImport.stat) !== prepared.identity ||
         !beforeImport.bytes.equals(prepared.bytes) ||
-        hashWorkflowRunnerSource(beforeImport.bytes) !== descriptor.workflowSourceHash
+        policy.hashSource(beforeImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error('Sealed workflow source changed after lease acceptance.');
+        throw new Error(policy.messages.changedSource);
       }
       const { loadWorkflow } = await import('./loader.js');
       const workflow = await loadWorkflow(prepared.path, {
@@ -526,115 +556,65 @@ export function createSealedWorkflowRunnerSourceLoader(
         !afterImport.bytes.equals(prepared.bytes) ||
         workflow.meta.name !== descriptor.workflowId ||
         (workflow.meta.version ?? '0.0.0') !== descriptor.workflowVersion ||
-        hashWorkflowRunnerManifest(workflow.meta) !== descriptor.manifestHash ||
-        hashWorkflowRunnerSource(afterImport.bytes) !== descriptor.workflowSourceHash
+        policy.hashManifest(workflow.meta) !== descriptor.manifestHash ||
+        policy.hashSource(afterImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error('Loaded workflow identity does not match the sealed descriptor.');
+        throw new Error(policy.messages.loadedIdentity);
       }
       return workflow;
     },
   });
 }
 
+export function createSealedWorkflowRunnerSourceLoader(
+  workspaceRoot: string,
+): WorkflowRunnerSourceLoader<PreparedWorkflowSource> {
+  const core = createSealedWorkflowSourceLoaderCore<WorkflowRunnerExecutionDescriptor>(
+    workspaceRoot,
+    {
+      hashSource: hashWorkflowRunnerSource,
+      hashManifest: hashWorkflowRunnerManifest,
+      messages: {
+        unsafeRoot: 'Sealed workflow catalog root is unsafe.',
+        nonCanonicalRoot: 'Sealed workflow catalog root must be canonical and non-symlinked.',
+        ambiguousEntry: 'Sealed workflow catalog entry is missing or ambiguous.',
+        unsafeSource: 'Sealed workflow source has an unsafe type.',
+        escapedSource: 'Sealed workflow source escapes its catalog root.',
+        changedRoot: 'Sealed workflow catalog root changed during validation.',
+        sourceHash: 'Sealed workflow source hash does not match the descriptor.',
+        changedSource: 'Sealed workflow source changed after lease acceptance.',
+        loadedIdentity: 'Loaded workflow identity does not match the sealed descriptor.',
+      },
+    },
+  );
+  return Object.freeze({
+    prepare: core.prepare,
+    load: (descriptor: WorkflowRunnerExecutionDescriptor, prepared: PreparedWorkflowSource) =>
+      core.load(prepared, descriptor),
+  });
+}
+
 export function createSealedWorkflowRunnerV2SourceLoader(
   workspaceRoot: string,
 ): WorkflowRunnerV2SourceLoader<PreparedWorkflowSource, WorkflowModule> {
-  return Object.freeze({
-    async prepare(
-      descriptor: WorkflowRunnerV2ExecutionDescriptor,
-    ): Promise<PreparedWorkflowSource> {
+  return createSealedWorkflowSourceLoaderCore<WorkflowRunnerV2ExecutionDescriptor>(workspaceRoot, {
+    hashSource: hashWorkflowRunnerV2Source,
+    hashManifest: hashWorkflowRunnerV2Manifest,
+    beforePrepare(descriptor) {
       if (descriptor.resumeGeneration !== 0) {
         throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
       }
-      const root = await sourceRoot(
-        descriptor as unknown as WorkflowRunnerExecutionDescriptor,
-        workspaceRoot,
-      );
-      await assertNoWindowsReparseComponents(root);
-      const rootBefore = await lstat(root, { bigint: true });
-      if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
-        throw new Error('Sealed v2 workflow catalog root is unsafe.');
-      }
-      const rootReal = await realpath(root);
-      const rootCanonical = await lstat(rootReal, { bigint: true });
-      if (
-        !rootCanonical.isDirectory() ||
-        rootCanonical.isSymbolicLink() ||
-        (process.platform === 'win32'
-          ? !sameFilesystemObject(rootBefore, rootCanonical)
-          : rootReal !== resolve(root))
-      ) {
-        throw new Error('Sealed v2 workflow catalog root must be canonical and non-symlinked.');
-      }
-      const entries = new Set(await readdir(root));
-      const candidates = SOURCE_EXTENSIONS.filter((extension) =>
-        entries.has(`${descriptor.workflowId}${extension}`),
-      ).map((extension) => join(rootReal, `${descriptor.workflowId}${extension}`));
-      if (candidates.length !== 1) {
-        throw new Error('Sealed v2 workflow catalog entry is missing or ambiguous.');
-      }
-      const path = candidates[0]!;
-      const pathBefore = await lstat(path, { bigint: true });
-      if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
-        throw new Error('Sealed v2 workflow source has an unsafe type.');
-      }
-      const canonical = await realpath(path);
-      const canonicalStat = await lstat(canonical, { bigint: true });
-      if (
-        !canonicalStat.isFile() ||
-        canonicalStat.isSymbolicLink() ||
-        (process.platform === 'win32'
-          ? !sameFilesystemObject(pathBefore, canonicalStat)
-          : canonical !== path) ||
-        !within(rootReal, canonical)
-      ) {
-        throw new Error('Sealed v2 workflow source escapes its catalog root.');
-      }
-      const source = await readSealedWorkflowSource(canonical);
-      const rootAfter = await lstat(root, { bigint: true });
-      if (!sameSourceIdentity(rootBefore, rootAfter)) {
-        throw new Error('Sealed v2 workflow catalog root changed during validation.');
-      }
-      if (hashWorkflowRunnerV2Source(source.bytes) !== descriptor.workflowSourceHash) {
-        throw new Error('Sealed v2 workflow source hash does not match the descriptor.');
-      }
-      if (descriptor.workflowSource !== 'builtin') {
-        assertWorkflowRunnerSourceIsSelfContained(source.bytes);
-      }
-      return Object.freeze({
-        path: canonical,
-        bytes: source.bytes,
-        identity: sourceIdentity(source.stat),
-      });
     },
-    async load(
-      prepared: PreparedWorkflowSource,
-      descriptor: WorkflowRunnerV2ExecutionDescriptor,
-    ): Promise<WorkflowModule> {
-      const beforeImport = await readSealedWorkflowSource(prepared.path);
-      if (
-        sourceIdentity(beforeImport.stat) !== prepared.identity ||
-        !beforeImport.bytes.equals(prepared.bytes) ||
-        hashWorkflowRunnerV2Source(beforeImport.bytes) !== descriptor.workflowSourceHash
-      ) {
-        throw new Error('Sealed v2 workflow source changed after lease acceptance.');
-      }
-      const { loadWorkflow } = await import('./loader.js');
-      const workflow = await loadWorkflow(prepared.path, {
-        moduleCacheKey: descriptor.workflowSourceHash,
-      });
-      const afterImport = await readSealedWorkflowSource(prepared.path);
-      if (
-        sourceIdentity(afterImport.stat) !== prepared.identity ||
-        !afterImport.bytes.equals(prepared.bytes) ||
-        workflow.meta.name !== descriptor.workflowId ||
-        (workflow.meta.version ?? '0.0.0') !== descriptor.workflowVersion ||
-        hashWorkflowRunnerV2Manifest(workflow.meta) !== descriptor.manifestHash ||
-        hashWorkflowRunnerV2Source(afterImport.bytes) !== descriptor.workflowSourceHash
-      ) {
-        throw new Error('Loaded v2 workflow identity does not match the sealed descriptor.');
-      }
-      return workflow;
+    messages: {
+      unsafeRoot: 'Sealed v2 workflow catalog root is unsafe.',
+      nonCanonicalRoot: 'Sealed v2 workflow catalog root must be canonical and non-symlinked.',
+      ambiguousEntry: 'Sealed v2 workflow catalog entry is missing or ambiguous.',
+      unsafeSource: 'Sealed v2 workflow source has an unsafe type.',
+      escapedSource: 'Sealed v2 workflow source escapes its catalog root.',
+      changedRoot: 'Sealed v2 workflow catalog root changed during validation.',
+      sourceHash: 'Sealed v2 workflow source hash does not match the descriptor.',
+      changedSource: 'Sealed v2 workflow source changed after lease acceptance.',
+      loadedIdentity: 'Loaded v2 workflow identity does not match the sealed descriptor.',
     },
   });
 }

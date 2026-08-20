@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
 
 func (repository *Repository) RecordV2Negotiation(ctx context.Context, input runnerstore.V2NegotiationInput) (runnerstore.V2Negotiation, error) {
-	if input.Lease.RequiredProtocolVersion != authoritycontract.ProtocolVersion || input.Lease.AuthorityRoute == nil {
+	if input.Lease.RequiredProtocolVersion != runnerprotocols.V2 || input.Lease.AuthorityRoute == nil {
 		return runnerstore.V2Negotiation{}, runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "v2 negotiation requires a v2-bound lease", nil)
 	}
 	if input.Hello.Kind != authoritycontract.KindHello {

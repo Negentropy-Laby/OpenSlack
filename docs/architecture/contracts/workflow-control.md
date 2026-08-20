@@ -592,6 +592,14 @@ provider, model, or provider-run identity into the E authority contract. GS9-F1 
 checkpoint, GS9-D effect, GS9-E budget, or resume adapters, and it does not establish complete
 runtime delivery or crash-after-authority recovery. GS9-F2 owns those adapters and exit gates.
 
+The F1 worker reserves the remaining total-token budget while independently bounding provider
+output by the smaller output limit; settlement continues to charge prompt plus completion usage.
+Its single receipt lane orders heartbeat, domain events, cancel acknowledgement, and terminal
+without allowing a timer-driven heartbeat to create a fatal sequence collision. Resume advancement
+mints a workflow resume identity distinct from the runner lease attempt; it does not rewrite the
+lease identity carried by later envelopes and receipts. Receipt transport uncertainty for an
+already persisted terminal cannot replace that terminal with reconciliation.
+
 The service profile is `workflow-control-runner-v2-foundation-v1`. Its mechanical gate remains a
 strict superset of the earlier GS7-B, GS8-B, and GS9-B/C/D/E repository checks, but its evidence
 ceiling is only `GS9-F1 FOUNDATION LOCAL_PASS / runtime delivery NOT_CLAIMED`. Production v2

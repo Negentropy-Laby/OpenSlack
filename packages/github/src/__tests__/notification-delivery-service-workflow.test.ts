@@ -332,10 +332,6 @@ function gs9eBudgetRun(): string {
   return 'bash scripts/qualification/workflow-control-postgres-gate.sh gs9e-budget';
 }
 
-function gs9f1RunnerV2FoundationRun(): string {
-  return 'bash scripts/go-check.sh services/workflow-control';
-}
-
 describe('notification delivery service workflow', () => {
   it('runs only for the service contract on main and manual dispatch', () => {
     expect(workflow.name).toBe('Notification Delivery Service CI');
@@ -426,7 +422,6 @@ describe('notification delivery service workflow', () => {
     const gs9cCheckpointIndex = stepIndex('Qualify GS9-C Workflow checkpoint shadow');
     const gs9dEffectIndex = stepIndex('Qualify GS9-D Workflow effect shadow');
     const gs9eBudgetIndex = stepIndex('Qualify GS9-E Workflow budget authority');
-    const gs9f1RunnerV2FoundationIndex = stepIndex('Qualify GS9-F1 runner v2 foundation');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
@@ -469,8 +464,7 @@ describe('notification delivery service workflow', () => {
     expect(gs9cCheckpointIndex).toBe(gs9bAuthorityIndex + 1);
     expect(gs9dEffectIndex).toBe(gs9cCheckpointIndex + 1);
     expect(gs9eBudgetIndex).toBe(gs9dEffectIndex + 1);
-    expect(gs9f1RunnerV2FoundationIndex).toBe(gs9eBudgetIndex + 1);
-    expect(goCheckIndex).toBe(gs9f1RunnerV2FoundationIndex + 1);
+    expect(goCheckIndex).toBe(gs9eBudgetIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
@@ -685,11 +679,6 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: gs9eBudgetRun(),
     });
-    expect(job.steps[gs9f1RunnerV2FoundationIndex]).toEqual({
-      name: 'Qualify GS9-F1 runner v2 foundation',
-      'working-directory': '.',
-      run: gs9f1RunnerV2FoundationRun(),
-    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -761,7 +750,6 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-C Workflow checkpoint shadow',
       'Qualify GS9-D Workflow effect shadow',
       'Qualify GS9-E Workflow budget authority',
-      'Qualify GS9-F1 runner v2 foundation',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
@@ -870,7 +858,6 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-C Workflow checkpoint shadow': gs9cCheckpointRun(),
       'Qualify GS9-D Workflow effect shadow': gs9dEffectRun(),
       'Qualify GS9-E Workflow budget authority': gs9eBudgetRun(),
-      'Qualify GS9-F1 runner v2 foundation': gs9f1RunnerV2FoundationRun(),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -1376,32 +1363,21 @@ describe('notification delivery service workflow', () => {
       names.indexOf('Qualify GS9-E Workflow budget authority'),
     );
     expect(names.indexOf('Qualify GS9-E Workflow budget authority')).toBeLessThan(
-      names.indexOf('Qualify GS9-F1 runner v2 foundation'),
-    );
-    expect(names.indexOf('Qualify GS9-F1 runner v2 foundation')).toBeLessThan(
       names.indexOf('Run reviewed Go workspace verifier'),
     );
   });
 
-  it('qualifies GS9-F1 through the reviewed default-off runner v2 foundation profile', () => {
-    const step = workflow.jobs.validate.steps.find(
-      (candidate) => candidate.name === 'Qualify GS9-F1 runner v2 foundation',
+  it('qualifies GS9-F1 once through the reviewed all-workspace Go verifier', () => {
+    const goChecks = workflow.jobs.validate.steps.filter((candidate) =>
+      candidate.run?.includes('scripts/go-check.sh'),
     );
-    expect(step).toEqual({
-      name: 'Qualify GS9-F1 runner v2 foundation',
-      'working-directory': '.',
-      run: gs9f1RunnerV2FoundationRun(),
-    });
-    expect(step?.run).toBe('bash scripts/go-check.sh services/workflow-control');
-    expect(step?.run).not.toContain('--all');
-
-    const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
-    expect(names.indexOf('Qualify GS9-E Workflow budget authority')).toBeLessThan(
-      names.indexOf('Qualify GS9-F1 runner v2 foundation'),
-    );
-    expect(names.indexOf('Qualify GS9-F1 runner v2 foundation')).toBeLessThan(
-      names.indexOf('Run reviewed Go workspace verifier'),
-    );
+    expect(goChecks).toEqual([
+      {
+        name: 'Run reviewed Go workspace verifier',
+        'working-directory': '.',
+        run: 'bash scripts/go-check.sh --all',
+      },
+    ]);
   });
 
   it('binds the shared PostgreSQL gate to the four reviewed profiles', () => {

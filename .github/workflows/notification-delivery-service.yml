@@ -513,9 +513,6 @@ jobs:
       - name: Qualify GS9-E Workflow budget authority
         working-directory: .
         run: bash scripts/qualification/workflow-control-postgres-gate.sh gs9e-budget
-      - name: Qualify GS9-F1 runner v2 foundation
-        working-directory: .
-        run: bash scripts/go-check.sh services/workflow-control
       - name: Run reviewed Go workspace verifier
         working-directory: .
         run: bash scripts/go-check.sh --all

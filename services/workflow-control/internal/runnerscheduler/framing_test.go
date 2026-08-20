@@ -2,9 +2,11 @@ package runnerscheduler
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
@@ -35,6 +37,27 @@ func TestRuntimeFrameReaderAcceptsOnlyExactCanonicalJSONL(t *testing.T) {
 				t.Fatal("invalid frame was accepted")
 			}
 		})
+	}
+}
+
+func TestProtocolDecodePumpStopsWhenItsSessionIsCancelled(t *testing.T) {
+	message := testHello()
+	body, err := runnerprotocol.CanonicalEnvelopeBytes(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	destination := make(chan protocolDecodedFrame[runnerprotocol.Envelope])
+	done := make(chan struct{})
+	go func() {
+		decodeProtocolFrames(ctx, newFrameReader(bytes.NewReader(body)), destination)
+		close(done)
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled protocol decoder remained blocked on frame delivery")
 	}
 }
 

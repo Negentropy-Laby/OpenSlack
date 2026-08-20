@@ -154,6 +154,7 @@ interface OutstandingEvent {
 }
 
 const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 
 function messagePayload(
   message: WorkflowControlAuthorityMessage,
@@ -190,6 +191,8 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #queuedCancel?: WorkflowControlAuthorityMessage;
   #terminal = false;
   #terminalReceiptAccepted = false;
+  #eventLaneTail: Promise<void> = Promise.resolve();
+  #eventLanePending = 0;
 
   constructor(options: WorkflowRunnerV2SessionOptions<TPrepared, TWorkflow>) {
     if (!HASH.test(options.runnerBuildHash)) {
@@ -359,24 +362,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     if (Date.parse(expiresAt) <= Date.parse(this.#now())) {
       return this.#sendLeaseReject(message, 'stale');
     }
-    if (
-      message.jobId === null ||
-      message.workflowRunId === null ||
-      message.attemptId === null ||
-      message.leaseId === null ||
-      message.fencingToken === null ||
-      message.authorityBackend === null ||
-      message.authority === null ||
-      message.routingEpoch === null ||
-      message.authorityBuildHash === null ||
-      message.runRevision === null ||
-      message.resumeGeneration === null
-    ) {
-      throw new WorkflowRunnerV2SessionError(
-        'WORKFLOW_RUNNER_V2_ADMISSION_BINDING_MISMATCH',
-        'Lease offer lacks its v2 authority binding.',
-      );
-    }
+    const lease = this.#leaseBindingFromMessage(message, 'Lease offer');
     this.#state = 'validating_offer';
     const descriptor = await this.#options.descriptorStore.read(
       requiredString(message, 'executionDescriptorRef'),
@@ -384,8 +370,8 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     );
     try {
       assertWorkflowRunnerV2AdmissionBinding(descriptor, {
-        workspaceId: message.workspaceId,
-        workflowRunId: message.workflowRunId,
+        workspaceId: lease.workspaceId,
+        workflowRunId: lease.workflowRunId,
         correlationId: message.correlationId,
         executionDescriptorRef: requiredString(message, 'executionDescriptorRef'),
         executionDescriptorHash: requiredString(message, 'executionDescriptorHash'),
@@ -397,13 +383,13 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         requiredProtocolVersion: WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
         requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
         authorityRoute: {
-          backend: message.authorityBackend,
-          authority: message.authority,
-          routingEpoch: message.routingEpoch,
-          authorityBuildHash: message.authorityBuildHash,
+          backend: lease.authorityBackend,
+          authority: lease.authority,
+          routingEpoch: lease.routingEpoch,
+          authorityBuildHash: lease.authorityBuildHash,
         },
-        runRevision: message.runRevision,
-        resumeGeneration: message.resumeGeneration,
+        runRevision: lease.runRevision,
+        resumeGeneration: lease.resumeGeneration,
       });
     } catch (error) {
       throw new WorkflowRunnerV2SessionError(
@@ -434,22 +420,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     } catch {
       return this.#sendLeaseReject(message, 'unsupported');
     }
-    this.#lease = {
-      workspaceId: message.workspaceId,
-      jobId: message.jobId,
-      workflowRunId: message.workflowRunId,
-      attemptId: message.attemptId,
-      leaseId: message.leaseId,
-      fencingToken: message.fencingToken,
-      correlationId: message.correlationId,
-      authorityBackend: message.authorityBackend,
-      authority: message.authority,
-      routingEpoch: message.routingEpoch,
-      authorityBuildHash: message.authorityBuildHash,
-      runRevision: message.runRevision,
-      resumeGeneration: message.resumeGeneration,
-      leaseExpiresAt: expiresAt,
-    };
+    this.#lease = lease;
     this.#descriptor = descriptor;
     this.#preparedSource = prepared;
     this.#abortController = new AbortController();
@@ -461,10 +432,16 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       this.#lease.resumeGeneration > 0
         ? {
             kind: 'resume_offer',
-            match: (decision) =>
-              messagePayload(decision).newAttemptId === this.#lease?.attemptId &&
-              messagePayload(decision).newResumeGeneration ===
-                (this.#lease?.resumeGeneration ?? -1) + 1,
+            match: (decision) => {
+              const nextAttemptId = messagePayload(decision).newAttemptId;
+              return (
+                typeof nextAttemptId === 'string' &&
+                SAFE_ID.test(nextAttemptId) &&
+                nextAttemptId !== this.#lease?.attemptId &&
+                messagePayload(decision).newResumeGeneration ===
+                  (this.#lease?.resumeGeneration ?? -1) + 1
+              );
+            },
           }
         : undefined,
     );
@@ -495,40 +472,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     offer: WorkflowControlAuthorityMessage,
     reason: 'unsupported' | 'stale',
   ): Promise<void> {
-    if (
-      offer.jobId === null ||
-      offer.workflowRunId === null ||
-      offer.attemptId === null ||
-      offer.leaseId === null ||
-      offer.fencingToken === null ||
-      offer.authorityBackend === null ||
-      offer.authority === null ||
-      offer.routingEpoch === null ||
-      offer.authorityBuildHash === null ||
-      offer.runRevision === null ||
-      offer.resumeGeneration === null
-    ) {
-      throw new WorkflowRunnerV2SessionError(
-        'WORKFLOW_RUNNER_V2_ADMISSION_BINDING_MISMATCH',
-        'Rejected lease lacks its v2 authority binding.',
-      );
-    }
-    this.#lease = {
-      workspaceId: offer.workspaceId,
-      jobId: offer.jobId,
-      workflowRunId: offer.workflowRunId,
-      attemptId: offer.attemptId,
-      leaseId: offer.leaseId,
-      fencingToken: offer.fencingToken,
-      correlationId: offer.correlationId,
-      authorityBackend: offer.authorityBackend,
-      authority: offer.authority,
-      routingEpoch: offer.routingEpoch,
-      authorityBuildHash: offer.authorityBuildHash,
-      runRevision: offer.runRevision,
-      resumeGeneration: offer.resumeGeneration,
-      leaseExpiresAt: requiredString(offer, 'expiresAt'),
-    };
+    this.#lease = this.#leaseBindingFromMessage(offer, 'Rejected lease');
     this.#state = 'waiting_event_receipt';
     await this.#emitReceiptable('lease_reject', { rejectedAt: this.#now(), reason });
     this.#clearLease();
@@ -580,7 +524,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       result = await this.#options.execute(workflow, this.#descriptor, context);
     } catch (error) {
       if (this.#state === 'reconciliation_required' || this.#state === 'closed') return;
-      await this.#afterDecisionLane();
       const cancelled = this.#abortController.signal.aborted;
       await this.#emitTerminal(cancelled ? 'cancelled' : 'failed', {
         name: error instanceof Error ? error.name : 'Error',
@@ -593,7 +536,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       });
       return;
     }
-    await this.#afterDecisionLane();
     if (this.#abortController.signal.aborted) {
       await this.#emitTerminal('cancelled', { code: 'WORKFLOW_RUNNER_CANCELLED' });
       return;
@@ -611,12 +553,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     status: 'completed' | 'failed' | 'cancelled',
     evidence: Readonly<Record<string, unknown>>,
   ): Promise<void> {
-    if (this.#outstanding) {
-      throw new WorkflowRunnerV2SessionError(
-        'WORKFLOW_RUNNER_V2_TERMINAL_BEFORE_RECEIPT',
-        'Terminal cannot overtake an outstanding v2 event or decision.',
-      );
-    }
     this.#terminal = true;
     this.#state = 'waiting_terminal_receipt';
     const resultHash =
@@ -641,7 +577,14 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async heartbeat(): Promise<boolean> {
-    if (!this.#lease || this.#outstanding || this.#state === 'closed') return false;
+    if (
+      !this.#lease ||
+      this.#terminal ||
+      this.#outstanding ||
+      this.#eventLanePending > 0 ||
+      this.#state === 'closed'
+    )
+      return false;
     const observedAt = this.#now();
     await this.#emitReceiptable('heartbeat', {
       observedAt,
@@ -678,6 +621,17 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async #emitReceiptable(
+    kind: ReceiptableKind,
+    payload: Readonly<Record<string, unknown>>,
+    expectedDecision?: {
+      readonly kind: DecisionKind;
+      readonly match: (message: WorkflowControlAuthorityMessage) => boolean;
+    },
+  ): Promise<WorkflowControlAuthorityMessage | undefined> {
+    return this.#withEventLane(() => this.#emitReceiptableNow(kind, payload, expectedDecision));
+  }
+
+  async #emitReceiptableNow(
     kind: ReceiptableKind,
     payload: Readonly<Record<string, unknown>>,
     expectedDecision?: {
@@ -749,10 +703,13 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     await receipt;
     if (!decision) {
       this.#outstanding = undefined;
+      await this.#applyQueuedCancelInLane();
       return undefined;
     }
     this.#state = 'waiting_control_decision';
-    return decision;
+    const resolved = await decision;
+    await this.#applyQueuedCancelInLane();
+    return resolved;
   }
 
   async #handleReceipt(message: WorkflowControlAuthorityMessage): Promise<void> {
@@ -812,7 +769,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     outstanding.resolveReceipt();
     if (!outstanding.expectedDecision) {
       this.#outstanding = undefined;
-      await this.#afterDecisionLane();
     }
   }
 
@@ -851,7 +807,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     if (message.runRevision !== null) this.#requireLease().runRevision = message.runRevision;
     this.#outstanding = undefined;
     outstanding.resolveDecision?.(message);
-    await this.#afterDecisionLane();
   }
 
   async #handleCancel(message: WorkflowControlAuthorityMessage): Promise<void> {
@@ -870,19 +825,28 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       );
     }
     this.#queuedCancel = message;
+    if (!this.#terminal) {
+      this.#abortController?.abort(
+        new Error(`workflow runner v2 cancel: ${String(messagePayload(message).reason)}`),
+      );
+    }
     if (this.#outstanding) return;
     await this.#applyQueuedCancel();
   }
 
   async #applyQueuedCancel(): Promise<void> {
+    if (!this.#queuedCancel) return;
+    await this.#withEventLane(() => this.#applyQueuedCancelInLane());
+  }
+
+  async #applyQueuedCancelInLane(): Promise<void> {
     const cancel = this.#queuedCancel;
     if (!cancel || this.#outstanding) return;
     this.#queuedCancel = undefined;
-    this.#state = 'cancelling';
-    this.#abortController?.abort(
-      new Error(`workflow runner v2 cancel: ${String(messagePayload(cancel).reason)}`),
-    );
-    await this.#emitReceiptable('cancel_ack', {
+    if (!this.#terminal) {
+      this.#state = 'cancelling';
+    }
+    await this.#emitReceiptableNow('cancel_ack', {
       cancelId: requiredString(cancel, 'cancelId'),
       acknowledgedAt: this.#now(),
       status: this.#terminal ? 'already_terminal' : 'cancelling',
@@ -890,7 +854,65 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async #afterDecisionLane(): Promise<void> {
-    if (!this.#outstanding && this.#queuedCancel) await this.#applyQueuedCancel();
+    while (true) {
+      const tail = this.#eventLaneTail;
+      await tail;
+      if (tail === this.#eventLaneTail) return;
+    }
+  }
+
+  async #withEventLane<T>(operation: () => Promise<T>): Promise<T> {
+    const predecessor = this.#eventLaneTail;
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.#eventLanePending += 1;
+    this.#eventLaneTail = predecessor.catch(() => undefined).then(() => current);
+    await predecessor.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      this.#eventLanePending -= 1;
+      release();
+    }
+  }
+
+  #leaseBindingFromMessage(message: WorkflowControlAuthorityMessage, label: string): LeaseBinding {
+    if (
+      message.jobId === null ||
+      message.workflowRunId === null ||
+      message.attemptId === null ||
+      message.leaseId === null ||
+      message.fencingToken === null ||
+      message.authorityBackend === null ||
+      message.authority === null ||
+      message.routingEpoch === null ||
+      message.authorityBuildHash === null ||
+      message.runRevision === null ||
+      message.resumeGeneration === null
+    ) {
+      throw new WorkflowRunnerV2SessionError(
+        'WORKFLOW_RUNNER_V2_ADMISSION_BINDING_MISMATCH',
+        `${label} lacks its v2 authority binding.`,
+      );
+    }
+    return {
+      workspaceId: message.workspaceId,
+      jobId: message.jobId!,
+      workflowRunId: message.workflowRunId!,
+      attemptId: message.attemptId!,
+      leaseId: message.leaseId!,
+      fencingToken: message.fencingToken!,
+      correlationId: message.correlationId,
+      authorityBackend: message.authorityBackend!,
+      authority: message.authority!,
+      routingEpoch: message.routingEpoch!,
+      authorityBuildHash: message.authorityBuildHash!,
+      runRevision: message.runRevision!,
+      resumeGeneration: message.resumeGeneration!,
+      leaseExpiresAt: requiredString(message, 'expiresAt'),
+    };
   }
 
   #assertLeaseIdentity(message: WorkflowControlAuthorityMessage, decision: boolean): void {
@@ -966,6 +988,9 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#resumeOffer = null;
     this.#workerSequence = 0;
     this.#lastReceiptSequence = 0;
+    this.#queuedCancel = undefined;
+    this.#terminal = false;
+    this.#terminalReceiptAccepted = false;
   }
 
   async #fatal(error: unknown): Promise<void> {

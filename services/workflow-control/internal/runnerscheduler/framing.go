@@ -5,6 +5,7 @@ package runnerscheduler
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,31 +13,62 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
-type frameReader struct{ reader *bufio.Reader }
-
-func newFrameReader(source io.Reader) *frameReader {
-	return &frameReader{reader: bufio.NewReaderSize(source, runnerprotocol.MaxEnvelopeBytes+1)}
+type protocolDecodedFrame[T any] struct {
+	message T
+	exact   []byte
+	err     error
 }
 
-func (reader *frameReader) Read() (runnerprotocol.Envelope, []byte, error) {
+type protocolFrameReader[T any] struct {
+	reader *bufio.Reader
+	max    int
+	label  string
+	decode func([]byte) (T, error)
+}
+
+func newProtocolFrameReader[T any](source io.Reader, max int, label string, decode func([]byte) (T, error)) *protocolFrameReader[T] {
+	return &protocolFrameReader[T]{reader: bufio.NewReaderSize(source, max+1), max: max, label: label, decode: decode}
+}
+
+func (reader *protocolFrameReader[T]) Read() (T, []byte, error) {
+	var zero T
 	line, err := reader.reader.ReadSlice('\n')
 	if errors.Is(err, bufio.ErrBufferFull) {
-		return runnerprotocol.Envelope{}, nil, fmt.Errorf("runner frame exceeds %d bytes", runnerprotocol.MaxEnvelopeBytes)
+		return zero, nil, fmt.Errorf("%s frame exceeds %d bytes", reader.label, reader.max)
 	}
 	if err != nil {
 		if errors.Is(err, io.EOF) && len(line) > 0 {
-			return runnerprotocol.Envelope{}, nil, fmt.Errorf("runner stream ended with a partial frame")
+			return zero, nil, fmt.Errorf("%s stream ended with a partial frame", reader.label)
 		}
-		return runnerprotocol.Envelope{}, nil, err
+		return zero, nil, err
 	}
-	if len(line) > runnerprotocol.MaxEnvelopeBytes {
-		return runnerprotocol.Envelope{}, nil, fmt.Errorf("runner frame exceeds %d bytes", runnerprotocol.MaxEnvelopeBytes)
+	if len(line) > reader.max {
+		return zero, nil, fmt.Errorf("%s frame exceeds %d bytes", reader.label, reader.max)
 	}
-	message, err := runnerprotocol.ValidateCanonicalEnvelopeBytes(line)
+	message, err := reader.decode(line)
 	if err != nil {
-		return runnerprotocol.Envelope{}, nil, err
+		return zero, nil, err
 	}
 	return message, append([]byte(nil), line...), nil
+}
+
+func decodeProtocolFrames[T any](ctx context.Context, reader *protocolFrameReader[T], destination chan<- protocolDecodedFrame[T]) {
+	defer close(destination)
+	for {
+		message, exact, err := reader.Read()
+		select {
+		case destination <- protocolDecodedFrame[T]{message: message, exact: exact, err: err}:
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func newFrameReader(source io.Reader) *protocolFrameReader[runnerprotocol.Envelope] {
+	return newProtocolFrameReader(source, runnerprotocol.MaxEnvelopeBytes, "runner", runnerprotocol.ValidateCanonicalEnvelopeBytes)
 }
 
 func writeFrame(destination io.Writer, body []byte) error {

@@ -90,6 +90,7 @@ func TestSchemaProfilesAcceptMigrationSevenWithoutRaisingExistingMinimums(t *tes
 		{name: "checkpoint", got: RunnerRange(true, false), want: Range{Minimum: 4, Maximum: 7}},
 		{name: "effect", got: RunnerRange(true, true), want: Range{Minimum: 5, Maximum: 7}},
 		{name: "budget", got: BudgetProfile, want: Range{Minimum: 6, Maximum: 7}},
+		{name: "runner-v2-foundation", got: RunnerV2FoundationProfile, want: Range{Minimum: 7, Maximum: 7}},
 	}
 	if CurrentSchemaVersion != 7 {
 		t.Fatalf("current schema version = %d", CurrentSchemaVersion)

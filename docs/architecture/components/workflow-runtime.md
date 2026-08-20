@@ -1105,6 +1105,13 @@ no real checkpoint, effect, budget, or resume adapter and makes no claim about t
 decisions, runtime delivery, or crash-after-authority recovery. GS9-F2 must add and qualify those
 bindings before complete runner-v2 delivery can be claimed. Existing v1 bytes remain exact.
 
+The F1 session serializes heartbeat and workflow events through one receiptable lane. Cancellation
+aborts execution without overtaking an existing event; cancel acknowledgement drains before the
+sealed terminal is sent. A terminal already accepted in PostgreSQL stays terminal if only delivery
+of its own event receipt is uncertain. A resume decision's `newAttemptId` is a separate workflow
+resume identity, while the active runner lease attempt remains stable for envelope and receipt
+binding. Total-token reservation and provider output limiting are also separate quantities.
+
 The foundation remains off unless its qualification profile is selected. The default image does
 not submit or route v2 work. TypeScript remains the sole production Workflow state-machine,
 checkpoint/resume, approval/effect, budget-policy, provider, RunStore, and user-visible read

@@ -7,9 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
 type ProtocolSession interface {
@@ -88,14 +87,11 @@ func (scheduler *Scheduler) workerLoop(ctx context.Context, failures chan<- erro
 	ticker := time.NewTicker(scheduler.config.PollInterval)
 	defer ticker.Stop()
 	for {
-		protocols := []string{runnerprotocol.ProtocolVersion}
-		if scheduler.config.V2Qualification {
-			protocols = append(protocols, authoritycontract.ProtocolVersion)
-		}
+		protocols := runnerprotocols.Enabled(scheduler.config.V2Qualification)
 		lease, err := scheduler.config.Store.ClaimNext(ctx, runnerstore.ClaimInput{WorkspaceID: scheduler.config.WorkspaceID, SupervisorInstanceID: scheduler.config.SupervisorInstanceID, LeaseOfferTimeout: scheduler.config.LeaseOfferTimeout, LeaseDuration: scheduler.config.LeaseDuration, Now: scheduler.config.Now(), ProtocolVersions: protocols})
 		if err == nil {
 			selected := ProtocolSession(scheduler.config.Session)
-			if lease.RequiredProtocolVersion == authoritycontract.ProtocolVersion {
+			if lease.RequiredProtocolVersion == runnerprotocols.V2 {
 				if !scheduler.config.V2Qualification || scheduler.config.V2Session == nil {
 					select {
 					case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "v2 lease was claimed without the qualification session", nil):
@@ -104,7 +100,7 @@ func (scheduler *Scheduler) workerLoop(ctx context.Context, failures chan<- erro
 					return
 				}
 				selected = scheduler.config.V2Session
-			} else if lease.RequiredProtocolVersion != "" && lease.RequiredProtocolVersion != runnerprotocol.ProtocolVersion {
+			} else if lease.RequiredProtocolVersion != "" && lease.RequiredProtocolVersion != runnerprotocols.V1 {
 				select {
 				case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "claimed lease requires an unsupported protocol", nil):
 				case <-ctx.Done():

@@ -226,6 +226,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             : initialTokensRemaining - tokenUsage;
         if (remaining <= 0) throw new AgentBudgetExceededError();
         let maxTokens = Math.min(this.options.maxOutputTokens, remaining);
+        const requestedTotalTokens = remaining;
         const modelId = context.resolvedConfig.model ?? this.options.model;
         if (this.options.providerAttemptBoundary) {
           reservation = await reserveProviderAttempt(this.options.providerAttemptBoundary, {
@@ -233,7 +234,10 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             modelId,
             providerRunId: context.runId,
             providerAttempt: String(turn + 1),
-            requestedTokens: String(maxTokens),
+            // The authority settles prompt + completion usage. Reserve the
+            // remaining total-token budget; max_tokens remains a separate
+            // provider output cap below.
+            requestedTokens: String(requestedTotalTokens),
           });
           if (
             !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(reservation.reservationId) ||
@@ -248,13 +252,13 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           if (
             !Number.isSafeInteger(authorizedTokens) ||
             authorizedTokens < 1 ||
-            authorizedTokens > maxTokens
+            authorizedTokens > requestedTotalTokens
           ) {
             throw new RuntimeMisconfiguredError(
               'Provider attempt reservation exceeded the requested token bound.',
             );
           }
-          maxTokens = authorizedTokens;
+          maxTokens = Math.min(maxTokens, authorizedTokens);
         }
         requestBody = JSON.stringify({
           model: modelId,

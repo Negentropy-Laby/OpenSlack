@@ -1,18 +1,26 @@
 import { createHash } from 'node:crypto';
-import { isAbsolute, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+  validateWorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRoute,
 } from './workflow-control-authority-contract.js';
-import { WORKFLOW_RUNNER_CAPABILITIES } from './workflow-runner-contract.js';
+import {
+  isWorkflowRunnerCapabilitySet,
+  WORKFLOW_RUNNER_CAPABILITIES,
+} from './workflow-runner-contract.js';
+import {
+  cancelWorkflowRunnerResponseBody,
+  exactWorkflowRunnerLoopbackOrigin,
+  isWorkflowRunnerTransportConfigShape,
+  readWorkflowRunnerResponseBytes,
+} from './workflow-runner-control-http.js';
 
 export const WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA = 'openslack.workflow_runner_job_spec.v2' as const;
 export const WORKFLOW_RUNNER_V2_JOB_RECEIPT_SCHEMA =
   'openslack.workflow_runner_job_receipt.v2' as const;
-export const WORKFLOW_RUNNER_V2_JOB_VIEW_SCHEMA = 'openslack.workflow_runner_job_view.v2' as const;
 
 export type WorkflowRunnerV2RequiredCapability = (typeof WORKFLOW_RUNNER_CAPABILITIES)[number];
 
@@ -99,84 +107,34 @@ const MAX_TIMEOUT_MS = 24 * 60 * 60_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 async function readBoundedResponse(response: Response): Promise<Buffer> {
-  const declaredLength = response.headers.get('Content-Length');
-  let expectedLength: number | null = null;
-  if (declaredLength !== null) {
-    const parsed = Number(declaredLength);
-    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_RESPONSE_BYTES) {
-      return fail(
-        'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
-        'V2 response content length is invalid.',
-      );
-    }
-    expectedLength = parsed;
-  }
-  if (!response.body) {
-    return fail('WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID', 'V2 response body is missing.');
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    while (true) {
-      const item = await reader.read();
-      if (item.done) break;
-      length += item.value.byteLength;
-      if (length > MAX_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        return fail(
-          'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
-          'V2 response exceeds its byte limit.',
-        );
-      }
-      chunks.push(item.value);
-    }
-  } catch (error) {
-    return fail('WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID', 'V2 response read failed.', {
-      cause: error,
-    });
-  }
-  if (length === 0) {
-    return fail('WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID', 'V2 response body is empty.');
-  }
-  if (expectedLength !== null && expectedLength !== length) {
-    return fail(
-      'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
-      'V2 response content length does not match its body.',
-    );
-  }
-  return Buffer.concat(
-    chunks.map((chunk) => Buffer.from(chunk)),
-    length,
-  );
+  return readWorkflowRunnerResponseBytes(response, {
+    maxBytes: MAX_RESPONSE_BYTES,
+    validateContentLength: true,
+    minimumBytes: 1,
+    failure: (message, options) =>
+      fail('WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID', message, options),
+    messages: {
+      contentType: 'V2 response content type is invalid.',
+      contentLength: 'V2 response content length is invalid.',
+      missingBody: 'V2 response body is missing.',
+      readFailed: 'V2 response read failed.',
+      exceeded: 'V2 response exceeds its byte limit.',
+      empty: 'V2 response body is empty.',
+      lengthMismatch: 'V2 response content length does not match its body.',
+      aborted: 'v2 response read aborted',
+    },
+  });
 }
 
 function exactLoopbackOrigin(value: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch (error) {
-    return fail('WORKFLOW_RUNNER_V2_CONTROL_CONFIG_INVALID', 'V2 runner origin is invalid.', {
-      cause: error,
-    });
-  }
-  if (
-    parsed.protocol !== 'http:' ||
-    !['127.0.0.1', '[::1]'].includes(parsed.hostname) ||
-    parsed.port === '' ||
-    parsed.username !== '' ||
-    parsed.password !== '' ||
-    parsed.pathname !== '/' ||
-    parsed.search !== '' ||
-    parsed.hash !== '' ||
-    parsed.origin !== value
-  ) {
-    return fail(
-      'WORKFLOW_RUNNER_V2_CONTROL_CONFIG_INVALID',
-      'V2 runner origin must be an exact loopback HTTP origin.',
-    );
-  }
-  return parsed.origin;
+  return exactWorkflowRunnerLoopbackOrigin(
+    value,
+    (message, options) => fail('WORKFLOW_RUNNER_V2_CONTROL_CONFIG_INVALID', message, options),
+    {
+      invalid: 'V2 runner origin is invalid.',
+      nonLoopback: 'V2 runner origin must be an exact loopback HTTP origin.',
+    },
+  );
 }
 
 function fail(
@@ -242,38 +200,18 @@ function timestamp(value: unknown, label: string): string {
 }
 
 function route(value: unknown): WorkflowControlAuthorityRoute {
-  const item = record(
-    value,
-    ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'],
-    'Authority route',
-  );
-  const backend = own(item, 'backend');
-  const authority = own(item, 'authority');
-  if (
-    !(
-      (backend === 'ts-local' && authority === 'typescript') ||
-      (backend === 'go' && authority === 'workflow-control')
-    )
-  ) {
+  try {
+    return validateWorkflowControlAuthorityRoute(value, '$/authorityRoute');
+  } catch {
     return fail(
       'WORKFLOW_RUNNER_V2_CONTROL_INPUT_INVALID',
       'Authority route backend and authority disagree.',
     );
   }
-  return Object.freeze({
-    backend,
-    authority,
-    routingEpoch: safeInteger(own(item, 'routingEpoch'), 1, 'routingEpoch'),
-    authorityBuildHash: text(own(item, 'authorityBuildHash'), HASH, 'authorityBuildHash'),
-  }) as WorkflowControlAuthorityRoute;
 }
 
 function capabilities(value: unknown): readonly WorkflowRunnerV2RequiredCapability[] {
-  if (
-    !Array.isArray(value) ||
-    value.length !== WORKFLOW_RUNNER_CAPABILITIES.length ||
-    value.some((entry, index) => entry !== WORKFLOW_RUNNER_CAPABILITIES[index])
-  ) {
+  if (!isWorkflowRunnerCapabilitySet(value)) {
     return fail(
       'WORKFLOW_RUNNER_V2_CONTROL_INPUT_INVALID',
       'V2 required capabilities must match the frozen qualification set.',
@@ -442,17 +380,7 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
   readonly #fetch: typeof fetch;
 
   constructor(config: WorkflowRunnerControlConfig, fetchImpl: typeof fetch = fetch) {
-    if (
-      !config ||
-      typeof config !== 'object' ||
-      !SAFE_ID.test(config.workspaceId) ||
-      typeof config.bearerToken !== 'string' ||
-      config.bearerToken.length < 32 ||
-      config.bearerToken.length > 4096 ||
-      /[\u0000-\u0020\u007f]/u.test(config.bearerToken) ||
-      !isAbsolute(config.descriptorRoot) ||
-      resolve(config.descriptorRoot) !== config.descriptorRoot
-    ) {
+    if (!isWorkflowRunnerTransportConfigShape(config)) {
       fail('WORKFLOW_RUNNER_V2_CONTROL_CONFIG_INVALID', 'V2 runner control config is invalid.');
     }
     this.#config = Object.freeze({ ...config, origin: exactLoopbackOrigin(config.origin) });
@@ -500,15 +428,10 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
       });
     }
     if (response.redirected || ![200, 201, 202].includes(response.status)) {
+      await cancelWorkflowRunnerResponseBody(response);
       return fail(
         'WORKFLOW_RUNNER_V2_CONTROL_REJECTED',
         `V2 submit rejected (${response.status}).`,
-      );
-    }
-    if (response.headers.get('Content-Type') !== 'application/json') {
-      return fail(
-        'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
-        'V2 response content type is invalid.',
       );
     }
     const replayHeader = response.headers.get('Idempotency-Replayed');
@@ -516,6 +439,7 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
       (response.status === 200 && replayHeader !== 'true') ||
       (response.status !== 200 && replayHeader !== null)
     ) {
+      await cancelWorkflowRunnerResponseBody(response);
       return fail(
         'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
         'V2 response replay metadata is invalid.',

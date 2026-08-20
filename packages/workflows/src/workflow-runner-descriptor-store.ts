@@ -445,8 +445,15 @@ export class WorkflowRunnerDescriptorStore<
 
   constructor(
     root: string,
-    security: WorkflowRunnerDescriptorPathSecurity = createWorkflowRunnerDescriptorPathSecurity(),
-    codec: WorkflowRunnerDescriptorCodec<TDescriptor> = V1_DESCRIPTOR_CODEC as unknown as WorkflowRunnerDescriptorCodec<TDescriptor>,
+    ...options: TDescriptor extends WorkflowRunnerExecutionDescriptor
+      ? [
+          security?: WorkflowRunnerDescriptorPathSecurity,
+          codec?: WorkflowRunnerDescriptorCodec<TDescriptor>,
+        ]
+      : [
+          security: WorkflowRunnerDescriptorPathSecurity | undefined,
+          codec: WorkflowRunnerDescriptorCodec<TDescriptor>,
+        ]
   ) {
     if (!isAbsolute(root) || resolve(root) !== root || root.includes('\0')) {
       storeFail(
@@ -455,10 +462,17 @@ export class WorkflowRunnerDescriptorStore<
         root,
       );
     }
+    const [security = createWorkflowRunnerDescriptorPathSecurity(), codecValue] = options as [
+      WorkflowRunnerDescriptorPathSecurity | undefined,
+      WorkflowRunnerDescriptorCodec<TDescriptor> | undefined,
+    ];
+    const codec =
+      codecValue ??
+      (V1_DESCRIPTOR_CODEC as WorkflowRunnerDescriptorCodec<WorkflowRunnerExecutionDescriptor>);
     this.#root = root;
     this.#descriptors = join(root, 'descriptors');
     this.#security = security;
-    this.#codec = codec;
+    this.#codec = codec as WorkflowRunnerDescriptorCodec<TDescriptor>;
   }
 
   async initialize(): Promise<void> {

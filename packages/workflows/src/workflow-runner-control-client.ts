@@ -2,6 +2,11 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
+import {
+  exactWorkflowRunnerLoopbackOrigin,
+  isWorkflowRunnerTransportConfigShape,
+  readWorkflowRunnerResponseBytes,
+} from './workflow-runner-control-http.js';
 
 export const WORKFLOW_RUNNER_JOB_SPEC_SCHEMA = 'openslack.workflow_runner_job_spec.v1' as const;
 export const WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA =
@@ -251,31 +256,14 @@ function enumValue<const T extends string>(
 }
 
 function validateOrigin(value: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch (error) {
-    return fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', 'Runner control origin is invalid.', {
-      cause: error,
-    });
-  }
-  if (
-    parsed.protocol !== 'http:' ||
-    !['127.0.0.1', '[::1]'].includes(parsed.hostname) ||
-    parsed.port === '' ||
-    parsed.username !== '' ||
-    parsed.password !== '' ||
-    parsed.pathname !== '/' ||
-    parsed.search !== '' ||
-    parsed.hash !== '' ||
-    parsed.origin !== value
-  ) {
-    return fail(
-      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
-      'Runner control origin must be an exact loopback HTTP origin.',
-    );
-  }
-  return parsed.origin;
+  return exactWorkflowRunnerLoopbackOrigin(
+    value,
+    (message, options) => fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', message, options),
+    {
+      invalid: 'Runner control origin is invalid.',
+      nonLoopback: 'Runner control origin must be an exact loopback HTTP origin.',
+    },
+  );
 }
 
 export function loadWorkflowRunnerControlConfig(
@@ -575,44 +563,24 @@ export function validateWorkflowRunnerJobView(value: unknown): WorkflowRunnerJob
 }
 
 async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
-  const type = response.headers.get('content-type');
-  if (type !== 'application/json') {
-    return fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', 'Runner response type is invalid.');
-  }
-  const reader = response.body?.getReader();
-  if (!reader) {
-    return fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', 'Runner response body is missing.');
-  }
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    if (signal?.aborted) {
-      await reader.cancel().catch(() => undefined);
-      throw signal.reason ?? new Error('runner response read aborted');
-    }
-    let abort: (() => void) | undefined;
-    const aborted = new Promise<never>((_resolve, reject) => {
-      abort = () => reject(signal?.reason ?? new Error('runner response read aborted'));
-      signal?.addEventListener('abort', abort, { once: true });
-    });
-    let next: Awaited<ReturnType<typeof reader.read>>;
-    try {
-      next = await Promise.race([reader.read(), aborted]);
-    } catch (error) {
-      await reader.cancel().catch(() => undefined);
-      throw error;
-    } finally {
-      if (abort) signal?.removeEventListener('abort', abort);
-    }
-    if (next.done) break;
-    size += next.value.byteLength;
-    if (size > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      return fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', 'Runner response exceeds its limit.');
-    }
-    chunks.push(next.value);
-  }
-  const bytes = Buffer.concat(chunks, size);
+  const bytes = await readWorkflowRunnerResponseBytes(response, {
+    maxBytes: MAX_RESPONSE_BYTES,
+    signal,
+    validateContentLength: false,
+    minimumBytes: 0,
+    failure: (message, options) =>
+      fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', message, options),
+    messages: {
+      contentType: 'Runner response type is invalid.',
+      contentLength: 'Runner response content length is invalid.',
+      missingBody: 'Runner response body is missing.',
+      readFailed: 'Runner response read failed.',
+      exceeded: 'Runner response exceeds its limit.',
+      empty: 'Runner response body is empty.',
+      lengthMismatch: 'Runner response content length does not match its body.',
+      aborted: 'runner response read aborted',
+    },
+  });
   let value: unknown;
   try {
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -668,16 +636,7 @@ export class WorkflowRunnerControlClient implements WorkflowRunnerControlPort {
     if (!config || typeof config !== 'object' || !SAFE_ID.test(config.workspaceId)) {
       fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', 'Runner control workspace is invalid.');
     }
-    if (
-      typeof config.origin !== 'string' ||
-      typeof config.bearerToken !== 'string' ||
-      config.bearerToken.length < 32 ||
-      config.bearerToken.length > 4096 ||
-      /[\u0000-\u0020\u007f]/u.test(config.bearerToken) ||
-      typeof config.descriptorRoot !== 'string' ||
-      !isAbsolute(config.descriptorRoot) ||
-      resolve(config.descriptorRoot) !== config.descriptorRoot
-    ) {
+    if (!isWorkflowRunnerTransportConfigShape(config)) {
       fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', 'Runner control configuration is invalid.');
     }
     this.#config = Object.freeze({

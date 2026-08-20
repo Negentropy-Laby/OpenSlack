@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
 
@@ -28,12 +29,6 @@ type V2Session struct {
 	base   *Session
 }
 
-type decodedV2Frame struct {
-	message authoritycontract.Message
-	exact   []byte
-	err     error
-}
-
 func NewV2Session(config V2SessionConfig) (*V2Session, error) {
 	if config.Store == nil || config.Launcher == nil || len(config.ControlBuildHash) != 64 || len(config.ExpectedRunnerBuildHash) != 64 {
 		return nil, fmt.Errorf("runner v2 session identity and sealed launcher are required")
@@ -52,15 +47,17 @@ func NewV2Session(config V2SessionConfig) (*V2Session, error) {
 }
 
 func (session *V2Session) Run(ctx context.Context, lease runnerstore.AttemptLease) error {
-	if lease.RequiredProtocolVersion != authoritycontract.ProtocolVersion || lease.V2LeaseOffer == nil || lease.AuthorityRoute == nil {
+	if lease.RequiredProtocolVersion != runnerprotocols.V2 || lease.V2LeaseOffer == nil || lease.AuthorityRoute == nil {
 		return runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "v2 session received a non-v2 lease", nil)
 	}
 	process, err := session.config.Launcher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("start sealed v2 worker: %w", err)
 	}
-	frames := make(chan decodedV2Frame, 1)
-	go decodeV2Frames(process.Stdout(), frames)
+	decodeCtx, cancelDecode := context.WithCancel(ctx)
+	defer cancelDecode()
+	frames := make(chan protocolDecodedFrame[authoritycontract.Message], 1)
+	go decodeProtocolFrames(decodeCtx, newV2FrameReader(process.Stdout()), frames)
 	first, err := awaitV2Frame(ctx, frames, lease.OfferExpiresAt.Sub(session.config.Now()))
 	if err != nil {
 		return session.base.failProcess(ctx, process, lease, runnerstore.ProcessCrashed, fmt.Errorf("runner v2 hello: %w", err))
@@ -274,30 +271,18 @@ func (session *V2Session) send(ctx context.Context, process WorkerProcess, attem
 	return nil
 }
 
-func decodeV2Frames(source io.Reader, destination chan<- decodedV2Frame) {
-	defer close(destination)
-	reader := newV2FrameReader(source)
-	for {
-		message, exact, err := reader.Read()
-		destination <- decodedV2Frame{message: message, exact: exact, err: err}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func awaitV2Frame(ctx context.Context, frames <-chan decodedV2Frame, timeout time.Duration) (decodedV2Frame, error) {
+func awaitV2Frame(ctx context.Context, frames <-chan protocolDecodedFrame[authoritycontract.Message], timeout time.Duration) (protocolDecodedFrame[authoritycontract.Message], error) {
 	timer := time.NewTimer(positiveDuration(timeout))
 	defer timer.Stop()
 	select {
 	case value, ok := <-frames:
 		if !ok {
-			return decodedV2Frame{}, io.EOF
+			return protocolDecodedFrame[authoritycontract.Message]{}, io.EOF
 		}
 		return value, value.err
 	case <-timer.C:
-		return decodedV2Frame{}, runnerstore.Failure(runnerstore.ErrorLeaseExpired, "runner v2 negotiation deadline expired", nil)
+		return protocolDecodedFrame[authoritycontract.Message]{}, runnerstore.Failure(runnerstore.ErrorLeaseExpired, "runner v2 negotiation deadline expired", nil)
 	case <-ctx.Done():
-		return decodedV2Frame{}, ctx.Err()
+		return protocolDecodedFrame[authoritycontract.Message]{}, ctx.Err()
 	}
 }

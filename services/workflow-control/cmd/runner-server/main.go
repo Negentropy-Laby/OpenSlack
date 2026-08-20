@@ -59,7 +59,7 @@ func main() {
 	defer pool.Close()
 	schemaRange := databaseready.RunnerRange(config.CheckpointShadowEnabled, config.EffectShadowEnabled)
 	if config.V2QualificationEnabled {
-		schemaRange = databaseready.Range{Minimum: 7, Maximum: 7}
+		schemaRange = databaseready.RunnerV2FoundationProfile
 	}
 	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, schemaRange)
 	if err != nil {
@@ -106,6 +106,7 @@ func main() {
 		logger.Error("workflow_runner_control_supervisor_invalid", "code", "SUPERVISOR_INVALID")
 		os.Exit(1)
 	}
+	store := runnerpostgres.NewForSchema(pool, schemaVersion)
 	var v2Session runnerscheduler.ProtocolSession
 	if config.V2QualificationEnabled {
 		v2Supervisor, supervisorErr := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion)
@@ -114,7 +115,7 @@ func main() {
 			os.Exit(1)
 		}
 		v2Session, err = runnerscheduler.NewV2Session(runnerscheduler.V2SessionConfig{
-			Store: runnerpostgres.New(pool), Launcher: runnerscheduler.SealedLauncher{Supervisor: v2Supervisor},
+			Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: v2Supervisor},
 			ControlBuildHash: config.ServiceBuildSHA, ExpectedRunnerBuildHash: registry.RunnerBuildHash(),
 			HeartbeatInterval: config.HeartbeatInterval, LeaseOfferTimeout: config.LeaseOfferTimeout,
 			CancelGrace: config.CancelGrace, TerminalExitGrace: config.TerminalExitGrace,
@@ -124,7 +125,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	store := runnerpostgres.New(pool)
 	session, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
 		Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: supervisor},
 		ControlBuildHash:  config.ServiceBuildSHA,

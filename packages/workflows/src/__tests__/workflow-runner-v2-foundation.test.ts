@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   prepareWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityRoute,
   validateWorkflowControlAuthorityMessage,
   WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
 } from '../workflow-control-authority-contract.js';
 import {
   WORKFLOW_RUNNER_CAPABILITIES,
+  isWorkflowRunnerCapabilitySet,
   WORKFLOW_RUNNER_PROTOCOL_VERSION,
   WORKFLOW_RUNNER_RUNTIME_NAME,
 } from '../workflow-runner-contract.js';
@@ -154,6 +156,10 @@ describe('GS9-F1 Workflow runner v2 foundation', () => {
     expect(prepared.exactBody).toContain('"resumeGeneration":0');
     expect(prepared.jobSpecHash).toMatch(/^[0-9a-f]{64}$/u);
     expect(prepared.idempotencyKey).toMatch(/^openslack\.workflow-runner-job\.v2\.[0-9a-f]{64}$/u);
+    expect(isWorkflowRunnerCapabilitySet(prepared.spec.requiredCapabilities)).toBe(true);
+    expect(validateWorkflowControlAuthorityRoute(prepared.spec.authorityRoute, '$/route')).toEqual(
+      prepared.spec.authorityRoute,
+    );
     expect(() =>
       prepareWorkflowRunnerV2JobSpec({ ...jobSpec(), workflowVersion: 'not-semver' }),
     ).toThrowError(/workflowVersion/u);
@@ -359,6 +365,42 @@ describe('GS9-F1 Workflow runner v2 foundation', () => {
       await expect(client.submit(prepared)).rejects.toMatchObject({
         code: expect.stringMatching(/^WORKFLOW_RUNNER_V2_CONTROL_(?:REJECTED|RESPONSE_INVALID)$/u),
       });
+    }
+  });
+
+  it('cancels every early-rejected response body before returning', async () => {
+    const prepared = prepareWorkflowRunnerV2JobSpec(jobSpec());
+    const cases = [
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+      {
+        status: 201,
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Replayed': 'true' },
+      },
+      { status: 201, headers: { 'Content-Type': 'text/plain' } },
+    ] as const;
+
+    for (const item of cases) {
+      let cancellations = 0;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Buffer.from('{}\n'));
+        },
+        cancel() {
+          cancellations += 1;
+        },
+      });
+      const client = new WorkflowRunnerV2ControlClient(
+        {
+          origin: 'http://127.0.0.1:8080',
+          workspaceId: prepared.spec.workspaceId,
+          bearerToken: 'test-only-bearer-value-000000000000',
+          descriptorRoot: process.cwd(),
+        },
+        (async () => new Response(body, item)) as typeof fetch,
+      );
+
+      await expect(client.submit(prepared)).rejects.toBeInstanceOf(Error);
+      expect(cancellations).toBe(1);
     }
   });
 

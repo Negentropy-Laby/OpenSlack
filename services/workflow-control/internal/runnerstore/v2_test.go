@@ -15,7 +15,7 @@ func validV2JobSpec() V2JobSpec {
 		WorkflowID: "workflow.test", WorkflowVersion: "1.0.0", WorkflowSourceHash: strings.Repeat("2", 64),
 		ManifestHash: strings.Repeat("3", 64), InputHash: strings.Repeat("4", 64), WholeTimeoutMS: 60_000,
 		SubmittedAt: "2026-08-15T00:00:00.000Z", RequiredProtocolVersion: authoritycontract.ProtocolVersion,
-		RequiredCapabilities: append([]string(nil), V2RequiredCapabilities...),
+		RequiredCapabilities: V2RequiredCapabilities(),
 		AuthorityRoute:       authoritycontract.Route{Backend: "ts-local", Authority: "typescript", RoutingEpoch: 1, AuthorityBuildHash: strings.Repeat("5", 64)},
 		RunRevision:          1, ResumeGeneration: 0,
 	}

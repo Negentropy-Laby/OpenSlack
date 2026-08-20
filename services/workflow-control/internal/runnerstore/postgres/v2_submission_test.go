@@ -78,3 +78,31 @@ func TestReadV2JobReceiptRejectsCanonicalCrossSplice(t *testing.T) {
 		})
 	}
 }
+
+func TestCloneScalarPayloadDoesNotAliasProtocolEnvelopes(t *testing.T) {
+	source := map[string]any{"attempt": "attempt-1", "fence": int64(7)}
+	clone := cloneScalarPayload(source)
+	clone["attempt"] = "mutated"
+	if source["attempt"] != "attempt-1" {
+		t.Fatalf("v1 and v2 lease payloads share mutable storage: %v", source)
+	}
+	source["fence"] = int64(8)
+	if clone["fence"] != int64(7) {
+		t.Fatalf("cloned lease payload changed with its source: %v", clone)
+	}
+}
+
+func TestClaimQueryUsesTypedProtocolDispatchColumns(t *testing.T) {
+	if strings.Contains(claimJobSQL, "to_jsonb") {
+		t.Fatal("claim query bypasses the typed protocol dispatch index")
+	}
+	for _, column := range []string{
+		"required_protocol_version = ANY($3::TEXT[])",
+		"authority_backend='ts-local'",
+		"workflow_authority='typescript'",
+	} {
+		if !strings.Contains(claimJobSQL, column) {
+			t.Fatalf("claim query is missing typed v2 dispatch binding %q", column)
+		}
+	}
+}

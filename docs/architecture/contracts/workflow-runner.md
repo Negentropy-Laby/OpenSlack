@@ -347,6 +347,15 @@ effect, GS9-E budget, or resume adapters, and therefore does not claim end-to-en
 checkpoint/effect/budget decision completion, or crash-after-authority recovery. Those remain the
 separate GS9-F2 integration gate.
 
+Within the foundation session, all receiptable events share one FIFO lane. Heartbeat never
+preempts a budget, effect, checkpoint, cancel acknowledgement, or terminal event; cancellation may
+abort execution immediately, but its acknowledgement drains behind the event already awaiting a
+receipt and ahead of the sealed terminal event. A receipt-proven terminal is immutable even when
+delivery of that terminal event's own receipt is uncertain. Domain authority uncertainty and
+uncertain earlier control delivery still latch reconciliation. A `resume_offer.newAttemptId` is a
+new workflow resume identity and must differ from the existing runner lease `attemptId`; the
+envelope and receipt continue to use the unchanged lease attempt identity.
+
 The path is qualification-only and default-off. It does not enable production v2 job submission,
 new-record routing, canary or cutover; it does not make Go the Workflow state-machine, checkpoint,
 effect-approval, effect-execution, budget-policy, or user-visible read authority. TypeScript remains

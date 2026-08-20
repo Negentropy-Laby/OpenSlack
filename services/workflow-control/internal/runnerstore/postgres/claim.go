@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
@@ -43,7 +44,7 @@ func (repository *Repository) ClaimNext(ctx context.Context, input runnerstore.C
 		protocols = []string{runnerprotocol.ProtocolVersion}
 	}
 	for _, protocol := range protocols {
-		if protocol != runnerprotocol.ProtocolVersion && protocol != authoritycontract.ProtocolVersion {
+		if !runnerprotocols.IsSupported(protocol) {
 			return runnerstore.AttemptLease{}, runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "scheduler requested an unsupported protocol", nil)
 		}
 	}
@@ -135,7 +136,7 @@ func (repository *Repository) ClaimNext(ctx context.Context, input runnerstore.C
 			AuthorityBackend: job.authorityBackend, Authority: job.authority, RoutingEpoch: job.routingEpoch,
 			AuthorityBuildHash: stringPointer(hex.EncodeToString(job.authorityBuildHash)), RunRevision: job.runRevision,
 			ResumeGeneration: job.resumeGeneration, EventID: eventID, CorrelationID: job.correlationID,
-			SentAt: runnerstore.CanonicalTimestamp(now), Payload: leaseOffer.Payload,
+			SentAt: runnerstore.CanonicalTimestamp(now), Payload: cloneScalarPayload(leaseOffer.Payload),
 		}
 		preparedV2, prepareErr := prepareV2Message(message)
 		if prepareErr != nil {
@@ -210,6 +211,14 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9,$10,$11)`,
 }
 
 func stringPointer(value string) *string { return &value }
+
+func cloneScalarPayload(value map[string]any) map[string]any {
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
+}
 
 func pointerInt64(value *int64) int64 {
 	if value == nil {

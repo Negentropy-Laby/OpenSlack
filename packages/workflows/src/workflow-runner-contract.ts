@@ -92,6 +92,16 @@ export const WORKFLOW_RUNNER_CAPABILITIES = Object.freeze([
   'effect_receipts',
   'lease_heartbeat',
 ] as const);
+
+export function isWorkflowRunnerCapabilitySet(
+  value: unknown,
+): value is readonly (typeof WORKFLOW_RUNNER_CAPABILITIES)[number][] {
+  return (
+    Array.isArray(value) &&
+    value.length === WORKFLOW_RUNNER_CAPABILITIES.length &&
+    value.every((entry, index) => entry === WORKFLOW_RUNNER_CAPABILITIES[index])
+  );
+}
 export const WORKFLOW_RUNNER_LEASE_REJECT_REASONS = Object.freeze([
   'busy',
   'unsupported',

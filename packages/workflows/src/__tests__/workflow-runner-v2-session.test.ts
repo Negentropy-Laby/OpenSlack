@@ -19,6 +19,7 @@ import {
   WorkflowRunnerV2Session,
   type WorkflowRunnerV2ExecutionContext,
 } from '../workflow-runner-v2-session.js';
+import type { RunResult } from '../types.js';
 
 const NOW = '2026-08-15T02:00:00.000Z';
 const LATER = '2026-08-15T02:05:00.000Z';
@@ -185,7 +186,14 @@ async function turn(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function harness(resumeGeneration: number, authorityRoute?: Parameters<typeof descriptor>[1]) {
+function harness(
+  resumeGeneration: number,
+  authorityRoute?: Parameters<typeof descriptor>[1],
+  options: {
+    readonly execute?: (context: WorkflowRunnerV2ExecutionContext) => Promise<RunResult>;
+    readonly now?: () => string;
+  } = {},
+) {
   const sealed = descriptor(resumeGeneration, authorityRoute);
   const sent: WorkflowControlAuthorityMessage[] = [];
   const closed: number[] = [];
@@ -221,9 +229,10 @@ function harness(resumeGeneration: number, authorityRoute?: Parameters<typeof de
     async execute(_workflow, _descriptor, context) {
       executed += 1;
       executionContext = context;
+      if (options.execute) return options.execute(context);
       return await new Promise<never>(() => undefined);
     },
-    now: () => NOW,
+    now: options.now ?? (() => NOW),
   });
   return {
     session,
@@ -320,7 +329,7 @@ describe('WorkflowRunnerV2Session', () => {
           nextPhaseId: 'phase-1',
           nextPhaseIndex: 0,
           newResumeGeneration: 2,
-          newAttemptId: 'attempt.v2',
+          newAttemptId: 'attempt.v2.resume.2',
           authorityReceiptHash: HASH_C,
           expiresAt: LATER,
         },
@@ -352,6 +361,134 @@ describe('WorkflowRunnerV2Session', () => {
     });
     await value.session.receive(receipt(checkpoint, 4, 2));
     await checkpointTask;
+  });
+
+  it('rejects a resume offer that reuses the runner lease attempt identity', () => {
+    expect(() =>
+      controlMessage({
+        kind: 'resume_offer',
+        workflowRunId: 'run.v2.1',
+        sequence: 3,
+        runRevision: 2,
+        resumeGeneration: 1,
+        correlationId: 'correlation.v2.1',
+        payload: {
+          checkpointId: 'checkpoint.v2',
+          checkpointHash: HASH_B,
+          nextPhaseId: 'phase-1',
+          nextPhaseIndex: 0,
+          newResumeGeneration: 2,
+          newAttemptId: 'attempt.v2',
+          authorityReceiptHash: HASH_C,
+          expiresAt: LATER,
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_CONTROL_AUTHORITY_IDENTITY_MISMATCH',
+        path: '$/payload/newAttemptId',
+      }),
+    );
+  });
+
+  it('serializes heartbeat, cancel acknowledgement, and terminal without poisoning the lane', async () => {
+    const value = harness(0, undefined, {
+      execute: async (context) =>
+        await new Promise<RunResult>((_resolve, reject) => {
+          const abort = () => reject(context.signal.reason ?? new Error('cancelled'));
+          if (context.signal.aborted) abort();
+          else context.signal.addEventListener('abort', abort, { once: true });
+        }),
+    });
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+
+    const heartbeatTask = value.session.heartbeat();
+    await turn();
+    const heartbeat = value.sent.at(-1)!;
+    expect(heartbeat.kind).toBe('heartbeat');
+    await value.session.receive(
+      controlMessage({
+        kind: 'cancel_request',
+        sequence: 3,
+        correlationId: value.sealed.correlationId,
+        payload: {
+          cancelId: 'cancel.v2.1',
+          requestedAt: NOW,
+          expiresAt: LATER,
+          reason: 'operator',
+        },
+      }),
+    );
+    expect(value.context()?.signal.aborted).toBe(true);
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+
+    await value.session.receive(receipt(heartbeat, 4));
+    await turn();
+    const cancelAck = value.sent.at(-1)!;
+    expect(cancelAck).toMatchObject({
+      kind: 'cancel_ack',
+      payload: { cancelId: 'cancel.v2.1', status: 'already_terminal' },
+    });
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+
+    await value.session.receive(receipt(cancelAck, 5));
+    await expect(heartbeatTask).resolves.toBe(true);
+    await turn();
+    const terminal = value.sent.at(-1)!;
+    expect(value.sent.slice(-3).map((message) => message.kind)).toEqual([
+      'heartbeat',
+      'cancel_ack',
+      'terminal',
+    ]);
+    expect(terminal).toMatchObject({ kind: 'terminal', payload: { status: 'cancelled' } });
+    await value.session.receive(receipt(terminal, 6));
+    await turn();
+    expect(value.closed).toEqual([0]);
+  });
+
+  it('queues workflow events behind an in-flight heartbeat instead of failing the run', async () => {
+    const value = harness(0);
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+
+    const heartbeatTask = value.session.heartbeat();
+    await turn();
+    const heartbeat = value.sent.at(-1)!;
+    const checkpointTask = value.context()!.checkpointCommit({
+      checkpointId: 'checkpoint.v2.queued',
+      phaseId: 'phase-1',
+      phaseIndex: 0,
+      commitPoint: 'after_phase_work',
+      artifactRef: 'checkpoint-control/artifacts/queued.json',
+      artifactHash: HASH_A,
+      resultHash: null,
+      cacheKeyHash: null,
+      workflowSourceHash: value.sealed.workflowSourceHash,
+      manifestHash: value.sealed.manifestHash,
+      inputHash: value.sealed.inputHash,
+    });
+    await turn();
+    expect(value.sent.at(-1)).toBe(heartbeat);
+
+    await value.session.receive(receipt(heartbeat, 3));
+    await expect(heartbeatTask).resolves.toBe(true);
+    await turn();
+    const checkpoint = value.sent.at(-1)!;
+    expect(checkpoint.kind).toBe('checkpoint_commit');
+    await value.session.receive(receipt(checkpoint, 4));
+    await checkpointTask;
+    expect(value.closed).toEqual([]);
   });
 
   it('fails closed when a budget decision arrives before its event receipt', async () => {

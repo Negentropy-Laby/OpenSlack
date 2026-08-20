@@ -21,6 +21,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
@@ -185,7 +186,7 @@ func (registry *Registry) NewSupervisor() (*processsupervisor.Supervisor, error)
 }
 
 func (registry *Registry) NewSupervisorForProtocol(protocolVersion string) (*processsupervisor.Supervisor, error) {
-	if protocolVersion != runnerprotocol.ProtocolVersion && protocolVersion != authoritycontract.ProtocolVersion {
+	if !runnerprotocols.IsSupported(protocolVersion) {
 		return nil, fmt.Errorf("trusted worker protocol version is unsupported")
 	}
 	manifestPath := filepath.Join(registry.bundleRoot, ManifestFilename)

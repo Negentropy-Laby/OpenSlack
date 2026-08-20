@@ -578,6 +578,14 @@ function validateRoute(value: unknown, path: string): WorkflowControlAuthorityRo
   });
 }
 
+/** Validate the frozen authority-route vocabulary for adjacent runner contracts. */
+export function validateWorkflowControlAuthorityRoute(
+  value: unknown,
+  path: string,
+): WorkflowControlAuthorityRoute {
+  return validateRoute(value, path);
+}
+
 function validateBudget(value: unknown, path: string): WorkflowControlAuthorityState['budget'] {
   const fields = [
     'policyHash',
@@ -1440,6 +1448,13 @@ export function validateWorkflowControlAuthorityMessage(
       'WORKFLOW_CONTROL_AUTHORITY_STALE_RESUME_GENERATION',
       '$/payload/newResumeGeneration',
       'Resume offer must advance the exact bound generation once.',
+    );
+  }
+  if (kind === 'resume_offer' && payload.newAttemptId === leasedStrings.attemptId) {
+    fail(
+      'WORKFLOW_CONTROL_AUTHORITY_IDENTITY_MISMATCH',
+      '$/payload/newAttemptId',
+      'Resume offer must mint a new workflow resume identity.',
     );
   }
   if (

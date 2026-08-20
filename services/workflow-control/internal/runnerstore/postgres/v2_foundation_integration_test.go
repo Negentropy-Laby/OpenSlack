@@ -13,9 +13,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
@@ -148,6 +150,38 @@ func TestGS9F1QualificationFoundation(t *testing.T) {
 		}
 		deliverV2Control(t, repository, lease.AttemptID, wrapped.Message.EventID, string(wrapped.Message.Kind))
 		deliverV2Control(t, repository, lease.AttemptID, recorded.Receipt.EventID, string(recorded.Receipt.Kind))
+	})
+
+	t.Run("cancel cannot synthesize clearance for an unresolved authority event", func(t *testing.T) {
+		adapter := &budgetFoundationAdapter{failApplyResponse: true, failRead: true}
+		repository := NewWithV2Authorities(pool, runnerstore.V2AuthorityPorts{Budget: adapter})
+		lease := startV2Lease(t, repository, "cancel-unresolved-authority")
+		budget := v2BudgetReserve(t, lease, 2, "event-budget-unresolved")
+		if _, err := repository.RecordV2Event(ctx, budget); !runnerstore.IsCode(err, runnerstore.ErrorReconciliation) {
+			t.Fatalf("unproven authority result was not latched for recovery: %v", err)
+		}
+
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		cancelInput := runnerstore.CancelInput{WorkspaceID: lease.WorkspaceID, JobID: lease.JobID, CorrelationID: lease.CorrelationID,
+			ExpectedAttemptID: lease.AttemptID, ExpectedLeaseID: lease.LeaseID, ExpectedFence: lease.FencingToken,
+			Reason: "operator", Now: now, ExpiresAt: now.Add(time.Minute)}
+		cancelInput.IdempotencyKey, cancelInput.RequestFingerprint, _ = runnerstore.CancelBindings(cancelInput)
+		if _, err := repository.RequestCancel(ctx, cancelInput); !runnerstore.IsCode(err, runnerstore.ErrorConflict) ||
+			err.Error() != "WORKFLOW_RUNNER_CONFLICT: v2 cancellation is blocked by an unsettled authority event" {
+			t.Fatalf("cancellation forged authority clearance or changed its stable diagnostic: %v", err)
+		}
+
+		var inboxState string
+		var cancelRows int
+		if err := pool.QueryRow(ctx, `SELECT state FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, budget.Message.EventID).Scan(&inboxState); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_runner_cancel_controls WHERE attempt_id=$1`, lease.AttemptID).Scan(&cancelRows); err != nil {
+			t.Fatal(err)
+		}
+		if inboxState != "pending_authority" || cancelRows != 0 {
+			t.Fatalf("blocked cancellation mutated recovery evidence: state=%s cancelRows=%d", inboxState, cancelRows)
+		}
 	})
 
 	t.Run("operation-specific revision and generation transitions are database enforced", func(t *testing.T) {
@@ -348,7 +382,7 @@ func TestGS9F1RestartFoundation(t *testing.T) {
 		}
 	})
 
-	t.Run("uncertain terminal receipt delivery replaces terminal with reconciliation", func(t *testing.T) {
+	t.Run("uncertain terminal receipt delivery preserves the receipt-proven terminal", func(t *testing.T) {
 		repository := New(pool)
 		lease := startV2Lease(t, repository, "terminal-delivery-loss")
 		finishedAt := canonicalNow()
@@ -364,7 +398,12 @@ func TestGS9F1RestartFoundation(t *testing.T) {
 		if err := repository.MarkV2ControlDeliveryReconciliation(ctx, lease.AttemptID, recorded.Receipt.EventID, string(recorded.Receipt.Kind), time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		assertV2ProcessExitReconciliation(t, repository, lease)
+		view, err := repository.RecordProcessExit(ctx, runnerstore.ProcessExitInput{WorkspaceID: lease.WorkspaceID, JobID: lease.JobID,
+			AttemptID: lease.AttemptID, LeaseID: lease.LeaseID, FencingToken: lease.FencingToken,
+			Class: runnerstore.ProcessCrashed, ObservedAt: time.Now().UTC()})
+		if err != nil || view.State != runnerstore.JobTerminal || view.TerminalStatus == nil || *view.TerminalStatus != runnerprotocol.TerminalCompleted {
+			t.Fatalf("receipt-proven terminal was overwritten by transport uncertainty: %+v %v", view, err)
+		}
 	})
 
 	t.Run("down migration refuses durable v2 evidence", func(t *testing.T) {
@@ -380,6 +419,57 @@ func TestGS9F1RestartFoundation(t *testing.T) {
 			t.Fatalf("failed down migration did not roll back atomically: present=%v err=%v", stillPresent, err)
 		}
 	})
+}
+
+type v2ReplayQueryTracer struct{ count atomic.Int64 }
+
+func (tracer *v2ReplayQueryTracer) TraceQueryStart(
+	ctx context.Context,
+	_ *pgx.Conn,
+	data pgx.TraceQueryStartData,
+) context.Context {
+	if strings.Contains(data.SQL, "FROM workflow_runner_worker_events e") {
+		tracer.count.Add(1)
+	}
+	return ctx
+}
+
+func (*v2ReplayQueryTracer) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+func TestGS9F1EventReplayQueriesAreBounded(t *testing.T) {
+	tracer := &v2ReplayQueryTracer{}
+	pool := testsupport.OpenPostgresWithTracer(t, tracer)
+	repository := NewWithV2Authorities(pool, runnerstore.V2AuthorityPorts{Budget: &budgetFoundationAdapter{}})
+	lease := startV2Lease(t, repository, "bounded-replay-query")
+	event := v2BudgetReserve(t, lease, 2, "event-bounded-replay-query")
+
+	tracer.count.Store(0)
+	first, err := repository.RecordV2Event(t.Context(), event)
+	if err != nil || first.Duplicate || tracer.count.Load() != 2 {
+		t.Fatalf("fresh authority event replay-query count drifted: count=%d result=%+v err=%v", tracer.count.Load(), first, err)
+	}
+	tracer.count.Store(0)
+	replay, err := repository.RecordV2Event(t.Context(), event)
+	if err != nil || !replay.Duplicate || tracer.count.Load() != 1 {
+		t.Fatalf("exact replay query count drifted: count=%d result=%+v err=%v", tracer.count.Load(), replay, err)
+	}
+}
+
+func TestGS9F1SchemaSevenDoesNotSilentlySkipMissingV2Tables(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	repository := NewForSchema(pool, 7)
+	lease := startV2Lease(t, repository, "missing-v2-table")
+	if _, err := pool.Exec(t.Context(), `DROP TABLE workflow_runner_v2_event_inbox CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := repository.RecordProcessExit(t.Context(), runnerstore.ProcessExitInput{
+		WorkspaceID: lease.WorkspaceID, JobID: lease.JobID, AttemptID: lease.AttemptID,
+		LeaseID: lease.LeaseID, FencingToken: lease.FencingToken,
+		Class: runnerstore.ProcessCrashed, ObservedAt: time.Now().UTC(),
+	})
+	if !runnerstore.IsCode(err, runnerstore.ErrorDatabase) {
+		t.Fatalf("schema 7 silently skipped a missing v2 table: %v", err)
+	}
 }
 
 func assertV2ProcessExitReconciliation(t testing.TB, repository *Repository, lease runnerstore.AttemptLease) {
@@ -574,7 +664,7 @@ func v2JobInputForWorkspace(t testing.TB, suffix, workspace, backend, authority 
 		ExecutionDescriptorHash: strings.Repeat("1", 64), WorkflowID: "workflow-" + suffix, WorkflowVersion: "1.0.0",
 		WorkflowSourceHash: strings.Repeat("2", 64), ManifestHash: strings.Repeat("3", 64), InputHash: strings.Repeat("4", 64),
 		WholeTimeoutMS: time.Hour.Milliseconds(), SubmittedAt: runnerstore.CanonicalTimestamp(time.Now().UTC()),
-		RequiredProtocolVersion: authoritycontract.ProtocolVersion, RequiredCapabilities: append([]string(nil), runnerstore.V2RequiredCapabilities...),
+		RequiredProtocolVersion: authoritycontract.ProtocolVersion, RequiredCapabilities: runnerstore.V2RequiredCapabilities(),
 		AuthorityRoute: authoritycontract.Route{Backend: backend, Authority: authority, RoutingEpoch: 1, AuthorityBuildHash: strings.Repeat("5", 64)},
 		RunRevision:    1, ResumeGeneration: 0,
 	})
@@ -702,6 +792,7 @@ func deliverV2Control(t testing.TB, repository *Repository, attemptID, eventID, 
 type budgetFoundationAdapter struct {
 	applyCalls, readCalls int
 	failApplyResponse     bool
+	failRead              bool
 	stored                runnerstore.V2AuthorityOutcome
 }
 
@@ -740,6 +831,9 @@ func (adapter *budgetFoundationAdapter) SettleBudget(context.Context, runnerstor
 }
 func (adapter *budgetFoundationAdapter) ReadBudgetReceipt(context.Context, authoritycontract.Kind, string, string) (runnerstore.V2AuthorityOutcome, error) {
 	adapter.readCalls++
+	if adapter.failRead {
+		return runnerstore.V2AuthorityOutcome{}, errors.New("simulated unreadable authority receipt")
+	}
 	return adapter.stored, nil
 }
 

@@ -11,17 +11,17 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 )
 
 const (
 	V2JobSpecSchema     = "openslack.workflow_runner_job_spec.v2"
 	V2JobReceiptSchema  = "openslack.workflow_runner_job_receipt.v2"
-	V2JobViewSchema     = "openslack.workflow_runner_job_view.v2"
 	V2JobSpecHashDomain = "openslack.workflow-runner.job-spec.v2\x00"
 	V2JobKeyPrefix      = "openslack.workflow-runner-job.v2."
 )
 
-var V2RequiredCapabilities = []string{"cancel_ack", "effect_receipts", "lease_heartbeat"}
+func V2RequiredCapabilities() []string { return runnerprotocols.Capabilities() }
 
 // V2JobSpec is an additive admission contract. The budget policy remains in
 // the hash-bound execution descriptor; it is deliberately not duplicated in
@@ -134,19 +134,13 @@ func ValidateV2JobSpec(value V2JobSpec) error {
 	if len(value.WorkflowVersion) > 64 || !semverPattern.MatchString(value.WorkflowVersion) {
 		return Failure(ErrorInputInvalid, "v2 workflowVersion must be exact semantic version text", nil)
 	}
-	if len(value.RequiredCapabilities) != len(V2RequiredCapabilities) {
+	if !runnerprotocols.CapabilitiesMatch(value.RequiredCapabilities) {
 		return Failure(ErrorCapabilityMismatch, "v2 job capabilities must match the closed qualification set", nil)
 	}
-	for index, capability := range V2RequiredCapabilities {
-		if value.RequiredCapabilities[index] != capability {
-			return Failure(ErrorCapabilityMismatch, "v2 job capabilities must match the closed qualification set", nil)
-		}
-	}
-	if (value.AuthorityRoute.Backend == "ts-local" && value.AuthorityRoute.Authority != "typescript") ||
-		(value.AuthorityRoute.Backend == "go" && value.AuthorityRoute.Authority != "workflow-control") ||
-		(value.AuthorityRoute.Backend != "ts-local" && value.AuthorityRoute.Backend != "go") ||
-		!hashPattern.MatchString(value.AuthorityRoute.AuthorityBuildHash) ||
-		value.AuthorityRoute.RoutingEpoch < 1 || value.AuthorityRoute.RoutingEpoch > authoritycontract.MaxSafeInteger {
+	if _, err := authoritycontract.ValidateRoute(map[string]any{
+		"backend": value.AuthorityRoute.Backend, "authority": value.AuthorityRoute.Authority,
+		"routingEpoch": value.AuthorityRoute.RoutingEpoch, "authorityBuildHash": value.AuthorityRoute.AuthorityBuildHash,
+	}, "$/authorityRoute"); err != nil {
 		return Failure(ErrorAuthorityBinding, "v2 job authority route is invalid", nil)
 	}
 	if value.RunRevision < 1 || value.RunRevision > authoritycontract.MaxSafeInteger || value.ResumeGeneration < 0 || value.ResumeGeneration > authoritycontract.MaxSafeInteger {

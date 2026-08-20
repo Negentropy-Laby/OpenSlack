@@ -105,6 +105,11 @@ func TestCrossFieldAuthorityBindingsFailClosed(t *testing.T) {
 	_, err = ValidateMessage(resume)
 	assertContractFailure(t, err, ErrorStaleResumeGeneration, "$/payload/newResumeGeneration")
 
+	resume = goldenMessageObject(t, KindResumeOffer)
+	resume["payload"].(map[string]any)["newAttemptId"] = resume["attemptId"]
+	_, err = ValidateMessage(resume)
+	assertContractFailure(t, err, ErrorIdentityMismatch, "$/payload/newAttemptId")
+
 	budget := goldenMessageObject(t, KindBudgetAuthorization)
 	budget["payload"].(map[string]any)["committedRunRevision"] = budget["runRevision"].(int64) + 1
 	_, err = ValidateMessage(budget)

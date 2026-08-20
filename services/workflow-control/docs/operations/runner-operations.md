@@ -1,7 +1,7 @@
 # GS8-B Runner Operations
 
 The default image starts `/server` and keeps runner control disabled. To operate `/runner-server`,
-first apply migrations through version 2, pre-create an owner-only descriptor root, build the
+first apply the reviewed migration chain for the selected schema profile, pre-create an owner-only descriptor root, build the
 TypeScript package, and create a bundle manifest matching
 `openslack.workflow_runner_bundle.v1`. Record the manifest SHA-256 outside the bundle and pass it
 through the required runner environment documented in the service README. The bundle directory
@@ -13,9 +13,11 @@ the runner listener.
 
 Only one runner-server may own a workspace. A dedicated PostgreSQL advisory lock enforces this for
 the process lifetime. Each boot derives a new supervisor identity, allowing startup recovery to
-distinguish old attempts. Readiness requires database access and a clean supported schema version
-from 2 through 4. Version 4 adds the isolated GS9-C checkpoint-shadow namespace; it does not add
-checkpoint authority to the runner tables.
+distinguish old attempts. Readiness requires database access and a clean supported schema version.
+The ordinary runner accepts the reviewed range from 2 through the current schema; optional shadow
+profiles may narrow it. The default-off GS9-F1 v2 qualification profile requires at least schema 7
+and accepts later reviewed current versions. Schema 7 adds typed v2 dispatch and event tables but
+does not activate production v2 routing.
 
 Operational handling is fail closed:
 
@@ -27,6 +29,17 @@ Operational handling is fail closed:
 - process crash or forced termination: inspect whether JavaScript started and whether an effect
   boundary was open;
 - bundle or descriptor hash drift: reject startup or the lease; do not overwrite the artifact.
+
+An unresolved v2 authority event is deliberately not clearable through cancellation in F1. Preserve
+the job, inbox, receipt, and reconciliation evidence, stop automatic retries, and escalate it to the
+GS9-F2 recovery procedure; do not delete rows or synthesize cancellation clearance. GS9-F2 must add
+durable authority-event replay, cancellation coordination, and exact result disambiguation before
+this state can be operationally released.
+
+The silent-session cancellation probe currently polls every 250 ms, matching v1. Before enabling
+long-lived v2 routing, GS9-F2 must measure per-session query rate, cancellation-latency distribution,
+and database load, then compare bounded backoff and notification-based alternatives. The current
+value is a qualification setting, not an unmeasured production SLO.
 
 The metrics endpoint is authenticated and workspace-bound. When runner control is enabled, add it
 as a separate Prometheus target and load the supplied runner alerts. Logs must use bounded IDs and

@@ -117,6 +117,7 @@ export {
   validateWorkflowControlAuthorityDecimal,
   validateWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityReceipt,
+  validateWorkflowControlAuthorityRoute,
   validateWorkflowControlAuthorityState,
   validateWorkflowControlAuthorityTransition,
   workflowControlAuthorityDirectionForKind,
@@ -790,6 +791,7 @@ export {
   WORKFLOW_RUNNER_CANCEL_ACK_STATES,
   WORKFLOW_RUNNER_CANCEL_REASONS,
   WORKFLOW_RUNNER_CAPABILITIES,
+  isWorkflowRunnerCapabilitySet,
   WORKFLOW_RUNNER_CONTRACT_ERROR_CODES,
   WORKFLOW_RUNNER_CONTRACT_LIMITS,
   WORKFLOW_RUNNER_DIRECTIONS,
@@ -951,7 +953,6 @@ export {
   validateWorkflowRunnerV2JobSpec,
   WORKFLOW_RUNNER_V2_JOB_RECEIPT_SCHEMA,
   WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
-  WORKFLOW_RUNNER_V2_JOB_VIEW_SCHEMA,
   WorkflowRunnerV2ControlClient,
   WorkflowRunnerV2ControlError,
 } from './workflow-runner-v2-control-client.js';

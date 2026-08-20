@@ -5,9 +5,13 @@ import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
 import type { WorkflowRunnerDescriptorCodec } from './workflow-runner-descriptor-store.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+  validateWorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRoute,
 } from './workflow-control-authority-contract.js';
-import { WORKFLOW_RUNNER_CAPABILITIES } from './workflow-runner-contract.js';
+import {
+  isWorkflowRunnerCapabilitySet,
+  WORKFLOW_RUNNER_CAPABILITIES,
+} from './workflow-runner-contract.js';
 
 export type WorkflowRunnerV2Capability = (typeof WORKFLOW_RUNNER_CAPABILITIES)[number];
 
@@ -185,42 +189,19 @@ function decimal(value: unknown, path: string, rate = false): string {
 }
 
 function route(value: unknown): WorkflowControlAuthorityRoute {
-  const item = record(
-    value,
-    ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'],
-    '$/authorityRoute',
-  );
-  const backend = own(item, 'backend');
-  const authority = own(item, 'authority');
-  if (
-    !(
-      (backend === 'ts-local' && authority === 'typescript') ||
-      (backend === 'go' && authority === 'workflow-control')
-    )
-  ) {
+  try {
+    return validateWorkflowControlAuthorityRoute(value, '$/authorityRoute');
+  } catch {
     return fail(
       'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
       '$/authorityRoute',
       'Authority route is inconsistent.',
     );
   }
-  return Object.freeze({
-    backend,
-    authority,
-    routingEpoch: integer(own(item, 'routingEpoch'), '$/authorityRoute/routingEpoch', 1),
-    authorityBuildHash: hash(
-      own(item, 'authorityBuildHash'),
-      '$/authorityRoute/authorityBuildHash',
-    ),
-  }) as WorkflowControlAuthorityRoute;
 }
 
 function capabilities(value: unknown): readonly WorkflowRunnerV2Capability[] {
-  if (
-    !Array.isArray(value) ||
-    value.length !== WORKFLOW_RUNNER_CAPABILITIES.length ||
-    value.some((entry, index) => entry !== WORKFLOW_RUNNER_CAPABILITIES[index])
-  ) {
+  if (!isWorkflowRunnerCapabilitySet(value)) {
     return fail(
       'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
       '$/requiredCapabilities',

@@ -25,22 +25,15 @@ SELECT workspace_id, job_id, workflow_run_id, correlation_id,
        execution_descriptor_ref, execution_descriptor_hash, job_spec_hash,
 	       workflow_id, workflow_version, workflow_source_hash, manifest_hash, input_hash,
 	       whole_deadline, revision, current_fence,
-	       COALESCE(to_jsonb(j)->>'required_protocol_version','openslack.workflow_runner.v1'),
-	       CASE WHEN to_jsonb(j) ? 'required_capabilities'
-	         THEN ARRAY(SELECT jsonb_array_elements_text(to_jsonb(j)->'required_capabilities'))
-	         ELSE ARRAY['cancel_ack','effect_receipts','lease_heartbeat']::TEXT[] END,
-	       to_jsonb(j)->>'authority_backend', to_jsonb(j)->>'workflow_authority',
-	       (to_jsonb(j)->>'routing_epoch')::BIGINT,
-	       CASE WHEN to_jsonb(j) ? 'authority_build_hash' AND to_jsonb(j)->>'authority_build_hash' IS NOT NULL
-	         THEN decode(substr(to_jsonb(j)->>'authority_build_hash',3),'hex') ELSE NULL END,
-	       (to_jsonb(j)->>'required_run_revision')::BIGINT,
-	       (to_jsonb(j)->>'required_resume_generation')::BIGINT
+	       required_protocol_version, required_capabilities,
+	       authority_backend, workflow_authority, routing_epoch,
+	       authority_build_hash, required_run_revision, required_resume_generation
 	FROM workflow_runner_jobs j
 	WHERE workspace_id=$1 AND state='queued' AND dispatch_state <> 'dead'
 	  AND dispatch_not_before <= $2 AND whole_deadline > $2
-	  AND COALESCE(to_jsonb(j)->>'required_protocol_version','openslack.workflow_runner.v1') = ANY($3::TEXT[])
-	  AND (COALESCE(to_jsonb(j)->>'required_protocol_version','openslack.workflow_runner.v1') <> 'openslack.workflow_runner.v2'
-	       OR (to_jsonb(j)->>'authority_backend'='ts-local' AND to_jsonb(j)->>'workflow_authority'='typescript'))
+	  AND required_protocol_version = ANY($3::TEXT[])
+	  AND (required_protocol_version <> 'openslack.workflow_runner.v2'
+	       OR (authority_backend='ts-local' AND workflow_authority='typescript'))
 ORDER BY created_at, workspace_id, job_id
 FOR UPDATE SKIP LOCKED
 LIMIT 1`

@@ -234,6 +234,40 @@ describe('OpenAI-compatible agent runtime', () => {
     ]);
   });
 
+  it('separates total-token reservation from the provider output cap', async () => {
+    const events: string[] = [];
+    const port: ProviderAttemptPort = {
+      async reserve(input) {
+        events.push(`reserve:${input.requestedTokens}`);
+        return {
+          reservationId: 'reservation-total-budget',
+          callId: 'call-total-budget',
+          authorizedTokens: input.requestedTokens,
+        };
+      },
+      async settle(_reservation, usage) {
+        events.push(`settle:${usage.totalTokens}`);
+      },
+    };
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { max_tokens: number };
+      events.push(`fetch:${request.max_tokens}`);
+      return jsonResponse({
+        choices: [{ message: { content: '{"summary":"within-total-budget"}' } }],
+        usage: { prompt_tokens: 55, completion_tokens: 5, total_tokens: 60 },
+      });
+    }) as unknown as typeof fetch;
+    const { context } = createContext(root, { tokens: 100 });
+
+    await expect(
+      adapter(fetchImpl, {
+        maxOutputTokens: 10,
+        providerAttemptBoundary: createProviderAttemptBoundary(port),
+      }).execute<{ summary: string }>(context),
+    ).resolves.toMatchObject({ data: { summary: 'within-total-budget' }, tokenUsage: 60 });
+    expect(events).toEqual(['reserve:100', 'fetch:10', 'settle:60']);
+  });
+
   it('settles a failed real HTTP attempt and does not retry without a new reservation', async () => {
     const events: string[] = [];
     const port: ProviderAttemptPort = {

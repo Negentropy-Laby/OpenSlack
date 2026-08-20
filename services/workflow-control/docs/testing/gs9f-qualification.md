@@ -29,8 +29,8 @@ GS7-B, GS8-B, and GS9-B/C/D/E and runs:
 - PostgreSQL restart using one retained qualification schema; and
 - built-image evidence that the default `/server` process does not submit or route v2 work.
 
-The hosted exact-head workflow runs this service gate after the GS9-E budget gate and before the
-workspace-wide `go-check --all` gate. Windows additionally rebuilds the sealed worker and runs the
+The hosted exact-head workflow runs the service exactly once through the workspace-wide
+`go-check --all` verifier after the GS9-E budget gate. Windows additionally rebuilds the sealed worker and runs the
 native descriptor, reparse-point, process-tree, worker, and session boundaries.
 
 Passing these gates establishes at most:
@@ -48,5 +48,8 @@ TypeScript production Workflow authority retained
 It does not establish complete receipt-to-checkpoint/effect/budget/resume decision ordering,
 crash-after-authority recovery, or Go production Workflow, checkpoint, effect, budget-policy,
 provider, RunStore, or user-visible read authority. GS9-F2 must deliver those runtime adapters and
-their exit gates. Authenticated external-host, Qoder, remote Connector, live, release, tag, npm, and
+their exit gates. In particular, F2 must add durable recovery/replay and result disambiguation for a
+staged authority event; F1 keeps that state fail-closed and cancellation cannot manufacture
+clearance. F2 must also measure the current 250 ms silent-session cancellation polling load and
+latency before production routing. Authenticated external-host, Qoder, remote Connector, live, release, tag, npm, and
 production readiness also remain outside this evidence.

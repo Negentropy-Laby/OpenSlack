@@ -48,15 +48,15 @@ func (repository *Repository) RecordProcessExit(ctx context.Context, input runne
 		}
 		return runnerstore.JobView{}, err
 	}
-	v2AuthorityOutstanding, err := hasOutstandingV2AuthorityEvent(ctx, tx, input.AttemptID)
+	v2Outstanding, err := repository.readV2OutstandingState(ctx, tx, input.AttemptID)
 	if err != nil {
 		return runnerstore.JobView{}, err
 	}
 	if current.jobState == runnerstore.JobReconciliationRequired ||
-		(current.jobState == runnerstore.JobTerminal && !v2AuthorityOutstanding) {
-		// Settled terminal evidence is authoritative. A terminal receipt whose
-		// delivery is uncertain is not settled: the worker may have observed it,
-		// so process exit must latch reconciliation instead of returning terminal.
+		(current.jobState == runnerstore.JobTerminal && !v2Outstanding.authority && !v2Outstanding.nonTerminalDelivery) {
+		// A receipt-proven terminal remains authoritative when only delivery of
+		// that terminal event's own receipt is uncertain. Unsettled authority or
+		// an earlier non-terminal control still requires reconciliation.
 		return readJobView(tx.QueryRow(ctx, jobViewSQL, input.WorkspaceID, input.JobID))
 	}
 	if current.currentFence != input.FencingToken || current.currentAttemptID != input.AttemptID {
@@ -83,14 +83,14 @@ func (repository *Repository) RecordProcessExit(ctx context.Context, input runne
 	terminalStatus := string(runnerprotocol.TerminalFailed)
 	terminalReason := "process_crash"
 	var reconciliationID any
-	if current.openEffectCount > 0 || v2AuthorityOutstanding {
+	if current.openEffectCount > 0 || v2Outstanding.any() {
 		value, insertErr := insertProcessReconciliation(ctx, tx, input, now)
 		if insertErr != nil {
 			return runnerstore.JobView{}, insertErr
 		}
 		jobState, attemptState = runnerstore.JobReconciliationRequired, runnerstore.AttemptReconciliationRequired
 		terminalStatus, terminalReason, reconciliationID = string(runnerprotocol.TerminalReconciliationRequired), "commit_outcome_unknown", value
-		if v2AuthorityOutstanding {
+		if v2Outstanding.authority {
 			if _, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_v2_event_inbox
 SET state='reconciliation_required',reconciliation_id=$1,updated_at=$2
 WHERE attempt_id=$3 AND state IN ('pending_authority','authority_committed','reconciliation_required')`, value, now, input.AttemptID); updateErr != nil {
@@ -223,11 +223,11 @@ func (repository *Repository) recoverExpiredOne(ctx context.Context, workspaceID
 		return runnerstore.RecoveryResult{}, runnerstore.Failure(runnerstore.ErrorConflict, "lease no longer qualifies as expired", nil)
 	}
 	result := runnerstore.RecoveryResult{WorkspaceID: workspaceID, JobID: jobID, AttemptID: attemptID, LeaseID: leaseID, PreviousFence: fence}
-	v2AuthorityOutstanding, err := hasOutstandingV2AuthorityEvent(ctx, tx, attemptID)
+	v2Outstanding, err := repository.readV2OutstandingState(ctx, tx, attemptID)
 	if err != nil {
 		return result, err
 	}
-	if v2AuthorityOutstanding {
+	if v2Outstanding.any() {
 		reconciliationID, insertErr := insertProcessReconciliation(ctx, tx, runnerstore.ProcessExitInput{
 			WorkspaceID: workspaceID, JobID: jobID, AttemptID: attemptID, LeaseID: leaseID,
 			FencingToken: fence, Class: runnerstore.ProcessCrashed, ObservedAt: now,
@@ -285,29 +285,37 @@ WHERE workspace_id=$3 AND job_id=$4 AND revision=$5`, reconciliationID, now, wor
 	return result, nil
 }
 
-func hasOutstandingV2AuthorityEvent(ctx context.Context, tx pgx.Tx, attemptID string) (bool, error) {
-	var relation *string
-	if err := tx.QueryRow(ctx, `SELECT to_regclass('workflow_runner_v2_event_inbox')::TEXT`).Scan(&relation); err != nil {
-		return false, databaseFailure("detect v2 event inbox", err)
+type v2OutstandingState struct {
+	authority           bool
+	nonTerminalDelivery bool
+}
+
+func (state v2OutstandingState) any() bool {
+	return state.authority || state.nonTerminalDelivery
+}
+
+func (repository *Repository) readV2OutstandingState(ctx context.Context, tx pgx.Tx, attemptID string) (v2OutstandingState, error) {
+	if repository.schemaVersion < 7 {
+		return v2OutstandingState{}, nil
 	}
-	if relation == nil {
-		return false, nil
-	}
-	var outstanding bool
+	var state v2OutstandingState
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM workflow_runner_v2_event_inbox
-WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','reconciliation_required'))`, attemptID).Scan(&outstanding); err != nil {
-		return false, databaseFailure("read outstanding v2 authority event", err)
+WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','reconciliation_required'))`, attemptID).Scan(&state.authority); err != nil {
+		return v2OutstandingState{}, databaseFailure("read outstanding v2 authority event", err)
 	}
-	if !outstanding {
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM workflow_runner_control_messages message
 JOIN workflow_runner_v2_attempt_bindings binding ON binding.attempt_id=message.attempt_id
-WHERE message.attempt_id=$1 AND message.delivery_state IN ('delivering','reconciliation_required'))`, attemptID).Scan(&outstanding); err != nil {
-			return false, databaseFailure("read uncertain v2 control delivery", err)
-		}
+WHERE message.attempt_id=$1 AND message.delivery_state IN ('delivering','reconciliation_required')
+  AND NOT (message.kind='event_receipt' AND EXISTS (
+    SELECT 1 FROM workflow_runner_event_receipts receipt
+    JOIN workflow_runner_worker_events event ON event.event_id=receipt.received_event_id
+    WHERE receipt.receipt_event_id=message.control_event_id AND event.kind='terminal'
+  )))`, attemptID).Scan(&state.nonTerminalDelivery); err != nil {
+		return v2OutstandingState{}, databaseFailure("read uncertain v2 control delivery", err)
 	}
-	return outstanding, nil
+	return state, nil
 }
 
 func (repository *Repository) RecoverOrphans(ctx context.Context, supervisorInstanceID string, now time.Time, limit int) ([]runnerstore.RecoveryResult, error) {

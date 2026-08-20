@@ -29,19 +29,8 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 	if direction != authoritycontract.DirectionRunnerToControl || message.JobID == nil || message.AttemptID == nil || message.LeaseID == nil || message.FencingToken == nil || message.Sequence == nil || message.RunRevision == nil || message.ResumeGeneration == nil {
 		return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorIdentityMismatch, "v2 leased event binding is incomplete", nil)
 	}
-	// Replay is resolved before consulting mutable attempt state. An authority
-	// receipt may already have advanced the run revision or resume generation,
-	// so validating current bindings first would make an exact response-loss
-	// retry impossible.
-	if recorded, found, replayErr := repository.readV2EventReplay(ctx, prepared, input.ExactBytes); replayErr != nil {
-		return runnerstore.V2RecordedEvent{}, replayErr
-	} else if found {
-		return recorded, nil
-	}
-	needsAuthority := message.Kind == authoritycontract.KindEffectIntent || message.Kind == authoritycontract.KindCheckpointCommit ||
-		message.Kind == authoritycontract.KindBudgetReserveRequest || message.Kind == authoritycontract.KindBudgetUsageReport ||
-		(message.Kind == authoritycontract.KindLeaseAccept && *message.ResumeGeneration > 0)
-	if !needsAuthority {
+	advance := v2Advance(message.Kind, *message.ResumeGeneration)
+	if !advance.needsAuthority {
 		return repository.finalizeV2Event(ctx, input, prepared, nil)
 	}
 	staged, err := repository.stageV2Event(ctx, input, prepared)
@@ -80,6 +69,32 @@ type stagedV2Event struct {
 	authorityCommitted bool
 }
 
+type v2AdvanceRule struct {
+	needsAuthority bool
+	runDelta       int64
+	resumeDelta    int64
+	operation      authoritycontract.ReceiptOperation
+	decisionKind   authoritycontract.Kind
+}
+
+func v2Advance(kind authoritycontract.Kind, resumeGeneration int64) v2AdvanceRule {
+	switch kind {
+	case authoritycontract.KindCheckpointCommit:
+		return v2AdvanceRule{needsAuthority: true, operation: authoritycontract.ReceiptCheckpointCommit}
+	case authoritycontract.KindEffectIntent:
+		return v2AdvanceRule{needsAuthority: true, operation: authoritycontract.ReceiptEffectAuthorize, decisionKind: authoritycontract.KindEffectAuthorization}
+	case authoritycontract.KindBudgetReserveRequest:
+		return v2AdvanceRule{needsAuthority: true, runDelta: 1, operation: authoritycontract.ReceiptBudgetReserve, decisionKind: authoritycontract.KindBudgetAuthorization}
+	case authoritycontract.KindBudgetUsageReport:
+		return v2AdvanceRule{needsAuthority: true, runDelta: 1, operation: authoritycontract.ReceiptBudgetSettle}
+	case authoritycontract.KindLeaseAccept:
+		if resumeGeneration > 0 {
+			return v2AdvanceRule{needsAuthority: true, runDelta: 1, resumeDelta: 1, operation: authoritycontract.ReceiptResumeAdvance, decisionKind: authoritycontract.KindResumeOffer}
+		}
+	}
+	return v2AdvanceRule{}
+}
+
 const v2EventReplaySQL = `
 SELECT e.request_fingerprint,e.exact_event_bytes,e.workspace_id,e.job_id,e.attempt_id,e.lease_id,
        e.fencing_token,e.sequence,e.kind,e.idempotency_key,e.message_digest,
@@ -98,10 +113,6 @@ JOIN workflow_runner_v2_decision_bindings b ON b.received_event_id=e.event_id
 LEFT JOIN workflow_runner_control_messages d ON d.control_event_id=b.decision_control_event_id
 LEFT JOIN workflow_runner_v2_event_inbox i ON i.event_id=e.event_id
 WHERE e.idempotency_key=$1`
-
-func (repository *Repository) readV2EventReplay(ctx context.Context, prepared authoritycontract.PreparedMessage, exactEventBytes []byte) (runnerstore.V2RecordedEvent, bool, error) {
-	return readV2EventReplayRow(repository.pool.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey), prepared, exactEventBytes)
-}
 
 func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessage, exactEventBytes []byte) (runnerstore.V2RecordedEvent, bool, error) {
 	var fingerprint, storedEvent, eventDigest, receiptBytes, receiptDigest, receiptControlBytes, receiptControlDigest []byte
@@ -179,13 +190,9 @@ func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessag
 		if subtle.ConstantTimeCompare(authorityReceiptHash, digest[:]) != 1 {
 			return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored v2 authority receipt hash drifted", nil)
 		}
-		expectedRevision, expectedGeneration := *event.RunRevision, *event.ResumeGeneration
-		if event.Kind == authoritycontract.KindBudgetReserveRequest || event.Kind == authoritycontract.KindBudgetUsageReport || event.Kind == authoritycontract.KindLeaseAccept {
-			expectedRevision++
-		}
-		if event.Kind == authoritycontract.KindLeaseAccept {
-			expectedGeneration++
-		}
+		advance := v2Advance(event.Kind, *event.ResumeGeneration)
+		expectedRevision := *event.RunRevision + advance.runDelta
+		expectedGeneration := *event.ResumeGeneration + advance.resumeDelta
 		outcome := runnerstore.V2AuthorityOutcome{Operation: authoritycontract.ReceiptOperation(*authorityOperation), ExactReceiptBytes: authorityReceiptBytes,
 			AcceptedRunRevision: expectedRevision, AcceptedResumeGeneration: expectedGeneration, Decision: result.Decision, DecisionBytes: result.DecisionBytes}
 		if _, _, validateErr := validateV2AuthorityResult(event, receiptControlSequence+1, outcome); validateErr != nil {
@@ -213,11 +220,8 @@ func validateStoredV2EventReceipt(event authoritycontract.Message, prepared auth
 		receipt.Payload["status"] != string(authoritycontract.ReceiptAccepted) || receipt.Payload["committedAt"] != receipt.SentAt || receipt.Payload["errorCode"] != nil {
 		return runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "stored v2 event receipt is cross-spliced", nil)
 	}
-	expectedRevision := *event.RunRevision
-	if event.Kind == authoritycontract.KindBudgetReserveRequest || event.Kind == authoritycontract.KindBudgetUsageReport ||
-		(event.Kind == authoritycontract.KindLeaseAccept && *event.ResumeGeneration > 0) {
-		expectedRevision++
-	}
+	advance := v2Advance(event.Kind, *event.ResumeGeneration)
+	expectedRevision := *event.RunRevision + advance.runDelta
 	if *receipt.RunRevision != expectedRevision {
 		return runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "stored v2 event receipt revision drifted", nil)
 	}
@@ -596,21 +600,10 @@ func validateV2AuthorityResult(message authoritycontract.Message, decisionSequen
 	if len(result.ExactReceiptBytes) == 0 {
 		return 0, 0, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 authority receipt is missing", nil)
 	}
-	expectedOperation := map[authoritycontract.Kind]authoritycontract.ReceiptOperation{
-		authoritycontract.KindCheckpointCommit:     authoritycontract.ReceiptCheckpointCommit,
-		authoritycontract.KindEffectIntent:         authoritycontract.ReceiptEffectAuthorize,
-		authoritycontract.KindBudgetReserveRequest: authoritycontract.ReceiptBudgetReserve,
-		authoritycontract.KindBudgetUsageReport:    authoritycontract.ReceiptBudgetSettle,
-		authoritycontract.KindLeaseAccept:          authoritycontract.ReceiptResumeAdvance,
-	}[message.Kind]
-	expectedRevision, expectedGeneration := *message.RunRevision, *message.ResumeGeneration
-	if message.Kind == authoritycontract.KindBudgetReserveRequest || message.Kind == authoritycontract.KindBudgetUsageReport || message.Kind == authoritycontract.KindLeaseAccept {
-		expectedRevision++
-	}
-	if message.Kind == authoritycontract.KindLeaseAccept {
-		expectedGeneration++
-	}
-	if result.Operation != expectedOperation || result.AcceptedRunRevision != expectedRevision || result.AcceptedResumeGeneration != expectedGeneration {
+	advance := v2Advance(message.Kind, *message.ResumeGeneration)
+	expectedRevision := *message.RunRevision + advance.runDelta
+	expectedGeneration := *message.ResumeGeneration + advance.resumeDelta
+	if !advance.needsAuthority || result.Operation != advance.operation || result.AcceptedRunRevision != expectedRevision || result.AcceptedResumeGeneration != expectedGeneration {
 		return 0, 0, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 operation-specific authority outcome drifted", nil)
 	}
 	if result.Decision != nil {
@@ -632,12 +625,7 @@ func validateV2AuthorityResult(message authoritycontract.Message, decisionSequen
 		if decision.Payload["authorityReceiptHash"] != hex.EncodeToString(receiptHash[:]) {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 decision does not bind the exact authority receipt", nil)
 		}
-		expectedKind := map[authoritycontract.Kind]authoritycontract.Kind{
-			authoritycontract.KindBudgetReserveRequest: authoritycontract.KindBudgetAuthorization,
-			authoritycontract.KindEffectIntent:         authoritycontract.KindEffectAuthorization,
-			authoritycontract.KindLeaseAccept:          authoritycontract.KindResumeOffer,
-		}[message.Kind]
-		if decision.Kind != expectedKind {
+		if advance.decisionKind == "" || decision.Kind != advance.decisionKind {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 authority decision kind does not match the triggering event", nil)
 		}
 		if message.Kind == authoritycontract.KindBudgetReserveRequest && decision.Payload["reservationId"] != message.Payload["reservationId"] {
@@ -648,14 +636,15 @@ func validateV2AuthorityResult(message authoritycontract.Message, decisionSequen
 		}
 		if message.Kind == authoritycontract.KindLeaseAccept {
 			generation, ok := decision.Payload["newResumeGeneration"].(int64)
-			if !ok || generation != *message.ResumeGeneration+1 {
-				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 resume decision generation differs", nil)
+			newAttemptID, validAttemptID := decision.Payload["newAttemptId"].(string)
+			if !ok || generation != *message.ResumeGeneration+1 || !validAttemptID || newAttemptID == *message.AttemptID {
+				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 resume decision identity or generation differs", nil)
 			}
 			if generation != result.AcceptedResumeGeneration {
 				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 resume decision does not match its operation-specific receipt", nil)
 			}
 		}
-	} else if message.Kind == authoritycontract.KindBudgetReserveRequest || message.Kind == authoritycontract.KindEffectIntent || (message.Kind == authoritycontract.KindLeaseAccept && *message.ResumeGeneration > 0) {
+	} else if advance.decisionKind != "" {
 		return 0, 0, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 advancing authority event is missing its control decision", nil)
 	}
 	return result.AcceptedRunRevision, result.AcceptedResumeGeneration, nil
