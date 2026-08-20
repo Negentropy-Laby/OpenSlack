@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-error.v1.schema.json",
+  "title": "OpenSlack GS9-F2a authority-binding closed error",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_runner_authority_binding_error.v1" },
+    "code": {
+      "enum": [
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_UNSUPPORTED_VERSION",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_REVISION_CONFLICT",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_RESUME_GENERATION_CONFLICT",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_REQUIRED",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_REQUIRED",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDEMPOTENCY_CONFLICT",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD",
+        "WORKFLOW_RUNNER_AUTHORITY_BINDING_RECONCILIATION_REQUIRED"
+      ]
+    },
+    "message": { "type": "string", "minLength": 1, "maxLength": 524288 },
+    "bindingId": {
+      "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "enum": [
+            "checkpoint_commit",
+            "effect_authorize",
+            "effect_complete",
+            "budget_reserve",
+            "budget_settle",
+            "resume_advance"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "reconciliationToken": {
+      "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+    }
+  },
+  "required": ["schema", "code", "message", "bindingId", "operation", "reconciliationToken"]
+}

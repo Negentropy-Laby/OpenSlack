@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-04
+updated: 2026-08-20
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -17,10 +17,10 @@ sources:
 
 # Workflow Runner Protocol Contract
 
-Status: GS8-B local implementation. GS8-A remains the immutable
-`openslack.workflow_runner.v1` bidirectional TypeScript/Go contract. GS8-B implements an explicit,
-default-off Go runner-lifecycle control plane and the sealed TypeScript worker without changing the
-normal CLI/TUI route or moving any GS9-deferred workflow authority.
+Status: GS8-B local implementation plus the GS9-F1 default-off runner-v2 foundation and GS9-F2a
+authority-binding contract freeze. GS8-A remains the immutable `openslack.workflow_runner.v1`
+bidirectional TypeScript/Go contract. F2a adds only exact contract parity; the normal CLI/TUI route,
+F1 runtime profile/source manifest and production Workflow authority remain unchanged.
 
 ## Purpose
 
@@ -345,7 +345,7 @@ run/revision/generation/route, create the exact runner receipt, and require rece
 a later decision adapter may advance. It does not implement the GS9-C checkpoint, GS9-D TypeScript
 effect, GS9-E budget, or resume adapters, and therefore does not claim end-to-end runtime delivery,
 checkpoint/effect/budget decision completion, or crash-after-authority recovery. Those remain the
-separate GS9-F2 integration gate.
+GS9-F2 umbrella: F2a freezes the missing companion contract and F2b owns integration delivery.
 
 Within the foundation session, all receiptable events share one FIFO lane. Heartbeat never
 preempts a budget, effect, checkpoint, cancel acknowledgement, or terminal event; cancellation may
@@ -361,3 +361,95 @@ new-record routing, canary or cutover; it does not make Go the Workflow state-ma
 effect-approval, effect-execution, budget-policy, or user-visible read authority. TypeScript remains
 the production Workflow authority, and the default image continues to start `/server` without v2
 submission or routing.
+
+## GS9-F2a authority-binding companion contract freeze
+
+The GS9-F2 umbrella is split into two sequential, non-stacked Red-zone deliveries. GS9-F2a freezes
+only the TypeScript-owned exact-byte `openslack.workflow_runner_authority_binding.v1` companion
+contract and its pure Go validator mirror. GS9-F2b, starting from the merged F2a head, must add the
+durable adapters, migration, scheduler/worker composition, recovery, and end-to-end qualification.
+
+The companion family is a closed four-schema bundle:
+`openslack.workflow_runner_authority_binding_stage.v1`,
+`openslack.workflow_runner_authority_binding_resolution.v1`,
+`openslack.workflow_runner_authority_binding_receipt.v1`, and
+`openslack.workflow_runner_authority_binding_error.v1`.
+The receipt schema is itself a closed union for `stage_event` ACK, `commit_authority` ACK, and the
+runner-to-control `control_delivery` ACK. A delivery ACK binds the exact control event, kind,
+sequence, digest, and current attempt/lease/fence; an ACK for another event or sequence is invalid.
+The acknowledged control kind is closed to `event_receipt`, `budget_authorization`,
+`effect_authorization`, `resume_offer`, or `cancel_request`.
+Its operation vocabulary is exactly `checkpoint_commit`, `effect_authorize`, `effect_complete`,
+`budget_reserve`, `budget_settle`, and `resume_advance`. Each operation uses two ordered phases:
+`stage_event` binds the future frozen runner-v2 event and its exact leased identity; only after its
+phase receipt is accepted may `commit_authority` bind the domain authority request, durable
+decision or observation, and coordinator result. The worker may send the byte-identical frozen
+runner-v2 event only after the matching `commit_authority` resolution has a durable ACK; Go then
+consumes that resolution while applying the coordinator/global mutation and issuing the runner
+event receipt. The runner ACKs delivery of that receipt before an optional control decision is
+sent, and separately ACKs delivery of that decision before advancing. Thus the frozen order is
+stage ACK -> resolution ACK -> event -> event receipt -> control-delivery ACK -> optional decision
+-> control-delivery ACK -> advance. A receipt or acknowledgement for one phase cannot clear the
+other phase, and a domain receipt cannot substitute for the coordinator/global receipt.
+
+The operation-to-frozen-event mapping is closed:
+
+| Companion operation | Frozen runner-v2 event kind |
+| ------------------- | --------------------------- |
+| `checkpoint_commit` | `checkpoint_commit`         |
+| `effect_authorize`  | `effect_intent`             |
+| `effect_complete`   | `effect_outcome`            |
+| `budget_reserve`    | `budget_reserve_request`    |
+| `budget_settle`     | `budget_usage_report`       |
+| `resume_advance`    | `lease_accept`              |
+
+Its source planes are also closed to `checkpoint_control`, `effect_v2_sibling`,
+`budget_account`, and `resume_control`; no observer receipt can be relabelled as source authority.
+
+The contract fixes two independent revision planes. The coordinator/global matrix is:
+
+| Operation           | Run revision delta | Resume-generation delta |
+| ------------------- | -----------------: | ----------------------: |
+| `checkpoint_commit` |                 +1 |                       0 |
+| `effect_authorize`  |                 +1 |                       0 |
+| `effect_complete`   |                  0 |                       0 |
+| `budget_reserve`    |                 +1 |                       0 |
+| `budget_settle`     |                 +1 |                       0 |
+| `resume_advance`    |                 +1 |                      +1 |
+
+The embedded `sourceAuthority` evidence separately carries its own expected and accepted
+revision/generation values, normally advancing its source revision by one. Those values cannot be
+inferred from or collapsed into the coordinator revision. Route/build/epoch, job, runner attempt,
+lease, fence, event, operation, source-authority and exact-byte hashes are cross-bound; splice,
+phase, kind, revision, generation, route, build, lease or fence drift fails closed.
+
+F2a locks the existing runner-v1, authority-v2 (including the runner-v2 vocabulary), checkpoint,
+effect-control, effect-shadow and budget manifest bytes plus both F1 migration `000007` SQL files:
+
+| Source lock               | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| runner-v1 manifest        | `908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6` |
+| authority-v2 manifest     | `62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1` |
+| checkpoint manifest       | `e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000` |
+| effect-control manifest   | `36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65` |
+| effect-shadow manifest    | `72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e` |
+| budget manifest           | `5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714` |
+| migration `000007` up SQL | `bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722` |
+| migration `000007` down   | `251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7` |
+
+These source locks do not modify the locked bytes and are not runtime deployment build identity.
+The companion additionally names the future F2b profile
+`workflow-control-runner-v2-runtime-delivery-v1`, but F2a does not register or activate it. F2a does
+not change the F1 runtime profile or source manifest,
+does not add migration `000008`, database/HTTP/store/scheduler/worker wiring, and does not emit or
+consume the companion frame at runtime. Its exact evidence ceiling is
+`GS9-F2A CONTRACT LOCAL_PASS / Go exact mirror validator only / runtime authority delivery
+NOT_CLAIMED`.
+
+Production v2 submission, new-record acceptance, routing, canary, cutover, TypeScript fallback or
+writer removal, authenticated external-host qualification, Qoder, remote Connector, release,
+live, tag, npm and production readiness remain not activated, not delivered or not claimed.
+Production Go Workflow/checkpoint/effect/budget/provider/RunStore/read authority, hosted exact-head
+checks, review resolution, independent human approval and merge remain separate and are not
+claimed. The F1 profile and source manifest continue to describe F1 only until F2b supplies and
+qualifies the real runtime composition.

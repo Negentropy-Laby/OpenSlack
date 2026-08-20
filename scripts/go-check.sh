@@ -557,6 +557,13 @@ validate_dockerignore() {
       '!budgetcontract/generated/v1/*.json' | \
       '!budgetcontract/generated/v1/schemas/' | \
       '!budgetcontract/generated/v1/schemas/*.json' | \
+      '!runnerbindingcontract/' | \
+      '!runnerbindingcontract/*.go' | \
+      '!runnerbindingcontract/generated/' | \
+      '!runnerbindingcontract/generated/v1/' | \
+      '!runnerbindingcontract/generated/v1/*.json' | \
+      '!runnerbindingcontract/generated/v1/schemas/' | \
+      '!runnerbindingcontract/generated/v1/schemas/*.json' | \
       '!LICENSE' | \
       '!NOTICE' | \
       '!THIRD_PARTY_NOTICES.md' | \

@@ -32,6 +32,7 @@ on:
       - packages/workflows/contracts/workflow-effect-control/**
       - packages/workflows/contracts/workflow-effect-shadow/**
       - packages/workflows/contracts/workflow-runner/**
+      - packages/workflows/contracts/workflow-runner-authority-binding/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-budget-authority-contract.ts
@@ -94,6 +95,7 @@ on:
       - scripts/workflow-effect-control-contracts/**
       - scripts/workflow-effect-shadow-contracts/**
       - scripts/workflow-runner-contracts/**
+      - scripts/workflow-runner-authority-binding-contracts/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
@@ -133,6 +135,7 @@ on:
       - packages/workflows/contracts/workflow-effect-control/**
       - packages/workflows/contracts/workflow-effect-shadow/**
       - packages/workflows/contracts/workflow-runner/**
+      - packages/workflows/contracts/workflow-runner-authority-binding/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-budget-authority-contract.ts
@@ -195,6 +198,7 @@ on:
       - scripts/workflow-effect-control-contracts/**
       - scripts/workflow-effect-shadow-contracts/**
       - scripts/workflow-runner-contracts/**
+      - scripts/workflow-runner-authority-binding-contracts/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
@@ -303,6 +307,15 @@ jobs:
       - name: Verify Workflow Runner golden contracts
         working-directory: .
         run: bun run workflow:runner-golden -- --check
+      - name: Verify Workflow Runner authority binding golden contracts
+        working-directory: .
+        run: bun run workflow:runner-authority-binding-golden -- --check
+      - name: Qualify GS9-F2a TypeScript authority binding contract
+        working-directory: .
+        run: bunx vitest run packages/workflows/src/__tests__/workflow-runner-authority-binding-contract.test.ts
+      - name: Qualify GS9-F2a Go authority binding contract mirror
+        working-directory: services/workflow-control
+        run: go test -race ./runnerbindingcontract -count=1
       - name: Verify Workflow Checkpoint shadow golden contracts
         working-directory: .
         run: bun run workflow:checkpoint-shadow-golden -- --check

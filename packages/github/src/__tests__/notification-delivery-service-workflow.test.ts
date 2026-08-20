@@ -165,6 +165,7 @@ const triggerPaths = [
   'packages/workflows/contracts/workflow-effect-control/**',
   'packages/workflows/contracts/workflow-effect-shadow/**',
   'packages/workflows/contracts/workflow-runner/**',
+  'packages/workflows/contracts/workflow-runner-authority-binding/**',
   'packages/workflows/src/workflow-control-contract.ts',
   'packages/workflows/src/workflow-control-authority-contract.ts',
   'packages/workflows/src/workflow-budget-authority-contract.ts',
@@ -227,6 +228,7 @@ const triggerPaths = [
   'scripts/workflow-effect-control-contracts/**',
   'scripts/workflow-effect-shadow-contracts/**',
   'scripts/workflow-runner-contracts/**',
+  'scripts/workflow-runner-authority-binding-contracts/**',
   'scripts/qualification/workflow-control-postgres-gate.sh',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
@@ -396,6 +398,15 @@ describe('notification delivery service workflow', () => {
     const workflowBudgetGoIndex = stepIndex('Qualify GS9-E1 Go budget contract mirror');
     const workflowShadowGoldenIndex = stepIndex('Verify Workflow Control shadow golden contracts');
     const workflowRunnerGoldenIndex = stepIndex('Verify Workflow Runner golden contracts');
+    const workflowRunnerAuthorityBindingGoldenIndex = stepIndex(
+      'Verify Workflow Runner authority binding golden contracts',
+    );
+    const workflowRunnerAuthorityBindingTsIndex = stepIndex(
+      'Qualify GS9-F2a TypeScript authority binding contract',
+    );
+    const workflowRunnerAuthorityBindingGoIndex = stepIndex(
+      'Qualify GS9-F2a Go authority binding contract mirror',
+    );
     const workflowCheckpointGoldenIndex = stepIndex(
       'Verify Workflow Checkpoint shadow golden contracts',
     );
@@ -446,7 +457,12 @@ describe('notification delivery service workflow', () => {
     expect(workflowBudgetGoIndex).toBe(workflowBudgetTsIndex + 1);
     expect(workflowShadowGoldenIndex).toBe(workflowBudgetGoIndex + 1);
     expect(workflowRunnerGoldenIndex).toBe(workflowShadowGoldenIndex + 1);
-    expect(workflowCheckpointGoldenIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(workflowRunnerAuthorityBindingGoldenIndex).toBe(workflowRunnerGoldenIndex + 1);
+    expect(workflowRunnerAuthorityBindingTsIndex).toBe(
+      workflowRunnerAuthorityBindingGoldenIndex + 1,
+    );
+    expect(workflowRunnerAuthorityBindingGoIndex).toBe(workflowRunnerAuthorityBindingTsIndex + 1);
+    expect(workflowCheckpointGoldenIndex).toBe(workflowRunnerAuthorityBindingGoIndex + 1);
     expect(workflowCheckpointTsIndex).toBe(workflowCheckpointGoldenIndex + 1);
     expect(workflowEffectControlGoldenIndex).toBe(workflowCheckpointTsIndex + 1);
     expect(workflowEffectShadowGoldenIndex).toBe(workflowEffectControlGoldenIndex + 1);
@@ -574,6 +590,21 @@ describe('notification delivery service workflow', () => {
       name: 'Verify Workflow Runner golden contracts',
       'working-directory': '.',
       run: 'bun run workflow:runner-golden -- --check',
+    });
+    expect(job.steps[workflowRunnerAuthorityBindingGoldenIndex]).toEqual({
+      name: 'Verify Workflow Runner authority binding golden contracts',
+      'working-directory': '.',
+      run: 'bun run workflow:runner-authority-binding-golden -- --check',
+    });
+    expect(job.steps[workflowRunnerAuthorityBindingTsIndex]).toEqual({
+      name: 'Qualify GS9-F2a TypeScript authority binding contract',
+      'working-directory': '.',
+      run: 'bunx vitest run packages/workflows/src/__tests__/workflow-runner-authority-binding-contract.test.ts',
+    });
+    expect(job.steps[workflowRunnerAuthorityBindingGoIndex]).toEqual({
+      name: 'Qualify GS9-F2a Go authority binding contract mirror',
+      'working-directory': 'services/workflow-control',
+      run: 'go test -race ./runnerbindingcontract -count=1',
     });
     expect(job.steps[workflowCheckpointGoldenIndex]).toEqual({
       name: 'Verify Workflow Checkpoint shadow golden contracts',
@@ -732,6 +763,9 @@ describe('notification delivery service workflow', () => {
       'Qualify GS9-E1 Go budget contract mirror',
       'Verify Workflow Control shadow golden contracts',
       'Verify Workflow Runner golden contracts',
+      'Verify Workflow Runner authority binding golden contracts',
+      'Qualify GS9-F2a TypeScript authority binding contract',
+      'Qualify GS9-F2a Go authority binding contract mirror',
       'Verify Workflow Checkpoint shadow golden contracts',
       'Qualify GS9-C TypeScript checkpoint shadow',
       'Verify Workflow Effect Control golden contracts',
@@ -805,6 +839,12 @@ describe('notification delivery service workflow', () => {
       'Verify Workflow Control shadow golden contracts':
         'bun run workflow:shadow-golden -- --check',
       'Verify Workflow Runner golden contracts': 'bun run workflow:runner-golden -- --check',
+      'Verify Workflow Runner authority binding golden contracts':
+        'bun run workflow:runner-authority-binding-golden -- --check',
+      'Qualify GS9-F2a TypeScript authority binding contract':
+        'bunx vitest run packages/workflows/src/__tests__/workflow-runner-authority-binding-contract.test.ts',
+      'Qualify GS9-F2a Go authority binding contract mirror':
+        'go test -race ./runnerbindingcontract -count=1',
       'Verify Workflow Checkpoint shadow golden contracts':
         'bun run workflow:checkpoint-shadow-golden -- --check',
       'Qualify GS9-C TypeScript checkpoint shadow': lines(
@@ -898,6 +938,15 @@ describe('notification delivery service workflow', () => {
     );
     expect(rootPackage.scripts.typecheck).toContain(
       'tsc --noEmit -p scripts/workflow-runner-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts['workflow:runner-authority-binding-golden']).toBe(
+      'bun scripts/workflow-runner-authority-binding-contracts/index.ts',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'tsc --noEmit -p scripts/workflow-runner-authority-binding-contracts/tsconfig.json',
+    );
+    expect(rootPackage.scripts.typecheck).toContain(
+      'bun run workflow:runner-authority-binding-golden -- --check',
     );
     expect(rootPackage.scripts['workflow:authority-golden']).toBe(
       'bun scripts/workflow-authority-contracts/index.ts',

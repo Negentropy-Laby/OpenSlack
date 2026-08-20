@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-08-20
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -180,7 +180,45 @@ capabilities; exact negotiation cannot downgrade to v1. The transport persists t
 and exact runner receipt before a later domain-decision adapter may advance.
 
 F1 contains no real checkpoint, TypeScript effect, budget, or resume adapter. Complete runtime
-delivery, their decision ordering, and crash-after-authority recovery remain GS9-F2 exit gates.
+delivery, their decision ordering, and crash-after-authority recovery remain GS9-F2b exit gates
+after the F2a contract freeze.
 Runner-v1 bytes remain unchanged. Production v2 submission and new-record routing remain disabled;
 TypeScript remains production Workflow, checkpoint/resume, approval, effect, budget, provider,
 RunStore, and read authority.
+
+## GS9-F2a Authority-Binding Contract Boundary
+
+GS9-F2 is split into two sequential Red-zone deliveries. F2a freezes only the TypeScript-owned,
+exact-byte `openslack.workflow_runner_authority_binding.v1` companion family and a pure Go mirror;
+F2b later implements the durable adapters, migration, recovery and complete runtime delivery.
+
+The companion has closed `stage`, `resolution`, `receipt`, and `error` schemas and exactly six
+operations: `checkpoint_commit`, `effect_authorize`, `effect_complete`, `budget_reserve`,
+`budget_settle`, and `resume_advance`. `stage_event` durably reserves the exact future frozen
+runner-v2 event bytes before any source authority commit. After the source result exists,
+`commit_authority` must receive a durable resolution ACK before the worker sends that byte-identical
+runner event. Go may then consume the prepared resolution with the coordinator/global mutation and
+issue the runner event receipt. The runner must ACK delivery of that exact receipt before an
+optional decision is sent and separately ACK that decision before advancing. Each
+`control_delivery` ACK binds control event, kind, sequence, digest and active attempt/lease/fence.
+Source, phase, runner, coordinator or receipt evidence cannot substitute for another layer.
+
+The coordinator/global head advances run revision once for checkpoint commit, effect authorization,
+budget reserve, budget settlement and resume advance; only resume advance increments resume
+generation; effect completion increments neither. The embedded source authority has independent
+expected/accepted revision and generation heads. Both planes, together with route/build/epoch,
+job/attempt/lease/fence, operation, exact event bytes, source request/result and hashes, must agree.
+
+F2a source-locks the six frozen runner-v1, authority-v2 (including runner-v2), checkpoint,
+effect-control, effect-shadow and budget manifest SHA-256 values plus both F1 migration `000007`
+SQL hashes without modifying those assets. It names but does not register the future
+`workflow-control-runner-v2-runtime-delivery-v1` profile. It adds no database, migration `000008`, HTTP,
+runner/scheduler/worker, checkpoint/effect/budget/resume/provider adapter or runtime recovery. The
+F1 profile and source manifest remain F1, TypeScript remains the production Workflow authority,
+and production v2 submission, routing, canary, cutover, writer retirement, authenticated external
+qualification, Qoder, remote Connector, release, live, tag, npm and production claims remain
+outside this contract batch. Its exact evidence ceiling is
+`GS9-F2A CONTRACT LOCAL_PASS / Go exact mirror validator only / runtime authority delivery
+NOT_CLAIMED`; production Go Workflow/checkpoint/effect/budget/provider/RunStore/read authority,
+hosted exact-head checks, review resolution, independent human approval and merge remain separate
+and are not claimed.
