@@ -25,6 +25,7 @@ import {
   type WorkflowRunnerDescriptorPathSecurity,
 } from '../workflow-runner-descriptor-store.js';
 import type { WorkflowMeta } from '../types.js';
+import type { WorkflowRunnerV2ExecutionDescriptor } from '../workflow-runner-v2-descriptor.js';
 
 const roots: string[] = [];
 const now = '2026-08-04T01:00:00.000Z';
@@ -130,6 +131,10 @@ afterEach(async () => {
 
 describe('GS8-B sealed execution descriptor', () => {
   it('uses closed canonical data and independent full domain hashes', () => {
+    if (false) {
+      // @ts-expect-error non-v1 descriptor stores require an explicit security policy and codec
+      new WorkflowRunnerDescriptorStore<WorkflowRunnerV2ExecutionDescriptor>('.');
+    }
     const value = descriptor();
     expect(value.workflowSourceHash).toMatch(/^[0-9a-f]{64}$/u);
     expect(value.manifestHash).toMatch(/^[0-9a-f]{64}$/u);

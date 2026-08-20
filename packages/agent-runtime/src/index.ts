@@ -67,6 +67,11 @@ export type {
   ProviderTokenUsage,
   BuildProviderUsageReceiptInput,
 } from './provider-usage-evidence.js';
+export type {
+  ProviderAttemptPort,
+  ProviderAttemptReservation,
+  ProviderAttemptReserveInput,
+} from './provider-attempt-port.js';
 export {
   PROVIDER_USAGE_RECEIPT_SCHEMA,
   PROVIDER_USAGE_EVIDENCE_MAX_ENTRIES,

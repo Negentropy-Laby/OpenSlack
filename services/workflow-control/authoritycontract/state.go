@@ -156,6 +156,12 @@ func validateRoute(value any, path string) (Route, error) {
 	return Route{Backend: backend, Authority: authority, RoutingEpoch: routingEpoch, AuthorityBuildHash: buildHash}, nil
 }
 
+// ValidateRoute exposes the frozen route vocabulary to adjacent runner
+// admission code without duplicating backend/authority/hash rules.
+func ValidateRoute(value any, path string) (Route, error) {
+	return validateRoute(value, path)
+}
+
 func validateCheckpoint(value any, revision, resumeGeneration int64) (*CheckpointHead, error) {
 	if value == nil {
 		return nil, nil

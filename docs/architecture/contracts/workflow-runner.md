@@ -330,3 +330,34 @@ GS9-B and later work must separately qualify shadow/differential, reads, routing
 acceptance, response loss, restart, duplicate/conflict, recovery, canary, and higher-epoch rollback
 before any new record can move. GS8-A/GS8-B and `GS9-A LOCAL_PASS` cannot be used as evidence that
 Go Workflow Control authority exists.
+
+## GS9-F1 default-off runner v2 foundation
+
+GS9-F1 consumes the already frozen `openslack.workflow_runner.v2` vocabulary without changing the
+runner-v1 bundle, manifest, golden vectors, idempotency prefixes, or generated Go mirror. It adds
+only the admission/storage foundation, exact `[v1, v2]` negotiation skeleton, and the
+receipt-before-decision transport boundary. A foundation job pins protocol v2, the exact
+route/build/epoch, run revision, resume generation, and required capabilities; a v1-only worker,
+missing capability, or binding drift is rejected with no downgrade.
+
+The foundation can persist and bind a worker event to the current job/attempt/lease/fence and
+run/revision/generation/route, create the exact runner receipt, and require receipt delivery before
+a later decision adapter may advance. It does not implement the GS9-C checkpoint, GS9-D TypeScript
+effect, GS9-E budget, or resume adapters, and therefore does not claim end-to-end runtime delivery,
+checkpoint/effect/budget decision completion, or crash-after-authority recovery. Those remain the
+separate GS9-F2 integration gate.
+
+Within the foundation session, all receiptable events share one FIFO lane. Heartbeat never
+preempts a budget, effect, checkpoint, cancel acknowledgement, or terminal event; cancellation may
+abort execution immediately, but its acknowledgement drains behind the event already awaiting a
+receipt and ahead of the sealed terminal event. A receipt-proven terminal is immutable even when
+delivery of that terminal event's own receipt is uncertain. Domain authority uncertainty and
+uncertain earlier control delivery still latch reconciliation. A `resume_offer.newAttemptId` is a
+new workflow resume identity and must differ from the existing runner lease `attemptId`; the
+envelope and receipt continue to use the unchanged lease attempt identity.
+
+The path is qualification-only and default-off. It does not enable production v2 job submission,
+new-record routing, canary or cutover; it does not make Go the Workflow state-machine, checkpoint,
+effect-approval, effect-execution, budget-policy, or user-visible read authority. TypeScript remains
+the production Workflow authority, and the default image continues to start `/server` without v2
+submission or routing.

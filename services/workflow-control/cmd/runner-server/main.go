@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerapp"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
@@ -56,7 +57,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := databaseready.RequireCleanSchema(startup, pool, databaseready.RunnerRange(config.CheckpointShadowEnabled, config.EffectShadowEnabled)); err != nil {
+	schemaRange := databaseready.RunnerRange(config.CheckpointShadowEnabled, config.EffectShadowEnabled)
+	if config.V2QualificationEnabled {
+		schemaRange = databaseready.RunnerV2FoundationProfile
+	}
+	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, schemaRange)
+	if err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
 	}
@@ -100,7 +106,25 @@ func main() {
 		logger.Error("workflow_runner_control_supervisor_invalid", "code", "SUPERVISOR_INVALID")
 		os.Exit(1)
 	}
-	store := runnerpostgres.New(pool)
+	store := runnerpostgres.NewForSchema(pool, schemaVersion)
+	var v2Session runnerscheduler.ProtocolSession
+	if config.V2QualificationEnabled {
+		v2Supervisor, supervisorErr := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion)
+		if supervisorErr != nil {
+			logger.Error("workflow_runner_control_v2_supervisor_invalid", "code", "SUPERVISOR_INVALID")
+			os.Exit(1)
+		}
+		v2Session, err = runnerscheduler.NewV2Session(runnerscheduler.V2SessionConfig{
+			Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: v2Supervisor},
+			ControlBuildHash: config.ServiceBuildSHA, ExpectedRunnerBuildHash: registry.RunnerBuildHash(),
+			HeartbeatInterval: config.HeartbeatInterval, LeaseOfferTimeout: config.LeaseOfferTimeout,
+			CancelGrace: config.CancelGrace, TerminalExitGrace: config.TerminalExitGrace,
+		})
+		if err != nil {
+			logger.Error("workflow_runner_control_v2_session_invalid", "code", "COMPOSITION_INVALID")
+			os.Exit(1)
+		}
+	}
 	session, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
 		Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: supervisor},
 		ControlBuildHash:  config.ServiceBuildSHA,
@@ -114,6 +138,7 @@ func main() {
 	}
 	scheduler, err := runnerscheduler.New(runnerscheduler.Config{
 		Store: store, Session: session, WorkspaceID: config.WorkspaceID,
+		V2Session: v2Session, V2Qualification: config.V2QualificationEnabled,
 		SupervisorInstanceID: bootInstanceID, MaxProcesses: config.MaxProcesses,
 		LeaseOfferTimeout: config.LeaseOfferTimeout, LeaseDuration: config.LeaseDuration,
 		PollInterval: config.PollInterval, RecoveryInterval: config.RecoveryInterval,
@@ -124,6 +149,7 @@ func main() {
 	}
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
+		V2Store: store, V2Qualification: config.V2QualificationEnabled, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
 	})
 	if err != nil {
@@ -134,6 +160,7 @@ func main() {
 		"http_bind", config.HTTPBind, "network_mode", config.NetworkMode,
 		"workspace_id", config.WorkspaceID, "build_sha", config.ServiceBuildSHA,
 		"worker_bundle_id", registry.BundleID(), "worker_build_hash", registry.RunnerBuildHash(),
+		"v2_qualification", config.V2QualificationEnabled, "routing_activated", false,
 	)
 	if err := run(ctx, service, scheduler, config); err != nil {
 		logger.Error("workflow_runner_control_stopped_with_error", "code", "RUNNER_CONTROL_FAILED")

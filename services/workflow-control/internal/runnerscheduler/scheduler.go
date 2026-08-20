@@ -7,12 +7,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
+
+type ProtocolSession interface {
+	Run(context.Context, runnerstore.AttemptLease) error
+}
 
 type Config struct {
 	Store                runnerstore.Store
 	Session              *Session
+	V2Session            ProtocolSession
+	V2Qualification      bool
 	WorkspaceID          string
 	SupervisorInstanceID string
 	MaxProcesses         int
@@ -28,6 +35,9 @@ type Scheduler struct{ config Config }
 func New(config Config) (*Scheduler, error) {
 	if config.Store == nil || config.Session == nil {
 		return nil, fmt.Errorf("runner scheduler store and session are required")
+	}
+	if config.V2Qualification && config.V2Session == nil {
+		return nil, fmt.Errorf("runner scheduler v2 qualification session is required when enabled")
 	}
 	if config.WorkspaceID == "" || config.SupervisorInstanceID == "" {
 		return nil, fmt.Errorf("runner scheduler identities are required")
@@ -77,9 +87,27 @@ func (scheduler *Scheduler) workerLoop(ctx context.Context, failures chan<- erro
 	ticker := time.NewTicker(scheduler.config.PollInterval)
 	defer ticker.Stop()
 	for {
-		lease, err := scheduler.config.Store.ClaimNext(ctx, runnerstore.ClaimInput{WorkspaceID: scheduler.config.WorkspaceID, SupervisorInstanceID: scheduler.config.SupervisorInstanceID, LeaseOfferTimeout: scheduler.config.LeaseOfferTimeout, LeaseDuration: scheduler.config.LeaseDuration, Now: scheduler.config.Now()})
+		protocols := runnerprotocols.Enabled(scheduler.config.V2Qualification)
+		lease, err := scheduler.config.Store.ClaimNext(ctx, runnerstore.ClaimInput{WorkspaceID: scheduler.config.WorkspaceID, SupervisorInstanceID: scheduler.config.SupervisorInstanceID, LeaseOfferTimeout: scheduler.config.LeaseOfferTimeout, LeaseDuration: scheduler.config.LeaseDuration, Now: scheduler.config.Now(), ProtocolVersions: protocols})
 		if err == nil {
-			runErr := scheduler.config.Session.Run(ctx, lease)
+			selected := ProtocolSession(scheduler.config.Session)
+			if lease.RequiredProtocolVersion == runnerprotocols.V2 {
+				if !scheduler.config.V2Qualification || scheduler.config.V2Session == nil {
+					select {
+					case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "v2 lease was claimed without the qualification session", nil):
+					case <-ctx.Done():
+					}
+					return
+				}
+				selected = scheduler.config.V2Session
+			} else if lease.RequiredProtocolVersion != "" && lease.RequiredProtocolVersion != runnerprotocols.V1 {
+				select {
+				case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "claimed lease requires an unsupported protocol", nil):
+				case <-ctx.Done():
+				}
+				return
+			}
+			runErr := selected.Run(ctx, lease)
 			if runErr == nil {
 				continue
 			}

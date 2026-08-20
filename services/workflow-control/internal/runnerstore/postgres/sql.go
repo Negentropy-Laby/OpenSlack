@@ -23,11 +23,17 @@ INSERT INTO workflow_runner_job_receipts (
 	claimJobSQL = `
 SELECT workspace_id, job_id, workflow_run_id, correlation_id,
        execution_descriptor_ref, execution_descriptor_hash, job_spec_hash,
-       workflow_id, workflow_version, workflow_source_hash, manifest_hash, input_hash,
-       whole_deadline, revision, current_fence
-FROM workflow_runner_jobs
-WHERE workspace_id=$1 AND state='queued' AND dispatch_state <> 'dead'
-  AND dispatch_not_before <= $2 AND whole_deadline > $2
+	       workflow_id, workflow_version, workflow_source_hash, manifest_hash, input_hash,
+	       whole_deadline, revision, current_fence,
+	       required_protocol_version, required_capabilities,
+	       authority_backend, workflow_authority, routing_epoch,
+	       authority_build_hash, required_run_revision, required_resume_generation
+	FROM workflow_runner_jobs j
+	WHERE workspace_id=$1 AND state='queued' AND dispatch_state <> 'dead'
+	  AND dispatch_not_before <= $2 AND whole_deadline > $2
+	  AND required_protocol_version = ANY($3::TEXT[])
+	  AND (required_protocol_version <> 'openslack.workflow_runner.v2'
+	       OR (authority_backend='ts-local' AND workflow_authority='typescript'))
 ORDER BY created_at, workspace_id, job_id
 FOR UPDATE SKIP LOCKED
 LIMIT 1`

@@ -117,6 +117,7 @@ export {
   validateWorkflowControlAuthorityDecimal,
   validateWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityReceipt,
+  validateWorkflowControlAuthorityRoute,
   validateWorkflowControlAuthorityState,
   validateWorkflowControlAuthorityTransition,
   workflowControlAuthorityDirectionForKind,
@@ -790,6 +791,7 @@ export {
   WORKFLOW_RUNNER_CANCEL_ACK_STATES,
   WORKFLOW_RUNNER_CANCEL_REASONS,
   WORKFLOW_RUNNER_CAPABILITIES,
+  isWorkflowRunnerCapabilitySet,
   WORKFLOW_RUNNER_CONTRACT_ERROR_CODES,
   WORKFLOW_RUNNER_CONTRACT_LIMITS,
   WORKFLOW_RUNNER_DIRECTIONS,
@@ -923,6 +925,61 @@ export type {
   WorkflowRunnerTerminalMessage,
   WorkflowRunnerTerminalPayload,
 } from './workflow-runner-contract.js';
+
+// ── Workflow Runner GS9-F qualification-only v2 transport ───────────────
+export {
+  assertWorkflowRunnerV2AdmissionBinding,
+  canonicalWorkflowRunnerV2DescriptorJson,
+  createWorkflowRunnerV2ExecutionDescriptor,
+  hashWorkflowRunnerV2Descriptor,
+  hashWorkflowRunnerV2Domain,
+  hashWorkflowRunnerV2Input,
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Source,
+  validateWorkflowRunnerV2ExecutionDescriptor,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_LIMITS,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_SCHEMA,
+  WorkflowRunnerV2DescriptorError,
+} from './workflow-runner-v2-descriptor.js';
+export type {
+  CreateWorkflowRunnerV2ExecutionDescriptorInput,
+  WorkflowRunnerV2BudgetPolicyBinding,
+  WorkflowRunnerV2Capability,
+  WorkflowRunnerV2ExecutionDescriptor,
+} from './workflow-runner-v2-descriptor.js';
+export {
+  prepareWorkflowRunnerV2JobSpec,
+  validateWorkflowRunnerV2JobReceipt,
+  validateWorkflowRunnerV2JobSpec,
+  WORKFLOW_RUNNER_V2_JOB_RECEIPT_SCHEMA,
+  WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
+  WorkflowRunnerV2ControlClient,
+  WorkflowRunnerV2ControlError,
+} from './workflow-runner-v2-control-client.js';
+export type {
+  PreparedWorkflowRunnerV2JobSpec,
+  WorkflowRunnerV2ControlPort,
+  WorkflowRunnerV2JobReceipt,
+  WorkflowRunnerV2JobSpec,
+  WorkflowRunnerV2RequiredCapability,
+} from './workflow-runner-v2-control-client.js';
+export {
+  decodeWorkflowRunnerV2Frame,
+  WorkflowRunnerV2FramingError,
+  WorkflowRunnerV2JsonlDecoder,
+} from './workflow-runner-v2-framing.js';
+export {
+  WorkflowRunnerV2Session,
+  WorkflowRunnerV2SessionError,
+} from './workflow-runner-v2-session.js';
+export type {
+  WorkflowRunnerV2DescriptorStore,
+  WorkflowRunnerV2ExecutionContext,
+  WorkflowRunnerV2PreparedSource,
+  WorkflowRunnerV2SessionOptions,
+  WorkflowRunnerV2SessionState,
+  WorkflowRunnerV2SourceLoader,
+} from './workflow-runner-v2-session.js';
 export {
   bindLocalHumanSubject,
   createLocalHumanAttestationProvider,

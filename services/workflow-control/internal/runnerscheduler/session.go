@@ -89,12 +89,6 @@ func NewSession(config SessionConfig) (*Session, error) {
 	return &Session{config: config}, nil
 }
 
-type decodedFrame struct {
-	message runnerprotocol.Envelope
-	exact   []byte
-	err     error
-}
-
 type sessionErrorDisposition uint8
 
 const (
@@ -129,8 +123,10 @@ func (session *Session) Run(ctx context.Context, lease runnerstore.AttemptLease)
 		}
 		return settledSessionError(view, fmt.Errorf("start sealed TypeScript worker: %w", err))
 	}
-	frames := make(chan decodedFrame, 1)
-	go decodeFrames(process.Stdout(), frames)
+	decodeCtx, cancelDecode := context.WithCancel(ctx)
+	defer cancelDecode()
+	frames := make(chan protocolDecodedFrame[runnerprotocol.Envelope], 1)
+	go decodeProtocolFrames(decodeCtx, newFrameReader(process.Stdout()), frames)
 	first, err := awaitFrame(ctx, frames, clock.remainingOffer())
 	if err != nil {
 		return session.failProcess(ctx, process, lease, runnerstore.ProcessCrashed, fmt.Errorf("runner hello: %w", err))
@@ -281,31 +277,19 @@ func (session *Session) Run(ctx context.Context, lease runnerstore.AttemptLease)
 	}
 }
 
-func decodeFrames(source io.Reader, destination chan<- decodedFrame) {
-	defer close(destination)
-	reader := newFrameReader(source)
-	for {
-		message, exact, err := reader.Read()
-		destination <- decodedFrame{message: message, exact: exact, err: err}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func awaitFrame(ctx context.Context, frames <-chan decodedFrame, timeout time.Duration) (decodedFrame, error) {
+func awaitFrame(ctx context.Context, frames <-chan protocolDecodedFrame[runnerprotocol.Envelope], timeout time.Duration) (protocolDecodedFrame[runnerprotocol.Envelope], error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case value, ok := <-frames:
 		if !ok {
-			return decodedFrame{}, io.EOF
+			return protocolDecodedFrame[runnerprotocol.Envelope]{}, io.EOF
 		}
 		return value, value.err
 	case <-timer.C:
-		return decodedFrame{}, runnerstore.Failure(runnerstore.ErrorLeaseExpired, "runner negotiation deadline expired", nil)
+		return protocolDecodedFrame[runnerprotocol.Envelope]{}, runnerstore.Failure(runnerstore.ErrorLeaseExpired, "runner negotiation deadline expired", nil)
 	case <-ctx.Done():
-		return decodedFrame{}, ctx.Err()
+		return protocolDecodedFrame[runnerprotocol.Envelope]{}, ctx.Err()
 	}
 }
 

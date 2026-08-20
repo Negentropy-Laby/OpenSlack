@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -18,7 +19,7 @@ import {
   type WorkflowRunnerSourceLoader,
 } from './workflow-runner-session.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
-import type { RunResult, WorkflowModule } from './types.js';
+import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import {
@@ -38,8 +39,33 @@ import {
 import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
 import { validateWorkflowLocalShadowConfig } from './internal/workflow-local-shadow-config.js';
+import type {
+  ProviderAttemptPort,
+  ProviderAttemptReservation,
+  ProviderAttemptReserveInput,
+  ProviderUsageReceipt,
+} from '@openslack/agent-runtime';
+import { workflowBudgetAuthorityChargeNanoUsd } from './workflow-budget-authority-contract.js';
+import {
+  decodeWorkflowRunnerV2Frame,
+  WorkflowRunnerV2JsonlDecoder,
+} from './workflow-runner-v2-framing.js';
+import {
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Source,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+  type WorkflowRunnerV2ExecutionDescriptor,
+} from './workflow-runner-v2-descriptor.js';
+import {
+  WorkflowRunnerV2Session,
+  WorkflowRunnerV2SessionError,
+  type WorkflowRunnerV2ExecutionContext,
+  type WorkflowRunnerV2SourceLoader,
+} from './workflow-runner-v2-session.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
+export const WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV =
+  'OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED' as const;
 
 export interface WorkflowRunnerWorkerConfig {
   readonly enabled: true;
@@ -61,10 +87,29 @@ export interface WorkflowRunnerWorkerConfig {
   };
 }
 
+export interface WorkflowRunnerV2QualificationWorkerConfig {
+  readonly enabled: true;
+  readonly qualificationOnly: true;
+  readonly runtimeBoundaryMode: 'provider-attempt-only';
+  readonly workspaceId: string;
+  readonly workspaceRoot: string;
+  readonly descriptorRoot: string;
+  readonly runnerBuildHash: string;
+}
+
 export class WorkflowRunnerWorkerConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'WorkflowRunnerWorkerConfigError';
+  }
+}
+
+export class WorkflowRunnerV2RuntimeBoundaryUnavailableError extends Error {
+  readonly code = 'WORKFLOW_RUNNER_V2_RUNTIME_BOUNDARY_UNAVAILABLE' as const;
+
+  constructor(boundary: 'resume' | 'checkpoint' | 'effect') {
+    super(`Workflow runner v2 ${boundary} delivery remains unavailable in GS9-F1.`);
+    this.name = 'WorkflowRunnerV2RuntimeBoundaryUnavailableError';
   }
 }
 
@@ -311,13 +356,68 @@ export function loadWorkflowRunnerWorkerConfig(
   });
 }
 
+export function loadWorkflowRunnerV2QualificationWorkerConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): WorkflowRunnerV2QualificationWorkerConfig {
+  if (environment[WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV] !== '1') {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Workflow runner v2 qualification is default-off; explicit enablement is required.',
+    );
+  }
+  if (environment[WORKFLOW_RUNNER_WORKER_ENABLED_ENV] === '1') {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Workflow runner v1 and v2 qualification modes cannot be enabled together.',
+    );
+  }
+  const unavailableBoundaryKeys = [
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID',
+    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID',
+    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT',
+  ] as const;
+  if (unavailableBoundaryKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Workflow runner v2 GS9-F1 cannot configure checkpoint or effect authority boundaries.',
+    );
+  }
+  const workspaceId = environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID;
+  const runnerBuildHash = environment.OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH;
+  if (!workspaceId || !SAFE_ID.test(workspaceId)) {
+    throw new WorkflowRunnerWorkerConfigError('V2 qualification workspace ID is invalid.');
+  }
+  if (!runnerBuildHash || !HASH.test(runnerBuildHash)) {
+    throw new WorkflowRunnerWorkerConfigError('V2 qualification runner build hash is invalid.');
+  }
+  return Object.freeze({
+    enabled: true,
+    qualificationOnly: true,
+    runtimeBoundaryMode: 'provider-attempt-only',
+    workspaceId,
+    workspaceRoot: absolutePath(
+      environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
+      'V2 qualification workspace root',
+    ),
+    descriptorRoot: absolutePath(
+      environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT,
+      'V2 qualification descriptor root',
+    ),
+    runnerBuildHash,
+  });
+}
+
 function within(root: string, candidate: string): boolean {
   const rel = relative(root, candidate);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 async function sourceRoot(
-  descriptor: WorkflowRunnerExecutionDescriptor,
+  descriptor: Pick<WorkflowRunnerExecutionDescriptor, 'workflowSource'>,
   workspaceRoot: string,
 ): Promise<string> {
   switch (descriptor.workflowSource) {
@@ -332,16 +432,49 @@ async function sourceRoot(
   }
 }
 
-export function createSealedWorkflowRunnerSourceLoader(
+interface SealedWorkflowDescriptor {
+  readonly workflowSource: WorkflowRunnerExecutionDescriptor['workflowSource'];
+  readonly workflowId: string;
+  readonly workflowVersion: string;
+  readonly workflowSourceHash: string;
+  readonly manifestHash: string;
+}
+
+interface SealedSourcePolicy<TDescriptor extends SealedWorkflowDescriptor> {
+  readonly hashSource: (bytes: Uint8Array) => string;
+  readonly hashManifest: (manifest: WorkflowMeta) => string;
+  readonly beforePrepare?: (descriptor: TDescriptor) => void;
+  readonly messages: {
+    readonly unsafeRoot: string;
+    readonly nonCanonicalRoot: string;
+    readonly ambiguousEntry: string;
+    readonly unsafeSource: string;
+    readonly escapedSource: string;
+    readonly changedRoot: string;
+    readonly sourceHash: string;
+    readonly changedSource: string;
+    readonly loadedIdentity: string;
+  };
+}
+
+function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflowDescriptor>(
   workspaceRoot: string,
-): WorkflowRunnerSourceLoader<PreparedWorkflowSource> {
+  policy: SealedSourcePolicy<TDescriptor>,
+): {
+  readonly prepare: (descriptor: TDescriptor) => Promise<PreparedWorkflowSource>;
+  readonly load: (
+    prepared: PreparedWorkflowSource,
+    descriptor: TDescriptor,
+  ) => Promise<WorkflowModule>;
+} {
   return Object.freeze({
-    async prepare(descriptor: WorkflowRunnerExecutionDescriptor): Promise<PreparedWorkflowSource> {
+    async prepare(descriptor: TDescriptor): Promise<PreparedWorkflowSource> {
+      policy.beforePrepare?.(descriptor);
       const root = await sourceRoot(descriptor, workspaceRoot);
       await assertNoWindowsReparseComponents(root);
       const rootBefore = await lstat(root, { bigint: true });
       if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
-        throw new Error('Sealed workflow catalog root is unsafe.');
+        throw new Error(policy.messages.unsafeRoot);
       }
       const rootReal = await realpath(root);
       const rootCanonical = await lstat(rootReal, { bigint: true });
@@ -352,19 +485,19 @@ export function createSealedWorkflowRunnerSourceLoader(
           ? !sameFilesystemObject(rootBefore, rootCanonical)
           : rootReal !== resolve(root))
       ) {
-        throw new Error('Sealed workflow catalog root must be canonical and non-symlinked.');
+        throw new Error(policy.messages.nonCanonicalRoot);
       }
       const entries = new Set(await readdir(root));
       const candidates = SOURCE_EXTENSIONS.filter((extension) =>
         entries.has(`${descriptor.workflowId}${extension}`),
       ).map((extension) => join(rootReal, `${descriptor.workflowId}${extension}`));
       if (candidates.length !== 1) {
-        throw new Error('Sealed workflow catalog entry is missing or ambiguous.');
+        throw new Error(policy.messages.ambiguousEntry);
       }
       const path = candidates[0]!;
       const pathBefore = await lstat(path, { bigint: true });
       if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
-        throw new Error('Sealed workflow source has an unsafe type.');
+        throw new Error(policy.messages.unsafeSource);
       }
       const canonical = await realpath(path);
       const canonicalStat = await lstat(canonical, { bigint: true });
@@ -376,15 +509,15 @@ export function createSealedWorkflowRunnerSourceLoader(
           : canonical !== path) ||
         !within(rootReal, canonical)
       ) {
-        throw new Error('Sealed workflow source escapes its catalog root.');
+        throw new Error(policy.messages.escapedSource);
       }
       const source = await readSealedWorkflowSource(canonical);
       const rootAfter = await lstat(root, { bigint: true });
       if (!sameSourceIdentity(rootBefore, rootAfter)) {
-        throw new Error('Sealed workflow catalog root changed during validation.');
+        throw new Error(policy.messages.changedRoot);
       }
-      if (hashWorkflowRunnerSource(source.bytes) !== descriptor.workflowSourceHash) {
-        throw new Error('Sealed workflow source hash does not match the descriptor.');
+      if (policy.hashSource(source.bytes) !== descriptor.workflowSourceHash) {
+        throw new Error(policy.messages.sourceHash);
       }
       // Project and user catalogs accept only one hash-bound source object.
       // Builtins are reviewed code inside the sealed runner distribution: the
@@ -399,19 +532,16 @@ export function createSealedWorkflowRunnerSourceLoader(
         identity: sourceIdentity(source.stat),
       });
     },
-    async load(
-      descriptor: WorkflowRunnerExecutionDescriptor,
-      prepared: PreparedWorkflowSource,
-    ): Promise<WorkflowModule> {
+    async load(prepared: PreparedWorkflowSource, descriptor: TDescriptor): Promise<WorkflowModule> {
       // This is the first dynamic import on the worker execution path and the
       // session invokes it only after lease_accept has an advancing receipt.
       const beforeImport = await readSealedWorkflowSource(prepared.path);
       if (
         sourceIdentity(beforeImport.stat) !== prepared.identity ||
         !beforeImport.bytes.equals(prepared.bytes) ||
-        hashWorkflowRunnerSource(beforeImport.bytes) !== descriptor.workflowSourceHash
+        policy.hashSource(beforeImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error('Sealed workflow source changed after lease acceptance.');
+        throw new Error(policy.messages.changedSource);
       }
       const { loadWorkflow } = await import('./loader.js');
       const workflow = await loadWorkflow(prepared.path, {
@@ -426,12 +556,65 @@ export function createSealedWorkflowRunnerSourceLoader(
         !afterImport.bytes.equals(prepared.bytes) ||
         workflow.meta.name !== descriptor.workflowId ||
         (workflow.meta.version ?? '0.0.0') !== descriptor.workflowVersion ||
-        hashWorkflowRunnerManifest(workflow.meta) !== descriptor.manifestHash ||
-        hashWorkflowRunnerSource(afterImport.bytes) !== descriptor.workflowSourceHash
+        policy.hashManifest(workflow.meta) !== descriptor.manifestHash ||
+        policy.hashSource(afterImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error('Loaded workflow identity does not match the sealed descriptor.');
+        throw new Error(policy.messages.loadedIdentity);
       }
       return workflow;
+    },
+  });
+}
+
+export function createSealedWorkflowRunnerSourceLoader(
+  workspaceRoot: string,
+): WorkflowRunnerSourceLoader<PreparedWorkflowSource> {
+  const core = createSealedWorkflowSourceLoaderCore<WorkflowRunnerExecutionDescriptor>(
+    workspaceRoot,
+    {
+      hashSource: hashWorkflowRunnerSource,
+      hashManifest: hashWorkflowRunnerManifest,
+      messages: {
+        unsafeRoot: 'Sealed workflow catalog root is unsafe.',
+        nonCanonicalRoot: 'Sealed workflow catalog root must be canonical and non-symlinked.',
+        ambiguousEntry: 'Sealed workflow catalog entry is missing or ambiguous.',
+        unsafeSource: 'Sealed workflow source has an unsafe type.',
+        escapedSource: 'Sealed workflow source escapes its catalog root.',
+        changedRoot: 'Sealed workflow catalog root changed during validation.',
+        sourceHash: 'Sealed workflow source hash does not match the descriptor.',
+        changedSource: 'Sealed workflow source changed after lease acceptance.',
+        loadedIdentity: 'Loaded workflow identity does not match the sealed descriptor.',
+      },
+    },
+  );
+  return Object.freeze({
+    prepare: core.prepare,
+    load: (descriptor: WorkflowRunnerExecutionDescriptor, prepared: PreparedWorkflowSource) =>
+      core.load(prepared, descriptor),
+  });
+}
+
+export function createSealedWorkflowRunnerV2SourceLoader(
+  workspaceRoot: string,
+): WorkflowRunnerV2SourceLoader<PreparedWorkflowSource, WorkflowModule> {
+  return createSealedWorkflowSourceLoaderCore<WorkflowRunnerV2ExecutionDescriptor>(workspaceRoot, {
+    hashSource: hashWorkflowRunnerV2Source,
+    hashManifest: hashWorkflowRunnerV2Manifest,
+    beforePrepare(descriptor) {
+      if (descriptor.resumeGeneration !== 0) {
+        throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
+      }
+    },
+    messages: {
+      unsafeRoot: 'Sealed v2 workflow catalog root is unsafe.',
+      nonCanonicalRoot: 'Sealed v2 workflow catalog root must be canonical and non-symlinked.',
+      ambiguousEntry: 'Sealed v2 workflow catalog entry is missing or ambiguous.',
+      unsafeSource: 'Sealed v2 workflow source has an unsafe type.',
+      escapedSource: 'Sealed v2 workflow source escapes its catalog root.',
+      changedRoot: 'Sealed v2 workflow catalog root changed during validation.',
+      sourceHash: 'Sealed v2 workflow source hash does not match the descriptor.',
+      changedSource: 'Sealed v2 workflow source changed after lease acceptance.',
+      loadedIdentity: 'Loaded v2 workflow identity does not match the sealed descriptor.',
     },
   });
 }
@@ -727,6 +910,280 @@ export async function runWorkflowRunnerWorker(
         });
     }, 2_000);
   }
+}
+
+class WorkflowRunnerV2BudgetBoundaryError extends Error {
+  constructor(
+    readonly code:
+      | 'WORKFLOW_RUNNER_V2_BUDGET_REJECTED'
+      | 'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH'
+      | 'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'WorkflowRunnerV2BudgetBoundaryError';
+  }
+}
+
+function createWorkflowRunnerV2ProviderAttemptPort(
+  descriptor: WorkflowRunnerV2ExecutionDescriptor,
+  context: WorkflowRunnerV2ExecutionContext,
+): ProviderAttemptPort {
+  const reservations = new Map<
+    string,
+    {
+      readonly reservation: ProviderAttemptReservation;
+      readonly providerAttempt: string;
+      readonly requestedTokens: string;
+    }
+  >();
+  // F1 proves only reserve-before-fetch and settle-after-usage ordering. The
+  // frozen request does not carry expected provider/model/provider-run hashes,
+  // so this seam deliberately makes no E1 identity-propagation or budget-
+  // authority claim.
+  return Object.freeze({
+    async reserve(input: ProviderAttemptReserveInput) {
+      const identity = createHash('sha256')
+        .update(
+          [descriptor.workflowRunId, input.providerRunId, input.providerAttempt].join('\0'),
+          'utf8',
+        )
+        .digest('hex')
+        .slice(0, 32);
+      const reservationId = `reservation-${identity}`;
+      const callId = `call-${identity}`;
+      const decision = await context.reserveBudget({
+        reservationId,
+        callId,
+        policyHash: descriptor.budgetPolicy.policyHash,
+        requestedTokens: input.requestedTokens,
+        requestedCostNanoUsd: workflowBudgetAuthorityChargeNanoUsd(
+          input.requestedTokens,
+          descriptor.budgetPolicy.rateNanoUsdPerToken,
+        ),
+        requestedCalls: '1',
+      });
+      const payload = decision.payload;
+      if (payload.status === 'reconciliation_required') {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+          'Budget reserve outcome requires reconciliation.',
+        );
+      }
+      if (payload.status !== 'reserved') {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_REJECTED',
+          'Budget authority rejected the provider attempt.',
+        );
+      }
+      if (
+        payload.reservationId !== reservationId ||
+        typeof payload.authorizedTokens !== 'string' ||
+        !/^(?:0|[1-9][0-9]*)$/u.test(payload.authorizedTokens) ||
+        BigInt(payload.authorizedTokens) < 1n ||
+        BigInt(payload.authorizedTokens) > BigInt(input.requestedTokens) ||
+        payload.authorizedCalls !== '1'
+      ) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
+          'Budget authorization does not bind the requested provider attempt.',
+        );
+      }
+      const reservation = Object.freeze({
+        reservationId,
+        callId,
+        authorizedTokens: payload.authorizedTokens,
+      });
+      reservations.set(reservationId, {
+        reservation,
+        providerAttempt: input.providerAttempt,
+        requestedTokens: input.requestedTokens,
+      });
+      return reservation;
+    },
+    async settle(reservation: ProviderAttemptReservation, usage: ProviderUsageReceipt) {
+      const opened = reservations.get(reservation.reservationId);
+      if (
+        !opened ||
+        opened.reservation !== reservation ||
+        reservation.callId !== opened.reservation.callId ||
+        usage.attempt !== opened.providerAttempt
+      ) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
+          'Provider usage does not bind an open budget reservation.',
+        );
+      }
+      const totalTokens = usage.status === 'reported' ? usage.totalTokens : null;
+      const receiptHash = usage.receiptHash.startsWith('sha256:')
+        ? usage.receiptHash.slice('sha256:'.length)
+        : usage.receiptHash;
+      if (!HASH.test(receiptHash)) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+          'Provider usage receipt hash is invalid.',
+        );
+      }
+      const settled = totalTokens !== null && BigInt(totalTokens) <= BigInt(opened.requestedTokens);
+      await context.reportBudgetUsage({
+        reservationId: reservation.reservationId,
+        callId: reservation.callId,
+        providerReceiptHash: receiptHash,
+        actualTokens: totalTokens ?? '0',
+        actualCostNanoUsd:
+          totalTokens === null
+            ? '0'
+            : workflowBudgetAuthorityChargeNanoUsd(
+                totalTokens,
+                descriptor.budgetPolicy.rateNanoUsdPerToken,
+              ),
+        actualCalls: '1',
+        settlementStatus: settled ? 'settled' : 'reconciliation_required',
+      });
+      reservations.delete(reservation.reservationId);
+      if (!settled) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+          'Provider usage is missing, unreported, or exceeded its reservation.',
+        );
+      }
+    },
+  });
+}
+
+async function executeWorkflowRunnerV2QualificationJob(
+  workflow: WorkflowModule,
+  descriptor: WorkflowRunnerV2ExecutionDescriptor,
+  context: WorkflowRunnerV2ExecutionContext,
+  workspaceRoot: string,
+): Promise<RunResult> {
+  const store = new RunStore({
+    baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+  });
+  const exists = await store.runExists(descriptor.workflowRunId);
+  const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
+  const disposition = classifyWorkflowRunnerRunState(
+    descriptor.workflowRunId,
+    exists,
+    status?.status ?? null,
+  );
+  if (disposition === 'resume') {
+    throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
+  }
+  const { executeRunWithStore } = await loadWorkflowExecutionAuthority();
+  const tokenLimit = Number(descriptor.budgetPolicy.tokenLimit);
+  const costLimitNanoUsd = BigInt(descriptor.budgetPolicy.costLimitNanoUsd);
+  const costUsd = Number(costLimitNanoUsd) / 1_000_000_000;
+  const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
+  const common = {
+    manifest: workflow.meta,
+    args: { ...descriptor.input },
+    budget: { tokens: tokenLimit, costUsd },
+    runId: descriptor.workflowRunId,
+    ...(unattended
+      ? { allowUnattended: true as const }
+      : { confirmationPolicy: descriptor.confirmationPolicy }),
+    signal: context.signal,
+    rootDir: workspaceRoot,
+    agentLauncher: await (async () => {
+      const { createOpenSlackAgentLauncher, createRunStore } =
+        await import('@openslack/agent-runtime');
+      return createOpenSlackAgentLauncher({
+        runStore: createRunStore(workspaceRoot),
+        rootDir: workspaceRoot,
+        openAICompatible: {
+          rootDir: workspaceRoot,
+          providerAttemptPort: createWorkflowRunnerV2ProviderAttemptPort(descriptor, context),
+        },
+      });
+    })(),
+  };
+  // GS9-F1 is qualification-only and deliberately wires only the provider
+  // attempt reserve/settle seam. It does not claim provider-budget delivery or
+  // authority. No checkpoint authority, effect boundary, or effect
+  // authorization port is passed here: ctx.checkpoint therefore stays absent
+  // and every real effect fails closed with the existing authorization-required
+  // error. Durable checkpoint/effect adapters remain explicit GS9-F2 work.
+  return executeRunWithStore(workflow, common, store);
+}
+
+export async function runWorkflowRunnerV2QualificationWorker(
+  config: WorkflowRunnerV2QualificationWorkerConfig = loadWorkflowRunnerV2QualificationWorkerConfig(),
+): Promise<void> {
+  installProtocolOnlyStreams();
+  const descriptorStore = new WorkflowRunnerDescriptorStore<WorkflowRunnerV2ExecutionDescriptor>(
+    config.descriptorRoot,
+    undefined,
+    WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+  );
+  await descriptorStore.initialize();
+  let closed = false;
+  const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
+  const close = async (exitCode: number) => {
+    if (closed) return;
+    closed = true;
+    if (timers.heartbeat) clearInterval(timers.heartbeat);
+    if (timers.retry) clearInterval(timers.retry);
+    process.stdin.pause();
+    process.exitCode = exitCode;
+  };
+  const session = new WorkflowRunnerV2Session<PreparedWorkflowSource, WorkflowModule>({
+    workspaceId: config.workspaceId,
+    runnerBuildHash: config.runnerBuildHash,
+    runtimeVersion: process.versions.node,
+    descriptorStore,
+    sourceLoader: createSealedWorkflowRunnerV2SourceLoader(config.workspaceRoot),
+    send: (exactBytes) => {
+      writeSync(1, exactBytes, undefined, 'utf8');
+    },
+    close,
+    execute: (workflow, descriptor, context) =>
+      executeWorkflowRunnerV2QualificationJob(workflow, descriptor, context, config.workspaceRoot),
+  });
+  const fatal = async (error: unknown) => {
+    if (closed) return;
+    writeSync(2, boundedDiagnostic(error), undefined, 'utf8');
+    await close(1);
+  };
+  const decoder = new WorkflowRunnerV2JsonlDecoder();
+  process.stdin.on('data', (chunk: Buffer) => {
+    try {
+      for (const frame of decoder.push(chunk)) {
+        const message = decodeWorkflowRunnerV2Frame(frame);
+        void session.receive(message).catch(fatal);
+      }
+    } catch (error) {
+      void fatal(error);
+    }
+  });
+  process.stdin.on('end', () => {
+    try {
+      decoder.finish();
+      if (!closed) void fatal(new Error('Workflow runner v2 control stream ended unexpectedly.'));
+    } catch (error) {
+      void fatal(error);
+    }
+  });
+  process.stdin.on('error', fatal);
+  await session.start();
+  let lastHeartbeat = 0;
+  let heartbeatInFlight: Promise<void> | undefined;
+  timers.heartbeat = setInterval(() => {
+    const interval = session.heartbeatIntervalMs ?? 0;
+    if (interval <= 0 || heartbeatInFlight || Date.now() - lastHeartbeat < interval) return;
+    heartbeatInFlight = session
+      .heartbeat()
+      .then((sent) => {
+        if (sent) lastHeartbeat = Date.now();
+      })
+      .catch(fatal)
+      .finally(() => {
+        heartbeatInFlight = undefined;
+      });
+  }, 250);
+  timers.retry = setInterval(() => {
+    void session.retryOutstanding().catch(fatal);
+  }, 2_000);
 }
 
 async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {

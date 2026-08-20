@@ -77,6 +77,61 @@ func (service *Service) handleSubmit(w http.ResponseWriter, request *http.Reques
 	writeExactJSON(w, status, exact)
 }
 
+func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Request) {
+	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
+	defer cancel()
+	request = request.WithContext(ctx)
+	if !requireMutationHeaders(w, request) {
+		return
+	}
+	body, err := readBoundedBody(w, request)
+	if err != nil {
+		writeReadError(w, ctx, err)
+		return
+	}
+	prepared, err := runnerstore.ParseV2JobSpec(body)
+	if err != nil || prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 job specification is invalid")
+		return
+	}
+	key, fingerprint := runnerstore.V2SubmissionBindings(prepared)
+	if request.Header.Get("Idempotency-Key") != key || request.Header.Get(HeaderRequestFingerprint) != fingerprint {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "v2 job request headers do not bind the exact body")
+		return
+	}
+	receipt, err := service.v2Store.SubmitV2(ctx, runnerstore.V2SubmitInput{Prepared: prepared, IdempotencyKey: key, RequestFingerprint: fingerprint})
+	if err != nil {
+		service.writeStoreError(w, err)
+		return
+	}
+	input := runnerstore.V2SubmitInput{Prepared: prepared, IdempotencyKey: key, RequestFingerprint: fingerprint}
+	exact, err := v2JobReceiptBytes(receipt)
+	if err != nil || !bytes.Equal(exact, receipt.ExactBytes) || runnerstore.ValidateV2JobReceiptForSubmit(receipt, input) != nil {
+		service.logger.Error("workflow_runner_invalid_v2_store_job_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner v2 control failure")
+		return
+	}
+	status := http.StatusCreated
+	if receipt.Replay {
+		w.Header().Set(HeaderIdempotencyReplayed, "true")
+		service.duplicates.Add(1)
+		status = http.StatusOK
+	} else if receipt.Status == runnerstore.ReceiptReconciliationRequired {
+		status = http.StatusAccepted
+	} else {
+		service.accepted.Add(1)
+	}
+	writeExactJSON(w, status, exact)
+}
+
+func v2JobReceiptBytes(receipt runnerstore.V2JobReceipt) ([]byte, error) {
+	body, err := canonicaljson.Encode(receipt)
+	if err != nil {
+		return nil, err
+	}
+	return append(body, '\n'), nil
+}
+
 func (service *Service) handleReadJob(w http.ResponseWriter, request *http.Request) {
 	if !requireNoQuery(w, request) {
 		return
@@ -205,11 +260,16 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 	if !requireNoQuery(w, request) {
 		return
 	}
-	writeCanonical(w, http.StatusOK, canonicaljson.Object{
+	version := canonicaljson.Object{
 		"schema":   "openslack.workflow_runner_control_service_version.v1",
-		"buildSha": service.buildSHA, "schemaVersion": 2,
+		"buildSha": service.buildSHA, "schemaVersion": service.schemaVersion,
 		"mode": "runner-control-explicit", "workflowAuthority": "typescript",
-	})
+	}
+	if service.v2Enabled {
+		version["v2QualificationAdmission"] = true
+		version["routingActivated"] = false
+	}
+	writeCanonical(w, http.StatusOK, version)
 }
 
 func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Request) {

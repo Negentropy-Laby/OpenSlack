@@ -52,6 +52,7 @@ type Config struct {
 	EffectShadowBearerToken     string
 	EffectShadowCallerID        string
 	EffectShadowJournalRoot     string
+	V2QualificationEnabled      bool
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -131,6 +132,10 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	v2Qualification := values["WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED"]
+	if v2Qualification != "" && v2Qualification != EnabledValue {
+		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED must be unset or exactly 1")
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -150,6 +155,7 @@ func LoadEnvironment(environment []string) (Config, error) {
 		EffectShadowEnabled:         effectEnabled, EffectShadowEndpoint: effectEndpoint,
 		EffectShadowBearerToken: effectToken, EffectShadowCallerID: effectCaller,
 		EffectShadowJournalRoot: effectJournal,
+		V2QualificationEnabled:  v2Qualification == EnabledValue,
 		ShutdownDeadline:        30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
@@ -183,6 +189,7 @@ func parse(environment []string) (map[string]string, error) {
 		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN":     {},
 		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID":        {},
 		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT":     {},
+		"WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED":       {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {

@@ -10,7 +10,54 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 )
+
+func TestProtocolSupervisorsUseMutuallyExclusiveReservedEnablement(t *testing.T) {
+	for _, reserved := range []string{"OPENSLACK_WORKFLOW_RUNNER_ENABLED", "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED"} {
+		root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{reserved + "=1"} })
+		if _, err := Load(root, hash, runtimeConfig); err == nil {
+			t.Fatalf("manifest override %s was accepted", reserved)
+		}
+	}
+	root, hash, runtimeConfig := writeBundle(t, nil)
+	registry, err := Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1 := strings.Join(selectProtocolEnvironment(registry.command.Environment, "openslack.workflow_runner.v1"), "\n")
+	v2 := strings.Join(selectProtocolEnvironment(registry.command.Environment, authoritycontract.ProtocolVersion), "\n")
+	if !strings.Contains(v1, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") || strings.Contains(v1, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") {
+		t.Fatalf("v1 sealed environment is ambiguous: %s", v1)
+	}
+	if !strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") || strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") {
+		t.Fatalf("v2 sealed environment is ambiguous: %s", v2)
+	}
+	if _, err := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion); err != nil {
+		t.Fatalf("construct sealed v2 supervisor: %v", err)
+	}
+}
+
+func TestV2QualificationSupervisorStripsIncompatibleShadowInjection(t *testing.T) {
+	environment := []string{
+		"OPENSLACK_WORKFLOW_RUNNER_ENABLED=1",
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1",
+		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT=http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints",
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1",
+		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT=http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events",
+		"OPENSLACK_AGENT_ID=agent.test",
+	}
+	v1 := strings.Join(selectProtocolEnvironment(environment, "openslack.workflow_runner.v1"), "\n")
+	v2 := strings.Join(selectProtocolEnvironment(environment, authoritycontract.ProtocolVersion), "\n")
+	if !strings.Contains(v1, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1") || !strings.Contains(v1, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1") {
+		t.Fatalf("v1 supervisor lost configured shadow transport: %s", v1)
+	}
+	if strings.Contains(v2, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_") || strings.Contains(v2, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_") ||
+		!strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") || strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") {
+		t.Fatalf("v2 qualification supervisor received incompatible shadow configuration: %s", v2)
+	}
+}
 
 func writeBundle(t *testing.T, mutate func(*Manifest)) (string, string, Runtime) {
 	t.Helper()

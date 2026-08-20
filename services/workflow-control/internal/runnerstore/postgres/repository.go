@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
@@ -34,12 +35,24 @@ type Repository struct {
 	pool              *pgxpool.Pool
 	commitTransaction func(context.Context, pgx.Tx) error
 	staleFenceRejects atomic.Int64
+	v2Authorities     runnerstore.V2AuthorityPorts
+	schemaVersion     int64
 }
 
-func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+func New(pool *pgxpool.Pool) *Repository {
+	return NewForSchema(pool, databaseready.CurrentSchemaVersion)
+}
+
+func NewForSchema(pool *pgxpool.Pool, schemaVersion int64) *Repository {
+	return &Repository{pool: pool, schemaVersion: schemaVersion}
+}
+
+func NewWithV2Authorities(pool *pgxpool.Pool, authorities runnerstore.V2AuthorityPorts) *Repository {
+	return &Repository{pool: pool, v2Authorities: authorities, schemaVersion: databaseready.CurrentSchemaVersion}
+}
 
 func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) error) *Repository {
-	return &Repository{pool: pool, commitTransaction: commit}
+	return &Repository{pool: pool, commitTransaction: commit, schemaVersion: databaseready.CurrentSchemaVersion}
 }
 
 func (repository *Repository) Submit(ctx context.Context, input runnerstore.SubmitInput) (runnerstore.JobReceipt, error) {

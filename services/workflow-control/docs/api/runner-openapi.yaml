@@ -64,6 +64,55 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/jobs:
+    post:
+      operationId: submitWorkflowRunnerV2QualificationJob
+      description: >-
+        Default-off GS9-F qualification admission. The exact body permanently
+        binds protocol v2, required capabilities, authority route, run revision,
+        and resume generation. This route does not activate production routing.
+      x-openslack-canonical-json: required
+      x-openslack-qualification-only: true
+      x-openslack-no-protocol-downgrade: true
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/JobIdempotencyKeyV2'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/V2JobSpec' }
+      responses:
+        '201':
+          description: V2 qualification job accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/V2JobReceipt' }
+        '200':
+          description: Exact accepted or reconciliation-required v2 receipt replayed byte-for-byte.
+          headers:
+            Idempotency-Replayed:
+              schema: { const: 'true' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/V2JobReceipt' }
+        '202':
+          description: V2 qualification admission requires reconciliation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/V2JobReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/runner/jobs/{jobId}:
     get:
       operationId: getWorkflowRunnerJob
@@ -202,6 +251,14 @@ components:
         type: string
         pattern: '^openslack\.workflow-runner-job\.v1\.[0-9a-f]{64}$'
         maxLength: 160
+    JobIdempotencyKeyV2:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-job\.v2\.[0-9a-f]{64}$'
+        maxLength: 160
     CancelIdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -275,6 +332,11 @@ components:
       format: int64
       minimum: 1
       maximum: 9007199254740991
+    Semver:
+      type: string
+      pattern: '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$'
+      minLength: 5
+      maxLength: 64
     JobSpec:
       type: object
       additionalProperties: false
@@ -346,6 +408,130 @@ components:
         idempotencyKey:
           type: string
           pattern: '^openslack\.workflow-runner-job\.v1\.[0-9a-f]{64}$'
+        requestFingerprint:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        committedAt: { $ref: '#/components/schemas/Timestamp' }
+        reconciliationId:
+          type: [string, 'null']
+          maxLength: 512
+    AuthorityRouteV2:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required: [backend, authority, routingEpoch, authorityBuildHash]
+      properties:
+        backend: { const: ts-local }
+        authority: { const: typescript }
+        routingEpoch: { $ref: '#/components/schemas/SafePositiveInteger' }
+        authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+    V2JobSpec:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          correlationId,
+          executionDescriptorRef,
+          executionDescriptorHash,
+          workflowId,
+          workflowVersion,
+          workflowSourceHash,
+          manifestHash,
+          inputHash,
+          wholeTimeoutMs,
+          submittedAt,
+          requiredProtocolVersion,
+          requiredCapabilities,
+          authorityRoute,
+          runRevision,
+          resumeGeneration,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_job_spec.v2 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        correlationId: { $ref: '#/components/schemas/Identifier' }
+        executionDescriptorRef: { $ref: '#/components/schemas/Identifier' }
+        executionDescriptorHash: { $ref: '#/components/schemas/Hash' }
+        workflowId: { $ref: '#/components/schemas/Identifier' }
+        workflowVersion: { $ref: '#/components/schemas/Semver' }
+        workflowSourceHash: { $ref: '#/components/schemas/Hash' }
+        manifestHash: { $ref: '#/components/schemas/Hash' }
+        inputHash: { $ref: '#/components/schemas/Hash' }
+        wholeTimeoutMs:
+          allOf:
+            - $ref: '#/components/schemas/SafePositiveInteger'
+            - minimum: 1000
+              maximum: 86400000
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+        requiredProtocolVersion: { const: openslack.workflow_runner.v2 }
+        requiredCapabilities:
+          type: array
+          prefixItems:
+            - { const: cancel_ack }
+            - { const: effect_receipts }
+            - { const: lease_heartbeat }
+          minItems: 3
+          maxItems: 3
+        authorityRoute: { $ref: '#/components/schemas/AuthorityRouteV2' }
+        runRevision: { $ref: '#/components/schemas/SafePositiveInteger' }
+        resumeGeneration:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+    V2JobReceipt:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      oneOf:
+        - title: AcceptedV2JobReceipt
+          properties:
+            status: { const: accepted }
+            state: { const: queued }
+            revision: { const: 1 }
+            reconciliationId: { type: 'null' }
+        - title: ReconciliationRequiredV2JobReceipt
+          properties:
+            status: { const: reconciliation_required }
+            state: { const: reconciliation_required }
+            reconciliationId:
+              type: string
+              minLength: 1
+              maxLength: 512
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          state,
+          revision,
+          jobSpecHash,
+          idempotencyKey,
+          requestFingerprint,
+          committedAt,
+          reconciliationId,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_job_receipt.v2 }
+        status: { enum: [accepted, reconciliation_required] }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        state: { enum: [queued, reconciliation_required] }
+        revision: { $ref: '#/components/schemas/SafePositiveInteger' }
+        jobSpecHash: { $ref: '#/components/schemas/Hash' }
+        idempotencyKey:
+          type: string
+          pattern: '^openslack\.workflow-runner-job\.v2\.[0-9a-f]{64}$'
         requestFingerprint:
           type: string
           pattern: '^sha256:[0-9a-f]{64}$'
@@ -523,9 +709,14 @@ components:
       properties:
         schema: { const: openslack.workflow_runner_control_service_version.v1 }
         buildSha: { $ref: '#/components/schemas/Hash' }
-        schemaVersion: { const: 2 }
+        schemaVersion:
+          type: integer
+          minimum: 2
+          maximum: 7
         mode: { const: runner-control-explicit }
         workflowAuthority: { const: typescript }
+        v2QualificationAdmission: { type: boolean }
+        routingActivated: { const: false }
     Error:
       type: object
       additionalProperties: false

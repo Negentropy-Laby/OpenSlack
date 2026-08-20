@@ -36,6 +36,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		"/health/live", "/health/ready", "/health/version", "/metrics",
 		"/v1/runner/jobs", "/v1/runner/jobs/{jobId}",
 		"/v1/runner/jobs/{jobId}/cancellations",
+		"/v2/runner/jobs",
 	}
 	if fmt.Sprint(routes) != fmt.Sprint(expectedRoutes) {
 		t.Fatalf("unexpected runner route set: %v", routes)
@@ -53,6 +54,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 	}
 	for _, operation := range []*openapi3.Operation{
 		document.Paths.Value("/v1/runner/jobs").Post,
+		document.Paths.Value("/v2/runner/jobs").Post,
 		document.Paths.Value("/v1/runner/jobs/{jobId}").Get,
 		document.Paths.Value("/v1/runner/jobs/{jobId}/cancellations").Post,
 		document.Paths.Value("/metrics").Get,
@@ -69,6 +71,82 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		if operation == nil || operation.Security == nil || len(*operation.Security) != 0 {
 			t.Fatalf("health route %s must explicitly carry no credential dependency", route)
 		}
+	}
+}
+
+func TestRunnerOpenAPIV2QualificationAdmissionAndReceiptAreClosed(t *testing.T) {
+	document := loadRunnerOpenAPI(t)
+	operation := document.Paths.Value("/v2/runner/jobs").Post
+	if operation == nil || operation.Extensions["x-openslack-qualification-only"] != true ||
+		operation.Extensions["x-openslack-no-protocol-downgrade"] != true ||
+		operation.Extensions["x-openslack-replay-response"] != "exact-original" ||
+		operation.Responses.Value("201") == nil || operation.Responses.Value("200") == nil || operation.Responses.Value("202") == nil {
+		t.Fatalf("v2 qualification response contract drifted: %+v", operation)
+	}
+	hash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	spec := map[string]any{
+		"schema": "openslack.workflow_runner_job_spec.v2", "workspaceId": "workspace.test", "jobId": "job.test",
+		"workflowRunId": "run.test", "correlationId": "correlation.test", "executionDescriptorRef": "descriptor.test",
+		"executionDescriptorHash": hash, "workflowId": "workflow.test", "workflowVersion": "1.0.0",
+		"workflowSourceHash": hash, "manifestHash": hash, "inputHash": hash, "wholeTimeoutMs": int64(60_000),
+		"submittedAt": "2026-08-15T00:00:00.000Z", "requiredProtocolVersion": "openslack.workflow_runner.v2",
+		"requiredCapabilities": []any{"cancel_ack", "effect_receipts", "lease_heartbeat"},
+		"authorityRoute":       map[string]any{"backend": "ts-local", "authority": "typescript", "routingEpoch": int64(1), "authorityBuildHash": hash},
+		"runRevision":          int64(1), "resumeGeneration": int64(0),
+	}
+	specSchema := document.Components.Schemas["V2JobSpec"].Value
+	if err := specSchema.VisitJSON(spec); err != nil {
+		t.Fatalf("valid v2 spec rejected: %v", err)
+	}
+	invalidVersion := cloneJSONMap(t, spec)
+	invalidVersion["workflowVersion"] = "latest"
+	if err := specSchema.VisitJSON(invalidVersion); err == nil {
+		t.Fatal("non-semver v2 workflowVersion was accepted")
+	}
+	extra := cloneJSONMap(t, spec)
+	extra["command"] = "node"
+	if err := specSchema.VisitJSON(extra); err == nil {
+		t.Fatal("v2 admission accepted an unknown launch field")
+	}
+
+	receiptSchema := document.Components.Schemas["V2JobReceipt"].Value
+	accepted := map[string]any{
+		"schema": "openslack.workflow_runner_job_receipt.v2", "status": "accepted", "workspaceId": "workspace.test",
+		"jobId": "job.test", "workflowRunId": "run.test", "state": "queued", "revision": int64(1), "jobSpecHash": hash,
+		"idempotencyKey": "openslack.workflow-runner-job.v2." + hash, "requestFingerprint": "sha256:" + hash,
+		"committedAt": "2026-08-15T00:00:00.000Z", "reconciliationId": nil,
+	}
+	if err := receiptSchema.VisitJSON(accepted); err != nil {
+		t.Fatalf("valid accepted v2 receipt rejected: %v", err)
+	}
+	reconciliation := cloneJSONMap(t, accepted)
+	reconciliation["status"], reconciliation["state"], reconciliation["reconciliationId"] = "reconciliation_required", "reconciliation_required", "reconciliation.test"
+	if err := receiptSchema.VisitJSON(reconciliation); err != nil {
+		t.Fatalf("valid reconciliation v2 receipt rejected: %v", err)
+	}
+	for name, invalid := range map[string]map[string]any{
+		"accepted with reconciliation": func() map[string]any {
+			value := cloneJSONMap(t, accepted)
+			value["reconciliationId"] = "unexpected"
+			return value
+		}(),
+		"reconciliation without id": func() map[string]any {
+			value := cloneJSONMap(t, reconciliation)
+			value["reconciliationId"] = nil
+			return value
+		}(),
+		"accepted wrong state": func() map[string]any {
+			value := cloneJSONMap(t, accepted)
+			value["state"] = "reconciliation_required"
+			return value
+		}(),
+		"accepted wrong revision": func() map[string]any { value := cloneJSONMap(t, accepted); value["revision"] = int64(2); return value }(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := receiptSchema.VisitJSON(invalid); err == nil {
+				t.Fatal("invalid v2 receipt variant was accepted")
+			}
+		})
 	}
 }
 

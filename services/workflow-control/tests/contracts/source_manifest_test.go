@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,7 +71,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-E" ||
+		manifest.Service.MigrationPhase != "GS9-F1" ||
 		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
@@ -97,11 +97,16 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_LEDGER",
 			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_EXACT_RECEIPT",
 			"WORKFLOW_CONTROL_BUDGET_AUTHORITY_QUALIFICATION_RECONCILIATION",
+			"WORKFLOW_RUNNER_V2_FOUNDATION_ADMISSION",
+			"WORKFLOW_RUNNER_V2_FOUNDATION_STORAGE",
+			"WORKFLOW_RUNNER_V2_FOUNDATION_NEGOTIATION",
+			"WORKFLOW_RUNNER_V2_FOUNDATION_RECEIPT_BEFORE_DECISION_TRANSPORT",
+			"WORKFLOW_RUNNER_V2_LOCAL_PROVIDER_ATTEMPT_ORDERING_SEAM",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 11 || len(manifest.ContractInputs) != 14 {
+		len(manifest.SourceInputs) != 15 || len(manifest.ContractInputs) != 14 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -149,6 +154,22 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 			Path:   "services/workflow-control/migrations/000006_create_workflow_control_budget_authority.down.sql",
 			SHA256: "e3548650dc03cafc3cd70c90ab3cf76af2f8aaf905390917bf93b576d4be5ea7",
 		},
+		"runnerV2MigrationUp": {
+			Path:   "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql",
+			SHA256: "bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722",
+		},
+		"runnerV2MigrationDown": {
+			Path:   "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql",
+			SHA256: "251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7",
+		},
+		"runnerV2EventSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_event.go",
+			SHA256: "1c7fdf8fbc4ba7edbe4d084c7f2b9d886fb8e1635af02131e96cfe78388ad29a",
+		},
+		"runnerV2FoundationIntegrationTest": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go",
+			SHA256: "5a67b1462a7939ce5fa3378be8cf2246d280e35984efa259f527f83df67f5de0",
+		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
 		t.Fatalf("source manifest source inputs drifted: %#v", manifest.SourceInputs)
@@ -192,7 +213,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 		},
 		"runnerOpenapi": {
 			Path:   "services/workflow-control/docs/api/runner-openapi.yaml",
-			SHA256: "8d05d7b08cb1e7a11cf76b6f10b26079e54b546c527efb6325f6bdc42ab3d632",
+			SHA256: "70830c01a17cd51ffbb7aa966c4c7bf63a5c80e92304b5c143a118d95b2ab6fa",
 		},
 		"authorityOpenapi": {
 			Path:   "services/workflow-control/docs/api/authority-openapi.yaml",
@@ -222,7 +243,12 @@ func TestSourceManifestBindsOnlyUnreleasedGS9EInputs(t *testing.T) {
 		"WORKFLOW_CONTROL_AUTHORITY_CUTOVER", "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
 		"WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
 		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_ROUTING_CANARY_CUTOVER",
-		"WORKFLOW_RUNNER_V2_DELIVERY", "WORKFLOW_RUNSTORE_AUTHORITY",
+		"WORKFLOW_RUNNER_V2_BUDGET_ADAPTER", "WORKFLOW_RUNNER_V2_BUDGET_IDENTITY_BINDING",
+		"WORKFLOW_RUNNER_V2_CHECKPOINT_ADAPTER",
+		"WORKFLOW_RUNNER_V2_EFFECT_ADAPTER",
+		"WORKFLOW_RUNNER_V2_PRODUCTION_ROUTING", "WORKFLOW_RUNNER_V2_PRODUCTION_SUBMISSION",
+		"WORKFLOW_RUNNER_V2_RESUME_ADAPTER", "WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY",
+		"WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)
 	sort.Strings(actualNonClaims)

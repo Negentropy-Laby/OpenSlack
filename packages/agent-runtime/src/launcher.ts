@@ -42,9 +42,13 @@ import {
   inspectProviderUsageEvidence,
   type ProviderUsageReceipt,
 } from './provider-usage-evidence.js';
+import type { ProviderAttemptPort } from './provider-attempt-port.js';
+import { createProviderAttemptBoundary } from './internal/provider-attempt-boundary.js';
 
 export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
   fetchImpl?: typeof fetch;
+  /** Optional qualification host transport; the launcher mints the adapter capability. */
+  providerAttemptPort?: ProviderAttemptPort;
 }
 
 export interface LauncherOptions {
@@ -568,6 +572,13 @@ function createDefaultProviderRegistry(
             openAICompatible?.credentialStore,
           ),
           fetchImpl: openAICompatible?.fetchImpl,
+          ...(openAICompatible?.providerAttemptPort
+            ? {
+                providerAttemptBoundary: createProviderAttemptBoundary(
+                  openAICompatible.providerAttemptPort,
+                ),
+              }
+            : {}),
         }),
       };
     },

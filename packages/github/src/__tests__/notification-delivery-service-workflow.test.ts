@@ -1123,7 +1123,7 @@ describe('notification delivery service workflow', () => {
 
     const windowsJob = workflow.jobs['workflow-runner-windows'];
     expect(windowsJob).toMatchObject({
-      name: 'Qualify GS8-B runner on Windows',
+      name: 'Qualify GS8-B and GS9-F1 runner foundation boundaries on Windows',
       'runs-on': 'windows-2022',
       'timeout-minutes': 45,
       env: { EXPECTED_COMMIT: exactHeadExpression, GOWORK: 'off' },
@@ -1135,7 +1135,7 @@ describe('notification delivery service workflow', () => {
       'Set up the exact Node toolchain',
       'Set up the exact Bun toolchain',
       'Install and build the sealed TypeScript runner',
-      'Qualify native Windows descriptor ACL and reparse boundaries',
+      'Qualify native Windows runner and GS9-F1 TypeScript boundaries',
       'Qualify native Windows Job Object process trees',
     ]);
     const windowsActions = windowsJob.steps.flatMap((step) =>
@@ -1149,7 +1149,7 @@ describe('notification delivery service workflow', () => {
     ]);
     expect(windowsActions.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
     const windowsTests = windowsJob.steps.find(
-      (step) => step.name === 'Qualify native Windows descriptor ACL and reparse boundaries',
+      (step) => step.name === 'Qualify native Windows runner and GS9-F1 TypeScript boundaries',
     )?.run;
     for (const file of [
       'workflow-runner-descriptor.test.ts',
@@ -1159,9 +1159,19 @@ describe('notification delivery service workflow', () => {
       'workflow-runner-source-invariants.test.ts',
       'workflow-runner-execute.test.ts',
       'workflow-runner-framing.test.ts',
+      'workflow-runner-v2-foundation.test.ts',
+      'workflow-runner-v2-session.test.ts',
+      'openai-compatible-runtime.test.ts',
       'workflow-effect-shadow.test.ts',
     ]) {
       expect(windowsTests).toContain(file);
+    }
+    for (const gs9f1Suite of [
+      'packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts',
+      'packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts',
+      'packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts',
+    ]) {
+      expect(windowsTests).toContain(gs9f1Suite);
     }
     const processTests = windowsJob.steps.find(
       (step) => step.name === 'Qualify native Windows Job Object process trees',
@@ -1355,6 +1365,19 @@ describe('notification delivery service workflow', () => {
     expect(names.indexOf('Qualify GS9-E Workflow budget authority')).toBeLessThan(
       names.indexOf('Run reviewed Go workspace verifier'),
     );
+  });
+
+  it('qualifies GS9-F1 once through the reviewed all-workspace Go verifier', () => {
+    const goChecks = workflow.jobs.validate.steps.filter((candidate) =>
+      candidate.run?.includes('scripts/go-check.sh'),
+    );
+    expect(goChecks).toEqual([
+      {
+        name: 'Run reviewed Go workspace verifier',
+        'working-directory': '.',
+        run: 'bash scripts/go-check.sh --all',
+      },
+    ]);
   });
 
   it('binds the shared PostgreSQL gate to the four reviewed profiles', () => {

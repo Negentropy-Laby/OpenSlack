@@ -27,6 +27,12 @@ import {
   type ProviderTokenUsage,
   type ProviderUsageReceipt,
 } from './provider-usage-evidence.js';
+import type { ProviderAttemptReservation } from './provider-attempt-port.js';
+import {
+  reserveProviderAttempt,
+  settleProviderAttempt,
+  type ProviderAttemptBoundary,
+} from './internal/provider-attempt-boundary.js';
 
 export interface OpenAICompatibleRuntimeConfig {
   providerId: 'openai-compatible';
@@ -51,6 +57,8 @@ export interface OpenAICompatibleRuntimeOptions {
 export interface OpenAICompatibleAdapterOptions extends OpenAICompatibleRuntimeConfig {
   apiKey: string;
   fetchImpl?: typeof fetch;
+  /** Host-minted; callers cannot construct a valid boundary structurally. */
+  providerAttemptBoundary?: ProviderAttemptBoundary;
 }
 
 const CONFIG_KEYS = new Set([
@@ -206,6 +214,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
       let attemptStarted = false;
       let receiptRecorded = false;
       let reportedUsage: ProviderTokenUsage | null = null;
+      let reservation: ProviderAttemptReservation | undefined;
       try {
         throwIfAborted(context.signal);
         if (Date.now() - startedAt >= this.options.timeoutMs) {
@@ -216,8 +225,41 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
             ? this.options.maxOutputTokens
             : initialTokensRemaining - tokenUsage;
         if (remaining <= 0) throw new AgentBudgetExceededError();
-        const maxTokens = Math.min(this.options.maxOutputTokens, remaining);
+        let maxTokens = Math.min(this.options.maxOutputTokens, remaining);
+        const requestedTotalTokens = remaining;
         const modelId = context.resolvedConfig.model ?? this.options.model;
+        if (this.options.providerAttemptBoundary) {
+          reservation = await reserveProviderAttempt(this.options.providerAttemptBoundary, {
+            providerId: this.options.providerId,
+            modelId,
+            providerRunId: context.runId,
+            providerAttempt: String(turn + 1),
+            // The authority settles prompt + completion usage. Reserve the
+            // remaining total-token budget; max_tokens remains a separate
+            // provider output cap below.
+            requestedTokens: String(requestedTotalTokens),
+          });
+          if (
+            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(reservation.reservationId) ||
+            !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(reservation.callId) ||
+            !/^(?:0|[1-9][0-9]*)$/u.test(reservation.authorizedTokens)
+          ) {
+            throw new RuntimeMisconfiguredError(
+              'Provider attempt reservation returned an invalid authorization.',
+            );
+          }
+          const authorizedTokens = Number(reservation.authorizedTokens);
+          if (
+            !Number.isSafeInteger(authorizedTokens) ||
+            authorizedTokens < 1 ||
+            authorizedTokens > requestedTotalTokens
+          ) {
+            throw new RuntimeMisconfiguredError(
+              'Provider attempt reservation exceeded the requested token bound.',
+            );
+          }
+          maxTokens = Math.min(maxTokens, authorizedTokens);
+        }
         requestBody = JSON.stringify({
           model: modelId,
           messages,
@@ -322,20 +364,31 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           }
         }
 
-        usageEvidence.push(
-          buildProviderUsageReceipt({
-            providerId: this.options.providerId,
-            modelId,
-            runId: context.runId,
-            attempt: turn + 1,
-            status: 'reported',
-            usage,
-            outcome: 'provider_response_accepted',
-            requestBytes: requestBody,
-            outcomeBytes: responseBytes,
-          }),
-        );
+        const acceptedReceipt = buildProviderUsageReceipt({
+          providerId: this.options.providerId,
+          modelId,
+          runId: context.runId,
+          attempt: turn + 1,
+          status: 'reported',
+          usage,
+          outcome: 'provider_response_accepted',
+          requestBytes: requestBody,
+          outcomeBytes: responseBytes,
+        });
+        usageEvidence.push(acceptedReceipt);
         receiptRecorded = true;
+        if (this.options.providerAttemptBoundary) {
+          if (!reservation) {
+            throw new RuntimeMisconfiguredError(
+              'Provider attempt completed without a durable reservation.',
+            );
+          }
+          await settleProviderAttempt(
+            this.options.providerAttemptBoundary,
+            reservation,
+            acceptedReceipt,
+          );
+        }
         context.recorder.progress(context.runId, {
           step: 'provider_turn_completed',
           provider: 'openai-compatible',
@@ -384,20 +437,40 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
           usageEvidence: Object.freeze([...usageEvidence]),
         };
       } catch (error) {
-        if (attemptStarted && !receiptRecorded) {
-          usageEvidence.push(
-            buildProviderUsageReceipt({
-              providerId: this.options.providerId,
-              modelId: context.resolvedConfig.model ?? this.options.model,
-              runId: context.runId,
-              attempt: turn + 1,
-              status: reportedUsage === null ? 'unreported' : 'reported',
-              usage: reportedUsage,
-              outcome: 'provider_attempt_failed',
-              requestBytes: requestBody,
-              outcomeBytes: responseBytes ?? providerFailureOutcome(error),
-            }),
-          );
+        // Reserve is durable before the transport begins. Once it succeeds,
+        // local framing/authorization failures must settle as unreported
+        // instead of leaving an open reservation behind.
+        if ((attemptStarted || reservation !== undefined) && !receiptRecorded) {
+          const failedReceipt = buildProviderUsageReceipt({
+            providerId: this.options.providerId,
+            modelId: context.resolvedConfig.model ?? this.options.model,
+            runId: context.runId,
+            attempt: turn + 1,
+            status: reportedUsage === null ? 'unreported' : 'reported',
+            usage: reportedUsage,
+            outcome: 'provider_attempt_failed',
+            requestBytes: requestBody,
+            outcomeBytes: responseBytes ?? providerFailureOutcome(error),
+          });
+          usageEvidence.push(failedReceipt);
+          receiptRecorded = true;
+          if (this.options.providerAttemptBoundary) {
+            if (!reservation) {
+              throw new RuntimeMisconfiguredError(
+                'Provider attempt failed without a durable reservation.',
+              );
+            }
+            try {
+              await settleProviderAttempt(
+                this.options.providerAttemptBoundary,
+                reservation,
+                failedReceipt,
+              );
+            } catch (settlementError) {
+              attachProviderUsageEvidence(settlementError, usageEvidence);
+              throw settlementError;
+            }
+          }
         }
         attachProviderUsageEvidence(error, usageEvidence);
         throw error;

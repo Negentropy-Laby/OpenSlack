@@ -122,6 +122,9 @@ func ValidateMessage(value any) (Message, error) {
 	if kind == KindResumeOffer && payload["newResumeGeneration"].(int64) != *resumeGeneration+1 {
 		return Message{}, failure(ErrorStaleResumeGeneration, "$/payload/newResumeGeneration", "resume offer must advance the exact bound generation once")
 	}
+	if kind == KindResumeOffer && payload["newAttemptId"].(string) == *attemptID {
+		return Message{}, failure(ErrorIdentityMismatch, "$/payload/newAttemptId", "resume offer must mint a new workflow resume identity")
+	}
 	if kind == KindBudgetAuthorization && payload["committedRunRevision"].(int64) != *runRevision {
 		return Message{}, failure(ErrorStaleRevision, "$/payload/committedRunRevision", "budget authorization must bind the envelope run revision")
 	}

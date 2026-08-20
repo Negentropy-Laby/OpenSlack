@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 5863
+vitest_tests: 5868
 vitest_files: 466
 modules:
   - id: self_evolution
@@ -428,6 +428,44 @@ modules:
       - repo:services/workflow-control/docs/api/authority-openapi.yaml
       - repo:services/workflow-control/docs/testing/gs9b-qualification.md
       - repo:services/workflow-control/cmd/authority-server
+      - commit:aa7ecdbd
+      - test:packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-session.test.ts
+      - test:services/workflow-control/cmd/checkpoint-shadow-server/qualification_test.go
+      - test:services/workflow-control/internal/checkpointshadowstore/postgres/repository_test.go
+      - test:services/workflow-control/tests/contracts/checkpoint_shadow_openapi_contract_test.go
+      - repo:services/workflow-control/docs/testing/gs9c-qualification.md
+      - commit:3e91d8ca
+      - commit:17b4faf9
+      - commit:90855a0d
+      - test:packages/workflows/src/__tests__/workflow-effect-control-contract.test.ts
+      - test:packages/workflows/src/__tests__/workflow-effect-authorization.test.ts
+      - test:packages/workflows/src/__tests__/workflow-effect-shadow.test.ts
+      - test:services/workflow-control/cmd/effect-shadow-server/qualification_test.go
+      - test:services/workflow-control/internal/effectshadowstore/postgres/repository_test.go
+      - test:services/workflow-control/tests/contracts/effect_shadow_openapi_contract_test.go
+      - repo:services/workflow-control/docs/testing/gs9d-qualification.md
+      - commit:8a7f1ab3
+      - commit:023cb15a
+      - test:packages/workflows/src/__tests__/workflow-budget-authority-contract.test.ts
+      - test:packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts
+      - test:services/workflow-control/cmd/budget-authority-server/qualification_test.go
+      - test:services/workflow-control/internal/budgetstore/postgres/repository_test.go
+      - test:services/workflow-control/tests/contracts/budget_authority_openapi_contract_test.go
+      - repo:services/workflow-control/docs/testing/gs9e-qualification.md
+      - commit:21b74ace
+      - test:packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts
+      - test:packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts
+      - test:services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go
+      - test:services/workflow-control/tests/contracts/source_manifest_test.go
+      - test:packages/workspace/src/__tests__/go-check-script.test.ts
+      - test:packages/github/src/__tests__/notification-delivery-service-workflow.test.ts
+      - repo:services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql
+      - repo:services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql
+      - repo:services/workflow-control/docs/api/runner-openapi.yaml
+      - repo:services/workflow-control/integration/source-manifest.v2.json
+      - repo:services/workflow-control/docs/testing/gs9f-qualification.md
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
@@ -494,7 +532,7 @@ modules:
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
       - github.com/Negentropy-Laby/OpenSlack/services/workflow-control
-    tests: 2799
+    tests: 2804
     test_files: 223
     components:
       - id: agent_runtime
@@ -526,6 +564,7 @@ modules:
       GS8-B adds a default-off, single-workspace Go runner lifecycle control plane and one exact sealed TypeScript worker. Go now owns only hash-bound runner job admission, PostgreSQL attempt leases and fencing tokens, child-process supervision, cancellation escalation, protocol event receipts, restart recovery, and reconciliation-required terminal ambiguity. The exact three-file bundle revalidates its external manifest anchor, bounded executable, self-contained entrypoint and recomputed build hash before launch; the worker also revalidates its owner-only descriptor, workflow source, input and manifest hashes around import, while the GS8-only source policy rejects runtime imports without changing the legacy CLI loader. Canonical bounded JSONL, accepted-receipt gates, exact cancel-control binding, terminal-state preservation, process-exit proof, durable dispatch backoff and a five-failure dead/reconciliation ceiling prevent speculative execution or hot-loop replay. The existing TypeScript Workflow RunStore, state machine, checkpoint/resume, workflow-effect approval v2, effect execution, budget accounting, user-visible reads, CLI/MCP routing, and provider adapters remain authoritative through GS8. The default service image still starts the GS7-B shadow server; runner admission requires an explicit enable flag, private bind, bearer hash, external sealed bundle, and a separately started runner binary. Local tests establish contract, store, process, Windows ACL/reparse, and default-off evidence; hosted exact-head CI is the required location for clean dependency installation, real PostgreSQL restart, real TypeScript child execution, Linux race tests, Windows process-tree checks, and container qualification. This batch makes no GS9, Qoder, remote Connector, live, release, or production claim.
       GS9-A freezes the TypeScript-owned Workflow Control authority v2 exact-byte contract and a pure Go mirror without transferring runtime authority. Run revision/CAS is independent from GS8 runner attempt, lease, and fencing; the immutable per-record authority epoch is independent from both and may select only a future record's writer. Legacy run-gate and workflow-effect approval v2 remain separate planes. A durable accepted or duplicate authority receipt is the checkpoint commit point, and resume generation is monotonic and distinct from attempt ordinal. Durable budget quantities are canonical non-negative decimal strings bounded by signed 64-bit BIGINT; money uses integer nano_usd at scale 9 with half_up_nonnegative conversion instead of binary floating point. The 18-kind `openslack.workflow_runner.v2` vocabulary retains all 12 v1 kinds and adds checkpoint_commit, budget_reserve_request, budget_usage_report, budget_authorization, effect_authorization, and resume_offer; the v2 hello/hello_ack negotiation contract is frozen, v1 remains byte-stable, and no v2 runtime negotiation or delivery exists. TypeScript remains the sole writer and user-visible read source. `GS9-A LOCAL_PASS` is contract parity only; Go Workflow Control authority, PostgreSQL authority storage, active routing, effect execution, budget enforcement, resume runtime, canary, rollback, Qoder, release, live, and production claims remain `NOT_CLAIMED`.
       GS9-B adds an isolated, default-off PostgreSQL Workflow authority qualification spine without transferring any real Workflow record. The independent `workflow_control_*` namespace fixes immutable epoch/backend/authority/build per run and keeps Workflow revision/state/phase/resume CAS separate from GS8 runner job/attempt/lease/fencing. Strict canonical accept/transition requests use ordered advisory locks, receipt point-read, expected-head CAS, append-only transition events, byte-identical accepted receipts, and same-transaction outbox writes. Same-key replay preserves the original receipt bytes; fingerprint, route, revision, state, phase, resume, immutable-identity, and invalid-transition drift fail closed. Lost responses first recover the exact receipt; unknown commits persist reconciliation without advancing head/event/outbox, while an unprovable reconciliation commit returns `WORKFLOW_CONTROL_AUTHORITY_COMMIT_OUTCOME_UNKNOWN`. The separate authority binary registers mutation routes only under an exact loopback `local-qualification-v1` binding and remains health-only otherwise; the default image still starts the observational server and reports TypeScript authority with routing and new-record acceptance disabled. No RunStore, CLI/TUI/MCP/Qoder client, checkpoint/resume, approval/effect, budget, runner-v2, canary, rollback, migration, or writer cutover is added. The evidence ceiling is `GS9-B LOCAL_PASS / Go authority NOT_CLAIMED`; hosted exact-head checks, review threads, independent human approval, release, live, and production remain separate.
+      GS9-C adds only a default-off checkpoint/resume parity observer over the existing TypeScript authority. GS9-D keeps TypeScript as the sole effect-decision and execution authority while the Go effect service remains an observational exact-receipt shadow. GS9-E adds an isolated durable budget qualification authority with no production runtime client or policy source. GS9-F1 adds only the runner-v2 admission/storage foundation, exact no-downgrade negotiation, durable event staging, receipt delivery ordering skeleton, and local reserve-before-fetch/settle-after-receipt ordering around an opaque provider call. It does not propagate exact provider/model/provider-run identity into E authority, compose the real GS9-C checkpoint, GS9-D TypeScript effect, GS9-E budget, or resume adapters, and complete runtime delivery remains GS9-F2 NOT_CLAIMED. Runner-v1 and authority-v2 source assets remain byte-identical. Production v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, live, release, tag, npm, Qoder, and Go production Workflow authority remain not activated or not claimed.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
       The explicit graph snapshot build CLI accepts one bounded file or stdin source through a sealed two-profile dispatch under the same locked 4 MiB Software Delivery source ceiling. Each profile applies strict JSON plus its registered validator/projector and defaults to CAS publication in the workspace-local graph store; an explicitly complete GS3-C binding instead succeeds only from a durable Go authority receipt. Unknown scenarios and partial bindings fail closed. It performs no live evidence collection, exposes no force overwrite, and remains separate from the side-effect-free MCP query/explain tools.
       Contract-to-Delivery Projector v1 is active as a deterministic composite projection. It invokes the existing Software Delivery projector, preserves its nodes and edges exactly, and adds bounded Customer, Contract, Project, Milestone, Acceptance, Deliverable, and Outcome relationships only from typed demo-fixture business evidence. Acceptance requires a current merged deliverable, an independent current-head human approval, and a current accepted transition; Outcome requires that promoted acceptance, a live closed work item, and the existing Software Delivery outcome. Missing or drifted bridges remain incomplete and never create dangling authority edges. The checked fixture and official stock 12-tool MCP SDK test prove the Customer-to-Outcome graph, bounded query/explain evidence, projection-only authority, and no query-side store mutation.

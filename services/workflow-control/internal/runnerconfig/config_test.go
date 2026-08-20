@@ -59,6 +59,28 @@ func TestLoadEnvironmentRequiresExplicitEnablementAndClosedPrivateConfig(t *test
 	}
 }
 
+func TestV2QualificationIsDefaultOffAndRequiresExactEnablement(t *testing.T) {
+	base := validEnvironment(t)
+	config, err := LoadEnvironment(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.V2QualificationEnabled {
+		t.Fatal("v2 qualification was not default-off")
+	}
+	enabled := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1")
+	config, err = LoadEnvironment(enabled)
+	if err != nil || !config.V2QualificationEnabled {
+		t.Fatalf("exact v2 qualification enablement rejected: %+v %v", config, err)
+	}
+	for _, value := range []string{"0", "true", "yes", " 1", "1 "} {
+		candidate := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED="+value)
+		if _, err := LoadEnvironment(candidate); err == nil {
+			t.Fatalf("non-exact v2 enablement accepted: %q", value)
+		}
+	}
+}
+
 func TestCheckpointShadowRunnerConfigIsExplicitAndClosed(t *testing.T) {
 	base := validEnvironment(t)
 	config, err := LoadEnvironment(base)
