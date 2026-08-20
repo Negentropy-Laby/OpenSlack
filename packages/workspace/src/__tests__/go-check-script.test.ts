@@ -117,6 +117,13 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       "'!budgetcontract/'",
       "'!budgetcontract/*.go'",
       "'!budgetcontract/generated/v1/schemas/*.json'",
+      "'!runnerbindingcontract/'",
+      "'!runnerbindingcontract/*.go'",
+      "'!runnerbindingcontract/generated/'",
+      "'!runnerbindingcontract/generated/v1/'",
+      "'!runnerbindingcontract/generated/v1/*.json'",
+      "'!runnerbindingcontract/generated/v1/schemas/'",
+      "'!runnerbindingcontract/generated/v1/schemas/*.json'",
     ]) {
       expect(goCheckSource).toContain(reviewedWorkflowAuthoritySource);
     }

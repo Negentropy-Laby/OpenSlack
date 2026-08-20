@@ -466,6 +466,7 @@ modules:
       - repo:services/workflow-control/docs/api/runner-openapi.yaml
       - repo:services/workflow-control/integration/source-manifest.v2.json
       - repo:services/workflow-control/docs/testing/gs9f-qualification.md
+      - commit:397a0f652ee1dbe72a6cec12b2066f63c21a87f1
       - test:packages/workflows/src/__tests__/workflow-runner-authority-binding-contract.test.ts
       - repo:packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json
       - repo:scripts/workflow-runner-authority-binding-contracts
