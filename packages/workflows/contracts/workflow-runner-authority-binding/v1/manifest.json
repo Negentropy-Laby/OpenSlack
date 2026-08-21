@@ -1,0 +1,228 @@
+{
+  "schema": "openslack.workflow_runner_authority_binding_contract_manifest.v1",
+  "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+  "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+  "authorityBoundary": {
+    "batch": "GS9-F2a",
+    "normative": true,
+    "contractOnly": true,
+    "qualificationOnly": true,
+    "authorityClaim": "NO_AUTHORITY",
+    "goAuthorityImplemented": false,
+    "runtimeCompositionImplemented": false,
+    "productionRoutingActivated": false,
+    "frozenAuthorityV2KindsExtended": false,
+    "frozenAuthorityV2KindCount": 18,
+    "sourceAuthoritiesReplaced": false,
+    "notDelivered": [
+      "migration_000008",
+      "database",
+      "http",
+      "durable_store",
+      "scheduler",
+      "worker",
+      "checkpoint_adapter",
+      "effect_adapter",
+      "budget_adapter",
+      "resume_adapter",
+      "provider_adapter",
+      "authority_recovery",
+      "runtime_composition"
+    ],
+    "notActivated": [
+      "future_runtime_profile",
+      "production_v2_submission",
+      "new_record_acceptance",
+      "routing",
+      "canary",
+      "cutover",
+      "typescript_fallback_removal",
+      "typescript_writer_retirement"
+    ],
+    "notClaimed": [
+      "runtime_authority_delivery",
+      "go_production_workflow_authority",
+      "go_production_checkpoint_authority",
+      "go_production_effect_authority",
+      "go_production_budget_policy_authority",
+      "go_production_provider_authority",
+      "go_production_run_store_authority",
+      "go_production_user_visible_read_authority",
+      "authenticated_external_host_qualification",
+      "qoder",
+      "remote_connector",
+      "release",
+      "live",
+      "tag",
+      "npm",
+      "production_readiness"
+    ],
+    "separateGates": [
+      "hosted_exact_head_checks",
+      "review_thread_resolution",
+      "independent_human_approval",
+      "merge"
+    ]
+  },
+  "protocol": {
+    "sequence": ["stage_event", "stage_event_ack", "commit_authority", "commit_authority_ack"],
+    "independentCompanionSequence": true,
+    "frozenTargetBytesBoundBeforeAuthority": true,
+    "resolutionAckPrecedesFrozenTargetDelivery": true,
+    "controlDeliveryAck": true,
+    "exactReplayReturnsOriginalReceiptBytes": true
+  },
+  "operations": [
+    {
+      "operation": "checkpoint_commit",
+      "targetKind": "checkpoint_commit",
+      "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "checkpoint_control",
+      "sourceEvidenceState": "committed",
+      "sourceRevisionDelta": 1,
+      "sourceGenerationDelta": 0,
+      "sourceReceiptSchema": "openslack.workflow_runner_checkpoint_authority_receipt.v1"
+    },
+    {
+      "operation": "effect_authorize",
+      "targetKind": "effect_intent",
+      "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "effect_v2_sibling",
+      "sourceEvidenceState": "committed",
+      "sourceRevisionDelta": 1,
+      "sourceGenerationDelta": 0,
+      "sourceReceiptSchema": "openslack.workflow_runner_effect_authority_receipt.v1"
+    },
+    {
+      "operation": "effect_complete",
+      "targetKind": "effect_outcome",
+      "runnerDelta": { "revision": 0, "generation": 0 },
+      "sourcePlane": "effect_v2_sibling",
+      "sourceEvidenceState": "committed",
+      "sourceRevisionDelta": 1,
+      "sourceGenerationDelta": 0,
+      "sourceReceiptSchema": "openslack.workflow_runner_effect_completion_receipt.v1"
+    },
+    {
+      "operation": "budget_reserve",
+      "targetKind": "budget_reserve_request",
+      "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "budget_account",
+      "sourceEvidenceState": "prepared",
+      "sourceRevisionDelta": 0,
+      "sourceGenerationDelta": 0,
+      "sourceReceiptSchema": null
+    },
+    {
+      "operation": "budget_settle",
+      "targetKind": "budget_usage_report",
+      "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "budget_account",
+      "sourceEvidenceState": "prepared",
+      "sourceRevisionDelta": 0,
+      "sourceGenerationDelta": 0,
+      "sourceReceiptSchema": null
+    },
+    {
+      "operation": "resume_advance",
+      "targetKind": "lease_accept",
+      "runnerDelta": { "revision": 1, "generation": 1 },
+      "sourcePlane": "resume_control",
+      "sourceEvidenceState": "committed",
+      "sourceRevisionDelta": 1,
+      "sourceGenerationDelta": 1,
+      "sourceReceiptSchema": "openslack.workflow_runner_resume_authority_receipt.v1"
+    }
+  ],
+  "evidence": {
+    "closed": true,
+    "rawFieldsForbidden": [
+      "provider",
+      "providerId",
+      "model",
+      "modelId",
+      "prompt",
+      "result",
+      "nonce",
+      "credential",
+      "credentials"
+    ],
+    "providerIdentity": "hash_only",
+    "resultIdentity": "hash_only"
+  },
+  "exactFraming": {
+    "encoding": "utf-8",
+    "canonicalJson": true,
+    "terminalLfCount": 1,
+    "carriageReturnAllowed": false
+  },
+  "sourceLocks": {
+    "runnerV1Manifest": {
+      "path": "packages/workflows/contracts/workflow-runner/v1/manifest.json",
+      "sha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6"
+    },
+    "authorityV2Manifest": {
+      "path": "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
+      "sha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1"
+    },
+    "checkpointManifest": {
+      "path": "packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json",
+      "sha256": "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000"
+    },
+    "effectControlManifest": {
+      "path": "packages/workflows/contracts/workflow-effect-control/v1/manifest.json",
+      "sha256": "36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65"
+    },
+    "effectShadowManifest": {
+      "path": "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
+      "sha256": "72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e"
+    },
+    "budgetManifest": {
+      "path": "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
+      "sha256": "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714"
+    },
+    "migration7Up": {
+      "path": "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql",
+      "sha256": "bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722"
+    },
+    "migration7Down": {
+      "path": "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql",
+      "sha256": "251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7"
+    }
+  },
+  "bundleFiles": [
+    "schemas/workflow-runner-authority-binding-stage.v1.schema.json",
+    "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
+    "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
+    "schemas/workflow-runner-authority-binding-error.v1.schema.json",
+    "golden-vectors.json",
+    "manifest.json"
+  ],
+  "artifacts": {
+    "schemas/workflow-runner-authority-binding-stage.v1.schema.json": {
+      "path": "schemas/workflow-runner-authority-binding-stage.v1.schema.json",
+      "byteLength": 34127,
+      "sha256": "44fe46df4fd1f43f8f65e77459d06aaf36ce45d3982433e0d631bd219d746a33"
+    },
+    "schemas/workflow-runner-authority-binding-resolution.v1.schema.json": {
+      "path": "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
+      "byteLength": 69349,
+      "sha256": "c403b6cd36ea53c54658dbb7dec3f76c0fadaa23babf25324c283b17683a0c62"
+    },
+    "schemas/workflow-runner-authority-binding-receipt.v1.schema.json": {
+      "path": "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
+      "byteLength": 55817,
+      "sha256": "723be686dcf07c7a336324bcc0759e462b45ff15fb3db69d0e4d838456aed89c"
+    },
+    "schemas/workflow-runner-authority-binding-error.v1.schema.json": {
+      "path": "schemas/workflow-runner-authority-binding-error.v1.schema.json",
+      "byteLength": 1954,
+      "sha256": "57927dfa43d7237a6f3822ae4f5445ddb6d4894527addff573d1e0ada7e28d23"
+    },
+    "golden-vectors.json": {
+      "path": "golden-vectors.json",
+      "byteLength": 714010,
+      "sha256": "88fa05b25462068220cccbc24b1a76c1622ed9a48433aea3ada7e1aa2fafc582"
+    }
+  }
+}

@@ -24,14 +24,7 @@ on:
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**
       - packages/operator/src/governed-plan*.ts
-      - packages/workflows/contracts/workflow-control/**
-      - packages/workflows/contracts/workflow-control-authority/**
-      - packages/workflows/contracts/workflow-budget-authority/**
-      - packages/workflows/contracts/workflow-control-shadow/**
-      - packages/workflows/contracts/workflow-checkpoint-shadow/**
-      - packages/workflows/contracts/workflow-effect-control/**
-      - packages/workflows/contracts/workflow-effect-shadow/**
-      - packages/workflows/contracts/workflow-runner/**
+      - packages/workflows/contracts/workflow-*/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-budget-authority-contract.ts
@@ -86,14 +79,10 @@ on:
       - scripts/go-check/**
       - scripts/organization-graph-contracts/**
       - scripts/governance-control-contracts/**
-      - scripts/workflow-control-contracts/**
-      - scripts/workflow-authority-contracts/**
-      - scripts/workflow-budget-authority-contracts/**
-      - scripts/workflow-control-shadow-contracts/**
-      - scripts/workflow-checkpoint-shadow-contracts/**
-      - scripts/workflow-effect-control-contracts/**
-      - scripts/workflow-effect-shadow-contracts/**
-      - scripts/workflow-runner-contracts/**
+      - scripts/workflow-*-contracts/**
+      - scripts/workflow-contract-families.json
+      - scripts/workflow-contract-families.generated.sh
+      - scripts/workflow-contract-families/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
@@ -125,14 +114,7 @@ on:
       - packages/operator/contracts/governed-plan/**
       - packages/operator/contracts/governed-plan-authority/**
       - packages/operator/src/governed-plan*.ts
-      - packages/workflows/contracts/workflow-control/**
-      - packages/workflows/contracts/workflow-control-authority/**
-      - packages/workflows/contracts/workflow-budget-authority/**
-      - packages/workflows/contracts/workflow-control-shadow/**
-      - packages/workflows/contracts/workflow-checkpoint-shadow/**
-      - packages/workflows/contracts/workflow-effect-control/**
-      - packages/workflows/contracts/workflow-effect-shadow/**
-      - packages/workflows/contracts/workflow-runner/**
+      - packages/workflows/contracts/workflow-*/**
       - packages/workflows/src/workflow-control-contract.ts
       - packages/workflows/src/workflow-control-authority-contract.ts
       - packages/workflows/src/workflow-budget-authority-contract.ts
@@ -187,14 +169,10 @@ on:
       - scripts/go-check/**
       - scripts/organization-graph-contracts/**
       - scripts/governance-control-contracts/**
-      - scripts/workflow-control-contracts/**
-      - scripts/workflow-authority-contracts/**
-      - scripts/workflow-budget-authority-contracts/**
-      - scripts/workflow-control-shadow-contracts/**
-      - scripts/workflow-checkpoint-shadow-contracts/**
-      - scripts/workflow-effect-control-contracts/**
-      - scripts/workflow-effect-shadow-contracts/**
-      - scripts/workflow-runner-contracts/**
+      - scripts/workflow-*-contracts/**
+      - scripts/workflow-contract-families.json
+      - scripts/workflow-contract-families.generated.sh
+      - scripts/workflow-contract-families/**
       - scripts/qualification/workflow-control-postgres-gate.sh
       - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
@@ -269,21 +247,15 @@ jobs:
       - name: Verify Governance Control golden contracts
         working-directory: .
         run: bun run governance:golden -- --check
-      - name: Verify Workflow Control golden contracts
+      - name: Verify Workflow contract family golden contracts
         working-directory: .
-        run: bun run workflow:golden -- --check
-      - name: Verify Workflow Control authority golden contracts
-        working-directory: .
-        run: bun run workflow:authority-golden -- --check
+        run: bun run workflow:contract-families -- --check
       - name: Qualify GS9-A TypeScript authority contract
         working-directory: .
         run: bunx vitest run packages/workflows/src/__tests__/workflow-control-authority-contract.test.ts
       - name: Qualify GS9-A Go authority contract mirror
         working-directory: services/workflow-control
         run: go test -race ./authoritycontract -count=1
-      - name: Verify Workflow Budget authority golden contracts
-        working-directory: .
-        run: bun run workflow:budget-authority-golden -- --check
       - name: Qualify GS9-E1 TypeScript budget operational contract
         working-directory: .
         run: |
@@ -297,15 +269,6 @@ jobs:
       - name: Qualify GS9-E1 Go budget contract mirror
         working-directory: services/workflow-control
         run: go test -race ./budgetcontract -count=1
-      - name: Verify Workflow Control shadow golden contracts
-        working-directory: .
-        run: bun run workflow:shadow-golden -- --check
-      - name: Verify Workflow Runner golden contracts
-        working-directory: .
-        run: bun run workflow:runner-golden -- --check
-      - name: Verify Workflow Checkpoint shadow golden contracts
-        working-directory: .
-        run: bun run workflow:checkpoint-shadow-golden -- --check
       - name: Qualify GS9-C TypeScript checkpoint shadow
         working-directory: .
         run: |
@@ -316,12 +279,6 @@ jobs:
             packages/workflows/src/__tests__/workflow-runner-session.test.ts \
             packages/workflows/src/__tests__/workflow-runner-worker.test.ts \
             packages/workflows/src/__tests__/run-store.test.ts
-      - name: Verify Workflow Effect Control golden contracts
-        working-directory: .
-        run: bun run workflow:effect-control-golden -- --check
-      - name: Verify Workflow Effect shadow golden contracts
-        working-directory: .
-        run: bun run workflow:effect-shadow-golden -- --check
       - name: Qualify GS9-D TypeScript effect decision observer
         working-directory: .
         run: |

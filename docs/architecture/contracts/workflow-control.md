@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-15
+updated: 2026-08-20
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -20,7 +20,8 @@ sources:
 Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B PostgreSQL observational
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
 checkpoint/resume differential, the GS9-D effect-control seam plus default-off parity shadow, and
-the GS9-E1 budget operational bundle plus GS9-E2 default-off durable qualification authority.
+the GS9-E1 budget operational bundle plus GS9-E2 default-off durable qualification authority,
+the GS9-F1 runner-v2 foundation, and the GS9-F2a authority-binding companion contract freeze.
 TypeScript remains the sole production workflow writer, runner, approval, budget, effect, resume,
 and user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision
 and one-time claim, and D3 observes only the three credential-free decision/audit projections. E1
@@ -326,7 +327,7 @@ pending or the same decision's revision-2 audit-recorded projection may be consu
 success is evidence, not a precondition for effect authorization. The claim binds an exact
 `executionId`, immutable decision revision/hash, and one-time substate. D1 deliberately does not
 bind runner job, attempt, lease, or fence; the foundation bindings belong to GS9-F1 and the real
-domain adapters remain GS9-F2 work.
+domain adapters remain GS9-F2b work after the F2a contract freeze.
 Every terminal decision must name the same workspace as its enclosing artifact. An approved claim
 must begin after the decision and before the approval expires. Once that claim has begun, its
 proved completion or reconciliation record may be committed after approval expiry, but never
@@ -386,7 +387,7 @@ change a TypeScript effect result.
 
 Runner protocol v1 schemas, bytes, kinds, idempotency, receipts, and process lifecycle remain
 frozen. D1-D3 do not deliver runner-v2 `effect_authorization` and do not reinterpret a v1 runner
-message or durable receipt as approval. GS9-F2 must use a separately negotiated v2 session and
+message or durable receipt as approval. GS9-F2b must use the F2a companion plus a separately negotiated v2 session and
 preserve v1 unchanged.
 The six runner/authority/checkpoint manifest and golden SHA values in the bundle are source locks,
 not deployment identity. Runtime receipt validation receives the expected `controlBuildHash` from
@@ -537,7 +538,7 @@ revision, so no Workflow transition event is emitted. Ledger, receipt, and any k
 reconciliation commit together.
 
 An account/run revision mismatch caused by another run writer is a conflict, not an integrity
-alarm, and E2 does not rebase it; GS9-F2 must coordinate the real future running-run revision
+alarm, and E2 does not rebase it; GS9-F2b must coordinate the real future running-run revision
 writers after the F1 transport foundation.
 
 That first account is initialized only from a fixed, non-secret `BudgetSeed` in the
@@ -590,7 +591,8 @@ boundary until that receipt is delivered. The local provider seam orders reserve
 settlement after the returned receipt around an opaque call; it does not propagate or bind
 provider, model, or provider-run identity into the E authority contract. GS9-F1 does not call or complete the real GS9-C
 checkpoint, GS9-D effect, GS9-E budget, or resume adapters, and it does not establish complete
-runtime delivery or crash-after-authority recovery. GS9-F2 owns those adapters and exit gates.
+runtime delivery or crash-after-authority recovery. GS9-F2b owns those adapters and exit gates
+after F2a freezes their companion binding.
 
 The F1 worker reserves the remaining total-token budget while independently bounding provider
 output by the smaller output limit; settlement continues to charge prompt plus completion usage.
@@ -606,10 +608,16 @@ ceiling is only `GS9-F1 FOUNDATION LOCAL_PASS / runtime delivery NOT_CLAIMED`. P
 submission/routing, new-record acceptance, canary, TypeScript fallback removal, release, live,
 Qoder, tag, npm, and production remain unclaimed or not activated.
 
-GS9-F1 lays the transport foundation and GS9-F2 must complete runtime delivery before GS9-G owns new-record routing,
-canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
-read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
-drain. D1, D2, or D3 does not establish live qualification, release readiness, production
-activation, npm or tag publication, authenticated external-host evidence, production Go budget
-authority, or Go Workflow authority. E1 establishes none of those claims; E2 establishes only the
-bounded durable qualification authority stated above.
+## GS9-F2a authority-binding coordinator contract
+
+The generated [GS9-F2a manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative authority-boundary record. Its operation table is the single source for target
+kinds, coordinator deltas, source planes, source deltas, and source receipt schemas; its protocol,
+source-lock, framing, evidence, and closed boundary inventories are likewise authoritative. Other
+architecture documents must link to that record rather than duplicate its matrices or
+`NOT_CLAIMED` list.
+
+F2a contributes only the exact TypeScript contract and pure Go validator. It neither registers the
+future profile nor composes persistence, HTTP, scheduler/worker, recovery, or domain adapters.
+GS9-F1 remains the active foundation, TypeScript remains the production Workflow authority, and
+GS9-F2b must implement and qualify every runtime capability listed by the manifest as not delivered.

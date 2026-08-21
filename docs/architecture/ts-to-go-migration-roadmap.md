@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-15
+updated: 2026-08-20
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -509,8 +509,8 @@ cutover NOT_ACTIVATED`.
 
 TypeScript remains the sole production writer throughout GS9-D and GS9-E. Runner protocol v1 bytes
 and behavior remain frozen; neither stage negotiates or delivers runner v2, and a runner message or
-durable receipt is never itself an approval decision. GS9-F1 lays the transport foundation and
-GS9-F2 completes runtime delivery. GS9-G owns
+durable receipt is never itself an approval decision. GS9-F1 lays the transport foundation,
+GS9-F2a freezes the missing companion binding, and GS9-F2b completes runtime delivery. GS9-G owns
 new-record routing, canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes
 TypeScript a read-only recovery path. GS9-I deletes the TypeScript writer only after external
 qualification and drain. Existing records stay on their original writer and no stage permits
@@ -524,18 +524,23 @@ foundation for that already frozen v2 protocol. It pins protocol, route/build/ep
 resume generation, and capabilities; requires exact `[v1, v2]` negotiation with no downgrade; and
 persists a bound event and runner receipt before exposing the later decision boundary. Its local
 provider seam only orders reserve-before-fetch and settle-after-receipt around an opaque call; exact
-provider/model/provider-run identity binding into E authority remains F2 work.
+provider/model/provider-run identity binding into E authority remains F2b work.
 
 GS9-F1 does not deliver the real checkpoint, TypeScript effect, budget, or resume adapters and does
-not qualify complete runtime delivery or crash-after-authority recovery. GS9-F2 owns those adapters
-and exit gates. Production v2 submission and new-record routing remain disabled, TypeScript remains
-the production Workflow authority, and GS9-G still owns routing, canary, cutover, and higher-epoch
-rollback. Frozen runner-v1 and authority-v2 assets remain byte-identical.
+not qualify complete runtime delivery or crash-after-authority recovery. The F2 umbrella is split
+into sequential, non-stacked Red-zone batches:
 
-No GS9-D or GS9-E result claims authenticated external-host qualification, live verification,
-release, tag/npm publication, production activation, production Go budget authority, or Go
-Workflow authority. Those claims remain independent even when local and hosted qualification gates
-are green.
+```text
+GS9-F2a  exact Workflow Runner authority-binding companion contract + pure Go mirror
+GS9-F2b  durable checkpoint/effect/budget/resume adapters + end-to-end runtime delivery
+```
+
+F2a's generated [authority-binding manifest](../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative source for its exact contract, operation facts, protocol ordering, source locks,
+and authority ceiling. F2a remains contract-only, the Go mirror remains validator-only, and the F1
+profile and source manifest remain active. F2b owns every item in the manifest's `notDelivered`
+inventory; later routing/cutover stages may not infer authority from contract parity or remove any
+`notActivated`, `notClaimed`, or `separateGates` entry without new reviewed evidence.
 
 ### GS10–GS13 — Platform Runtime
 

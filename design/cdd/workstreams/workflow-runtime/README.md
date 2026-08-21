@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-08-20
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -180,7 +180,20 @@ capabilities; exact negotiation cannot downgrade to v1. The transport persists t
 and exact runner receipt before a later domain-decision adapter may advance.
 
 F1 contains no real checkpoint, TypeScript effect, budget, or resume adapter. Complete runtime
-delivery, their decision ordering, and crash-after-authority recovery remain GS9-F2 exit gates.
+delivery, their decision ordering, and crash-after-authority recovery remain GS9-F2b exit gates
+after the F2a contract freeze.
 Runner-v1 bytes remain unchanged. Production v2 submission and new-record routing remain disabled;
 TypeScript remains production Workflow, checkpoint/resume, approval, effect, budget, provider,
 RunStore, and read authority.
+
+## GS9-F2a Authority-Binding Contract Boundary
+
+GS9-F2a is contract-only; GS9-F2b owns durable adapters, recovery, and runtime delivery. The
+generated [authority-binding manifest](../../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative source for the six operations, coordinator and source-authority deltas, protocol
+ordering, source locks, exact framing, and the closed `notDelivered`, `notActivated`, `notClaimed`,
+and `separateGates` inventories. This CDD does not restate those inventories.
+
+TypeScript remains the production Workflow authority, and the Go package remains a pure validator
+with no durable authority. The active profile and service source manifest remain GS9-F1 until F2b
+implements and independently qualifies the runtime composition described by the manifest boundary.

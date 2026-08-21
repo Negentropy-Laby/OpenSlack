@@ -24,10 +24,22 @@ export class WorkflowEffectJsonError extends Error {
   }
 }
 
-interface Limits {
+export interface WorkflowEffectJsonLimits {
   readonly maxDepth: number;
   readonly maxNodes: number;
   readonly maxStringLength: number;
+  /** Optional UTF-8 byte ceiling applied to both object keys and string values. */
+  readonly maxStringBytes?: number;
+  /** Reject isolated UTF-16 surrogate code units after JSON escape decoding. */
+  readonly unicodeScalarsOnly?: boolean;
+  /** Accept only the exact decimal spelling of a JavaScript safe integer. */
+  readonly canonicalSafeIntegersOnly?: boolean;
+}
+
+interface ResolvedLimits extends WorkflowEffectJsonLimits {
+  readonly maxStringBytes: number;
+  readonly unicodeScalarsOnly: boolean;
+  readonly canonicalSafeIntegersOnly: boolean;
 }
 
 class StrictParser {
@@ -36,7 +48,7 @@ class StrictParser {
 
   constructor(
     private readonly text: string,
-    private readonly limits: Limits,
+    private readonly limits: ResolvedLimits,
   ) {}
 
   parse(): WorkflowEffectJsonValue {
@@ -141,6 +153,20 @@ class StrictParser {
         offset,
       );
     }
+    if (this.limits.unicodeScalarsOnly && containsUnpairedSurrogate(value)) {
+      throw new WorkflowEffectJsonError(
+        'WORKFLOW_EFFECT_JSON_INVALID',
+        'JSON string contains an unpaired Unicode surrogate.',
+        offset,
+      );
+    }
+    if (Buffer.byteLength(value, 'utf8') > this.limits.maxStringBytes) {
+      throw new WorkflowEffectJsonError(
+        'WORKFLOW_EFFECT_JSON_LIMIT_EXCEEDED',
+        'JSON string exceeds its byte limit.',
+        offset,
+      );
+    }
     return value;
   }
 
@@ -174,6 +200,12 @@ class StrictParser {
     this.#cursor += lexeme.length;
     const value = Number(lexeme);
     if (!Number.isFinite(value)) return this.invalid('JSON number is not finite.');
+    if (
+      this.limits.canonicalSafeIntegersOnly &&
+      (!Number.isSafeInteger(value) || String(value) !== lexeme)
+    ) {
+      return this.invalid('JSON number must be a canonical safe integer.');
+    }
     return value;
   }
 
@@ -208,7 +240,7 @@ class StrictParser {
 
 export function parseWorkflowEffectJson(
   bytes: Buffer,
-  limits: Partial<Limits> = {},
+  limits: Partial<WorkflowEffectJsonLimits> = {},
 ): WorkflowEffectJsonValue {
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     throw new WorkflowEffectJsonError('WORKFLOW_EFFECT_JSON_INVALID', 'UTF-8 BOM is forbidden.');
@@ -226,7 +258,24 @@ export function parseWorkflowEffectJson(
     maxDepth: limits.maxDepth ?? 8,
     maxNodes: limits.maxNodes ?? 128,
     maxStringLength: limits.maxStringLength ?? 2_048,
+    maxStringBytes: limits.maxStringBytes ?? Number.MAX_SAFE_INTEGER,
+    unicodeScalarsOnly: limits.unicodeScalarsOnly ?? false,
+    canonicalSafeIntegersOnly: limits.canonicalSafeIntegersOnly ?? false,
   }).parse();
+}
+
+function containsUnpairedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);

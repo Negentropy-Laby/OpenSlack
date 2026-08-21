@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-15
+updated: 2026-08-20
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -1032,7 +1032,7 @@ budget ledger entry as the source for the accepted run revision; it does not wri
 event or reuse runner/checkpoint/effect state.
 
 If another writer advances a running run without advancing the E2 account, the account/run
-revision mismatch is a conflict and E2 does not rebase it. GS9-F2 must explicitly coordinate that
+revision mismatch is a conflict and E2 does not rebase it. GS9-F2b must explicitly coordinate that
 future writer after the F1 transport foundation.
 
 The account preserves a canonical genesis anchor. Restart recovery folds every closed ledger kind
@@ -1087,7 +1087,8 @@ runner build hash jointly bind those bytes. Missing transport configuration fail
 and never falls back to the legacy in-process route.
 
 GS9-E1 freezes the budget contract and evidence seam; E2 adds only its durable qualification
-authority. GS9-F1 lays the transport foundation and GS9-F2 completes runtime delivery. GS9-G owns new-record routing,
+authority. GS9-F1 lays the transport foundation, F2a freezes the companion contract, and F2b
+completes runtime delivery. GS9-G owns new-record routing,
 canary, PostgreSQL single-writer cutover, and higher-epoch rollback. GS9-H makes TypeScript a
 read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
 drain. D1 makes no live, release, production, external-host, or Go-authority claim.
@@ -1102,7 +1103,7 @@ the ordered `[v1, v2]` set, but a v2-required foundation job cannot select or fa
 The transport enforces receipt-before-decision: a later adapter cannot advance until the current
 event and exact runner receipt are durable and the receipt is delivered. GS9-F1 intentionally has
 no real checkpoint, effect, budget, or resume adapter and makes no claim about their end-to-end
-decisions, runtime delivery, or crash-after-authority recovery. GS9-F2 must add and qualify those
+decisions, runtime delivery, or crash-after-authority recovery. GS9-F2b must add and qualify those
 bindings before complete runner-v2 delivery can be claimed. Existing v1 bytes remain exact.
 
 The F1 session serializes heartbeat and workflow events through one receiptable lane. Cancellation
@@ -1116,6 +1117,18 @@ The foundation remains off unless its qualification profile is selected. The def
 not submit or route v2 work. TypeScript remains the sole production Workflow state-machine,
 checkpoint/resume, approval/effect, budget-policy, provider, RunStore, and user-visible read
 authority; F1 makes no routing, canary, cutover, release, live, or production claim.
+
+### GS9-F2a authority-binding companion boundary
+
+F2a is contract-only. The generated [authority-binding manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the sole normative source for phase ordering, operation facts, source locks, framing, evidence,
+and the complete authority ceiling. Runtime code and supporting documents must consume or link to
+that record rather than maintain parallel matrices or negative-claim lists.
+
+No F2a runtime emits or consumes these frames. The GS9-F1 profile and source manifest remain active,
+TypeScript remains the production Workflow authority, and Go `runnerbindingcontract` remains a pure
+validator. GS9-F2b owns every capability in the manifest's `notDelivered` inventory and must
+qualify it independently before any boundary item can change.
 
 ### Operator Module
 

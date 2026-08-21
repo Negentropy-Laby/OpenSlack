@@ -49,3 +49,14 @@ a new workflow resume identity while retaining the runner lease attempt on all e
 The ordinary `server` binary and its image entry point remain shadow-only. The separately packaged
 `runner-server` starts only with exact enablement and all workspace, token, build, database, bundle,
 and filesystem bindings.
+
+## GS9-F2a contract-only companion
+
+The generated [authority-binding manifest](../../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative GS9-F2a boundary. It owns the closed operation facts, protocol sequence, source
+locks, exact framing, and authority-ceiling inventories; this lifecycle document intentionally does
+not duplicate them.
+
+F2a does not alter this service's scheduler, worker, store, image entry point, active GS9-F1
+profile, or source manifest. TypeScript remains the production Workflow authority, Go remains a
+pure validator, and GS9-F2b must implement and qualify the manifest's not-delivered runtime work.

@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-04
+updated: 2026-08-20
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -17,10 +17,10 @@ sources:
 
 # Workflow Runner Protocol Contract
 
-Status: GS8-B local implementation. GS8-A remains the immutable
-`openslack.workflow_runner.v1` bidirectional TypeScript/Go contract. GS8-B implements an explicit,
-default-off Go runner-lifecycle control plane and the sealed TypeScript worker without changing the
-normal CLI/TUI route or moving any GS9-deferred workflow authority.
+Status: GS8-B local implementation plus the GS9-F1 default-off runner-v2 foundation and GS9-F2a
+authority-binding contract freeze. GS8-A remains the immutable `openslack.workflow_runner.v1`
+bidirectional TypeScript/Go contract. F2a adds only exact contract parity; the normal CLI/TUI route,
+F1 runtime profile/source manifest and production Workflow authority remain unchanged.
 
 ## Purpose
 
@@ -345,7 +345,7 @@ run/revision/generation/route, create the exact runner receipt, and require rece
 a later decision adapter may advance. It does not implement the GS9-C checkpoint, GS9-D TypeScript
 effect, GS9-E budget, or resume adapters, and therefore does not claim end-to-end runtime delivery,
 checkpoint/effect/budget decision completion, or crash-after-authority recovery. Those remain the
-separate GS9-F2 integration gate.
+GS9-F2 umbrella: F2a freezes the missing companion contract and F2b owns integration delivery.
 
 Within the foundation session, all receiptable events share one FIFO lane. Heartbeat never
 preempts a budget, effect, checkpoint, cancel acknowledgement, or terminal event; cancellation may
@@ -361,3 +361,19 @@ new-record routing, canary or cutover; it does not make Go the Workflow state-ma
 effect-approval, effect-execution, budget-policy, or user-visible read authority. TypeScript remains
 the production Workflow authority, and the default image continues to start `/server` without v2
 submission or routing.
+
+## GS9-F2a authority-binding companion contract freeze
+
+The generated [GS9-F2a authority-binding manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative record for this contract-only batch. It closes the four-schema bundle, protocol
+sequence, operation facts, source-lock identities, exact framing, and every not-delivered,
+not-activated, not-claimed, or separately gated capability. The runner contract does not duplicate
+those inventories.
+
+F2a adds no runtime producer or consumer of the companion frames. GS9-F2b must compose durable
+staging, domain adapters, recovery, scheduler/worker integration, and end-to-end qualification
+without widening the manifest boundary.
+
+The active runtime profile and service source manifest continue to describe GS9-F1. TypeScript
+remains the production Workflow authority; the Go mirror remains validator-only with durable
+authority false.

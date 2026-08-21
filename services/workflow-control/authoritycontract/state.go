@@ -162,6 +162,20 @@ func ValidateRoute(value any, path string) (Route, error) {
 	return validateRoute(value, path)
 }
 
+// ValidateRouteJSON decodes one bounded neutral JSON value before applying the
+// same frozen route validator. Adjacent contracts use it to normalize their
+// in-memory numeric representation without copying route rules.
+func ValidateRouteJSON(input []byte, path string) (Route, error) {
+	if len(input) == 0 || len(input) > MaxStateBytes {
+		return Route{}, failure(ErrorLimitExceeded, path, "route exceeds its byte limit")
+	}
+	value, err := parseStrictJSON(input, MaxJSONDepth, MaxJSONNodes, MaxStringBytes)
+	if err != nil {
+		return Route{}, normalizeStrictJSONError(err)
+	}
+	return validateRoute(value, path)
+}
+
 func validateCheckpoint(value any, revision, resumeGeneration int64) (*CheckpointHead, error) {
 	if value == nil {
 		return nil, nil

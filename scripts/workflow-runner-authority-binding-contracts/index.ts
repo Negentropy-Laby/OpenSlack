@@ -1,0 +1,2690 @@
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { format } from 'prettier';
+
+import {
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_SCHEMA,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_SCHEMA,
+  WorkflowRunnerAuthorityBindingContractError,
+  deriveWorkflowRunnerAuthorityBindingId,
+  hashWorkflowRunnerAuthorityBindingEvidence,
+  hashWorkflowRunnerAuthorityBindingReceipt,
+  hashWorkflowRunnerAuthorityBindingResolution,
+  hashWorkflowRunnerAuthorityBindingStage,
+  prepareWorkflowRunnerAuthorityBindingReceipt,
+  prepareWorkflowRunnerAuthorityBindingResolution,
+  prepareWorkflowRunnerAuthorityBindingStage,
+  validateWorkflowRunnerAuthorityBindingReceipt,
+  validateWorkflowRunnerAuthorityBindingError,
+  validateWorkflowRunnerAuthorityBindingResolution,
+  validateWorkflowRunnerAuthorityBindingResolutionForStage,
+  validateWorkflowRunnerAuthorityBindingResolutionReceipt,
+  validateWorkflowRunnerAuthorityBindingStage,
+  validateWorkflowRunnerAuthorityBindingStageReceipt,
+  validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
+  workflowRunnerAuthorityBindingExpectedKind,
+  workflowRunnerAuthorityBindingMissingProviderUsageHash,
+  workflowRunnerAuthorityBindingRunnerDelta,
+  type WorkflowRunnerAuthorityBindingOperation,
+  type WorkflowRunnerAuthorityBindingReceipt,
+  type WorkflowRunnerAuthorityBindingResolution,
+  type WorkflowRunnerAuthorityBindingStage,
+  type WorkflowRunnerAuthorityEvidence,
+} from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
+import {
+  prepareWorkflowBudgetAuthorityRequest,
+  workflowBudgetAuthorityChargeNanoUsd,
+  validateWorkflowBudgetSettlementRequest,
+} from '../../packages/workflows/src/workflow-budget-authority-contract.js';
+import {
+  WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+  canonicalWorkflowControlAuthorityJson,
+  prepareWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityMessage,
+  type WorkflowControlAuthorityMessage,
+} from '../../packages/workflows/src/workflow-control-authority-contract.js';
+
+type Json = Record<string, unknown>;
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = resolve(here, '../..');
+const outputRoot = process.env.OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT
+  ? resolve(process.env.OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT)
+  : repositoryRoot;
+const contractRoot = resolve(
+  outputRoot,
+  'packages/workflows/contracts/workflow-runner-authority-binding/v1',
+);
+const serviceMirrorRoot = resolve(
+  outputRoot,
+  'services/workflow-control/runnerbindingcontract/generated/v1',
+);
+
+export const bundleFiles = Object.freeze([
+  'schemas/workflow-runner-authority-binding-stage.v1.schema.json',
+  'schemas/workflow-runner-authority-binding-resolution.v1.schema.json',
+  'schemas/workflow-runner-authority-binding-receipt.v1.schema.json',
+  'schemas/workflow-runner-authority-binding-error.v1.schema.json',
+  'golden-vectors.json',
+  'manifest.json',
+] as const);
+
+const sourceLockPaths = Object.freeze({
+  runnerV1Manifest: 'packages/workflows/contracts/workflow-runner/v1/manifest.json',
+  authorityV2Manifest: 'packages/workflows/contracts/workflow-control-authority/v2/manifest.json',
+  checkpointManifest: 'packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json',
+  effectControlManifest: 'packages/workflows/contracts/workflow-effect-control/v1/manifest.json',
+  effectShadowManifest: 'packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json',
+  budgetManifest: 'packages/workflows/contracts/workflow-budget-authority/v1/manifest.json',
+  migration7Up: 'services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql',
+  migration7Down:
+    'services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql',
+} as const satisfies Record<keyof typeof WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS, string>);
+
+const authorityBoundary = Object.freeze({
+  batch: 'GS9-F2a',
+  normative: true,
+  contractOnly: true,
+  qualificationOnly: true,
+  authorityClaim: 'NO_AUTHORITY',
+  goAuthorityImplemented: false,
+  runtimeCompositionImplemented: false,
+  productionRoutingActivated: false,
+  frozenAuthorityV2KindsExtended: false,
+  frozenAuthorityV2KindCount: 18,
+  sourceAuthoritiesReplaced: false,
+  notDelivered: Object.freeze([
+    'migration_000008',
+    'database',
+    'http',
+    'durable_store',
+    'scheduler',
+    'worker',
+    'checkpoint_adapter',
+    'effect_adapter',
+    'budget_adapter',
+    'resume_adapter',
+    'provider_adapter',
+    'authority_recovery',
+    'runtime_composition',
+  ]),
+  notActivated: Object.freeze([
+    'future_runtime_profile',
+    'production_v2_submission',
+    'new_record_acceptance',
+    'routing',
+    'canary',
+    'cutover',
+    'typescript_fallback_removal',
+    'typescript_writer_retirement',
+  ]),
+  notClaimed: Object.freeze([
+    'runtime_authority_delivery',
+    'go_production_workflow_authority',
+    'go_production_checkpoint_authority',
+    'go_production_effect_authority',
+    'go_production_budget_policy_authority',
+    'go_production_provider_authority',
+    'go_production_run_store_authority',
+    'go_production_user_visible_read_authority',
+    'authenticated_external_host_qualification',
+    'qoder',
+    'remote_connector',
+    'release',
+    'live',
+    'tag',
+    'npm',
+    'production_readiness',
+  ]),
+  separateGates: Object.freeze([
+    'hosted_exact_head_checks',
+    'review_thread_resolution',
+    'independent_human_approval',
+    'merge',
+  ]),
+});
+
+const HASH = '^[0-9a-f]{64}$';
+const PREFIXED_HASH = '^sha256:[0-9a-f]{64}$';
+const SAFE_ID = '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$';
+const SAFE_REF = '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$';
+const TIME = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
+const V2_KEY = '^openslack\\.workflow-control-authority\\.v2\\.[0-9a-f]{64}$';
+const RATE = '^(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,17}[1-9])?$';
+
+const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
+const h = (character: string): string => character.repeat(64);
+
+const OPERATION_MATRIX = Object.freeze(
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
+    operation,
+    targetKind: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind,
+    runnerDelta: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].runnerDelta,
+    sourcePlane: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourcePlane,
+    sourceEvidenceState:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceEvidenceState,
+    sourceRevisionDelta:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceRevisionDelta,
+    sourceGenerationDelta:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceGenerationDelta,
+    sourceReceiptSchema:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceReceiptSchema,
+  })),
+);
+
+const NEGATIVE_IDS = Object.freeze([
+  'stage-unknown-field',
+  'runner-revision-drift',
+  'resolution-evidence-hash-drift',
+  'stage-receipt-cross-splice',
+  'resolution-receipt-cross-splice',
+  'control-delivery-digest-drift',
+  'raw-provider-forbidden',
+  'resume-generation-drift',
+  'source-global-revision-swap',
+  'stage-before-resolution',
+  'same-key-body-drift',
+  'target-body-cross-splice',
+  'target-key-cross-splice',
+  'target-fingerprint-cross-splice',
+  'resolution-alien-stage-receipt',
+  'resolution-alien-stage-hash',
+  'resolution-receipt-alien-stage-receipt',
+  'resolution-receipt-stage-hash-drift',
+  'checkpoint-nested-contract-error',
+  'checkpoint-deep-path-contract-error',
+  'budget-nested-contract-error',
+  'effect-approved-expiry-boundary',
+  'effect-expired-future-boundary',
+  'effect-rejected-expiry-boundary',
+  'control-event-receipt-target-drift',
+  'control-decision-budget-evidence-drift',
+  'control-decision-effect-evidence-drift',
+  'control-decision-resume-attempt-drift',
+  'control-decision-ordering-drift',
+  'control-route-cross-splice',
+  'control-delivery-alien-stage-receipt',
+  'control-decision-missing-prior-event-ack',
+  'control-cancel-missing-prior-event-ack',
+  'control-decision-alien-prior-event-ack',
+  'control-decision-sequence-gap',
+  'control-decision-prior-time-inversion',
+  'budget-rate-invalid',
+  'budget-settle-receipt-hash-drift',
+  'budget-settle-token-drift',
+  'budget-settle-cost-drift',
+  'budget-settle-call-drift',
+  'budget-settle-disposition-drift',
+  'resume-logical-attempt-active-reuse',
+] as const);
+
+function asJson(value: unknown, label: string): Json {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  return value as Json;
+}
+
+function strict(properties: Json, required: readonly string[] = Object.keys(properties)): Json {
+  return { type: 'object', additionalProperties: false, properties, required };
+}
+
+function routeSchema(): Json {
+  const common = {
+    routingEpoch: {
+      type: 'integer',
+      minimum: 1,
+      maximum: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxSafeInteger,
+    },
+    authorityBuildHash: { type: 'string', pattern: HASH },
+  };
+  return {
+    oneOf: [
+      strict({ backend: { const: 'ts-local' }, authority: { const: 'typescript' }, ...common }),
+      strict({ backend: { const: 'go' }, authority: { const: 'workflow-control' }, ...common }),
+    ],
+  };
+}
+
+function receiptLifecycleSchema(schema: Json, value: Json): Json {
+  const properties = asJson(schema.properties, 'receipt properties');
+  const phase = value.phase;
+  if (phase === 'control_delivery') {
+    properties.status = { const: 'accepted' };
+    properties.committedAt = { type: 'string', pattern: TIME };
+    properties.reconciliationToken = { type: 'null' };
+    properties.disposition = { enum: ['accepted', 'reconciliation_required'] };
+    properties.controlKind = {
+      enum: [
+        'event_receipt',
+        'budget_authorization',
+        'effect_authorization',
+        'resume_offer',
+        'cancel_request',
+      ],
+    };
+    return schema;
+  }
+  if (phase === 'stage_event' || phase === 'commit_authority') {
+    properties.status = { enum: ['accepted', 'reconciliation_required'] };
+    properties.committedAt = {
+      oneOf: [{ type: 'string', pattern: TIME }, { type: 'null' }],
+    };
+    properties.reconciliationToken = {
+      oneOf: [{ type: 'string', pattern: SAFE_REF, maxLength: 512 }, { type: 'null' }],
+    };
+    schema.allOf = [
+      {
+        if: { properties: { status: { const: 'accepted' } }, required: ['status'] },
+        then: {
+          properties: {
+            committedAt: { type: 'string', pattern: TIME },
+            reconciliationToken: { type: 'null' },
+          },
+        },
+      },
+      {
+        if: {
+          properties: { status: { const: 'reconciliation_required' } },
+          required: ['status'],
+        },
+        then: {
+          properties: {
+            committedAt: { type: 'null' },
+            reconciliationToken: { type: 'string', pattern: SAFE_REF, maxLength: 512 },
+          },
+        },
+      },
+    ];
+  }
+  return schema;
+}
+
+function schemaForValue(value: unknown, path: readonly string[] = []): Json {
+  const key = path.at(-1) ?? '';
+  if (value === null) {
+    if (/Hash$/u.test(key)) return { oneOf: [{ type: 'string', pattern: HASH }, { type: 'null' }] };
+    if (/(?:Id|Schema|Token|At)$/u.test(key)) {
+      return { oneOf: [{ type: 'string', minLength: 1, maxLength: 512 }, { type: 'null' }] };
+    }
+    return { type: 'null' };
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0
+      ? { type: 'array', maxItems: 0 }
+      : { type: 'array', items: schemaForValue(value[0], [...path, '0']) };
+  }
+  if (typeof value === 'object') {
+    const record = value as Json;
+    if (
+      Object.keys(record).length === 4 &&
+      ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'].every((field) =>
+        Object.hasOwn(record, field),
+      )
+    ) {
+      return routeSchema();
+    }
+    const schema = strict(
+      Object.fromEntries(
+        Object.entries(record).map(([name, entry]) => [
+          name,
+          schemaForValue(entry, [...path, name]),
+        ]),
+      ),
+    );
+    if (
+      record.schema === WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA &&
+      typeof record.phase === 'string'
+    ) {
+      receiptLifecycleSchema(schema, record);
+    }
+    if (record.schema === 'openslack.workflow_runner_effect_completion_evidence.v1') {
+      asJson(schema.properties, 'effect completion properties').status = {
+        const: record.status,
+      };
+    }
+    if (record.schema === 'openslack.workflow_runner_effect_authority_evidence.v1') {
+      asJson(schema.properties, 'effect authority properties').approvalStatus = {
+        const: record.approvalStatus,
+      };
+    }
+    return schema;
+  }
+  if (typeof value === 'boolean') return { type: 'boolean' };
+  if (typeof value === 'number') {
+    return {
+      type: 'integer',
+      minimum: 0,
+      maximum: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxSafeInteger,
+    };
+  }
+  if (typeof value !== 'string') throw new Error(`Unsupported schema sample at ${path.join('/')}.`);
+
+  const fixedKeys = new Set([
+    'schema',
+    'contractVersion',
+    'profile',
+    'phase',
+    'direction',
+    'operation',
+    'kind',
+    'plane',
+    'evidenceState',
+    'receiptSchema',
+    'protocolVersion',
+    'authority',
+    'goRole',
+    'goAuthorityClaim',
+    'writer',
+    'method',
+    'path',
+    'commitPoint',
+  ]);
+  if (fixedKeys.has(key)) return { const: value };
+  if (key === 'status') return { type: 'string', minLength: 1, maxLength: 64 };
+  if (key === 'approvalStatus') return { enum: ['approved', 'rejected', 'expired'] };
+  if (key === 'disposition') return { enum: ['accepted', 'reconciliation_required'] };
+  if (key === 'body') {
+    return {
+      type: 'string',
+      minLength: 2,
+      maxLength: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
+    };
+  }
+  if (key === 'idempotencyKey') {
+    return {
+      type: 'string',
+      pattern: value.startsWith('openslack.workflow-control-authority')
+        ? V2_KEY
+        : '^openslack\\.[A-Za-z0-9._:-]+$',
+    };
+  }
+  if (key === 'requestFingerprint' || value.startsWith('sha256:')) {
+    return { type: 'string', pattern: PREFIXED_HASH };
+  }
+  if (key === 'rateNanoUsdPerToken') {
+    return { type: 'string', pattern: RATE, maxLength: 64 };
+  }
+  if (/(?:Hash|Digest)$/u.test(key)) return { type: 'string', pattern: HASH };
+  if (/(?:At|ExpiresAt)$/u.test(key)) return { type: 'string', pattern: TIME };
+  if (/(?:Id|Kind)$/u.test(key)) return { type: 'string', pattern: SAFE_ID, maxLength: 256 };
+  return { type: 'string', minLength: 1, maxLength: 524_288 };
+}
+
+function replaceRootConst(schema: Json, field: string, value: unknown): void {
+  const properties = asJson(schema.properties, 'schema properties');
+  properties[field] = { const: value };
+}
+
+function unionSchema(
+  id: string,
+  title: string,
+  values: readonly unknown[],
+  discriminants: readonly string[],
+): Json {
+  const variants = values.map((value) => {
+    const schema = schemaForValue(value);
+    const object = asJson(value, 'schema sample');
+    for (const field of discriminants) replaceRootConst(schema, field, object[field]);
+    return schema;
+  });
+
+  const unique = [
+    ...new Map(variants.map((variant) => [JSON.stringify(variant), variant])).values(),
+  ];
+  return {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: id,
+    title,
+    oneOf: unique,
+  };
+}
+
+function route(
+  buildHash: string,
+  backend: 'ts-local' | 'go' = 'ts-local',
+  authority: 'typescript' | 'workflow-control' = backend === 'ts-local'
+    ? 'typescript'
+    : 'workflow-control',
+) {
+  return {
+    backend,
+    authority,
+    routingEpoch: 1,
+    authorityBuildHash: buildHash,
+  };
+}
+
+interface StageIdentity {
+  readonly workspaceId: string;
+  readonly jobId: string;
+  readonly runId: string;
+  readonly runnerAttemptId: string;
+  readonly leaseId: string;
+  readonly fencingToken: number;
+  readonly correlationId: string;
+  readonly buildHash: string;
+  readonly expectedRevision: number;
+  readonly expectedGeneration: number;
+  readonly sequence: number;
+  readonly sentAt: string;
+  readonly backend?: 'ts-local' | 'go';
+  readonly authority?: 'typescript' | 'workflow-control';
+}
+
+function targetMessage(
+  operation: WorkflowRunnerAuthorityBindingOperation,
+  identity: StageIdentity,
+  payload: Json,
+): WorkflowControlAuthorityMessage {
+  return validateWorkflowControlAuthorityMessage({
+    schema: WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
+    protocolVersion: WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+    kind: workflowRunnerAuthorityBindingExpectedKind(operation),
+    workspaceId: identity.workspaceId,
+    jobId: identity.jobId,
+    workflowRunId: identity.runId,
+    attemptId: identity.runnerAttemptId,
+    leaseId: identity.leaseId,
+    fencingToken: identity.fencingToken,
+    sequence: identity.sequence,
+    authorityBackend: identity.backend ?? 'ts-local',
+    authority:
+      identity.authority ?? (identity.backend === 'go' ? 'workflow-control' : 'typescript'),
+    routingEpoch: 1,
+    authorityBuildHash: identity.buildHash,
+    runRevision: identity.expectedRevision,
+    resumeGeneration: identity.expectedGeneration,
+    eventId: `binding-${operation}-${identity.sequence}`,
+    correlationId: identity.correlationId,
+    sentAt: identity.sentAt,
+    payload,
+  });
+}
+
+function stage(
+  operation: WorkflowRunnerAuthorityBindingOperation,
+  identity: StageIdentity,
+  payload: Json,
+): WorkflowRunnerAuthorityBindingStage {
+  const message = targetMessage(operation, identity, payload);
+  const prepared = prepareWorkflowControlAuthorityMessage(message);
+  const delta = workflowRunnerAuthorityBindingRunnerDelta(operation);
+  const input = {
+    schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_SCHEMA,
+    contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+    profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+    phase: 'stage_event',
+    direction: 'runner-to-control',
+    companionSequence: 1,
+    bindingId: 'placeholder',
+    operation,
+    workspaceId: identity.workspaceId,
+    jobId: identity.jobId,
+    runId: identity.runId,
+    runnerAttemptId: identity.runnerAttemptId,
+    leaseId: identity.leaseId,
+    fencingToken: identity.fencingToken,
+    route: route(identity.buildHash, identity.backend, identity.authority),
+    runnerAuthority: {
+      expectedGlobalRunRevision: identity.expectedRevision,
+      acceptedGlobalRunRevision: identity.expectedRevision + delta.revision,
+      expectedResumeGeneration: identity.expectedGeneration,
+      acceptedResumeGeneration: identity.expectedGeneration + delta.generation,
+    },
+    target: {
+      schema: WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
+      eventId: message.eventId,
+      kind: message.kind,
+      sequence: message.sequence!,
+      body: prepared.body,
+      messageDigest: prepared.messageDigest,
+      idempotencyKey: prepared.idempotencyKey,
+      requestFingerprint: prepared.requestFingerprint,
+    },
+    correlationId: identity.correlationId,
+    sentAt: identity.sentAt,
+  } as const;
+  return validateWorkflowRunnerAuthorityBindingStage({
+    ...input,
+    bindingId: deriveWorkflowRunnerAuthorityBindingId(input),
+  });
+}
+
+function sourceAuthority(
+  operation: WorkflowRunnerAuthorityBindingOperation,
+  input: {
+    expectedRevision: number;
+    expectedGeneration: number;
+    requestHash: string;
+    recordHash?: string;
+    receiptHash?: string;
+    buildHash: string;
+  },
+) {
+  const prepared = operation === 'budget_reserve' || operation === 'budget_settle';
+  return {
+    plane:
+      operation === 'checkpoint_commit'
+        ? 'checkpoint_control'
+        : operation === 'effect_authorize' || operation === 'effect_complete'
+          ? 'effect_v2_sibling'
+          : prepared
+            ? 'budget_account'
+            : 'resume_control',
+    evidenceState: prepared ? 'prepared' : 'committed',
+    expectedRevision: input.expectedRevision,
+    acceptedRevision: prepared ? null : input.expectedRevision + 1,
+    expectedResumeGeneration: input.expectedGeneration,
+    acceptedResumeGeneration: input.expectedGeneration + (operation === 'resume_advance' ? 1 : 0),
+    requestHash: input.requestHash,
+    receiptSchema: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS[operation],
+    receiptHash: prepared ? null : (input.receiptHash ?? h('a')),
+    recordHash: prepared ? null : (input.recordHash ?? h('b')),
+    authorityBuildHash: input.buildHash,
+  } as const;
+}
+
+interface Exchange {
+  readonly stage: WorkflowRunnerAuthorityBindingStage;
+  readonly stageReceipt: WorkflowRunnerAuthorityBindingReceipt;
+  readonly resolution: WorkflowRunnerAuthorityBindingResolution;
+  readonly resolutionReceipt: WorkflowRunnerAuthorityBindingReceipt;
+}
+
+function acceptedStageReceipt(
+  staged: WorkflowRunnerAuthorityBindingStage,
+  offset: number,
+): WorkflowRunnerAuthorityBindingReceipt {
+  return validateWorkflowRunnerAuthorityBindingStageReceipt(
+    {
+      schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
+      contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+      profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+      direction: 'control-to-runner',
+      phase: 'stage_event',
+      companionSequence: 1,
+      bindingId: staged.bindingId,
+      operation: staged.operation,
+      status: 'accepted',
+      controlBuildHash: staged.route.authorityBuildHash,
+      committedAt: `2026-08-20T00:${String(offset).padStart(2, '0')}:01.000Z`,
+      reconciliationToken: null,
+      requestHash: hashWorkflowRunnerAuthorityBindingStage(staged),
+      targetEventId: staged.target.eventId,
+      targetBodyHash: staged.target.messageDigest,
+      evidenceHash: null,
+    },
+    staged,
+  );
+}
+
+function exchange(
+  staged: WorkflowRunnerAuthorityBindingStage,
+  evidence: WorkflowRunnerAuthorityEvidence,
+  offset: number,
+): Exchange {
+  const stageReceipt = acceptedStageReceipt(staged, offset);
+  const resolution = validateWorkflowRunnerAuthorityBindingResolutionForStage(
+    {
+      schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_SCHEMA,
+      contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+      profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+      phase: 'commit_authority',
+      direction: 'runner-to-control',
+      companionSequence: 2,
+      bindingId: staged.bindingId,
+      operation: staged.operation,
+      stageHash: hashWorkflowRunnerAuthorityBindingStage(staged),
+      stageReceiptHash: hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt),
+      targetBodyHash: staged.target.messageDigest,
+      evidence,
+      evidenceHash: hashWorkflowRunnerAuthorityBindingEvidence(evidence, staged.operation),
+      sentAt: `2026-08-20T00:${String(offset).padStart(2, '0')}:02.000Z`,
+    },
+    staged,
+    stageReceipt,
+  );
+  const resolutionReceipt = validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+    {
+      schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
+      contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+      profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+      direction: 'control-to-runner',
+      phase: 'commit_authority',
+      companionSequence: 2,
+      bindingId: staged.bindingId,
+      operation: staged.operation,
+      status: 'accepted',
+      controlBuildHash: evidence.sourceAuthority.authorityBuildHash,
+      committedAt: `2026-08-20T00:${String(offset).padStart(2, '0')}:03.000Z`,
+      reconciliationToken: null,
+      requestHash: hashWorkflowRunnerAuthorityBindingResolution(resolution),
+      targetEventId: staged.target.eventId,
+      targetBodyHash: staged.target.messageDigest,
+      stageHash: resolution.stageHash,
+      stageReceiptHash: resolution.stageReceiptHash,
+      evidenceHash: resolution.evidenceHash,
+    },
+    resolution,
+    staged,
+    stageReceipt,
+  );
+  return { stage: staged, stageReceipt, resolution, resolutionReceipt };
+}
+
+function settlementStageDrift(
+  original: Exchange,
+  field:
+    | 'providerReceiptHash'
+    | 'actualTokens'
+    | 'actualCostNanoUsd'
+    | 'actualCalls'
+    | 'settlementStatus',
+  value: string,
+): {
+  readonly resolution: WorkflowRunnerAuthorityBindingResolution;
+  readonly stage: WorkflowRunnerAuthorityBindingStage;
+  readonly stageReceipt: WorkflowRunnerAuthorityBindingReceipt;
+} {
+  const originalMessage = JSON.parse(original.stage.target.body) as Json;
+  const payload = structuredClone(asJson(originalMessage.payload, 'budget settlement payload'));
+  payload[field] = value;
+  const staged = stage(
+    'budget_settle',
+    {
+      workspaceId: original.stage.workspaceId,
+      jobId: original.stage.jobId,
+      runId: original.stage.runId,
+      runnerAttemptId: original.stage.runnerAttemptId,
+      leaseId: original.stage.leaseId,
+      fencingToken: original.stage.fencingToken,
+      correlationId: original.stage.correlationId,
+      buildHash: original.stage.route.authorityBuildHash,
+      expectedRevision: original.stage.runnerAuthority.expectedGlobalRunRevision,
+      expectedGeneration: original.stage.runnerAuthority.expectedResumeGeneration,
+      sequence: original.stage.target.sequence,
+      sentAt: original.stage.sentAt,
+      backend: original.stage.route.backend,
+      authority: original.stage.route.authority,
+    },
+    payload,
+  );
+  const stageReceipt = acceptedStageReceipt(staged, 5);
+  const candidate = structuredClone(original.resolution) as unknown as Json;
+  candidate.bindingId = staged.bindingId;
+  candidate.stageHash = hashWorkflowRunnerAuthorityBindingStage(staged);
+  candidate.stageReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt);
+  candidate.targetBodyHash = staged.target.messageDigest;
+  return {
+    stage: staged,
+    stageReceipt,
+    resolution: validateWorkflowRunnerAuthorityBindingResolution(candidate),
+  };
+}
+
+async function sourceGolden(path: string): Promise<Json> {
+  return JSON.parse(await readFile(resolve(repositoryRoot, path), 'utf8')) as Json;
+}
+
+async function makeExchanges(
+  budgetRecords: Json,
+): Promise<Record<WorkflowRunnerAuthorityBindingOperation, Exchange>> {
+  const checkpointGolden = await sourceGolden(
+    'packages/workflows/contracts/workflow-checkpoint-shadow/v1/golden-vectors.json',
+  );
+  const checkpointVectors = asJson(checkpointGolden.vectors, 'checkpoint vectors');
+  const checkpointEnvelope = asJson(
+    asJson(checkpointVectors.checkpointCommit, 'checkpoint vector').value,
+    'checkpoint envelope',
+  );
+  const resumeEnvelope = asJson(
+    asJson(checkpointVectors.resumeAdvance, 'resume vector').value,
+    'resume envelope',
+  );
+  const checkpointObservation = asJson(checkpointEnvelope.observation, 'checkpoint observation');
+  const resumeObservation = asJson(resumeEnvelope.observation, 'resume observation');
+  const checkpointRunner = asJson(checkpointObservation.runner, 'checkpoint runner');
+  const resumeRunner = asJson(resumeObservation.runner, 'resume runner');
+  const checkpointRecord = asJson(checkpointObservation.checkpoint, 'checkpoint record');
+  const priorCheckpoint = asJson(resumeObservation.priorCheckpoint, 'prior checkpoint');
+
+  const checkpointEnvelopeHash = H(canonicalWorkflowControlAuthorityJson(checkpointEnvelope));
+  const resumeEnvelopeHash = H(canonicalWorkflowControlAuthorityJson(resumeEnvelope));
+  const checkpointStage = stage(
+    'checkpoint_commit',
+    {
+      workspaceId: checkpointRunner.workspaceId as string,
+      jobId: checkpointRunner.jobId as string,
+      runId: checkpointObservation.runId as string,
+      runnerAttemptId: checkpointRunner.attemptId as string,
+      leaseId: checkpointRunner.leaseId as string,
+      fencingToken: checkpointRunner.fencingToken as number,
+      correlationId: checkpointRunner.correlationId as string,
+      buildHash: checkpointRunner.runnerBuildHash as string,
+      expectedRevision: 10,
+      expectedGeneration: checkpointObservation.resumeGeneration as number,
+      sequence: 11,
+      sentAt: '2026-08-20T00:01:00.000Z',
+    },
+    {
+      checkpointId: checkpointRecord.checkpointId,
+      phaseId: checkpointRecord.phaseId,
+      phaseIndex: checkpointRecord.phaseIndex,
+      commitPoint: checkpointRecord.commitPoint,
+      artifactRef: checkpointRecord.artifactRef,
+      artifactHash: checkpointRecord.artifactHash,
+      resultHash: checkpointRecord.resultHash,
+      cacheKeyHash: checkpointRecord.cacheKeyHash,
+      workflowSourceHash: checkpointObservation.workflowSourceHash,
+      manifestHash: checkpointObservation.manifestHash,
+      inputHash: checkpointObservation.inputHash,
+    },
+  );
+  const checkpointEvidence = {
+    schema: 'openslack.workflow_runner_checkpoint_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('checkpoint_commit', {
+      expectedRevision: (checkpointObservation.revision as number) - 1,
+      expectedGeneration: checkpointObservation.resumeGeneration as number,
+      requestHash: checkpointEnvelopeHash,
+      recordHash: checkpointEnvelope.observationHash as string,
+      receiptHash: h('c'),
+      buildHash: checkpointRunner.runnerBuildHash as string,
+    }),
+    envelope: checkpointEnvelope,
+    envelopeHash: checkpointEnvelopeHash,
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  const resumeStage = stage(
+    'resume_advance',
+    {
+      workspaceId: resumeRunner.workspaceId as string,
+      jobId: resumeRunner.jobId as string,
+      runId: resumeObservation.runId as string,
+      runnerAttemptId: resumeRunner.attemptId as string,
+      leaseId: resumeRunner.leaseId as string,
+      fencingToken: resumeRunner.fencingToken as number,
+      correlationId: resumeRunner.correlationId as string,
+      buildHash: resumeRunner.runnerBuildHash as string,
+      expectedRevision: 20,
+      expectedGeneration: (resumeObservation.resumeGeneration as number) - 1,
+      sequence: 21,
+      sentAt: '2026-08-20T00:06:00.000Z',
+    },
+    {
+      acceptedAt: '2026-08-20T00:06:00.000Z',
+      leaseExpiresAt: '2026-08-20T00:16:00.000Z',
+    },
+  );
+  const resumeEvidence = {
+    schema: 'openslack.workflow_runner_resume_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('resume_advance', {
+      expectedRevision: (resumeObservation.revision as number) - 1,
+      expectedGeneration: (resumeObservation.resumeGeneration as number) - 1,
+      requestHash: resumeEnvelopeHash,
+      recordHash: resumeEnvelope.observationHash as string,
+      receiptHash: h('d'),
+      buildHash: resumeRunner.runnerBuildHash as string,
+    }),
+    envelope: resumeEnvelope,
+    envelopeHash: resumeEnvelopeHash,
+    priorCheckpointId: priorCheckpoint.checkpointId,
+    priorCheckpointHash: H(canonicalWorkflowControlAuthorityJson(priorCheckpoint)),
+    nextPhaseId: resumeObservation.nextPhaseId,
+    nextPhaseIndex: resumeObservation.nextPhaseIndex,
+    logicalResumeAttemptId: 'logical.resume.attempt.1',
+    expiresAt: '2026-08-20T00:16:00.000Z',
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  const effectBuild = h('1');
+  const effectIdentity = {
+    workspaceId: 'workspace.effect',
+    jobId: 'job.effect',
+    runId: 'run.effect',
+    runnerAttemptId: 'attempt.effect',
+    leaseId: 'lease.effect',
+    fencingToken: 9,
+    correlationId: 'correlation.effect',
+    buildHash: effectBuild,
+    expectedRevision: 30,
+    expectedGeneration: 0,
+    sequence: 31,
+    sentAt: '2026-08-20T00:02:00.000Z',
+  } as const;
+  const effectHash = h('2');
+  const capabilityHash = h('3');
+  const intentBindingHash = h('4');
+  const effectStage = stage('effect_authorize', effectIdentity, {
+    effectId: 'effect.1',
+    effectKind: 'collaboration.event',
+    effectHash,
+    capabilityHash,
+    requiresHumanDecision: true,
+  });
+  const grantHash = h('5');
+  const effectEvidence = {
+    schema: 'openslack.workflow_runner_effect_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('effect_authorize', {
+      expectedRevision: 0,
+      expectedGeneration: 0,
+      requestHash: intentBindingHash,
+      recordHash: h('6'),
+      receiptHash: h('7'),
+      buildHash: effectBuild,
+    }),
+    occurrenceId: 'occurrence.1',
+    intentBindingHash,
+    effectId: 'effect.1',
+    effectHash,
+    capabilityHash,
+    approvalId: 'approval.1',
+    approvalStatus: 'approved',
+    approvalRecordHash: h('8'),
+    approvalDecisionHash: h('9'),
+    decisionRevision: 1,
+    humanBindingHash: h('a'),
+    attestationHash: h('b'),
+    executionId: 'execution.1',
+    claimHash: grantHash,
+    grantHash,
+    expiresAt: '2026-08-20T00:12:00.000Z',
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  const completionIdentity = {
+    ...effectIdentity,
+    expectedRevision: 31,
+    sequence: 32,
+    sentAt: '2026-08-20T00:03:00.000Z',
+  };
+  const outcomeHash = h('c');
+  const completionStage = stage('effect_complete', completionIdentity, {
+    effectId: 'effect.1',
+    status: 'executed',
+    outcomeHash,
+  });
+  const completionEvidence = {
+    schema: 'openslack.workflow_runner_effect_completion_evidence.v1',
+    sourceAuthority: sourceAuthority('effect_complete', {
+      expectedRevision: 1,
+      expectedGeneration: 0,
+      requestHash: grantHash,
+      recordHash: h('d'),
+      receiptHash: h('e'),
+      buildHash: effectBuild,
+    }),
+    occurrenceId: 'occurrence.1',
+    effectId: 'effect.1',
+    effectHash,
+    executionId: 'execution.1',
+    claimHash: grantHash,
+    status: 'executed',
+    outcomeHash,
+    reconciliationToken: null,
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  const preparedReserve = asJson(
+    asJson(budgetRecords.preparedReserve, 'prepared reserve').value,
+    'prepared reserve value',
+  );
+  const preparedSettlement = asJson(
+    asJson(budgetRecords.preparedSettlement, 'prepared settlement').value,
+    'prepared settlement value',
+  );
+  const reserveRequest = JSON.parse(preparedReserve.body as string) as Json;
+  const settlementRequest = JSON.parse(preparedSettlement.body as string) as Json;
+  const reserveRoute = asJson(reserveRequest.route, 'reserve route');
+  const reserveIdentity: StageIdentity = {
+    workspaceId: reserveRequest.workspaceId as string,
+    jobId: 'job.budget',
+    runId: reserveRequest.runId as string,
+    runnerAttemptId: 'attempt.budget',
+    leaseId: 'lease.budget',
+    fencingToken: 11,
+    correlationId: reserveRequest.correlationId as string,
+    buildHash: reserveRoute.authorityBuildHash as string,
+    expectedRevision: reserveRequest.expectedRunRevision as number,
+    expectedGeneration: 0,
+    sequence: 41,
+    sentAt: '2026-08-20T00:04:00.000Z',
+  };
+  const reserveStage = stage('budget_reserve', reserveIdentity, {
+    reservationId: reserveRequest.reservationId,
+    callId: reserveRequest.callId,
+    policyHash: reserveRequest.policyHash,
+    requestedTokens: asJson(reserveRequest.requested, 'requested').tokens,
+    requestedCostNanoUsd: asJson(reserveRequest.requested, 'requested').nanoUsd,
+    requestedCalls: asJson(reserveRequest.requested, 'requested').calls,
+  });
+  const reserveEvidence = {
+    schema: 'openslack.workflow_runner_budget_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('budget_reserve', {
+      expectedRevision: reserveRequest.expectedAccountRevision as number,
+      expectedGeneration: 0,
+      requestHash: preparedReserve.requestHash as string,
+      buildHash: reserveRoute.authorityBuildHash as string,
+    }),
+    preparedRequest: preparedReserve,
+    providerHash: reserveRequest.expectedProviderHash,
+    modelHash: reserveRequest.expectedModelHash,
+    providerRunHash: reserveRequest.expectedProviderRunHash,
+    providerAttempt: reserveRequest.providerAttempt,
+    accountId: reserveRequest.accountId,
+    policyHash: reserveRequest.policyHash,
+    rateNanoUsdPerToken: reserveRequest.rateNanoUsdPerToken,
+    providerUsageReceiptHash: null,
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  const usage = asJson(settlementRequest.providerUsage, 'provider usage');
+  const settlementRoute = asJson(settlementRequest.route, 'settlement route');
+  const settleIdentity: StageIdentity = {
+    ...reserveIdentity,
+    correlationId: settlementRequest.correlationId as string,
+    buildHash: settlementRoute.authorityBuildHash as string,
+    expectedRevision: settlementRequest.expectedRunRevision as number,
+    sequence: 42,
+    sentAt: '2026-08-20T00:05:00.000Z',
+  };
+  const settleStage = stage('budget_settle', settleIdentity, {
+    reservationId: settlementRequest.reservationId,
+    callId: settlementRequest.callId,
+    providerReceiptHash: (settlementRequest.usageReceiptHash as string).slice('sha256:'.length),
+    actualTokens: usage.totalTokens,
+    actualCostNanoUsd: workflowBudgetAuthorityChargeNanoUsd(
+      usage.totalTokens,
+      settlementRequest.rateNanoUsdPerToken,
+    ),
+    actualCalls: usage.calls,
+    settlementStatus: 'settled',
+  });
+  const settleEvidence = {
+    schema: 'openslack.workflow_runner_budget_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('budget_settle', {
+      expectedRevision: settlementRequest.expectedAccountRevision as number,
+      expectedGeneration: 0,
+      requestHash: preparedSettlement.requestHash as string,
+      buildHash: settlementRoute.authorityBuildHash as string,
+    }),
+    preparedRequest: preparedSettlement,
+    providerHash: settlementRequest.expectedProviderHash,
+    modelHash: settlementRequest.expectedModelHash,
+    providerRunHash: settlementRequest.expectedProviderRunHash,
+    providerAttempt: settlementRequest.providerAttempt,
+    accountId: settlementRequest.accountId,
+    policyHash: settlementRequest.policyHash,
+    rateNanoUsdPerToken: settlementRequest.rateNanoUsdPerToken,
+    providerUsageReceiptHash: settlementRequest.usageReceiptHash,
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+
+  return {
+    checkpoint_commit: exchange(checkpointStage, checkpointEvidence, 1),
+    effect_authorize: exchange(effectStage, effectEvidence, 2),
+    effect_complete: exchange(completionStage, completionEvidence, 3),
+    budget_reserve: exchange(reserveStage, reserveEvidence, 4),
+    budget_settle: exchange(settleStage, settleEvidence, 5),
+    resume_advance: exchange(resumeStage, resumeEvidence, 6),
+  };
+}
+
+function effectSemanticVariants(
+  exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
+): Record<string, Exchange> {
+  const authorized = exchanges.effect_authorize;
+  const authorizedEvidence = authorized.resolution.evidence as unknown as Json;
+  const baseEffect = {
+    effectId: authorizedEvidence.effectId as string,
+    effectHash: authorizedEvidence.effectHash as string,
+    capabilityHash: authorizedEvidence.capabilityHash as string,
+    occurrenceId: authorizedEvidence.occurrenceId as string,
+    buildHash: authorized.stage.route.authorityBuildHash,
+  };
+  const authorization = (status: 'rejected' | 'expired', index: number): Exchange => {
+    const intentBindingHash = H(`semantic-effect-${status}`);
+    const staged = stage(
+      'effect_authorize',
+      {
+        workspaceId: authorized.stage.workspaceId,
+        jobId: authorized.stage.jobId,
+        runId: authorized.stage.runId,
+        runnerAttemptId: authorized.stage.runnerAttemptId,
+        leaseId: authorized.stage.leaseId,
+        fencingToken: authorized.stage.fencingToken,
+        correlationId: authorized.stage.correlationId,
+        buildHash: baseEffect.buildHash,
+        expectedRevision: 32 + index,
+        expectedGeneration: 0,
+        sequence: 50 + index,
+        sentAt: `2026-08-20T00:1${index}:00.000Z`,
+      },
+      {
+        effectId: baseEffect.effectId,
+        effectKind: 'collaboration.event',
+        effectHash: baseEffect.effectHash,
+        capabilityHash: baseEffect.capabilityHash,
+        requiresHumanDecision: true,
+      },
+    );
+    const expectedSourceRevision = 10 + index;
+    const decided = status === 'rejected';
+    const evidence = {
+      schema: 'openslack.workflow_runner_effect_authority_evidence.v1',
+      sourceAuthority: sourceAuthority('effect_authorize', {
+        expectedRevision: expectedSourceRevision,
+        expectedGeneration: 0,
+        requestHash: intentBindingHash,
+        recordHash: H(`effect-${status}-record`),
+        receiptHash: H(`effect-${status}-receipt`),
+        buildHash: baseEffect.buildHash,
+      }),
+      occurrenceId: `${baseEffect.occurrenceId}.${status}`,
+      intentBindingHash,
+      effectId: baseEffect.effectId,
+      effectHash: baseEffect.effectHash,
+      capabilityHash: baseEffect.capabilityHash,
+      approvalId: `approval.${status}`,
+      approvalStatus: status,
+      approvalRecordHash: decided ? H(`approval-${status}`) : null,
+      approvalDecisionHash: decided ? H(`decision-${status}`) : null,
+      decisionRevision: expectedSourceRevision + 1,
+      humanBindingHash: decided ? H(`human-${status}`) : null,
+      attestationHash: decided ? H(`attestation-${status}`) : null,
+      executionId: null,
+      claimHash: null,
+      grantHash: null,
+      expiresAt: status === 'expired' ? '2026-08-20T00:12:02.000Z' : '2026-08-20T00:21:00.000Z',
+    } as unknown as WorkflowRunnerAuthorityEvidence;
+    return exchange(staged, evidence, 10 + index);
+  };
+
+  const completed = exchanges.effect_complete;
+  const completedEvidence = completed.resolution.evidence as unknown as Json;
+  const completion = (status: 'failed' | 'reconciliation_required', index: number): Exchange => {
+    const outcomeHash = H(`semantic-effect-outcome-${status}`);
+    const staged = stage(
+      'effect_complete',
+      {
+        workspaceId: completed.stage.workspaceId,
+        jobId: completed.stage.jobId,
+        runId: completed.stage.runId,
+        runnerAttemptId: completed.stage.runnerAttemptId,
+        leaseId: completed.stage.leaseId,
+        fencingToken: completed.stage.fencingToken,
+        correlationId: completed.stage.correlationId,
+        buildHash: completed.stage.route.authorityBuildHash,
+        expectedRevision: 40 + index,
+        expectedGeneration: 0,
+        sequence: 60 + index,
+        sentAt: `2026-08-20T00:1${index + 2}:00.000Z`,
+      },
+      { effectId: completedEvidence.effectId, status, outcomeHash },
+    );
+    const claimHash = completedEvidence.claimHash as string;
+    const evidence = {
+      schema: 'openslack.workflow_runner_effect_completion_evidence.v1',
+      sourceAuthority: sourceAuthority('effect_complete', {
+        expectedRevision: 20 + index,
+        expectedGeneration: 0,
+        requestHash: claimHash,
+        recordHash: H(`completion-${status}-record`),
+        receiptHash: H(`completion-${status}-receipt`),
+        buildHash: completed.stage.route.authorityBuildHash,
+      }),
+      occurrenceId: `${completedEvidence.occurrenceId as string}.${status}`,
+      effectId: completedEvidence.effectId,
+      effectHash: completedEvidence.effectHash,
+      executionId: completedEvidence.executionId,
+      claimHash,
+      status,
+      outcomeHash,
+      reconciliationToken:
+        status === 'reconciliation_required' ? 'reconcile.effect.completion' : null,
+    } as unknown as WorkflowRunnerAuthorityEvidence;
+    return exchange(staged, evidence, 12 + index);
+  };
+
+  return {
+    effectAuthorizeRejected: authorization('rejected', 1),
+    effectAuthorizeExpired: authorization('expired', 2),
+    effectCompleteFailed: completion('failed', 1),
+    effectCompleteReconciliation: completion('reconciliation_required', 2),
+  };
+}
+
+function goRouteSemanticVariant(
+  exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
+): Exchange {
+  const checkpoint = exchanges.checkpoint_commit;
+  const target = validateWorkflowControlAuthorityMessage(JSON.parse(checkpoint.stage.target.body));
+  const staged = stage(
+    'checkpoint_commit',
+    {
+      workspaceId: checkpoint.stage.workspaceId,
+      jobId: checkpoint.stage.jobId,
+      runId: checkpoint.stage.runId,
+      runnerAttemptId: checkpoint.stage.runnerAttemptId,
+      leaseId: checkpoint.stage.leaseId,
+      fencingToken: checkpoint.stage.fencingToken,
+      correlationId: checkpoint.stage.correlationId,
+      buildHash: checkpoint.stage.route.authorityBuildHash,
+      expectedRevision: checkpoint.stage.runnerAuthority.expectedGlobalRunRevision,
+      expectedGeneration: checkpoint.stage.runnerAuthority.expectedResumeGeneration,
+      sequence: 81,
+      sentAt: '2026-08-20T00:30:00.000Z',
+      backend: 'go',
+      authority: 'workflow-control',
+    },
+    target.payload as Json,
+  );
+  return exchange(staged, structuredClone(checkpoint.resolution.evidence), 30);
+}
+
+async function budgetSemanticVariants(
+  exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
+  records: Json,
+): Promise<Record<string, Exchange>> {
+  const base = exchanges.budget_settle.stage;
+
+  const settlement = (recordName: string, index: number): Exchange => {
+    const record = asJson(asJson(records[recordName], recordName).value, `${recordName} value`);
+    const request = validateWorkflowBudgetSettlementRequest(record.request);
+    const prepared = prepareWorkflowBudgetAuthorityRequest(
+      'settle',
+      request,
+      'qualification-caller',
+    );
+    const receiptHash =
+      request.usageReceiptHash ??
+      workflowRunnerAuthorityBindingMissingProviderUsageHash(prepared.requestHash);
+    const staged = stage(
+      'budget_settle',
+      {
+        workspaceId: request.workspaceId,
+        jobId: base.jobId,
+        runId: request.runId,
+        runnerAttemptId: base.runnerAttemptId,
+        leaseId: base.leaseId,
+        fencingToken: base.fencingToken,
+        correlationId: request.correlationId,
+        buildHash: request.route.authorityBuildHash,
+        expectedRevision: request.expectedRunRevision,
+        expectedGeneration: base.runnerAuthority.expectedResumeGeneration,
+        sequence: 70 + index,
+        sentAt: `2026-08-20T00:${String(14 + index).padStart(2, '0')}:00.000Z`,
+      },
+      {
+        reservationId: request.reservationId,
+        callId: request.callId,
+        providerReceiptHash: receiptHash.slice('sha256:'.length),
+        actualTokens: '0',
+        actualCostNanoUsd: '0',
+        actualCalls: '0',
+        settlementStatus: 'reconciliation_required',
+      },
+    );
+    const evidence = {
+      schema: 'openslack.workflow_runner_budget_authority_evidence.v1',
+      sourceAuthority: sourceAuthority('budget_settle', {
+        expectedRevision: request.expectedAccountRevision,
+        expectedGeneration: 0,
+        requestHash: prepared.requestHash,
+        buildHash: request.route.authorityBuildHash,
+      }),
+      preparedRequest: prepared,
+      providerHash: request.expectedProviderHash,
+      modelHash: request.expectedModelHash,
+      providerRunHash: request.expectedProviderRunHash,
+      providerAttempt: request.providerAttempt,
+      accountId: request.accountId,
+      policyHash: request.policyHash,
+      rateNanoUsdPerToken: request.rateNanoUsdPerToken,
+      providerUsageReceiptHash: receiptHash,
+    } as unknown as WorkflowRunnerAuthorityEvidence;
+    return exchange(staged, evidence, 20 + index);
+  };
+
+  return {
+    budgetSettleMissing: settlement('usageMissing', 1),
+    budgetSettleUntrusted: settlement('usageUntrusted', 2),
+    budgetSettleProviderUnreported: settlement('providerUnknown', 3),
+  };
+}
+
+type ControlDeliveryKind =
+  | 'event_receipt'
+  | 'budget_authorization'
+  | 'effect_authorization'
+  | 'resume_offer'
+  | 'cancel_request';
+
+function controlMessage(
+  exchangeValue: Exchange,
+  kind: ControlDeliveryKind,
+): WorkflowControlAuthorityMessage {
+  const staged = exchangeValue.stage;
+  const target = validateWorkflowControlAuthorityMessage(JSON.parse(staged.target.body));
+  const resolutionEvidence = exchangeValue.resolution.evidence as unknown as Json;
+  const decision = kind !== 'event_receipt';
+  const sentAt = decision ? '2026-08-20T00:07:02.000Z' : '2026-08-20T00:07:00.000Z';
+  const authorityReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(
+    exchangeValue.resolutionReceipt,
+  );
+  const head =
+    kind === 'resume_offer'
+      ? {
+          revision: staged.runnerAuthority.expectedGlobalRunRevision,
+          generation: staged.runnerAuthority.expectedResumeGeneration,
+        }
+      : {
+          revision: staged.runnerAuthority.acceptedGlobalRunRevision,
+          generation: staged.runnerAuthority.acceptedResumeGeneration,
+        };
+  const common = {
+    schema: WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
+    protocolVersion: WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+    kind,
+    workspaceId: staged.workspaceId,
+    jobId: staged.jobId,
+    workflowRunId: staged.runId,
+    attemptId: staged.runnerAttemptId,
+    leaseId: staged.leaseId,
+    fencingToken: staged.fencingToken,
+    sequence: 100 + staged.target.sequence + (decision ? 1 : 0),
+    authorityBackend: staged.route.backend,
+    authority: staged.route.authority,
+    routingEpoch: staged.route.routingEpoch,
+    authorityBuildHash: staged.route.authorityBuildHash,
+    runRevision: head.revision,
+    resumeGeneration: head.generation,
+    eventId: `control-${kind}-${staged.target.sequence}`,
+    correlationId: staged.correlationId,
+    sentAt,
+  };
+  let payload: Json;
+  switch (kind) {
+    case 'event_receipt':
+      payload = {
+        receivedEventId: target.eventId,
+        receivedKind: target.kind,
+        receivedSequence: target.sequence,
+        receivedDigest: staged.target.messageDigest,
+        receivedIdempotencyKey: staged.target.idempotencyKey,
+        receivedFingerprint: staged.target.requestFingerprint,
+        status: 'accepted',
+        controlBuildHash: staged.route.authorityBuildHash,
+        committedAt: sentAt,
+        errorCode: null,
+      };
+      break;
+    case 'budget_authorization': {
+      const prepared = asJson(resolutionEvidence.preparedRequest, 'budget prepared request');
+      const request = asJson(JSON.parse(prepared.body as string), 'budget reserve request');
+      const requested = asJson(request.requested, 'budget requested quantities');
+      payload = {
+        reservationId: request.reservationId,
+        status: 'reserved',
+        authorizedTokens: requested.tokens,
+        authorizedCostNanoUsd: requested.nanoUsd,
+        authorizedCalls: requested.calls,
+        authorityReceiptHash,
+        committedRunRevision: staged.runnerAuthority.acceptedGlobalRunRevision,
+      };
+      break;
+    }
+    case 'effect_authorization':
+      payload = {
+        effectId: resolutionEvidence.effectId,
+        effectHash: resolutionEvidence.effectHash,
+        approvalId: resolutionEvidence.approvalId,
+        approvalStatus: resolutionEvidence.approvalStatus,
+        decisionRevision: resolutionEvidence.decisionRevision,
+        grantHash: resolutionEvidence.grantHash,
+        authorityReceiptHash,
+        expiresAt: resolutionEvidence.expiresAt,
+      };
+      break;
+    case 'resume_offer':
+      payload = {
+        checkpointId: resolutionEvidence.priorCheckpointId,
+        checkpointHash: resolutionEvidence.priorCheckpointHash,
+        nextPhaseId: resolutionEvidence.nextPhaseId,
+        nextPhaseIndex: resolutionEvidence.nextPhaseIndex,
+        newResumeGeneration: staged.runnerAuthority.acceptedResumeGeneration,
+        newAttemptId: resolutionEvidence.logicalResumeAttemptId,
+        authorityReceiptHash,
+        expiresAt: resolutionEvidence.expiresAt,
+      };
+      break;
+    case 'cancel_request':
+      payload = {
+        cancelId: 'cancel.binding.1',
+        requestedAt: sentAt,
+        expiresAt: '2026-08-20T00:08:02.000Z',
+        reason: 'operator',
+      };
+      break;
+  }
+  return validateWorkflowControlAuthorityMessage({
+    ...common,
+    payload,
+  });
+}
+
+function controlDelivery(
+  exchangeValue: Exchange,
+  message: WorkflowControlAuthorityMessage,
+  companionSequence: number,
+  disposition: 'accepted' | 'reconciliation_required',
+  priorEventDelivery: {
+    message: WorkflowControlAuthorityMessage;
+    receipt: WorkflowRunnerAuthorityBindingReceipt;
+  } | null,
+): WorkflowRunnerAuthorityBindingReceipt {
+  const staged = exchangeValue.stage;
+  const prepared = prepareWorkflowControlAuthorityMessage(message);
+  const processedAt =
+    companionSequence === 3 ? '2026-08-20T00:07:01.000Z' : '2026-08-20T00:07:03.000Z';
+  const value = {
+    schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
+    contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+    profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+    direction: 'runner-to-control',
+    phase: 'control_delivery',
+    companionSequence,
+    bindingId: staged.bindingId,
+    operation: staged.operation,
+    status: 'accepted',
+    controlBuildHash: staged.route.authorityBuildHash,
+    committedAt: processedAt,
+    reconciliationToken: null,
+    controlEventId: message.eventId,
+    controlKind: message.kind,
+    controlSequence: message.sequence,
+    messageDigest: prepared.messageDigest,
+    runnerAttemptId: staged.runnerAttemptId,
+    leaseId: staged.leaseId,
+    fencingToken: staged.fencingToken,
+    processedAt,
+    disposition,
+  };
+  return validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+    value,
+    message,
+    staged,
+    exchangeValue.resolution,
+    exchangeValue.resolutionReceipt,
+    exchangeValue.stageReceipt,
+    priorEventDelivery,
+  );
+}
+
+function vector(value: unknown, domain: 'stage' | 'resolution' | 'receipt') {
+  const prepared =
+    domain === 'stage'
+      ? prepareWorkflowRunnerAuthorityBindingStage(value)
+      : domain === 'resolution'
+        ? prepareWorkflowRunnerAuthorityBindingResolution(value)
+        : prepareWorkflowRunnerAuthorityBindingReceipt(value);
+  return {
+    value: prepared.value,
+    canonicalBytes: prepared.body,
+    byteLength: Buffer.byteLength(prepared.body),
+    sha256: H(prepared.body),
+    prepared: {
+      schema: prepared.schema,
+      bodyHash: prepared.bodyHash,
+      idempotencyKey: prepared.idempotencyKey,
+      requestFingerprint: prepared.requestFingerprint,
+    },
+  };
+}
+
+function errorOf(operation: () => unknown) {
+  try {
+    operation();
+  } catch (error) {
+    if (error instanceof WorkflowRunnerAuthorityBindingContractError) {
+      return { name: error.name, code: error.code, path: error.path, message: error.message };
+    }
+    throw error;
+  }
+  throw new Error('Negative vector unexpectedly succeeded.');
+}
+
+function negative(id: string, operation: string, input: Json, execute: () => unknown): Json {
+  return { id, operation, input, expectedError: errorOf(execute) };
+}
+
+function exactNegatives(values: Json[]): Json[] {
+  const ids = values.map((value) => value.id);
+  if (JSON.stringify(ids) !== JSON.stringify(NEGATIVE_IDS)) {
+    throw new Error(`Negative ID inventory drifted: ${JSON.stringify(ids)}`);
+  }
+  return values;
+}
+
+async function goldenVectors() {
+  const budgetGolden = await sourceGolden(
+    'packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json',
+  );
+  const budgetRecords = asJson(
+    asJson(budgetGolden.vectors, 'budget vectors').records,
+    'budget records',
+  );
+  const exchanges = await makeExchanges(budgetRecords);
+  const effectVariants = effectSemanticVariants(exchanges);
+  const semanticVariants = {
+    ...effectVariants,
+    ...(await budgetSemanticVariants(exchanges, budgetRecords)),
+    goRouteCheckpoint: goRouteSemanticVariant(exchanges),
+  };
+  const controlReceiptMessages = Object.fromEntries(
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
+      operation,
+      controlMessage(exchanges[operation], 'event_receipt'),
+    ]),
+  ) as Record<WorkflowRunnerAuthorityBindingOperation, WorkflowControlAuthorityMessage>;
+  const acceptedDeliveries = Object.fromEntries(
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
+      operation,
+      controlDelivery(exchanges[operation], controlReceiptMessages[operation], 3, 'accepted', null),
+    ]),
+  ) as Record<WorkflowRunnerAuthorityBindingOperation, WorkflowRunnerAuthorityBindingReceipt>;
+  const controlKindInputs = {
+    event_receipt: exchanges.checkpoint_commit,
+    budget_authorization: exchanges.budget_reserve,
+    effect_authorization: exchanges.effect_authorize,
+    resume_offer: exchanges.resume_advance,
+    cancel_request: exchanges.effect_complete,
+  } as const satisfies Record<ControlDeliveryKind, Exchange>;
+  const controlKindMessages = Object.fromEntries(
+    (Object.keys(controlKindInputs) as ControlDeliveryKind[]).map((kind) => [
+      kind,
+      controlMessage(controlKindInputs[kind], kind),
+    ]),
+  ) as Record<ControlDeliveryKind, WorkflowControlAuthorityMessage>;
+  const controlKinds = Object.fromEntries(
+    (Object.keys(controlKindInputs) as ControlDeliveryKind[]).map((kind) => [
+      kind,
+      {
+        operation: controlKindInputs[kind].stage.operation,
+        message: controlKindMessages[kind],
+        receipt: controlDelivery(
+          controlKindInputs[kind],
+          controlKindMessages[kind],
+          kind === 'event_receipt' ? 3 : 4,
+          'accepted',
+          kind === 'event_receipt'
+            ? null
+            : {
+                message: controlReceiptMessages[controlKindInputs[kind].stage.operation],
+                receipt: acceptedDeliveries[controlKindInputs[kind].stage.operation],
+              },
+        ),
+      },
+    ]),
+  ) as Record<
+    ControlDeliveryKind,
+    {
+      operation: WorkflowRunnerAuthorityBindingOperation;
+      message: WorkflowControlAuthorityMessage;
+      receipt: WorkflowRunnerAuthorityBindingReceipt;
+    }
+  >;
+  const deliveries = {
+    accepted: acceptedDeliveries,
+    reconciliationRequired: controlDelivery(
+      exchanges.effect_complete,
+      controlKindMessages.cancel_request,
+      4,
+      'reconciliation_required',
+      {
+        message: controlReceiptMessages.effect_complete,
+        receipt: acceptedDeliveries.effect_complete,
+      },
+    ),
+  };
+
+  const checkpoint = exchanges.checkpoint_commit;
+  const badStageUnknown = { ...structuredClone(checkpoint.stage), rawPrompt: 'forbidden' } as Json;
+  const badStageRevision = structuredClone(checkpoint.stage) as unknown as Json;
+  asJson(badStageRevision.runnerAuthority, 'runner authority').acceptedGlobalRunRevision = 99;
+  const badResolutionHash = structuredClone(checkpoint.resolution) as unknown as Json;
+  badResolutionHash.evidenceHash = h('0');
+  const badStageReceipt = structuredClone(checkpoint.stageReceipt) as unknown as Json;
+  badStageReceipt.targetEventId = 'event.cross-spliced';
+  const badResolutionReceipt = structuredClone(checkpoint.resolutionReceipt) as unknown as Json;
+  badResolutionReceipt.evidenceHash = h('f');
+  const badControl = structuredClone(deliveries.accepted.checkpoint_commit) as unknown as Json;
+  badControl.messageDigest = h('f');
+  const sensitiveEvidence = structuredClone(
+    exchanges.effect_authorize.resolution,
+  ) as unknown as Json;
+  asJson(sensitiveEvidence.evidence, 'effect evidence').providerId = 'raw-provider';
+  const staleResume = structuredClone(exchanges.resume_advance.resolution) as unknown as Json;
+  asJson(
+    asJson(staleResume.evidence, 'resume evidence').sourceAuthority,
+    'source authority',
+  ).acceptedResumeGeneration = 0;
+  const swappedSourceRevision = structuredClone(checkpoint.resolution) as unknown as Json;
+  const swappedEvidence = asJson(swappedSourceRevision.evidence, 'swapped evidence');
+  const swappedSource = asJson(swappedEvidence.sourceAuthority, 'swapped source authority');
+  const runnerAuthority = checkpoint.stage.runnerAuthority;
+  swappedSource.expectedRevision = runnerAuthority.expectedGlobalRunRevision;
+  swappedSource.acceptedRevision = runnerAuthority.acceptedGlobalRunRevision;
+  const unacceptedStageReceipt = structuredClone(checkpoint.stageReceipt) as unknown as Json;
+  unacceptedStageReceipt.status = 'reconciliation_required';
+  unacceptedStageReceipt.committedAt = null;
+  unacceptedStageReceipt.reconciliationToken = 'reconcile.stage.before-resolution';
+  const sameKeyBodyDrift = structuredClone(checkpoint.stage) as unknown as Json;
+  const sameKeyTarget = asJson(sameKeyBodyDrift.target, 'same-key target');
+  sameKeyTarget.body = (sameKeyTarget.body as string).replace(/\n$/u, ' \n');
+  const bodyCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  asJson(bodyCrossSplice.target, 'body cross-splice target').body =
+    exchanges.resume_advance.stage.target.body;
+  const keyCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  asJson(keyCrossSplice.target, 'key cross-splice target').idempotencyKey =
+    exchanges.resume_advance.stage.target.idempotencyKey;
+  const fingerprintCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  asJson(fingerprintCrossSplice.target, 'fingerprint cross-splice target').requestFingerprint =
+    exchanges.resume_advance.stage.target.requestFingerprint;
+  const alienStageReceipt = exchanges.resume_advance.stageReceipt;
+  const alienStageHashResolution = structuredClone(checkpoint.resolution) as unknown as Json;
+  alienStageHashResolution.stageHash = hashWorkflowRunnerAuthorityBindingStage(
+    exchanges.resume_advance.stage,
+  );
+  const driftedResolutionReceiptStageHash = structuredClone(
+    checkpoint.resolutionReceipt,
+  ) as unknown as Json;
+  driftedResolutionReceiptStageHash.stageHash = hashWorkflowRunnerAuthorityBindingStage(
+    exchanges.resume_advance.stage,
+  );
+  const checkpointNestedError = structuredClone(checkpoint.resolution) as unknown as Json;
+  asJson(
+    asJson(checkpointNestedError.evidence, 'checkpoint evidence').envelope,
+    'checkpoint envelope',
+  ).unexpected = true;
+  const checkpointDeepPathError = structuredClone(checkpoint.resolution) as unknown as Json;
+  asJson(
+    asJson(
+      asJson(
+        asJson(checkpointDeepPathError.evidence, 'checkpoint evidence').envelope,
+        'checkpoint envelope',
+      ).observation,
+      'checkpoint observation',
+    ).runner,
+    'checkpoint runner',
+  ).unexpected = true;
+  const budgetNestedError = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
+  asJson(
+    asJson(budgetNestedError.evidence, 'budget evidence').preparedRequest,
+    'budget prepared request',
+  ).unexpected = true;
+  const approvedExpiryBoundary = structuredClone(
+    exchanges.effect_authorize.resolution,
+  ) as unknown as Json;
+  asJson(approvedExpiryBoundary.evidence, 'approved effect evidence').expiresAt =
+    approvedExpiryBoundary.sentAt;
+  approvedExpiryBoundary.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
+    approvedExpiryBoundary.evidence,
+    'effect_authorize',
+  );
+  const expiredExpiryFuture = structuredClone(
+    effectVariants['effectAuthorizeExpired']!.resolution,
+  ) as unknown as Json;
+  asJson(expiredExpiryFuture.evidence, 'expired effect evidence').expiresAt =
+    '2026-08-20T00:12:03.000Z';
+  expiredExpiryFuture.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
+    expiredExpiryFuture.evidence,
+    'effect_authorize',
+  );
+  const rejectedExpiryBoundary = structuredClone(
+    effectVariants['effectAuthorizeRejected']!.resolution,
+  ) as unknown as Json;
+  asJson(rejectedExpiryBoundary.evidence, 'rejected effect evidence').expiresAt =
+    rejectedExpiryBoundary.sentAt;
+  rejectedExpiryBoundary.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
+    rejectedExpiryBoundary.evidence,
+    'effect_authorize',
+  );
+  const badEventMessage = structuredClone(controlKindMessages.event_receipt) as unknown as Json;
+  asJson(badEventMessage.payload, 'event receipt payload').receivedEventId = 'event.alien';
+  const badEventDelivery = structuredClone(controlKinds.event_receipt.receipt) as unknown as Json;
+  badEventDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(badEventMessage).messageDigest;
+  const badResumeMessage = structuredClone(controlKindMessages.resume_offer) as unknown as Json;
+  asJson(badResumeMessage.payload, 'resume offer payload').newAttemptId = 'logical.resume.alien';
+  const badResumeDelivery = structuredClone(controlKinds.resume_offer.receipt) as unknown as Json;
+  badResumeDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(badResumeMessage).messageDigest;
+  const badBudgetMessage = structuredClone(
+    controlKindMessages.budget_authorization,
+  ) as unknown as Json;
+  asJson(badBudgetMessage.payload, 'budget authorization payload').authorizedTokens = '1';
+  const badBudgetDelivery = structuredClone(
+    controlKinds.budget_authorization.receipt,
+  ) as unknown as Json;
+  badBudgetDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(badBudgetMessage).messageDigest;
+  const badEffectMessage = structuredClone(
+    controlKindMessages.effect_authorization,
+  ) as unknown as Json;
+  asJson(badEffectMessage.payload, 'effect authorization payload').effectId = 'effect.alien';
+  const badEffectDelivery = structuredClone(
+    controlKinds.effect_authorization.receipt,
+  ) as unknown as Json;
+  badEffectDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(badEffectMessage).messageDigest;
+  const badDecisionOrdering = structuredClone(
+    controlKinds.effect_authorization.receipt,
+  ) as unknown as Json;
+  badDecisionOrdering.companionSequence = 3;
+  const badRouteMessage = structuredClone(controlKindMessages.event_receipt) as unknown as Json;
+  badRouteMessage.authorityBackend = 'go';
+  badRouteMessage.authority = 'workflow-control';
+  const badRouteDelivery = structuredClone(controlKinds.event_receipt.receipt) as unknown as Json;
+  badRouteDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(badRouteMessage).messageDigest;
+  const alienControlResolution = structuredClone(checkpoint.resolution) as unknown as Json;
+  alienControlResolution.stageReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(
+    exchanges.resume_advance.stageReceipt,
+  );
+  alienControlResolution.sentAt = '2026-08-20T00:06:02.000Z';
+  const alienControlResolutionReceipt = structuredClone(
+    checkpoint.resolutionReceipt,
+  ) as unknown as Json;
+  alienControlResolutionReceipt.stageReceiptHash = alienControlResolution.stageReceiptHash;
+  alienControlResolutionReceipt.requestHash = hashWorkflowRunnerAuthorityBindingResolution(
+    alienControlResolution as unknown as WorkflowRunnerAuthorityBindingResolution,
+  );
+  alienControlResolutionReceipt.committedAt = '2026-08-20T00:06:03.000Z';
+  const sequenceGapMessage = structuredClone(
+    controlKindMessages.effect_authorization,
+  ) as unknown as Json;
+  sequenceGapMessage.sequence = (sequenceGapMessage.sequence as number) + 1;
+  const sequenceGapDelivery = structuredClone(
+    controlKinds.effect_authorization.receipt,
+  ) as unknown as Json;
+  sequenceGapDelivery.controlSequence = sequenceGapMessage.sequence;
+  sequenceGapDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(sequenceGapMessage).messageDigest;
+  const timeInversionMessage = structuredClone(
+    controlKindMessages.effect_authorization,
+  ) as unknown as Json;
+  timeInversionMessage.sentAt = '2026-08-20T00:07:00.500Z';
+  const timeInversionDelivery = structuredClone(
+    controlKinds.effect_authorization.receipt,
+  ) as unknown as Json;
+  timeInversionDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(timeInversionMessage).messageDigest;
+  const budgetRateInvalid = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
+  asJson(budgetRateInvalid.evidence, 'budget evidence').rateNanoUsdPerToken = 'not-a-rate';
+  const budgetSettleReceiptHashDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'providerReceiptHash',
+    h('0'),
+  );
+  const budgetSettleTokenDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'actualTokens',
+    '401',
+  );
+  const budgetSettleCostDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'actualCostNanoUsd',
+    '4001',
+  );
+  const budgetSettleCallDrift = settlementStageDrift(exchanges.budget_settle, 'actualCalls', '2');
+  const budgetSettleDispositionDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'settlementStatus',
+    'reconciliation_required',
+  );
+  const resumeLogicalAttemptReuse = structuredClone(
+    exchanges.resume_advance.resolution,
+  ) as unknown as Json;
+  asJson(resumeLogicalAttemptReuse.evidence, 'resume evidence').logicalResumeAttemptId =
+    exchanges.resume_advance.stage.runnerAttemptId;
+  resumeLogicalAttemptReuse.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
+    resumeLogicalAttemptReuse.evidence,
+    'resume_advance',
+  );
+
+  const positives = Object.fromEntries(
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => {
+      const item = exchanges[operation];
+      return [
+        operation,
+        {
+          stage: vector(item.stage, 'stage'),
+          stageReceipt: vector(item.stageReceipt, 'receipt'),
+          resolution: vector(item.resolution, 'resolution'),
+          resolutionReceipt: vector(item.resolutionReceipt, 'receipt'),
+        },
+      ];
+    }),
+  );
+
+  return {
+    schema: 'openslack.workflow_runner_authority_binding_golden_vectors.v1',
+    contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+    profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+    sourceLocks: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS,
+    operationMatrix: OPERATION_MATRIX,
+    positive: {
+      operations: positives,
+      semanticVariants: Object.fromEntries(
+        Object.entries(semanticVariants).map(([name, item]) => [
+          name,
+          {
+            stage: vector(item.stage, 'stage'),
+            stageReceipt: vector(item.stageReceipt, 'receipt'),
+            resolution: vector(item.resolution, 'resolution'),
+            resolutionReceipt: vector(item.resolutionReceipt, 'receipt'),
+          },
+        ]),
+      ),
+      controlDelivery: {
+        accepted: Object.fromEntries(
+          WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
+            operation,
+            vector(deliveries.accepted[operation], 'receipt'),
+          ]),
+        ),
+        reconciliationRequired: vector(deliveries.reconciliationRequired, 'receipt'),
+        byKind: Object.fromEntries(
+          (Object.keys(controlKinds) as ControlDeliveryKind[]).map((kind) => [
+            kind,
+            {
+              operation: controlKinds[kind].operation,
+              message: controlKinds[kind].message,
+              receipt: vector(controlKinds[kind].receipt, 'receipt'),
+            },
+          ]),
+        ),
+        messages: {
+          accepted: controlReceiptMessages,
+          reconciliationRequired: controlKindMessages.cancel_request,
+        },
+      },
+    },
+    negative: exactNegatives([
+      negative('stage-unknown-field', 'validate_stage', badStageUnknown, () =>
+        validateWorkflowRunnerAuthorityBindingStage(badStageUnknown),
+      ),
+      negative('runner-revision-drift', 'validate_stage', badStageRevision, () =>
+        validateWorkflowRunnerAuthorityBindingStage(badStageRevision),
+      ),
+      negative('resolution-evidence-hash-drift', 'validate_resolution', badResolutionHash, () =>
+        validateWorkflowRunnerAuthorityBindingResolution(badResolutionHash),
+      ),
+      negative(
+        'stage-receipt-cross-splice',
+        'validate_stage_receipt',
+        { receipt: badStageReceipt, stage: checkpoint.stage },
+        () => validateWorkflowRunnerAuthorityBindingStageReceipt(badStageReceipt, checkpoint.stage),
+      ),
+      negative(
+        'resolution-receipt-cross-splice',
+        'validate_resolution_receipt',
+        {
+          receipt: badResolutionReceipt,
+          resolution: checkpoint.resolution,
+          stage: checkpoint.stage,
+          stageReceipt: checkpoint.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+            badResolutionReceipt,
+            checkpoint.resolution,
+            checkpoint.stage,
+            checkpoint.stageReceipt,
+          ),
+      ),
+      negative(
+        'control-delivery-digest-drift',
+        'validate_control_delivery',
+        {
+          receipt: badControl,
+          message: controlReceiptMessages.checkpoint_commit,
+          stage: checkpoint.stage,
+          resolution: checkpoint.resolution,
+          resolutionReceipt: checkpoint.resolutionReceipt,
+          stageReceipt: checkpoint.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badControl,
+            controlReceiptMessages.checkpoint_commit,
+            checkpoint.stage,
+            checkpoint.resolution,
+            checkpoint.resolutionReceipt,
+            checkpoint.stageReceipt,
+            null,
+          ),
+      ),
+      negative('raw-provider-forbidden', 'validate_resolution', sensitiveEvidence, () =>
+        validateWorkflowRunnerAuthorityBindingResolution(sensitiveEvidence),
+      ),
+      negative(
+        'resume-generation-drift',
+        'validate_resolution_for_stage',
+        {
+          resolution: staleResume,
+          stage: exchanges.resume_advance.stage,
+          stageReceipt: exchanges.resume_advance.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            staleResume,
+            exchanges.resume_advance.stage,
+            exchanges.resume_advance.stageReceipt,
+          ),
+      ),
+      negative(
+        'source-global-revision-swap',
+        'validate_resolution_for_stage',
+        {
+          resolution: swappedSourceRevision,
+          stage: checkpoint.stage,
+          stageReceipt: checkpoint.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            swappedSourceRevision,
+            checkpoint.stage,
+            checkpoint.stageReceipt,
+          ),
+      ),
+      negative(
+        'stage-before-resolution',
+        'validate_resolution_for_stage',
+        {
+          resolution: checkpoint.resolution,
+          stage: checkpoint.stage,
+          stageReceipt: unacceptedStageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            checkpoint.resolution,
+            checkpoint.stage,
+            unacceptedStageReceipt,
+          ),
+      ),
+      negative('same-key-body-drift', 'validate_stage', sameKeyBodyDrift, () =>
+        validateWorkflowRunnerAuthorityBindingStage(sameKeyBodyDrift),
+      ),
+      negative('target-body-cross-splice', 'validate_stage', bodyCrossSplice, () =>
+        validateWorkflowRunnerAuthorityBindingStage(bodyCrossSplice),
+      ),
+      negative('target-key-cross-splice', 'validate_stage', keyCrossSplice, () =>
+        validateWorkflowRunnerAuthorityBindingStage(keyCrossSplice),
+      ),
+      negative('target-fingerprint-cross-splice', 'validate_stage', fingerprintCrossSplice, () =>
+        validateWorkflowRunnerAuthorityBindingStage(fingerprintCrossSplice),
+      ),
+      negative(
+        'resolution-alien-stage-receipt',
+        'validate_resolution_for_stage',
+        {
+          resolution: checkpoint.resolution,
+          stage: checkpoint.stage,
+          stageReceipt: alienStageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            checkpoint.resolution,
+            checkpoint.stage,
+            alienStageReceipt,
+          ),
+      ),
+      negative(
+        'resolution-alien-stage-hash',
+        'validate_resolution_for_stage',
+        {
+          resolution: alienStageHashResolution,
+          stage: checkpoint.stage,
+          stageReceipt: checkpoint.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            alienStageHashResolution,
+            checkpoint.stage,
+            checkpoint.stageReceipt,
+          ),
+      ),
+      negative(
+        'resolution-receipt-alien-stage-receipt',
+        'validate_resolution_receipt',
+        {
+          receipt: checkpoint.resolutionReceipt,
+          resolution: checkpoint.resolution,
+          stage: checkpoint.stage,
+          stageReceipt: alienStageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+            checkpoint.resolutionReceipt,
+            checkpoint.resolution,
+            checkpoint.stage,
+            alienStageReceipt,
+          ),
+      ),
+      negative(
+        'resolution-receipt-stage-hash-drift',
+        'validate_resolution_receipt',
+        {
+          receipt: driftedResolutionReceiptStageHash,
+          resolution: checkpoint.resolution,
+          stage: checkpoint.stage,
+          stageReceipt: checkpoint.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+            driftedResolutionReceiptStageHash,
+            checkpoint.resolution,
+            checkpoint.stage,
+            checkpoint.stageReceipt,
+          ),
+      ),
+      negative(
+        'checkpoint-nested-contract-error',
+        'validate_resolution',
+        checkpointNestedError,
+        () => validateWorkflowRunnerAuthorityBindingResolution(checkpointNestedError),
+      ),
+      negative(
+        'checkpoint-deep-path-contract-error',
+        'validate_resolution',
+        checkpointDeepPathError,
+        () => validateWorkflowRunnerAuthorityBindingResolution(checkpointDeepPathError),
+      ),
+      negative('budget-nested-contract-error', 'validate_resolution', budgetNestedError, () =>
+        validateWorkflowRunnerAuthorityBindingResolution(budgetNestedError),
+      ),
+      negative(
+        'effect-approved-expiry-boundary',
+        'validate_resolution_for_stage',
+        {
+          resolution: approvedExpiryBoundary,
+          stage: exchanges.effect_authorize.stage,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            approvedExpiryBoundary,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.stageReceipt,
+          ),
+      ),
+      negative(
+        'effect-expired-future-boundary',
+        'validate_resolution_for_stage',
+        {
+          resolution: expiredExpiryFuture,
+          stage: effectVariants['effectAuthorizeExpired']!.stage,
+          stageReceipt: effectVariants['effectAuthorizeExpired']!.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            expiredExpiryFuture,
+            effectVariants['effectAuthorizeExpired']!.stage,
+            effectVariants['effectAuthorizeExpired']!.stageReceipt,
+          ),
+      ),
+      negative(
+        'effect-rejected-expiry-boundary',
+        'validate_resolution_for_stage',
+        {
+          resolution: rejectedExpiryBoundary,
+          stage: effectVariants['effectAuthorizeRejected']!.stage,
+          stageReceipt: effectVariants['effectAuthorizeRejected']!.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            rejectedExpiryBoundary,
+            effectVariants['effectAuthorizeRejected']!.stage,
+            effectVariants['effectAuthorizeRejected']!.stageReceipt,
+          ),
+      ),
+      negative(
+        'control-event-receipt-target-drift',
+        'validate_control_delivery',
+        {
+          receipt: badEventDelivery,
+          message: badEventMessage,
+          stage: checkpoint.stage,
+          resolution: checkpoint.resolution,
+          resolutionReceipt: checkpoint.resolutionReceipt,
+          stageReceipt: checkpoint.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badEventDelivery,
+            badEventMessage,
+            checkpoint.stage,
+            checkpoint.resolution,
+            checkpoint.resolutionReceipt,
+            checkpoint.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
+        'control-decision-budget-evidence-drift',
+        'validate_control_delivery',
+        {
+          receipt: badBudgetDelivery,
+          message: badBudgetMessage,
+          stage: exchanges.budget_reserve.stage,
+          resolution: exchanges.budget_reserve.resolution,
+          resolutionReceipt: exchanges.budget_reserve.resolutionReceipt,
+          stageReceipt: exchanges.budget_reserve.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.budget_reserve,
+            receipt: acceptedDeliveries.budget_reserve,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badBudgetDelivery,
+            badBudgetMessage,
+            exchanges.budget_reserve.stage,
+            exchanges.budget_reserve.resolution,
+            exchanges.budget_reserve.resolutionReceipt,
+            exchanges.budget_reserve.stageReceipt,
+            {
+              message: controlReceiptMessages.budget_reserve,
+              receipt: acceptedDeliveries.budget_reserve,
+            },
+          ),
+      ),
+      negative(
+        'control-decision-effect-evidence-drift',
+        'validate_control_delivery',
+        {
+          receipt: badEffectDelivery,
+          message: badEffectMessage,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.effect_authorize,
+            receipt: acceptedDeliveries.effect_authorize,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badEffectDelivery,
+            badEffectMessage,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            {
+              message: controlReceiptMessages.effect_authorize,
+              receipt: acceptedDeliveries.effect_authorize,
+            },
+          ),
+      ),
+      negative(
+        'control-decision-resume-attempt-drift',
+        'validate_control_delivery',
+        {
+          receipt: badResumeDelivery,
+          message: badResumeMessage,
+          stage: exchanges.resume_advance.stage,
+          resolution: exchanges.resume_advance.resolution,
+          resolutionReceipt: exchanges.resume_advance.resolutionReceipt,
+          stageReceipt: exchanges.resume_advance.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.resume_advance,
+            receipt: acceptedDeliveries.resume_advance,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badResumeDelivery,
+            badResumeMessage,
+            exchanges.resume_advance.stage,
+            exchanges.resume_advance.resolution,
+            exchanges.resume_advance.resolutionReceipt,
+            exchanges.resume_advance.stageReceipt,
+            {
+              message: controlReceiptMessages.resume_advance,
+              receipt: acceptedDeliveries.resume_advance,
+            },
+          ),
+      ),
+      negative(
+        'control-decision-ordering-drift',
+        'validate_control_delivery',
+        {
+          receipt: badDecisionOrdering,
+          message: controlKindMessages.effect_authorization,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.effect_authorize,
+            receipt: acceptedDeliveries.effect_authorize,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badDecisionOrdering,
+            controlKindMessages.effect_authorization,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            {
+              message: controlReceiptMessages.effect_authorize,
+              receipt: acceptedDeliveries.effect_authorize,
+            },
+          ),
+      ),
+      negative(
+        'control-route-cross-splice',
+        'validate_control_delivery',
+        {
+          receipt: badRouteDelivery,
+          message: badRouteMessage,
+          stage: checkpoint.stage,
+          resolution: checkpoint.resolution,
+          resolutionReceipt: checkpoint.resolutionReceipt,
+          stageReceipt: checkpoint.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            badRouteDelivery,
+            badRouteMessage,
+            checkpoint.stage,
+            checkpoint.resolution,
+            checkpoint.resolutionReceipt,
+            checkpoint.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
+        'control-delivery-alien-stage-receipt',
+        'validate_control_delivery',
+        {
+          receipt: acceptedDeliveries.checkpoint_commit,
+          message: controlReceiptMessages.checkpoint_commit,
+          stage: checkpoint.stage,
+          resolution: alienControlResolution,
+          resolutionReceipt: alienControlResolutionReceipt,
+          stageReceipt: exchanges.resume_advance.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            acceptedDeliveries.checkpoint_commit,
+            controlReceiptMessages.checkpoint_commit,
+            checkpoint.stage,
+            alienControlResolution,
+            alienControlResolutionReceipt,
+            exchanges.resume_advance.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
+        'control-decision-missing-prior-event-ack',
+        'validate_control_delivery',
+        {
+          receipt: controlKinds.effect_authorization.receipt,
+          message: controlKindMessages.effect_authorization,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            controlKinds.effect_authorization.receipt,
+            controlKindMessages.effect_authorization,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
+        'control-cancel-missing-prior-event-ack',
+        'validate_control_delivery',
+        {
+          receipt: controlKinds.cancel_request.receipt,
+          message: controlKindMessages.cancel_request,
+          stage: exchanges.effect_complete.stage,
+          resolution: exchanges.effect_complete.resolution,
+          resolutionReceipt: exchanges.effect_complete.resolutionReceipt,
+          stageReceipt: exchanges.effect_complete.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            controlKinds.cancel_request.receipt,
+            controlKindMessages.cancel_request,
+            exchanges.effect_complete.stage,
+            exchanges.effect_complete.resolution,
+            exchanges.effect_complete.resolutionReceipt,
+            exchanges.effect_complete.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
+        'control-decision-alien-prior-event-ack',
+        'validate_control_delivery',
+        {
+          receipt: controlKinds.effect_authorization.receipt,
+          message: controlKindMessages.effect_authorization,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.checkpoint_commit,
+            receipt: acceptedDeliveries.checkpoint_commit,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            controlKinds.effect_authorization.receipt,
+            controlKindMessages.effect_authorization,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            {
+              message: controlReceiptMessages.checkpoint_commit,
+              receipt: acceptedDeliveries.checkpoint_commit,
+            },
+          ),
+      ),
+      negative(
+        'control-decision-sequence-gap',
+        'validate_control_delivery',
+        {
+          receipt: sequenceGapDelivery,
+          message: sequenceGapMessage,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.effect_authorize,
+            receipt: acceptedDeliveries.effect_authorize,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            sequenceGapDelivery,
+            sequenceGapMessage,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            {
+              message: controlReceiptMessages.effect_authorize,
+              receipt: acceptedDeliveries.effect_authorize,
+            },
+          ),
+      ),
+      negative(
+        'control-decision-prior-time-inversion',
+        'validate_control_delivery',
+        {
+          receipt: timeInversionDelivery,
+          message: timeInversionMessage,
+          stage: exchanges.effect_authorize.stage,
+          resolution: exchanges.effect_authorize.resolution,
+          resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
+          stageReceipt: exchanges.effect_authorize.stageReceipt,
+          priorEventDelivery: {
+            message: controlReceiptMessages.effect_authorize,
+            receipt: acceptedDeliveries.effect_authorize,
+          },
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            timeInversionDelivery,
+            timeInversionMessage,
+            exchanges.effect_authorize.stage,
+            exchanges.effect_authorize.resolution,
+            exchanges.effect_authorize.resolutionReceipt,
+            exchanges.effect_authorize.stageReceipt,
+            {
+              message: controlReceiptMessages.effect_authorize,
+              receipt: acceptedDeliveries.effect_authorize,
+            },
+          ),
+      ),
+      negative('budget-rate-invalid', 'validate_resolution', budgetRateInvalid, () =>
+        validateWorkflowRunnerAuthorityBindingResolution(budgetRateInvalid),
+      ),
+      ...[
+        ['budget-settle-receipt-hash-drift', budgetSettleReceiptHashDrift],
+        ['budget-settle-token-drift', budgetSettleTokenDrift],
+        ['budget-settle-cost-drift', budgetSettleCostDrift],
+        ['budget-settle-call-drift', budgetSettleCallDrift],
+        ['budget-settle-disposition-drift', budgetSettleDispositionDrift],
+      ].map(([id, item]) => {
+        const drift = item as typeof budgetSettleTokenDrift;
+        return negative(id as string, 'validate_resolution_for_stage', drift, () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            drift.resolution,
+            drift.stage,
+            drift.stageReceipt,
+          ),
+        );
+      }),
+      negative(
+        'resume-logical-attempt-active-reuse',
+        'validate_resolution_for_stage',
+        {
+          resolution: resumeLogicalAttemptReuse,
+          stage: exchanges.resume_advance.stage,
+          stageReceipt: exchanges.resume_advance.stageReceipt,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            resumeLogicalAttemptReuse,
+            exchanges.resume_advance.stage,
+            exchanges.resume_advance.stageReceipt,
+          ),
+      ),
+    ]),
+  };
+}
+
+async function schemas(golden: Awaited<ReturnType<typeof goldenVectors>>) {
+  const operations = asJson(asJson(golden.positive, 'positive').operations, 'operations');
+  const semanticVariants = asJson(
+    asJson(golden.positive, 'positive').semanticVariants,
+    'semantic variants',
+  );
+  const semantic = Object.values(semanticVariants).map((entry) => asJson(entry, 'semantic'));
+  const stages = [
+    ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) =>
+      asJson(asJson(asJson(operations[operation], operation).stage, 'stage').value, 'stage value'),
+    ),
+    ...semantic.map((entry) =>
+      asJson(asJson(entry.stage, 'semantic stage').value, 'semantic stage value'),
+    ),
+  ];
+  const resolutions = [
+    ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) =>
+      asJson(
+        asJson(asJson(operations[operation], operation).resolution, 'resolution').value,
+        'resolution value',
+      ),
+    ),
+    ...semantic.map((entry) =>
+      asJson(asJson(entry.resolution, 'semantic resolution').value, 'semantic resolution value'),
+    ),
+  ];
+  const receipts = WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.flatMap((operation) => {
+    const exchangeValue = asJson(operations[operation], operation);
+    return [
+      asJson(asJson(exchangeValue.stageReceipt, 'stage receipt').value, 'stage receipt value'),
+      asJson(
+        asJson(exchangeValue.resolutionReceipt, 'resolution receipt').value,
+        'resolution receipt value',
+      ),
+    ];
+  });
+  for (const entry of semantic) {
+    receipts.push(
+      asJson(
+        asJson(entry.stageReceipt, 'semantic stage receipt').value,
+        'semantic stage receipt value',
+      ),
+      asJson(
+        asJson(entry.resolutionReceipt, 'semantic resolution receipt').value,
+        'semantic resolution receipt value',
+      ),
+    );
+  }
+  const control = asJson(asJson(golden.positive, 'positive').controlDelivery, 'control delivery');
+  const acceptedControl = asJson(control.accepted, 'accepted control deliveries');
+  for (const operation of WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS) {
+    receipts.push(
+      asJson(
+        asJson(acceptedControl[operation], `${operation} delivery`).value,
+        `${operation} delivery value`,
+      ),
+    );
+  }
+  const byKind = asJson(control.byKind, 'control deliveries by kind');
+  for (const kind of [
+    'event_receipt',
+    'budget_authorization',
+    'effect_authorization',
+    'resume_offer',
+    'cancel_request',
+  ]) {
+    receipts.push(
+      asJson(
+        asJson(asJson(byKind[kind], `${kind} delivery`).receipt, `${kind} receipt`).value,
+        `${kind} receipt value`,
+      ),
+    );
+  }
+  receipts.push(
+    asJson(
+      asJson(control.reconciliationRequired, 'reconciliation delivery').value,
+      'reconciliation delivery value',
+    ),
+  );
+  const errorSample = validateWorkflowRunnerAuthorityBindingError({
+    schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA,
+    code: WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES[0],
+    message: 'closed contract failure',
+    bindingId: null,
+    operation: null,
+    reconciliationToken: null,
+  });
+  const errorSchema = schemaForValue(errorSample);
+  replaceRootConst(errorSchema, 'schema', WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA);
+  const errorProperties = asJson(errorSchema.properties, 'error properties');
+  errorProperties.code = { enum: WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES };
+  errorProperties.operation = {
+    oneOf: [{ enum: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS }, { type: 'null' }],
+  };
+  return [
+    unionSchema(
+      'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json',
+      'OpenSlack GS9-F2a authority-binding stage_event',
+      stages,
+      ['schema', 'operation'],
+    ),
+    unionSchema(
+      'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-resolution.v1.schema.json',
+      'OpenSlack GS9-F2a authority-binding commit_authority',
+      resolutions,
+      ['schema', 'operation'],
+    ),
+    unionSchema(
+      'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-receipt.v1.schema.json',
+      'OpenSlack GS9-F2a stage, resolution, and control-delivery receipts',
+      receipts,
+      ['schema', 'phase', 'operation'],
+    ),
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-error.v1.schema.json',
+      title: 'OpenSlack GS9-F2a authority-binding closed error',
+      ...errorSchema,
+    },
+  ];
+}
+
+async function pretty(value: unknown): Promise<Buffer> {
+  return Buffer.from(
+    await format(JSON.stringify(value), { parser: 'json', printWidth: 100, tabWidth: 2 }),
+    'utf8',
+  );
+}
+
+async function verifySourceLocks(): Promise<void> {
+  for (const name of Object.keys(sourceLockPaths) as Array<keyof typeof sourceLockPaths>) {
+    const path = sourceLockPaths[name];
+    const actual = H(await readFile(resolve(repositoryRoot, path)));
+    const expected = WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS[name];
+    if (actual !== expected) {
+      throw new Error(
+        `Authority-binding source lock drift: ${path} = ${actual}; expected ${expected}`,
+      );
+    }
+  }
+}
+
+async function outputs(): Promise<Map<string, Buffer>> {
+  await verifySourceLocks();
+  const golden = await goldenVectors();
+  const generatedSchemas = await schemas(golden);
+  const map = new Map<string, Buffer>();
+  for (let index = 0; index < generatedSchemas.length; index += 1) {
+    map.set(bundleFiles[index]!, await pretty(generatedSchemas[index]));
+  }
+  map.set(bundleFiles[4], await pretty(golden));
+  const artifacts = Object.fromEntries(
+    [...map].map(([path, bytes]) => [
+      path,
+      { path, byteLength: bytes.byteLength, sha256: H(bytes) },
+    ]),
+  );
+  map.set(
+    bundleFiles[5],
+    await pretty({
+      schema: 'openslack.workflow_runner_authority_binding_contract_manifest.v1',
+      contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
+      profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
+      authorityBoundary,
+      protocol: {
+        sequence: ['stage_event', 'stage_event_ack', 'commit_authority', 'commit_authority_ack'],
+        independentCompanionSequence: true,
+        frozenTargetBytesBoundBeforeAuthority: true,
+        resolutionAckPrecedesFrozenTargetDelivery: true,
+        controlDeliveryAck: true,
+        exactReplayReturnsOriginalReceiptBytes: true,
+      },
+      operations: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
+        operation,
+        ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation],
+      })),
+      evidence: {
+        closed: true,
+        rawFieldsForbidden: [
+          'provider',
+          'providerId',
+          'model',
+          'modelId',
+          'prompt',
+          'result',
+          'nonce',
+          'credential',
+          'credentials',
+        ],
+        providerIdentity: 'hash_only',
+        resultIdentity: 'hash_only',
+      },
+      exactFraming: {
+        encoding: 'utf-8',
+        canonicalJson: true,
+        terminalLfCount: 1,
+        carriageReturnAllowed: false,
+      },
+      sourceLocks: Object.fromEntries(
+        (Object.keys(sourceLockPaths) as Array<keyof typeof sourceLockPaths>).map((name) => [
+          name,
+          {
+            path: sourceLockPaths[name],
+            sha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS[name],
+          },
+        ]),
+      ),
+      bundleFiles,
+      artifacts,
+    }),
+  );
+  return map;
+}
+
+async function inventory(root: string): Promise<string[]> {
+  const result: string[] = [];
+  async function visit(directory: string): Promise<void> {
+    for (const name of await readdir(directory).catch(() => [] as string[])) {
+      const path = resolve(directory, name);
+      const stat = await lstat(path);
+      if (stat.isSymbolicLink()) throw new Error(`Symlink forbidden in contract bundle: ${path}`);
+      if (stat.isDirectory()) await visit(path);
+      else if (stat.isFile()) result.push(relative(root, path).split(sep).join('/'));
+      else throw new Error(`Non-regular contract artifact forbidden: ${path}`);
+    }
+  }
+  await visit(root);
+  return result.sort();
+}
+
+async function generate(): Promise<void> {
+  const map = await outputs();
+  for (const root of [contractRoot, serviceMirrorRoot]) {
+    for (const [path, bytes] of map) {
+      const destination = resolve(root, path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, bytes);
+    }
+  }
+}
+
+async function check(): Promise<void> {
+  const map = await outputs();
+  const expectedInventory = [...bundleFiles].sort();
+  const stale: string[] = [];
+  for (const [label, root] of [
+    ['typescript', contractRoot],
+    ['go', serviceMirrorRoot],
+  ] as const) {
+    const actualInventory = await inventory(root);
+    if (JSON.stringify(actualInventory) !== JSON.stringify(expectedInventory)) {
+      throw new Error(
+        `Authority-binding ${label} bundle inventory drift:\nactual=${actualInventory.join(',')}\nexpected=${expectedInventory.join(',')}`,
+      );
+    }
+    for (const [path, expected] of map) {
+      const actual = await readFile(resolve(root, path)).catch(() => null);
+      if (actual === null || !actual.equals(expected)) stale.push(`${label}:${path}`);
+    }
+  }
+  if (stale.length > 0) {
+    throw new Error(
+      `Authority-binding contracts are stale:\n${stale.join('\n')}\nRun: bun run workflow:runner-authority-binding-golden -- --generate`,
+    );
+  }
+}
+
+const command = process.argv[2] ?? '--generate';
+if (command === '--generate' || command === 'generate') await generate();
+else if (command === '--check' || command === 'check') await check();
+else throw new Error('Usage: index.ts [--generate|--check]');
