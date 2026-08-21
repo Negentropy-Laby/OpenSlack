@@ -57,15 +57,20 @@ async function main(args = process.argv.slice(2)) {
   const env = createChildEnvironment();
   let credentials;
   try {
-    credentials = await acquireConfiguredInstallationCredentials();
+    credentials = await acquireConfiguredInstallationCredentials({ args, cwd: process.cwd() });
   } catch {
     process.stderr.write('GitHub App installation authentication failed.\n');
     return 1;
   }
+  env.OPENSLACK_GITHUB_AUTH_MODE = 'app';
   env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN = credentials.value;
+  env.OPENSLACK_GITHUB_APP_ID = credentials.appId;
   env.OPENSLACK_GITHUB_APP_INSTALLATION_ID = credentials.installationId;
+  env.OPENSLACK_GITHUB_APP_SLUG = credentials.appSlug;
   env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT = credentials.expiresAt;
   env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS = JSON.stringify(credentials.permissions);
+  env.GITHUB_OWNER = credentials.owner;
+  env.GITHUB_REPO = credentials.repo;
 
   const result = spawnSync(
     process.execPath,

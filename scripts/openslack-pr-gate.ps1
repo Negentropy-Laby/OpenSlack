@@ -26,19 +26,17 @@ param(
   [ValidateSet('merge', 'squash', 'rebase')]
   [string]$Method = 'merge',
 
-  [string]$PrivateKeyPath = $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH,
+  [string]$PrivateKeyPath,
 
-  [string]$AppId = $(if ($env:OPENSLACK_GITHUB_APP_ID) { $env:OPENSLACK_GITHUB_APP_ID } else { '3728623' }),
+  [string]$AppId,
 
-  [string]$InstallationId = $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID,
+  [string]$InstallationId,
 
-  [string]$AppSlug = $(if ($env:OPENSLACK_GITHUB_APP_SLUG) { $env:OPENSLACK_GITHUB_APP_SLUG } else { 'openslack-agent-operator' }),
+  [string]$AppSlug,
 
-  [string]$Owner = $(if ($env:GITHUB_OWNER) { $env:GITHUB_OWNER } else { 'Negentropy-Laby' }),
+  [string]$Owner,
 
-  [string]$Repo = $(if ($env:GITHUB_REPO) { $env:GITHUB_REPO } else { 'OpenSlack' }),
-
-  [switch]$NoAutoDiscover
+  [string]$Repo
 )
 
 Set-StrictMode -Version Latest
@@ -52,23 +50,8 @@ if (-not (Test-Path -LiteralPath $botScript -PathType Leaf)) {
   exit 1
 }
 
-if ([string]::IsNullOrWhiteSpace($PrivateKeyPath)) {
-  $PrivateKeyPath = Join-Path $repoRoot '.openslack.local/github-app.pem'
-} elseif (-not [System.IO.Path]::IsPathRooted($PrivateKeyPath)) {
-  $PrivateKeyPath = Join-Path $repoRoot $PrivateKeyPath
-}
-
-$resolvedKeyPath = $PrivateKeyPath
-if (Test-Path -LiteralPath $PrivateKeyPath -PathType Leaf) {
-  $resolvedKeyPath = (Resolve-Path -LiteralPath $PrivateKeyPath).Path
-} else {
-  Write-Error "GitHub App private key not found at '$PrivateKeyPath'. Place the PEM there yourself; do not commit it."
-  exit 1
-}
-
-$firstLine = Get-Content -LiteralPath $resolvedKeyPath -TotalCount 1
-if ($firstLine -notmatch '^-----BEGIN [A-Z ]*PRIVATE KEY-----$') {
-  Write-Error "File at '$resolvedKeyPath' does not look like a PEM private key."
+if ([string]::IsNullOrWhiteSpace($Owner) -ne [string]::IsNullOrWhiteSpace($Repo)) {
+  Write-Error 'Owner and Repo must be provided together.'
   exit 1
 }
 
@@ -81,20 +64,20 @@ function Invoke-OpenSlackBot {
   $botArgs = @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
-    '-File', $botScript,
-    '-PrivateKeyPath', $resolvedKeyPath,
-    '-AppId', $AppId,
-    '-AppSlug', $AppSlug,
-    '-Owner', $Owner,
-    '-Repo', $Repo
+    '-File', $botScript
   )
 
-  if (-not [string]::IsNullOrWhiteSpace($InstallationId)) {
-    $botArgs += @('-InstallationId', $InstallationId)
-  }
-
-  if ($NoAutoDiscover) {
-    $botArgs += @('-NoAutoDiscover')
+  foreach ($binding in @(
+    @('PrivateKeyPath', $PrivateKeyPath),
+    @('AppId', $AppId),
+    @('InstallationId', $InstallationId),
+    @('AppSlug', $AppSlug),
+    @('Owner', $Owner),
+    @('Repo', $Repo)
+  )) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$binding[1])) {
+      $botArgs += @("-$($binding[0])", [string]$binding[1])
+    }
   }
 
   $botArgs += $OpenSlackArgs
@@ -106,10 +89,10 @@ function Invoke-OpenSlackBot {
   }
 }
 
-Write-Host "Running PRMS doctor for ${Owner}/${Repo} PR #$PrNumber with GitHub App bot auth."
+Write-Host "Running PRMS doctor for PR #$PrNumber with dynamically selected GitHub App bot auth."
 Invoke-OpenSlackBot -OpenSlackArgs @('pr', 'doctor', [string]$PrNumber)
 
 if ($Merge) {
-  Write-Host "Running Merge Steward for ${Owner}/${Repo} PR #$PrNumber with method '$Method'."
+  Write-Host "Running Merge Steward for PR #$PrNumber with method '$Method'."
   Invoke-OpenSlackBot -OpenSlackArgs @('pr', 'merge', [string]$PrNumber, '--method', $Method)
 }

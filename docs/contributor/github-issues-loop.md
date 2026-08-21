@@ -291,7 +291,7 @@ with `CLAIM_INVALID_INPUT`.
 
 Uses the three-tier auth model from `docs/operations/github-automation.md`:
 
-1. `OPENSLACK_GITHUB_APP_ID` + `OPENSLACK_GITHUB_APP_INSTALLATION_ID` + private key → GitHub App installation token (preferred)
+1. GitHub App identity + private key → dynamically discovered installation token (preferred). Bot wrappers use the checked-in public identity and treat any configured installation ID only as a hint.
 2. `GITHUB_TOKEN` → PAT fallback
 3. Neither → dry-run mode
 

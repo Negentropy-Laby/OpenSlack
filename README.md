@@ -339,13 +339,19 @@ Three-tier model (see [`docs/operations/github-automation.md`](docs/operations/g
 
 ```bash
 # GitHub App auth (preferred)
-export OPENSLACK_GITHUB_APP_ID=3728623
-export OPENSLACK_GITHUB_APP_INSTALLATION_ID=<installation-id>
-export OPENSLACK_GITHUB_APP_PRIVATE_KEY="$(cat .openslack.local/github-app.pem)"
+export OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH=.openslack.local/github-app.pem
+./scripts/bot-gh.sh pr comment 117 --body "..."
 
 # PAT fallback
 export GITHUB_TOKEN=ghp_xxxxxxxx
 ```
+
+The bot wrappers read the checked-in, non-secret App identity from
+`.openslack/integrations/github-app-public.json`, resolve the target repository
+from `--repo`, a complete owner/repository environment pair, verified Git
+origin, or that public config, and discover the unique matching installation at
+runtime. A configured installation ID is only a hint. The wrappers never
+source `.env` files and never persist a discovered replacement.
 
 On Windows, keep the PEM under the gitignored `.openslack.local/` directory and
 run commands through the bot-auth wrapper:

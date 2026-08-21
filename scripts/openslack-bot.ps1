@@ -1,14 +1,12 @@
 <#
 .SYNOPSIS
-Run OpenSlack with GitHub App bot authentication.
+Run OpenSlack with dynamically selected GitHub App bot authentication.
 
 .DESCRIPTION
-Loads a GitHub App private key from a local, gitignored PEM file into
-OPENSLACK_GITHUB_APP_PRIVATE_KEY, then runs `pnpm openslack`.
-
-The default key path is `.openslack.local/github-app.pem` at the repository
-root. The script intentionally removes GITHUB_TOKEN from the child process so
-bot-auth runs cannot silently fall back to a human PAT.
+Uses the shared Node installation resolver to combine explicit/environment
+configuration, supported local metadata, verified Git origin, and checked-in
+public metadata. It never sources an arbitrary .env file and never exposes an
+installation token to PowerShell.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 setup github
@@ -22,14 +20,13 @@ powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 -ListInstalla
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
-  [string]$PrivateKeyPath = $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH,
-  [string]$AppId = $(if ($env:OPENSLACK_GITHUB_APP_ID) { $env:OPENSLACK_GITHUB_APP_ID } else { '3728623' }),
-  [string]$InstallationId = $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID,
-  [string]$AppSlug = $(if ($env:OPENSLACK_GITHUB_APP_SLUG) { $env:OPENSLACK_GITHUB_APP_SLUG } else { 'openslack-agent-operator' }),
-  [string]$Owner = $(if ($env:GITHUB_OWNER) { $env:GITHUB_OWNER } else { 'Negentropy-Laby' }),
-  [string]$Repo = $(if ($env:GITHUB_REPO) { $env:GITHUB_REPO } else { 'OpenSlack' }),
+  [string]$PrivateKeyPath,
+  [string]$AppId,
+  [string]$InstallationId,
+  [string]$AppSlug,
+  [string]$Owner,
+  [string]$Repo,
   [switch]$ListInstallations,
-  [switch]$NoAutoDiscover,
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$OpenSlackArgs
 )
@@ -37,172 +34,75 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Error 'node is required but not installed.'
+  exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($Owner) -ne [string]::IsNullOrWhiteSpace($Repo)) {
+  Write-Error 'Owner and Repo must be provided together.'
+  exit 1
+}
+
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
-if ([string]::IsNullOrWhiteSpace($PrivateKeyPath)) {
-  $PrivateKeyPath = Join-Path $repoRoot '.openslack.local/github-app.pem'
-}
-
-if (-not (Test-Path -LiteralPath $PrivateKeyPath -PathType Leaf)) {
-  Write-Error "GitHub App private key not found at '$PrivateKeyPath'. Place the PEM there yourself; do not commit it."
-  exit 1
-}
-
-$privateKey = Get-Content -Raw -LiteralPath $PrivateKeyPath
-if ($privateKey -notmatch '-----BEGIN [A-Z ]*PRIVATE KEY-----') {
-  Write-Error "File at '$PrivateKeyPath' does not look like a PEM private key."
-  exit 1
-}
-
-function Get-GitHubAppInstallations {
-  param(
-    [Parameter(Mandatory = $true)][string]$GitHubAppId,
-    [Parameter(Mandatory = $true)][string]$GitHubPrivateKey
-  )
-
-  $previousAppId = $env:OPENSLACK_GITHUB_APP_ID
-  $previousPrivateKey = $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY
-  try {
-    $env:OPENSLACK_GITHUB_APP_ID = $GitHubAppId
-    $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = $GitHubPrivateKey
-
-    $nodeCode = @'
-const { createSign } = require("node:crypto");
-const https = require("node:https");
-
-function b64url(input) {
-  return Buffer.from(input).toString("base64url").replace(/=+$/, "");
-}
-
-function jwt(appId, privateKey) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = b64url(JSON.stringify({ iat: now - 60, exp: now + 600, iss: appId }));
-  const signer = createSign("RSA-SHA256");
-  signer.update(`${header}.${payload}`);
-  const signature = signer.sign(privateKey).toString("base64url").replace(/=+$/, "");
-  return `${header}.${payload}.${signature}`;
-}
-
-const token = jwt(process.env.OPENSLACK_GITHUB_APP_ID, process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY);
-const req = https.request({
-  hostname: "api.github.com",
-  path: "/app/installations",
-  method: "GET",
-  headers: {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "openslack-bot-wrapper"
-  }
-}, (res) => {
-  let body = "";
-  res.on("data", (chunk) => { body += chunk.toString(); });
-  res.on("end", () => {
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      console.error(body);
-      process.exit(1);
-    }
-    console.log(body);
-  });
-});
-req.on("error", (err) => {
-  console.error(err.message);
-  process.exit(1);
-});
-req.end();
-'@
-
-    $raw = ($nodeCode | node -) -join "`n"
-    if ($LASTEXITCODE -ne 0) {
-      throw "Could not list GitHub App installations. Check OPENSLACK_GITHUB_APP_ID and the PEM key."
-    }
-    return @($raw | ConvertFrom-Json)
-  } finally {
-    if ($null -eq $previousAppId) { Remove-Item Env:OPENSLACK_GITHUB_APP_ID -ErrorAction SilentlyContinue } else { $env:OPENSLACK_GITHUB_APP_ID = $previousAppId }
-    if ($null -eq $previousPrivateKey) { Remove-Item Env:OPENSLACK_GITHUB_APP_PRIVATE_KEY -ErrorAction SilentlyContinue } else { $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = $previousPrivateKey }
-  }
-}
-
-if ($ListInstallations -or -not $NoAutoDiscover) {
-  $installations = Get-GitHubAppInstallations -GitHubAppId $AppId -GitHubPrivateKey $privateKey
-
-  if ($ListInstallations) {
-    foreach ($installation in $installations) {
-      $account = $installation.account.login
-      $selection = $installation.repository_selection
-      Write-Output ("{0}`t{1}`t{2}" -f $installation.id, $account, $selection)
-    }
-    exit 0
-  }
-
-  $matchingInstallations = @($installations | Where-Object { $_.account.login -eq $Owner })
-  if ($matchingInstallations.Count -eq 1) {
-    $detectedId = [string]$matchingInstallations[0].id
-    if ([string]::IsNullOrWhiteSpace($InstallationId)) {
-      Write-Host "Detected GitHub App installation for ${Owner}: $detectedId"
-      $InstallationId = $detectedId
-    } elseif ($InstallationId -ne $detectedId) {
-      Write-Warning "OPENSLACK_GITHUB_APP_INSTALLATION_ID=$InstallationId does not match $Owner. Using detected installation $detectedId."
-      $InstallationId = $detectedId
-    }
-  } elseif ([string]::IsNullOrWhiteSpace($InstallationId)) {
-    Write-Error "Could not auto-detect a unique installation for owner '$Owner'. Run with -ListInstallations and set OPENSLACK_GITHUB_APP_INSTALLATION_ID."
-    exit 1
-  }
-}
-
-if ([string]::IsNullOrWhiteSpace($InstallationId)) {
-  Write-Error 'Missing OPENSLACK_GITHUB_APP_INSTALLATION_ID. Set it, pass -InstallationId <id>, or allow auto-discovery.'
-  exit 1
-}
-
-$managedEnvNames = @(
-  'OPENSLACK_GITHUB_AUTH_MODE',
+$managed = @(
+  'OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH',
   'OPENSLACK_GITHUB_APP_ID',
   'OPENSLACK_GITHUB_APP_INSTALLATION_ID',
-  'OPENSLACK_GITHUB_APP_PRIVATE_KEY',
   'OPENSLACK_GITHUB_APP_SLUG',
   'GITHUB_OWNER',
-  'GITHUB_REPO',
-  'GITHUB_TOKEN',
-  'GH_TOKEN'
+  'GITHUB_REPO'
 )
-$previousEnv = @{}
-foreach ($name in $managedEnvNames) {
-  $previousEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+$previous = @{}
+foreach ($name in $managed) {
+  $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 
-$commandExit = 1
+$exitCode = 1
 try {
-  $env:OPENSLACK_GITHUB_AUTH_MODE = 'app'
-  $env:OPENSLACK_GITHUB_APP_ID = $AppId
-  $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID = $InstallationId
-  $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = $privateKey
-  $env:OPENSLACK_GITHUB_APP_SLUG = $AppSlug
-  $env:GITHUB_OWNER = $Owner
-  $env:GITHUB_REPO = $Repo
-
-  # Prevent every human token fallback in bot-auth runs. The client consumes
-  # OPENSLACK_GITHUB_AUTH_MODE=app and fails closed if App auth is unavailable.
-  Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
-  Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
-
-  if (-not $OpenSlackArgs -or $OpenSlackArgs.Count -eq 0) {
-    $OpenSlackArgs = @('setup', 'github')
-  }
-
-  & pnpm openslack @OpenSlackArgs
-  $commandExit = $LASTEXITCODE
-} finally {
-  foreach ($name in $managedEnvNames) {
-    $value = $previousEnv[$name]
-    if ($null -eq $value) {
-      [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+  if (-not [string]::IsNullOrWhiteSpace($PrivateKeyPath)) {
+    $resolvedPrivateKeyPath = if ([System.IO.Path]::IsPathRooted($PrivateKeyPath)) {
+      $PrivateKeyPath
     } else {
-      [Environment]::SetEnvironmentVariable($name, [string]$value, 'Process')
+      Join-Path $repoRoot $PrivateKeyPath
     }
+    $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH = $resolvedPrivateKeyPath
   }
-  $privateKey = $null
+  if (-not [string]::IsNullOrWhiteSpace($AppId)) {
+    $env:OPENSLACK_GITHUB_APP_ID = $AppId
+  }
+  if (-not [string]::IsNullOrWhiteSpace($InstallationId)) {
+    $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID = $InstallationId
+  }
+  if (-not [string]::IsNullOrWhiteSpace($AppSlug)) {
+    $env:OPENSLACK_GITHUB_APP_SLUG = $AppSlug
+  }
+  if (-not [string]::IsNullOrWhiteSpace($Owner)) {
+    $env:GITHUB_OWNER = $Owner
+    $env:GITHUB_REPO = $Repo
+  }
+  if ($ListInstallations) {
+    $raw = & node (Join-Path $PSScriptRoot 'bot-gh-token.js') --list-installations
+    if ($LASTEXITCODE -ne 0) {
+      $exitCode = $LASTEXITCODE
+    } else {
+      $installations = @($raw | ConvertFrom-Json)
+      foreach ($installation in $installations) {
+        Write-Output ("{0}`t{1}`t{2}" -f $installation.id, $installation.account, $installation.repositorySelection)
+      }
+      $exitCode = 0
+    }
+  } else {
+    if (-not $OpenSlackArgs -or $OpenSlackArgs.Count -eq 0) {
+      $OpenSlackArgs = @('setup', 'github')
+    }
+    & node (Join-Path $PSScriptRoot 'bot-openslack-command.js') @OpenSlackArgs
+    $exitCode = $LASTEXITCODE
+  }
+} finally {
+  foreach ($name in $managed) {
+    [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
+  }
 }
 
-exit $commandExit
+exit $exitCode

@@ -81,13 +81,21 @@ powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 setup github
 powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 pr doctor 71
 ```
 
-The wrapper loads `.openslack.local/github-app.pem` into
-`OPENSLACK_GITHUB_APP_PRIVATE_KEY` for the child `bun run openslack` process and
-removes `GITHUB_TOKEN` from that child process so bot-auth runs cannot silently
-fall back to a human PAT. If `OPENSLACK_GITHUB_APP_INSTALLATION_ID` is missing
-or points to a different installation, the wrapper lists the GitHub App's
-installations and uses the one matching `GITHUB_OWNER` (default:
-`Negentropy-Laby`).
+The wrapper delegates key use and token exchange to the shared Node launcher;
+PowerShell never receives the installation token. The child environment omits
+`GITHUB_TOKEN` and `GH_TOKEN`, so bot-auth runs cannot silently fall back to a
+human PAT. The checked-in
+`.openslack/integrations/github-app-public.json` contains only the public App
+ID, App slug, and canonical repository. Environment values and the supported
+local `github-app.json` remain higher-priority identity inputs.
+
+Before every token exchange the launcher performs a bounded, paginated App
+installation discovery and requires exactly one case-insensitive owner match.
+`OPENSLACK_GITHUB_APP_INSTALLATION_ID` is only a hint: a stale hint or one for
+another owner is replaced in memory for that process. Zero matches, multiple
+matches, malformed or oversized responses, and network failures all fail
+closed. No wrapper sources an arbitrary `.env` file or writes the replacement
+ID back to disk.
 
 Direct `bun run openslack ...` commands and installed release commands never
 read `.openslack.local/github-app.pem` and do not reuse the human `gh` CLI
@@ -214,10 +222,13 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 
 #### How the wrappers work
 
-For `pr create`, the wrapper launcher loads the configured App key, exchanges it
-for one short-lived installation token, and delegates to `openslack delivery
-publish` with only that token, its required expiry, installation ID, and
-non-secret permission evidence. The child never receives the App key. Delivery
+For `pr create`, the wrapper launcher resolves the target repository in this
+order: explicit `--repo`, a complete `GITHUB_OWNER`/`GITHUB_REPO` pair, a
+verified GitHub `origin`, then the checked-in public config. It discovers the
+unique owner installation, exchanges the App JWT for one short-lived token,
+and delegates to `openslack delivery publish` with only that token, its required
+expiry, installation ID, public App identity, repository target, and non-secret
+permission evidence. The child never receives the App key. Delivery
 pushes through child-only askpass, creates or updates the exact-head draft PR
 through the API, and verifies the synchronized head SHA. `GITHUB_TOKEN` and
 `GH_TOKEN` are excluded, so the operation cannot silently fall back to a human
@@ -244,7 +255,8 @@ adapter. It obtains the installation token in memory, removes human-token and Ap
 key variables from the `gh` child, sets child-only `GH_TOKEN`, and forwards the
 command. `scripts/bot-gh-token.js` is an internal exchange module; direct token
 output is disabled so shell variables, xtrace, and transcripts cannot capture it.
-The compatibility adapter permits only `pr edit`, `pr comment`, and `pr ready`,
+The compatibility adapter permits only `pr edit`, `pr comment`, `pr ready`, and
+`issue edit`,
 rejects token display/auth/extension commands before credential loading, and
 disables child pager, editor, browser, and interactive prompt processes.
 
@@ -256,11 +268,10 @@ proposal.
 
 #### Troubleshooting
 
-| Problem                                 | Cause                                  | Fix                                                                                       |
-| --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
-| "No GitHub App private key found"       | PEM missing                            | Place `.openslack.local/github-app.pem` or set `OPENSLACK_GITHUB_APP_PRIVATE_KEY`         |
-| "Failed to generate installation token" | PEM invalid or App ID wrong            | Verify PEM content and `OPENSLACK_GITHUB_APP_ID` / `OPENSLACK_GITHUB_APP_INSTALLATION_ID` |
-| PR created under human identity         | `GITHUB_TOKEN` was set and not removed | Use the wrapper — it removes `GITHUB_TOKEN` automatically                                 |
+| Problem                                         | Cause                                             | Fix                                                                                    |
+| ----------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| "GitHub App installation authentication failed" | Missing/invalid key or discovery did not converge | Check the key input, public identity, repository target, and unique owner installation |
+| PR created under human identity                 | Wrapper was bypassed                              | Use the wrapper; its child cannot inherit `GITHUB_TOKEN` or `GH_TOKEN`                 |
 
 ### PRMS bot merge pipeline
 
@@ -278,11 +289,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber 110 -Merge -Method merge
 ```
 
-The default key path is `.openslack.local\github-app.pem`. Agents and LLMs must
+The default key path is `.openslack.local\github-app.pem`; an operator may set
+`OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` without changing public metadata. Agents and LLMs must
 not read, print, copy, summarize, or pass PEM contents. They may only reference
-the fixed wrapper command or ask a human/operator to run it. The PEM is read by
-the PowerShell wrapper, placed only in the child process environment variable
-expected by `@openslack/github`, and removed when that process exits. The PEM
+the fixed wrapper command or ask a human/operator to run it. The shared Node
+resolver reads the PEM. Generic `gh` and delivery launchers forward only a
+short-lived installation token; `openslack-bot.ps1` gives the key only to its
+direct OpenSlack child so long-running commands can refresh that token. The PEM
 must never be passed as a command-line argument, log line, PR body, review body,
 or chat message.
 
@@ -417,6 +430,9 @@ powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 -ListInstalla
 ### How it works (zero manual)
 
 ```
+public App identity + exact repository target
+  → bounded GET /app/installations pagination
+  → require one exact owner installation
 OPENSLACK_GITHUB_APP_PRIVATE_KEY
   → sign JWT (RS256)
   → POST /app/installations/{id}/access_tokens
@@ -461,9 +477,11 @@ checkout.
 
 ## Token Priority (getClient)
 
-Repository target resolution uses: explicit command option, then
-`GITHUB_OWNER`/`GITHUB_REPO`, then `git remote origin`, then
-`openslack.yaml` canonical remote.
+Bot-wrapper repository target resolution uses: explicit `--repo`, then a
+complete `GITHUB_OWNER`/`GITHUB_REPO` pair, then a verified GitHub `origin`,
+then `.openslack/integrations/github-app-public.json`. A partial environment
+pair fails closed. Product commands outside the wrappers retain their documented
+workspace resolver.
 
 1. `OPENSLACK_GITHUB_APP_ID` + `OPENSLACK_GITHUB_APP_INSTALLATION_ID` + private key → **GitHub App installation token** (preferred)
 2. `GITHUB_TOKEN` or `GH_TOKEN` → **PAT / Actions token** (fallback)
@@ -475,16 +493,16 @@ data.
 
 ## Environment Variables
 
-| Variable                                | Required          | Default                                  |
-| --------------------------------------- | ----------------- | ---------------------------------------- |
-| `GITHUB_OWNER`                          | No                | `wsman`                                  |
-| `GITHUB_REPO`                           | No                | `OpenSlack`                              |
-| `GITHUB_TOKEN`                          | No (PAT fallback) | —                                        |
-| `OPENSLACK_GITHUB_AUTH_MODE`            | No                | auto-detect                              |
-| `OPENSLACK_GITHUB_APP_ID`               | No                | —                                        |
-| `OPENSLACK_GITHUB_APP_INSTALLATION_ID`  | No                | —                                        |
-| `OPENSLACK_GITHUB_APP_PRIVATE_KEY`      | No                | PEM content                              |
-| `OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` | No                | Used by `scripts/openslack-bot.ps1` only |
+| Variable                                | Required          | Default                                 |
+| --------------------------------------- | ----------------- | --------------------------------------- |
+| `GITHUB_OWNER`                          | No                | Public config after verified Git origin |
+| `GITHUB_REPO`                           | No                | Public config after verified Git origin |
+| `GITHUB_TOKEN`                          | No (PAT fallback) | —                                       |
+| `OPENSLACK_GITHUB_AUTH_MODE`            | No                | auto-detect                             |
+| `OPENSLACK_GITHUB_APP_ID`               | No                | Public config for bot wrappers          |
+| `OPENSLACK_GITHUB_APP_INSTALLATION_ID`  | No                | Discovery hint only for bot wrappers    |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY`      | No                | PEM content                             |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` | No                | Bot-wrapper private key input           |
 
 ## Project v2 Configuration (one-time human admin)
 
