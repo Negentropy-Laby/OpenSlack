@@ -9,26 +9,44 @@ export interface ClosedRecordFailures {
   readonly dataField: (path: string, key: PropertyKey) => never;
 }
 
+export interface ClosedRecordOptions {
+  /** Select a deterministic ECMAScript UTF-16 order for string-key diagnostics. */
+  readonly keyOrder?: 'reflection' | 'utf16';
+  /** Null-prototype objects are inert and accepted by default. */
+  readonly allowNullPrototype?: boolean;
+}
+
 /** Shared inert-object mechanics; callers retain their frozen error surface. */
 export function closedDataRecord(
   value: unknown,
   fields: readonly string[],
   path: string,
   failures: ClosedRecordFailures,
+  options: ClosedRecordOptions = {},
 ): ContractDataRecord {
   if (
     value === null ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
     nodeTypes.isProxy(value) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
+    ![Object.prototype, ...(options.allowNullPrototype === false ? [] : [null])].includes(
+      Object.getPrototypeOf(value) as never,
+    )
   ) {
     return failures.inert(path);
   }
   for (const field of fields) {
     if (!Object.hasOwn(value, field)) failures.missing(path, field);
   }
-  for (const key of Reflect.ownKeys(value)) {
+  const reflectedKeys = Reflect.ownKeys(value);
+  const keys =
+    options.keyOrder === 'utf16'
+      ? [
+          ...reflectedKeys.filter((key): key is string => typeof key === 'string').sort(),
+          ...reflectedKeys.filter((key): key is symbol => typeof key === 'symbol'),
+        ]
+      : reflectedKeys;
+  for (const key of keys) {
     if (typeof key !== 'string' || !fields.includes(key)) failures.unknown(path, key);
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {

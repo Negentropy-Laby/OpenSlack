@@ -3,11 +3,14 @@ package runnerbindingcontract
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"regexp"
 	"strings"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 )
+
+var authorityIdempotencyPattern = regexp.MustCompile(`^openslack\.workflow-control-authority\.v2\.[0-9a-f]{64}$`)
 
 var stageFields = []string{
 	"schema",
@@ -32,6 +35,10 @@ var stageFields = []string{
 }
 
 func ValidateStage(value any) (Record, error) {
+	return validateStageWithSession(value, newBindingValidationSession(nil))
+}
+
+func validateStageWithSession(value any, session *bindingValidationSession) (Record, error) {
 	record, err := closedRecord(value, stageFields, "$")
 	if err != nil {
 		return nil, err
@@ -171,42 +178,39 @@ func ValidateStage(value any) (Record, error) {
 		"correlationId":     correlationID,
 		"sentAt":            sentAt,
 	}
-	if err := byteBound(result, MaxFrameBytes, "$"); err != nil {
+	if err := session.byteBound(result, MaxFrameBytes, "$", true); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 func validateRoute(value any, path string) (Record, error) {
-	record, err := closedRecord(value, []string{"backend", "authority", "routingEpoch", "authorityBuildHash"}, path)
-	if err != nil {
-		return nil, err
+	canonical, encodeErr := canonicalJSON(value)
+	if encodeErr != nil {
+		return nil, failure(ErrorInvalid, path, "Embedded authority route is invalid.")
 	}
-	backend, err := enumString(record["backend"], []string{"ts-local", "go"}, path+"/backend")
+	route, err := authoritycontract.ValidateRouteJSON(canonical, path)
 	if err != nil {
-		return nil, err
-	}
-	authority, err := enumString(record["authority"], []string{"typescript", "workflow-control"}, path+"/authority")
-	if err != nil {
-		return nil, err
-	}
-	if (backend == "ts-local" && authority != "typescript") ||
-		(backend == "go" && authority != "workflow-control") {
-		return nil, failure(ErrorAuthorityPlaneMismatch, path, "Authority route is inconsistent.")
-	}
-	routingEpoch, err := integerValue(record["routingEpoch"], path+"/routingEpoch", 1)
-	if err != nil {
-		return nil, err
-	}
-	authorityBuildHash, err := hashValue(record["authorityBuildHash"], path+"/authorityBuildHash")
-	if err != nil {
+		var contractErr *authoritycontract.ContractError
+		if errors.As(err, &contractErr) {
+			if contractErr.Code == authoritycontract.ErrorIdentityMismatch {
+				return nil, failure(ErrorAuthorityPlaneMismatch, path, "Authority route is inconsistent.")
+			}
+			code := ErrorInvalid
+			if contractErr.Code == authoritycontract.ErrorUnknownField {
+				code = ErrorUnknownField
+			} else if contractErr.Code == authoritycontract.ErrorLimitExceeded {
+				code = ErrorLimitExceeded
+			}
+			return nil, failure(code, contractErr.Path, "Embedded authority route is invalid.")
+		}
 		return nil, err
 	}
 	return Record{
-		"backend":            backend,
-		"authority":          authority,
-		"routingEpoch":       routingEpoch,
-		"authorityBuildHash": authorityBuildHash,
+		"backend":            route.Backend,
+		"authority":          route.Authority,
+		"routingEpoch":       route.RoutingEpoch,
+		"authorityBuildHash": route.AuthorityBuildHash,
 	}, nil
 }
 
@@ -303,7 +307,7 @@ func validateTarget(value any, operation Operation, path string) (Record, author
 	if err != nil {
 		return nil, authoritycontract.Message{}, err
 	}
-	idempotencyKey, err = textValue(record["idempotencyKey"], path+"/idempotencyKey", regexpMust(`^openslack\.workflow-control-authority\.v2\.[0-9a-f]{64}$`), 128)
+	idempotencyKey, err = textValue(record["idempotencyKey"], path+"/idempotencyKey", authorityIdempotencyPattern, 128)
 	if err != nil {
 		return nil, authoritycontract.Message{}, err
 	}
@@ -322,8 +326,6 @@ func validateTarget(value any, operation Operation, path string) (Record, author
 		"requestFingerprint": requestFingerprint,
 	}, message, nil
 }
-
-func regexpMust(pattern string) *regexp.Regexp { return regexp.MustCompile(pattern) }
 
 func leasedMessageIdentityMatches(
 	message authoritycontract.Message,

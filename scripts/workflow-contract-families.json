@@ -1,0 +1,53 @@
+{
+  "schema": "openslack.workflow_contract_family_registry.v1",
+  "families": [
+    {
+      "id": "workflow-control",
+      "generator": "scripts/workflow-control-contracts/index.ts",
+      "tsconfig": "scripts/workflow-control-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-authority",
+      "generator": "scripts/workflow-authority-contracts/index.ts",
+      "tsconfig": "scripts/workflow-authority-contracts/tsconfig.json",
+      "goMirror": { "package": "authoritycontract", "version": "v2" }
+    },
+    {
+      "id": "workflow-budget-authority",
+      "generator": "scripts/workflow-budget-authority-contracts/index.ts",
+      "tsconfig": "scripts/workflow-budget-authority-contracts/tsconfig.json",
+      "goMirror": { "package": "budgetcontract", "version": "v1" }
+    },
+    {
+      "id": "workflow-control-shadow",
+      "generator": "scripts/workflow-control-shadow-contracts/index.ts",
+      "tsconfig": "scripts/workflow-control-shadow-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-checkpoint-shadow",
+      "generator": "scripts/workflow-checkpoint-shadow-contracts/index.ts",
+      "tsconfig": "scripts/workflow-checkpoint-shadow-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-effect-control",
+      "generator": "scripts/workflow-effect-control-contracts/index.ts",
+      "tsconfig": "scripts/workflow-effect-control-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-effect-shadow",
+      "generator": "scripts/workflow-effect-shadow-contracts/index.ts",
+      "tsconfig": "scripts/workflow-effect-shadow-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-runner",
+      "generator": "scripts/workflow-runner-contracts/index.ts",
+      "tsconfig": "scripts/workflow-runner-contracts/tsconfig.json"
+    },
+    {
+      "id": "workflow-runner-authority-binding",
+      "generator": "scripts/workflow-runner-authority-binding-contracts/index.ts",
+      "tsconfig": "scripts/workflow-runner-authority-binding-contracts/tsconfig.json",
+      "goMirror": { "package": "runnerbindingcontract", "version": "v1" }
+    }
+  ]
+}

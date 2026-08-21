@@ -10,6 +10,7 @@ import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
@@ -27,6 +28,7 @@ import {
   prepareWorkflowRunnerAuthorityBindingResolution,
   prepareWorkflowRunnerAuthorityBindingStage,
   validateWorkflowRunnerAuthorityBindingReceipt,
+  validateWorkflowRunnerAuthorityBindingError,
   validateWorkflowRunnerAuthorityBindingResolution,
   validateWorkflowRunnerAuthorityBindingResolutionForStage,
   validateWorkflowRunnerAuthorityBindingResolutionReceipt,
@@ -44,6 +46,7 @@ import {
 } from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
 import {
   prepareWorkflowBudgetAuthorityRequest,
+  workflowBudgetAuthorityChargeNanoUsd,
   validateWorkflowBudgetSettlementRequest,
 } from '../../packages/workflows/src/workflow-budget-authority-contract.js';
 import {
@@ -67,6 +70,10 @@ const contractRoot = resolve(
   outputRoot,
   'packages/workflows/contracts/workflow-runner-authority-binding/v1',
 );
+const serviceMirrorRoot = resolve(
+  outputRoot,
+  'services/workflow-control/runnerbindingcontract/generated/v1',
+);
 
 export const bundleFiles = Object.freeze([
   'schemas/workflow-runner-authority-binding-stage.v1.schema.json',
@@ -89,6 +96,69 @@ const sourceLockPaths = Object.freeze({
     'services/workflow-control/migrations/000007_integrate_workflow_runner_v2.down.sql',
 } as const satisfies Record<keyof typeof WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS, string>);
 
+const authorityBoundary = Object.freeze({
+  batch: 'GS9-F2a',
+  normative: true,
+  contractOnly: true,
+  qualificationOnly: true,
+  authorityClaim: 'NO_AUTHORITY',
+  goAuthorityImplemented: false,
+  runtimeCompositionImplemented: false,
+  productionRoutingActivated: false,
+  frozenAuthorityV2KindsExtended: false,
+  frozenAuthorityV2KindCount: 18,
+  sourceAuthoritiesReplaced: false,
+  notDelivered: Object.freeze([
+    'migration_000008',
+    'database',
+    'http',
+    'durable_store',
+    'scheduler',
+    'worker',
+    'checkpoint_adapter',
+    'effect_adapter',
+    'budget_adapter',
+    'resume_adapter',
+    'provider_adapter',
+    'authority_recovery',
+    'runtime_composition',
+  ]),
+  notActivated: Object.freeze([
+    'future_runtime_profile',
+    'production_v2_submission',
+    'new_record_acceptance',
+    'routing',
+    'canary',
+    'cutover',
+    'typescript_fallback_removal',
+    'typescript_writer_retirement',
+  ]),
+  notClaimed: Object.freeze([
+    'runtime_authority_delivery',
+    'go_production_workflow_authority',
+    'go_production_checkpoint_authority',
+    'go_production_effect_authority',
+    'go_production_budget_policy_authority',
+    'go_production_provider_authority',
+    'go_production_run_store_authority',
+    'go_production_user_visible_read_authority',
+    'authenticated_external_host_qualification',
+    'qoder',
+    'remote_connector',
+    'release',
+    'live',
+    'tag',
+    'npm',
+    'production_readiness',
+  ]),
+  separateGates: Object.freeze([
+    'hosted_exact_head_checks',
+    'review_thread_resolution',
+    'independent_human_approval',
+    'merge',
+  ]),
+});
+
 const HASH = '^[0-9a-f]{64}$';
 const PREFIXED_HASH = '^sha256:[0-9a-f]{64}$';
 const SAFE_ID = '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$';
@@ -100,62 +170,22 @@ const RATE = '^(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,17}[1-9])?$';
 const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const h = (character: string): string => character.repeat(64);
 
-const OPERATION_MATRIX = Object.freeze([
-  {
-    operation: 'checkpoint_commit',
-    targetKind: 'checkpoint_commit',
-    runnerDelta: { revision: 1, generation: 0 },
-    sourceEvidenceState: 'committed',
-    sourceRevisionDelta: 1,
-    sourceGenerationDelta: 0,
-    sourceReceiptSchema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
-  },
-  {
-    operation: 'effect_authorize',
-    targetKind: 'effect_intent',
-    runnerDelta: { revision: 1, generation: 0 },
-    sourceEvidenceState: 'committed',
-    sourceRevisionDelta: 1,
-    sourceGenerationDelta: 0,
-    sourceReceiptSchema: 'openslack.workflow_runner_effect_authority_receipt.v1',
-  },
-  {
-    operation: 'effect_complete',
-    targetKind: 'effect_outcome',
-    runnerDelta: { revision: 0, generation: 0 },
-    sourceEvidenceState: 'committed',
-    sourceRevisionDelta: 1,
-    sourceGenerationDelta: 0,
-    sourceReceiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
-  },
-  {
-    operation: 'budget_reserve',
-    targetKind: 'budget_reserve_request',
-    runnerDelta: { revision: 1, generation: 0 },
-    sourceEvidenceState: 'prepared',
-    sourceRevisionDelta: 0,
-    sourceGenerationDelta: 0,
-    sourceReceiptSchema: null,
-  },
-  {
-    operation: 'budget_settle',
-    targetKind: 'budget_usage_report',
-    runnerDelta: { revision: 1, generation: 0 },
-    sourceEvidenceState: 'prepared',
-    sourceRevisionDelta: 0,
-    sourceGenerationDelta: 0,
-    sourceReceiptSchema: null,
-  },
-  {
-    operation: 'resume_advance',
-    targetKind: 'lease_accept',
-    runnerDelta: { revision: 1, generation: 1 },
-    sourceEvidenceState: 'committed',
-    sourceRevisionDelta: 1,
-    sourceGenerationDelta: 1,
-    sourceReceiptSchema: 'openslack.workflow_runner_resume_authority_receipt.v1',
-  },
-] as const);
+const OPERATION_MATRIX = Object.freeze(
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
+    operation,
+    targetKind: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind,
+    runnerDelta: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].runnerDelta,
+    sourcePlane: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourcePlane,
+    sourceEvidenceState:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceEvidenceState,
+    sourceRevisionDelta:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceRevisionDelta,
+    sourceGenerationDelta:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceGenerationDelta,
+    sourceReceiptSchema:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceReceiptSchema,
+  })),
+);
 
 const NEGATIVE_IDS = Object.freeze([
   'stage-unknown-field',
@@ -177,6 +207,7 @@ const NEGATIVE_IDS = Object.freeze([
   'resolution-receipt-alien-stage-receipt',
   'resolution-receipt-stage-hash-drift',
   'checkpoint-nested-contract-error',
+  'checkpoint-deep-path-contract-error',
   'budget-nested-contract-error',
   'effect-approved-expiry-boundary',
   'effect-expired-future-boundary',
@@ -194,6 +225,11 @@ const NEGATIVE_IDS = Object.freeze([
   'control-decision-sequence-gap',
   'control-decision-prior-time-inversion',
   'budget-rate-invalid',
+  'budget-settle-receipt-hash-drift',
+  'budget-settle-token-drift',
+  'budget-settle-cost-drift',
+  'budget-settle-call-drift',
+  'budget-settle-disposition-drift',
   'resume-logical-attempt-active-reuse',
 ] as const);
 
@@ -407,6 +443,7 @@ function unionSchema(
     for (const field of discriminants) replaceRootConst(schema, field, object[field]);
     return schema;
   });
+
   const unique = [
     ...new Map(variants.map((variant) => [JSON.stringify(variant), variant])).values(),
   ];
@@ -570,12 +607,11 @@ interface Exchange {
   readonly resolutionReceipt: WorkflowRunnerAuthorityBindingReceipt;
 }
 
-function exchange(
+function acceptedStageReceipt(
   staged: WorkflowRunnerAuthorityBindingStage,
-  evidence: WorkflowRunnerAuthorityEvidence,
   offset: number,
-): Exchange {
-  const stageReceipt = validateWorkflowRunnerAuthorityBindingStageReceipt(
+): WorkflowRunnerAuthorityBindingReceipt {
+  return validateWorkflowRunnerAuthorityBindingStageReceipt(
     {
       schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA,
       contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
@@ -596,6 +632,14 @@ function exchange(
     },
     staged,
   );
+}
+
+function exchange(
+  staged: WorkflowRunnerAuthorityBindingStage,
+  evidence: WorkflowRunnerAuthorityEvidence,
+  offset: number,
+): Exchange {
+  const stageReceipt = acceptedStageReceipt(staged, offset);
   const resolution = validateWorkflowRunnerAuthorityBindingResolutionForStage(
     {
       schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_SCHEMA,
@@ -644,11 +688,63 @@ function exchange(
   return { stage: staged, stageReceipt, resolution, resolutionReceipt };
 }
 
+function settlementStageDrift(
+  original: Exchange,
+  field:
+    | 'providerReceiptHash'
+    | 'actualTokens'
+    | 'actualCostNanoUsd'
+    | 'actualCalls'
+    | 'settlementStatus',
+  value: string,
+): {
+  readonly resolution: WorkflowRunnerAuthorityBindingResolution;
+  readonly stage: WorkflowRunnerAuthorityBindingStage;
+  readonly stageReceipt: WorkflowRunnerAuthorityBindingReceipt;
+} {
+  const originalMessage = JSON.parse(original.stage.target.body) as Json;
+  const payload = structuredClone(asJson(originalMessage.payload, 'budget settlement payload'));
+  payload[field] = value;
+  const staged = stage(
+    'budget_settle',
+    {
+      workspaceId: original.stage.workspaceId,
+      jobId: original.stage.jobId,
+      runId: original.stage.runId,
+      runnerAttemptId: original.stage.runnerAttemptId,
+      leaseId: original.stage.leaseId,
+      fencingToken: original.stage.fencingToken,
+      correlationId: original.stage.correlationId,
+      buildHash: original.stage.route.authorityBuildHash,
+      expectedRevision: original.stage.runnerAuthority.expectedGlobalRunRevision,
+      expectedGeneration: original.stage.runnerAuthority.expectedResumeGeneration,
+      sequence: original.stage.target.sequence,
+      sentAt: original.stage.sentAt,
+      backend: original.stage.route.backend,
+      authority: original.stage.route.authority,
+    },
+    payload,
+  );
+  const stageReceipt = acceptedStageReceipt(staged, 5);
+  const candidate = structuredClone(original.resolution) as unknown as Json;
+  candidate.bindingId = staged.bindingId;
+  candidate.stageHash = hashWorkflowRunnerAuthorityBindingStage(staged);
+  candidate.stageReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt);
+  candidate.targetBodyHash = staged.target.messageDigest;
+  return {
+    stage: staged,
+    stageReceipt,
+    resolution: validateWorkflowRunnerAuthorityBindingResolution(candidate),
+  };
+}
+
 async function sourceGolden(path: string): Promise<Json> {
   return JSON.parse(await readFile(resolve(repositoryRoot, path), 'utf8')) as Json;
 }
 
-async function makeExchanges(): Promise<Record<WorkflowRunnerAuthorityBindingOperation, Exchange>> {
+async function makeExchanges(
+  budgetRecords: Json,
+): Promise<Record<WorkflowRunnerAuthorityBindingOperation, Exchange>> {
   const checkpointGolden = await sourceGolden(
     'packages/workflows/contracts/workflow-checkpoint-shadow/v1/golden-vectors.json',
   );
@@ -841,13 +937,6 @@ async function makeExchanges(): Promise<Record<WorkflowRunnerAuthorityBindingOpe
     reconciliationToken: null,
   } as unknown as WorkflowRunnerAuthorityEvidence;
 
-  const budgetGolden = await sourceGolden(
-    'packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json',
-  );
-  const budgetRecords = asJson(
-    asJson(budgetGolden.vectors, 'budget vectors').records,
-    'budget records',
-  );
   const preparedReserve = asJson(
     asJson(budgetRecords.preparedReserve, 'prepared reserve').value,
     'prepared reserve value',
@@ -915,9 +1004,10 @@ async function makeExchanges(): Promise<Record<WorkflowRunnerAuthorityBindingOpe
     callId: settlementRequest.callId,
     providerReceiptHash: (settlementRequest.usageReceiptHash as string).slice('sha256:'.length),
     actualTokens: usage.totalTokens,
-    actualCostNanoUsd: (
-      BigInt(usage.totalTokens as string) * BigInt(settlementRequest.rateNanoUsdPerToken as string)
-    ).toString(),
+    actualCostNanoUsd: workflowBudgetAuthorityChargeNanoUsd(
+      usage.totalTokens,
+      settlementRequest.rateNanoUsdPerToken,
+    ),
     actualCalls: usage.calls,
     settlementStatus: 'settled',
   });
@@ -1104,11 +1194,8 @@ function goRouteSemanticVariant(
 
 async function budgetSemanticVariants(
   exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
+  records: Json,
 ): Promise<Record<string, Exchange>> {
-  const budgetGolden = await sourceGolden(
-    'packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json',
-  );
-  const records = asJson(asJson(budgetGolden.vectors, 'budget vectors').records, 'budget records');
   const base = exchanges.budget_settle.stage;
 
   const settlement = (recordName: string, index: number): Exchange => {
@@ -1390,11 +1477,18 @@ function exactNegatives(values: Json[]): Json[] {
 }
 
 async function goldenVectors() {
-  const exchanges = await makeExchanges();
+  const budgetGolden = await sourceGolden(
+    'packages/workflows/contracts/workflow-budget-authority/v1/golden-vectors.json',
+  );
+  const budgetRecords = asJson(
+    asJson(budgetGolden.vectors, 'budget vectors').records,
+    'budget records',
+  );
+  const exchanges = await makeExchanges(budgetRecords);
   const effectVariants = effectSemanticVariants(exchanges);
   const semanticVariants = {
     ...effectVariants,
-    ...(await budgetSemanticVariants(exchanges)),
+    ...(await budgetSemanticVariants(exchanges, budgetRecords)),
     goRouteCheckpoint: goRouteSemanticVariant(exchanges),
   };
   const controlReceiptMessages = Object.fromEntries(
@@ -1523,6 +1617,17 @@ async function goldenVectors() {
     asJson(checkpointNestedError.evidence, 'checkpoint evidence').envelope,
     'checkpoint envelope',
   ).unexpected = true;
+  const checkpointDeepPathError = structuredClone(checkpoint.resolution) as unknown as Json;
+  asJson(
+    asJson(
+      asJson(
+        asJson(checkpointDeepPathError.evidence, 'checkpoint evidence').envelope,
+        'checkpoint envelope',
+      ).observation,
+      'checkpoint observation',
+    ).runner,
+    'checkpoint runner',
+  ).unexpected = true;
   const budgetNestedError = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
   asJson(
     asJson(budgetNestedError.evidence, 'budget evidence').preparedRequest,
@@ -1627,6 +1732,27 @@ async function goldenVectors() {
     prepareWorkflowControlAuthorityMessage(timeInversionMessage).messageDigest;
   const budgetRateInvalid = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
   asJson(budgetRateInvalid.evidence, 'budget evidence').rateNanoUsdPerToken = 'not-a-rate';
+  const budgetSettleReceiptHashDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'providerReceiptHash',
+    h('0'),
+  );
+  const budgetSettleTokenDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'actualTokens',
+    '401',
+  );
+  const budgetSettleCostDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'actualCostNanoUsd',
+    '4001',
+  );
+  const budgetSettleCallDrift = settlementStageDrift(exchanges.budget_settle, 'actualCalls', '2');
+  const budgetSettleDispositionDrift = settlementStageDrift(
+    exchanges.budget_settle,
+    'settlementStatus',
+    'reconciliation_required',
+  );
   const resumeLogicalAttemptReuse = structuredClone(
     exchanges.resume_advance.resolution,
   ) as unknown as Json;
@@ -1880,6 +2006,12 @@ async function goldenVectors() {
         'validate_resolution',
         checkpointNestedError,
         () => validateWorkflowRunnerAuthorityBindingResolution(checkpointNestedError),
+      ),
+      negative(
+        'checkpoint-deep-path-contract-error',
+        'validate_resolution',
+        checkpointDeepPathError,
+        () => validateWorkflowRunnerAuthorityBindingResolution(checkpointDeepPathError),
       ),
       negative('budget-nested-contract-error', 'validate_resolution', budgetNestedError, () =>
         validateWorkflowRunnerAuthorityBindingResolution(budgetNestedError),
@@ -2250,6 +2382,22 @@ async function goldenVectors() {
       negative('budget-rate-invalid', 'validate_resolution', budgetRateInvalid, () =>
         validateWorkflowRunnerAuthorityBindingResolution(budgetRateInvalid),
       ),
+      ...[
+        ['budget-settle-receipt-hash-drift', budgetSettleReceiptHashDrift],
+        ['budget-settle-token-drift', budgetSettleTokenDrift],
+        ['budget-settle-cost-drift', budgetSettleCostDrift],
+        ['budget-settle-call-drift', budgetSettleCallDrift],
+        ['budget-settle-disposition-drift', budgetSettleDispositionDrift],
+      ].map(([id, item]) => {
+        const drift = item as typeof budgetSettleTokenDrift;
+        return negative(id as string, 'validate_resolution_for_stage', drift, () =>
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            drift.resolution,
+            drift.stage,
+            drift.stageReceipt,
+          ),
+        );
+      }),
       negative(
         'resume-logical-attempt-active-reuse',
         'validate_resolution_for_stage',
@@ -2348,14 +2496,14 @@ async function schemas(golden: Awaited<ReturnType<typeof goldenVectors>>) {
       'reconciliation delivery value',
     ),
   );
-  const errorSample = {
+  const errorSample = validateWorkflowRunnerAuthorityBindingError({
     schema: WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA,
     code: WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES[0],
     message: 'closed contract failure',
     bindingId: null,
     operation: null,
     reconciliationToken: null,
-  };
+  });
   const errorSchema = schemaForValue(errorSample);
   replaceRootConst(errorSchema, 'schema', WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA);
   const errorProperties = asJson(errorSchema.properties, 'error properties');
@@ -2432,18 +2580,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
       schema: 'openslack.workflow_runner_authority_binding_contract_manifest.v1',
       contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
       profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
-      authorityBoundary: {
-        batch: 'GS9-F2a',
-        contractOnly: true,
-        qualificationOnly: true,
-        authorityClaim: 'NO_AUTHORITY',
-        goAuthorityImplemented: false,
-        runtimeCompositionImplemented: false,
-        productionRoutingActivated: false,
-        frozenAuthorityV2KindsExtended: false,
-        frozenAuthorityV2KindCount: 18,
-        sourceAuthoritiesReplaced: false,
-      },
+      authorityBoundary,
       protocol: {
         sequence: ['stage_event', 'stage_event_ack', 'commit_authority', 'commit_authority_ack'],
         independentCompanionSequence: true,
@@ -2454,13 +2591,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
       },
       operations: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
         operation,
-        targetKind: workflowRunnerAuthorityBindingExpectedKind(operation),
-        runnerDelta: workflowRunnerAuthorityBindingRunnerDelta(operation),
-        sourceEvidenceState:
-          operation === 'budget_reserve' || operation === 'budget_settle'
-            ? 'prepared'
-            : 'committed',
-        sourceReceiptSchema: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS[operation],
+        ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation],
       })),
       evidence: {
         closed: true,
@@ -2518,26 +2649,33 @@ async function inventory(root: string): Promise<string[]> {
 
 async function generate(): Promise<void> {
   const map = await outputs();
-  for (const [path, bytes] of map) {
-    const destination = resolve(contractRoot, path);
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, bytes);
+  for (const root of [contractRoot, serviceMirrorRoot]) {
+    for (const [path, bytes] of map) {
+      const destination = resolve(root, path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, bytes);
+    }
   }
 }
 
 async function check(): Promise<void> {
   const map = await outputs();
-  const actualInventory = await inventory(contractRoot);
   const expectedInventory = [...bundleFiles].sort();
-  if (JSON.stringify(actualInventory) !== JSON.stringify(expectedInventory)) {
-    throw new Error(
-      `Authority-binding bundle inventory drift:\nactual=${actualInventory.join(',')}\nexpected=${expectedInventory.join(',')}`,
-    );
-  }
   const stale: string[] = [];
-  for (const [path, expected] of map) {
-    const actual = await readFile(resolve(contractRoot, path)).catch(() => null);
-    if (actual === null || !actual.equals(expected)) stale.push(path);
+  for (const [label, root] of [
+    ['typescript', contractRoot],
+    ['go', serviceMirrorRoot],
+  ] as const) {
+    const actualInventory = await inventory(root);
+    if (JSON.stringify(actualInventory) !== JSON.stringify(expectedInventory)) {
+      throw new Error(
+        `Authority-binding ${label} bundle inventory drift:\nactual=${actualInventory.join(',')}\nexpected=${expectedInventory.join(',')}`,
+      );
+    }
+    for (const [path, expected] of map) {
+      const actual = await readFile(resolve(root, path)).catch(() => null);
+      if (actual === null || !actual.equals(expected)) stale.push(`${label}:${path}`);
+    }
   }
   if (stale.length > 0) {
     throw new Error(

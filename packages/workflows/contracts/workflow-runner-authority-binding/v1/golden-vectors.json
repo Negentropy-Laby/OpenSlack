@@ -17,6 +17,7 @@
       "operation": "checkpoint_commit",
       "targetKind": "checkpoint_commit",
       "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "checkpoint_control",
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
@@ -26,6 +27,7 @@
       "operation": "effect_authorize",
       "targetKind": "effect_intent",
       "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
@@ -35,6 +37,7 @@
       "operation": "effect_complete",
       "targetKind": "effect_outcome",
       "runnerDelta": { "revision": 0, "generation": 0 },
+      "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
@@ -44,6 +47,7 @@
       "operation": "budget_reserve",
       "targetKind": "budget_reserve_request",
       "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
       "sourceRevisionDelta": 0,
       "sourceGenerationDelta": 0,
@@ -53,6 +57,7 @@
       "operation": "budget_settle",
       "targetKind": "budget_usage_report",
       "runnerDelta": { "revision": 1, "generation": 0 },
+      "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
       "sourceRevisionDelta": 0,
       "sourceGenerationDelta": 0,
@@ -62,6 +67,7 @@
       "operation": "resume_advance",
       "targetKind": "lease_accept",
       "runnerDelta": { "revision": 1, "generation": 1 },
+      "sourcePlane": "resume_control",
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 1,
@@ -5409,6 +5415,92 @@
       }
     },
     {
+      "id": "checkpoint-deep-path-contract-error",
+      "operation": "validate_resolution",
+      "input": {
+        "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+        "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+        "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+        "phase": "commit_authority",
+        "direction": "runner-to-control",
+        "companionSequence": 2,
+        "bindingId": "WFRUNNER-BINDING-e3f0a44425c396591cfe26b631192492208d6c87e79ab47e6b14123b793bd461",
+        "operation": "checkpoint_commit",
+        "stageHash": "7f5cb3a9c9ddd86c902046412264ac4fc3cc28cd11ae28e967f9af6b497397c7",
+        "stageReceiptHash": "48accce2eec224ad6ba82ce539904082925accc906cdc31bca8c8d22a0425c5d",
+        "targetBodyHash": "550b72f4e93dfed923112a06fbc5c49b60d382940d6b104bbb7344d45b656b65",
+        "evidence": {
+          "schema": "openslack.workflow_runner_checkpoint_authority_evidence.v1",
+          "sourceAuthority": {
+            "plane": "checkpoint_control",
+            "evidenceState": "committed",
+            "expectedRevision": 1,
+            "acceptedRevision": 2,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0,
+            "requestHash": "7c0565b760c9a0a0e48b05e8cc78729b98cb8092470aa715c84878c59f239ef5",
+            "receiptSchema": "openslack.workflow_runner_checkpoint_authority_receipt.v1",
+            "receiptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "recordHash": "3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0",
+            "authorityBuildHash": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "envelope": {
+            "schema": "openslack.workflow_checkpoint_shadow_envelope.v1",
+            "goRole": "observer_only",
+            "sourceSequence": 1,
+            "operation": "checkpoint_commit",
+            "observation": {
+              "schema": "openslack.workflow_checkpoint_shadow_observation.v1",
+              "authority": "typescript",
+              "goRole": "observer_only",
+              "runId": "run.gs9c.1",
+              "revision": 2,
+              "resumeGeneration": 0,
+              "checkpoint": {
+                "checkpointId": "checkpoint-2222222222222222222222222222222222222222222222222222222222222222",
+                "phaseId": "phase-0",
+                "phaseIndex": 0,
+                "commitPoint": "after_phase_work",
+                "artifactRef": "checkpoint-control/artifacts/2222222222222222222222222222222222222222222222222222222222222222.json",
+                "artifactHash": "2222222222222222222222222222222222222222222222222222222222222222",
+                "resultHash": "3333333333333333333333333333333333333333333333333333333333333333",
+                "cacheKeyHash": "4444444444444444444444444444444444444444444444444444444444444444",
+                "committedRevision": 2,
+                "resumeGeneration": 0,
+                "committedAt": "2026-08-12T00:00:00.000Z"
+              },
+              "priorCheckpoint": null,
+              "nextPhaseId": null,
+              "nextPhaseIndex": null,
+              "workflowSourceHash": "5555555555555555555555555555555555555555555555555555555555555555",
+              "manifestHash": "6666666666666666666666666666666666666666666666666666666666666666",
+              "inputHash": "7777777777777777777777777777777777777777777777777777777777777777",
+              "runner": {
+                "workspaceId": "workspace.test",
+                "jobId": "job.1",
+                "attemptId": "attempt.1",
+                "leaseId": "lease.1",
+                "fencingToken": 1,
+                "correlationId": "correlation.gs9c.1",
+                "runnerBuildHash": "1111111111111111111111111111111111111111111111111111111111111111",
+                "unexpected": true
+              }
+            },
+            "observationHash": "3b4736879916283874e60a97f621534f035555381574298aad5f953b8733e0d0"
+          },
+          "envelopeHash": "7c0565b760c9a0a0e48b05e8cc78729b98cb8092470aa715c84878c59f239ef5"
+        },
+        "evidenceHash": "c2b51285838cbe3d361b7a99695de552e2fb3df2fbb4ac4377292d45adf30ace",
+        "sentAt": "2026-08-20T00:01:02.000Z"
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+        "path": "$/evidence/envelope/runner",
+        "message": "Embedded checkpoint evidence is invalid."
+      }
+    },
+    {
       "id": "budget-nested-contract-error",
       "operation": "validate_resolution",
       "input": {
@@ -8695,6 +8787,606 @@
         "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH",
         "path": "$/evidence",
         "message": "Budget runner identity differs from the exact E1 request."
+      }
+    },
+    {
+      "id": "budget-settle-receipt-hash-drift",
+      "operation": "validate_resolution_for_stage",
+      "input": {
+        "stage": {
+          "schema": "openslack.workflow_runner_authority_binding_stage.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "stage_event",
+          "direction": "runner-to-control",
+          "companionSequence": 1,
+          "bindingId": "WFRUNNER-BINDING-25a7eb08802cc3a42f2ec62ba93b8f1563a464ec65d0847c730fb16c3b5c8f20",
+          "operation": "budget_settle",
+          "workspaceId": "workspace-1",
+          "jobId": "job.budget",
+          "runId": "run-1",
+          "runnerAttemptId": "attempt.budget",
+          "leaseId": "lease.budget",
+          "fencingToken": 11,
+          "route": {
+            "backend": "ts-local",
+            "authority": "typescript",
+            "routingEpoch": 1,
+            "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          "runnerAuthority": {
+            "expectedGlobalRunRevision": 5,
+            "acceptedGlobalRunRevision": 6,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0
+          },
+          "target": {
+            "schema": "openslack.workflow_control_authority_prepared_message.v2",
+            "eventId": "binding-budget_settle-42",
+            "kind": "budget_usage_report",
+            "sequence": 42,
+            "body": "{\"attemptId\":\"attempt.budget\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"correlationId\":\"correlation-2\",\"eventId\":\"binding-budget_settle-42\",\"fencingToken\":11,\"jobId\":\"job.budget\",\"kind\":\"budget_usage_report\",\"leaseId\":\"lease.budget\",\"payload\":{\"actualCalls\":\"1\",\"actualCostNanoUsd\":\"4000\",\"actualTokens\":\"400\",\"callId\":\"call-1\",\"providerReceiptHash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"reservationId\":\"reservation-1\",\"settlementStatus\":\"settled\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:05:00.000Z\",\"sequence\":42,\"workflowRunId\":\"run-1\",\"workspaceId\":\"workspace-1\"}\n",
+            "messageDigest": "84f963c505b11312fc7ef72b1f1f100875a122296cf8e257d199b6616f89c026",
+            "idempotencyKey": "openslack.workflow-control-authority.v2.84f963c505b11312fc7ef72b1f1f100875a122296cf8e257d199b6616f89c026",
+            "requestFingerprint": "sha256:9b152791630f7552ca31064a7a1fe894d53ac508689e6167b5eeb0311b22b92d"
+          },
+          "correlationId": "correlation-2",
+          "sentAt": "2026-08-20T00:05:00.000Z"
+        },
+        "stageReceipt": {
+          "schema": "openslack.workflow_runner_authority_binding_receipt.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "direction": "control-to-runner",
+          "bindingId": "WFRUNNER-BINDING-25a7eb08802cc3a42f2ec62ba93b8f1563a464ec65d0847c730fb16c3b5c8f20",
+          "operation": "budget_settle",
+          "status": "accepted",
+          "controlBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "committedAt": "2026-08-20T00:05:01.000Z",
+          "reconciliationToken": null,
+          "requestHash": "cb9216c94fb227867a2e3a21c1ddb926da0dccfde7f045a29ed8eefb5a7fb585",
+          "targetEventId": "binding-budget_settle-42",
+          "targetBodyHash": "84f963c505b11312fc7ef72b1f1f100875a122296cf8e257d199b6616f89c026",
+          "phase": "stage_event",
+          "companionSequence": 1,
+          "evidenceHash": null
+        },
+        "resolution": {
+          "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "commit_authority",
+          "direction": "runner-to-control",
+          "companionSequence": 2,
+          "bindingId": "WFRUNNER-BINDING-25a7eb08802cc3a42f2ec62ba93b8f1563a464ec65d0847c730fb16c3b5c8f20",
+          "operation": "budget_settle",
+          "stageHash": "cb9216c94fb227867a2e3a21c1ddb926da0dccfde7f045a29ed8eefb5a7fb585",
+          "stageReceiptHash": "998b41282db52a68585570a788a4099987ce87eda572ff8762efd6cb5d9c2b0f",
+          "targetBodyHash": "84f963c505b11312fc7ef72b1f1f100875a122296cf8e257d199b6616f89c026",
+          "evidence": {
+            "schema": "openslack.workflow_runner_budget_authority_evidence.v1",
+            "sourceAuthority": {
+              "plane": "budget_account",
+              "evidenceState": "prepared",
+              "expectedRevision": 1,
+              "acceptedRevision": null,
+              "expectedResumeGeneration": 0,
+              "acceptedResumeGeneration": 0,
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "receiptSchema": null,
+              "receiptHash": null,
+              "recordHash": null,
+              "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "preparedRequest": {
+              "schema": "openslack.workflow_budget_prepared_request.v1",
+              "operation": "settle",
+              "method": "POST",
+              "path": "/v1/authority/workflow-budgets:settle",
+              "callerId": "qualification-caller",
+              "body": "{\"accountId\":\"budget-account-1\",\"authority\":\"typescript\",\"callId\":\"call-1\",\"contractVersion\":\"v1\",\"correlationId\":\"correlation-2\",\"expectedAccountRevision\":1,\"expectedModelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"expectedProviderHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"expectedProviderRunHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"expectedRunRevision\":5,\"goAuthorityClaim\":\"NO_AUTHORITY\",\"goAuthorityEligible\":false,\"goRole\":\"validator_only\",\"policyHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"providerAttempt\":\"1\",\"providerUsage\":{\"attempt\":\"1\",\"calls\":\"1\",\"inputTokens\":\"250\",\"modelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"outcome\":\"provider_response_accepted\",\"outcomeHash\":\"sha256:db13106f584b7cf2846545279006d73848bcd32862aed5310ee6b58bd9a3653c\",\"outputTokens\":\"150\",\"providerHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"receiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"requestHash\":\"sha256:35bdbc75a292b6ee4eaf5ad126cb7362a1abff943c8fa5a4307141a92d33f931\",\"runHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"schema\":\"openslack.provider_usage_receipt.v1\",\"status\":\"reported\",\"totalTokens\":\"400\"},\"rateNanoUsdPerToken\":\"10\",\"requestedAt\":\"2026-08-14T00:00:05.000Z\",\"reservationId\":\"reservation-1\",\"reserveDecisionHash\":\"08ec3b918a37e8bded9089b7b68f7b383ed3e4c4eaef1afb938fe00b40a83661\",\"route\":{\"authority\":\"typescript\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"backend\":\"ts-local\",\"routingEpoch\":1},\"runId\":\"run-1\",\"schema\":\"openslack.workflow_budget_settlement_request.v1\",\"usageEvidenceStatus\":\"trusted\",\"usageReceiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"workspaceId\":\"workspace-1\",\"writer\":\"@openslack/workflows\"}\n",
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "idempotencyKey": "openslack.workflow-budget-authority.v1.7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "requestFingerprint": "sha256:e2b4696a5c34ae6f2a514b16849640938746cf2113f7f562a8423c0084b59844"
+            },
+            "providerHash": "sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2",
+            "modelHash": "sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54",
+            "providerRunHash": "sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f",
+            "providerAttempt": "1",
+            "accountId": "budget-account-1",
+            "policyHash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "rateNanoUsdPerToken": "10",
+            "providerUsageReceiptHash": "sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9"
+          },
+          "evidenceHash": "881b06a471da3b73bd74ffbb34c58883b45c2f0ef82834d9a5e9a2a2dd9c5fef",
+          "sentAt": "2026-08-20T00:05:02.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "path": "$/evidence/preparedRequest",
+        "message": "Budget settlement usage evidence differs from the staged event."
+      }
+    },
+    {
+      "id": "budget-settle-token-drift",
+      "operation": "validate_resolution_for_stage",
+      "input": {
+        "stage": {
+          "schema": "openslack.workflow_runner_authority_binding_stage.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "stage_event",
+          "direction": "runner-to-control",
+          "companionSequence": 1,
+          "bindingId": "WFRUNNER-BINDING-0aec3be5f57763ea04f4a47c642e9e1fb889f8f17014d66c5f323cd4fff44e28",
+          "operation": "budget_settle",
+          "workspaceId": "workspace-1",
+          "jobId": "job.budget",
+          "runId": "run-1",
+          "runnerAttemptId": "attempt.budget",
+          "leaseId": "lease.budget",
+          "fencingToken": 11,
+          "route": {
+            "backend": "ts-local",
+            "authority": "typescript",
+            "routingEpoch": 1,
+            "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          "runnerAuthority": {
+            "expectedGlobalRunRevision": 5,
+            "acceptedGlobalRunRevision": 6,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0
+          },
+          "target": {
+            "schema": "openslack.workflow_control_authority_prepared_message.v2",
+            "eventId": "binding-budget_settle-42",
+            "kind": "budget_usage_report",
+            "sequence": 42,
+            "body": "{\"attemptId\":\"attempt.budget\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"correlationId\":\"correlation-2\",\"eventId\":\"binding-budget_settle-42\",\"fencingToken\":11,\"jobId\":\"job.budget\",\"kind\":\"budget_usage_report\",\"leaseId\":\"lease.budget\",\"payload\":{\"actualCalls\":\"1\",\"actualCostNanoUsd\":\"4000\",\"actualTokens\":\"401\",\"callId\":\"call-1\",\"providerReceiptHash\":\"1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"reservationId\":\"reservation-1\",\"settlementStatus\":\"settled\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:05:00.000Z\",\"sequence\":42,\"workflowRunId\":\"run-1\",\"workspaceId\":\"workspace-1\"}\n",
+            "messageDigest": "581be8598463e2c784004ecd7c35944929f1a326c594665f21f7c5d2570585c1",
+            "idempotencyKey": "openslack.workflow-control-authority.v2.581be8598463e2c784004ecd7c35944929f1a326c594665f21f7c5d2570585c1",
+            "requestFingerprint": "sha256:24a58c4e857098ca0964059f19bc766f57a56716819219ab8b02a36c724206df"
+          },
+          "correlationId": "correlation-2",
+          "sentAt": "2026-08-20T00:05:00.000Z"
+        },
+        "stageReceipt": {
+          "schema": "openslack.workflow_runner_authority_binding_receipt.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "direction": "control-to-runner",
+          "bindingId": "WFRUNNER-BINDING-0aec3be5f57763ea04f4a47c642e9e1fb889f8f17014d66c5f323cd4fff44e28",
+          "operation": "budget_settle",
+          "status": "accepted",
+          "controlBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "committedAt": "2026-08-20T00:05:01.000Z",
+          "reconciliationToken": null,
+          "requestHash": "c914ac425078db5b02e1262585874515895b03102a780ac45c0c2c0e3f9fc5b2",
+          "targetEventId": "binding-budget_settle-42",
+          "targetBodyHash": "581be8598463e2c784004ecd7c35944929f1a326c594665f21f7c5d2570585c1",
+          "phase": "stage_event",
+          "companionSequence": 1,
+          "evidenceHash": null
+        },
+        "resolution": {
+          "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "commit_authority",
+          "direction": "runner-to-control",
+          "companionSequence": 2,
+          "bindingId": "WFRUNNER-BINDING-0aec3be5f57763ea04f4a47c642e9e1fb889f8f17014d66c5f323cd4fff44e28",
+          "operation": "budget_settle",
+          "stageHash": "c914ac425078db5b02e1262585874515895b03102a780ac45c0c2c0e3f9fc5b2",
+          "stageReceiptHash": "7fe86adf02cdcd1f4e73ab56e8131caad3fed37209a0f5ae61b231f396394205",
+          "targetBodyHash": "581be8598463e2c784004ecd7c35944929f1a326c594665f21f7c5d2570585c1",
+          "evidence": {
+            "schema": "openslack.workflow_runner_budget_authority_evidence.v1",
+            "sourceAuthority": {
+              "plane": "budget_account",
+              "evidenceState": "prepared",
+              "expectedRevision": 1,
+              "acceptedRevision": null,
+              "expectedResumeGeneration": 0,
+              "acceptedResumeGeneration": 0,
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "receiptSchema": null,
+              "receiptHash": null,
+              "recordHash": null,
+              "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "preparedRequest": {
+              "schema": "openslack.workflow_budget_prepared_request.v1",
+              "operation": "settle",
+              "method": "POST",
+              "path": "/v1/authority/workflow-budgets:settle",
+              "callerId": "qualification-caller",
+              "body": "{\"accountId\":\"budget-account-1\",\"authority\":\"typescript\",\"callId\":\"call-1\",\"contractVersion\":\"v1\",\"correlationId\":\"correlation-2\",\"expectedAccountRevision\":1,\"expectedModelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"expectedProviderHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"expectedProviderRunHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"expectedRunRevision\":5,\"goAuthorityClaim\":\"NO_AUTHORITY\",\"goAuthorityEligible\":false,\"goRole\":\"validator_only\",\"policyHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"providerAttempt\":\"1\",\"providerUsage\":{\"attempt\":\"1\",\"calls\":\"1\",\"inputTokens\":\"250\",\"modelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"outcome\":\"provider_response_accepted\",\"outcomeHash\":\"sha256:db13106f584b7cf2846545279006d73848bcd32862aed5310ee6b58bd9a3653c\",\"outputTokens\":\"150\",\"providerHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"receiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"requestHash\":\"sha256:35bdbc75a292b6ee4eaf5ad126cb7362a1abff943c8fa5a4307141a92d33f931\",\"runHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"schema\":\"openslack.provider_usage_receipt.v1\",\"status\":\"reported\",\"totalTokens\":\"400\"},\"rateNanoUsdPerToken\":\"10\",\"requestedAt\":\"2026-08-14T00:00:05.000Z\",\"reservationId\":\"reservation-1\",\"reserveDecisionHash\":\"08ec3b918a37e8bded9089b7b68f7b383ed3e4c4eaef1afb938fe00b40a83661\",\"route\":{\"authority\":\"typescript\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"backend\":\"ts-local\",\"routingEpoch\":1},\"runId\":\"run-1\",\"schema\":\"openslack.workflow_budget_settlement_request.v1\",\"usageEvidenceStatus\":\"trusted\",\"usageReceiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"workspaceId\":\"workspace-1\",\"writer\":\"@openslack/workflows\"}\n",
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "idempotencyKey": "openslack.workflow-budget-authority.v1.7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "requestFingerprint": "sha256:e2b4696a5c34ae6f2a514b16849640938746cf2113f7f562a8423c0084b59844"
+            },
+            "providerHash": "sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2",
+            "modelHash": "sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54",
+            "providerRunHash": "sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f",
+            "providerAttempt": "1",
+            "accountId": "budget-account-1",
+            "policyHash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "rateNanoUsdPerToken": "10",
+            "providerUsageReceiptHash": "sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9"
+          },
+          "evidenceHash": "881b06a471da3b73bd74ffbb34c58883b45c2f0ef82834d9a5e9a2a2dd9c5fef",
+          "sentAt": "2026-08-20T00:05:02.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "path": "$/evidence/preparedRequest",
+        "message": "Budget settlement usage evidence differs from the staged event."
+      }
+    },
+    {
+      "id": "budget-settle-cost-drift",
+      "operation": "validate_resolution_for_stage",
+      "input": {
+        "stage": {
+          "schema": "openslack.workflow_runner_authority_binding_stage.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "stage_event",
+          "direction": "runner-to-control",
+          "companionSequence": 1,
+          "bindingId": "WFRUNNER-BINDING-a07c717a7c07363af983dc9e335e8cd5043fc9833088589dbe351aae5ae2d3a7",
+          "operation": "budget_settle",
+          "workspaceId": "workspace-1",
+          "jobId": "job.budget",
+          "runId": "run-1",
+          "runnerAttemptId": "attempt.budget",
+          "leaseId": "lease.budget",
+          "fencingToken": 11,
+          "route": {
+            "backend": "ts-local",
+            "authority": "typescript",
+            "routingEpoch": 1,
+            "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          "runnerAuthority": {
+            "expectedGlobalRunRevision": 5,
+            "acceptedGlobalRunRevision": 6,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0
+          },
+          "target": {
+            "schema": "openslack.workflow_control_authority_prepared_message.v2",
+            "eventId": "binding-budget_settle-42",
+            "kind": "budget_usage_report",
+            "sequence": 42,
+            "body": "{\"attemptId\":\"attempt.budget\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"correlationId\":\"correlation-2\",\"eventId\":\"binding-budget_settle-42\",\"fencingToken\":11,\"jobId\":\"job.budget\",\"kind\":\"budget_usage_report\",\"leaseId\":\"lease.budget\",\"payload\":{\"actualCalls\":\"1\",\"actualCostNanoUsd\":\"4001\",\"actualTokens\":\"400\",\"callId\":\"call-1\",\"providerReceiptHash\":\"1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"reservationId\":\"reservation-1\",\"settlementStatus\":\"settled\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:05:00.000Z\",\"sequence\":42,\"workflowRunId\":\"run-1\",\"workspaceId\":\"workspace-1\"}\n",
+            "messageDigest": "b671b7fd4dec5a0f1a5ed6e23a9e543ec22640e04e60b29e4b34fd76e9998dd9",
+            "idempotencyKey": "openslack.workflow-control-authority.v2.b671b7fd4dec5a0f1a5ed6e23a9e543ec22640e04e60b29e4b34fd76e9998dd9",
+            "requestFingerprint": "sha256:1070466eeca0113b663c5e9b23ede17ff9fe576a872c38355255925b7a005a87"
+          },
+          "correlationId": "correlation-2",
+          "sentAt": "2026-08-20T00:05:00.000Z"
+        },
+        "stageReceipt": {
+          "schema": "openslack.workflow_runner_authority_binding_receipt.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "direction": "control-to-runner",
+          "bindingId": "WFRUNNER-BINDING-a07c717a7c07363af983dc9e335e8cd5043fc9833088589dbe351aae5ae2d3a7",
+          "operation": "budget_settle",
+          "status": "accepted",
+          "controlBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "committedAt": "2026-08-20T00:05:01.000Z",
+          "reconciliationToken": null,
+          "requestHash": "c6e1cd56f4ea1b87e0460ca7895f1093d0d2c898d942c75f343fc7907dd2ebb7",
+          "targetEventId": "binding-budget_settle-42",
+          "targetBodyHash": "b671b7fd4dec5a0f1a5ed6e23a9e543ec22640e04e60b29e4b34fd76e9998dd9",
+          "phase": "stage_event",
+          "companionSequence": 1,
+          "evidenceHash": null
+        },
+        "resolution": {
+          "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "commit_authority",
+          "direction": "runner-to-control",
+          "companionSequence": 2,
+          "bindingId": "WFRUNNER-BINDING-a07c717a7c07363af983dc9e335e8cd5043fc9833088589dbe351aae5ae2d3a7",
+          "operation": "budget_settle",
+          "stageHash": "c6e1cd56f4ea1b87e0460ca7895f1093d0d2c898d942c75f343fc7907dd2ebb7",
+          "stageReceiptHash": "fcd614ae88f5c8c468bd9a5659a638dcaeae71d136f30da4a844592f51344cfe",
+          "targetBodyHash": "b671b7fd4dec5a0f1a5ed6e23a9e543ec22640e04e60b29e4b34fd76e9998dd9",
+          "evidence": {
+            "schema": "openslack.workflow_runner_budget_authority_evidence.v1",
+            "sourceAuthority": {
+              "plane": "budget_account",
+              "evidenceState": "prepared",
+              "expectedRevision": 1,
+              "acceptedRevision": null,
+              "expectedResumeGeneration": 0,
+              "acceptedResumeGeneration": 0,
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "receiptSchema": null,
+              "receiptHash": null,
+              "recordHash": null,
+              "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "preparedRequest": {
+              "schema": "openslack.workflow_budget_prepared_request.v1",
+              "operation": "settle",
+              "method": "POST",
+              "path": "/v1/authority/workflow-budgets:settle",
+              "callerId": "qualification-caller",
+              "body": "{\"accountId\":\"budget-account-1\",\"authority\":\"typescript\",\"callId\":\"call-1\",\"contractVersion\":\"v1\",\"correlationId\":\"correlation-2\",\"expectedAccountRevision\":1,\"expectedModelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"expectedProviderHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"expectedProviderRunHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"expectedRunRevision\":5,\"goAuthorityClaim\":\"NO_AUTHORITY\",\"goAuthorityEligible\":false,\"goRole\":\"validator_only\",\"policyHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"providerAttempt\":\"1\",\"providerUsage\":{\"attempt\":\"1\",\"calls\":\"1\",\"inputTokens\":\"250\",\"modelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"outcome\":\"provider_response_accepted\",\"outcomeHash\":\"sha256:db13106f584b7cf2846545279006d73848bcd32862aed5310ee6b58bd9a3653c\",\"outputTokens\":\"150\",\"providerHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"receiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"requestHash\":\"sha256:35bdbc75a292b6ee4eaf5ad126cb7362a1abff943c8fa5a4307141a92d33f931\",\"runHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"schema\":\"openslack.provider_usage_receipt.v1\",\"status\":\"reported\",\"totalTokens\":\"400\"},\"rateNanoUsdPerToken\":\"10\",\"requestedAt\":\"2026-08-14T00:00:05.000Z\",\"reservationId\":\"reservation-1\",\"reserveDecisionHash\":\"08ec3b918a37e8bded9089b7b68f7b383ed3e4c4eaef1afb938fe00b40a83661\",\"route\":{\"authority\":\"typescript\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"backend\":\"ts-local\",\"routingEpoch\":1},\"runId\":\"run-1\",\"schema\":\"openslack.workflow_budget_settlement_request.v1\",\"usageEvidenceStatus\":\"trusted\",\"usageReceiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"workspaceId\":\"workspace-1\",\"writer\":\"@openslack/workflows\"}\n",
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "idempotencyKey": "openslack.workflow-budget-authority.v1.7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "requestFingerprint": "sha256:e2b4696a5c34ae6f2a514b16849640938746cf2113f7f562a8423c0084b59844"
+            },
+            "providerHash": "sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2",
+            "modelHash": "sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54",
+            "providerRunHash": "sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f",
+            "providerAttempt": "1",
+            "accountId": "budget-account-1",
+            "policyHash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "rateNanoUsdPerToken": "10",
+            "providerUsageReceiptHash": "sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9"
+          },
+          "evidenceHash": "881b06a471da3b73bd74ffbb34c58883b45c2f0ef82834d9a5e9a2a2dd9c5fef",
+          "sentAt": "2026-08-20T00:05:02.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "path": "$/evidence/preparedRequest",
+        "message": "Budget settlement usage evidence differs from the staged event."
+      }
+    },
+    {
+      "id": "budget-settle-call-drift",
+      "operation": "validate_resolution_for_stage",
+      "input": {
+        "stage": {
+          "schema": "openslack.workflow_runner_authority_binding_stage.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "stage_event",
+          "direction": "runner-to-control",
+          "companionSequence": 1,
+          "bindingId": "WFRUNNER-BINDING-0b9fcb4ebc67ead6a5a7416324b6d85d20cde715963d7518981327e750566af9",
+          "operation": "budget_settle",
+          "workspaceId": "workspace-1",
+          "jobId": "job.budget",
+          "runId": "run-1",
+          "runnerAttemptId": "attempt.budget",
+          "leaseId": "lease.budget",
+          "fencingToken": 11,
+          "route": {
+            "backend": "ts-local",
+            "authority": "typescript",
+            "routingEpoch": 1,
+            "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          "runnerAuthority": {
+            "expectedGlobalRunRevision": 5,
+            "acceptedGlobalRunRevision": 6,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0
+          },
+          "target": {
+            "schema": "openslack.workflow_control_authority_prepared_message.v2",
+            "eventId": "binding-budget_settle-42",
+            "kind": "budget_usage_report",
+            "sequence": 42,
+            "body": "{\"attemptId\":\"attempt.budget\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"correlationId\":\"correlation-2\",\"eventId\":\"binding-budget_settle-42\",\"fencingToken\":11,\"jobId\":\"job.budget\",\"kind\":\"budget_usage_report\",\"leaseId\":\"lease.budget\",\"payload\":{\"actualCalls\":\"2\",\"actualCostNanoUsd\":\"4000\",\"actualTokens\":\"400\",\"callId\":\"call-1\",\"providerReceiptHash\":\"1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"reservationId\":\"reservation-1\",\"settlementStatus\":\"settled\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:05:00.000Z\",\"sequence\":42,\"workflowRunId\":\"run-1\",\"workspaceId\":\"workspace-1\"}\n",
+            "messageDigest": "a2ba55149d163d499b232b64729c8df2f206ce00fe14462727f4153606c73aa6",
+            "idempotencyKey": "openslack.workflow-control-authority.v2.a2ba55149d163d499b232b64729c8df2f206ce00fe14462727f4153606c73aa6",
+            "requestFingerprint": "sha256:80001c78db728356bfde996ebc69bcf31a32ad59b245bc504e0f0f4e09f9a161"
+          },
+          "correlationId": "correlation-2",
+          "sentAt": "2026-08-20T00:05:00.000Z"
+        },
+        "stageReceipt": {
+          "schema": "openslack.workflow_runner_authority_binding_receipt.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "direction": "control-to-runner",
+          "bindingId": "WFRUNNER-BINDING-0b9fcb4ebc67ead6a5a7416324b6d85d20cde715963d7518981327e750566af9",
+          "operation": "budget_settle",
+          "status": "accepted",
+          "controlBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "committedAt": "2026-08-20T00:05:01.000Z",
+          "reconciliationToken": null,
+          "requestHash": "1556d7922150e256fca16e5ac76d0261bea9f61a3a568eea0ce3028294e79eec",
+          "targetEventId": "binding-budget_settle-42",
+          "targetBodyHash": "a2ba55149d163d499b232b64729c8df2f206ce00fe14462727f4153606c73aa6",
+          "phase": "stage_event",
+          "companionSequence": 1,
+          "evidenceHash": null
+        },
+        "resolution": {
+          "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "commit_authority",
+          "direction": "runner-to-control",
+          "companionSequence": 2,
+          "bindingId": "WFRUNNER-BINDING-0b9fcb4ebc67ead6a5a7416324b6d85d20cde715963d7518981327e750566af9",
+          "operation": "budget_settle",
+          "stageHash": "1556d7922150e256fca16e5ac76d0261bea9f61a3a568eea0ce3028294e79eec",
+          "stageReceiptHash": "6d60b84b7b44525388bb4947b4ecc8ed9c843cac710b294c4eb62320d31b82cc",
+          "targetBodyHash": "a2ba55149d163d499b232b64729c8df2f206ce00fe14462727f4153606c73aa6",
+          "evidence": {
+            "schema": "openslack.workflow_runner_budget_authority_evidence.v1",
+            "sourceAuthority": {
+              "plane": "budget_account",
+              "evidenceState": "prepared",
+              "expectedRevision": 1,
+              "acceptedRevision": null,
+              "expectedResumeGeneration": 0,
+              "acceptedResumeGeneration": 0,
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "receiptSchema": null,
+              "receiptHash": null,
+              "recordHash": null,
+              "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "preparedRequest": {
+              "schema": "openslack.workflow_budget_prepared_request.v1",
+              "operation": "settle",
+              "method": "POST",
+              "path": "/v1/authority/workflow-budgets:settle",
+              "callerId": "qualification-caller",
+              "body": "{\"accountId\":\"budget-account-1\",\"authority\":\"typescript\",\"callId\":\"call-1\",\"contractVersion\":\"v1\",\"correlationId\":\"correlation-2\",\"expectedAccountRevision\":1,\"expectedModelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"expectedProviderHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"expectedProviderRunHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"expectedRunRevision\":5,\"goAuthorityClaim\":\"NO_AUTHORITY\",\"goAuthorityEligible\":false,\"goRole\":\"validator_only\",\"policyHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"providerAttempt\":\"1\",\"providerUsage\":{\"attempt\":\"1\",\"calls\":\"1\",\"inputTokens\":\"250\",\"modelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"outcome\":\"provider_response_accepted\",\"outcomeHash\":\"sha256:db13106f584b7cf2846545279006d73848bcd32862aed5310ee6b58bd9a3653c\",\"outputTokens\":\"150\",\"providerHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"receiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"requestHash\":\"sha256:35bdbc75a292b6ee4eaf5ad126cb7362a1abff943c8fa5a4307141a92d33f931\",\"runHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"schema\":\"openslack.provider_usage_receipt.v1\",\"status\":\"reported\",\"totalTokens\":\"400\"},\"rateNanoUsdPerToken\":\"10\",\"requestedAt\":\"2026-08-14T00:00:05.000Z\",\"reservationId\":\"reservation-1\",\"reserveDecisionHash\":\"08ec3b918a37e8bded9089b7b68f7b383ed3e4c4eaef1afb938fe00b40a83661\",\"route\":{\"authority\":\"typescript\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"backend\":\"ts-local\",\"routingEpoch\":1},\"runId\":\"run-1\",\"schema\":\"openslack.workflow_budget_settlement_request.v1\",\"usageEvidenceStatus\":\"trusted\",\"usageReceiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"workspaceId\":\"workspace-1\",\"writer\":\"@openslack/workflows\"}\n",
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "idempotencyKey": "openslack.workflow-budget-authority.v1.7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "requestFingerprint": "sha256:e2b4696a5c34ae6f2a514b16849640938746cf2113f7f562a8423c0084b59844"
+            },
+            "providerHash": "sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2",
+            "modelHash": "sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54",
+            "providerRunHash": "sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f",
+            "providerAttempt": "1",
+            "accountId": "budget-account-1",
+            "policyHash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "rateNanoUsdPerToken": "10",
+            "providerUsageReceiptHash": "sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9"
+          },
+          "evidenceHash": "881b06a471da3b73bd74ffbb34c58883b45c2f0ef82834d9a5e9a2a2dd9c5fef",
+          "sentAt": "2026-08-20T00:05:02.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "path": "$/evidence/preparedRequest",
+        "message": "Budget settlement usage evidence differs from the staged event."
+      }
+    },
+    {
+      "id": "budget-settle-disposition-drift",
+      "operation": "validate_resolution_for_stage",
+      "input": {
+        "stage": {
+          "schema": "openslack.workflow_runner_authority_binding_stage.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "stage_event",
+          "direction": "runner-to-control",
+          "companionSequence": 1,
+          "bindingId": "WFRUNNER-BINDING-7e651d03136ab1e8018bdb86771b0e2d46d0f04f2a828f1458b3ba0850fa3c50",
+          "operation": "budget_settle",
+          "workspaceId": "workspace-1",
+          "jobId": "job.budget",
+          "runId": "run-1",
+          "runnerAttemptId": "attempt.budget",
+          "leaseId": "lease.budget",
+          "fencingToken": 11,
+          "route": {
+            "backend": "ts-local",
+            "authority": "typescript",
+            "routingEpoch": 1,
+            "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          "runnerAuthority": {
+            "expectedGlobalRunRevision": 5,
+            "acceptedGlobalRunRevision": 6,
+            "expectedResumeGeneration": 0,
+            "acceptedResumeGeneration": 0
+          },
+          "target": {
+            "schema": "openslack.workflow_control_authority_prepared_message.v2",
+            "eventId": "binding-budget_settle-42",
+            "kind": "budget_usage_report",
+            "sequence": 42,
+            "body": "{\"attemptId\":\"attempt.budget\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"correlationId\":\"correlation-2\",\"eventId\":\"binding-budget_settle-42\",\"fencingToken\":11,\"jobId\":\"job.budget\",\"kind\":\"budget_usage_report\",\"leaseId\":\"lease.budget\",\"payload\":{\"actualCalls\":\"1\",\"actualCostNanoUsd\":\"4000\",\"actualTokens\":\"400\",\"callId\":\"call-1\",\"providerReceiptHash\":\"1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"reservationId\":\"reservation-1\",\"settlementStatus\":\"reconciliation_required\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:05:00.000Z\",\"sequence\":42,\"workflowRunId\":\"run-1\",\"workspaceId\":\"workspace-1\"}\n",
+            "messageDigest": "0d315d6bb3123a780959be1d3cb30046c81c467f60da4f9bcb22896fb0747fdc",
+            "idempotencyKey": "openslack.workflow-control-authority.v2.0d315d6bb3123a780959be1d3cb30046c81c467f60da4f9bcb22896fb0747fdc",
+            "requestFingerprint": "sha256:dd851157c668f39fbe4dbc0d2a7a1e3b910c7f1fbf604cc6a506817da7df1648"
+          },
+          "correlationId": "correlation-2",
+          "sentAt": "2026-08-20T00:05:00.000Z"
+        },
+        "stageReceipt": {
+          "schema": "openslack.workflow_runner_authority_binding_receipt.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "direction": "control-to-runner",
+          "bindingId": "WFRUNNER-BINDING-7e651d03136ab1e8018bdb86771b0e2d46d0f04f2a828f1458b3ba0850fa3c50",
+          "operation": "budget_settle",
+          "status": "accepted",
+          "controlBuildHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "committedAt": "2026-08-20T00:05:01.000Z",
+          "reconciliationToken": null,
+          "requestHash": "12ed675ff84f3384d0ab73a5245f6ccf66edf5a8d3b28cb2c6427f4d92901f97",
+          "targetEventId": "binding-budget_settle-42",
+          "targetBodyHash": "0d315d6bb3123a780959be1d3cb30046c81c467f60da4f9bcb22896fb0747fdc",
+          "phase": "stage_event",
+          "companionSequence": 1,
+          "evidenceHash": null
+        },
+        "resolution": {
+          "schema": "openslack.workflow_runner_authority_binding_resolution.v1",
+          "contractVersion": "openslack.workflow_runner_authority_binding.v1",
+          "profile": "workflow-control-runner-v2-runtime-delivery-v1",
+          "phase": "commit_authority",
+          "direction": "runner-to-control",
+          "companionSequence": 2,
+          "bindingId": "WFRUNNER-BINDING-7e651d03136ab1e8018bdb86771b0e2d46d0f04f2a828f1458b3ba0850fa3c50",
+          "operation": "budget_settle",
+          "stageHash": "12ed675ff84f3384d0ab73a5245f6ccf66edf5a8d3b28cb2c6427f4d92901f97",
+          "stageReceiptHash": "fa09997f1345ed36af91ab4967417e981f3ae63e92e68b0df95f5d8516836e54",
+          "targetBodyHash": "0d315d6bb3123a780959be1d3cb30046c81c467f60da4f9bcb22896fb0747fdc",
+          "evidence": {
+            "schema": "openslack.workflow_runner_budget_authority_evidence.v1",
+            "sourceAuthority": {
+              "plane": "budget_account",
+              "evidenceState": "prepared",
+              "expectedRevision": 1,
+              "acceptedRevision": null,
+              "expectedResumeGeneration": 0,
+              "acceptedResumeGeneration": 0,
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "receiptSchema": null,
+              "receiptHash": null,
+              "recordHash": null,
+              "authorityBuildHash": "8888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "preparedRequest": {
+              "schema": "openslack.workflow_budget_prepared_request.v1",
+              "operation": "settle",
+              "method": "POST",
+              "path": "/v1/authority/workflow-budgets:settle",
+              "callerId": "qualification-caller",
+              "body": "{\"accountId\":\"budget-account-1\",\"authority\":\"typescript\",\"callId\":\"call-1\",\"contractVersion\":\"v1\",\"correlationId\":\"correlation-2\",\"expectedAccountRevision\":1,\"expectedModelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"expectedProviderHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"expectedProviderRunHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"expectedRunRevision\":5,\"goAuthorityClaim\":\"NO_AUTHORITY\",\"goAuthorityEligible\":false,\"goRole\":\"validator_only\",\"policyHash\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"providerAttempt\":\"1\",\"providerUsage\":{\"attempt\":\"1\",\"calls\":\"1\",\"inputTokens\":\"250\",\"modelHash\":\"sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54\",\"outcome\":\"provider_response_accepted\",\"outcomeHash\":\"sha256:db13106f584b7cf2846545279006d73848bcd32862aed5310ee6b58bd9a3653c\",\"outputTokens\":\"150\",\"providerHash\":\"sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2\",\"receiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"requestHash\":\"sha256:35bdbc75a292b6ee4eaf5ad126cb7362a1abff943c8fa5a4307141a92d33f931\",\"runHash\":\"sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f\",\"schema\":\"openslack.provider_usage_receipt.v1\",\"status\":\"reported\",\"totalTokens\":\"400\"},\"rateNanoUsdPerToken\":\"10\",\"requestedAt\":\"2026-08-14T00:00:05.000Z\",\"reservationId\":\"reservation-1\",\"reserveDecisionHash\":\"08ec3b918a37e8bded9089b7b68f7b383ed3e4c4eaef1afb938fe00b40a83661\",\"route\":{\"authority\":\"typescript\",\"authorityBuildHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"backend\":\"ts-local\",\"routingEpoch\":1},\"runId\":\"run-1\",\"schema\":\"openslack.workflow_budget_settlement_request.v1\",\"usageEvidenceStatus\":\"trusted\",\"usageReceiptHash\":\"sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9\",\"workspaceId\":\"workspace-1\",\"writer\":\"@openslack/workflows\"}\n",
+              "requestHash": "7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "idempotencyKey": "openslack.workflow-budget-authority.v1.7b0af7536ca00173dfa8182c7152635679ea32041c2beb6a6df2478f6e58b7b8",
+              "requestFingerprint": "sha256:e2b4696a5c34ae6f2a514b16849640938746cf2113f7f562a8423c0084b59844"
+            },
+            "providerHash": "sha256:f00c827d28af6e2303c01daad4ed75e311c7524157382cb1d6beb266ce3b34c2",
+            "modelHash": "sha256:710cb46efc8037be7fea0ae626589bfb3953a19cc8125d692daa1ce24dabdd54",
+            "providerRunHash": "sha256:87c2b5b628cd1f4dc3c8c8086b20738451d6b59ca07ca7c6e7b5c68e69c7b01f",
+            "providerAttempt": "1",
+            "accountId": "budget-account-1",
+            "policyHash": "7777777777777777777777777777777777777777777777777777777777777777",
+            "rateNanoUsdPerToken": "10",
+            "providerUsageReceiptHash": "sha256:1f92e5991faea1d48e2ca2ddac3898110f3a7afd710e56a796ce0bcfa39fa8a9"
+          },
+          "evidenceHash": "881b06a471da3b73bd74ffbb34c58883b45c2f0ef82834d9a5e9a2a2dd9c5fef",
+          "sentAt": "2026-08-20T00:05:02.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowRunnerAuthorityBindingContractError",
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
+        "path": "$/evidence/preparedRequest",
+        "message": "Budget settlement usage evidence differs from the staged event."
       }
     },
     {

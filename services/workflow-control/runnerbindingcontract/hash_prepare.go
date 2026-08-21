@@ -4,8 +4,66 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
+	"errors"
+	"reflect"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/strictjson"
 )
+
+type canonicalRecordEntry struct {
+	value Record
+	bytes []byte
+}
+
+// bindingValidationSession keeps canonical bytes local to one validation
+// operation. Retaining the Record in each entry prevents pointer reuse while
+// the session is live; no process-global or unbounded cache is involved.
+type bindingValidationSession struct {
+	canonicalByRecord map[uintptr]canonicalRecordEntry
+	onEncode          func(Record)
+}
+
+func newBindingValidationSession(onEncode func(Record)) *bindingValidationSession {
+	return &bindingValidationSession{
+		canonicalByRecord: make(map[uintptr]canonicalRecordEntry),
+		onEncode:          onEncode,
+	}
+}
+
+func (session *bindingValidationSession) canonical(value any) ([]byte, error) {
+	record, cacheable := value.(Record)
+	if cacheable {
+		identity := reflect.ValueOf(record).Pointer()
+		if entry, ok := session.canonicalByRecord[identity]; ok {
+			return entry.bytes, nil
+		}
+		encoded, err := canonicalJSON(record)
+		if err != nil {
+			return nil, err
+		}
+		session.canonicalByRecord[identity] = canonicalRecordEntry{value: record, bytes: encoded}
+		if session.onEncode != nil {
+			session.onEncode(record)
+		}
+		return encoded, nil
+	}
+	return canonicalJSON(value)
+}
+
+func (session *bindingValidationSession) byteBound(value any, limit int, path string, framed bool) error {
+	encoded, err := session.canonical(value)
+	if err != nil {
+		return failure(ErrorInvalid, path, err.Error())
+	}
+	length := len(encoded)
+	if framed {
+		length++
+	}
+	if length > limit {
+		return failure(ErrorLimitExceeded, path, path+" exceeds its byte limit.")
+	}
+	return nil
+}
 
 type Prepared struct {
 	Schema             string `json:"schema"`
@@ -17,46 +75,48 @@ type Prepared struct {
 }
 
 func HashStage(value any) (string, error) {
-	validated, err := ValidateStage(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateStageWithSession(value, session)
 	if err != nil {
 		return "", err
 	}
-	return domainHash("stage", validated)
+	return domainHashWithSession(session, "stage", validated)
 }
 
 func HashResolution(value any) (string, error) {
-	validated, err := ValidateResolution(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateResolutionWithSession(value, session)
 	if err != nil {
 		return "", err
 	}
-	return domainHash("resolution", validated)
+	return domainHashWithSession(session, "resolution", validated)
 }
 
 func HashReceipt(value any) (string, error) {
-	validated, err := ValidateReceipt(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateReceiptWithSession(value, session)
 	if err != nil {
 		return "", err
 	}
-	return domainHash("receipt", validated)
+	return domainHashWithSession(session, "receipt", validated)
 }
 
 // HashEvidence validates and hashes exact operation-specific authority
 // evidence in the same domain as the TypeScript source contract.
 func HashEvidence(value any, operation Operation) (string, error) {
+	session := newBindingValidationSession(nil)
 	validated, err := validateEvidence(value, operation, "$")
 	if err != nil {
 		return "", err
 	}
-	return hashValidatedEvidence(validated)
+	if err := session.byteBound(validated, MaxEvidenceBytes, "$", false); err != nil {
+		return "", err
+	}
+	return hashValidatedEvidenceWithSession(session, validated)
 }
 
-func hashValidatedEvidence(value Record) (string, error) {
-	canonical, err := canonicalJSON(value)
-	if err != nil {
-		return "", failure(ErrorInvalid, "$", err.Error())
-	}
-	digest := sha256.Sum256(append([]byte("openslack.workflow-runner-authority-binding.evidence.v1\x00"), canonical...))
-	return hex.EncodeToString(digest[:]), nil
+func hashValidatedEvidenceWithSession(session *bindingValidationSession, value Record) (string, error) {
+	return domainHashWithSession(session, "evidence", value)
 }
 
 // MissingProviderUsageHash binds a budget settlement without provider usage
@@ -70,56 +130,62 @@ func MissingProviderUsageHash(preparedRequestHash any) (string, error) {
 	return "sha256:" + hex.EncodeToString(digest[:]), nil
 }
 
-func domainHash(domain string, value Record) (string, error) {
-	canonical, err := canonicalJSON(value)
+func domainHashWithSession(session *bindingValidationSession, domain string, value Record) (string, error) {
+	_, hash, err := canonicalAndDomainHashWithSession(session, domain, value)
+	return hash, err
+}
+
+func canonicalAndDomainHashWithSession(session *bindingValidationSession, domain string, value Record) ([]byte, string, error) {
+	canonical, err := session.canonical(value)
 	if err != nil {
-		return "", failure(ErrorInvalid, "$", err.Error())
+		return nil, "", failure(ErrorInvalid, "$", err.Error())
 	}
 	digest := sha256.Sum256(append([]byte("openslack.workflow-runner-authority-binding."+domain+".v1\x00"), canonical...))
-	return hex.EncodeToString(digest[:]), nil
+	return canonical, hex.EncodeToString(digest[:]), nil
 }
 
 func PrepareStage(value any) (Prepared, error) {
-	validated, err := ValidateStage(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateStageWithSession(value, session)
 	if err != nil {
 		return Prepared{}, err
 	}
-	return prepareValue("stage", validated)
+	return prepareValueWithSession(session, "stage", validated)
 }
 
 func PrepareResolution(value any) (Prepared, error) {
-	validated, err := ValidateResolution(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateResolutionWithSession(value, session)
 	if err != nil {
 		return Prepared{}, err
 	}
-	return prepareValue("resolution", validated)
+	return prepareValueWithSession(session, "resolution", validated)
 }
 
 func PrepareReceipt(value any) (Prepared, error) {
-	validated, err := ValidateReceipt(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateReceiptWithSession(value, session)
 	if err != nil {
 		return Prepared{}, err
 	}
-	return prepareValue("receipt", validated)
+	return prepareValueWithSession(session, "receipt", validated)
 }
 
 func PrepareError(value any) (Prepared, error) {
-	validated, err := ValidateErrorRecord(value)
+	session := newBindingValidationSession(nil)
+	validated, err := validateErrorRecordWithSession(value, session)
 	if err != nil {
 		return Prepared{}, err
 	}
-	return prepareValue("error", validated)
+	return prepareValueWithSession(session, "error", validated)
 }
 
-func prepareValue(domain string, value Record) (Prepared, error) {
-	body, err := canonicalLF(value)
-	if err != nil {
-		return Prepared{}, failure(ErrorInvalid, "$", err.Error())
-	}
-	bodyHash, err := domainHash(domain, value)
+func prepareValueWithSession(session *bindingValidationSession, domain string, value Record) (Prepared, error) {
+	canonical, bodyHash, err := canonicalAndDomainHashWithSession(session, domain, value)
 	if err != nil {
 		return Prepared{}, err
 	}
+	body := append(append([]byte(nil), canonical...), '\n')
 	fingerprintDigest := sha256.Sum256([]byte("openslack.workflow-runner-authority-binding.fingerprint.v1\x00" + domain + "\x00" + bodyHash))
 	return Prepared{
 		Schema: PreparedSchema, Body: string(body), BodyHash: bodyHash,
@@ -130,25 +196,25 @@ func prepareValue(domain string, value Record) (Prepared, error) {
 }
 
 func ParseStageBytes(input []byte) (Record, error) {
-	return parseCanonicalBytes(input, MaxFrameBytes, ValidateStage)
+	return parseCanonicalBytes(input, MaxFrameBytes, validateStageWithSession)
 }
 
 func ParseResolutionBytes(input []byte) (Record, error) {
-	return parseCanonicalBytes(input, MaxFrameBytes, ValidateResolution)
+	return parseCanonicalBytes(input, MaxFrameBytes, validateResolutionWithSession)
 }
 
 func ParseReceiptBytes(input []byte) (Record, error) {
-	return parseCanonicalBytes(input, MaxReceiptBytes, ValidateReceipt)
+	return parseCanonicalBytes(input, MaxReceiptBytes, validateReceiptWithSession)
 }
 
 func ParseErrorBytes(input []byte) (Record, error) {
-	return parseCanonicalBytes(input, MaxErrorBytes, ValidateErrorRecord)
+	return parseCanonicalBytes(input, MaxErrorBytes, validateErrorRecordWithSession)
 }
 
 func parseCanonicalBytes(
 	input []byte,
 	limit int,
-	validate func(any) (Record, error),
+	validate func(any, *bindingValidationSession) (Record, error),
 ) (Record, error) {
 	if len(input) == 0 || len(input) > limit {
 		return nil, failure(ErrorLimitExceeded, "$", "Binding frame size is invalid.")
@@ -159,19 +225,22 @@ func parseCanonicalBytes(
 	parsed, err := parseStrictJSON(input[:len(input)-1], limit, MaxJSONDepth, MaxJSONNodes, MaxStringBytes, MaxSafeInteger)
 	if err != nil {
 		code := ErrorInvalid
-		if strings.Contains(err.Error(), "exceeds") {
+		var jsonError *strictjson.Error
+		if errors.As(err, &jsonError) && jsonError.Kind == strictjson.ErrorLimit {
 			code = ErrorLimitExceeded
 		}
 		return nil, failure(code, "$", err.Error())
 	}
-	validated, err := validate(parsed)
+	session := newBindingValidationSession(nil)
+	validated, err := validate(parsed, session)
 	if err != nil {
 		return nil, err
 	}
-	canonical, err := canonicalLF(validated)
+	canonical, err := session.canonical(validated)
 	if err != nil {
 		return nil, failure(ErrorInvalid, "$", err.Error())
 	}
+	canonical = append(append([]byte(nil), canonical...), '\n')
 	if !bytes.Equal(input, canonical) {
 		return nil, failure(ErrorInvalid, "$", "Binding frame is not canonical exact bytes.")
 	}

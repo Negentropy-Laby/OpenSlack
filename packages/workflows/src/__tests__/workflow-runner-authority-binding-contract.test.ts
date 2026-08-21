@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +11,8 @@ import { describe, expect, it } from 'vitest';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS,
@@ -20,6 +25,8 @@ import {
   parseWorkflowRunnerAuthorityBindingReceiptBytes,
   parseWorkflowRunnerAuthorityBindingResolutionBytes,
   parseWorkflowRunnerAuthorityBindingStageBytes,
+  parseWorkflowRunnerAuthorityBindingErrorBytes,
+  prepareWorkflowRunnerAuthorityBindingError,
   prepareWorkflowRunnerAuthorityBindingReceipt,
   prepareWorkflowRunnerAuthorityBindingResolution,
   prepareWorkflowRunnerAuthorityBindingStage,
@@ -29,13 +36,20 @@ import {
   validateWorkflowRunnerAuthorityBindingResolutionReceipt,
   validateWorkflowRunnerAuthorityBindingStage,
   validateWorkflowRunnerAuthorityBindingStageReceipt,
+  validateWorkflowRunnerAuthorityBindingError,
   validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
   workflowRunnerAuthorityBindingExpectedKind,
   workflowRunnerAuthorityBindingRunnerDelta,
   type WorkflowRunnerAuthorityBindingOperation,
 } from '../workflow-runner-authority-binding-contract.js';
+import {
+  canonicalWorkflowBudgetAuthorityJson,
+  prepareWorkflowBudgetAuthorityRequest,
+  type WorkflowBudgetSettlementRequest,
+} from '../workflow-budget-authority-contract.js';
+import { withWorkflowRunnerAuthorityBindingEncodingObserver } from '../internal/workflow-runner-authority-binding-instrumentation.js';
 
-const root = resolve('.');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const bundleRoot = resolve(
   root,
   'packages/workflows/contracts/workflow-runner-authority-binding/v1',
@@ -82,6 +96,7 @@ interface Golden {
     targetKind: string;
     runnerDelta: { revision: number; generation: number };
     sourceEvidenceState: 'prepared' | 'committed';
+    sourcePlane: 'checkpoint_control' | 'effect_v2_sibling' | 'budget_account' | 'resume_control';
     sourceRevisionDelta: number;
     sourceGenerationDelta: number;
     sourceReceiptSchema: string | null;
@@ -202,14 +217,67 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budget_settle',
       'resume_advance',
     ]);
-    expect(manifest.authorityBoundary).toMatchObject({
+    expect(manifest.authorityBoundary).toEqual({
+      batch: 'GS9-F2a',
+      normative: true,
       contractOnly: true,
       qualificationOnly: true,
       authorityClaim: 'NO_AUTHORITY',
+      goAuthorityImplemented: false,
       runtimeCompositionImplemented: false,
       productionRoutingActivated: false,
       frozenAuthorityV2KindsExtended: false,
       frozenAuthorityV2KindCount: 18,
+      sourceAuthoritiesReplaced: false,
+      notDelivered: [
+        'migration_000008',
+        'database',
+        'http',
+        'durable_store',
+        'scheduler',
+        'worker',
+        'checkpoint_adapter',
+        'effect_adapter',
+        'budget_adapter',
+        'resume_adapter',
+        'provider_adapter',
+        'authority_recovery',
+        'runtime_composition',
+      ],
+      notActivated: [
+        'future_runtime_profile',
+        'production_v2_submission',
+        'new_record_acceptance',
+        'routing',
+        'canary',
+        'cutover',
+        'typescript_fallback_removal',
+        'typescript_writer_retirement',
+      ],
+      notClaimed: [
+        'runtime_authority_delivery',
+        'go_production_workflow_authority',
+        'go_production_checkpoint_authority',
+        'go_production_effect_authority',
+        'go_production_budget_policy_authority',
+        'go_production_provider_authority',
+        'go_production_run_store_authority',
+        'go_production_user_visible_read_authority',
+        'authenticated_external_host_qualification',
+        'qoder',
+        'remote_connector',
+        'release',
+        'live',
+        'tag',
+        'npm',
+        'production_readiness',
+      ],
+      separateGates: [
+        'hosted_exact_head_checks',
+        'review_thread_resolution',
+        'independent_human_approval',
+        'merge',
+      ],
     });
   });
 
@@ -267,62 +335,13 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
   });
 
   it('separates coordinator and source revisions with the exact operation delta matrix', () => {
-    expect(golden.operationMatrix).toEqual([
-      {
-        operation: 'checkpoint_commit',
-        targetKind: 'checkpoint_commit',
-        runnerDelta: { revision: 1, generation: 0 },
-        sourceEvidenceState: 'committed',
-        sourceRevisionDelta: 1,
-        sourceGenerationDelta: 0,
-        sourceReceiptSchema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
-      },
-      {
-        operation: 'effect_authorize',
-        targetKind: 'effect_intent',
-        runnerDelta: { revision: 1, generation: 0 },
-        sourceEvidenceState: 'committed',
-        sourceRevisionDelta: 1,
-        sourceGenerationDelta: 0,
-        sourceReceiptSchema: 'openslack.workflow_runner_effect_authority_receipt.v1',
-      },
-      {
-        operation: 'effect_complete',
-        targetKind: 'effect_outcome',
-        runnerDelta: { revision: 0, generation: 0 },
-        sourceEvidenceState: 'committed',
-        sourceRevisionDelta: 1,
-        sourceGenerationDelta: 0,
-        sourceReceiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
-      },
-      {
-        operation: 'budget_reserve',
-        targetKind: 'budget_reserve_request',
-        runnerDelta: { revision: 1, generation: 0 },
-        sourceEvidenceState: 'prepared',
-        sourceRevisionDelta: 0,
-        sourceGenerationDelta: 0,
-        sourceReceiptSchema: null,
-      },
-      {
-        operation: 'budget_settle',
-        targetKind: 'budget_usage_report',
-        runnerDelta: { revision: 1, generation: 0 },
-        sourceEvidenceState: 'prepared',
-        sourceRevisionDelta: 0,
-        sourceGenerationDelta: 0,
-        sourceReceiptSchema: null,
-      },
-      {
-        operation: 'resume_advance',
-        targetKind: 'lease_accept',
-        runnerDelta: { revision: 1, generation: 1 },
-        sourceEvidenceState: 'committed',
-        sourceRevisionDelta: 1,
-        sourceGenerationDelta: 1,
-        sourceReceiptSchema: 'openslack.workflow_runner_resume_authority_receipt.v1',
-      },
-    ]);
+    expect(golden.operationMatrix).toEqual(
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
+        operation,
+        ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation],
+      })),
+    );
+    expect(manifest.operations).toEqual(golden.operationMatrix);
     for (const row of golden.operationMatrix) {
       expect(row.targetKind).toBe(workflowRunnerAuthorityBindingExpectedKind(row.operation));
       expect(row.runnerDelta).toEqual(workflowRunnerAuthorityBindingRunnerDelta(row.operation));
@@ -567,6 +586,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'resolution-receipt-alien-stage-receipt',
       'resolution-receipt-stage-hash-drift',
       'checkpoint-nested-contract-error',
+      'checkpoint-deep-path-contract-error',
       'budget-nested-contract-error',
       'effect-approved-expiry-boundary',
       'effect-expired-future-boundary',
@@ -584,9 +604,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'control-decision-sequence-gap',
       'control-decision-prior-time-inversion',
       'budget-rate-invalid',
+      'budget-settle-receipt-hash-drift',
+      'budget-settle-token-drift',
+      'budget-settle-cost-drift',
+      'budget-settle-call-drift',
+      'budget-settle-disposition-drift',
       'resume-logical-attempt-active-reuse',
     ]);
-    expect(golden.negative).toHaveLength(37);
+    expect(golden.negative).toHaveLength(43);
     for (const item of golden.negative) {
       try {
         executeNegative(item.operation, item.input);
@@ -624,6 +649,162 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     }
   });
 
+  it('rejects ambiguous strict JSON and includes the terminal LF in frame limits', () => {
+    const parse = parseWorkflowRunnerAuthorityBindingStageBytes;
+    const invalidFrames = [
+      Buffer.from([0xef, 0xbb, 0xbf, 0x7b, 0x7d, 0x0a]),
+      Buffer.from('{"x":1,"x":2}\n'),
+      Buffer.from('{"x":"\\ud800"}\n'),
+      Buffer.from('{"x":9007199254740992}\n'),
+      Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d, 0x0a]),
+    ];
+    for (const frame of invalidFrames) {
+      expect(() => parse(frame)).toThrowError(
+        expect.objectContaining({
+          code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+          path: '$',
+        }),
+      );
+    }
+
+    const longKey = '界'.repeat(
+      Math.floor(WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes / 3) + 1,
+    );
+    expect(() => parse(Buffer.from(`{"${longKey}":0}\n`))).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
+        path: '$',
+      }),
+    );
+
+    const frameLimit = WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxFrameBytes;
+    const fixedBytes = Buffer.byteLength('{"x":["",""]}\n');
+    const firstLength = WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes;
+    const secondLength = frameLimit - fixedBytes - firstLength;
+    const exactLimit = Buffer.from(
+      `{"x":["${'a'.repeat(firstLength)}","${'b'.repeat(secondLength)}"]}\n`,
+    );
+    expect(exactLimit).toHaveLength(frameLimit);
+    expect(() => parse(exactLimit)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
+        path: '$/schema',
+      }),
+    );
+    expect(() =>
+      parse(Buffer.concat([exactLimit.subarray(0, -1), Buffer.from(' '), Buffer.from('\n')])),
+    ).toThrowError(
+      expect.objectContaining({ code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED' }),
+    );
+  });
+
+  it('keeps invalid timestamps, deterministic keys, and inert object rules on the frozen surface', () => {
+    const stage = structuredClone(golden.positive.operations.checkpoint_commit.stage.value) as Json;
+    stage.sentAt = '2026-13-01T00:00:00.000Z';
+    expect(() => validateWorkflowRunnerAuthorityBindingStage(stage)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+        path: '$/sentAt',
+      }),
+    );
+
+    const unknowns = structuredClone(
+      golden.positive.operations.checkpoint_commit.stage.value,
+    ) as Json;
+    unknowns.zzz = true;
+    unknowns.aaa = true;
+    expect(() => validateWorkflowRunnerAuthorityBindingStage(unknowns)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
+        path: '$/aaa',
+      }),
+    );
+
+    const forbidden = structuredClone(
+      golden.positive.operations.checkpoint_commit.resolution.value,
+    ) as Json;
+    Object.assign(asJson(forbidden.evidence, 'evidence'), { response: 'x', credentials: 'x' });
+    expect(() => validateWorkflowRunnerAuthorityBindingResolution(forbidden)).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD',
+        path: '$/evidence/credentials',
+      }),
+    );
+
+    const nullPrototype = Object.assign(
+      Object.create(null) as Record<string, unknown>,
+      golden.positive.operations.checkpoint_commit.stage.value,
+    );
+    expect(validateWorkflowRunnerAuthorityBindingStage(nullPrototype)).toEqual(
+      golden.positive.operations.checkpoint_commit.stage.value,
+    );
+    expect(() => validateWorkflowRunnerAuthorityBindingStage(new Proxy(nullPrototype, {}))).toThrow(
+      WorkflowRunnerAuthorityBindingContractError,
+    );
+  });
+
+  it('maps budget charge overflow to binding errors before semantic drift checks', () => {
+    const vectors = golden.positive.operations.budget_settle;
+    const resolution = structuredClone(vectors.resolution.value) as Json;
+    const evidence = asJson(resolution.evidence, 'evidence');
+    const prepared = asJson(evidence.preparedRequest, 'preparedRequest');
+    const request = JSON.parse(String(prepared.body)) as Json;
+    request.rateNanoUsdPerToken = '1000000';
+    const providerUsage = asJson(request.providerUsage, 'providerUsage');
+    providerUsage.inputTokens = '9007199254740991';
+    providerUsage.outputTokens = '0';
+    providerUsage.totalTokens = '9007199254740991';
+    const unsignedUsage = { ...providerUsage };
+    delete unsignedUsage.receiptHash;
+    providerUsage.receiptHash = `sha256:${createHash('sha256')
+      .update('openslack.provider-usage-receipt.v1\0', 'utf8')
+      .update(canonicalWorkflowBudgetAuthorityJson(unsignedUsage), 'utf8')
+      .digest('hex')}`;
+    request.usageReceiptHash = providerUsage.receiptHash;
+    const nextPrepared = prepareWorkflowBudgetAuthorityRequest(
+      'settle',
+      request as unknown as WorkflowBudgetSettlementRequest,
+      String(prepared.callerId),
+    );
+    evidence.preparedRequest = nextPrepared;
+    evidence.rateNanoUsdPerToken = request.rateNanoUsdPerToken;
+    evidence.providerUsageReceiptHash = providerUsage.receiptHash;
+    asJson(evidence.sourceAuthority, 'sourceAuthority').requestHash = nextPrepared.requestHash;
+    resolution.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(evidence, 'budget_settle');
+    expect(() =>
+      validateWorkflowRunnerAuthorityBindingResolutionForStage(
+        resolution,
+        vectors.stage.value,
+        vectors.stageReceipt.value,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+        path: '$/evidence/preparedRequest/body/nanoUsd',
+      }),
+    );
+  });
+
+  it('round-trips the closed error record through validate, prepare, parse, bytes, and hash', () => {
+    const value = {
+      schema: 'openslack.workflow_runner_authority_binding_error.v1',
+      code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+      message: 'invalid frame',
+      bindingId: null,
+      operation: null,
+      reconciliationToken: null,
+    } as const;
+    const validated = validateWorkflowRunnerAuthorityBindingError(value);
+    const prepared = prepareWorkflowRunnerAuthorityBindingError(validated);
+    expect(parseWorkflowRunnerAuthorityBindingErrorBytes(Buffer.from(prepared.body))).toEqual(
+      validated,
+    );
+    expect(Buffer.byteLength(prepared.body)).toBeLessThanOrEqual(
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxErrorBytes,
+    );
+    expect(prepared.bodyHash).toMatch(/^[0-9a-f]{64}$/u);
+  });
+
   it('uses domain-separated hashes and never conflates stage, evidence, resolution, or receipt', () => {
     const vectors = golden.positive.operations.checkpoint_commit;
     const stage = validateWorkflowRunnerAuthorityBindingStage(vectors.stage.value);
@@ -636,6 +817,89 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       hashWorkflowRunnerAuthorityBindingReceipt(receipt),
     ]);
     expect(hashes.size).toBe(4);
-    expect(WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES).toHaveLength(15);
+    const encodedObjects: object[] = [];
+    const delivery = golden.positive.controlDelivery.accepted.checkpoint_commit;
+    withWorkflowRunnerAuthorityBindingEncodingObserver(
+      (value) => encodedObjects.push(value),
+      () =>
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+          delivery.value,
+          golden.positive.controlDelivery.messages.accepted.checkpoint_commit,
+          vectors.stage.value,
+          vectors.resolution.value,
+          vectors.resolutionReceipt.value,
+          vectors.stageReceipt.value,
+          null,
+        ),
+    );
+    expect(encodedObjects).toHaveLength(6);
+    expect(new Set(encodedObjects).size).toBe(encodedObjects.length);
+    expect(WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES).toEqual([
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_REVISION_CONFLICT',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_RESUME_GENERATION_CONFLICT',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_REQUIRED',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD',
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_RECONCILIATION_REQUIRED',
+    ]);
   });
+
+  it('detects stale, extra, and missing artifacts in either generated mirror', () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), 'openslack-binding-contract-'));
+    const generator = resolve(root, 'scripts/workflow-runner-authority-binding-contracts/index.ts');
+    const runGenerator = (command: '--generate' | '--check') =>
+      spawnSync('bun', [generator, command], {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT: outputRoot,
+        },
+      });
+    const output = (result: ReturnType<typeof runGenerator>) =>
+      `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+
+    try {
+      expect(runGenerator('--generate').status).toBe(0);
+      expect(runGenerator('--check').status).toBe(0);
+
+      const typescriptExtra = resolve(
+        outputRoot,
+        'packages/workflows/contracts/workflow-runner-authority-binding/v1/extra.json',
+      );
+      writeFileSync(typescriptExtra, '{}\n', 'utf8');
+      const extraResult = runGenerator('--check');
+      expect(extraResult.status).not.toBe(0);
+      expect(output(extraResult)).toContain('Authority-binding typescript bundle inventory drift');
+      unlinkSync(typescriptExtra);
+
+      const goManifest = resolve(
+        outputRoot,
+        'services/workflow-control/runnerbindingcontract/generated/v1/manifest.json',
+      );
+      const goManifestBytes = readFileSync(goManifest);
+      writeFileSync(goManifest, '{}\n', 'utf8');
+      const staleResult = runGenerator('--check');
+      expect(staleResult.status).not.toBe(0);
+      expect(output(staleResult)).toContain('go:manifest.json');
+      writeFileSync(goManifest, goManifestBytes);
+
+      const goSchema = resolve(
+        outputRoot,
+        'services/workflow-control/runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json',
+      );
+      unlinkSync(goSchema);
+      const missingResult = runGenerator('--check');
+      expect(missingResult.status).not.toBe(0);
+      expect(output(missingResult)).toContain('Authority-binding go bundle inventory drift');
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
 });

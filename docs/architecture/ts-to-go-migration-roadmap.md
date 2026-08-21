@@ -535,45 +535,12 @@ GS9-F2a  exact Workflow Runner authority-binding companion contract + pure Go mi
 GS9-F2b  durable checkpoint/effect/budget/resume adapters + end-to-end runtime delivery
 ```
 
-F2a freezes the TypeScript-owned `openslack.workflow_runner_authority_binding.v1` closed
-stage/resolution/receipt/error bundle for exactly `checkpoint_commit`, `effect_authorize`,
-`effect_complete`, `budget_reserve`, `budget_settle`, and `resume_advance`. Each operation orders
-the exact future-event `stage_event` ACK before the source authority commit/prepared evidence and
-`commit_authority` resolution ACK. Only then may the worker send the byte-identical frozen
-runner-v2 event for Go to consume with the coordinator mutation. The durable source authority
-result is bound evidence but cannot replace the coordinator/global receipt.
-
-The F2a receipt union also freezes runner-to-control `control_delivery` ACKs for the exact control
-event, kind, sequence and digest plus the active attempt/lease/fence. The complete advancement
-order is stage ACK, resolution ACK, runner event, event receipt, receipt-delivery ACK, optional
-decision, decision-delivery ACK, then advance; response loss cannot be cleared by another ACK.
-
-The F2a coordinator/global revision matrix advances `runRevision` by one for checkpoint commit,
-effect authorization, budget reserve, budget settlement and resume advance, advances
-`resumeGeneration` only for resume advance, and advances neither head for effect completion.
-Embedded `sourceAuthority` expected/accepted heads remain independent and normally advance their
-own revision by one. Phase, operation, exact event bytes, route/build/epoch,
-job/attempt/lease/fence, both revision planes, source request/result and receipt hashes are all
-cross-bound and fail closed on drift.
-
-F2a is contract-only: it adds no database, migration, HTTP, runner composition, runtime adapter,
-recovery or source-manifest/runtime-profile promotion. The F1 profile and source manifest remain
-F1. The Go mirror is a pure validator with no durable authority. F2b owns migration `000008`, real
-runtime wiring and the original F2 response-loss, restart, cancellation, outstanding-event,
-crash-after-authority and full reconciliation exits.
-
-Production v2 submission and new-record routing remain disabled, TypeScript remains the production
-Workflow authority, and GS9-G still owns routing, canary, cutover, and higher-epoch rollback. Frozen
-runner-v1, authority-v2 (including the runner-v2 vocabulary), checkpoint, effect-control,
-effect-shadow and budget source assets remain byte-identical; F2a locks those six manifest SHA-256
-values plus the F1 migration `000007` up/down hashes. Its named future runtime profile is not
-registered or activated.
-
-No GS9-D, GS9-E or GS9-F2a result claims authenticated external-host qualification, live
-verification, release, tag/npm publication, production activation, production Go budget authority,
-Go Workflow authority, runner-v2 delivery, routing, canary, cutover, TypeScript writer retirement,
-Qoder, remote Connector, review resolution, human approval or merge. Those claims remain
-independent even when local and hosted contract gates are green.
+F2a's generated [authority-binding manifest](../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative source for its exact contract, operation facts, protocol ordering, source locks,
+and authority ceiling. F2a remains contract-only, the Go mirror remains validator-only, and the F1
+profile and source manifest remain active. F2b owns every item in the manifest's `notDelivered`
+inventory; later routing/cutover stages may not infer authority from contract parity or remove any
+`notActivated`, `notClaimed`, or `separateGates` entry without new reviewed evidence.
 
 ### GS10–GS13 — Platform Runtime
 

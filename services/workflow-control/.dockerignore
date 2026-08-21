@@ -18,8 +18,7 @@
 !internal/
 !internal/**/
 !internal/**/*.go
-internal/testsupport/
-internal/testsupport/**
+# BEGIN GENERATED WORKFLOW CONTRACT FAMILIES
 !authoritycontract/
 !authoritycontract/*.go
 !authoritycontract/generated/
@@ -41,6 +40,9 @@ internal/testsupport/**
 !runnerbindingcontract/generated/v1/*.json
 !runnerbindingcontract/generated/v1/schemas/
 !runnerbindingcontract/generated/v1/schemas/*.json
+# END GENERATED WORKFLOW CONTRACT FAMILIES
+internal/testsupport/
+internal/testsupport/**
 !runnerprotocol/
 !runnerprotocol/*.go
 !migrations/

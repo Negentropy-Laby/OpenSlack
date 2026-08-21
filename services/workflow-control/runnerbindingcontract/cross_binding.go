@@ -141,6 +141,7 @@ func assertBudgetSettlementEvidence(evidence Record, request budgetcontract.Reco
 	providerUsage, hasUsage := request["providerUsage"].(budgetcontract.Record)
 	trustedReported = trustedReported && hasUsage && providerUsage["status"] == "reported"
 	expectedTokens, expectedCost, expectedCalls := "0", "0", "0"
+	expectedSettlementStatus := "reconciliation_required"
 	if trustedReported {
 		expectedTokens = providerUsage["totalTokens"].(string)
 		rate := request["rateNanoUsdPerToken"].(string)
@@ -149,10 +150,11 @@ func assertBudgetSettlementEvidence(evidence Record, request budgetcontract.Reco
 			return embeddedBudgetFailure(err, "$/evidence/preparedRequest/body")
 		}
 		expectedCalls = providerUsage["calls"].(string)
+		expectedSettlementStatus = "settled"
 	}
 	if evidence["providerUsageReceiptHash"] != expectedPrefixed || payload["providerReceiptHash"] != transportBare ||
 		payload["actualTokens"] != expectedTokens || payload["actualCostNanoUsd"] != expectedCost || payload["actualCalls"] != expectedCalls ||
-		(!trustedReported && payload["settlementStatus"] != "reconciliation_required") {
+		payload["settlementStatus"] != expectedSettlementStatus {
 		return failure(ErrorIdentityMismatch, "$/evidence/preparedRequest", "Budget settlement usage evidence differs from the staged event.")
 	}
 	return nil

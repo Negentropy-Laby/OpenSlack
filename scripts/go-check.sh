@@ -45,6 +45,7 @@ readonly workspace_parser="${repo_root}/scripts/go-check/parse-work-json.go"
 readonly workspace_parser_test="${repo_root}/scripts/go-check/parse-work-json_test.go"
 readonly container_gate="${repo_root}/scripts/go-check/container-gate.sh"
 readonly service_config_root="${repo_root}/scripts/go-check/services"
+readonly workflow_contract_family_inventory="${repo_root}/scripts/workflow-contract-families.generated.sh"
 
 host_runtime=""
 docker_client_os=""
@@ -72,6 +73,11 @@ fail() {
   printf 'go-check: %s\n' "$*" >&2
   exit 1
 }
+
+[[ -f "${workflow_contract_family_inventory}" && ! -L "${workflow_contract_family_inventory}" ]] ||
+  fail "workflow contract family inventory must be a regular non-symlink file"
+# shellcheck disable=SC1090 -- generated from the closed JSON family registry.
+source "${workflow_contract_family_inventory}"
 
 log() {
   printf 'go-check: %s\n' "$*"
@@ -292,6 +298,7 @@ preflight_repository() {
     fail "container gate must be a regular non-symlink file"
   [[ -d "${service_config_root}" && ! -L "${service_config_root}" ]] ||
     fail "service verification config root must be a regular non-symlink directory"
+
   [[ ! -e "${repo_root}/go.mod" ]] || fail "a root go.mod is forbidden"
 
   local observed_root
@@ -532,6 +539,9 @@ validate_dockerignore() {
       first_rule_seen=1
       continue
     fi
+    if workflow_contract_dockerignore_rule_allowed "${line}"; then
+      continue
+    fi
     case "${line}" in
       '!Dockerfile' | \
       '!.dockerignore' | \
@@ -543,27 +553,6 @@ validate_dockerignore() {
       '!organizationgraph.go' | \
       '!shadow_contract.go' | \
       '!workflowcontrol.go' | \
-      '!authoritycontract/' | \
-      '!authoritycontract/*.go' | \
-      '!authoritycontract/generated/' | \
-      '!authoritycontract/generated/v2/' | \
-      '!authoritycontract/generated/v2/*.json' | \
-      '!authoritycontract/generated/v2/schemas/' | \
-      '!authoritycontract/generated/v2/schemas/*.json' | \
-      '!budgetcontract/' | \
-      '!budgetcontract/*.go' | \
-      '!budgetcontract/generated/' | \
-      '!budgetcontract/generated/v1/' | \
-      '!budgetcontract/generated/v1/*.json' | \
-      '!budgetcontract/generated/v1/schemas/' | \
-      '!budgetcontract/generated/v1/schemas/*.json' | \
-      '!runnerbindingcontract/' | \
-      '!runnerbindingcontract/*.go' | \
-      '!runnerbindingcontract/generated/' | \
-      '!runnerbindingcontract/generated/v1/' | \
-      '!runnerbindingcontract/generated/v1/*.json' | \
-      '!runnerbindingcontract/generated/v1/schemas/' | \
-      '!runnerbindingcontract/generated/v1/schemas/*.json' | \
       '!LICENSE' | \
       '!NOTICE' | \
       '!THIRD_PARTY_NOTICES.md' | \

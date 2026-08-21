@@ -10,14 +10,16 @@ const (
 	IdempotencyPrefix    = "openslack.workflow-runner-authority-binding.v1."
 	FutureRuntimeProfile = "workflow-control-runner-v2-runtime-delivery-v1"
 
-	MaxFrameBytes    = 1_048_576
-	MaxReceiptBytes  = 65_536
-	MaxErrorBytes    = 16_384
-	MaxEvidenceBytes = 786_432
-	MaxJSONDepth     = 16
-	MaxJSONNodes     = 8_192
-	MaxStringBytes   = 524_288
-	MaxSafeInteger   = int64(1<<53 - 1)
+	MaxFrameBytes         = 1_048_576
+	MaxReceiptBytes       = 65_536
+	MaxErrorBytes         = 16_384
+	MaxEvidenceBytes      = 786_432
+	MaxJSONDepth          = 16
+	MaxJSONNodes          = 8_192
+	MaxStringBytes        = 524_288
+	MaxSafeInteger        = int64(1<<53 - 1)
+	MaxRateDecimalBytes   = 64
+	MaxRateFractionDigits = 18
 )
 
 type Operation string
@@ -30,39 +32,6 @@ const (
 	OperationBudgetSettle     Operation = "budget_settle"
 	OperationResumeAdvance    Operation = "resume_advance"
 )
-
-func Operations() []Operation {
-	return []Operation{
-		OperationCheckpointCommit,
-		OperationEffectAuthorize,
-		OperationEffectComplete,
-		OperationBudgetReserve,
-		OperationBudgetSettle,
-		OperationResumeAdvance,
-	}
-}
-
-// SourceReceiptSchema returns the only receipt schema admitted for an
-// operation's source-authority plane. Budget operations are prepared evidence
-// and therefore deliberately return nil.
-func SourceReceiptSchema(operation Operation) (*string, error) {
-	var schema string
-	switch operation {
-	case OperationCheckpointCommit:
-		schema = "openslack.workflow_runner_checkpoint_authority_receipt.v1"
-	case OperationEffectAuthorize:
-		schema = "openslack.workflow_runner_effect_authority_receipt.v1"
-	case OperationEffectComplete:
-		schema = "openslack.workflow_runner_effect_completion_receipt.v1"
-	case OperationBudgetReserve, OperationBudgetSettle:
-		return nil, nil
-	case OperationResumeAdvance:
-		schema = "openslack.workflow_runner_resume_authority_receipt.v1"
-	default:
-		return nil, failure(ErrorInvalid, "$/operation", "$/operation is invalid.")
-	}
-	return &schema, nil
-}
 
 type SourceLock struct {
 	Name   string

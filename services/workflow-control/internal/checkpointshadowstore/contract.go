@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/checkpointcontract"
 )
 
 var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$`)
@@ -74,29 +75,24 @@ func validateEnvelope(value Envelope) error {
 	if !safeID.MatchString(r.WorkspaceID) || !safeID.MatchString(r.JobID) || !safeID.MatchString(r.AttemptID) || !safeID.MatchString(r.LeaseID) || !safeID.MatchString(r.CorrelationID) || r.FencingToken < 1 || r.FencingToken > MaxSafeInteger || !hash64.MatchString(r.RunnerBuildHash) {
 		return Failure(ErrorInputInvalid, "checkpoint runner binding is invalid", nil)
 	}
-	if value.Operation == OperationCheckpointCommit {
-		if o.Checkpoint == nil || o.PriorCheckpoint != nil || o.NextPhaseID != nil || o.NextPhaseIndex != nil || o.Checkpoint.CommittedRevision != o.Revision || o.Checkpoint.ResumeGeneration != o.ResumeGeneration {
-			return Failure(ErrorInputInvalid, "checkpoint commit variant is invalid", nil)
-		}
+	if o.Checkpoint != nil {
 		if err := validateCheckpoint(*o.Checkpoint); err != nil {
 			return err
 		}
-	} else {
-		if o.Checkpoint != nil || o.NextPhaseID == nil || o.NextPhaseIndex == nil || !safeID.MatchString(*o.NextPhaseID) || *o.NextPhaseID != phaseID(*o.NextPhaseIndex) || *o.NextPhaseIndex < 0 || *o.NextPhaseIndex > MaxSafeInteger {
-			return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
+	}
+	if o.PriorCheckpoint != nil {
+		if err := validateCheckpoint(*o.PriorCheckpoint); err != nil {
+			return err
 		}
-		if o.PriorCheckpoint == nil {
-			if *o.NextPhaseIndex != 0 || o.Revision <= 1 || o.ResumeGeneration <= 0 {
-				return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
-			}
-		} else {
-			if *o.NextPhaseIndex != o.PriorCheckpoint.PhaseIndex+1 || o.Revision <= o.PriorCheckpoint.CommittedRevision || o.ResumeGeneration <= o.PriorCheckpoint.ResumeGeneration {
-				return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
-			}
-			if err := validateCheckpoint(*o.PriorCheckpoint); err != nil {
-				return err
-			}
-		}
+	}
+	if o.NextPhaseID != nil && !safeID.MatchString(*o.NextPhaseID) {
+		return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
+	}
+	if o.NextPhaseIndex != nil && (*o.NextPhaseIndex < 0 || *o.NextPhaseIndex > MaxSafeInteger) {
+		return Failure(ErrorInputInvalid, "resume advance variant is invalid", nil)
+	}
+	if err := checkpointcontract.ValidateEnvelope(checkpointSemanticEnvelope(value), "$"); err != nil {
+		return Failure(ErrorInputInvalid, err.Error(), err)
 	}
 	if !hash64.MatchString(value.ObservationHash) {
 		return Failure(ErrorInputInvalid, "checkpoint observation hash is invalid", nil)
@@ -105,7 +101,7 @@ func validateEnvelope(value Envelope) error {
 }
 
 func validateCheckpoint(c Checkpoint) error {
-	if !safeID.MatchString(c.CheckpointID) || !safeID.MatchString(c.PhaseID) || c.PhaseIndex < 0 || c.PhaseIndex > MaxSafeInteger || c.PhaseID != phaseID(c.PhaseIndex) || c.CommitPoint != "after_phase_work" || !safeRef.MatchString(c.ArtifactRef) || !hash64.MatchString(c.ArtifactHash) || !nullableHash(c.ResultHash) || !nullableHash(c.CacheKeyHash) || c.CommittedRevision < 1 || c.CommittedRevision > MaxSafeInteger || c.ResumeGeneration < 0 || c.ResumeGeneration > MaxSafeInteger {
+	if !safeID.MatchString(c.CheckpointID) || !safeID.MatchString(c.PhaseID) || c.PhaseIndex < 0 || c.PhaseIndex > MaxSafeInteger || c.CommitPoint != "after_phase_work" || !safeRef.MatchString(c.ArtifactRef) || !hash64.MatchString(c.ArtifactHash) || !nullableHash(c.ResultHash) || !nullableHash(c.CacheKeyHash) || c.CommittedRevision < 1 || c.CommittedRevision > MaxSafeInteger || c.ResumeGeneration < 0 || c.ResumeGeneration > MaxSafeInteger {
 		return Failure(ErrorInputInvalid, "checkpoint record is invalid", nil)
 	}
 	parsed, err := time.Parse("2006-01-02T15:04:05.000Z", c.CommittedAt)
@@ -113,6 +109,34 @@ func validateCheckpoint(c Checkpoint) error {
 		return Failure(ErrorInputInvalid, "checkpoint committedAt is not canonical UTC", err)
 	}
 	return nil
+}
+
+func checkpointSemanticEnvelope(value Envelope) checkpointcontract.Envelope {
+	observation := value.Observation
+	return checkpointcontract.Envelope{
+		SourceSequence: value.SourceSequence,
+		Operation:      string(value.Operation),
+		Observation: checkpointcontract.Observation{
+			Revision:         observation.Revision,
+			ResumeGeneration: observation.ResumeGeneration,
+			Checkpoint:       checkpointSemanticCheckpoint(observation.Checkpoint),
+			PriorCheckpoint:  checkpointSemanticCheckpoint(observation.PriorCheckpoint),
+			NextPhaseID:      observation.NextPhaseID,
+			NextPhaseIndex:   observation.NextPhaseIndex,
+		},
+	}
+}
+
+func checkpointSemanticCheckpoint(value *Checkpoint) *checkpointcontract.Checkpoint {
+	if value == nil {
+		return nil
+	}
+	return &checkpointcontract.Checkpoint{
+		PhaseID:           value.PhaseID,
+		PhaseIndex:        value.PhaseIndex,
+		CommittedRevision: value.CommittedRevision,
+		ResumeGeneration:  value.ResumeGeneration,
+	}
 }
 
 func phaseID(index int64) string { return fmt.Sprintf("phase-%d", index) }

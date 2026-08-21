@@ -8,6 +8,10 @@ import (
 var errorMessagePattern = regexp.MustCompile(`^.{1,512}$`)
 
 func ValidateErrorRecord(value any) (Record, error) {
+	return validateErrorRecordWithSession(value, newBindingValidationSession(nil))
+}
+
+func validateErrorRecordWithSession(value any, session *bindingValidationSession) (Record, error) {
 	record, err := closedRecord(value, []string{"schema", "code", "message", "bindingId", "operation", "reconciliationToken"}, "$")
 	if err != nil {
 		return nil, err
@@ -48,7 +52,7 @@ func ValidateErrorRecord(value any) (Record, error) {
 		"bindingId": nullableStringValue(bindingID), "operation": operation,
 		"reconciliationToken": nullableStringValue(reconciliationToken),
 	}
-	if err := byteBound(result, MaxErrorBytes, "$"); err != nil {
+	if err := session.byteBound(result, MaxErrorBytes, "$", true); err != nil {
 		return nil, err
 	}
 	return result, nil

@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"strings"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/strictjson"
 )
 
 func CanonicalJSON(value any) ([]byte, error) {
@@ -39,7 +39,8 @@ func normalizeStrictJSONError(err error) error {
 		return err
 	}
 	code := ErrorInvalid
-	if strings.Contains(err.Error(), "exceeds its limit") || strings.Contains(err.Error(), "exceeds its byte limit") {
+	var jsonError *strictjson.Error
+	if errors.As(err, &jsonError) && jsonError.Kind == strictjson.ErrorLimit {
 		code = ErrorLimitExceeded
 	}
 	return failure(code, "$", err.Error())

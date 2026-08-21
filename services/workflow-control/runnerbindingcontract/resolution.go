@@ -6,6 +6,10 @@ var resolutionFields = []string{
 }
 
 func ValidateResolution(value any) (Record, error) {
+	return validateResolutionWithSession(value, newBindingValidationSession(nil))
+}
+
+func validateResolutionWithSession(value any, session *bindingValidationSession) (Record, error) {
 	record, err := closedRecord(value, resolutionFields, "$")
 	if err != nil {
 		return nil, err
@@ -18,14 +22,14 @@ func ValidateResolution(value any) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := byteBound(evidence, MaxEvidenceBytes, "$/evidence"); err != nil {
+	if err := session.byteBound(evidence, MaxEvidenceBytes, "$/evidence", false); err != nil {
 		return nil, err
 	}
 	evidenceHash, err := hashValue(record["evidenceHash"], "$/evidenceHash")
 	if err != nil {
 		return nil, err
 	}
-	calculatedEvidenceHash, err := hashValidatedEvidence(evidence)
+	calculatedEvidenceHash, err := hashValidatedEvidenceWithSession(session, evidence)
 	if err != nil {
 		return nil, err
 	}
@@ -61,30 +65,35 @@ func ValidateResolution(value any) (Record, error) {
 	if result["sentAt"], err = timestampValue(record["sentAt"], "$/sentAt"); err != nil {
 		return nil, err
 	}
-	if err := byteBound(result, MaxFrameBytes, "$"); err != nil {
+	if err := session.byteBound(result, MaxFrameBytes, "$", true); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 func ValidateResolutionForStage(value, stageValue, stageReceiptValue any) (Record, error) {
-	stage, err := ValidateStage(stageValue)
+	session := newBindingValidationSession(nil)
+	stage, err := validateStageWithSession(stageValue, session)
 	if err != nil {
 		return nil, err
 	}
-	stageReceipt, err := ValidateStageReceipt(stageReceiptValue, stage)
+	stageReceipt, err := validateStageReceiptForValidatedStage(stageReceiptValue, stage, session)
 	if err != nil {
 		return nil, err
 	}
-	resolution, err := ValidateResolution(value)
+	return validateResolutionForValidatedStage(value, stage, stageReceipt, session)
+}
+
+func validateResolutionForValidatedStage(value any, stage, stageReceipt Record, session *bindingValidationSession) (Record, error) {
+	resolution, err := validateResolutionWithSession(value, session)
 	if err != nil {
 		return nil, err
 	}
-	stageHash, err := HashStage(stage)
+	stageHash, err := domainHashWithSession(session, "stage", stage)
 	if err != nil {
 		return nil, err
 	}
-	receiptHash, err := HashReceipt(stageReceipt)
+	receiptHash, err := domainHashWithSession(session, "receipt", stageReceipt)
 	if err != nil {
 		return nil, err
 	}

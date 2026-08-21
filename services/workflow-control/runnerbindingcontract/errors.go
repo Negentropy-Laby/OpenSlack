@@ -15,7 +15,6 @@ const (
 	ErrorInvalid                  ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID"
 	ErrorUnknownField             ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD"
 	ErrorLimitExceeded            ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED"
-	ErrorUnsupportedVersion       ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_UNSUPPORTED_VERSION"
 	ErrorIdentityMismatch         ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH"
 	ErrorHashMismatch             ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH"
 	ErrorSequenceConflict         ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT"
@@ -23,8 +22,6 @@ const (
 	ErrorResumeGenerationConflict ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_RESUME_GENERATION_CONFLICT"
 	ErrorAuthorityPlaneMismatch   ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH"
 	ErrorStageRequired            ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_REQUIRED"
-	ErrorResolutionRequired       ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_REQUIRED"
-	ErrorIdempotencyConflict      ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDEMPOTENCY_CONFLICT"
 	ErrorForbiddenField           ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD"
 	ErrorReconciliationRequired   ErrorCode = "WORKFLOW_RUNNER_AUTHORITY_BINDING_RECONCILIATION_REQUIRED"
 )
@@ -71,7 +68,6 @@ func ErrorCodes() []ErrorCode {
 		ErrorInvalid,
 		ErrorUnknownField,
 		ErrorLimitExceeded,
-		ErrorUnsupportedVersion,
 		ErrorIdentityMismatch,
 		ErrorHashMismatch,
 		ErrorSequenceConflict,
@@ -79,8 +75,6 @@ func ErrorCodes() []ErrorCode {
 		ErrorResumeGenerationConflict,
 		ErrorAuthorityPlaneMismatch,
 		ErrorStageRequired,
-		ErrorResolutionRequired,
-		ErrorIdempotencyConflict,
 		ErrorForbiddenField,
 		ErrorReconciliationRequired,
 	}

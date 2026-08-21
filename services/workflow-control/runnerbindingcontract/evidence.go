@@ -45,27 +45,15 @@ func validateSourceAuthority(value any, operation Operation, path string) (Recor
 	if err != nil {
 		return nil, err
 	}
-	expectedPlane := "resume_control"
-	switch operation {
-	case OperationCheckpointCommit:
-		expectedPlane = "checkpoint_control"
-	case OperationEffectAuthorize, OperationEffectComplete:
-		expectedPlane = "effect_v2_sibling"
-	case OperationBudgetReserve, OperationBudgetSettle:
-		expectedPlane = "budget_account"
-	case OperationResumeAdvance:
-	default:
+	fact, err := factFor(operation)
+	if err != nil {
 		return nil, failure(ErrorInvalid, path+"/plane", path+"/plane is invalid.")
 	}
-	plane, err := literalString(record["plane"], expectedPlane, path+"/plane")
+	plane, err := literalString(record["plane"], fact.SourcePlane, path+"/plane")
 	if err != nil {
 		return nil, err
 	}
-	expectedState := "committed"
-	if operation == OperationBudgetReserve || operation == OperationBudgetSettle {
-		expectedState = "prepared"
-	}
-	evidenceState, err := literalString(record["evidenceState"], expectedState, path+"/evidenceState")
+	evidenceState, err := literalString(record["evidenceState"], fact.SourceEvidenceState, path+"/evidenceState")
 	if err != nil {
 		return nil, err
 	}
@@ -103,12 +91,8 @@ func validateSourceAuthority(value any, operation Operation, path string) (Recor
 			return nil, failure(ErrorAuthorityPlaneMismatch, path, "Prepared evidence cannot claim an authority mutation.")
 		}
 	} else {
-		expectedGenerationDelta := int64(0)
-		if operation == OperationResumeAdvance {
-			expectedGenerationDelta = 1
-		}
-		if acceptedRevision == nil || *acceptedRevision != expectedRevision+1 ||
-			acceptedGeneration != expectedGeneration+expectedGenerationDelta ||
+		if acceptedRevision == nil || *acceptedRevision != expectedRevision+fact.SourceRevisionDelta ||
+			acceptedGeneration != expectedGeneration+fact.SourceGenerationDelta ||
 			receiptSchema == nil || receiptHash == nil || recordHash == nil {
 			code := ErrorRevisionConflict
 			if operation == OperationResumeAdvance {
@@ -117,11 +101,7 @@ func validateSourceAuthority(value any, operation Operation, path string) (Recor
 			return nil, failure(code, path, "Committed source-authority head is invalid.")
 		}
 	}
-	expectedReceiptSchema, err := SourceReceiptSchema(operation)
-	if err != nil {
-		return nil, err
-	}
-	if nullableStringValue(receiptSchema) != nullableStringValue(expectedReceiptSchema) {
+	if nullableStringValue(receiptSchema) != nullableStringValue(fact.SourceReceiptSchema) {
 		return nil, failure(
 			ErrorAuthorityPlaneMismatch,
 			path+"/receiptSchema",

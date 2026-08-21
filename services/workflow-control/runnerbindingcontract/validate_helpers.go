@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 )
 
 var (
@@ -44,14 +44,19 @@ func closedRecord(value any, fields []string, path string) (Record, error) {
 	for _, field := range fields {
 		allowed[field] = struct{}{}
 	}
-	for key := range record {
-		if _, ok := allowed[key]; !ok {
-			return nil, failure(ErrorUnknownField, path+"/"+key, path+" contains an unknown field.")
-		}
-	}
 	for _, field := range fields {
 		if _, ok := record[field]; !ok {
 			return nil, failure(ErrorUnknownField, path+"/"+field, "A required field is missing.")
+		}
+	}
+	keys := make([]string, 0, len(record))
+	for key := range record {
+		keys = append(keys, key)
+	}
+	canonicaljson.SortStringsUTF16(keys)
+	for _, key := range keys {
+		if _, ok := allowed[key]; !ok {
+			return nil, failure(ErrorUnknownField, path+"/"+key, path+" contains an unknown field.")
 		}
 	}
 	return record, nil
@@ -78,7 +83,7 @@ func hashValue(value any, path string) (string, error) {
 }
 
 func rateValue(value any, path string) (string, error) {
-	rate, err := textValue(value, path, bindingRatePattern, budgetcontract.MaxRateDecimalBytes)
+	rate, err := textValue(value, path, bindingRatePattern, MaxRateDecimalBytes)
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +91,7 @@ func rateValue(value any, path string) (string, error) {
 	if separator := strings.IndexByte(rate, '.'); separator >= 0 {
 		fraction = rate[separator+1:]
 	}
-	if len(fraction) > budgetcontract.MaxRateFractionDigits {
+	if len(fraction) > MaxRateFractionDigits {
 		return "", failure(ErrorLimitExceeded, path, path+" has too many fractional digits.")
 	}
 	return rate, nil
@@ -193,21 +198,16 @@ func operationValue(value any, path string) (Operation, error) {
 	return "", failure(ErrorInvalid, path, path+" is invalid.")
 }
 
-func byteBound(value any, limit int, path string) error {
-	encoded, err := canonicalJSON(value)
-	if err != nil {
-		return failure(ErrorInvalid, path, err.Error())
-	}
-	if len(encoded) > limit {
-		return failure(ErrorLimitExceeded, path, path+" exceeds its byte limit.")
-	}
-	return nil
-}
-
 func rejectForbiddenKeys(value any, path string) error {
 	switch current := value.(type) {
 	case Record:
-		for key, entry := range current {
+		keys := make([]string, 0, len(current))
+		for key := range current {
+			keys = append(keys, key)
+		}
+		canonicaljson.SortStringsUTF16(keys)
+		for _, key := range keys {
+			entry := current[key]
 			if _, forbidden := forbiddenKeys[key]; forbidden {
 				return failure(ErrorForbiddenField, path+"/"+key, "Raw provider, prompt, result, nonce, endpoint, token, or credential fields are forbidden.")
 			}

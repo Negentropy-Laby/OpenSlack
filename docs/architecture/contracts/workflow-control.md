@@ -610,67 +610,14 @@ Qoder, tag, npm, and production remain unclaimed or not activated.
 
 ## GS9-F2a authority-binding coordinator contract
 
-GS9-F2 is an umbrella, not one implementation PR. F2a freezes the closed
-`openslack.workflow_runner_authority_binding.v1` companion family and exact TypeScript/Go parity;
-F2b must later implement its durable adapters and runtime delivery from the merged F2a head. The
-existing runner-v1, Workflow authority-v2 (including the runner-v2 vocabulary), checkpoint-shadow,
-effect-control, effect-shadow and budget-authority contracts remain byte-stable source authorities.
-F2a pins the six referenced manifest SHA-256 values plus the exact F1 `000007` up/down SQL hashes.
-It also freezes the future profile name `workflow-control-runner-v2-runtime-delivery-v1` without
-registering or activating that profile.
+The generated [GS9-F2a manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
+is the normative authority-boundary record. Its operation table is the single source for target
+kinds, coordinator deltas, source planes, source deltas, and source receipt schemas; its protocol,
+source-lock, framing, evidence, and closed boundary inventories are likewise authoritative. Other
+architecture documents must link to that record rather than duplicate its matrices or
+`NOT_CLAIMED` list.
 
-The companion admits exactly six operations: `checkpoint_commit`, `effect_authorize`,
-`effect_complete`, `budget_reserve`, `budget_settle`, and `resume_advance`. Each operation first
-records a `stage_event` binding and then a `commit_authority` resolution. Stage and commit have
-separate exact receipts/acknowledgements; a successful source authority receipt is evidence inside
-the commit phase, not the coordinator/global receipt and not permission to advance a runner event
-on its own. The worker sends the matching frozen runner-v2 event only after a durable resolution
-ACK; Go consumes the prepared resolution while atomically applying the coordinator/global result
-and constructing the runner event receipt. The closed receipt union additionally binds
-runner-to-control `control_delivery` ACKs to the exact control event, kind, sequence, digest and
-active attempt/lease/fence. Advancement order is stage ACK -> resolution ACK -> runner event ->
-event receipt -> delivery ACK -> optional decision -> delivery ACK -> advance.
-
-The frozen coordinator/global head transitions are:
-
-```text
-checkpoint_commit  runRevision +1  resumeGeneration +0
-effect_authorize   runRevision +1  resumeGeneration +0
-effect_complete    runRevision +0  resumeGeneration +0
-budget_reserve     runRevision +1  resumeGeneration +0
-budget_settle      runRevision +1  resumeGeneration +0
-resume_advance     runRevision +1  resumeGeneration +1
-```
-
-`sourceAuthority` retains a separate expected/accepted revision and generation pair for its own
-authority store. A normal source transition advances its source revision once; it is never derived
-from the coordinator delta. The contract cross-binds route/build/epoch, job, active runner
-attempt/lease/fence, exact staged event bytes, operation, source request/result, expected and
-accepted heads, and all canonical hashes. Cross-splicing one valid event, decision, receipt or
-source lock into another binding fails closed.
-
-F2a is contract-only. The Go mirror reports no durable authority and adds no database, migration,
-repository, HTTP route, runner port, scheduler, worker, provider, checkpoint, effect, budget or
-resume wiring. Migration `000008`, authority recovery, response-loss handling, cancel/outstanding
-ordering and all runtime adapters remain F2b. The service runtime profile remains
-`workflow-control-runner-v2-foundation-v1`, the service source manifest remains F1, and production
-v2 submission/routing remains disabled.
-
-The hosted exact-head Red-zone gate is three explicit steps: check the generated authority-binding
-bundle, run the focused TypeScript contract suite, then run the pure Go mirror with race detection.
-Green results prove only exact contract parity for that reviewed head. They do not establish
-runtime delivery, PostgreSQL authority, production Workflow/checkpoint/effect/budget/provider/read
-authority, authenticated external qualification, routing, canary, cutover, writer retirement,
-Qoder, remote Connector, release, live, tag, npm, production readiness, review resolution or human
-approval, and do not establish merge state. The exact evidence ceiling is
-`GS9-F2A CONTRACT LOCAL_PASS / Go exact mirror validator only / runtime authority delivery
-NOT_CLAIMED`.
-
-GS9-F1 lays the transport foundation, F2a freezes the companion contract, and F2b must complete
-runtime delivery before GS9-G owns new-record routing, canary, PostgreSQL single-writer cutover,
-and higher-epoch rollback. GS9-H makes TypeScript a
-read-only recovery path. GS9-I deletes the TypeScript writer only after external qualification and
-drain. D1, D2, or D3 does not establish live qualification, release readiness, production
-activation, npm or tag publication, authenticated external-host evidence, production Go budget
-authority, or Go Workflow authority. E1 establishes none of those claims; E2 establishes only the
-bounded durable qualification authority stated above.
+F2a contributes only the exact TypeScript contract and pure Go validator. It neither registers the
+future profile nor composes persistence, HTTP, scheduler/worker, recovery, or domain adapters.
+GS9-F1 remains the active foundation, TypeScript remains the production Workflow authority, and
+GS9-F2b must implement and qualify every runtime capability listed by the manifest as not delivered.

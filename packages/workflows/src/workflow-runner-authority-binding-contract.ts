@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
-import { types as nodeTypes } from 'node:util';
 
 import {
   WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
+  WorkflowControlAuthorityContractError,
   canonicalWorkflowControlAuthorityJson,
   parseWorkflowControlAuthorityMessageBytes,
   prepareWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityMessageKind,
 } from './workflow-control-authority-contract.js';
@@ -26,6 +27,15 @@ import {
   validateWorkflowCheckpointShadowEnvelope,
   type WorkflowCheckpointShadowEnvelope,
 } from './workflow-checkpoint-shadow-contract.js';
+import {
+  canonicalUtcTimestamp,
+  closedDataRecord,
+  immutableContractValue,
+  ownDataField,
+  type ContractDataRecord,
+} from './internal/contract-validation.js';
+import { observeWorkflowRunnerAuthorityBindingEncoding } from './internal/workflow-runner-authority-binding-instrumentation.js';
+import { parseWorkflowEffectJson, WorkflowEffectJsonError } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION =
   'openslack.workflow_runner_authority_binding.v1' as const;
@@ -55,20 +65,93 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS = Object.freeze([
 export type WorkflowRunnerAuthorityBindingOperation =
   (typeof WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS)[number];
 
-export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS = Object.freeze({
-  checkpoint_commit: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
-  effect_authorize: 'openslack.workflow_runner_effect_authority_receipt.v1',
-  effect_complete: 'openslack.workflow_runner_effect_completion_receipt.v1',
-  budget_reserve: null,
-  budget_settle: null,
-  resume_advance: 'openslack.workflow_runner_resume_authority_receipt.v1',
-} as const satisfies Record<WorkflowRunnerAuthorityBindingOperation, string | null>);
+export interface WorkflowRunnerAuthorityBindingOperationFact {
+  readonly targetKind: WorkflowControlAuthorityMessageKind;
+  readonly runnerDelta: Readonly<{ revision: number; generation: number }>;
+  readonly sourcePlane:
+    | 'checkpoint_control'
+    | 'effect_v2_sibling'
+    | 'budget_account'
+    | 'resume_control';
+  readonly sourceEvidenceState: 'prepared' | 'committed';
+  readonly sourceRevisionDelta: number;
+  readonly sourceGenerationDelta: number;
+  readonly sourceReceiptSchema: string | null;
+}
+
+export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContractValue({
+  checkpoint_commit: {
+    targetKind: 'checkpoint_commit',
+    runnerDelta: { revision: 1, generation: 0 },
+    sourcePlane: 'checkpoint_control',
+    sourceEvidenceState: 'committed',
+    sourceRevisionDelta: 1,
+    sourceGenerationDelta: 0,
+    sourceReceiptSchema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
+  },
+  effect_authorize: {
+    targetKind: 'effect_intent',
+    runnerDelta: { revision: 1, generation: 0 },
+    sourcePlane: 'effect_v2_sibling',
+    sourceEvidenceState: 'committed',
+    sourceRevisionDelta: 1,
+    sourceGenerationDelta: 0,
+    sourceReceiptSchema: 'openslack.workflow_runner_effect_authority_receipt.v1',
+  },
+  effect_complete: {
+    targetKind: 'effect_outcome',
+    runnerDelta: { revision: 0, generation: 0 },
+    sourcePlane: 'effect_v2_sibling',
+    sourceEvidenceState: 'committed',
+    sourceRevisionDelta: 1,
+    sourceGenerationDelta: 0,
+    sourceReceiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
+  },
+  budget_reserve: {
+    targetKind: 'budget_reserve_request',
+    runnerDelta: { revision: 1, generation: 0 },
+    sourcePlane: 'budget_account',
+    sourceEvidenceState: 'prepared',
+    sourceRevisionDelta: 0,
+    sourceGenerationDelta: 0,
+    sourceReceiptSchema: null,
+  },
+  budget_settle: {
+    targetKind: 'budget_usage_report',
+    runnerDelta: { revision: 1, generation: 0 },
+    sourcePlane: 'budget_account',
+    sourceEvidenceState: 'prepared',
+    sourceRevisionDelta: 0,
+    sourceGenerationDelta: 0,
+    sourceReceiptSchema: null,
+  },
+  resume_advance: {
+    targetKind: 'lease_accept',
+    runnerDelta: { revision: 1, generation: 1 },
+    sourcePlane: 'resume_control',
+    sourceEvidenceState: 'committed',
+    sourceRevisionDelta: 1,
+    sourceGenerationDelta: 1,
+    sourceReceiptSchema: 'openslack.workflow_runner_resume_authority_receipt.v1',
+  },
+} as const satisfies Record<
+  WorkflowRunnerAuthorityBindingOperation,
+  WorkflowRunnerAuthorityBindingOperationFact
+>);
+
+export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS = Object.freeze(
+  Object.fromEntries(
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
+      operation,
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourceReceiptSchema,
+    ]),
+  ),
+) as Readonly<Record<WorkflowRunnerAuthorityBindingOperation, string | null>>;
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES = Object.freeze([
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
-  'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNSUPPORTED_VERSION',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
@@ -76,8 +159,6 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES = Object.freeze([
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_RESUME_GENERATION_CONFLICT',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_REQUIRED',
-  'WORKFLOW_RUNNER_AUTHORITY_BINDING_RESOLUTION_REQUIRED',
-  'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDEMPOTENCY_CONFLICT',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD',
   'WORKFLOW_RUNNER_AUTHORITY_BINDING_RECONCILIATION_REQUIRED',
 ] as const);
@@ -93,6 +174,8 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS = Object.freeze({
   maxNodes: 8_192,
   maxStringBytes: 524_288,
   maxSafeInteger: 9_007_199_254_740_991,
+  maxRateDecimalBytes: 64,
+  maxRateFractionDigits: 18,
 } as const);
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS = Object.freeze({
@@ -425,54 +508,73 @@ function validateBudgetContractForBinding<T>(path: string, validate: () => T): T
   }
 }
 
+function validateAuthorityContractForBinding<T>(path: string, validate: () => T): T {
+  try {
+    return validate();
+  } catch (error) {
+    if (error instanceof WorkflowControlAuthorityContractError) {
+      if (error.code === 'WORKFLOW_CONTROL_AUTHORITY_IDENTITY_MISMATCH') {
+        fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+          path,
+          'Authority route is inconsistent.',
+        );
+      }
+      fail(
+        error.code === 'WORKFLOW_CONTROL_AUTHORITY_UNKNOWN_FIELD'
+          ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD'
+          : error.code === 'WORKFLOW_CONTROL_AUTHORITY_LIMIT_EXCEEDED'
+            ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED'
+            : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+        nestedContractPath(path, error.path),
+        'Embedded authority route is invalid.',
+      );
+    }
+    throw error;
+  }
+}
+
 function inertRecord(
   value: unknown,
   fields: readonly string[],
   path: string,
 ): Record<string, unknown> {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    nodeTypes.isProxy(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
-  ) {
-    fail('WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID', path, `${path} must be an inert object.`);
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Reflect.ownKeys(record);
-  const expected = new Set(fields);
-  for (const key of keys) {
-    if (typeof key !== 'string' || !expected.has(key)) {
-      fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
-        `${path}/${String(key)}`,
-        `${path} contains an unknown field.`,
-      );
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(record, key);
-    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
-      fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
-        `${path}/${key}`,
-        'Accessors are forbidden.',
-      );
-    }
-  }
-  for (const field of fields) {
-    if (!Object.hasOwn(record, field)) {
-      fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
-        `${path}/${field}`,
-        'A required field is missing.',
-      );
-    }
-  }
-  return record;
+  return closedDataRecord(
+    value,
+    fields,
+    path,
+    {
+      inert: (target) =>
+        fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+          target,
+          `${target} must be an inert object.`,
+        ),
+      missing: (target, field) =>
+        fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
+          `${target}/${field}`,
+          'A required field is missing.',
+        ),
+      unknown: (target, key) =>
+        fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_UNKNOWN_FIELD',
+          `${target}/${String(key)}`,
+          `${target} contains an unknown field.`,
+        ),
+      dataField: (target, key) =>
+        fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+          `${target}/${String(key)}`,
+          'Accessors are forbidden.',
+        ),
+    },
+    { keyOrder: 'utf16' },
+  );
 }
 
 function own(record: Record<string, unknown>, key: string): unknown {
-  return record[key];
+  return ownDataField(record as ContractDataRecord, key);
 }
 
 function text(value: unknown, path: string, pattern: RegExp, maxBytes = 512): string {
@@ -503,9 +605,14 @@ function prefixedHash(value: unknown, path: string): string {
 }
 
 function rate(value: unknown, path: string): string {
-  const result = text(value, path, RATE, 64);
+  const result = text(
+    value,
+    path,
+    RATE,
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxRateDecimalBytes,
+  );
   const fraction = result.split('.')[1] ?? '';
-  if (fraction.length > 18) {
+  if (fraction.length > WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxRateFractionDigits) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
       path,
@@ -516,11 +623,13 @@ function rate(value: unknown, path: string): string {
 }
 
 function timestamp(value: unknown, path: string): string {
-  const result = text(value, path, TIMESTAMP, 24);
-  if (new Date(result).toISOString() !== result) {
-    fail('WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID', path, `${path} is not canonical UTC.`);
-  }
-  return result;
+  return canonicalUtcTimestamp(
+    value,
+    path,
+    (entry, target) => text(entry, target, TIMESTAMP, 24),
+    (target) =>
+      fail('WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID', target, `${target} is not canonical UTC.`),
+  );
 }
 
 function integer(value: unknown, path: string, minimum = 0): number {
@@ -560,14 +669,47 @@ function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+type WorkflowRunnerAuthorityBindingHashDomain = 'stage' | 'evidence' | 'resolution' | 'receipt';
+
+const canonicalBindingValueCache = new WeakMap<object, string>();
+
+function canonicalBindingValue(value: unknown): string {
+  if (typeof value === 'object' && value !== null) {
+    const cached = canonicalBindingValueCache.get(value);
+    if (cached !== undefined) return cached;
+    observeWorkflowRunnerAuthorityBindingEncoding(value);
+    const canonical = canonicalWorkflowControlAuthorityJson(value);
+    canonicalBindingValueCache.set(value, canonical);
+    return canonical;
+  }
+  return canonicalWorkflowControlAuthorityJson(value);
+}
+
+function hashValidatedBindingValue(
+  domain: WorkflowRunnerAuthorityBindingHashDomain,
+  value: unknown,
+): string {
+  return sha256(
+    `openslack.workflow-runner-authority-binding.${domain}.v1\0${canonicalBindingValue(value)}`,
+  );
+}
+
 function immutable<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value;
-  for (const child of Object.values(value as Record<string, unknown>)) immutable(child);
-  return Object.freeze(value);
+  return immutableContractValue(value);
 }
 
 function byteBound(value: unknown, limit: number, path: string): void {
-  if (Buffer.byteLength(canonicalWorkflowControlAuthorityJson(value), 'utf8') > limit) {
+  if (Buffer.byteLength(canonicalBindingValue(value), 'utf8') > limit) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
+      path,
+      `${path} exceeds its byte limit.`,
+    );
+  }
+}
+
+function framedByteBound(value: unknown, limit: number, path: string): void {
+  if (Buffer.byteLength(canonicalBindingValue(value), 'utf8') + 1 > limit) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
       path,
@@ -582,7 +724,8 @@ function assertNoForbiddenKeys(value: unknown, path = '$'): void {
     return;
   }
   if (typeof value !== 'object' || value === null) return;
-  for (const [key, entry] of Object.entries(value)) {
+  for (const key of Object.keys(value).sort()) {
+    const entry = own(value as Record<string, unknown>, key);
     if (FORBIDDEN_KEYS.has(key)) {
       fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_FORBIDDEN_FIELD',
@@ -594,66 +737,27 @@ function assertNoForbiddenKeys(value: unknown, path = '$'): void {
   }
 }
 
-const TARGET_KIND = Object.freeze({
-  checkpoint_commit: 'checkpoint_commit',
-  effect_authorize: 'effect_intent',
-  effect_complete: 'effect_outcome',
-  budget_reserve: 'budget_reserve_request',
-  budget_settle: 'budget_usage_report',
-  resume_advance: 'lease_accept',
-} satisfies Record<WorkflowRunnerAuthorityBindingOperation, WorkflowControlAuthorityMessageKind>);
-
-const RUNNER_DELTAS = Object.freeze({
-  checkpoint_commit: Object.freeze({ revision: 1, generation: 0 }),
-  effect_authorize: Object.freeze({ revision: 1, generation: 0 }),
-  effect_complete: Object.freeze({ revision: 0, generation: 0 }),
-  budget_reserve: Object.freeze({ revision: 1, generation: 0 }),
-  budget_settle: Object.freeze({ revision: 1, generation: 0 }),
-  resume_advance: Object.freeze({ revision: 1, generation: 1 }),
-} satisfies Record<
-  WorkflowRunnerAuthorityBindingOperation,
-  Readonly<{ revision: number; generation: number }>
->);
-
 export function workflowRunnerAuthorityBindingExpectedKind(
   operation: WorkflowRunnerAuthorityBindingOperation,
 ): WorkflowControlAuthorityMessageKind {
-  return TARGET_KIND[operation];
+  return WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind;
 }
 
 export function workflowRunnerAuthorityBindingRunnerDelta(
   operation: WorkflowRunnerAuthorityBindingOperation,
 ): Readonly<{ revision: number; generation: number }> {
-  return RUNNER_DELTAS[operation];
+  return WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].runnerDelta;
 }
 
 function validateRoute(value: unknown, path: string): WorkflowRunnerAuthorityRouteBinding {
-  const record = inertRecord(
-    value,
-    ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'],
-    path,
+  const route = validateAuthorityContractForBinding(path, () =>
+    validateWorkflowControlAuthorityRoute(value, '$'),
   );
-  const backend = oneOf(own(record, 'backend'), ['ts-local', 'go'] as const, `${path}/backend`);
-  const authority = oneOf(
-    own(record, 'authority'),
-    ['typescript', 'workflow-control'] as const,
-    `${path}/authority`,
-  );
-  if (
-    (backend === 'ts-local' && authority !== 'typescript') ||
-    (backend === 'go' && authority !== 'workflow-control')
-  ) {
-    fail(
-      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
-      path,
-      'Authority route is inconsistent.',
-    );
-  }
   return immutable({
-    backend,
-    authority,
-    routingEpoch: integer(own(record, 'routingEpoch'), `${path}/routingEpoch`, 1),
-    authorityBuildHash: hash(own(record, 'authorityBuildHash'), `${path}/authorityBuildHash`),
+    backend: route.backend,
+    authority: route.authority,
+    routingEpoch: route.routingEpoch,
+    authorityBuildHash: route.authorityBuildHash,
   });
 }
 
@@ -690,7 +794,7 @@ function validateRunnerHead(
     own(record, 'acceptedResumeGeneration'),
     `${path}/acceptedResumeGeneration`,
   );
-  const delta = RUNNER_DELTAS[operation];
+  const delta = WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].runnerDelta;
   if (acceptedGlobalRunRevision !== expectedGlobalRunRevision + delta.revision) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_REVISION_CONFLICT',
@@ -771,7 +875,7 @@ function validateTarget(
       'Target prepared event binding drifted.',
     );
   }
-  const expectedKind = TARGET_KIND[operation];
+  const expectedKind = WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind;
   if (message.kind !== expectedKind || own(record, 'kind') !== expectedKind) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
@@ -983,7 +1087,7 @@ export function validateWorkflowRunnerAuthorityBindingStage(
       'Stage correlation differs from the target event.',
     );
   }
-  byteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxFrameBytes, '$');
+  framedByteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxFrameBytes, '$');
   return result;
 }
 
@@ -1009,17 +1113,9 @@ function validateSourceAuthority(
     ],
     path,
   );
-  const expectedPlane =
-    operation === 'checkpoint_commit'
-      ? 'checkpoint_control'
-      : operation === 'effect_authorize' || operation === 'effect_complete'
-        ? 'effect_v2_sibling'
-        : operation === 'budget_reserve' || operation === 'budget_settle'
-          ? 'budget_account'
-          : 'resume_control';
-  const plane = literal(own(record, 'plane'), expectedPlane, `${path}/plane`);
-  const expectedEvidenceState =
-    operation === 'budget_reserve' || operation === 'budget_settle' ? 'prepared' : 'committed';
+  const fact = WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation];
+  const plane = literal(own(record, 'plane'), fact.sourcePlane, `${path}/plane`);
+  const expectedEvidenceState = fact.sourceEvidenceState;
   const evidenceState = literal(
     own(record, 'evidenceState'),
     expectedEvidenceState,
@@ -1061,10 +1157,9 @@ function validateSourceAuthority(
       );
     }
   } else {
-    const expectedGenerationDelta = operation === 'resume_advance' ? 1 : 0;
     if (
-      acceptedRevision !== expectedRevision + 1 ||
-      acceptedResumeGeneration !== expectedResumeGeneration + expectedGenerationDelta ||
+      acceptedRevision !== expectedRevision + fact.sourceRevisionDelta ||
+      acceptedResumeGeneration !== expectedResumeGeneration + fact.sourceGenerationDelta ||
       receiptSchema === null ||
       receiptHash === null ||
       recordHash === null
@@ -1078,7 +1173,7 @@ function validateSourceAuthority(
       );
     }
   }
-  if (receiptSchema !== WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS[operation]) {
+  if (receiptSchema !== fact.sourceReceiptSchema) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
       `${path}/receiptSchema`,
@@ -1534,11 +1629,7 @@ export function hashWorkflowRunnerAuthorityBindingEvidence(
   operation: WorkflowRunnerAuthorityBindingOperation,
 ): string {
   const evidence = validateEvidence(value, operation, '$');
-  return sha256(
-    `openslack.workflow-runner-authority-binding.evidence.v1\0${canonicalWorkflowControlAuthorityJson(
-      evidence,
-    )}`,
-  );
+  return hashValidatedBindingValue('evidence', evidence);
 }
 
 export function workflowRunnerAuthorityBindingMissingProviderUsageHash(
@@ -1750,16 +1841,19 @@ function assertEvidenceForStage(
         settlement.providerUsage?.status === 'reported';
       const expectedTokens = trustedReported ? settlement.providerUsage!.totalTokens! : '0';
       const expectedCost = trustedReported
-        ? workflowBudgetAuthorityChargeNanoUsd(expectedTokens, settlement.rateNanoUsdPerToken)
+        ? validateBudgetContractForBinding('$/evidence/preparedRequest/body', () =>
+            workflowBudgetAuthorityChargeNanoUsd(expectedTokens, settlement.rateNanoUsdPerToken),
+          )
         : '0';
       const expectedCalls = trustedReported ? settlement.providerUsage!.calls : '0';
+      const expectedSettlementStatus = trustedReported ? 'settled' : 'reconciliation_required';
       if (
         evidence.providerUsageReceiptHash !== expectedReceiptHash ||
         payload.providerReceiptHash !== expectedReceiptHash.slice('sha256:'.length) ||
         payload.actualTokens !== expectedTokens ||
         payload.actualCostNanoUsd !== expectedCost ||
         payload.actualCalls !== expectedCalls ||
-        (!trustedReported && payload.settlementStatus !== 'reconciliation_required')
+        payload.settlementStatus !== expectedSettlementStatus
       ) {
         fail(
           'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
@@ -1806,11 +1900,7 @@ export function hashWorkflowRunnerAuthorityBindingStage(
   value: WorkflowRunnerAuthorityBindingStage,
 ): string {
   const validated = validateWorkflowRunnerAuthorityBindingStage(value);
-  return sha256(
-    `openslack.workflow-runner-authority-binding.stage.v1\0${canonicalWorkflowControlAuthorityJson(
-      validated,
-    )}`,
-  );
+  return hashValidatedBindingValue('stage', validated);
 }
 
 export function validateWorkflowRunnerAuthorityBindingResolution(
@@ -1844,7 +1934,7 @@ export function validateWorkflowRunnerAuthorityBindingResolution(
   const evidence = validateEvidence(own(record, 'evidence'), operation, '$/evidence');
   byteBound(evidence, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxEvidenceBytes, '$/evidence');
   const evidenceHash = hash(own(record, 'evidenceHash'), '$/evidenceHash');
-  if (evidenceHash !== hashWorkflowRunnerAuthorityBindingEvidence(evidence, operation)) {
+  if (evidenceHash !== hashValidatedBindingValue('evidence', evidence)) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH',
       '$/evidenceHash',
@@ -1879,7 +1969,7 @@ export function validateWorkflowRunnerAuthorityBindingResolution(
     evidenceHash,
     sentAt: timestamp(own(record, 'sentAt'), '$/sentAt'),
   } satisfies WorkflowRunnerAuthorityBindingResolution);
-  byteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxFrameBytes, '$');
+  framedByteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxFrameBytes, '$');
   return result;
 }
 
@@ -1889,15 +1979,23 @@ export function validateWorkflowRunnerAuthorityBindingResolutionForStage(
   stageReceiptValue: unknown,
 ): WorkflowRunnerAuthorityBindingResolution {
   const stage = validateWorkflowRunnerAuthorityBindingStage(stageValue);
-  const stageReceipt = validateWorkflowRunnerAuthorityBindingStageReceipt(stageReceiptValue, stage);
+  const stageReceipt = validateStageReceiptForValidatedStage(stageReceiptValue, stage);
+  return validateResolutionForValidatedStage(value, stage, stageReceipt);
+}
+
+function validateResolutionForValidatedStage(
+  value: unknown,
+  stage: WorkflowRunnerAuthorityBindingStage,
+  stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+): WorkflowRunnerAuthorityBindingResolution {
   const resolution = validateWorkflowRunnerAuthorityBindingResolution(value);
   if (
     stageReceipt.phase !== 'stage_event' ||
     stageReceipt.status !== 'accepted' ||
     resolution.bindingId !== stage.bindingId ||
     resolution.operation !== stage.operation ||
-    resolution.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-    resolution.stageReceiptHash !== hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt) ||
+    resolution.stageHash !== hashValidatedBindingValue('stage', stage) ||
+    resolution.stageReceiptHash !== hashValidatedBindingValue('receipt', stageReceipt) ||
     resolution.targetBodyHash !== stage.target.messageDigest ||
     resolution.stageReceiptHash === resolution.stageHash ||
     resolution.sentAt < stageReceipt.committedAt!
@@ -2046,7 +2144,7 @@ export function validateWorkflowRunnerAuthorityBindingReceipt(
             stageReceiptHash: hash(own(record, 'stageReceiptHash'), '$/stageReceiptHash'),
             evidenceHash: evidenceHash!,
           } satisfies WorkflowRunnerAuthorityResolutionReceipt);
-    byteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxReceiptBytes, '$');
+    framedByteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxReceiptBytes, '$');
     return result;
   }
   if (phase === 'control_delivery') {
@@ -2125,7 +2223,7 @@ export function validateWorkflowRunnerAuthorityBindingReceipt(
         'Control processing time must equal its durable acknowledgement time.',
       );
     }
-    byteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxReceiptBytes, '$');
+    framedByteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxReceiptBytes, '$');
     return result;
   }
   return fail('WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID', '$/phase', 'Receipt phase is invalid.');
@@ -2135,22 +2233,14 @@ export function hashWorkflowRunnerAuthorityBindingResolution(
   value: WorkflowRunnerAuthorityBindingResolution,
 ): string {
   const validated = validateWorkflowRunnerAuthorityBindingResolution(value);
-  return sha256(
-    `openslack.workflow-runner-authority-binding.resolution.v1\0${canonicalWorkflowControlAuthorityJson(
-      validated,
-    )}`,
-  );
+  return hashValidatedBindingValue('resolution', validated);
 }
 
 export function hashWorkflowRunnerAuthorityBindingReceipt(
   value: WorkflowRunnerAuthorityBindingReceipt,
 ): string {
   const validated = validateWorkflowRunnerAuthorityBindingReceipt(value);
-  return sha256(
-    `openslack.workflow-runner-authority-binding.receipt.v1\0${canonicalWorkflowControlAuthorityJson(
-      validated,
-    )}`,
-  );
+  return hashValidatedBindingValue('receipt', validated);
 }
 
 export function validateWorkflowRunnerAuthorityBindingStageReceipt(
@@ -2158,12 +2248,19 @@ export function validateWorkflowRunnerAuthorityBindingStageReceipt(
   stageValue: unknown,
 ): WorkflowRunnerAuthorityStageReceipt {
   const stage = validateWorkflowRunnerAuthorityBindingStage(stageValue);
+  return validateStageReceiptForValidatedStage(value, stage);
+}
+
+function validateStageReceiptForValidatedStage(
+  value: unknown,
+  stage: WorkflowRunnerAuthorityBindingStage,
+): WorkflowRunnerAuthorityStageReceipt {
   const receipt = validateWorkflowRunnerAuthorityBindingReceipt(value);
   if (
     receipt.phase !== 'stage_event' ||
     receipt.bindingId !== stage.bindingId ||
     receipt.operation !== stage.operation ||
-    receipt.requestHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
+    receipt.requestHash !== hashValidatedBindingValue('stage', stage) ||
     receipt.targetEventId !== stage.target.eventId ||
     receipt.targetBodyHash !== stage.target.messageDigest ||
     receipt.controlBuildHash !== stage.route.authorityBuildHash ||
@@ -2185,24 +2282,29 @@ export function validateWorkflowRunnerAuthorityBindingResolutionReceipt(
   stageReceiptValue: unknown,
 ): WorkflowRunnerAuthorityResolutionReceipt {
   const stage = validateWorkflowRunnerAuthorityBindingStage(stageValue);
-  const stageReceipt = validateWorkflowRunnerAuthorityBindingStageReceipt(stageReceiptValue, stage);
-  const resolution = validateWorkflowRunnerAuthorityBindingResolutionForStage(
-    resolutionValue,
-    stage,
-    stageReceipt,
-  );
+  const stageReceipt = validateStageReceiptForValidatedStage(stageReceiptValue, stage);
+  const resolution = validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt);
+  return validateResolutionReceiptForValidatedContext(value, resolution, stage, stageReceipt);
+}
+
+function validateResolutionReceiptForValidatedContext(
+  value: unknown,
+  resolution: WorkflowRunnerAuthorityBindingResolution,
+  stage: WorkflowRunnerAuthorityBindingStage,
+  stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+): WorkflowRunnerAuthorityResolutionReceipt {
   const receipt = validateWorkflowRunnerAuthorityBindingReceipt(value);
   if (
     receipt.phase !== 'commit_authority' ||
     receipt.bindingId !== resolution.bindingId ||
     receipt.operation !== resolution.operation ||
-    receipt.requestHash !== hashWorkflowRunnerAuthorityBindingResolution(resolution) ||
+    receipt.requestHash !== hashValidatedBindingValue('resolution', resolution) ||
     receipt.targetEventId !== stage.target.eventId ||
     receipt.targetBodyHash !== resolution.targetBodyHash ||
     receipt.stageHash !== resolution.stageHash ||
-    receipt.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
+    receipt.stageHash !== hashValidatedBindingValue('stage', stage) ||
     receipt.stageReceiptHash !== resolution.stageReceiptHash ||
-    receipt.stageReceiptHash !== hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt) ||
+    receipt.stageReceiptHash !== hashValidatedBindingValue('receipt', stageReceipt) ||
     receipt.evidenceHash !== resolution.evidenceHash ||
     receipt.controlBuildHash !== resolution.evidence.sourceAuthority.authorityBuildHash ||
     resolution.bindingId !== stage.bindingId ||
@@ -2229,18 +2331,34 @@ export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
   priorEventDeliveryValue: unknown,
 ): WorkflowRunnerAuthorityControlDeliveryReceipt {
   const stage = validateWorkflowRunnerAuthorityBindingStage(stageValue);
-  const stageReceipt = validateWorkflowRunnerAuthorityBindingStageReceipt(stageReceiptValue, stage);
-  const resolution = validateWorkflowRunnerAuthorityBindingResolutionForStage(
-    resolutionValue,
-    stage,
-    stageReceipt,
-  );
-  const resolutionReceipt = validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+  const stageReceipt = validateStageReceiptForValidatedStage(stageReceiptValue, stage);
+  const resolution = validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt);
+  const resolutionReceipt = validateResolutionReceiptForValidatedContext(
     resolutionReceiptValue,
     resolution,
     stage,
     stageReceipt,
   );
+  return validateControlDeliveryForValidatedContext(
+    value,
+    messageValue,
+    stage,
+    resolution,
+    resolutionReceipt,
+    stageReceipt,
+    priorEventDeliveryValue,
+  );
+}
+
+function validateControlDeliveryForValidatedContext(
+  value: unknown,
+  messageValue: unknown,
+  stage: WorkflowRunnerAuthorityBindingStage,
+  resolution: WorkflowRunnerAuthorityBindingResolution,
+  resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+  stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+  priorEventDeliveryValue: unknown,
+): WorkflowRunnerAuthorityControlDeliveryReceipt {
   const receipt = validateWorkflowRunnerAuthorityBindingReceipt(value);
   if (receipt.phase !== 'control_delivery') {
     return fail(
@@ -2265,21 +2383,6 @@ export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
     message.direction !== 'control-to-runner' ||
     resolutionReceipt.phase !== 'commit_authority' ||
     resolutionReceipt.status !== 'accepted' ||
-    resolution.bindingId !== stage.bindingId ||
-    resolution.operation !== stage.operation ||
-    resolution.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-    resolution.targetBodyHash !== stage.target.messageDigest ||
-    resolutionReceipt.bindingId !== stage.bindingId ||
-    resolutionReceipt.operation !== stage.operation ||
-    resolutionReceipt.requestHash !== hashWorkflowRunnerAuthorityBindingResolution(resolution) ||
-    resolutionReceipt.targetEventId !== stage.target.eventId ||
-    resolutionReceipt.targetBodyHash !== stage.target.messageDigest ||
-    resolutionReceipt.stageHash !== resolution.stageHash ||
-    resolutionReceipt.stageReceiptHash !== resolution.stageReceiptHash ||
-    resolutionReceipt.evidenceHash !== resolution.evidenceHash ||
-    resolutionReceipt.controlBuildHash !== resolution.evidence.sourceAuthority.authorityBuildHash ||
-    resolution.stageReceiptHash === resolution.stageHash ||
-    (resolutionReceipt.committedAt !== null && resolutionReceipt.committedAt < resolution.sentAt) ||
     receipt.bindingId !== stage.bindingId ||
     receipt.operation !== stage.operation ||
     receipt.controlEventId !== control.eventId ||
@@ -2317,7 +2420,7 @@ export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
   }
   assertEvidenceForStage(resolution.evidence, stage, resolution.sentAt);
   const payload = control.payload;
-  const authorityReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(resolutionReceipt);
+  const authorityReceiptHash = hashValidatedBindingValue('receipt', resolutionReceipt);
   switch (control.kind) {
     case 'event_receipt': {
       const target = targetMessage(stage);
@@ -2459,7 +2562,7 @@ export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
     );
     let priorReceipt: WorkflowRunnerAuthorityControlDeliveryReceipt;
     try {
-      priorReceipt = validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+      priorReceipt = validateControlDeliveryForValidatedContext(
         own(prior, 'receipt'),
         own(prior, 'message'),
         stage,
@@ -2523,44 +2626,8 @@ export function validateWorkflowRunnerAuthorityBindingError(
       ref(entry, '$/reconciliationToken'),
     ),
   } satisfies WorkflowRunnerAuthorityBindingError);
-  byteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxErrorBytes, '$');
+  framedByteBound(result, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxErrorBytes, '$');
   return result;
-}
-
-function assertStructuralLimits(value: unknown): void {
-  const stack: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
-  let nodes = 0;
-  while (stack.length > 0) {
-    const entry = stack.pop()!;
-    nodes += 1;
-    if (
-      nodes > WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxNodes ||
-      entry.depth > WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxDepth
-    ) {
-      fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
-        '$',
-        'JSON structural limits were exceeded.',
-      );
-    }
-    if (typeof entry.value === 'string') {
-      if (
-        Buffer.byteLength(entry.value, 'utf8') >
-        WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes
-      ) {
-        fail(
-          'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
-          '$',
-          'A string exceeds the binding contract limit.',
-        );
-      }
-    } else if (Array.isArray(entry.value)) {
-      for (const child of entry.value) stack.push({ value: child, depth: entry.depth + 1 });
-    } else if (typeof entry.value === 'object' && entry.value !== null) {
-      for (const child of Object.values(entry.value))
-        stack.push({ value: child, depth: entry.depth + 1 });
-    }
-  }
 }
 
 function parseCanonicalBindingBytes<T>(
@@ -2571,8 +2638,8 @@ function parseCanonicalBindingBytes<T>(
   if (bytes.byteLength === 0 || bytes.byteLength > limit) {
     fail('WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED', '$', 'Binding frame size is invalid.');
   }
-  const textValue = Buffer.from(bytes).toString('utf8');
-  if (!textValue.endsWith('\n') || textValue.endsWith('\n\n') || textValue.includes('\r')) {
+  const frame = Buffer.from(bytes);
+  if (frame.at(-1) !== 0x0a || frame.at(-2) === 0x0a || frame.includes(0x0d)) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
       '$',
@@ -2581,17 +2648,30 @@ function parseCanonicalBindingBytes<T>(
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(textValue.slice(0, -1));
-  } catch {
-    return fail(
-      'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
-      '$',
-      'Binding frame is not valid JSON.',
-    );
+    parsed = parseWorkflowEffectJson(frame.subarray(0, -1), {
+      maxDepth: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxDepth,
+      maxNodes: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxNodes,
+      maxStringLength: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
+      maxStringBytes: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
+      unicodeScalarsOnly: true,
+      canonicalSafeIntegersOnly: true,
+    });
+  } catch (error) {
+    if (error instanceof WorkflowEffectJsonError) {
+      return fail(
+        error.code === 'WORKFLOW_EFFECT_JSON_LIMIT_EXCEEDED'
+          ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED'
+          : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+        '$',
+        error.code === 'WORKFLOW_EFFECT_JSON_LIMIT_EXCEEDED'
+          ? 'Binding JSON exceeds its structural limit.'
+          : 'Binding frame is not valid strict JSON.',
+      );
+    }
+    throw error;
   }
-  assertStructuralLimits(parsed);
   const validated = validate(parsed);
-  if (`${canonicalWorkflowControlAuthorityJson(validated)}\n` !== textValue) {
+  if (!Buffer.from(`${canonicalWorkflowControlAuthorityJson(validated)}\n`).equals(frame)) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
       '$',

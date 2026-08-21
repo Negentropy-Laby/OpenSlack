@@ -4,8 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/checkpointcontract"
 )
 
 func validateCheckpointEvidence(value any, operation Operation, path string) (Record, error) {
@@ -128,10 +129,14 @@ func validateCheckpointEnvelopeForBinding(value any, path string) (Record, error
 	var contractErr *ContractError
 	if errors.As(err, &contractErr) {
 		nestedPath := contractErr.Path
-		// The checkpoint contract reports missing/unknown root shape at its
-		// validator root rather than at the individual key.
-		if contractErr.Code == ErrorUnknownField && strings.HasPrefix(contractErr.Path, path+"/") {
-			nestedPath = path
+		observationPath := path + "/observation"
+		if strings.HasPrefix(nestedPath, observationPath+"/") {
+			nestedPath = path + strings.TrimPrefix(nestedPath, observationPath)
+		}
+		if contractErr.Code == ErrorUnknownField && strings.HasPrefix(nestedPath, path+"/") {
+			if separator := strings.LastIndex(nestedPath, "/"); separator >= len(path) {
+				nestedPath = nestedPath[:separator]
+			}
 		}
 		return nil, failure(ErrorInvalid, nestedPath, "Embedded checkpoint evidence is invalid.")
 	}
@@ -163,12 +168,12 @@ func validateCheckpointEnvelope(value any, path string) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	if sourceSequence > MaxSafeInteger-1 || observation["revision"].(int64) != sourceSequence+1 {
-		return nil, failure(ErrorInvalid, path+"/sourceSequence", "Envelope sequence does not match observation revision.")
-	}
-	_, hasCheckpoint := observation["checkpoint"].(Record)
-	if (operation == "checkpoint_commit") != hasCheckpoint {
-		return nil, failure(ErrorInvalid, path+"/operation", "Envelope operation does not match observation variant.")
+	if err := checkpointcontract.ValidateEnvelope(checkpointSemanticEnvelope(sourceSequence, operation, observation), path); err != nil {
+		var semanticErr *checkpointcontract.Error
+		if errors.As(err, &semanticErr) {
+			return nil, failure(ErrorInvalid, semanticErr.Path, semanticErr.Message)
+		}
+		return nil, err
 	}
 	observationHash, err := hashValue(record["observationHash"], path+"/observationHash")
 	if err != nil {
@@ -238,21 +243,6 @@ func validateCheckpointObservation(value any, path string) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	if nextPhaseID != nil && nextPhaseIndex != nil && *nextPhaseID != fmt.Sprintf("phase-%d", *nextPhaseIndex) {
-		return nil, failure(ErrorInvalid, path+"/nextPhaseId", "Resume phase identity is invalid.")
-	}
-	revision := result["revision"].(int64)
-	generation := result["resumeGeneration"].(int64)
-	checkpointVariant := checkpoint != nil && prior == nil && nextPhaseID == nil && nextPhaseIndex == nil &&
-		checkpoint["committedRevision"] == revision && checkpoint["resumeGeneration"] == generation
-	initialResume := checkpoint == nil && prior == nil && nextPhaseID != nil && *nextPhaseID == "phase-0" &&
-		nextPhaseIndex != nil && *nextPhaseIndex == 0 && revision > 1 && generation > 0
-	checkpointResume := checkpoint == nil && prior != nil && nextPhaseID != nil && nextPhaseIndex != nil &&
-		*nextPhaseIndex == prior["phaseIndex"].(int64)+1 && revision > prior["committedRevision"].(int64) &&
-		generation > prior["resumeGeneration"].(int64)
-	if checkpointVariant == (initialResume || checkpointResume) {
-		return nil, failure(ErrorInvalid, path+"/checkpoint", "Observation variant is invalid.")
-	}
 	result["checkpoint"] = nullableRecordValue(checkpoint)
 	result["priorCheckpoint"] = nullableRecordValue(prior)
 	result["nextPhaseId"] = nullableStringValue(nextPhaseID)
@@ -313,9 +303,6 @@ func validateCheckpoint(value any, path string) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	if phaseID != fmt.Sprintf("phase-%d", phaseIndex) {
-		return nil, failure(ErrorInvalid, path+"/phaseId", "Checkpoint phase identity is invalid.")
-	}
 	resultHash, err := nullableText(record["resultHash"], path+"/resultHash", hashValue)
 	if err != nil {
 		return nil, err
@@ -352,6 +339,50 @@ func validateCheckpoint(value any, path string) (Record, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func checkpointSemanticEnvelope(sourceSequence int64, operation string, observation Record) checkpointcontract.Envelope {
+	return checkpointcontract.Envelope{
+		SourceSequence: sourceSequence,
+		Operation:      operation,
+		Observation: checkpointcontract.Observation{
+			Revision:         observation["revision"].(int64),
+			ResumeGeneration: observation["resumeGeneration"].(int64),
+			Checkpoint:       checkpointSemanticValue(observation["checkpoint"]),
+			PriorCheckpoint:  checkpointSemanticValue(observation["priorCheckpoint"]),
+			NextPhaseID:      nullableStringPointer(observation["nextPhaseId"]),
+			NextPhaseIndex:   nullableIntPointer(observation["nextPhaseIndex"]),
+		},
+	}
+}
+
+func checkpointSemanticValue(value any) *checkpointcontract.Checkpoint {
+	record, ok := value.(Record)
+	if !ok {
+		return nil
+	}
+	return &checkpointcontract.Checkpoint{
+		PhaseID:           record["phaseId"].(string),
+		PhaseIndex:        record["phaseIndex"].(int64),
+		CommittedRevision: record["committedRevision"].(int64),
+		ResumeGeneration:  record["resumeGeneration"].(int64),
+	}
+}
+
+func nullableStringPointer(value any) *string {
+	text, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	return &text
+}
+
+func nullableIntPointer(value any) *int64 {
+	integer, ok := value.(int64)
+	if !ok {
+		return nil
+	}
+	return &integer
 }
 
 func canonicalHash(value any) (string, error) {

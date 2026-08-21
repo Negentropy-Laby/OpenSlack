@@ -15,6 +15,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');
 const goCheckSource = readFileSync(join(repositoryRoot, 'scripts/go-check.sh'), 'utf8');
+const workflowContractFamilyInventorySource = readFileSync(
+  join(repositoryRoot, 'scripts/workflow-contract-families.generated.sh'),
+  'utf8',
+);
+const workflowContractFamilyRegistry = JSON.parse(
+  readFileSync(join(repositoryRoot, 'scripts/workflow-contract-families.json'), 'utf8'),
+) as {
+  families: Array<{ goMirror?: { package: string; version: string } }>;
+};
 const containerGateSource = readFileSync(
   join(repositoryRoot, 'scripts/go-check/container-gate.sh'),
   'utf8',
@@ -110,22 +119,24 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     ]) {
       expect(goCheckSource).toContain(reviewedGovernanceSource);
     }
-    for (const reviewedWorkflowAuthoritySource of [
-      "'!authoritycontract/'",
-      "'!authoritycontract/*.go'",
-      "'!authoritycontract/generated/v2/schemas/*.json'",
-      "'!budgetcontract/'",
-      "'!budgetcontract/*.go'",
-      "'!budgetcontract/generated/v1/schemas/*.json'",
-      "'!runnerbindingcontract/'",
-      "'!runnerbindingcontract/*.go'",
-      "'!runnerbindingcontract/generated/'",
-      "'!runnerbindingcontract/generated/v1/'",
-      "'!runnerbindingcontract/generated/v1/*.json'",
-      "'!runnerbindingcontract/generated/v1/schemas/'",
-      "'!runnerbindingcontract/generated/v1/schemas/*.json'",
-    ]) {
-      expect(goCheckSource).toContain(reviewedWorkflowAuthoritySource);
+    expect(goCheckSource).toContain('source "${workflow_contract_family_inventory}"');
+    const mirrors = workflowContractFamilyRegistry.families.flatMap((family) =>
+      family.goMirror ? [family.goMirror] : [],
+    );
+    expect(mirrors).toEqual([
+      { package: 'authoritycontract', version: 'v2' },
+      { package: 'budgetcontract', version: 'v1' },
+      { package: 'runnerbindingcontract', version: 'v1' },
+    ]);
+    for (const mirror of mirrors) {
+      for (const reviewedWorkflowAuthoritySource of [
+        `'${mirror.package}'`,
+        `'!${mirror.package}/'`,
+        `'!${mirror.package}/*.go'`,
+        `'!${mirror.package}/generated/${mirror.version}/schemas/*.json'`,
+      ]) {
+        expect(workflowContractFamilyInventorySource).toContain(reviewedWorkflowAuthoritySource);
+      }
     }
   });
 
@@ -1541,6 +1552,10 @@ function createFixture(modules: string[] = ['pure']): Fixture {
   );
 
   copyFileSync(join(repositoryRoot, 'scripts/go-check.sh'), join(scripts, 'go-check.sh'));
+  copyFileSync(
+    join(repositoryRoot, 'scripts/workflow-contract-families.generated.sh'),
+    join(scripts, 'workflow-contract-families.generated.sh'),
+  );
   copyFileSync(
     join(repositoryRoot, 'scripts/go-check/parse-work-json.go'),
     join(parserDirectory, 'parse-work-json.go'),

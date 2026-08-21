@@ -13,6 +13,10 @@ var receiptCommonFields = []string{
 }
 
 func ValidateReceipt(value any) (Record, error) {
+	return validateReceiptWithSession(value, newBindingValidationSession(nil))
+}
+
+func validateReceiptWithSession(value any, session *bindingValidationSession) (Record, error) {
 	record, ok := asRecord(value)
 	if !ok {
 		return nil, failure(ErrorInvalid, "$", "Receipt must be an inert object.")
@@ -67,7 +71,7 @@ func ValidateReceipt(value any) (Record, error) {
 			}
 		}
 		result["evidenceHash"] = nullableStringValue(evidenceHash)
-		if err := byteBound(result, MaxReceiptBytes, "$"); err != nil {
+		if err := session.byteBound(result, MaxReceiptBytes, "$", true); err != nil {
 			return nil, err
 		}
 		return result, nil
@@ -128,7 +132,7 @@ func ValidateReceipt(value any) (Record, error) {
 		if result["processedAt"] != result["committedAt"] {
 			return nil, failure(ErrorIdentityMismatch, "$/processedAt", "Control processing time must equal its durable acknowledgement time.")
 		}
-		if err := byteBound(result, MaxReceiptBytes, "$"); err != nil {
+		if err := session.byteBound(result, MaxReceiptBytes, "$", true); err != nil {
 			return nil, err
 		}
 		return result, nil
@@ -198,15 +202,20 @@ func assembleReceiptIdentity(record, base Record, direction, phase string, seque
 }
 
 func ValidateStageReceipt(value, stageValue any) (Record, error) {
-	stage, err := ValidateStage(stageValue)
+	session := newBindingValidationSession(nil)
+	stage, err := validateStageWithSession(stageValue, session)
 	if err != nil {
 		return nil, err
 	}
-	receipt, err := ValidateReceipt(value)
+	return validateStageReceiptForValidatedStage(value, stage, session)
+}
+
+func validateStageReceiptForValidatedStage(value any, stage Record, session *bindingValidationSession) (Record, error) {
+	receipt, err := validateReceiptWithSession(value, session)
 	if err != nil {
 		return nil, err
 	}
-	stageHash, err := HashStage(stage)
+	stageHash, err := domainHashWithSession(session, "stage", stage)
 	if err != nil {
 		return nil, err
 	}
@@ -222,31 +231,36 @@ func ValidateStageReceipt(value, stageValue any) (Record, error) {
 }
 
 func ValidateResolutionReceipt(value, resolutionValue, stageValue, stageReceiptValue any) (Record, error) {
-	stage, err := ValidateStage(stageValue)
+	session := newBindingValidationSession(nil)
+	stage, err := validateStageWithSession(stageValue, session)
 	if err != nil {
 		return nil, err
 	}
-	stageReceipt, err := ValidateStageReceipt(stageReceiptValue, stage)
+	stageReceipt, err := validateStageReceiptForValidatedStage(stageReceiptValue, stage, session)
 	if err != nil {
 		return nil, err
 	}
-	resolution, err := ValidateResolutionForStage(resolutionValue, stage, stageReceipt)
+	resolution, err := validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt, session)
 	if err != nil {
 		return nil, err
 	}
-	receipt, err := ValidateReceipt(value)
+	return validateResolutionReceiptForValidatedContext(value, resolution, stage, stageReceipt, session)
+}
+
+func validateResolutionReceiptForValidatedContext(value any, resolution, stage, stageReceipt Record, session *bindingValidationSession) (Record, error) {
+	receipt, err := validateReceiptWithSession(value, session)
 	if err != nil {
 		return nil, err
 	}
-	resolutionHash, err := HashResolution(resolution)
+	resolutionHash, err := domainHashWithSession(session, "resolution", resolution)
 	if err != nil {
 		return nil, err
 	}
-	stageHash, err := HashStage(stage)
+	stageHash, err := domainHashWithSession(session, "stage", stage)
 	if err != nil {
 		return nil, err
 	}
-	stageReceiptHash, err := HashReceipt(stageReceipt)
+	stageReceiptHash, err := domainHashWithSession(session, "receipt", stageReceipt)
 	if err != nil {
 		return nil, err
 	}
@@ -270,23 +284,64 @@ func ValidateResolutionReceipt(value, resolutionValue, stageValue, stageReceiptV
 func ValidateControlDeliveryReceiptForMessage(
 	value, messageValue, stageValue, resolutionValue, resolutionReceiptValue, stageReceiptValue, priorEventDeliveryValue any,
 ) (Record, error) {
-	stage, err := ValidateStage(stageValue)
+	return validateControlDeliveryReceiptForMessageWithObserver(
+		value,
+		messageValue,
+		stageValue,
+		resolutionValue,
+		resolutionReceiptValue,
+		stageReceiptValue,
+		priorEventDeliveryValue,
+		nil,
+	)
+}
+
+func validateControlDeliveryReceiptForMessageWithObserver(
+	value, messageValue, stageValue, resolutionValue, resolutionReceiptValue, stageReceiptValue, priorEventDeliveryValue any,
+	onEncode func(Record),
+) (Record, error) {
+	session := newBindingValidationSession(onEncode)
+	stage, err := validateStageWithSession(stageValue, session)
 	if err != nil {
 		return nil, err
 	}
-	stageReceipt, err := ValidateStageReceipt(stageReceiptValue, stage)
+	stageReceipt, err := validateStageReceiptForValidatedStage(stageReceiptValue, stage, session)
 	if err != nil {
 		return nil, err
 	}
-	resolution, err := ValidateResolutionForStage(resolutionValue, stage, stageReceipt)
+	resolution, err := validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt, session)
 	if err != nil {
 		return nil, err
 	}
-	resolutionReceipt, err := ValidateResolutionReceipt(resolutionReceiptValue, resolution, stage, stageReceipt)
+	resolutionReceipt, err := validateResolutionReceiptForValidatedContext(
+		resolutionReceiptValue,
+		resolution,
+		stage,
+		stageReceipt,
+		session,
+	)
 	if err != nil {
 		return nil, err
 	}
-	receipt, err := ValidateReceipt(value)
+	return validateControlDeliveryForValidatedContext(
+		value,
+		messageValue,
+		stage,
+		resolution,
+		resolutionReceipt,
+		stageReceipt,
+		priorEventDeliveryValue,
+		session,
+	)
+}
+
+func validateControlDeliveryForValidatedContext(
+	value, messageValue any,
+	stage, resolution, resolutionReceipt, stageReceipt Record,
+	priorEventDeliveryValue any,
+	session *bindingValidationSession,
+) (Record, error) {
+	receipt, err := validateReceiptWithSession(value, session)
 	if err != nil {
 		return nil, err
 	}
@@ -297,19 +352,10 @@ func ValidateControlDeliveryReceiptForMessage(
 	if err != nil {
 		return nil, err
 	}
-	stageHash, err := HashStage(stage)
-	if err != nil {
-		return nil, err
-	}
-	resolutionHash, err := HashResolution(resolution)
-	if err != nil {
-		return nil, err
-	}
 	runnerHead := stage["runnerAuthority"].(Record)
 	target := stage["target"].(Record)
 	route := stage["route"].(Record)
 	evidence := resolution["evidence"].(Record)
-	source := evidence["sourceAuthority"].(Record)
 	expectedRevision := runnerHead["acceptedGlobalRunRevision"].(int64)
 	expectedGeneration := runnerHead["acceptedResumeGeneration"].(int64)
 	if message.Kind == authoritycontract.KindResumeOffer {
@@ -324,14 +370,7 @@ func ValidateControlDeliveryReceiptForMessage(
 	receiptCommittedAt, receiptCommitted := receipt["committedAt"].(string)
 	if prepared.Direction != authoritycontract.DirectionControlToRunner ||
 		resolutionReceipt["phase"] != "commit_authority" || resolutionReceipt["status"] != "accepted" ||
-		resolution["bindingId"] != stage["bindingId"] || resolution["operation"] != stage["operation"] ||
-		resolution["stageHash"] != stageHash || resolution["targetBodyHash"] != target["messageDigest"] ||
-		resolutionReceipt["bindingId"] != stage["bindingId"] || resolutionReceipt["operation"] != stage["operation"] ||
-		resolutionReceipt["requestHash"] != resolutionHash || resolutionReceipt["targetEventId"] != target["eventId"] ||
-		resolutionReceipt["targetBodyHash"] != target["messageDigest"] || resolutionReceipt["stageHash"] != resolution["stageHash"] ||
-		resolutionReceipt["stageReceiptHash"] != resolution["stageReceiptHash"] ||
-		resolutionReceipt["evidenceHash"] != resolution["evidenceHash"] || resolutionReceipt["controlBuildHash"] != source["authorityBuildHash"] ||
-		resolution["stageReceiptHash"] == resolution["stageHash"] || !resolutionCommitted || resolutionCommittedAt < resolution["sentAt"].(string) ||
+		!resolutionCommitted ||
 		message.Sequence == nil || message.AttemptID == nil || message.LeaseID == nil || message.FencingToken == nil ||
 		message.AuthorityBackend == nil || message.Authority == nil || message.RoutingEpoch == nil || message.AuthorityBuildHash == nil ||
 		message.RunRevision == nil || message.ResumeGeneration == nil ||
@@ -354,7 +393,7 @@ func ValidateControlDeliveryReceiptForMessage(
 	if err := assertEvidenceForStage(evidence, stage, resolution["sentAt"].(string)); err != nil {
 		return nil, err
 	}
-	authorityReceiptHash, err := HashReceipt(resolutionReceipt)
+	authorityReceiptHash, err := domainHashWithSession(session, "receipt", resolutionReceipt)
 	if err != nil {
 		return nil, err
 	}
@@ -369,6 +408,7 @@ func ValidateControlDeliveryReceiptForMessage(
 		resolution,
 		resolutionReceipt,
 		stageReceipt,
+		session,
 	); err != nil {
 		return nil, err
 	}
@@ -379,6 +419,7 @@ func assertPriorEventDelivery(
 	priorEventDeliveryValue any,
 	message authoritycontract.Message,
 	receipt, stage, resolution, resolutionReceipt, stageReceipt Record,
+	session *bindingValidationSession,
 ) error {
 	if message.Kind == authoritycontract.KindEventReceipt {
 		if priorEventDeliveryValue != nil {
@@ -394,7 +435,7 @@ func assertPriorEventDelivery(
 	if err != nil {
 		return err
 	}
-	priorReceipt, err := ValidateControlDeliveryReceiptForMessage(
+	priorReceipt, err := validateControlDeliveryForValidatedContext(
 		prior["receipt"],
 		prior["message"],
 		stage,
@@ -402,6 +443,7 @@ func assertPriorEventDelivery(
 		resolutionReceipt,
 		stageReceipt,
 		nil,
+		session,
 	)
 	if err != nil {
 		var contractErr *ContractError

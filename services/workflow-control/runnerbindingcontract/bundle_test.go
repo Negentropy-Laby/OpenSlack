@@ -16,16 +16,21 @@ type runnerBindingManifest struct {
 	ContractVersion   string `json:"contractVersion"`
 	Profile           string `json:"profile"`
 	AuthorityBoundary struct {
-		Batch                          string `json:"batch"`
-		ContractOnly                   bool   `json:"contractOnly"`
-		QualificationOnly              bool   `json:"qualificationOnly"`
-		AuthorityClaim                 string `json:"authorityClaim"`
-		GoAuthorityImplemented         bool   `json:"goAuthorityImplemented"`
-		RuntimeCompositionImplemented  bool   `json:"runtimeCompositionImplemented"`
-		ProductionRoutingActivated     bool   `json:"productionRoutingActivated"`
-		FrozenAuthorityV2KindsExtended bool   `json:"frozenAuthorityV2KindsExtended"`
-		FrozenAuthorityV2KindCount     int    `json:"frozenAuthorityV2KindCount"`
-		SourceAuthoritiesReplaced      bool   `json:"sourceAuthoritiesReplaced"`
+		Batch                          string   `json:"batch"`
+		Normative                      bool     `json:"normative"`
+		ContractOnly                   bool     `json:"contractOnly"`
+		QualificationOnly              bool     `json:"qualificationOnly"`
+		AuthorityClaim                 string   `json:"authorityClaim"`
+		GoAuthorityImplemented         bool     `json:"goAuthorityImplemented"`
+		RuntimeCompositionImplemented  bool     `json:"runtimeCompositionImplemented"`
+		ProductionRoutingActivated     bool     `json:"productionRoutingActivated"`
+		FrozenAuthorityV2KindsExtended bool     `json:"frozenAuthorityV2KindsExtended"`
+		FrozenAuthorityV2KindCount     int      `json:"frozenAuthorityV2KindCount"`
+		SourceAuthoritiesReplaced      bool     `json:"sourceAuthoritiesReplaced"`
+		NotDelivered                   []string `json:"notDelivered"`
+		NotActivated                   []string `json:"notActivated"`
+		NotClaimed                     []string `json:"notClaimed"`
+		SeparateGates                  []string `json:"separateGates"`
 	} `json:"authorityBoundary"`
 	Protocol struct {
 		Sequence                                  []string `json:"sequence"`
@@ -36,11 +41,14 @@ type runnerBindingManifest struct {
 		ExactReplayReturnsOriginalReceiptBytes    bool     `json:"exactReplayReturnsOriginalReceiptBytes"`
 	} `json:"protocol"`
 	Operations []struct {
-		Operation           Operation   `json:"operation"`
-		TargetKind          string      `json:"targetKind"`
-		RunnerDelta         RunnerDelta `json:"runnerDelta"`
-		SourceEvidenceState string      `json:"sourceEvidenceState"`
-		SourceReceiptSchema *string     `json:"sourceReceiptSchema"`
+		Operation             Operation   `json:"operation"`
+		TargetKind            string      `json:"targetKind"`
+		RunnerDelta           RunnerDelta `json:"runnerDelta"`
+		SourcePlane           string      `json:"sourcePlane"`
+		SourceEvidenceState   string      `json:"sourceEvidenceState"`
+		SourceRevisionDelta   int64       `json:"sourceRevisionDelta"`
+		SourceGenerationDelta int64       `json:"sourceGenerationDelta"`
+		SourceReceiptSchema   *string     `json:"sourceReceiptSchema"`
 	} `json:"operations"`
 	Evidence struct {
 		Closed             bool     `json:"closed"`
@@ -106,12 +114,31 @@ func TestManifestLocksClosedContractAndAuthorityCeiling(t *testing.T) {
 		t.Fatalf("manifest identity drifted: %+v", manifest)
 	}
 	boundary := manifest.AuthorityBoundary
-	if boundary.Batch != "GS9-F2a" || !boundary.ContractOnly || !boundary.QualificationOnly ||
+	if boundary.Batch != "GS9-F2a" || !boundary.Normative || !boundary.ContractOnly || !boundary.QualificationOnly ||
 		boundary.AuthorityClaim != "NO_AUTHORITY" || boundary.GoAuthorityImplemented ||
 		boundary.RuntimeCompositionImplemented || boundary.ProductionRoutingActivated ||
 		boundary.FrozenAuthorityV2KindsExtended || boundary.FrozenAuthorityV2KindCount != 18 ||
 		boundary.SourceAuthoritiesReplaced || HasDurableAuthority() {
 		t.Fatalf("authority ceiling widened: %+v", boundary)
+	}
+	if !reflect.DeepEqual(boundary.NotDelivered, []string{
+		"migration_000008", "database", "http", "durable_store", "scheduler", "worker",
+		"checkpoint_adapter", "effect_adapter", "budget_adapter", "resume_adapter",
+		"provider_adapter", "authority_recovery", "runtime_composition",
+	}) || !reflect.DeepEqual(boundary.NotActivated, []string{
+		"future_runtime_profile", "production_v2_submission", "new_record_acceptance", "routing",
+		"canary", "cutover", "typescript_fallback_removal", "typescript_writer_retirement",
+	}) || !reflect.DeepEqual(boundary.NotClaimed, []string{
+		"runtime_authority_delivery", "go_production_workflow_authority",
+		"go_production_checkpoint_authority", "go_production_effect_authority",
+		"go_production_budget_policy_authority", "go_production_provider_authority",
+		"go_production_run_store_authority", "go_production_user_visible_read_authority",
+		"authenticated_external_host_qualification", "qoder", "remote_connector", "release",
+		"live", "tag", "npm", "production_readiness",
+	}) || !reflect.DeepEqual(boundary.SeparateGates, []string{
+		"hosted_exact_head_checks", "review_thread_resolution", "independent_human_approval", "merge",
+	}) {
+		t.Fatalf("authority boundary inventory drifted: %+v", boundary)
 	}
 	protocol := manifest.Protocol
 	if !reflect.DeepEqual(protocol.Sequence, []string{"stage_event", "stage_event_ack", "commit_authority", "commit_authority_ack"}) ||
@@ -161,24 +188,14 @@ func assertManifestOperationMatrix(t *testing.T, manifest runnerBindingManifest)
 	}
 	for index, operation := range Operations() {
 		entry := manifest.Operations[index]
-		kind, err := ExpectedKind(operation)
+		fact, err := factFor(operation)
 		if err != nil {
 			t.Fatal(err)
 		}
-		delta, err := RunnerHeadDelta(operation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		receiptSchema, err := SourceReceiptSchema(operation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		state := "committed"
-		if operation == OperationBudgetReserve || operation == OperationBudgetSettle {
-			state = "prepared"
-		}
-		if entry.Operation != operation || entry.TargetKind != string(kind) || entry.RunnerDelta != delta ||
-			entry.SourceEvidenceState != state || !nullableStringsEqual(entry.SourceReceiptSchema, receiptSchema) {
+		if entry.Operation != operation || entry.TargetKind != string(fact.TargetKind) || entry.RunnerDelta != fact.RunnerDelta ||
+			entry.SourcePlane != fact.SourcePlane || entry.SourceEvidenceState != fact.SourceEvidenceState ||
+			entry.SourceRevisionDelta != fact.SourceRevisionDelta || entry.SourceGenerationDelta != fact.SourceGenerationDelta ||
+			!nullableStringsEqual(entry.SourceReceiptSchema, fact.SourceReceiptSchema) {
 			t.Fatalf("operation matrix drift at %s: %+v", operation, entry)
 		}
 	}

@@ -226,6 +226,12 @@ func utf16Less(left, right string) bool {
 	return len(leftUnits) < len(rightUnits)
 }
 
+// SortStringsUTF16 orders strings exactly as ECMAScript Array.prototype.sort
+// orders object keys for the repository's canonical JSON contract.
+func SortStringsUTF16(values []string) {
+	sort.Slice(values, func(left, right int) bool { return utf16Less(values[left], values[right]) })
+}
+
 func formatNumber(value float64) (string, error) {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return "", fmt.Errorf("non-finite number")

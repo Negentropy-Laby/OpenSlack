@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -42,6 +43,7 @@ type bindingGoldenVectors struct {
 		Operation             Operation   `json:"operation"`
 		TargetKind            string      `json:"targetKind"`
 		RunnerDelta           RunnerDelta `json:"runnerDelta"`
+		SourcePlane           string      `json:"sourcePlane"`
 		SourceEvidenceState   string      `json:"sourceEvidenceState"`
 		SourceRevisionDelta   int64       `json:"sourceRevisionDelta"`
 		SourceGenerationDelta int64       `json:"sourceGenerationDelta"`
@@ -228,6 +230,35 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 		})
 	}
+	t.Run("singleCanonicalEncodingPerValidatedRecord", func(t *testing.T) {
+		t.Parallel()
+		operation := OperationCheckpointCommit
+		exchange := golden.Positive.Operations[string(operation)]
+		receipt := golden.Positive.ControlDelivery.Accepted[string(operation)].Value
+		message := acceptedMessages[string(operation)]
+		encoded := map[uintptr]int{}
+		_, err := validateControlDeliveryReceiptForMessageWithObserver(
+			receipt,
+			message,
+			exchange.Stage.Value,
+			exchange.Resolution.Value,
+			exchange.ResolutionReceipt.Value,
+			exchange.StageReceipt.Value,
+			nil,
+			func(record Record) { encoded[reflect.ValueOf(record).Pointer()]++ },
+		)
+		if err != nil {
+			t.Fatalf("instrumented control delivery validation: %v", err)
+		}
+		if len(encoded) != 6 {
+			t.Fatalf("canonical record encodes = %d, want 6", len(encoded))
+		}
+		for identity, count := range encoded {
+			if count != 1 {
+				t.Fatalf("canonical record %x encoded %d times", identity, count)
+			}
+		}
+	})
 }
 
 func goldenControlPrior(t *testing.T, golden bindingGoldenVectors, kind string, operation Operation) any {
@@ -258,7 +289,7 @@ func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operati
 func TestGoldenNegativeReplay(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Negative) != 37 {
+	if len(golden.Negative) != 43 {
 		t.Fatalf("negative count = %d", len(golden.Negative))
 	}
 	for _, vector := range golden.Negative {
