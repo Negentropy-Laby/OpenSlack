@@ -22,6 +22,7 @@ import {
   hashWorkflowRunnerAuthorityBindingReceipt,
   hashWorkflowRunnerAuthorityBindingResolution,
   hashWorkflowRunnerAuthorityBindingStage,
+  hashWorkflowRunnerBudgetSourceReceipt,
   parseWorkflowRunnerAuthorityBindingReceiptBytes,
   parseWorkflowRunnerAuthorityBindingResolutionBytes,
   parseWorkflowRunnerAuthorityBindingStageBytes,
@@ -38,6 +39,7 @@ import {
   validateWorkflowRunnerAuthorityBindingStageReceipt,
   validateWorkflowRunnerAuthorityBindingError,
   validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
+  validateWorkflowRunnerBudgetSourceResult,
   workflowRunnerAuthorityBindingExpectedKind,
   workflowRunnerAuthorityBindingRunnerDelta,
   type WorkflowRunnerAuthorityBindingOperation,
@@ -117,8 +119,30 @@ interface Golden {
           readonly operation: WorkflowRunnerAuthorityBindingOperation;
           readonly message: unknown;
           readonly receipt: ExactVector;
+          readonly budgetSourceResult: unknown | null;
+          readonly priorEventDelivery: {
+            readonly message: unknown;
+            readonly receipt: ExactVector;
+          } | null;
         }
       >;
+      readonly budgetAuthorization: Record<
+        'reserved' | 'rejected',
+        {
+          readonly message: unknown;
+          readonly receipt: ExactVector;
+          readonly priorEventDelivery: {
+            readonly message: unknown;
+            readonly receipt: ExactVector;
+          };
+          readonly sourceResult: unknown;
+        }
+      >;
+      readonly budgetDatabaseReconciliation: {
+        readonly message: unknown;
+        readonly receipt: ExactVector;
+        readonly decision: null;
+      };
       readonly messages: {
         readonly accepted: Record<WorkflowRunnerAuthorityBindingOperation, unknown>;
         readonly reconciliationRequired: unknown;
@@ -179,7 +203,10 @@ function executeNegative(operation: string, input: Json): unknown {
         input.resolutionReceipt,
         input.stageReceipt,
         input.priorEventDelivery,
+        input.budgetSourceResult ?? null,
       );
+    case 'validate_budget_source_result':
+      return validateWorkflowRunnerBudgetSourceResult(input.sourceResult, input.preparedRequest);
     case 'validate_resolution_for_stage':
       return validateWorkflowRunnerAuthorityBindingResolutionForStage(
         input.resolution,
@@ -279,6 +306,20 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         'merge',
       ],
     });
+    expect(manifest.budgetDecisionDelivery).toEqual({
+      sourceResultRequired: true,
+      durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
+      authorityReceiptHash: 'sha256_canonical_durable_receipt_outer',
+      acceptedStates: {
+        reserved: 'requested_amounts',
+        rejected: 'zero_amounts',
+      },
+      databaseReconciliationRequired: {
+        delivery: 'event_receipt_only',
+        budgetAuthorizationAllowed: false,
+        reason: 'accepted_run_revision_null',
+      },
+    });
   });
 
   it('pins every source manifest and the immutable 000007 migration bytes', () => {
@@ -370,6 +411,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budgetSettleUntrusted',
       'budgetSettleProviderUnreported',
       'goRouteCheckpoint',
+      'budgetReserveGoAuthority',
     ];
     expect(Object.keys(golden.positive.semanticVariants)).toEqual(expected);
     for (const [name, vectors] of Object.entries(golden.positive.semanticVariants)) {
@@ -390,6 +432,45 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         ),
         name,
       ).toEqual(resolutionReceipt);
+    }
+  });
+
+  it('binds accepted E1 reserve results through the exact durable receipt outer', () => {
+    const exchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
+    const prepared = asJson(
+      asJson(exchange.resolution.value, 'budget resolution').evidence,
+      'budget evidence',
+    ).preparedRequest;
+    for (const [status, item] of Object.entries(
+      golden.positive.controlDelivery.budgetAuthorization,
+    )) {
+      expect(validateWorkflowRunnerBudgetSourceResult(item.sourceResult, prepared), status).toEqual(
+        item.sourceResult,
+      );
+      const source = asJson(item.sourceResult, 'budget source result');
+      expect(hashWorkflowRunnerBudgetSourceReceipt(source.durableReceiptBytes), status).toBe(
+        createHash('sha256').update(String(source.durableReceiptBytes)).digest('hex'),
+      );
+      const receipt = exact(item.receipt, 'receipt');
+      expect(
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+          receipt,
+          item.message,
+          exchange.stage.value,
+          exchange.resolution.value,
+          exchange.resolutionReceipt.value,
+          exchange.stageReceipt.value,
+          {
+            message: item.priorEventDelivery.message,
+            receipt: item.priorEventDelivery.receipt.value,
+          },
+          item.sourceResult,
+        ),
+        status,
+      ).toEqual(receipt);
+      const payload = asJson(asJson(item.message, 'message').payload, 'payload');
+      expect(payload.status).toBe(status);
+      expect(payload.authorizedCalls).toBe(status === 'reserved' ? '1' : '0');
     }
   });
 
@@ -419,7 +500,10 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'cancel_request',
     ]);
     for (const [kind, item] of Object.entries(deliveries.byKind)) {
-      const exchange = golden.positive.operations[item.operation];
+      const exchange =
+        kind === 'budget_authorization'
+          ? golden.positive.semanticVariants.budgetReserveGoAuthority
+          : golden.positive.operations[item.operation];
       const receipt = exact(item.receipt, 'receipt');
       expect(
         validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
@@ -431,10 +515,16 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
           exchange.stageReceipt.value,
           kind === 'event_receipt'
             ? null
-            : {
-                message: deliveries.messages.accepted[item.operation],
-                receipt: deliveries.accepted[item.operation].value,
-              },
+            : kind === 'budget_authorization'
+              ? {
+                  message: item.priorEventDelivery!.message,
+                  receipt: item.priorEventDelivery!.receipt.value,
+                }
+              : {
+                  message: deliveries.messages.accepted[item.operation],
+                  receipt: deliveries.accepted[item.operation].value,
+                },
+          item.budgetSourceResult,
         ),
         kind,
       ).toEqual(receipt);
@@ -462,6 +552,30 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         },
       ),
     ).toEqual(reconciliation);
+
+    const databaseUnknown = deliveries.budgetDatabaseReconciliation;
+    const budgetExchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
+    const databaseReceipt = exact(databaseUnknown.receipt, 'receipt') as {
+      disposition: string;
+      companionSequence: number;
+    };
+    expect(
+      validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+        databaseReceipt,
+        databaseUnknown.message,
+        budgetExchange.stage.value,
+        budgetExchange.resolution.value,
+        budgetExchange.resolutionReceipt.value,
+        budgetExchange.stageReceipt.value,
+        null,
+        null,
+      ),
+    ).toEqual(databaseReceipt);
+    expect(databaseReceipt).toMatchObject({
+      disposition: 'reconciliation_required',
+      companionSequence: 3,
+    });
+    expect(databaseUnknown.decision).toBeNull();
   });
 
   it('keeps runtime validators and all four closed JSON Schemas aligned', () => {
@@ -502,6 +616,20 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       const validator = ajv.getSchema(ids.receipt)!;
       expect(validator(item.receipt.value), ajv.errorsText(validator.errors)).toBe(true);
     }
+    for (const item of Object.values(golden.positive.controlDelivery.budgetAuthorization)) {
+      const validator = ajv.getSchema(ids.receipt)!;
+      expect(validator(item.receipt.value), ajv.errorsText(validator.errors)).toBe(true);
+      expect(
+        validator(item.priorEventDelivery.receipt.value),
+        ajv.errorsText(validator.errors),
+      ).toBe(true);
+    }
+    expect(
+      ajv.getSchema(ids.receipt)!(
+        golden.positive.controlDelivery.budgetDatabaseReconciliation.receipt.value,
+      ),
+      ajv.errorsText(ajv.getSchema(ids.receipt)!.errors),
+    ).toBe(true);
     const open = structuredClone(golden.positive.operations.checkpoint_commit.stage.value) as Json;
     open.unexpected = true;
     expect(ajv.getSchema(ids.stage)!(open)).toBe(false);
@@ -593,6 +721,22 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'effect-rejected-expiry-boundary',
       'control-event-receipt-target-drift',
       'control-decision-budget-evidence-drift',
+      'budget-decision-status-drift',
+      'budget-decision-amount-drift',
+      'budget-decision-receipt-hash-drift',
+      'budget-decision-committed-run-revision-drift',
+      'budget-decision-source-result-cross-splice',
+      'budget-durable-manifest-drift',
+      'budget-durable-build-drift',
+      'budget-durable-projection-hash-drift',
+      'budget-source-ts-local-go-outer-cross-splice',
+      'budget-durable-bytes-whitespace-drift',
+      'budget-durable-bytes-duplicate-key-drift',
+      'budget-durable-bytes-trailing-drift',
+      'budget-durable-bytes-size-overflow',
+      'budget-decision-database-unknown-no-seq4',
+      'budget-decision-source-before-resolution-ack',
+      'budget-decision-time-inversion',
       'control-decision-effect-evidence-drift',
       'control-decision-resume-attempt-drift',
       'control-decision-ordering-drift',
@@ -611,7 +755,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budget-settle-disposition-drift',
       'resume-logical-attempt-active-reuse',
     ]);
-    expect(golden.negative).toHaveLength(43);
+    expect(golden.negative).toHaveLength(59);
     for (const item of golden.negative) {
       try {
         executeNegative(item.operation, item.input);

@@ -18,12 +18,14 @@ import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_RECEIPT_SCHEMAS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_SCHEMA,
+  WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
   WorkflowRunnerAuthorityBindingContractError,
   deriveWorkflowRunnerAuthorityBindingId,
   hashWorkflowRunnerAuthorityBindingEvidence,
   hashWorkflowRunnerAuthorityBindingReceipt,
   hashWorkflowRunnerAuthorityBindingResolution,
   hashWorkflowRunnerAuthorityBindingStage,
+  hashWorkflowRunnerBudgetSourceReceipt,
   prepareWorkflowRunnerAuthorityBindingReceipt,
   prepareWorkflowRunnerAuthorityBindingResolution,
   prepareWorkflowRunnerAuthorityBindingStage,
@@ -35,6 +37,7 @@ import {
   validateWorkflowRunnerAuthorityBindingStage,
   validateWorkflowRunnerAuthorityBindingStageReceipt,
   validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
+  validateWorkflowRunnerBudgetSourceResult,
   workflowRunnerAuthorityBindingExpectedKind,
   workflowRunnerAuthorityBindingMissingProviderUsageHash,
   workflowRunnerAuthorityBindingRunnerDelta,
@@ -43,10 +46,23 @@ import {
   type WorkflowRunnerAuthorityBindingResolution,
   type WorkflowRunnerAuthorityBindingStage,
   type WorkflowRunnerAuthorityEvidence,
+  type WorkflowRunnerBudgetSourceResult,
 } from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
 import {
+  WORKFLOW_BUDGET_RECEIPT_SCHEMA,
+  canonicalWorkflowBudgetAuthorityJson,
+  evaluateWorkflowBudgetReserve,
+  hashWorkflowBudgetAuthorityValue,
   prepareWorkflowBudgetAuthorityRequest,
+  validateWorkflowBudgetAccount,
+  validateWorkflowBudgetReceipt,
+  validateWorkflowBudgetReceiptForResult,
+  validateWorkflowBudgetReserveRequest,
   workflowBudgetAuthorityChargeNanoUsd,
+  type WorkflowBudgetLedgerEntry,
+  type WorkflowBudgetReceipt,
+  type WorkflowBudgetReserveDecision,
+  type WorkflowBudgetReserveRequest,
   validateWorkflowBudgetSettlementRequest,
 } from '../../packages/workflows/src/workflow-budget-authority-contract.js';
 import {
@@ -74,6 +90,21 @@ const serviceMirrorRoot = resolve(
   outputRoot,
   'services/workflow-control/runnerbindingcontract/generated/v1',
 );
+const outputScope = process.env.OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_SCOPE ?? 'both';
+if (!['both', 'typescript', 'go'].includes(outputScope)) {
+  throw new Error('Authority-binding output scope must be both, typescript, or go.');
+}
+
+function selectedOutputRoots(): readonly (readonly [string, string])[] {
+  return [
+    ...(outputScope === 'both' || outputScope === 'typescript'
+      ? ([['typescript', contractRoot]] as const)
+      : []),
+    ...(outputScope === 'both' || outputScope === 'go'
+      ? ([['go', serviceMirrorRoot]] as const)
+      : []),
+  ];
+}
 
 export const bundleFiles = Object.freeze([
   'schemas/workflow-runner-authority-binding-stage.v1.schema.json',
@@ -159,6 +190,21 @@ const authorityBoundary = Object.freeze({
   ]),
 });
 
+const budgetDecisionDelivery = Object.freeze({
+  sourceResultRequired: true,
+  durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
+  authorityReceiptHash: 'sha256_canonical_durable_receipt_outer',
+  acceptedStates: Object.freeze({
+    reserved: 'requested_amounts',
+    rejected: 'zero_amounts',
+  }),
+  databaseReconciliationRequired: Object.freeze({
+    delivery: 'event_receipt_only',
+    budgetAuthorizationAllowed: false,
+    reason: 'accepted_run_revision_null',
+  }),
+});
+
 const HASH = '^[0-9a-f]{64}$';
 const PREFIXED_HASH = '^sha256:[0-9a-f]{64}$';
 const SAFE_ID = '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$';
@@ -214,6 +260,22 @@ const NEGATIVE_IDS = Object.freeze([
   'effect-rejected-expiry-boundary',
   'control-event-receipt-target-drift',
   'control-decision-budget-evidence-drift',
+  'budget-decision-status-drift',
+  'budget-decision-amount-drift',
+  'budget-decision-receipt-hash-drift',
+  'budget-decision-committed-run-revision-drift',
+  'budget-decision-source-result-cross-splice',
+  'budget-durable-manifest-drift',
+  'budget-durable-build-drift',
+  'budget-durable-projection-hash-drift',
+  'budget-source-ts-local-go-outer-cross-splice',
+  'budget-durable-bytes-whitespace-drift',
+  'budget-durable-bytes-duplicate-key-drift',
+  'budget-durable-bytes-trailing-drift',
+  'budget-durable-bytes-size-overflow',
+  'budget-decision-database-unknown-no-seq4',
+  'budget-decision-source-before-resolution-ack',
+  'budget-decision-time-inversion',
   'control-decision-effect-evidence-drift',
   'control-decision-resume-attempt-drift',
   'control-decision-ordering-drift',
@@ -1040,6 +1102,170 @@ async function makeExchanges(
   };
 }
 
+function acceptedBudgetReserveReceipt(
+  prepared: ReturnType<typeof prepareWorkflowBudgetAuthorityRequest>,
+  decision: WorkflowBudgetReserveDecision,
+  ledgerEntry: WorkflowBudgetLedgerEntry,
+): WorkflowBudgetReceipt {
+  const request = decision.request;
+  const receipt = validateWorkflowBudgetReceipt({
+    schema: WORKFLOW_BUDGET_RECEIPT_SCHEMA,
+    contractVersion: decision.contractVersion,
+    authority: decision.authority,
+    writer: decision.writer,
+    goRole: decision.goRole,
+    goAuthorityClaim: decision.goAuthorityClaim,
+    goAuthorityEligible: decision.goAuthorityEligible,
+    operation: 'reserve',
+    status: 'accepted',
+    workspaceId: request.workspaceId,
+    runId: request.runId,
+    accountId: request.accountId,
+    reservationId: request.reservationId,
+    callId: request.callId,
+    expectedAccountRevision: request.expectedAccountRevision,
+    acceptedAccountRevision: decision.afterAccount.accountRevision,
+    expectedRunRevision: request.expectedRunRevision,
+    acceptedRunRevision: decision.afterAccount.runRevision,
+    idempotencyKey: prepared.idempotencyKey,
+    requestFingerprint: prepared.requestFingerprint,
+    requestHash: prepared.requestHash,
+    recordHash: hashWorkflowBudgetAuthorityValue('reserve-decision', decision),
+    ledgerEntryHash: hashWorkflowBudgetAuthorityValue('ledger-entry', ledgerEntry),
+    correlationId: request.correlationId,
+    serviceBuildHash: request.route.authorityBuildHash,
+    committedAt: decision.decidedAt,
+    reconciliationToken: null,
+  });
+  return validateWorkflowBudgetReceiptForResult(receipt, prepared, decision, ledgerEntry, null);
+}
+
+function exactDurableBudgetReceipt(receipt: WorkflowBudgetReceipt): string {
+  return canonicalWorkflowBudgetAuthorityJson({
+    schema: 'openslack.workflow_control_budget_durable_record.v1',
+    authority: 'workflow-control',
+    writer: 'workflow-control/budget-authority-server',
+    authorityMode: 'local-qualification-v1',
+    productionAuthority: false,
+    contractManifestSha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+    authorityBuildHash: receipt.serviceBuildHash,
+    recordKind: 'receipt',
+    operationalProjection: receipt,
+    operationalProjectionHash: hashWorkflowBudgetAuthorityValue('receipt', receipt),
+  });
+}
+
+function budgetDecisionFixtures(budgetRecords: Json) {
+  const account = asJson(asJson(budgetRecords.account, 'budget account').value, 'account value');
+  const baseRequest = asJson(
+    asJson(budgetRecords.reserveRequest, 'budget reserve request').value,
+    'reserve request value',
+  );
+  const authorityBuildHash = h('8');
+  const route = {
+    backend: 'go',
+    authority: 'workflow-control',
+    routingEpoch: 1,
+    authorityBuildHash,
+  } as const;
+  const request = validateWorkflowBudgetReserveRequest({
+    ...baseRequest,
+    route,
+    requestedAt: '2026-08-20T00:06:00.000Z',
+  });
+  const prepared = prepareWorkflowBudgetAuthorityRequest(
+    'reserve',
+    request,
+    'qualification-caller',
+  );
+  const staged = stage(
+    'budget_reserve',
+    {
+      workspaceId: request.workspaceId,
+      jobId: 'job.budget.go',
+      runId: request.runId,
+      runnerAttemptId: 'attempt.budget.go',
+      leaseId: 'lease.budget.go',
+      fencingToken: 19,
+      correlationId: request.correlationId,
+      buildHash: authorityBuildHash,
+      expectedRevision: request.expectedRunRevision,
+      expectedGeneration: 0,
+      sequence: 61,
+      sentAt: '2026-08-20T00:06:00.000Z',
+      backend: 'go',
+      authority: 'workflow-control',
+    },
+    {
+      reservationId: request.reservationId,
+      callId: request.callId,
+      policyHash: request.policyHash,
+      requestedTokens: request.requested.tokens,
+      requestedCostNanoUsd: request.requested.nanoUsd,
+      requestedCalls: request.requested.calls,
+    },
+  );
+  const evidence = {
+    schema: 'openslack.workflow_runner_budget_authority_evidence.v1',
+    sourceAuthority: sourceAuthority('budget_reserve', {
+      expectedRevision: request.expectedAccountRevision,
+      expectedGeneration: 0,
+      requestHash: prepared.requestHash,
+      buildHash: authorityBuildHash,
+    }),
+    preparedRequest: prepared,
+    providerHash: request.expectedProviderHash,
+    modelHash: request.expectedModelHash,
+    providerRunHash: request.expectedProviderRunHash,
+    providerAttempt: request.providerAttempt,
+    accountId: request.accountId,
+    policyHash: request.policyHash,
+    rateNanoUsdPerToken: request.rateNanoUsdPerToken,
+    providerUsageReceiptHash: null,
+  } as unknown as WorkflowRunnerAuthorityEvidence;
+  const exchangeValue = exchange(staged, evidence, 6);
+  const goAccount = validateWorkflowBudgetAccount({
+    ...account,
+    route,
+    updatedAt: '2026-08-20T00:05:59.000Z',
+  });
+  const rejectedAccount = validateWorkflowBudgetAccount({
+    ...goAccount,
+    limit: { tokens: '0', nanoUsd: '0', calls: '0' },
+  });
+  const reserved = evaluateWorkflowBudgetReserve(goAccount, request, '2026-08-20T00:06:04.000Z');
+  const rejected = evaluateWorkflowBudgetReserve(
+    rejectedAccount,
+    request,
+    '2026-08-20T00:06:04.500Z',
+  );
+  const early = evaluateWorkflowBudgetReserve(goAccount, request, '2026-08-20T00:06:02.999Z');
+  const late = evaluateWorkflowBudgetReserve(goAccount, request, '2026-08-20T00:07:00.001Z');
+  const result = (
+    decision: WorkflowBudgetReserveDecision,
+    ledgerEntry: WorkflowBudgetLedgerEntry,
+  ): WorkflowRunnerBudgetSourceResult => {
+    const receipt = acceptedBudgetReserveReceipt(prepared, decision, ledgerEntry);
+    return validateWorkflowRunnerBudgetSourceResult(
+      {
+        schema: WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
+        durableReceiptBytes: exactDurableBudgetReceipt(receipt),
+        decision,
+        ledgerEntry,
+      },
+      prepared,
+    );
+  };
+  return {
+    exchange: exchangeValue,
+    prepared,
+    reserved: result(reserved.decision, reserved.ledgerEntry),
+    rejected: result(rejected.decision, rejected.ledgerEntry),
+    early: result(early.decision, early.ledgerEntry),
+    late: result(late.decision, late.ledgerEntry),
+  };
+}
+
 function effectSemanticVariants(
   exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
 ): Record<string, Exchange> {
@@ -1273,15 +1499,17 @@ type ControlDeliveryKind =
 function controlMessage(
   exchangeValue: Exchange,
   kind: ControlDeliveryKind,
+  budgetSourceResult: WorkflowRunnerBudgetSourceResult | null = null,
 ): WorkflowControlAuthorityMessage {
   const staged = exchangeValue.stage;
   const target = validateWorkflowControlAuthorityMessage(JSON.parse(staged.target.body));
   const resolutionEvidence = exchangeValue.resolution.evidence as unknown as Json;
   const decision = kind !== 'event_receipt';
   const sentAt = decision ? '2026-08-20T00:07:02.000Z' : '2026-08-20T00:07:00.000Z';
-  const authorityReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(
-    exchangeValue.resolutionReceipt,
-  );
+  const authorityReceiptHash =
+    kind === 'budget_authorization'
+      ? hashWorkflowRunnerBudgetSourceReceipt(budgetSourceResult?.durableReceiptBytes)
+      : hashWorkflowRunnerAuthorityBindingReceipt(exchangeValue.resolutionReceipt);
   const head =
     kind === 'resume_offer'
       ? {
@@ -1330,17 +1558,23 @@ function controlMessage(
       };
       break;
     case 'budget_authorization': {
-      const prepared = asJson(resolutionEvidence.preparedRequest, 'budget prepared request');
-      const request = asJson(JSON.parse(prepared.body as string), 'budget reserve request');
-      const requested = asJson(request.requested, 'budget requested quantities');
+      if (budgetSourceResult === null) {
+        throw new Error('Budget authorization requires its exact durable source result.');
+      }
+      const durableReceipt = JSON.parse(budgetSourceResult.durableReceiptBytes) as Json;
+      const sourceReceipt = asJson(
+        durableReceipt.operationalProjection,
+        'durable budget receipt projection',
+      );
+      const authorization = budgetSourceResult.decision.authorization;
       payload = {
-        reservationId: request.reservationId,
-        status: 'reserved',
-        authorizedTokens: requested.tokens,
-        authorizedCostNanoUsd: requested.nanoUsd,
-        authorizedCalls: requested.calls,
+        reservationId: budgetSourceResult.decision.request.reservationId,
+        status: budgetSourceResult.decision.status,
+        authorizedTokens: authorization.tokens,
+        authorizedCostNanoUsd: authorization.nanoUsd,
+        authorizedCalls: authorization.calls,
         authorityReceiptHash,
-        committedRunRevision: staged.runnerAuthority.acceptedGlobalRunRevision,
+        committedRunRevision: sourceReceipt.acceptedRunRevision,
       };
       break;
     }
@@ -1392,6 +1626,7 @@ function controlDelivery(
     message: WorkflowControlAuthorityMessage;
     receipt: WorkflowRunnerAuthorityBindingReceipt;
   } | null,
+  budgetSourceResult: WorkflowRunnerBudgetSourceResult | null = null,
 ): WorkflowRunnerAuthorityBindingReceipt {
   const staged = exchangeValue.stage;
   const prepared = prepareWorkflowControlAuthorityMessage(message);
@@ -1428,6 +1663,7 @@ function controlDelivery(
     exchangeValue.resolutionReceipt,
     exchangeValue.stageReceipt,
     priorEventDelivery,
+    budgetSourceResult,
   );
 }
 
@@ -1485,11 +1721,13 @@ async function goldenVectors() {
     'budget records',
   );
   const exchanges = await makeExchanges(budgetRecords);
+  const budgetDecisions = budgetDecisionFixtures(budgetRecords);
   const effectVariants = effectSemanticVariants(exchanges);
   const semanticVariants = {
     ...effectVariants,
     ...(await budgetSemanticVariants(exchanges, budgetRecords)),
     goRouteCheckpoint: goRouteSemanticVariant(exchanges),
+    budgetReserveGoAuthority: budgetDecisions.exchange,
   };
   const controlReceiptMessages = Object.fromEntries(
     WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
@@ -1505,7 +1743,7 @@ async function goldenVectors() {
   ) as Record<WorkflowRunnerAuthorityBindingOperation, WorkflowRunnerAuthorityBindingReceipt>;
   const controlKindInputs = {
     event_receipt: exchanges.checkpoint_commit,
-    budget_authorization: exchanges.budget_reserve,
+    budget_authorization: budgetDecisions.exchange,
     effect_authorization: exchanges.effect_authorize,
     resume_offer: exchanges.resume_advance,
     cancel_request: exchanges.effect_complete,
@@ -1513,9 +1751,41 @@ async function goldenVectors() {
   const controlKindMessages = Object.fromEntries(
     (Object.keys(controlKindInputs) as ControlDeliveryKind[]).map((kind) => [
       kind,
-      controlMessage(controlKindInputs[kind], kind),
+      controlMessage(
+        controlKindInputs[kind],
+        kind,
+        kind === 'budget_authorization' ? budgetDecisions.reserved : null,
+      ),
     ]),
   ) as Record<ControlDeliveryKind, WorkflowControlAuthorityMessage>;
+  const budgetPriorMessage = controlMessage(budgetDecisions.exchange, 'event_receipt');
+  const budgetPriorReceipt = controlDelivery(
+    budgetDecisions.exchange,
+    budgetPriorMessage,
+    3,
+    'accepted',
+    null,
+  );
+  const budgetDatabaseReconciliationMessageValue = structuredClone(
+    budgetPriorMessage,
+  ) as unknown as Json;
+  const budgetDatabaseReconciliationPayload = asJson(
+    budgetDatabaseReconciliationMessageValue.payload,
+    'budget database reconciliation event receipt payload',
+  );
+  budgetDatabaseReconciliationPayload.status = 'reconciliation_required';
+  budgetDatabaseReconciliationPayload.errorCode =
+    'WORKFLOW_CONTROL_AUTHORITY_RECONCILIATION_REQUIRED';
+  const budgetDatabaseReconciliationMessage = validateWorkflowControlAuthorityMessage(
+    budgetDatabaseReconciliationMessageValue,
+  );
+  const budgetDatabaseReconciliationReceipt = controlDelivery(
+    budgetDecisions.exchange,
+    budgetDatabaseReconciliationMessage,
+    3,
+    'reconciliation_required',
+    null,
+  );
   const controlKinds = Object.fromEntries(
     (Object.keys(controlKindInputs) as ControlDeliveryKind[]).map((kind) => [
       kind,
@@ -1529,10 +1799,13 @@ async function goldenVectors() {
           'accepted',
           kind === 'event_receipt'
             ? null
-            : {
-                message: controlReceiptMessages[controlKindInputs[kind].stage.operation],
-                receipt: acceptedDeliveries[controlKindInputs[kind].stage.operation],
-              },
+            : kind === 'budget_authorization'
+              ? { message: budgetPriorMessage, receipt: budgetPriorReceipt }
+              : {
+                  message: controlReceiptMessages[controlKindInputs[kind].stage.operation],
+                  receipt: acceptedDeliveries[controlKindInputs[kind].stage.operation],
+                },
+          kind === 'budget_authorization' ? budgetDecisions.reserved : null,
         ),
       },
     ]),
@@ -1544,6 +1817,32 @@ async function goldenVectors() {
       receipt: WorkflowRunnerAuthorityBindingReceipt;
     }
   >;
+  const rejectedBudgetMessage = controlMessage(
+    budgetDecisions.exchange,
+    'budget_authorization',
+    budgetDecisions.rejected,
+  );
+  const budgetAuthorization = {
+    reserved: {
+      message: controlKindMessages.budget_authorization,
+      receipt: controlKinds.budget_authorization.receipt,
+      priorEventDelivery: { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+      sourceResult: budgetDecisions.reserved,
+    },
+    rejected: {
+      message: rejectedBudgetMessage,
+      receipt: controlDelivery(
+        budgetDecisions.exchange,
+        rejectedBudgetMessage,
+        4,
+        'accepted',
+        { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+        budgetDecisions.rejected,
+      ),
+      priorEventDelivery: { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+      sourceResult: budgetDecisions.rejected,
+    },
+  };
   const deliveries = {
     accepted: acceptedDeliveries,
     reconciliationRequired: controlDelivery(
@@ -1679,6 +1978,146 @@ async function goldenVectors() {
   ) as unknown as Json;
   badBudgetDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badBudgetMessage).messageDigest;
+  const budgetDeliveryInput = (
+    message: unknown,
+    receipt: unknown,
+    sourceResult: unknown,
+  ): Json => ({
+    receipt,
+    message,
+    stage: budgetDecisions.exchange.stage,
+    resolution: budgetDecisions.exchange.resolution,
+    resolutionReceipt: budgetDecisions.exchange.resolutionReceipt,
+    stageReceipt: budgetDecisions.exchange.stageReceipt,
+    priorEventDelivery: { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+    budgetSourceResult: sourceResult,
+  });
+  const driftBudgetMessage = (mutate: (payload: Json, message: Json) => void): [Json, Json] => {
+    const message = structuredClone(controlKindMessages.budget_authorization) as unknown as Json;
+    mutate(asJson(message.payload, 'budget authorization payload'), message);
+    const receipt = structuredClone(controlKinds.budget_authorization.receipt) as unknown as Json;
+    receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message).messageDigest;
+    return [message, receipt];
+  };
+  const [budgetStatusDriftMessage, budgetStatusDriftReceipt] = driftBudgetMessage((payload) => {
+    payload.status = 'rejected';
+    payload.authorizedTokens = '0';
+    payload.authorizedCostNanoUsd = '0';
+    payload.authorizedCalls = '0';
+  });
+  const [budgetAmountDriftMessage, budgetAmountDriftReceipt] = driftBudgetMessage((payload) => {
+    payload.authorizedCostNanoUsd = '1';
+  });
+  const [budgetReceiptHashDriftMessage, budgetReceiptHashDriftReceipt] = driftBudgetMessage(
+    (payload) => {
+      payload.authorityReceiptHash = h('0');
+    },
+  );
+  const [budgetCommittedRunRevisionDriftMessage, budgetCommittedRunRevisionDriftReceipt] =
+    driftBudgetMessage((payload, message) => {
+      payload.committedRunRevision = (payload.committedRunRevision as number) + 1;
+      message.runRevision = payload.committedRunRevision;
+    });
+  const sourceResultCrossSplice = {
+    ...structuredClone(budgetDecisions.reserved),
+    decision: budgetDecisions.rejected.decision,
+  };
+  const driftDurableSource = (
+    source: WorkflowRunnerBudgetSourceResult,
+    mutate: (durable: Json) => void,
+  ): Json => {
+    const result = structuredClone(source) as unknown as Json;
+    const durable = asJson(
+      JSON.parse(String(result.durableReceiptBytes)),
+      'durable budget receipt',
+    );
+    mutate(durable);
+    result.durableReceiptBytes = canonicalWorkflowBudgetAuthorityJson(durable);
+    return result;
+  };
+  const budgetManifestDrift = driftDurableSource(budgetDecisions.reserved, (durable) => {
+    durable.contractManifestSha256 = h('0');
+  });
+  const budgetBuildDrift = driftDurableSource(budgetDecisions.reserved, (durable) => {
+    durable.authorityBuildHash = h('7');
+  });
+  const budgetProjectionHashDrift = driftDurableSource(budgetDecisions.reserved, (durable) => {
+    durable.operationalProjectionHash = h('0');
+  });
+  const databaseUnknown = driftDurableSource(budgetDecisions.reserved, (durable) => {
+    const projection = asJson(durable.operationalProjection, 'budget receipt projection');
+    projection.status = 'database_reconciliation_required';
+    projection.acceptedAccountRevision = null;
+    projection.acceptedRunRevision = null;
+    projection.recordHash = null;
+    projection.ledgerEntryHash = null;
+    projection.committedAt = null;
+    projection.reconciliationToken = 'database-reconciliation-binding';
+    durable.operationalProjectionHash = hashWorkflowBudgetAuthorityValue('receipt', projection);
+  });
+  const whitespaceBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  whitespaceBytes.durableReceiptBytes = ` ${String(whitespaceBytes.durableReceiptBytes)}`;
+  const duplicateBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  duplicateBytes.durableReceiptBytes = String(duplicateBytes.durableReceiptBytes).replace(
+    /^\{"authority":"workflow-control",/u,
+    '{"authority":"workflow-control","authority":"workflow-control",',
+  );
+  const trailingBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  trailingBytes.durableReceiptBytes = `${String(trailingBytes.durableReceiptBytes)}x`;
+  const oversizedBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  oversizedBytes.durableReceiptBytes = 'x'.repeat(524_289);
+  const earlyBudgetMessage = controlMessage(
+    budgetDecisions.exchange,
+    'budget_authorization',
+    budgetDecisions.early,
+  );
+  const earlyBudgetReceipt = structuredClone(
+    controlKinds.budget_authorization.receipt,
+  ) as unknown as Json;
+  earlyBudgetReceipt.messageDigest =
+    prepareWorkflowControlAuthorityMessage(earlyBudgetMessage).messageDigest;
+  const lateBudgetMessage = controlMessage(
+    budgetDecisions.exchange,
+    'budget_authorization',
+    budgetDecisions.late,
+  );
+  const lateBudgetReceipt = structuredClone(
+    controlKinds.budget_authorization.receipt,
+  ) as unknown as Json;
+  lateBudgetReceipt.messageDigest =
+    prepareWorkflowControlAuthorityMessage(lateBudgetMessage).messageDigest;
+  const tsPrepared = asJson(
+    asJson(budgetRecords.preparedReserve, 'prepared reserve').value,
+    'prepared reserve value',
+  );
+  const tsReceipt = asJson(
+    asJson(budgetRecords.reserveReceipt, 'reserve receipt').value,
+    'reserve receipt value',
+  );
+  const tsDurableBytes = canonicalWorkflowBudgetAuthorityJson({
+    schema: 'openslack.workflow_control_budget_durable_record.v1',
+    authority: 'workflow-control',
+    writer: 'workflow-control/budget-authority-server',
+    authorityMode: 'local-qualification-v1',
+    productionAuthority: false,
+    contractManifestSha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+    authorityBuildHash: tsReceipt.serviceBuildHash,
+    recordKind: 'receipt',
+    operationalProjection: tsReceipt,
+    operationalProjectionHash: hashWorkflowBudgetAuthorityValue('receipt', tsReceipt),
+  });
+  const tsLocalGoOuter = {
+    schema: WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
+    durableReceiptBytes: tsDurableBytes,
+    decision: asJson(
+      asJson(budgetRecords.reserveReserved, 'reserve decision').value,
+      'reserve decision value',
+    ),
+    ledgerEntry: asJson(
+      asJson(budgetRecords.reserveLedger, 'reserve ledger').value,
+      'reserve ledger value',
+    ),
+  };
   const badEffectMessage = structuredClone(
     controlKindMessages.effect_authorization,
   ) as unknown as Json;
@@ -1812,9 +2251,33 @@ async function goldenVectors() {
               operation: controlKinds[kind].operation,
               message: controlKinds[kind].message,
               receipt: vector(controlKinds[kind].receipt, 'receipt'),
+              budgetSourceResult: kind === 'budget_authorization' ? budgetDecisions.reserved : null,
+              priorEventDelivery:
+                kind === 'budget_authorization'
+                  ? { message: budgetPriorMessage, receipt: vector(budgetPriorReceipt, 'receipt') }
+                  : null,
             },
           ]),
         ),
+        budgetAuthorization: Object.fromEntries(
+          Object.entries(budgetAuthorization).map(([status, item]) => [
+            status,
+            {
+              message: item.message,
+              receipt: vector(item.receipt, 'receipt'),
+              priorEventDelivery: {
+                message: item.priorEventDelivery.message,
+                receipt: vector(item.priorEventDelivery.receipt, 'receipt'),
+              },
+              sourceResult: item.sourceResult,
+            },
+          ]),
+        ),
+        budgetDatabaseReconciliation: {
+          message: budgetDatabaseReconciliationMessage,
+          receipt: vector(budgetDatabaseReconciliationReceipt, 'receipt'),
+          decision: null,
+        },
         messages: {
           accepted: controlReceiptMessages,
           reconciliationRequired: controlKindMessages.cancel_request,
@@ -2087,30 +2550,140 @@ async function goldenVectors() {
       negative(
         'control-decision-budget-evidence-drift',
         'validate_control_delivery',
-        {
-          receipt: badBudgetDelivery,
-          message: badBudgetMessage,
-          stage: exchanges.budget_reserve.stage,
-          resolution: exchanges.budget_reserve.resolution,
-          resolutionReceipt: exchanges.budget_reserve.resolutionReceipt,
-          stageReceipt: exchanges.budget_reserve.stageReceipt,
-          priorEventDelivery: {
-            message: controlReceiptMessages.budget_reserve,
-            receipt: acceptedDeliveries.budget_reserve,
-          },
-        },
+        budgetDeliveryInput(badBudgetMessage, badBudgetDelivery, budgetDecisions.reserved),
         () =>
           validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
             badBudgetDelivery,
             badBudgetMessage,
-            exchanges.budget_reserve.stage,
-            exchanges.budget_reserve.resolution,
-            exchanges.budget_reserve.resolutionReceipt,
-            exchanges.budget_reserve.stageReceipt,
-            {
-              message: controlReceiptMessages.budget_reserve,
-              receipt: acceptedDeliveries.budget_reserve,
-            },
+            budgetDecisions.exchange.stage,
+            budgetDecisions.exchange.resolution,
+            budgetDecisions.exchange.resolutionReceipt,
+            budgetDecisions.exchange.stageReceipt,
+            { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+            budgetDecisions.reserved,
+          ),
+      ),
+      ...(
+        [
+          [
+            'budget-decision-status-drift',
+            budgetStatusDriftMessage,
+            budgetStatusDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
+            'budget-decision-amount-drift',
+            budgetAmountDriftMessage,
+            budgetAmountDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
+            'budget-decision-receipt-hash-drift',
+            budgetReceiptHashDriftMessage,
+            budgetReceiptHashDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
+            'budget-decision-committed-run-revision-drift',
+            budgetCommittedRunRevisionDriftMessage,
+            budgetCommittedRunRevisionDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
+            'budget-decision-source-result-cross-splice',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            sourceResultCrossSplice,
+          ],
+          [
+            'budget-durable-manifest-drift',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            budgetManifestDrift,
+          ],
+          [
+            'budget-durable-build-drift',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            budgetBuildDrift,
+          ],
+          [
+            'budget-durable-projection-hash-drift',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            budgetProjectionHashDrift,
+          ],
+        ] as const
+      ).map(([id, message, receipt, sourceResult]) =>
+        negative(
+          id,
+          'validate_control_delivery',
+          budgetDeliveryInput(message, receipt, sourceResult),
+          () =>
+            validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+              receipt,
+              message,
+              budgetDecisions.exchange.stage,
+              budgetDecisions.exchange.resolution,
+              budgetDecisions.exchange.resolutionReceipt,
+              budgetDecisions.exchange.stageReceipt,
+              { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+              sourceResult,
+            ),
+        ),
+      ),
+      negative(
+        'budget-source-ts-local-go-outer-cross-splice',
+        'validate_budget_source_result',
+        { sourceResult: tsLocalGoOuter, preparedRequest: tsPrepared },
+        () => validateWorkflowRunnerBudgetSourceResult(tsLocalGoOuter, tsPrepared),
+      ),
+      ...(
+        [
+          ['budget-durable-bytes-whitespace-drift', whitespaceBytes],
+          ['budget-durable-bytes-duplicate-key-drift', duplicateBytes],
+          ['budget-durable-bytes-trailing-drift', trailingBytes],
+          ['budget-durable-bytes-size-overflow', oversizedBytes],
+          ['budget-decision-database-unknown-no-seq4', databaseUnknown],
+        ] as const
+      ).map(([id, sourceResult]) =>
+        negative(
+          id,
+          'validate_budget_source_result',
+          { sourceResult, preparedRequest: budgetDecisions.prepared },
+          () => validateWorkflowRunnerBudgetSourceResult(sourceResult, budgetDecisions.prepared),
+        ),
+      ),
+      negative(
+        'budget-decision-source-before-resolution-ack',
+        'validate_control_delivery',
+        budgetDeliveryInput(earlyBudgetMessage, earlyBudgetReceipt, budgetDecisions.early),
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            earlyBudgetReceipt,
+            earlyBudgetMessage,
+            budgetDecisions.exchange.stage,
+            budgetDecisions.exchange.resolution,
+            budgetDecisions.exchange.resolutionReceipt,
+            budgetDecisions.exchange.stageReceipt,
+            { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+            budgetDecisions.early,
+          ),
+      ),
+      negative(
+        'budget-decision-time-inversion',
+        'validate_control_delivery',
+        budgetDeliveryInput(lateBudgetMessage, lateBudgetReceipt, budgetDecisions.late),
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            lateBudgetReceipt,
+            lateBudgetMessage,
+            budgetDecisions.exchange.stage,
+            budgetDecisions.exchange.resolution,
+            budgetDecisions.exchange.resolutionReceipt,
+            budgetDecisions.exchange.stageReceipt,
+            { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+            budgetDecisions.late,
           ),
       ),
       negative(
@@ -2581,6 +3154,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
       contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
       profile: WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
       authorityBoundary,
+      budgetDecisionDelivery,
       protocol: {
         sequence: ['stage_event', 'stage_event_ack', 'commit_authority', 'commit_authority_ack'],
         independentCompanionSequence: true,
@@ -2649,7 +3223,7 @@ async function inventory(root: string): Promise<string[]> {
 
 async function generate(): Promise<void> {
   const map = await outputs();
-  for (const root of [contractRoot, serviceMirrorRoot]) {
+  for (const [, root] of selectedOutputRoots()) {
     for (const [path, bytes] of map) {
       const destination = resolve(root, path);
       await mkdir(dirname(destination), { recursive: true });
@@ -2662,10 +3236,7 @@ async function check(): Promise<void> {
   const map = await outputs();
   const expectedInventory = [...bundleFiles].sort();
   const stale: string[] = [];
-  for (const [label, root] of [
-    ['typescript', contractRoot],
-    ['go', serviceMirrorRoot],
-  ] as const) {
+  for (const [label, root] of selectedOutputRoots()) {
     const actualInventory = await inventory(root);
     if (JSON.stringify(actualInventory) !== JSON.stringify(expectedInventory)) {
       throw new Error(

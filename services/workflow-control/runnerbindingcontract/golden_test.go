@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 )
 
 type exactGoldenVector struct {
@@ -29,9 +31,18 @@ type operationGoldenExchange struct {
 }
 
 type controlGoldenExchange struct {
-	Operation Operation         `json:"operation"`
-	Message   any               `json:"message"`
-	Receipt   exactGoldenVector `json:"receipt"`
+	Operation          Operation         `json:"operation"`
+	Message            any               `json:"message"`
+	Receipt            exactGoldenVector `json:"receipt"`
+	BudgetSourceResult any               `json:"budgetSourceResult"`
+	PriorEventDelivery any               `json:"priorEventDelivery"`
+}
+
+type budgetControlGoldenExchange struct {
+	Message            any               `json:"message"`
+	Receipt            exactGoldenVector `json:"receipt"`
+	PriorEventDelivery any               `json:"priorEventDelivery"`
+	SourceResult       any               `json:"sourceResult"`
 }
 
 type bindingGoldenVectors struct {
@@ -53,10 +64,16 @@ type bindingGoldenVectors struct {
 		Operations       map[string]operationGoldenExchange `json:"operations"`
 		SemanticVariants map[string]operationGoldenExchange `json:"semanticVariants"`
 		ControlDelivery  struct {
-			Accepted               map[string]exactGoldenVector     `json:"accepted"`
-			ReconciliationRequired exactGoldenVector                `json:"reconciliationRequired"`
-			ByKind                 map[string]controlGoldenExchange `json:"byKind"`
-			Messages               map[string]any                   `json:"messages"`
+			Accepted                     map[string]exactGoldenVector           `json:"accepted"`
+			ReconciliationRequired       exactGoldenVector                      `json:"reconciliationRequired"`
+			ByKind                       map[string]controlGoldenExchange       `json:"byKind"`
+			BudgetAuthorization          map[string]budgetControlGoldenExchange `json:"budgetAuthorization"`
+			BudgetDatabaseReconciliation struct {
+				Message  any               `json:"message"`
+				Receipt  exactGoldenVector `json:"receipt"`
+				Decision any               `json:"decision"`
+			} `json:"budgetDatabaseReconciliation"`
+			Messages map[string]any `json:"messages"`
 		} `json:"controlDelivery"`
 	} `json:"positive"`
 	Negative []struct {
@@ -112,7 +129,7 @@ func TestGoldenPositiveOperationExchanges(t *testing.T) {
 func TestGoldenPositiveSemanticVariants(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Positive.SemanticVariants) != 8 {
+	if len(golden.Positive.SemanticVariants) != 9 {
 		t.Fatalf("semantic variant count = %d", len(golden.Positive.SemanticVariants))
 	}
 	for name, exchange := range golden.Positive.SemanticVariants {
@@ -168,6 +185,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 				exchange.ResolutionReceipt.Value,
 				exchange.StageReceipt.Value,
 				nil,
+				nil,
 			)
 			if err != nil {
 				t.Fatalf("control delivery contextual replay: %v", err)
@@ -193,6 +211,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			exchange.ResolutionReceipt.Value,
 			exchange.StageReceipt.Value,
 			goldenPriorEventDelivery(t, golden, OperationEffectComplete),
+			nil,
 		)
 		if err != nil {
 			t.Fatalf("control delivery contextual replay: %v", err)
@@ -209,6 +228,9 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		t.Run("kind/"+kind, func(t *testing.T) {
 			t.Parallel()
 			exchange, ok := golden.Positive.Operations[string(control.Operation)]
+			if kind == string(authoritycontract.KindBudgetAuthorization) {
+				exchange, ok = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+			}
 			if !ok {
 				t.Fatalf("missing operation context for control kind %s", kind)
 			}
@@ -220,7 +242,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 				exchange.Resolution.Value,
 				exchange.ResolutionReceipt.Value,
 				exchange.StageReceipt.Value,
-				goldenControlPrior(t, golden, kind, control.Operation),
+				controlPriorForGolden(t, golden, kind, control),
+				control.BudgetSourceResult,
 			)
 			if err != nil {
 				t.Fatalf("control kind contextual replay: %v", err)
@@ -230,6 +253,44 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 		})
 	}
+	if len(golden.Positive.ControlDelivery.BudgetAuthorization) != 2 {
+		t.Fatalf("budget authorization result count = %d", len(golden.Positive.ControlDelivery.BudgetAuthorization))
+	}
+	for status, control := range golden.Positive.ControlDelivery.BudgetAuthorization {
+		status, control := status, control
+		t.Run("budgetAuthorization/"+status, func(t *testing.T) {
+			t.Parallel()
+			exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
+			validated, err := ValidateControlDeliveryReceiptForMessage(
+				receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
+				exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value,
+				goldenPriorValue(control.PriorEventDelivery), control.SourceResult,
+			)
+			if err != nil {
+				t.Fatalf("budget %s contextual replay: %v", status, err)
+			}
+			if validated["controlKind"] != string(authoritycontract.KindBudgetAuthorization) {
+				t.Fatalf("budget %s control kind drifted: %+v", status, validated)
+			}
+		})
+	}
+	t.Run("budgetDatabaseReconciliation/eventReceiptOnly", func(t *testing.T) {
+		t.Parallel()
+		control := golden.Positive.ControlDelivery.BudgetDatabaseReconciliation
+		exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+		receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
+		validated, err := ValidateControlDeliveryReceiptForMessage(
+			receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
+			exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, nil, nil,
+		)
+		if err != nil {
+			t.Fatalf("database-unknown event receipt replay: %v", err)
+		}
+		if validated["disposition"] != "reconciliation_required" || control.Decision != nil {
+			t.Fatalf("database-unknown must stop after seq3: %+v", validated)
+		}
+	})
 	t.Run("singleCanonicalEncodingPerValidatedRecord", func(t *testing.T) {
 		t.Parallel()
 		operation := OperationCheckpointCommit
@@ -244,6 +305,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			exchange.Resolution.Value,
 			exchange.ResolutionReceipt.Value,
 			exchange.StageReceipt.Value,
+			nil,
 			nil,
 			func(record Record) { encoded[reflect.ValueOf(record).Pointer()]++ },
 		)
@@ -269,6 +331,26 @@ func goldenControlPrior(t *testing.T, golden bindingGoldenVectors, kind string, 
 	return goldenPriorEventDelivery(t, golden, operation)
 }
 
+func controlPriorForGolden(t *testing.T, golden bindingGoldenVectors, kind string, control controlGoldenExchange) any {
+	t.Helper()
+	if control.PriorEventDelivery != nil {
+		return goldenPriorValue(control.PriorEventDelivery)
+	}
+	return goldenControlPrior(t, golden, kind, control.Operation)
+}
+
+func goldenPriorValue(value any) any {
+	record, ok := asRecord(value)
+	if !ok {
+		return value
+	}
+	receipt, ok := asRecord(record["receipt"])
+	if ok && receipt["value"] != nil {
+		return Record{"message": record["message"], "receipt": receipt["value"]}
+	}
+	return value
+}
+
 func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operation Operation) Record {
 	t.Helper()
 	acceptedMessages, ok := asRecord(golden.Positive.ControlDelivery.Messages["accepted"])
@@ -289,7 +371,7 @@ func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operati
 func TestGoldenNegativeReplay(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Negative) != 43 {
+	if len(golden.Negative) != 59 {
 		t.Fatalf("negative count = %d", len(golden.Negative))
 	}
 	for _, vector := range golden.Negative {
@@ -392,8 +474,15 @@ func replayGoldenNegative(operation string, input any) error {
 		}
 		_, err = ValidateControlDeliveryReceiptForMessage(
 			record["receipt"], record["message"], record["stage"], record["resolution"], record["resolutionReceipt"],
-			record["stageReceipt"], record["priorEventDelivery"],
+			record["stageReceipt"], record["priorEventDelivery"], record["budgetSourceResult"],
 		)
+		return err
+	case "validate_budget_source_result":
+		record, err := goldenInputRecord(input)
+		if err != nil {
+			return err
+		}
+		_, err = ValidateBudgetSourceResult(record["sourceResult"], record["preparedRequest"])
 		return err
 	case "validate_resolution_for_stage":
 		record, err := goldenInputRecord(input)

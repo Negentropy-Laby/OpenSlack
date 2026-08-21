@@ -64,6 +64,17 @@
       "merge"
     ]
   },
+  "budgetDecisionDelivery": {
+    "sourceResultRequired": true,
+    "durableReceiptSchema": "openslack.workflow_control_budget_durable_record.v1",
+    "authorityReceiptHash": "sha256_canonical_durable_receipt_outer",
+    "acceptedStates": { "reserved": "requested_amounts", "rejected": "zero_amounts" },
+    "databaseReconciliationRequired": {
+      "delivery": "event_receipt_only",
+      "budgetAuthorizationAllowed": false,
+      "reason": "accepted_run_revision_null"
+    }
+  },
   "protocol": {
     "sequence": ["stage_event", "stage_event_ack", "commit_authority", "commit_authority_ack"],
     "independentCompanionSequence": true,
@@ -221,8 +232,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 714010,
-      "sha256": "88fa05b25462068220cccbc24b1a76c1622ed9a48433aea3ada7e1aa2fafc582"
+      "byteLength": 1591206,
+      "sha256": "9eb1b1fe8083bc68e08b7ece9cf9b7c00fa2c21e84f06a5ce6b36c380029cc1e"
     }
   }
 }

@@ -374,6 +374,16 @@ F2a adds no runtime producer or consumer of the companion frames. GS9-F2b must c
 staging, domain adapters, recovery, scheduler/worker integration, and end-to-end qualification
 without widening the manifest boundary.
 
+The `budget_authorization` ACK is checked against a post-event durable E1 result. An accepted
+reserve receipt plus its exact reserve decision and ledger entry determines `reserved` with the
+requested amounts or `rejected` with zero amounts, the accepted run revision, and the SHA-256 of
+the canonical Go durable-receipt envelope after its writer, mode, build, E1 manifest, record kind,
+projection, and projection hash are revalidated. A database-unknown reserve has no accepted revision and therefore
+uses the reconciliation-required event receipt to stop the attempt; it must not emit a sequence-4
+budget decision. The authority-v2 reconciliation status remains part of the frozen vocabulary for
+future evidence that can prove an accepted revision, but current E1 database-unknown evidence is
+not such proof.
+
 The active runtime profile and service source manifest continue to describe GS9-F1. TypeScript
 remains the production Workflow authority; the Go mirror remains validator-only with durable
 authority false.
