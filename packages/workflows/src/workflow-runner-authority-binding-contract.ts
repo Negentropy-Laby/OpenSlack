@@ -13,12 +13,21 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   WorkflowBudgetAuthorityContractError,
+  canonicalWorkflowBudgetAuthorityJson,
+  hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
   workflowBudgetAuthorityChargeNanoUsd,
+  validateWorkflowBudgetLedgerEntry,
   validateWorkflowBudgetPreparedRequest,
+  validateWorkflowBudgetReceipt,
+  validateWorkflowBudgetReceiptForResult,
+  validateWorkflowBudgetReserveDecision,
   validateWorkflowBudgetReserveRequest,
   validateWorkflowBudgetSettlementRequest,
+  type WorkflowBudgetLedgerEntry,
   type WorkflowBudgetPreparedRequest,
+  type WorkflowBudgetReceipt,
+  type WorkflowBudgetReserveDecision,
   type WorkflowBudgetReserveRequest,
   type WorkflowBudgetSettlementRequest,
 } from './workflow-budget-authority-contract.js';
@@ -34,7 +43,10 @@ import {
   ownDataField,
   type ContractDataRecord,
 } from './internal/contract-validation.js';
-import { observeWorkflowRunnerAuthorityBindingEncoding } from './internal/workflow-runner-authority-binding-instrumentation.js';
+import {
+  observeWorkflowRunnerAuthorityBindingEncoding,
+  observeWorkflowRunnerAuthorityBindingValidation,
+} from './internal/workflow-runner-authority-binding-instrumentation.js';
 import { parseWorkflowEffectJson, WorkflowEffectJsonError } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION =
@@ -49,6 +61,10 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA =
   'openslack.workflow_runner_authority_binding_error.v1' as const;
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_PREPARED_SCHEMA =
   'openslack.workflow_runner_authority_binding_prepared.v1' as const;
+export const WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA =
+  'openslack.workflow_runner_budget_source_result.v1' as const;
+export const WORKFLOW_RUNNER_BUDGET_DURABLE_RECEIPT_SCHEMA =
+  'openslack.workflow_control_budget_durable_record.v1' as const;
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_IDEMPOTENCY_PREFIX =
   'openslack.workflow-runner-authority-binding.v1.' as const;
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE =
@@ -65,6 +81,11 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS = Object.freeze([
 export type WorkflowRunnerAuthorityBindingOperation =
   (typeof WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS)[number];
 
+export type WorkflowRunnerAuthorityReceiptHashAlgorithm =
+  | 'binding_receipt_domain_sha256'
+  | 'canonical_durable_receipt_sha256'
+  | null;
+
 export interface WorkflowRunnerAuthorityBindingOperationFact {
   readonly targetKind: WorkflowControlAuthorityMessageKind;
   readonly runnerDelta: Readonly<{ revision: number; generation: number }>;
@@ -77,6 +98,7 @@ export interface WorkflowRunnerAuthorityBindingOperationFact {
   readonly sourceRevisionDelta: number;
   readonly sourceGenerationDelta: number;
   readonly sourceReceiptSchema: string | null;
+  readonly authorityReceiptHashAlgorithm: WorkflowRunnerAuthorityReceiptHashAlgorithm;
 }
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContractValue({
@@ -88,6 +110,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 1,
     sourceGenerationDelta: 0,
     sourceReceiptSchema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
+    authorityReceiptHashAlgorithm: null,
   },
   effect_authorize: {
     targetKind: 'effect_intent',
@@ -97,6 +120,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 1,
     sourceGenerationDelta: 0,
     sourceReceiptSchema: 'openslack.workflow_runner_effect_authority_receipt.v1',
+    authorityReceiptHashAlgorithm: 'binding_receipt_domain_sha256',
   },
   effect_complete: {
     targetKind: 'effect_outcome',
@@ -106,6 +130,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 1,
     sourceGenerationDelta: 0,
     sourceReceiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
+    authorityReceiptHashAlgorithm: null,
   },
   budget_reserve: {
     targetKind: 'budget_reserve_request',
@@ -115,6 +140,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 0,
     sourceGenerationDelta: 0,
     sourceReceiptSchema: null,
+    authorityReceiptHashAlgorithm: 'canonical_durable_receipt_sha256',
   },
   budget_settle: {
     targetKind: 'budget_usage_report',
@@ -124,6 +150,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 0,
     sourceGenerationDelta: 0,
     sourceReceiptSchema: null,
+    authorityReceiptHashAlgorithm: null,
   },
   resume_advance: {
     targetKind: 'lease_accept',
@@ -133,6 +160,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
     sourceRevisionDelta: 1,
     sourceGenerationDelta: 1,
     sourceReceiptSchema: 'openslack.workflow_runner_resume_authority_receipt.v1',
+    authorityReceiptHashAlgorithm: 'binding_receipt_domain_sha256',
   },
 } as const satisfies Record<
   WorkflowRunnerAuthorityBindingOperation,
@@ -417,6 +445,67 @@ export interface WorkflowRunnerAuthorityPriorEventDelivery {
   readonly receipt: WorkflowRunnerAuthorityControlDeliveryReceipt;
 }
 
+export interface WorkflowRunnerAuthorityControlDeliveryValidationContext {
+  readonly stage: unknown;
+  readonly resolution: unknown;
+  readonly resolutionReceipt: unknown;
+  readonly stageReceipt: unknown;
+  readonly priorEventDelivery: unknown;
+  readonly budgetSourceResult?: unknown;
+}
+
+/**
+ * Post-event E1 authority result required before a budget decision may be
+ * delivered. Database-unknown receipts are intentionally excluded because
+ * they do not prove an accepted run revision and therefore cannot produce a
+ * truthful `budget_authorization` control message.
+ */
+export interface WorkflowRunnerBudgetSourceResult {
+  readonly schema: typeof WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA;
+  readonly durableReceiptBytes: string;
+  readonly decision: WorkflowBudgetReserveDecision;
+  readonly ledgerEntry: WorkflowBudgetLedgerEntry;
+}
+
+export interface WorkflowRunnerBudgetDurableReceipt {
+  readonly schema: typeof WORKFLOW_RUNNER_BUDGET_DURABLE_RECEIPT_SCHEMA;
+  readonly authority: 'workflow-control';
+  readonly writer: 'workflow-control/budget-authority-server';
+  readonly authorityMode: 'local-qualification-v1';
+  readonly productionAuthority: false;
+  readonly contractManifestSha256: string;
+  readonly authorityBuildHash: string;
+  readonly recordKind: 'receipt';
+  readonly operationalProjection: WorkflowBudgetReceipt;
+  readonly operationalProjectionHash: string;
+}
+
+interface ValidatedBudgetPreparedRequest {
+  readonly prepared: WorkflowBudgetPreparedRequest;
+  readonly request: WorkflowBudgetReserveRequest | WorkflowBudgetSettlementRequest;
+}
+
+interface ValidatedBudgetDurableReceipt {
+  readonly value: WorkflowRunnerBudgetDurableReceipt;
+  readonly bytes: Buffer;
+  readonly receiptHash: string;
+}
+
+interface ValidatedBudgetSourceResult {
+  readonly value: WorkflowRunnerBudgetSourceResult;
+  readonly durable: ValidatedBudgetDurableReceipt;
+  readonly sourceReceipt: WorkflowBudgetReceipt;
+  readonly request: WorkflowBudgetReserveRequest;
+}
+
+interface BindingValidationSession {
+  readonly budgetPreparedByRequestHash: Map<string, ValidatedBudgetPreparedRequest>;
+}
+
+function newBindingValidationSession(): BindingValidationSession {
+  return { budgetPreparedByRequestHash: new Map() };
+}
+
 export type WorkflowRunnerAuthorityBindingReceipt =
   | WorkflowRunnerAuthorityPhaseReceipt
   | WorkflowRunnerAuthorityControlDeliveryReceipt;
@@ -667,6 +756,82 @@ function nullable<T>(value: unknown, validate: (entry: unknown) => T): T | null 
 
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function parseStrictBindingJson(
+  bytes: Buffer,
+  path: string,
+  invalidMessage: string,
+  limitMessage: string,
+): unknown {
+  try {
+    return parseWorkflowEffectJson(bytes, {
+      maxDepth: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxDepth,
+      maxNodes: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxNodes,
+      maxStringLength: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
+      maxStringBytes: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
+      unicodeScalarsOnly: true,
+      canonicalSafeIntegersOnly: true,
+    });
+  } catch (error) {
+    if (error instanceof WorkflowEffectJsonError) {
+      fail(
+        error.code === 'WORKFLOW_EFFECT_JSON_LIMIT_EXCEEDED'
+          ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED'
+          : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+        path,
+        error.code === 'WORKFLOW_EFFECT_JSON_LIMIT_EXCEEDED' ? limitMessage : invalidMessage,
+      );
+    }
+    throw error;
+  }
+}
+
+function parseBudgetDurableReceipt(value: unknown): ValidatedBudgetDurableReceipt {
+  if (typeof value !== 'string') {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
+      '$/budgetSourceResult/durableReceiptBytes',
+      'Durable budget receipt bytes exceed their limit.',
+    );
+  }
+  const bytes = Buffer.from(value, 'utf8');
+  if (
+    bytes.byteLength === 0 ||
+    bytes.byteLength > WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes
+  ) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMIT_EXCEEDED',
+      '$/budgetSourceResult/durableReceiptBytes',
+      'Durable budget receipt bytes exceed their limit.',
+    );
+  }
+  observeWorkflowRunnerAuthorityBindingValidation('budget_durable_parse');
+  const parsed = parseStrictBindingJson(
+    bytes,
+    '$/budgetSourceResult/durableReceiptBytes',
+    'Durable budget receipt bytes are not strict JSON.',
+    'Durable budget receipt bytes are not strict JSON.',
+  );
+  const durableReceipt = validateWorkflowRunnerBudgetDurableReceipt(parsed);
+  if (canonicalWorkflowBudgetAuthorityJson(durableReceipt) !== value) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID',
+      '$/budgetSourceResult/durableReceiptBytes',
+      'Durable budget receipt bytes are not exact canonical bytes.',
+    );
+  }
+  return { value: durableReceipt, bytes, receiptHash: sha256(bytes) };
+}
+
+export function parseWorkflowRunnerBudgetDurableReceiptBytes(
+  value: unknown,
+): WorkflowRunnerBudgetDurableReceipt {
+  return parseBudgetDurableReceipt(value).value;
+}
+
+export function hashWorkflowRunnerBudgetSourceReceipt(value: unknown): string {
+  return parseBudgetDurableReceipt(value).receiptHash;
 }
 
 type WorkflowRunnerAuthorityBindingHashDomain = 'stage' | 'evidence' | 'resolution' | 'receipt';
@@ -1424,19 +1589,38 @@ function validateEffectCompletionEvidence(
 function parsedBudgetRequest(
   prepared: WorkflowBudgetPreparedRequest,
   path: string,
+  session?: BindingValidationSession,
 ): WorkflowBudgetReserveRequest | WorkflowBudgetSettlementRequest {
-  return validateBudgetContractForBinding(path, () => {
+  const cached = session?.budgetPreparedByRequestHash.get(prepared.requestHash);
+  if (cached !== undefined) {
+    if (
+      cached.prepared.operation !== prepared.operation ||
+      cached.prepared.body !== prepared.body
+    ) {
+      fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_HASH_MISMATCH',
+        path,
+        'Budget prepared request hash was reused for different exact bytes.',
+      );
+    }
+    return cached.request;
+  }
+  observeWorkflowRunnerAuthorityBindingValidation('budget_prepared_parse');
+  const request = validateBudgetContractForBinding(path, () => {
     const value = parseWorkflowBudgetAuthorityBytes(Buffer.from(prepared.body, 'utf8'));
     return prepared.operation === 'reserve'
       ? validateWorkflowBudgetReserveRequest(value)
       : validateWorkflowBudgetSettlementRequest(value);
   });
+  session?.budgetPreparedByRequestHash.set(prepared.requestHash, { prepared, request });
+  return request;
 }
 
 function validateBudgetEvidence(
   value: unknown,
   operation: 'budget_reserve' | 'budget_settle',
   path: string,
+  session?: BindingValidationSession,
 ): WorkflowRunnerBudgetAuthorityEvidence {
   const record = inertRecord(
     value,
@@ -1471,7 +1655,7 @@ function validateBudgetEvidence(
       'Budget prepared request operation drifted.',
     );
   }
-  const request = parsedBudgetRequest(preparedRequest, `${path}/preparedRequest/body`);
+  const request = parsedBudgetRequest(preparedRequest, `${path}/preparedRequest/body`, session);
   const providerUsageReceiptHash = nullable(own(record, 'providerUsageReceiptHash'), (entry) =>
     prefixedHash(entry, `${path}/providerUsageReceiptHash`),
   );
@@ -1520,6 +1704,161 @@ function validateBudgetEvidence(
     rateNanoUsdPerToken: rate(own(record, 'rateNanoUsdPerToken'), `${path}/rateNanoUsdPerToken`),
     providerUsageReceiptHash,
   });
+}
+
+export function validateWorkflowRunnerBudgetDurableReceipt(
+  value: unknown,
+): WorkflowRunnerBudgetDurableReceipt {
+  const record = inertRecord(
+    value,
+    [
+      'schema',
+      'authority',
+      'writer',
+      'authorityMode',
+      'productionAuthority',
+      'contractManifestSha256',
+      'authorityBuildHash',
+      'recordKind',
+      'operationalProjection',
+      'operationalProjectionHash',
+    ],
+    '$/budgetSourceResult/durableReceipt',
+  );
+  const operationalProjection = validateBudgetContractForBinding(
+    '$/budgetSourceResult/durableReceipt/operationalProjection',
+    () => validateWorkflowBudgetReceipt(own(record, 'operationalProjection')),
+  );
+  const authorityBuildHash = hash(
+    own(record, 'authorityBuildHash'),
+    '$/budgetSourceResult/durableReceipt/authorityBuildHash',
+  );
+  if (
+    own(record, 'productionAuthority') !== false ||
+    authorityBuildHash !== operationalProjection.serviceBuildHash ||
+    own(record, 'operationalProjectionHash') !==
+      hashWorkflowBudgetAuthorityValue('receipt', operationalProjection)
+  ) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
+      '$/budgetSourceResult/durableReceipt',
+      'Durable budget receipt envelope does not bind its E1 projection.',
+    );
+  }
+  return immutable({
+    schema: literal(
+      own(record, 'schema'),
+      WORKFLOW_RUNNER_BUDGET_DURABLE_RECEIPT_SCHEMA,
+      '$/budgetSourceResult/durableReceipt/schema',
+    ),
+    authority: literal(
+      own(record, 'authority'),
+      'workflow-control',
+      '$/budgetSourceResult/durableReceipt/authority',
+    ),
+    writer: literal(
+      own(record, 'writer'),
+      'workflow-control/budget-authority-server',
+      '$/budgetSourceResult/durableReceipt/writer',
+    ),
+    authorityMode: literal(
+      own(record, 'authorityMode'),
+      'local-qualification-v1',
+      '$/budgetSourceResult/durableReceipt/authorityMode',
+    ),
+    productionAuthority: false as const,
+    contractManifestSha256: literal(
+      own(record, 'contractManifestSha256'),
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+      '$/budgetSourceResult/durableReceipt/contractManifestSha256',
+    ),
+    authorityBuildHash,
+    recordKind: literal(
+      own(record, 'recordKind'),
+      'receipt',
+      '$/budgetSourceResult/durableReceipt/recordKind',
+    ),
+    operationalProjection,
+    operationalProjectionHash: hash(
+      own(record, 'operationalProjectionHash'),
+      '$/budgetSourceResult/durableReceipt/operationalProjectionHash',
+    ),
+  });
+}
+
+function validateBudgetSourceResultForPrepared(
+  value: unknown,
+  prepared: WorkflowBudgetPreparedRequest,
+  request: WorkflowBudgetReserveRequest | WorkflowBudgetSettlementRequest,
+): ValidatedBudgetSourceResult {
+  const record = inertRecord(
+    value,
+    ['schema', 'durableReceiptBytes', 'decision', 'ledgerEntry'],
+    '$/budgetSourceResult',
+  );
+  if (prepared.operation !== 'reserve') {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      '$/budgetSourceResult',
+      'A budget authorization requires an exact reserve result.',
+    );
+  }
+  const reserveRequest = request as WorkflowBudgetReserveRequest;
+  const decision = validateBudgetContractForBinding('$/budgetSourceResult/decision', () =>
+    validateWorkflowBudgetReserveDecision(own(record, 'decision')),
+  );
+  const ledgerEntry = validateBudgetContractForBinding('$/budgetSourceResult/ledgerEntry', () =>
+    validateWorkflowBudgetLedgerEntry(own(record, 'ledgerEntry')),
+  );
+  const durableReceiptBytes = own(record, 'durableReceiptBytes');
+  const durable = parseBudgetDurableReceipt(durableReceiptBytes);
+  const durableReceipt = durable.value;
+  const receipt = validateBudgetContractForBinding('$/budgetSourceResult/receipt', () =>
+    validateWorkflowBudgetReceiptForResult(
+      durableReceipt.operationalProjection,
+      prepared,
+      decision,
+      ledgerEntry,
+      null,
+    ),
+  );
+  if (
+    receipt.operation !== 'reserve' ||
+    receipt.status !== 'accepted' ||
+    receipt.acceptedRunRevision === null ||
+    receipt.committedAt === null ||
+    `${canonicalWorkflowBudgetAuthorityJson(decision.request)}\n` !== prepared.body ||
+    decision.request.route.backend !== 'go' ||
+    decision.request.route.authority !== 'workflow-control'
+  ) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
+      '$/budgetSourceResult',
+      'Budget source result does not prove the exact accepted prepared reserve.',
+    );
+  }
+  const result = immutable({
+    schema: literal(
+      own(record, 'schema'),
+      WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
+      '$/budgetSourceResult/schema',
+    ),
+    durableReceiptBytes: durableReceiptBytes as string,
+    decision,
+    ledgerEntry,
+  });
+  return { value: result, durable, sourceReceipt: receipt, request: reserveRequest };
+}
+
+export function validateWorkflowRunnerBudgetSourceResult(
+  value: unknown,
+  preparedValue: unknown,
+): WorkflowRunnerBudgetSourceResult {
+  const prepared = validateBudgetContractForBinding('$/budgetSourceResult/decision/request', () =>
+    validateWorkflowBudgetPreparedRequest(preparedValue),
+  );
+  const request = parsedBudgetRequest(prepared, '$/budgetSourceResult/decision/request/body');
+  return validateBudgetSourceResultForPrepared(value, prepared, request).value;
 }
 
 function validateResumeEvidence(
@@ -1607,6 +1946,7 @@ function validateEvidence(
   value: unknown,
   operation: WorkflowRunnerAuthorityBindingOperation,
   path: string,
+  session?: BindingValidationSession,
 ): WorkflowRunnerAuthorityEvidence {
   assertNoForbiddenKeys(value, path);
   switch (operation) {
@@ -1618,7 +1958,7 @@ function validateEvidence(
       return validateEffectCompletionEvidence(value, operation, path);
     case 'budget_reserve':
     case 'budget_settle':
-      return validateBudgetEvidence(value, operation, path);
+      return validateBudgetEvidence(value, operation, path, session);
     case 'resume_advance':
       return validateResumeEvidence(value, operation, path);
   }
@@ -1680,6 +2020,7 @@ function assertEvidenceForStage(
   evidence: WorkflowRunnerAuthorityEvidence,
   stage: WorkflowRunnerAuthorityBindingStage,
   resolutionSentAt: string,
+  session: BindingValidationSession,
 ): void {
   const message = targetMessage(stage);
   const payload = message.payload;
@@ -1796,6 +2137,7 @@ function assertEvidenceForStage(
       const request = parsedBudgetRequest(
         evidence.preparedRequest,
         '$/evidence/preparedRequest/body',
+        session,
       );
       if (
         request.workspaceId !== stage.workspaceId ||
@@ -1906,6 +2248,16 @@ export function hashWorkflowRunnerAuthorityBindingStage(
 export function validateWorkflowRunnerAuthorityBindingResolution(
   value: unknown,
 ): WorkflowRunnerAuthorityBindingResolution {
+  return validateWorkflowRunnerAuthorityBindingResolutionWithSession(
+    value,
+    newBindingValidationSession(),
+  );
+}
+
+function validateWorkflowRunnerAuthorityBindingResolutionWithSession(
+  value: unknown,
+  session: BindingValidationSession,
+): WorkflowRunnerAuthorityBindingResolution {
   const record = inertRecord(
     value,
     [
@@ -1931,7 +2283,7 @@ export function validateWorkflowRunnerAuthorityBindingResolution(
     WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS,
     '$/operation',
   );
-  const evidence = validateEvidence(own(record, 'evidence'), operation, '$/evidence');
+  const evidence = validateEvidence(own(record, 'evidence'), operation, '$/evidence', session);
   byteBound(evidence, WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxEvidenceBytes, '$/evidence');
   const evidenceHash = hash(own(record, 'evidenceHash'), '$/evidenceHash');
   if (evidenceHash !== hashValidatedBindingValue('evidence', evidence)) {
@@ -1987,8 +2339,9 @@ function validateResolutionForValidatedStage(
   value: unknown,
   stage: WorkflowRunnerAuthorityBindingStage,
   stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+  session: BindingValidationSession = newBindingValidationSession(),
 ): WorkflowRunnerAuthorityBindingResolution {
-  const resolution = validateWorkflowRunnerAuthorityBindingResolution(value);
+  const resolution = validateWorkflowRunnerAuthorityBindingResolutionWithSession(value, session);
   if (
     stageReceipt.phase !== 'stage_event' ||
     stageReceipt.status !== 'accepted' ||
@@ -2006,7 +2359,7 @@ function validateResolutionForValidatedStage(
       'Authority resolution is not bound to an accepted durable stage.',
     );
   }
-  assertEvidenceForStage(resolution.evidence, stage, resolution.sentAt);
+  assertEvidenceForStage(resolution.evidence, stage, resolution.sentAt, session);
   return resolution;
 }
 
@@ -2324,17 +2677,19 @@ function validateResolutionReceiptForValidatedContext(
 export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
   value: unknown,
   messageValue: unknown,
-  stageValue: unknown,
-  resolutionValue: unknown,
-  resolutionReceiptValue: unknown,
-  stageReceiptValue: unknown,
-  priorEventDeliveryValue: unknown,
+  context: WorkflowRunnerAuthorityControlDeliveryValidationContext,
 ): WorkflowRunnerAuthorityControlDeliveryReceipt {
-  const stage = validateWorkflowRunnerAuthorityBindingStage(stageValue);
-  const stageReceipt = validateStageReceiptForValidatedStage(stageReceiptValue, stage);
-  const resolution = validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt);
+  const session = newBindingValidationSession();
+  const stage = validateWorkflowRunnerAuthorityBindingStage(context.stage);
+  const stageReceipt = validateStageReceiptForValidatedStage(context.stageReceipt, stage);
+  const resolution = validateResolutionForValidatedStage(
+    context.resolution,
+    stage,
+    stageReceipt,
+    session,
+  );
   const resolutionReceipt = validateResolutionReceiptForValidatedContext(
-    resolutionReceiptValue,
+    context.resolutionReceipt,
     resolution,
     stage,
     stageReceipt,
@@ -2346,7 +2701,9 @@ export function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
     resolution,
     resolutionReceipt,
     stageReceipt,
-    priorEventDeliveryValue,
+    context.priorEventDelivery,
+    context.budgetSourceResult,
+    session,
   );
 }
 
@@ -2358,6 +2715,8 @@ function validateControlDeliveryForValidatedContext(
   resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
   stageReceipt: WorkflowRunnerAuthorityStageReceipt,
   priorEventDeliveryValue: unknown,
+  budgetSourceResultValue: unknown,
+  session: BindingValidationSession,
 ): WorkflowRunnerAuthorityControlDeliveryReceipt {
   const receipt = validateWorkflowRunnerAuthorityBindingReceipt(value);
   if (receipt.phase !== 'control_delivery') {
@@ -2367,7 +2726,25 @@ function validateControlDeliveryForValidatedContext(
       'Expected a control delivery acknowledgement.',
     );
   }
-  const control = validateWorkflowControlAuthorityMessage(messageValue);
+  const control = validateAuthorityContractForBinding('$', () =>
+    validateWorkflowControlAuthorityMessage(messageValue),
+  );
+  const hasBudgetSourceResult =
+    budgetSourceResultValue !== undefined && budgetSourceResultValue !== null;
+  if (control.kind === 'budget_authorization' && !hasBudgetSourceResult) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      '$/budgetSourceResult',
+      'Budget authorization requires its exact durable source result.',
+    );
+  }
+  if (control.kind !== 'budget_authorization' && hasBudgetSourceResult) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      '$/budgetSourceResult',
+      'Budget source result is valid only for a budget authorization.',
+    );
+  }
   const message = prepareWorkflowControlAuthorityMessage(control);
   const expectedHead =
     control.kind === 'resume_offer'
@@ -2418,9 +2795,8 @@ function validateControlDeliveryForValidatedContext(
       'Control acknowledgement is cross-spliced with another exact control message.',
     );
   }
-  assertEvidenceForStage(resolution.evidence, stage, resolution.sentAt);
   const payload = control.payload;
-  const authorityReceiptHash = hashValidatedBindingValue('receipt', resolutionReceipt);
+  let budgetSourceResult: ValidatedBudgetSourceResult | null = null;
   switch (control.kind) {
     case 'event_receipt': {
       const target = targetMessage(stage);
@@ -2458,15 +2834,29 @@ function validateControlDeliveryForValidatedContext(
       const request = parsedBudgetRequest(
         resolution.evidence.preparedRequest,
         '$/resolution/evidence/preparedRequest/body',
+        session,
       ) as WorkflowBudgetReserveRequest;
+      budgetSourceResult = validateBudgetSourceResultForPrepared(
+        budgetSourceResultValue,
+        resolution.evidence.preparedRequest,
+        request,
+      );
+      const durableReceipt = budgetSourceResult.durable.value;
+      const sourceReceipt = budgetSourceResult.sourceReceipt;
+      const sourceDecision = budgetSourceResult.value.decision;
+      const authorization = sourceDecision.authorization;
       if (
         payload.reservationId !== request.reservationId ||
-        payload.status !== 'reserved' ||
-        payload.authorizedTokens !== request.requested.tokens ||
-        payload.authorizedCostNanoUsd !== request.requested.nanoUsd ||
-        payload.authorizedCalls !== request.requested.calls ||
-        payload.authorityReceiptHash !== authorityReceiptHash ||
-        payload.committedRunRevision !== stage.runnerAuthority.acceptedGlobalRunRevision
+        payload.status !== sourceDecision.status ||
+        payload.authorizedTokens !== authorization.tokens ||
+        payload.authorizedCostNanoUsd !== authorization.nanoUsd ||
+        payload.authorizedCalls !== authorization.calls ||
+        payload.authorityReceiptHash !== budgetSourceResult.durable.receiptHash ||
+        payload.committedRunRevision !== sourceReceipt.acceptedRunRevision ||
+        sourceReceipt.acceptedRunRevision !== stage.runnerAuthority.acceptedGlobalRunRevision ||
+        stage.route.backend !== 'go' ||
+        stage.route.authority !== 'workflow-control' ||
+        stage.route.authorityBuildHash !== durableReceipt.authorityBuildHash
       ) {
         fail(
           'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
@@ -2477,6 +2867,7 @@ function validateControlDeliveryForValidatedContext(
       break;
     }
     case 'effect_authorization': {
+      const authorityReceiptHash = hashValidatedBindingValue('receipt', resolutionReceipt);
       if (
         stage.operation !== 'effect_authorize' ||
         resolution.evidence.schema !== 'openslack.workflow_runner_effect_authority_evidence.v1'
@@ -2507,6 +2898,7 @@ function validateControlDeliveryForValidatedContext(
       break;
     }
     case 'resume_offer': {
+      const authorityReceiptHash = hashValidatedBindingValue('receipt', resolutionReceipt);
       if (
         stage.operation !== 'resume_advance' ||
         resolution.evidence.schema !== 'openslack.workflow_runner_resume_authority_evidence.v1'
@@ -2570,6 +2962,8 @@ function validateControlDeliveryForValidatedContext(
         resolutionReceipt,
         stageReceipt,
         null,
+        undefined,
+        session,
       );
     } catch (error) {
       if (error instanceof WorkflowRunnerAuthorityBindingContractError) {
@@ -2581,7 +2975,9 @@ function validateControlDeliveryForValidatedContext(
       }
       throw error;
     }
-    const priorMessage = validateWorkflowControlAuthorityMessage(own(prior, 'message'));
+    const priorMessage = validateAuthorityContractForBinding('$/priorEventDelivery/message', () =>
+      validateWorkflowControlAuthorityMessage(own(prior, 'message')),
+    );
     if (
       priorMessage.kind !== 'event_receipt' ||
       priorReceipt.controlKind !== 'event_receipt' ||
@@ -2596,6 +2992,25 @@ function validateControlDeliveryForValidatedContext(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
         '$/priorEventDelivery',
         'Optional control delivery is not contiguous with an accepted event-receipt ACK.',
+      );
+    }
+    if (
+      budgetSourceResult !== null &&
+      (() => {
+        const committedAt = budgetSourceResult.sourceReceipt.committedAt;
+        return (
+          committedAt === null ||
+          resolutionReceipt.committedAt === null ||
+          committedAt < resolutionReceipt.committedAt ||
+          committedAt > priorMessage.sentAt ||
+          control.sentAt < committedAt
+        );
+      })()
+    ) {
+      fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
+        '$/budgetSourceResult/receipt/committedAt',
+        'Budget authority must commit after the staged event and before its receipt and decision.',
       );
     }
   }

@@ -6,7 +6,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 )
 
-func assertEvidenceForStage(evidence, stage Record, resolutionSentAt string) error {
+func assertEvidenceForStage(evidence, stage Record, resolutionSentAt string, session *bindingValidationSession) error {
 	target := stage["target"].(Record)
 	message, _, err := prepareAuthorityMessageBytes([]byte(target["body"].(string)))
 	if err != nil {
@@ -71,7 +71,7 @@ func assertEvidenceForStage(evidence, stage Record, resolutionSentAt string) err
 			return failure(ErrorAuthorityPlaneMismatch, "$/evidence/schema", "Budget operation requires an exact E1 prepared request.")
 		}
 		prepared := evidence["preparedRequest"].(budgetcontract.PreparedRequest)
-		_, request, preparedErr := budgetcontract.ValidatePreparedRequestRecord(prepared)
+		_, request, preparedErr := validateBudgetPreparedWithSession(prepared, session)
 		if preparedErr != nil {
 			return embeddedBudgetFailure(preparedErr, "$/evidence/preparedRequest/body")
 		}

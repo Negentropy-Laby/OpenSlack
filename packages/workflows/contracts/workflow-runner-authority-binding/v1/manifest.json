@@ -64,6 +64,17 @@
       "merge"
     ]
   },
+  "budgetDecisionDelivery": {
+    "sourceResultRequired": true,
+    "durableReceiptSchema": "openslack.workflow_control_budget_durable_record.v1",
+    "authorityReceiptHash": "canonical_durable_receipt_sha256",
+    "acceptedStates": { "reserved": "requested_amounts", "rejected": "zero_amounts" },
+    "databaseReconciliationRequired": {
+      "delivery": "event_receipt_only",
+      "budgetAuthorizationAllowed": false,
+      "reason": "accepted_run_revision_null"
+    }
+  },
   "protocol": {
     "sequence": ["stage_event", "stage_event_ack", "commit_authority", "commit_authority_ack"],
     "independentCompanionSequence": true,
@@ -81,7 +92,8 @@
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
-      "sourceReceiptSchema": "openslack.workflow_runner_checkpoint_authority_receipt.v1"
+      "sourceReceiptSchema": "openslack.workflow_runner_checkpoint_authority_receipt.v1",
+      "authorityReceiptHashAlgorithm": null
     },
     {
       "operation": "effect_authorize",
@@ -91,7 +103,8 @@
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
-      "sourceReceiptSchema": "openslack.workflow_runner_effect_authority_receipt.v1"
+      "sourceReceiptSchema": "openslack.workflow_runner_effect_authority_receipt.v1",
+      "authorityReceiptHashAlgorithm": "binding_receipt_domain_sha256"
     },
     {
       "operation": "effect_complete",
@@ -101,7 +114,8 @@
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 0,
-      "sourceReceiptSchema": "openslack.workflow_runner_effect_completion_receipt.v1"
+      "sourceReceiptSchema": "openslack.workflow_runner_effect_completion_receipt.v1",
+      "authorityReceiptHashAlgorithm": null
     },
     {
       "operation": "budget_reserve",
@@ -111,7 +125,8 @@
       "sourceEvidenceState": "prepared",
       "sourceRevisionDelta": 0,
       "sourceGenerationDelta": 0,
-      "sourceReceiptSchema": null
+      "sourceReceiptSchema": null,
+      "authorityReceiptHashAlgorithm": "canonical_durable_receipt_sha256"
     },
     {
       "operation": "budget_settle",
@@ -121,7 +136,8 @@
       "sourceEvidenceState": "prepared",
       "sourceRevisionDelta": 0,
       "sourceGenerationDelta": 0,
-      "sourceReceiptSchema": null
+      "sourceReceiptSchema": null,
+      "authorityReceiptHashAlgorithm": null
     },
     {
       "operation": "resume_advance",
@@ -131,7 +147,8 @@
       "sourceEvidenceState": "committed",
       "sourceRevisionDelta": 1,
       "sourceGenerationDelta": 1,
-      "sourceReceiptSchema": "openslack.workflow_runner_resume_authority_receipt.v1"
+      "sourceReceiptSchema": "openslack.workflow_runner_resume_authority_receipt.v1",
+      "authorityReceiptHashAlgorithm": "binding_receipt_domain_sha256"
     }
   ],
   "evidence": {
@@ -221,8 +238,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 714010,
-      "sha256": "88fa05b25462068220cccbc24b1a76c1622ed9a48433aea3ada7e1aa2fafc582"
+      "byteLength": 1622499,
+      "sha256": "972a0397ba3c90d01dcd2f95b7e8d8176e5d302c435691afc40e8d871cb2835b"
     }
   }
 }

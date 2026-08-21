@@ -612,7 +612,8 @@ Qoder, tag, npm, and production remain unclaimed or not activated.
 
 The generated [GS9-F2a manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
 is the normative authority-boundary record. Its operation table is the single source for target
-kinds, coordinator deltas, source planes, source deltas, and source receipt schemas; its protocol,
+kinds, coordinator deltas, source planes, source deltas, source receipt schemas, and the receipt-hash
+algorithm for each deliverable kind; its protocol,
 source-lock, framing, evidence, and closed boundary inventories are likewise authoritative. Other
 architecture documents must link to that record rather than duplicate its matrices or
 `NOT_CLAIMED` list.
@@ -621,3 +622,22 @@ F2a contributes only the exact TypeScript contract and pure Go validator. It nei
 future profile nor composes persistence, HTTP, scheduler/worker, recovery, or domain adapters.
 GS9-F1 remains the active foundation, TypeScript remains the production Workflow authority, and
 GS9-F2b must implement and qualify every runtime capability listed by the manifest as not delivered.
+
+A budget decision delivery is a post-event contextual proof, not a projection of the pre-event
+resolution ACK. For `budget_reserve`, the control-delivery validator consumes the same exact E1
+prepared request together with the durable accepted budget receipt, reserve decision, and ledger
+entry. `reserved` authorizes the requested amounts; `rejected` authorizes zero. The control message
+binds the accepted run revision and the SHA-256 of the exact canonical Go durable-receipt envelope,
+whose operational projection is that same E1 receipt and whose manifest, build, writer, mode,
+record kind, and projection hash are revalidated. An E1
+`database_reconciliation_required` receipt has no accepted revision or durable result, so it closes
+the runner boundary through a reconciliation-required event receipt and cannot generate a budget
+authorization decision. This rule does not remove the frozen authority-v2 vocabulary; it prevents
+the current E1 database-unknown evidence from being promoted into a fabricated committed revision.
+
+Hash selection is kind-bound rather than caller-selected: `budget_authorization` uses SHA-256 of
+the exact canonical durable receipt bytes, while `effect_authorization` and `resume_offer` use the
+binding receipt domain hash. Kinds without an authority-receipt payload declare no algorithm. The
+TypeScript and Go validators consume the same generated operation facts and one validation-session
+cache, so this hardening removes structural drift and repeated parsing; it does not claim or repair
+a live Go runtime divergence, because F2a still has no live runtime composition.

@@ -18,7 +18,7 @@ func validateResolutionWithSession(value any, session *bindingValidationSession)
 	if err != nil {
 		return nil, err
 	}
-	evidence, err := validateEvidence(record["evidence"], operation, "$/evidence")
+	evidence, err := validateEvidence(record["evidence"], operation, "$/evidence", session)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func validateResolutionForValidatedStage(value any, stage, stageReceipt Record, 
 		resolution["stageReceiptHash"] == resolution["stageHash"] || resolution["sentAt"].(string) < committedAt {
 		return nil, failure(ErrorStageRequired, "$", "Authority resolution is not bound to an accepted durable stage.")
 	}
-	if err := assertEvidenceForStage(resolution["evidence"].(Record), stage, resolution["sentAt"].(string)); err != nil {
+	if err := assertEvidenceForStage(resolution["evidence"].(Record), stage, resolution["sentAt"].(string), session); err != nil {
 		return nil, err
 	}
 	return resolution, nil

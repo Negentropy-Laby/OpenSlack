@@ -69,3 +69,11 @@ Passing the F2a gates establishes exact TypeScript/Go contract parity only. The 
 machine-checked ceiling; qualification prose must not maintain a second negative-claim list.
 GS9-F2b must deliver recovery/replay, result disambiguation, runtime adapters, and its measured
 cancellation gate before any of those entries can change.
+
+The budget-decision repair vectors additionally prove that an accepted E1 reserve result is the
+only source of a sequence-4 budget authorization: `reserved` carries the requested amounts,
+`rejected` carries zero, and both bind the exact Go durable-receipt envelope, its E1 operational
+projection, and the accepted run revision. An E1
+database-unknown receipt instead produces a reconciliation-required event receipt and no budget
+decision. Cross-spliced prepared requests, decisions, ledgers, receipts, statuses, amounts, hashes,
+or revisions must be rejected identically by TypeScript and Go.

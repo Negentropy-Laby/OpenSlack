@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 )
 
@@ -61,6 +62,23 @@ func embeddedBudgetFailure(err error, path string) error {
 		)
 	}
 	return err
+}
+
+func embeddedAuthorityFailure(err error, path string) error {
+	var contractErr *authoritycontract.ContractError
+	if !errors.As(err, &contractErr) {
+		return err
+	}
+	if contractErr.Code == authoritycontract.ErrorIdentityMismatch {
+		return failure(ErrorAuthorityPlaneMismatch, path, "Authority route is inconsistent.")
+	}
+	code := ErrorInvalid
+	if contractErr.Code == authoritycontract.ErrorUnknownField {
+		code = ErrorUnknownField
+	} else if contractErr.Code == authoritycontract.ErrorLimitExceeded {
+		code = ErrorLimitExceeded
+	}
+	return failure(code, nestedContractPath(path, contractErr.Path), "Embedded authority route is invalid.")
 }
 
 func ErrorCodes() []ErrorCode {
