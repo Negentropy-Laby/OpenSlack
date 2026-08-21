@@ -281,41 +281,47 @@ func validateResolutionReceiptForValidatedContext(value any, resolution, stage, 
 	return receipt, nil
 }
 
-func ValidateControlDeliveryReceiptForMessage(
-	value, messageValue, stageValue, resolutionValue, resolutionReceiptValue, stageReceiptValue, priorEventDeliveryValue, budgetSourceResultValue any,
-) (Record, error) {
+type ControlDeliveryValidationContext struct {
+	Stage              any
+	Resolution         any
+	ResolutionReceipt  any
+	StageReceipt       any
+	PriorEventDelivery any
+	BudgetSourceResult any
+}
+
+func ValidateControlDeliveryReceiptForMessage(value, messageValue any, context ControlDeliveryValidationContext) (Record, error) {
 	return validateControlDeliveryReceiptForMessageWithObserver(
 		value,
 		messageValue,
-		stageValue,
-		resolutionValue,
-		resolutionReceiptValue,
-		stageReceiptValue,
-		priorEventDeliveryValue,
-		budgetSourceResultValue,
+		context,
+		nil,
 		nil,
 	)
 }
 
 func validateControlDeliveryReceiptForMessageWithObserver(
-	value, messageValue, stageValue, resolutionValue, resolutionReceiptValue, stageReceiptValue, priorEventDeliveryValue, budgetSourceResultValue any,
+	value, messageValue any,
+	context ControlDeliveryValidationContext,
 	onEncode func(Record),
+	onValidate func(string),
 ) (Record, error) {
 	session := newBindingValidationSession(onEncode)
-	stage, err := validateStageWithSession(stageValue, session)
+	session.onValidate = onValidate
+	stage, err := validateStageWithSession(context.Stage, session)
 	if err != nil {
 		return nil, err
 	}
-	stageReceipt, err := validateStageReceiptForValidatedStage(stageReceiptValue, stage, session)
+	stageReceipt, err := validateStageReceiptForValidatedStage(context.StageReceipt, stage, session)
 	if err != nil {
 		return nil, err
 	}
-	resolution, err := validateResolutionForValidatedStage(resolutionValue, stage, stageReceipt, session)
+	resolution, err := validateResolutionForValidatedStage(context.Resolution, stage, stageReceipt, session)
 	if err != nil {
 		return nil, err
 	}
 	resolutionReceipt, err := validateResolutionReceiptForValidatedContext(
-		resolutionReceiptValue,
+		context.ResolutionReceipt,
 		resolution,
 		stage,
 		stageReceipt,
@@ -331,8 +337,8 @@ func validateControlDeliveryReceiptForMessageWithObserver(
 		resolution,
 		resolutionReceipt,
 		stageReceipt,
-		priorEventDeliveryValue,
-		budgetSourceResultValue,
+		context.PriorEventDelivery,
+		context.BudgetSourceResult,
 		session,
 	)
 }
@@ -352,12 +358,18 @@ func validateControlDeliveryForValidatedContext(
 	}
 	message, prepared, err := prepareAuthorityMessageValue(messageValue)
 	if err != nil {
-		return nil, err
+		return nil, embeddedAuthorityFailure(err, "$")
+	}
+	hasBudgetSourceResult := budgetSourceResultValue != nil
+	if message.Kind == authoritycontract.KindBudgetAuthorization && !hasBudgetSourceResult {
+		return nil, failure(ErrorAuthorityPlaneMismatch, "$/budgetSourceResult", "Budget authorization requires its exact durable source result.")
+	}
+	if message.Kind != authoritycontract.KindBudgetAuthorization && hasBudgetSourceResult {
+		return nil, failure(ErrorAuthorityPlaneMismatch, "$/budgetSourceResult", "Budget source result is valid only for a budget authorization.")
 	}
 	runnerHead := stage["runnerAuthority"].(Record)
 	target := stage["target"].(Record)
 	route := stage["route"].(Record)
-	evidence := resolution["evidence"].(Record)
 	expectedRevision := runnerHead["acceptedGlobalRunRevision"].(int64)
 	expectedGeneration := runnerHead["acceptedResumeGeneration"].(int64)
 	if message.Kind == authoritycontract.KindResumeOffer {
@@ -392,14 +404,22 @@ func validateControlDeliveryForValidatedContext(
 		receipt["companionSequence"] != expectedCompanionSequence {
 		return nil, failure(ErrorIdentityMismatch, "$", "Control acknowledgement is cross-spliced with another exact control message.")
 	}
-	if err := assertEvidenceForStage(evidence, stage, resolution["sentAt"].(string)); err != nil {
-		return nil, err
+	authorityReceiptHash := ""
+	operationText, operationOK := stage["operation"].(string)
+	if !operationOK {
+		return nil, failure(ErrorInvalid, "$/operation", "$/operation is invalid.")
 	}
-	authorityReceiptHash, err := domainHashWithSession(session, "receipt", resolutionReceipt)
+	fact, err := factFor(Operation(operationText))
 	if err != nil {
 		return nil, err
 	}
-	budgetSourceResult, budgetSourceReceipt, err := assertControlPayloadForBinding(message, receipt, stage, resolution, authorityReceiptHash, budgetSourceResultValue)
+	if fact.AuthorityReceiptHash == AuthorityReceiptHashBindingDomain {
+		authorityReceiptHash, err = domainHashWithSession(session, "receipt", resolutionReceipt)
+		if err != nil {
+			return nil, err
+		}
+	}
+	budgetSourceResult, err := assertControlPayloadForBinding(message, receipt, stage, resolution, authorityReceiptHash, budgetSourceResultValue, session)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +432,6 @@ func validateControlDeliveryForValidatedContext(
 		resolutionReceipt,
 		stageReceipt,
 		budgetSourceResult,
-		budgetSourceReceipt,
 		session,
 	); err != nil {
 		return nil, err
@@ -424,8 +443,7 @@ func assertPriorEventDelivery(
 	priorEventDeliveryValue any,
 	message authoritycontract.Message,
 	receipt, stage, resolution, resolutionReceipt, stageReceipt Record,
-	budgetSourceResult Record,
-	budgetSourceReceipt budgetcontract.Record,
+	budgetSourceResult *validatedBudgetSourceResult,
 	session *bindingValidationSession,
 ) error {
 	if message.Kind == authoritycontract.KindEventReceipt {
@@ -466,7 +484,7 @@ func assertPriorEventDelivery(
 	}
 	priorMessage, _, err := prepareAuthorityMessageValue(prior["message"])
 	if err != nil {
-		return err
+		return embeddedAuthorityFailure(err, "$/priorEventDelivery/message")
 	}
 	priorCommittedAt, priorCommitted := priorReceipt["committedAt"].(string)
 	if priorMessage.Kind != authoritycontract.KindEventReceipt || priorReceipt["controlKind"] != string(authoritycontract.KindEventReceipt) ||
@@ -480,7 +498,7 @@ func assertPriorEventDelivery(
 		)
 	}
 	if budgetSourceResult != nil {
-		committedAt, _ := budgetSourceReceipt["committedAt"].(string)
+		committedAt, _ := budgetSourceResult.receipt["committedAt"].(string)
 		resolutionCommittedAt, _ := resolutionReceipt["committedAt"].(string)
 		if committedAt == "" || resolutionCommittedAt == "" || committedAt < resolutionCommittedAt ||
 			committedAt > priorMessage.SentAt || message.SentAt < committedAt {
@@ -499,81 +517,91 @@ func assertControlPayloadForBinding(
 	receipt, stage, resolution Record,
 	authorityReceiptHash string,
 	budgetSourceResultValue any,
-) (Record, budgetcontract.Record, error) {
+	session *bindingValidationSession,
+) (*validatedBudgetSourceResult, error) {
 	payload := message.Payload
-	evidence := resolution["evidence"].(Record)
-	runnerHead := stage["runnerAuthority"].(Record)
+	evidence, evidenceOK := asRecord(resolution["evidence"])
+	runnerHead, runnerHeadOK := asRecord(stage["runnerAuthority"])
+	target, targetOK := asRecord(stage["target"])
+	route, routeOK := asRecord(stage["route"])
+	if !evidenceOK || !runnerHeadOK || !targetOK || !routeOK {
+		return nil, failure(ErrorInvalid, "$", "Validated control context lost its closed record shape.")
+	}
 	switch message.Kind {
 	case authoritycontract.KindEventReceipt:
-		targetMessage, _, err := prepareAuthorityMessageBytes([]byte(stage["target"].(Record)["body"].(string)))
-		if err != nil {
-			return nil, nil, err
+		targetBody, bodyOK := target["body"].(string)
+		if !bodyOK {
+			return nil, failure(ErrorInvalid, "$/target/body", "Validated target body is invalid.")
 		}
-		target := stage["target"].(Record)
+		targetMessage, _, err := prepareAuthorityMessageBytes([]byte(targetBody))
+		if err != nil {
+			return nil, err
+		}
 		reconciles := payload["status"] == "reconciliation_required"
 		if payload["receivedEventId"] != targetMessage.EventID || payload["receivedKind"] != string(targetMessage.Kind) ||
 			payload["receivedSequence"] != *targetMessage.Sequence || payload["receivedDigest"] != target["messageDigest"] ||
 			payload["receivedIdempotencyKey"] != target["idempotencyKey"] || payload["receivedFingerprint"] != target["requestFingerprint"] ||
-			payload["controlBuildHash"] != stage["route"].(Record)["authorityBuildHash"] || payload["committedAt"] != message.SentAt ||
+			payload["controlBuildHash"] != route["authorityBuildHash"] || payload["committedAt"] != message.SentAt ||
 			reconciles != (receipt["disposition"] == "reconciliation_required") {
-			return nil, nil, failure(ErrorIdentityMismatch, "$/payload", "Event receipt does not acknowledge the exact staged target.")
+			return nil, failure(ErrorIdentityMismatch, "$/payload", "Event receipt does not acknowledge the exact staged target.")
 		}
 	case authoritycontract.KindBudgetAuthorization:
 		if stage["operation"] != string(OperationBudgetReserve) || evidence["schema"] != "openslack.workflow_runner_budget_authority_evidence.v1" {
-			return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Budget authorization is not valid for this binding operation.")
+			return nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Budget authorization is not valid for this binding operation.")
 		}
-		prepared := evidence["preparedRequest"].(budgetcontract.PreparedRequest)
-		_, request, err := budgetcontract.ValidatePreparedRequestRecord(prepared)
-		if err != nil {
-			return nil, nil, embeddedBudgetFailure(err, "$/resolution/evidence/preparedRequest/body")
+		prepared, preparedOK := evidence["preparedRequest"].(budgetcontract.PreparedRequest)
+		if !preparedOK {
+			return nil, failure(ErrorInvalid, "$/resolution/evidence/preparedRequest", "Validated budget prepared request is invalid.")
 		}
-		budgetSourceResult, sourceReceipt, err := validateBudgetSourceResult(budgetSourceResultValue, prepared)
+		validatedPrepared, request, err := validateBudgetPreparedWithSession(prepared, session)
 		if err != nil {
-			return nil, nil, err
+			return nil, embeddedBudgetFailure(err, "$/resolution/evidence/preparedRequest/body")
 		}
-		decision := budgetSourceResult["decision"].(budgetcontract.Record)
-		authorization := decision["authorization"].(budgetcontract.Record)
-		sourceHash, err := HashBudgetSourceReceipt(budgetSourceResult["durableReceiptBytes"])
+		budgetSourceResult, err := validateBudgetSourceResultForPrepared(budgetSourceResultValue, validatedPrepared, request, session)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
+		}
+		decision, decisionOK := asBudgetRecord(budgetSourceResult.record["decision"])
+		authorization, authorizationOK := asBudgetRecord(decision["authorization"])
+		if !decisionOK || !authorizationOK {
+			return nil, failure(ErrorInvalid, "$/budgetSourceResult/decision", "Validated budget source decision is invalid.")
 		}
 		if payload["reservationId"] != request["reservationId"] || payload["status"] != decision["status"] ||
 			payload["authorizedTokens"] != authorization["tokens"] || payload["authorizedCostNanoUsd"] != authorization["nanoUsd"] ||
-			payload["authorizedCalls"] != authorization["calls"] || payload["authorityReceiptHash"] != sourceHash ||
-			payload["committedRunRevision"] != sourceReceipt["acceptedRunRevision"] ||
-			sourceReceipt["acceptedRunRevision"] != runnerHead["acceptedGlobalRunRevision"] {
-			return nil, nil, failure(ErrorIdentityMismatch, "$/payload", "Budget decision differs from the exact prepared authority evidence.")
+			payload["authorizedCalls"] != authorization["calls"] || payload["authorityReceiptHash"] != budgetSourceResult.durable.hash ||
+			payload["committedRunRevision"] != budgetSourceResult.receipt["acceptedRunRevision"] ||
+			budgetSourceResult.receipt["acceptedRunRevision"] != runnerHead["acceptedGlobalRunRevision"] ||
+			route["backend"] != "go" || route["authority"] != "workflow-control" ||
+			route["authorityBuildHash"] != budgetSourceResult.durable.record["authorityBuildHash"] {
+			return nil, failure(ErrorIdentityMismatch, "$/payload", "Budget decision differs from the exact prepared authority evidence.")
 		}
-		return budgetSourceResult, sourceReceipt, nil
+		return &budgetSourceResult, nil
 	case authoritycontract.KindEffectAuthorization:
 		if stage["operation"] != string(OperationEffectAuthorize) || evidence["schema"] != "openslack.workflow_runner_effect_authority_evidence.v1" {
-			return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Effect authorization is not valid for this binding operation.")
+			return nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Effect authorization is not valid for this binding operation.")
 		}
 		if payload["effectId"] != evidence["effectId"] || payload["effectHash"] != evidence["effectHash"] ||
 			payload["approvalId"] != evidence["approvalId"] || payload["approvalStatus"] != evidence["approvalStatus"] ||
 			payload["decisionRevision"] != evidence["decisionRevision"] || payload["grantHash"] != evidence["grantHash"] ||
 			payload["authorityReceiptHash"] != authorityReceiptHash || payload["expiresAt"] != evidence["expiresAt"] {
-			return nil, nil, failure(ErrorIdentityMismatch, "$/payload", "Effect decision differs from the exact effect-v2 evidence.")
+			return nil, failure(ErrorIdentityMismatch, "$/payload", "Effect decision differs from the exact effect-v2 evidence.")
 		}
 	case authoritycontract.KindResumeOffer:
 		if stage["operation"] != string(OperationResumeAdvance) || evidence["schema"] != "openslack.workflow_runner_resume_authority_evidence.v1" {
-			return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Resume offer is not valid for this binding operation.")
+			return nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Resume offer is not valid for this binding operation.")
 		}
 		if payload["checkpointId"] != evidence["priorCheckpointId"] || payload["checkpointHash"] != evidence["priorCheckpointHash"] ||
 			payload["nextPhaseId"] != evidence["nextPhaseId"] || payload["nextPhaseIndex"] != evidence["nextPhaseIndex"] ||
 			payload["newResumeGeneration"] != runnerHead["acceptedResumeGeneration"] || payload["newAttemptId"] != evidence["logicalResumeAttemptId"] ||
 			payload["authorityReceiptHash"] != authorityReceiptHash || payload["expiresAt"] != evidence["expiresAt"] {
-			return nil, nil, failure(ErrorIdentityMismatch, "$/payload", "Resume offer differs from the exact resume authority evidence.")
+			return nil, failure(ErrorIdentityMismatch, "$/payload", "Resume offer differs from the exact resume authority evidence.")
 		}
 	case authoritycontract.KindCancelRequest:
 		// Cancellation has no operation-specific payload assertion.
 	default:
-		return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Control kind is outside the authority-binding delivery set.")
+		return nil, failure(ErrorAuthorityPlaneMismatch, "$/controlKind", "Control kind is outside the authority-binding delivery set.")
 	}
-	if budgetSourceResultValue != nil {
-		return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/budgetSourceResult", "Budget source result is valid only for a budget authorization.")
-	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 func asRecord(value any) (Record, bool) {

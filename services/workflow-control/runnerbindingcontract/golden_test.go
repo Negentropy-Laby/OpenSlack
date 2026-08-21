@@ -1,14 +1,26 @@
 package runnerbindingcontract
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 )
+
+func validateControlGolden(
+	value, message, stage, resolution, resolutionReceipt, stageReceipt, prior, budgetSource any,
+) (Record, error) {
+	return ValidateControlDeliveryReceiptForMessage(value, message, ControlDeliveryValidationContext{
+		Stage: stage, Resolution: resolution, ResolutionReceipt: resolutionReceipt,
+		StageReceipt: stageReceipt, PriorEventDelivery: prior, BudgetSourceResult: budgetSource,
+	})
+}
 
 type exactGoldenVector struct {
 	Value          any    `json:"value"`
@@ -31,18 +43,11 @@ type operationGoldenExchange struct {
 }
 
 type controlGoldenExchange struct {
-	Operation          Operation         `json:"operation"`
-	Message            any               `json:"message"`
-	Receipt            exactGoldenVector `json:"receipt"`
-	BudgetSourceResult any               `json:"budgetSourceResult"`
-	PriorEventDelivery any               `json:"priorEventDelivery"`
-}
-
-type budgetControlGoldenExchange struct {
-	Message            any               `json:"message"`
-	Receipt            exactGoldenVector `json:"receipt"`
-	PriorEventDelivery any               `json:"priorEventDelivery"`
-	SourceResult       any               `json:"sourceResult"`
+	Operation             Operation         `json:"operation"`
+	Message               any               `json:"message"`
+	Receipt               exactGoldenVector `json:"receipt"`
+	BudgetSourceResult    any               `json:"budgetSourceResult"`
+	PriorEventDeliveryRef *string           `json:"priorEventDeliveryRef"`
 }
 
 type bindingGoldenVectors struct {
@@ -51,23 +56,29 @@ type bindingGoldenVectors struct {
 	Profile         string            `json:"profile"`
 	SourceLocks     map[string]string `json:"sourceLocks"`
 	OperationMatrix []struct {
-		Operation             Operation   `json:"operation"`
-		TargetKind            string      `json:"targetKind"`
-		RunnerDelta           RunnerDelta `json:"runnerDelta"`
-		SourcePlane           string      `json:"sourcePlane"`
-		SourceEvidenceState   string      `json:"sourceEvidenceState"`
-		SourceRevisionDelta   int64       `json:"sourceRevisionDelta"`
-		SourceGenerationDelta int64       `json:"sourceGenerationDelta"`
-		SourceReceiptSchema   *string     `json:"sourceReceiptSchema"`
+		Operation             Operation                      `json:"operation"`
+		TargetKind            string                         `json:"targetKind"`
+		RunnerDelta           RunnerDelta                    `json:"runnerDelta"`
+		SourcePlane           string                         `json:"sourcePlane"`
+		SourceEvidenceState   string                         `json:"sourceEvidenceState"`
+		SourceRevisionDelta   int64                          `json:"sourceRevisionDelta"`
+		SourceGenerationDelta int64                          `json:"sourceGenerationDelta"`
+		SourceReceiptSchema   *string                        `json:"sourceReceiptSchema"`
+		AuthorityReceiptHash  *AuthorityReceiptHashAlgorithm `json:"authorityReceiptHashAlgorithm"`
 	} `json:"operationMatrix"`
 	Positive struct {
 		Operations       map[string]operationGoldenExchange `json:"operations"`
 		SemanticVariants map[string]operationGoldenExchange `json:"semanticVariants"`
 		ControlDelivery  struct {
-			Accepted                     map[string]exactGoldenVector           `json:"accepted"`
-			ReconciliationRequired       exactGoldenVector                      `json:"reconciliationRequired"`
-			ByKind                       map[string]controlGoldenExchange       `json:"byKind"`
-			BudgetAuthorization          map[string]budgetControlGoldenExchange `json:"budgetAuthorization"`
+			Accepted               map[string]exactGoldenVector     `json:"accepted"`
+			ReconciliationRequired exactGoldenVector                `json:"reconciliationRequired"`
+			Artifacts              map[string]controlGoldenExchange `json:"artifacts"`
+			PriorEventDeliveries   map[string]struct {
+				Message any               `json:"message"`
+				Receipt exactGoldenVector `json:"receipt"`
+			} `json:"priorEventDeliveries"`
+			ByKind                       map[string]string `json:"byKind"`
+			BudgetAuthorization          map[string]string `json:"budgetAuthorization"`
 			BudgetDatabaseReconciliation struct {
 				Message  any               `json:"message"`
 				Receipt  exactGoldenVector `json:"receipt"`
@@ -177,7 +188,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 			receipt := assertGoldenPrepared(t, vector, "receipt")
 			exchange := golden.Positive.Operations[string(operation)]
-			validated, err := ValidateControlDeliveryReceiptForMessage(
+			validated, err := validateControlGolden(
 				receipt,
 				message,
 				exchange.Stage.Value,
@@ -203,7 +214,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			t.Fatal("missing reconciliation-required control message")
 		}
 		exchange := golden.Positive.Operations[string(OperationEffectComplete)]
-		validated, err := ValidateControlDeliveryReceiptForMessage(
+		validated, err := validateControlGolden(
 			receipt,
 			message,
 			exchange.Stage.Value,
@@ -223,8 +234,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	if len(golden.Positive.ControlDelivery.ByKind) != 5 {
 		t.Fatalf("control kind count = %d", len(golden.Positive.ControlDelivery.ByKind))
 	}
-	for kind, control := range golden.Positive.ControlDelivery.ByKind {
-		kind, control := kind, control
+	for kind, reference := range golden.Positive.ControlDelivery.ByKind {
+		kind, control := kind, goldenControlArtifact(t, golden, reference)
 		t.Run("kind/"+kind, func(t *testing.T) {
 			t.Parallel()
 			exchange, ok := golden.Positive.Operations[string(control.Operation)]
@@ -235,7 +246,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 				t.Fatalf("missing operation context for control kind %s", kind)
 			}
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-			validated, err := ValidateControlDeliveryReceiptForMessage(
+			validated, err := validateControlGolden(
 				receipt,
 				control.Message,
 				exchange.Stage.Value,
@@ -256,16 +267,16 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	if len(golden.Positive.ControlDelivery.BudgetAuthorization) != 2 {
 		t.Fatalf("budget authorization result count = %d", len(golden.Positive.ControlDelivery.BudgetAuthorization))
 	}
-	for status, control := range golden.Positive.ControlDelivery.BudgetAuthorization {
-		status, control := status, control
+	for status, reference := range golden.Positive.ControlDelivery.BudgetAuthorization {
+		status, control := status, goldenControlArtifact(t, golden, reference)
 		t.Run("budgetAuthorization/"+status, func(t *testing.T) {
 			t.Parallel()
 			exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-			validated, err := ValidateControlDeliveryReceiptForMessage(
+			validated, err := validateControlGolden(
 				receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
 				exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value,
-				goldenPriorValue(control.PriorEventDelivery), control.SourceResult,
+				goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef), control.BudgetSourceResult,
 			)
 			if err != nil {
 				t.Fatalf("budget %s contextual replay: %v", status, err)
@@ -280,7 +291,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		control := golden.Positive.ControlDelivery.BudgetDatabaseReconciliation
 		exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
 		receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-		validated, err := ValidateControlDeliveryReceiptForMessage(
+		validated, err := validateControlGolden(
 			receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
 			exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, nil, nil,
 		)
@@ -301,13 +312,12 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		_, err := validateControlDeliveryReceiptForMessageWithObserver(
 			receipt,
 			message,
-			exchange.Stage.Value,
-			exchange.Resolution.Value,
-			exchange.ResolutionReceipt.Value,
-			exchange.StageReceipt.Value,
-			nil,
-			nil,
+			ControlDeliveryValidationContext{
+				Stage: exchange.Stage.Value, Resolution: exchange.Resolution.Value,
+				ResolutionReceipt: exchange.ResolutionReceipt.Value, StageReceipt: exchange.StageReceipt.Value,
+			},
 			func(record Record) { encoded[reflect.ValueOf(record).Pointer()]++ },
+			nil,
 		)
 		if err != nil {
 			t.Fatalf("instrumented control delivery validation: %v", err)
@@ -319,6 +329,29 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			if count != 1 {
 				t.Fatalf("canonical record %x encoded %d times", identity, count)
 			}
+		}
+	})
+	t.Run("singleBudgetValidationPasses", func(t *testing.T) {
+		control := goldenControlArtifact(t, golden, golden.Positive.ControlDelivery.BudgetAuthorization["reserved"])
+		exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+		var events []string
+		_, err := validateControlDeliveryReceiptForMessageWithObserver(
+			control.Receipt.Value,
+			control.Message,
+			ControlDeliveryValidationContext{
+				Stage: exchange.Stage.Value, Resolution: exchange.Resolution.Value,
+				ResolutionReceipt: exchange.ResolutionReceipt.Value, StageReceipt: exchange.StageReceipt.Value,
+				PriorEventDelivery: goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef),
+				BudgetSourceResult: control.BudgetSourceResult,
+			},
+			nil,
+			func(event string) { events = append(events, event) },
+		)
+		if err != nil {
+			t.Fatalf("instrumented budget delivery validation: %v", err)
+		}
+		if !reflect.DeepEqual(events, []string{"budget_prepared_parse", "budget_durable_parse"}) {
+			t.Fatalf("budget validation passes = %v", events)
 		}
 	})
 }
@@ -333,22 +366,32 @@ func goldenControlPrior(t *testing.T, golden bindingGoldenVectors, kind string, 
 
 func controlPriorForGolden(t *testing.T, golden bindingGoldenVectors, kind string, control controlGoldenExchange) any {
 	t.Helper()
-	if control.PriorEventDelivery != nil {
-		return goldenPriorValue(control.PriorEventDelivery)
+	if control.PriorEventDeliveryRef != nil {
+		return goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef)
 	}
 	return goldenControlPrior(t, golden, kind, control.Operation)
 }
 
-func goldenPriorValue(value any) any {
-	record, ok := asRecord(value)
+func goldenControlArtifact(t *testing.T, golden bindingGoldenVectors, reference string) controlGoldenExchange {
+	t.Helper()
+	artifact, ok := golden.Positive.ControlDelivery.Artifacts[reference]
 	if !ok {
-		return value
+		t.Fatalf("missing control delivery artifact %s", reference)
 	}
-	receipt, ok := asRecord(record["receipt"])
-	if ok && receipt["value"] != nil {
-		return Record{"message": record["message"], "receipt": receipt["value"]}
+	return artifact
+}
+
+func goldenNamedPriorDelivery(t *testing.T, golden bindingGoldenVectors, reference *string) any {
+	t.Helper()
+	if reference == nil {
+		return nil
 	}
-	return value
+	prior, ok := golden.Positive.ControlDelivery.PriorEventDeliveries[*reference]
+	if !ok {
+		t.Fatalf("missing prior event delivery artifact %s", *reference)
+	}
+	receipt := assertGoldenPrepared(t, prior.Receipt, "receipt")
+	return Record{"message": prior.Message, "receipt": receipt}
 }
 
 func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operation Operation) Record {
@@ -365,13 +408,13 @@ func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operati
 	if !ok {
 		t.Fatalf("missing prior event-receipt ACK for %s", operation)
 	}
-	return Record{"message": message, "receipt": receipt.Value}
+	return Record{"message": message, "receipt": assertGoldenPrepared(t, receipt, "receipt")}
 }
 
 func TestGoldenNegativeReplay(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Negative) != 59 {
+	if len(golden.Negative) != 62 {
 		t.Fatalf("negative count = %d", len(golden.Negative))
 	}
 	for _, vector := range golden.Negative {
@@ -398,11 +441,109 @@ func loadBindingGolden(t *testing.T) bindingGoldenVectors {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := parseStrictJSON(contents, len(contents), 64, 500_000, 2*MaxStringBytes, MaxSafeInteger); err != nil {
+		t.Fatalf("strict decode golden vectors: %v", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(contents))
+	decoder.UseNumber()
 	var golden bindingGoldenVectors
-	if err := json.Unmarshal(contents, &golden); err != nil {
+	if err := decoder.Decode(&golden); err != nil {
 		t.Fatalf("decode golden vectors: %v", err)
 	}
+	if err := ensureGoldenEOF(decoder); err != nil {
+		t.Fatalf("decode golden vectors: %v", err)
+	}
+	if err := normalizeGoldenNumbers(reflect.ValueOf(&golden)); err != nil {
+		t.Fatalf("normalize golden vectors: %v", err)
+	}
 	return golden
+}
+
+func ensureGoldenEOF(decoder *json.Decoder) error {
+	var trailing any
+	err := decoder.Decode(&trailing)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		return errors.New("golden vectors contain trailing JSON")
+	}
+	return err
+}
+
+func normalizeGoldenNumbers(value reflect.Value) error {
+	if !value.IsValid() {
+		return nil
+	}
+	switch value.Kind() {
+	case reflect.Pointer:
+		if !value.IsNil() {
+			return normalizeGoldenNumbers(value.Elem())
+		}
+	case reflect.Interface:
+		if value.IsNil() {
+			return nil
+		}
+		normalized, err := normalizeGoldenDynamic(value.Interface())
+		if err != nil {
+			return err
+		}
+		value.Set(reflect.ValueOf(normalized))
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			if err := normalizeGoldenNumbers(value.Field(index)); err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		iterator := value.MapRange()
+		for iterator.Next() {
+			entry := reflect.New(value.Type().Elem()).Elem()
+			entry.Set(iterator.Value())
+			if err := normalizeGoldenNumbers(entry); err != nil {
+				return err
+			}
+			value.SetMapIndex(iterator.Key(), entry)
+		}
+	case reflect.Slice:
+		for index := 0; index < value.Len(); index++ {
+			if err := normalizeGoldenNumbers(value.Index(index)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeGoldenDynamic(value any) (any, error) {
+	switch current := value.(type) {
+	case json.Number:
+		parsed, err := strconv.ParseInt(string(current), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("golden number %q is not an integer: %w", current, err)
+		}
+		return parsed, nil
+	case map[string]any:
+		for key, entry := range current {
+			normalized, err := normalizeGoldenDynamic(entry)
+			if err != nil {
+				return nil, err
+			}
+			current[key] = normalized
+		}
+		return current, nil
+	case []any:
+		for index, entry := range current {
+			normalized, err := normalizeGoldenDynamic(entry)
+			if err != nil {
+				return nil, err
+			}
+			current[index] = normalized
+		}
+		return current, nil
+	default:
+		return value, nil
+	}
 }
 
 func assertGoldenPrepared(t *testing.T, vector exactGoldenVector, domain string) Record {
@@ -472,7 +613,7 @@ func replayGoldenNegative(operation string, input any) error {
 		if err != nil {
 			return err
 		}
-		_, err = ValidateControlDeliveryReceiptForMessage(
+		_, err = validateControlGolden(
 			record["receipt"], record["message"], record["stage"], record["resolution"], record["resolutionReceipt"],
 			record["stageReceipt"], record["priorEventDelivery"], record["budgetSourceResult"],
 		)
@@ -526,6 +667,7 @@ func assertGoldenOperationMatrix(t *testing.T, golden bindingGoldenVectors) {
 		entry := golden.OperationMatrix[index]
 		kind, _ := ExpectedKind(operation)
 		delta, _ := RunnerHeadDelta(operation)
+		fact, _ := factFor(operation)
 		receiptSchema, _ := SourceReceiptSchema(operation)
 		state := "committed"
 		sourceRevisionDelta := int64(1)
@@ -540,8 +682,16 @@ func assertGoldenOperationMatrix(t *testing.T, golden bindingGoldenVectors) {
 		if entry.Operation != operation || entry.TargetKind != string(kind) || entry.RunnerDelta != delta ||
 			entry.SourceEvidenceState != state || entry.SourceRevisionDelta != sourceRevisionDelta ||
 			entry.SourceGenerationDelta != sourceGenerationDelta ||
-			!nullableStringsEqual(entry.SourceReceiptSchema, receiptSchema) {
+			!nullableStringsEqual(entry.SourceReceiptSchema, receiptSchema) ||
+			!nullableHashAlgorithmsEqual(entry.AuthorityReceiptHash, fact.AuthorityReceiptHash) {
 			t.Fatalf("golden operation matrix drift at %s: %+v", operation, entry)
 		}
 	}
+}
+
+func nullableHashAlgorithmsEqual(actual *AuthorityReceiptHashAlgorithm, expected AuthorityReceiptHashAlgorithm) bool {
+	if expected == AuthorityReceiptHashNone {
+		return actual == nil
+	}
+	return actual != nil && *actual == expected
 }

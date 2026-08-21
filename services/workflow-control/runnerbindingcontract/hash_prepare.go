@@ -7,6 +7,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/strictjson"
 )
 
@@ -15,17 +16,34 @@ type canonicalRecordEntry struct {
 	bytes []byte
 }
 
+type validatedBudgetPrepared struct {
+	prepared budgetcontract.PreparedRequest
+	request  budgetcontract.Record
+}
+
+type validatedBudgetDurable struct {
+	record     Record
+	projection budgetcontract.Record
+	bytes      []byte
+	hash       string
+}
+
 // bindingValidationSession keeps canonical bytes local to one validation
 // operation. Retaining the Record in each entry prevents pointer reuse while
 // the session is live; no process-global or unbounded cache is involved.
 type bindingValidationSession struct {
 	canonicalByRecord map[uintptr]canonicalRecordEntry
+	budgetPrepared    map[string]validatedBudgetPrepared
+	budgetDurable     map[string]validatedBudgetDurable
 	onEncode          func(Record)
+	onValidate        func(string)
 }
 
 func newBindingValidationSession(onEncode func(Record)) *bindingValidationSession {
 	return &bindingValidationSession{
 		canonicalByRecord: make(map[uintptr]canonicalRecordEntry),
+		budgetPrepared:    make(map[string]validatedBudgetPrepared),
+		budgetDurable:     make(map[string]validatedBudgetDurable),
 		onEncode:          onEncode,
 	}
 }
@@ -105,7 +123,7 @@ func HashReceipt(value any) (string, error) {
 // evidence in the same domain as the TypeScript source contract.
 func HashEvidence(value any, operation Operation) (string, error) {
 	session := newBindingValidationSession(nil)
-	validated, err := validateEvidence(value, operation, "$")
+	validated, err := validateEvidence(value, operation, "$", session)
 	if err != nil {
 		return "", err
 	}

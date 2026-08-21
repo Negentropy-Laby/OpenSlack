@@ -612,7 +612,8 @@ Qoder, tag, npm, and production remain unclaimed or not activated.
 
 The generated [GS9-F2a manifest](../../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
 is the normative authority-boundary record. Its operation table is the single source for target
-kinds, coordinator deltas, source planes, source deltas, and source receipt schemas; its protocol,
+kinds, coordinator deltas, source planes, source deltas, source receipt schemas, and the receipt-hash
+algorithm for each deliverable kind; its protocol,
 source-lock, framing, evidence, and closed boundary inventories are likewise authoritative. Other
 architecture documents must link to that record rather than duplicate its matrices or
 `NOT_CLAIMED` list.
@@ -633,3 +634,10 @@ record kind, and projection hash are revalidated. An E1
 the runner boundary through a reconciliation-required event receipt and cannot generate a budget
 authorization decision. This rule does not remove the frozen authority-v2 vocabulary; it prevents
 the current E1 database-unknown evidence from being promoted into a fabricated committed revision.
+
+Hash selection is kind-bound rather than caller-selected: `budget_authorization` uses SHA-256 of
+the exact canonical durable receipt bytes, while `effect_authorization` and `resume_offer` use the
+binding receipt domain hash. Kinds without an authority-receipt payload declare no algorithm. The
+TypeScript and Go validators consume the same generated operation facts and one validation-session
+cache, so this hardening removes structural drift and repeated parsing; it does not claim or repair
+a live Go runtime divergence, because F2a still has no live runtime composition.

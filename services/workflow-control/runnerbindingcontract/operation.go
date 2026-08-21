@@ -7,6 +7,14 @@ type RunnerDelta struct {
 	Generation int64
 }
 
+type AuthorityReceiptHashAlgorithm string
+
+const (
+	AuthorityReceiptHashNone             AuthorityReceiptHashAlgorithm = ""
+	AuthorityReceiptHashBindingDomain    AuthorityReceiptHashAlgorithm = "binding_receipt_domain_sha256"
+	AuthorityReceiptHashCanonicalDurable AuthorityReceiptHashAlgorithm = "canonical_durable_receipt_sha256"
+)
+
 type OperationFact struct {
 	TargetKind            authoritycontract.Kind
 	RunnerDelta           RunnerDelta
@@ -15,6 +23,7 @@ type OperationFact struct {
 	SourceRevisionDelta   int64
 	SourceGenerationDelta int64
 	SourceReceiptSchema   *string
+	AuthorityReceiptHash  AuthorityReceiptHashAlgorithm
 }
 
 var orderedOperations = []Operation{
@@ -27,15 +36,15 @@ var orderedOperations = []Operation{
 }
 
 var operationFacts = map[Operation]OperationFact{
-	OperationCheckpointCommit: operationFact(authoritycontract.KindCheckpointCommit, RunnerDelta{Revision: 1}, "checkpoint_control", "committed", 1, 0, "openslack.workflow_runner_checkpoint_authority_receipt.v1"),
-	OperationEffectAuthorize:  operationFact(authoritycontract.KindEffectIntent, RunnerDelta{Revision: 1}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_authority_receipt.v1"),
-	OperationEffectComplete:   operationFact(authoritycontract.KindEffectOutcome, RunnerDelta{}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_completion_receipt.v1"),
-	OperationBudgetReserve:    operationFact(authoritycontract.KindBudgetReserveRequest, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, ""),
-	OperationBudgetSettle:     operationFact(authoritycontract.KindBudgetUsageReport, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, ""),
-	OperationResumeAdvance:    operationFact(authoritycontract.KindLeaseAccept, RunnerDelta{Revision: 1, Generation: 1}, "resume_control", "committed", 1, 1, "openslack.workflow_runner_resume_authority_receipt.v1"),
+	OperationCheckpointCommit: operationFact(authoritycontract.KindCheckpointCommit, RunnerDelta{Revision: 1}, "checkpoint_control", "committed", 1, 0, "openslack.workflow_runner_checkpoint_authority_receipt.v1", AuthorityReceiptHashNone),
+	OperationEffectAuthorize:  operationFact(authoritycontract.KindEffectIntent, RunnerDelta{Revision: 1}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
+	OperationEffectComplete:   operationFact(authoritycontract.KindEffectOutcome, RunnerDelta{}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_completion_receipt.v1", AuthorityReceiptHashNone),
+	OperationBudgetReserve:    operationFact(authoritycontract.KindBudgetReserveRequest, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashCanonicalDurable),
+	OperationBudgetSettle:     operationFact(authoritycontract.KindBudgetUsageReport, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashNone),
+	OperationResumeAdvance:    operationFact(authoritycontract.KindLeaseAccept, RunnerDelta{Revision: 1, Generation: 1}, "resume_control", "committed", 1, 1, "openslack.workflow_runner_resume_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
 }
 
-func operationFact(kind authoritycontract.Kind, delta RunnerDelta, plane, state string, revisionDelta, generationDelta int64, receiptSchema string) OperationFact {
+func operationFact(kind authoritycontract.Kind, delta RunnerDelta, plane, state string, revisionDelta, generationDelta int64, receiptSchema string, hashAlgorithm AuthorityReceiptHashAlgorithm) OperationFact {
 	var schema *string
 	if receiptSchema != "" {
 		value := receiptSchema
@@ -44,6 +53,7 @@ func operationFact(kind authoritycontract.Kind, delta RunnerDelta, plane, state 
 	return OperationFact{
 		TargetKind: kind, RunnerDelta: delta, SourcePlane: plane, SourceEvidenceState: state,
 		SourceRevisionDelta: revisionDelta, SourceGenerationDelta: generationDelta, SourceReceiptSchema: schema,
+		AuthorityReceiptHash: hashAlgorithm,
 	}
 }
 

@@ -374,6 +374,13 @@ F2a adds no runtime producer or consumer of the companion frames. GS9-F2b must c
 staging, domain adapters, recovery, scheduler/worker integration, and end-to-end qualification
 without widening the manifest boundary.
 
+The operation facts also freeze receipt-hash selection per control kind. Budget authorization binds
+the exact canonical durable receipt bytes; effect authorization and resume offer bind the
+domain-separated authority receipt; other kinds carry no authority-receipt hash. Both mirrors now
+validate those facts from the generated bundle, share strict parsing within each language, and cache
+each prepared request and durable receipt for one validation call. These changes address structural
+fragility and test coverage only; no live Go behavior divergence was found or claimed.
+
 The `budget_authorization` ACK is checked against a post-event durable E1 result. An accepted
 reserve receipt plus its exact reserve decision and ledger entry determines `reserved` with the
 requested amounts or `rejected` with zero amounts, the accepted run revision, and the SHA-256 of

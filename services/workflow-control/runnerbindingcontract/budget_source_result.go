@@ -15,58 +15,106 @@ const (
 	BudgetDurableReceiptSchema = "openslack.workflow_control_budget_durable_record.v1"
 	budgetDurableWriter        = "workflow-control/budget-authority-server"
 	budgetDurableMode          = "local-qualification-v1"
-	budgetManifestSHA256       = "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714"
-	maxBudgetDurableBytes      = 524_288
 )
 
-// ParseBudgetDurableReceiptBytes validates the Go E2 durable envelope and
-// proves that the supplied bytes are its one exact canonical representation.
-func ParseBudgetDurableReceiptBytes(value any) (Record, error) {
-	text, ok := value.(string)
-	if !ok || len([]byte(text)) == 0 || len([]byte(text)) > maxBudgetDurableBytes {
-		return nil, failure(ErrorLimitExceeded, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes exceed their limit.")
+type validatedBudgetSourceResult struct {
+	record  Record
+	receipt budgetcontract.Record
+	request budgetcontract.Record
+	durable validatedBudgetDurable
+}
+
+func validateBudgetPreparedWithSession(value any, session *bindingValidationSession) (budgetcontract.PreparedRequest, budgetcontract.Record, error) {
+	if prepared, ok := value.(budgetcontract.PreparedRequest); ok && session != nil {
+		if cached, found := session.budgetPrepared[prepared.RequestHash]; found && cached.prepared == prepared {
+			return cached.prepared, cached.request, nil
+		}
 	}
-	parsed, err := strictjson.Parse([]byte(text), strictjson.Limits{
-		MaxBytes: maxBudgetDurableBytes, MaxDepth: MaxJSONDepth, MaxNodes: MaxJSONNodes,
-		MaxStringBytes: MaxStringBytes, MaxSafeInteger: MaxSafeInteger,
-		NumberPolicy: strictjson.NumberCanonicalSafeInteger,
-	})
+	if preparedRecord, ok := value.(Record); ok {
+		value = map[string]any(preparedRecord)
+	}
+	if session != nil && session.onValidate != nil {
+		session.onValidate("budget_prepared_parse")
+	}
+	prepared, request, err := budgetcontract.ValidatePreparedRequestRecord(value)
+	if err != nil {
+		return budgetcontract.PreparedRequest{}, nil, err
+	}
+	if session != nil {
+		session.budgetPrepared[prepared.RequestHash] = validatedBudgetPrepared{prepared: prepared, request: request}
+	}
+	return prepared, request, nil
+}
+
+func parseBudgetDurableReceiptWithSession(value any, session *bindingValidationSession) (validatedBudgetDurable, error) {
+	text, ok := value.(string)
+	if !ok || len([]byte(text)) == 0 || len([]byte(text)) > MaxStringBytes {
+		return validatedBudgetDurable{}, failure(ErrorLimitExceeded, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes exceed their limit.")
+	}
+	if session != nil {
+		if cached, found := session.budgetDurable[text]; found {
+			return cached, nil
+		}
+		if session.onValidate != nil {
+			session.onValidate("budget_durable_parse")
+		}
+	}
+	input := []byte(text)
+	parsed, err := parseStrictJSON(input, MaxStringBytes, MaxJSONDepth, MaxJSONNodes, MaxStringBytes, MaxSafeInteger)
 	if err != nil {
 		code := ErrorInvalid
 		var strictErr *strictjson.Error
 		if errors.As(err, &strictErr) && strictErr.Kind == strictjson.ErrorLimit {
 			code = ErrorLimitExceeded
 		}
-		return nil, failure(code, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes are not strict JSON.")
+		return validatedBudgetDurable{}, failure(code, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes are not strict JSON.")
 	}
-	durable, _, err := validateBudgetDurableReceipt(parsed)
+	durable, projection, err := validateBudgetDurableReceipt(parsed)
 	if err != nil {
-		return nil, err
+		return validatedBudgetDurable{}, err
 	}
 	canonical, err := budgetcontract.CanonicalJSON(durable)
-	if err != nil || !bytes.Equal([]byte(canonical), []byte(text)) {
-		return nil, failure(ErrorInvalid, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes are not exact canonical bytes.")
+	if err != nil || !bytes.Equal([]byte(canonical), input) {
+		return validatedBudgetDurable{}, failure(ErrorInvalid, "$/budgetSourceResult/durableReceiptBytes", "Durable budget receipt bytes are not exact canonical bytes.")
 	}
-	return durable, nil
+	digest := sha256.Sum256(input)
+	result := validatedBudgetDurable{
+		record: durable, projection: projection, bytes: append([]byte(nil), input...), hash: hex.EncodeToString(digest[:]),
+	}
+	if session != nil {
+		session.budgetDurable[text] = result
+	}
+	return result, nil
+}
+
+// ParseBudgetDurableReceiptBytes validates the Go E2 durable envelope and
+// proves that the supplied bytes are its one exact canonical representation.
+func ParseBudgetDurableReceiptBytes(value any) (Record, error) {
+	durable, err := parseBudgetDurableReceiptWithSession(value, newBindingValidationSession(nil))
+	return durable.record, err
 }
 
 // HashBudgetSourceReceipt is the plain SHA-256 of the exact E2 DurableRecord
 // bytes consumed by runner v2. It intentionally is not an E1 domain hash.
 func HashBudgetSourceReceipt(value any) (string, error) {
-	if _, err := ParseBudgetDurableReceiptBytes(value); err != nil {
-		return "", err
-	}
-	text := value.(string)
-	digest := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(digest[:]), nil
+	durable, err := parseBudgetDurableReceiptWithSession(value, newBindingValidationSession(nil))
+	return durable.hash, err
 }
 
 // ValidateBudgetSourceResult proves that an accepted E2 receipt envelope,
 // reserve decision, and ledger entry all bind the same frozen E1 prepared
 // request. Database-unknown receipts cannot satisfy this validator.
 func ValidateBudgetSourceResult(value, preparedValue any) (Record, error) {
-	result, _, err := validateBudgetSourceResult(value, preparedValue)
-	return result, err
+	session := newBindingValidationSession(nil)
+	prepared, request, err := validateBudgetPreparedWithSession(preparedValue, session)
+	if err != nil {
+		return nil, embeddedBudgetFailure(err, "$/budgetSourceResult/decision/request")
+	}
+	result, err := validateBudgetSourceResultForPrepared(value, prepared, request, session)
+	if err != nil {
+		return nil, err
+	}
+	return result.record, nil
 }
 
 func validateBudgetDurableReceipt(value any) (Record, budgetcontract.Record, error) {
@@ -128,49 +176,70 @@ func validateBudgetDurableReceipt(value any) (Record, budgetcontract.Record, err
 	}, projection, nil
 }
 
-func validateBudgetSourceResult(value any, preparedValue any) (Record, budgetcontract.Record, error) {
+func validateBudgetSourceResultForPrepared(
+	value any,
+	prepared budgetcontract.PreparedRequest,
+	request budgetcontract.Record,
+	session *bindingValidationSession,
+) (validatedBudgetSourceResult, error) {
 	record, err := closedRecord(value, []string{"schema", "durableReceiptBytes", "decision", "ledgerEntry"}, "$/budgetSourceResult")
 	if err != nil {
-		return nil, nil, err
-	}
-	prepared, request, err := budgetcontract.ValidatePreparedRequestRecord(preparedValue)
-	if err != nil {
-		return nil, nil, embeddedBudgetFailure(err, "$/budgetSourceResult/decision/request")
+		return validatedBudgetSourceResult{}, err
 	}
 	if prepared.Operation != "reserve" {
-		return nil, nil, failure(ErrorAuthorityPlaneMismatch, "$/budgetSourceResult", "A budget authorization requires an exact reserve result.")
+		return validatedBudgetSourceResult{}, failure(ErrorAuthorityPlaneMismatch, "$/budgetSourceResult", "A budget authorization requires an exact reserve result.")
 	}
 	decision, err := budgetcontract.ValidateReserveDecision(record["decision"])
 	if err != nil {
-		return nil, nil, embeddedBudgetFailure(err, "$/budgetSourceResult/decision")
+		return validatedBudgetSourceResult{}, embeddedBudgetFailure(err, "$/budgetSourceResult/decision")
 	}
 	ledger, err := budgetcontract.ValidateLedgerEntry(record["ledgerEntry"])
 	if err != nil {
-		return nil, nil, embeddedBudgetFailure(err, "$/budgetSourceResult/ledgerEntry")
+		return validatedBudgetSourceResult{}, embeddedBudgetFailure(err, "$/budgetSourceResult/ledgerEntry")
 	}
 	durableBytes := record["durableReceiptBytes"]
-	durable, err := ParseBudgetDurableReceiptBytes(durableBytes)
+	durable, err := parseBudgetDurableReceiptWithSession(durableBytes, session)
 	if err != nil {
-		return nil, nil, err
+		return validatedBudgetSourceResult{}, err
 	}
-	receipt := durable["operationalProjection"].(budgetcontract.Record)
+	receipt := durable.projection
 	if _, err := budgetcontract.ValidateReceiptForResult(receipt, prepared, decision, ledger, nil); err != nil {
-		return nil, nil, embeddedBudgetFailure(err, "$/budgetSourceResult/receipt")
+		return validatedBudgetSourceResult{}, embeddedBudgetFailure(err, "$/budgetSourceResult/receipt")
 	}
-	decisionRequest := decision["request"].(budgetcontract.Record)
-	decisionCanonical, _ := budgetcontract.CanonicalJSON(decisionRequest)
-	route, _ := decisionRequest["route"].(budgetcontract.Record)
+	decisionRequest, decisionRequestOK := asBudgetRecord(decision["request"])
+	route, routeOK := asBudgetRecord(decisionRequest["route"])
+	requestRoute, requestRouteOK := asBudgetRecord(request["route"])
+	decisionCanonical, canonicalErr := budgetcontract.CanonicalJSON(decisionRequest)
 	acceptedRevision, accepted := receipt["acceptedRunRevision"].(int64)
 	committedAt, committed := receipt["committedAt"].(string)
-	if receipt["operation"] != "reserve" || receipt["status"] != "accepted" || !accepted || acceptedRevision < 1 ||
+	if !decisionRequestOK || !routeOK || !requestRouteOK || canonicalErr != nil ||
+		receipt["operation"] != "reserve" || receipt["status"] != "accepted" || !accepted || acceptedRevision < 1 ||
 		!committed || committedAt == "" || decisionCanonical+"\n" != prepared.Body ||
-		route == nil || route["backend"] != "go" || route["authority"] != "workflow-control" ||
-		request["route"].(budgetcontract.Record)["backend"] != "go" || request["route"].(budgetcontract.Record)["authority"] != "workflow-control" {
-		return nil, nil, failure(ErrorIdentityMismatch, "$/budgetSourceResult", "Budget source result does not prove the exact accepted prepared reserve.")
+		route["backend"] != "go" || route["authority"] != "workflow-control" ||
+		requestRoute["backend"] != "go" || requestRoute["authority"] != "workflow-control" {
+		return validatedBudgetSourceResult{}, failure(ErrorIdentityMismatch, "$/budgetSourceResult", "Budget source result does not prove the exact accepted prepared reserve.")
 	}
 	schema, err := literalString(record["schema"], BudgetSourceResultSchema, "$/budgetSourceResult/schema")
 	if err != nil {
-		return nil, nil, err
+		return validatedBudgetSourceResult{}, err
 	}
-	return Record{"schema": schema, "durableReceiptBytes": durableBytes, "decision": decision, "ledgerEntry": ledger}, receipt, nil
+	return validatedBudgetSourceResult{
+		record:  Record{"schema": schema, "durableReceiptBytes": durableBytes, "decision": decision, "ledgerEntry": ledger},
+		receipt: receipt,
+		request: request,
+		durable: durable,
+	}, nil
+}
+
+func asBudgetRecord(value any) (budgetcontract.Record, bool) {
+	switch current := value.(type) {
+	case budgetcontract.Record:
+		return current, current != nil
+	case Record:
+		return budgetcontract.Record(current), current != nil
+	case map[string]any:
+		return budgetcontract.Record(current), current != nil
+	default:
+		return nil, false
+	}
 }

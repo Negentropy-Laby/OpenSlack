@@ -8,7 +8,11 @@ import (
 
 var positiveDecimalPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
-func validateEvidence(value any, operation Operation, path string) (Record, error) {
+func validateEvidence(value any, operation Operation, path string, sessions ...*bindingValidationSession) (Record, error) {
+	var session *bindingValidationSession
+	if len(sessions) > 0 {
+		session = sessions[0]
+	}
 	if err := rejectForbiddenKeys(value, path); err != nil {
 		return nil, err
 	}
@@ -20,7 +24,7 @@ func validateEvidence(value any, operation Operation, path string) (Record, erro
 	case OperationEffectComplete:
 		return validateEffectCompletionEvidence(value, operation, path)
 	case OperationBudgetReserve, OperationBudgetSettle:
-		return validateBudgetEvidence(value, operation, path)
+		return validateBudgetEvidence(value, operation, path, session)
 	case OperationResumeAdvance:
 		return validateResumeEvidence(value, operation, path)
 	default:
@@ -282,7 +286,7 @@ func validateEffectCompletionEvidence(value any, operation Operation, path strin
 	return result, nil
 }
 
-func validateBudgetEvidence(value any, operation Operation, path string) (Record, error) {
+func validateBudgetEvidence(value any, operation Operation, path string, session *bindingValidationSession) (Record, error) {
 	record, err := closedRecord(value, []string{
 		"schema", "sourceAuthority", "preparedRequest", "providerHash", "modelHash", "providerRunHash", "providerAttempt",
 		"accountId", "policyHash", "rateNanoUsdPerToken", "providerUsageReceiptHash",
@@ -301,7 +305,7 @@ func validateBudgetEvidence(value any, operation Operation, path string) (Record
 	if preparedRecord, ok := preparedValue.(Record); ok {
 		preparedValue = map[string]any(preparedRecord)
 	}
-	prepared, request, preparedErr := budgetcontract.ValidatePreparedRequestRecord(preparedValue)
+	prepared, request, preparedErr := validateBudgetPreparedWithSession(preparedValue, session)
 	if preparedErr != nil {
 		return nil, embeddedBudgetFailure(preparedErr, path+"/preparedRequest")
 	}
