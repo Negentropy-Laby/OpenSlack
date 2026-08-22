@@ -29,6 +29,25 @@ import (
 )
 
 func TestGS9F1QualificationFoundation(t *testing.T) {
+	t.Run("budget fixture produces an exact canonical E1 receipt", func(t *testing.T) {
+		route := &authoritycontract.Route{Backend: budgetstore.Backend, Authority: budgetstore.Authority,
+			RoutingEpoch: 1, AuthorityBuildHash: strings.Repeat("a", 64)}
+		lease := runnerstore.AttemptLease{WorkspaceID: "workspace.fixture", JobID: "job.fixture",
+			WorkflowRunID: "run.fixture", CorrelationID: "correlation.fixture", AttemptID: "attempt.fixture",
+			LeaseID: "lease.fixture", FencingToken: 1, AuthorityRoute: route, RunRevision: 1, ResumeGeneration: 0}
+		input := v2BudgetReserve(t, lease, 2, "event-budget-fixture")
+		adapter := &budgetFoundationAdapter{}
+		outcome, err := adapter.ReserveBudget(t.Context(), runnerstore.V2AuthorityRequest{
+			Message: input.Message, ExactBytes: input.ExactBytes, Lease: lease,
+		})
+		if err != nil || len(outcome.ExactReceiptBytes) == 0 || outcome.Decision == nil || outcome.Decision.Sequence == nil {
+			t.Fatalf("budget fixture did not produce durable authority evidence: %+v %v", outcome, err)
+		}
+		if _, _, err := validateV2AuthorityResult(input.Message, *outcome.Decision.Sequence, outcome); err != nil {
+			t.Fatalf("budget fixture failed the live runner binding: %v", err)
+		}
+	})
+
 	marker, configured := os.LookupEnv("WORKFLOW_RUNNER_GS9F1_QUALIFICATION")
 	if !configured || marker == "" {
 		t.Skip("GS9-F1 qualification marker is not configured")
@@ -894,6 +913,7 @@ func (adapter *budgetFoundationAdapter) ReserveBudget(_ context.Context, request
 		"expectedProviderHash":    "sha256:" + strings.Repeat("1", 64),
 		"expectedModelHash":       "sha256:" + strings.Repeat("2", 64),
 		"expectedProviderRunHash": "sha256:" + strings.Repeat("3", 64),
+		"correlationId":           request.Message.CorrelationID,
 		"policyHash":              request.Message.Payload["policyHash"], "route": route,
 		"expectedAccountRevision": int64(0), "expectedRunRevision": sourceRunRevision,
 		"rateNanoUsdPerToken": "1",
@@ -1005,6 +1025,9 @@ func (adapter *budgetFoundationAdapter) ReadBudgetReceipt(context.Context, autho
 	adapter.readCalls++
 	if adapter.failRead {
 		return runnerstore.V2AuthorityOutcome{}, errors.New("simulated unreadable authority receipt")
+	}
+	if len(adapter.stored.ExactReceiptBytes) == 0 {
+		return runnerstore.V2AuthorityOutcome{}, errors.New("budget foundation fixture has no durable receipt")
 	}
 	return adapter.stored, nil
 }
