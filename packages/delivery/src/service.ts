@@ -58,7 +58,7 @@ export class GitHubDeliveryService {
     let history: DeliveryState[] = ['PREPARED'];
     const tokenProvider =
       this.options.tokenProvider ??
-      defaultTokenProvider(resolveGitHubAppLocalStateRoot(input.rootDir));
+      defaultTokenProvider(resolveGitHubAppLocalStateRoot(input.rootDir), input.owner, input.repo);
     let token = await this.acquireToken(tokenProvider, false);
     const installationId = token.installationId;
     let permissions = diagnoseDeliveryPermissions(token.permissions, input.requireIssuesWrite);
@@ -460,7 +460,11 @@ function classifyDeliveryApiFailure(error: unknown): {
   };
 }
 
-function defaultTokenProvider(localStateRoot: string | undefined): DeliveryTokenProvider {
+function defaultTokenProvider(
+  localStateRoot: string | undefined,
+  owner: string,
+  repo: string,
+): DeliveryTokenProvider {
   return {
     async acquire(options) {
       const forwarded = readForwardedInstallationToken();
@@ -475,7 +479,9 @@ function defaultTokenProvider(localStateRoot: string | undefined): DeliveryToken
         return forwarded;
       }
       if (options?.forceRefresh) clearTokenCache();
-      return mapToken(await requireAppInstallationToken({ localStateRoot }));
+      return mapToken(
+        await requireAppInstallationToken({ localStateRoot, repository: { owner, repo } }),
+      );
     },
     invalidate() {
       clearTokenCache();
@@ -487,7 +493,8 @@ function readForwardedInstallationToken(): DeliveryToken | null {
   const value = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN?.trim();
   const installationId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID?.trim();
   const expiresAt = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT?.trim();
-  const hasForwardedCredential = Boolean(value || installationId || expiresAt);
+  const rawPermissions = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS;
+  const hasForwardedCredential = Boolean(value || expiresAt || rawPermissions);
   if (!hasForwardedCredential) return null;
   if (!value || !installationId || !expiresAt) {
     throw new DeliveryError(
@@ -506,7 +513,6 @@ function readForwardedInstallationToken(): DeliveryToken | null {
   }
 
   let permissions: Record<string, string> = {};
-  const rawPermissions = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS;
   if (rawPermissions) {
     try {
       const parsed: unknown = JSON.parse(rawPermissions);

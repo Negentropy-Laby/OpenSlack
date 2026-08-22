@@ -1,17 +1,13 @@
 import { Octokit } from '@octokit/rest';
 import { execFileSync } from 'node:child_process';
-import {
-  closeSync,
-  constants,
-  existsSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readSync,
-  realpathSync,
-} from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { requireAppInstallationToken, type GitHubAppInstallationTokenOptions } from './auth.js';
+import {
+  requireAppInstallationToken,
+  type GitHubAppAuthDiagnostic,
+  type GitHubAppInstallationTokenOptions,
+} from './auth.js';
+import { readStableLocalUtf8 as readStableUtf8 } from './stable-local-file.js';
 
 const LOCAL_METADATA_MAX_BYTES = 256 * 1024;
 const GIT_COMMAND_TIMEOUT_MS = 2_000;
@@ -37,6 +33,7 @@ export interface GitHubClientOptions {
   localStateRoot?: string;
   credentialStore?: GitHubAppInstallationTokenOptions['credentialStore'];
   signal?: AbortSignal;
+  onAuthDiagnostic?: (diagnostic: GitHubAppAuthDiagnostic) => void;
   evidenceLimits?: {
     maxPages?: number;
     maxFiles?: number;
@@ -59,6 +56,7 @@ export interface GitHubClient {
   isDryRun: boolean;
   tokenExpiresAt?: string;
   appSlug?: string;
+  installationHintReplaced?: boolean;
 }
 
 export interface GitHubIdentity {
@@ -120,25 +118,48 @@ export function parseGitHubRepoSpec(
   const value = input.trim();
   if (!value) return null;
 
-  const ssh = value.match(/^git@[^:]+:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/);
+  const ssh = value.match(
+    /^git@(github\.com|ssh\.github\.com):([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/u,
+  );
   if (ssh) {
-    return { owner: ssh[1], repo: ssh[2] };
+    return validRepositoryParts(ssh[2], ssh[3]);
   }
 
-  const shorthand = value.match(/^([^/\s]+)\/([^/\s]+?)(?:\.git)?$/);
+  const shorthand = value.match(/^([^/\s]+)\/([^/\s]+?)(?:\.git)?$/u);
   if (shorthand) {
-    return { owner: shorthand[1], repo: shorthand[2] };
+    return validRepositoryParts(shorthand[1], shorthand[2]);
+  }
+
+  const hostedShorthand = value.match(/^github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?$/u);
+  if (hostedShorthand) {
+    return validRepositoryParts(hostedShorthand[1], hostedShorthand[2]);
   }
 
   try {
     const url = new URL(value);
-    if (!url.hostname.endsWith('github.com')) return null;
-    const [owner, repoWithSuffix] = url.pathname.replace(/^\/+/, '').split('/');
-    if (!owner || !repoWithSuffix) return null;
-    return { owner, repo: repoWithSuffix.replace(/\.git$/, '') };
+    const hostname = url.hostname.toLowerCase();
+    if (hostname !== 'github.com' && hostname !== 'ssh.github.com') return null;
+    if (url.protocol !== 'https:' && url.protocol !== 'ssh:') return null;
+    if (hostname === 'ssh.github.com' && url.protocol !== 'ssh:') return null;
+    if (hostname === 'ssh.github.com' && url.port && url.port !== '443') return null;
+    const segments = url.pathname.replace(/^\/+|\/+$/gu, '').split('/');
+    if (segments.length !== 2) return null;
+    return validRepositoryParts(segments[0], segments[1].replace(/\.git$/u, ''));
   } catch {
     return null;
   }
+}
+
+function validRepositoryParts(owner: string, repo: string): { owner: string; repo: string } | null {
+  if (
+    !/^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(owner) ||
+    repo === '.' ||
+    repo === '..' ||
+    !/^[A-Za-z0-9._-]{1,100}$/u.test(repo)
+  ) {
+    return null;
+  }
+  return { owner, repo };
 }
 
 function abortError(): Error {
@@ -169,48 +190,11 @@ function runBoundedGit(cwd: string, args: string[], signal?: AbortSignal): strin
   return output;
 }
 
-function sameFileIdentity(left: ReturnType<typeof fstatSync>, right: ReturnType<typeof fstatSync>) {
-  return (
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.mode === right.mode &&
-    left.size === right.size &&
-    left.ctimeMs === right.ctimeMs &&
-    left.mtimeMs === right.mtimeMs
-  );
-}
-
 function readStableLocalUtf8(path: string, maxBytes: number): string | null {
-  let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const before = fstatSync(fd);
-    if (!before.isFile() || before.size <= 0 || before.size > maxBytes) {
-      throw new Error('LOCAL_METADATA_INVALID');
-    }
-    const content = Buffer.allocUnsafe(before.size);
-    let offset = 0;
-    while (offset < content.byteLength) {
-      const count = readSync(fd, content, offset, content.byteLength - offset, offset);
-      if (count === 0) break;
-      offset += count;
-    }
-    const after = fstatSync(fd);
-    const pathStat = lstatSync(path);
-    if (
-      offset !== content.byteLength ||
-      !sameFileIdentity(before, after) ||
-      pathStat.isSymbolicLink() ||
-      !sameFileIdentity(after, pathStat)
-    ) {
-      throw new Error('LOCAL_METADATA_CHANGED');
-    }
-    return new TextDecoder('utf-8', { fatal: true }).decode(content);
+    return readStableUtf8(path, { maxBytes });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return null;
     throw error;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -227,7 +211,7 @@ function resolveGitRemote(
   }
 }
 
-function resolveWorkspaceRepo(cwd: string): { owner: string; repo: string } | null {
+export function resolveGitHubWorkspaceTarget(cwd: string): { owner: string; repo: string } | null {
   const workspacePath = join(cwd, 'openslack.yaml');
 
   try {
@@ -268,7 +252,7 @@ export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitH
   const remote = resolveGitRemote(cwd, options.signal);
   if (remote) return { ...remote, source: 'git_remote' };
 
-  const workspace = resolveWorkspaceRepo(cwd);
+  const workspace = resolveGitHubWorkspaceTarget(cwd);
   if (workspace) return { ...workspace, source: 'workspace' };
 
   throw new GitHubRepoRequiredError(
@@ -408,6 +392,8 @@ async function getClientUncached(options: GitHubClientOptions): Promise<GitHubCl
         localStateRoot,
         credentialStore: options.credentialStore,
         signal: options.signal,
+        repository: { owner, repo },
+        onDiagnostic: options.onAuthDiagnostic ?? emitAuthDiagnostic,
       });
     } catch (error) {
       if (isAbortError(error)) throw error;
@@ -427,6 +413,7 @@ async function getClientUncached(options: GitHubClientOptions): Promise<GitHubCl
         isDryRun: false,
         tokenExpiresAt: appToken.expiresAt,
         appSlug: appToken.appSlug,
+        installationHintReplaced: appToken.installationHintReplaced,
       };
     }
 
@@ -473,6 +460,10 @@ async function getClientUncached(options: GitHubClientOptions): Promise<GitHubCl
     authMode: 'dry_run',
     isDryRun: true,
   };
+}
+
+function emitAuthDiagnostic(diagnostic: GitHubAppAuthDiagnostic): void {
+  process.emitWarning(diagnostic.message, { code: diagnostic.code });
 }
 
 function hasGitHubAppConfigurationIntent(localStateRoot: string | undefined): boolean {

@@ -434,8 +434,9 @@ openslack delivery probe --repo acme/project
 
 The probe is preview-only until `--apply` is supplied. A complete
 `OPENSLACK_GITHUB_APP_*` environment configuration remains supported and takes
-precedence; partial environment configuration fails closed instead of mixing
-environment IDs with a keychain private key.
+precedence. A whitespace-only private-key value is treated as absent, so the
+complete local keychain binding remains usable; other incomplete or mismatched
+environment credential combinations fail closed.
 
 The default writable backend is the pinned native `@napi-rs/keyring` adapter:
 Windows uses Credential Manager and Linux uses Secret Service. Missing native

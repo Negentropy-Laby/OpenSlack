@@ -419,11 +419,17 @@ The bot PR wrappers resolve `appId` and `installationId` from explicit
 `.openslack.local/github-app.json` import record. They do not contain
 organization-specific ID defaults.
 
-The private key is read only by `scripts/bot-gh-token.js` to mint a short-lived
-installation token. The subsequent `openslack pr workflow-governance` child
-receives only that token through `OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN`; it
-does not receive the PEM. The token is neither persisted nor forwarded through
-`GITHUB_TOKEN`, `GH_TOKEN`, command arguments, Git configuration, or logs.
+The private key is read through the package-owned stable credential loader;
+`scripts/bot-gh-token.js` is only a cwd-independent bridge. Generic `gh`
+children receive a short-lived token and never receive the key. Direct
+PEM-backed OpenSlack and governed-delivery children receive the App signing
+identity so their package-owned token cache can refresh during long-running
+work. Keychain-backed children keep using the product's native local binding;
+the wrapper does not copy that key into their environment. Repository selection
+remains inside the typed product command. Human tokens and stale forwarded
+installation-token fields are removed first.
+Neither key nor token is persisted, placed in command arguments, Git
+configuration, or logs.
 
 ## Failure Modes
 

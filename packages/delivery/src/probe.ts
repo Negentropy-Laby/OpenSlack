@@ -163,7 +163,7 @@ export class GitHubDeliveryProbe {
         false,
       );
     }
-    const token = await this.acquireToken(input.rootDir);
+    const token = await this.acquireToken(input);
     const permissions = diagnoseDeliveryPermissions(token.permissions);
     assertDeliveryPermissions(
       permissions.filter((permission) => permission.capability === 'contents'),
@@ -189,10 +189,13 @@ export class GitHubDeliveryProbe {
     this.gitPublisher.deleteRemoteRef(transportInput);
   }
 
-  private async acquireToken(rootDir: string): Promise<DeliveryToken> {
+  private async acquireToken(
+    input: Pick<GitHubDeliveryProbeInput, 'rootDir' | 'owner' | 'repo'>,
+  ): Promise<DeliveryToken> {
     try {
       return await (
-        this.tokenProvider ?? defaultTokenProvider(resolveGitHubAppLocalStateRoot(rootDir))
+        this.tokenProvider ??
+        defaultTokenProvider(resolveGitHubAppLocalStateRoot(input.rootDir), input.owner, input.repo)
       ).acquire();
     } catch {
       throw new DeliveryError(
@@ -209,7 +212,7 @@ export class GitHubDeliveryProbe {
     repositoryAccess: GitHubInstallationRepositoryAccess & { accessible: true; complete: true };
   }> {
     validateProbeInput(input);
-    const token = await this.acquireToken(input.rootDir);
+    const token = await this.acquireToken(input);
     const permissions = diagnoseDeliveryPermissions(token.permissions, input.requireIssuesWrite);
     assertDeliveryPermissions(permissions);
     const repositoryAccess = await this.inspectRepository(token, input);
@@ -257,10 +260,17 @@ export class GitHubDeliveryProbe {
   }
 }
 
-function defaultTokenProvider(localStateRoot: string | undefined): DeliveryTokenProvider {
+function defaultTokenProvider(
+  localStateRoot: string | undefined,
+  owner: string,
+  repo: string,
+): DeliveryTokenProvider {
   return {
     async acquire() {
-      const token = await requireAppInstallationToken({ localStateRoot });
+      const token = await requireAppInstallationToken({
+        localStateRoot,
+        repository: { owner, repo },
+      });
       return {
         value: token.token,
         expiresAt: token.expiresAt,

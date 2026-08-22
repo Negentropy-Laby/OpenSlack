@@ -1,32 +1,41 @@
 #!/usr/bin/env node
-// Launch a non-create `gh` command with a child-only installation token.
+// Launch an allowlisted non-create `gh` command with a child-only token.
 
 const { spawnSync } = require('node:child_process');
-const { acquireConfiguredInstallationCredentials } = require('./bot-gh-token.js');
+const {
+  acquireConfiguredInstallationCredentials,
+  formatBotAuthError,
+} = require('./bot-gh-token.js');
+const { createGhEnvironment } = require('./bot-launch-environment.js');
 
-async function main(args = process.argv.slice(2)) {
+async function main(args = process.argv.slice(2), dependencies = {}) {
   if (!isAllowedCommand(args)) {
     process.stderr.write(
-      'The bot gh wrapper permits only pr edit, pr comment, pr ready, and issue edit.\n',
+      'BOT_GH_COMMAND_FORBIDDEN: only pr edit, pr comment, pr ready, and issue edit are allowed.\n',
     );
     return 2;
   }
   let credentials;
   try {
-    credentials = await acquireConfiguredInstallationCredentials({ args, cwd: process.cwd() });
-  } catch {
-    process.stderr.write('GitHub App installation authentication failed.\n');
+    credentials = await (dependencies.acquire ?? acquireConfiguredInstallationCredentials)({
+      ghArgs: args,
+      useGhRepoEnvironment: true,
+      cwd: dependencies.cwd ?? process.cwd(),
+      onDiagnostic: dependencies.onDiagnostic ?? writeDiagnostic,
+    });
+  } catch (error) {
+    process.stderr.write(`${formatBotAuthError(error)}\n`);
     return 1;
   }
-  const env = createGhEnvironment(credentials);
-  const result = spawnSync('gh', args, {
+  const env = createGhEnvironment(credentials, dependencies.env ?? process.env);
+  const result = (dependencies.spawn ?? spawnSync)('gh', args, {
+    cwd: dependencies.cwd ?? process.cwd(),
     env,
     stdio: 'inherit',
     windowsHide: true,
   });
-  credentials = undefined;
   if (result.error) {
-    process.stderr.write('Could not start gh with GitHub App authentication.\n');
+    process.stderr.write('BOT_GH_LAUNCH_FAILED: could not start gh.\n');
     return 1;
   }
   return result.status ?? 1;
@@ -39,44 +48,13 @@ function isAllowedCommand(args) {
   );
 }
 
-function createGhEnvironment(credentials) {
-  const env = {};
-  for (const key of [
-    'PATH',
-    'Path',
-    'PATHEXT',
-    'SystemRoot',
-    'WINDIR',
-    'COMSPEC',
-    'TEMP',
-    'TMP',
-    'TMPDIR',
-    'HOME',
-    'USERPROFILE',
-    'LANG',
-    'LC_ALL',
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'NO_PROXY',
-    'http_proxy',
-    'https_proxy',
-    'no_proxy',
-    'SSL_CERT_FILE',
-    'SSL_CERT_DIR',
-  ]) {
-    if (process.env[key] !== undefined) env[key] = process.env[key];
-  }
-  env.GH_TOKEN = credentials.value;
-  env.GH_REPO = credentials.repository;
-  env.GH_PAGER = 'cat';
-  env.PAGER = 'cat';
-  env.GH_PROMPT_DISABLED = '1';
-  env.GH_EDITOR = 'false';
-  env.GH_BROWSER = 'false';
-  env.NO_COLOR = '1';
-  return env;
+function writeDiagnostic(diagnostic) {
+  process.stderr.write(`${diagnostic.code}: ${diagnostic.message}\n`);
 }
 
-module.exports = { createGhEnvironment, isAllowedCommand };
+module.exports = { createGhEnvironment, isAllowedCommand, main };
 
-if (require.main === module) void main().then((status) => process.exit(status));
+if (require.main === module)
+  void main().then((status) => {
+    process.exitCode = status;
+  });

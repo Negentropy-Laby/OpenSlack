@@ -1,18 +1,10 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { parseSecretReference } from '@openslack/credentials';
 import { isGitHubAppSlug } from './app-slug.js';
+import { POSITIVE_GITHUB_ID_PATTERN } from './app-jwt.js';
+import { readStableLocalUtf8 } from './stable-local-file.js';
 
 export interface GitHubAppLocalConfig {
   schema: 'openslack.github_app_local.v1';
@@ -20,6 +12,9 @@ export interface GitHubAppLocalConfig {
   installationId: string | null;
   appSlug: string;
   privateKeyRef: string;
+  clientId?: string;
+  webhookSecretRef?: string;
+  clientSecretRef?: string;
 }
 
 export class GitHubAppLocalConfigError extends Error {
@@ -31,53 +26,11 @@ export class GitHubAppLocalConfigError extends Error {
   }
 }
 
-function sameFileIdentity(left: ReturnType<typeof fstatSync>, right: ReturnType<typeof fstatSync>) {
-  return (
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.mode === right.mode &&
-    left.size === right.size &&
-    left.ctimeMs === right.ctimeMs &&
-    left.mtimeMs === right.mtimeMs
-  );
-}
-
 function readStableConfig(path: string): string | null {
-  let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const before = fstatSync(fd);
-    if (!before.isFile() || before.size <= 0 || before.size > 65_536) {
-      throw new GitHubAppLocalConfigError();
-    }
-    const bytes = Buffer.allocUnsafe(before.size);
-    let offset = 0;
-    while (offset < bytes.byteLength) {
-      const count = readSync(fd, bytes, offset, bytes.byteLength - offset, offset);
-      if (count === 0) break;
-      offset += count;
-    }
-    const after = fstatSync(fd);
-    const pathStat = lstatSync(path);
-    if (
-      offset !== bytes.byteLength ||
-      !sameFileIdentity(before, after) ||
-      pathStat.isSymbolicLink() ||
-      !sameFileIdentity(after, pathStat)
-    ) {
-      throw new GitHubAppLocalConfigError();
-    }
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch {
-      throw new GitHubAppLocalConfigError();
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return null;
-    if (error instanceof GitHubAppLocalConfigError) throw error;
+    return readStableLocalUtf8(path, { maxBytes: 65_536 });
+  } catch {
     throw new GitHubAppLocalConfigError();
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -99,22 +52,46 @@ export function readGitHubAppLocalConfig(
     throw new GitHubAppLocalConfigError();
   }
   const candidate = value as Record<string, unknown>;
+  const requiredKeys = ['schema', 'appId', 'installationId', 'appSlug', 'privateKeyRef'];
+  const manifestKeys = ['clientId', 'webhookSecretRef', 'clientSecretRef'];
+  const keys = Object.keys(candidate);
+  const hasManifestFields = manifestKeys.some((key) => key in candidate);
+  const expectedKeys = new Set(
+    hasManifestFields ? [...requiredKeys, ...manifestKeys] : requiredKeys,
+  );
   if (
+    keys.length !== expectedKeys.size ||
+    keys.some((key) => !expectedKeys.has(key)) ||
     candidate.schema !== 'openslack.github_app_local.v1' ||
     typeof candidate.appId !== 'string' ||
-    !/^\d+$/.test(candidate.appId) ||
+    !POSITIVE_GITHUB_ID_PATTERN.test(candidate.appId) ||
     !(
       candidate.installationId === null ||
-      (typeof candidate.installationId === 'string' && /^\d+$/.test(candidate.installationId))
+      (typeof candidate.installationId === 'string' &&
+        POSITIVE_GITHUB_ID_PATTERN.test(candidate.installationId))
     ) ||
     !isGitHubAppSlug(candidate.appSlug) ||
-    typeof candidate.privateKeyRef !== 'string'
+    typeof candidate.privateKeyRef !== 'string' ||
+    (hasManifestFields &&
+      (typeof candidate.clientId !== 'string' ||
+        !/^[A-Za-z0-9._-]{3,128}$/u.test(candidate.clientId) ||
+        typeof candidate.webhookSecretRef !== 'string' ||
+        typeof candidate.clientSecretRef !== 'string'))
   ) {
     throw new GitHubAppLocalConfigError();
   }
   try {
-    const reference = parseSecretReference(candidate.privateKeyRef);
-    if (reference.scheme !== 'keychain') throw new GitHubAppLocalConfigError();
+    const references = [candidate.privateKeyRef];
+    if (hasManifestFields) {
+      references.push(candidate.webhookSecretRef as string, candidate.clientSecretRef as string);
+    }
+    const parsed = references.map((reference) => parseSecretReference(reference));
+    if (
+      parsed.some((reference) => reference.scheme !== 'keychain') ||
+      new Set(references).size !== references.length
+    ) {
+      throw new GitHubAppLocalConfigError();
+    }
   } catch {
     throw new GitHubAppLocalConfigError();
   }
@@ -125,7 +102,7 @@ export function bindGitHubAppInstallation(
   localStateRoot: string,
   installationId: string,
 ): { config: GitHubAppLocalConfig; changed: boolean } {
-  if (!/^\d+$/.test(installationId)) throw new GitHubAppLocalConfigError();
+  if (!POSITIVE_GITHUB_ID_PATTERN.test(installationId)) throw new GitHubAppLocalConfigError();
   const current = readGitHubAppLocalConfig(localStateRoot);
   if (!current) throw new GitHubAppLocalConfigError('GitHub App local configuration is missing.');
   if (current.installationId !== null) {

@@ -82,15 +82,25 @@ try {
     $env:GITHUB_REPO = $Repo
   }
   if ($ListInstallations) {
-    $raw = & node (Join-Path $PSScriptRoot 'bot-gh-token.js') --list-installations
+    $raw = & node (Join-Path $PSScriptRoot 'bot-list-installations.js')
     if ($LASTEXITCODE -ne 0) {
       $exitCode = $LASTEXITCODE
     } else {
-      $installations = @($raw | ConvertFrom-Json)
-      foreach ($installation in $installations) {
-        Write-Output ("{0}`t{1}`t{2}" -f $installation.id, $installation.account, $installation.repositorySelection)
+      $envelope = $raw | ConvertFrom-Json
+      $hasInstallations = $null -ne $envelope -and
+        @($envelope.PSObject.Properties.Name) -contains 'installations'
+      if ($null -eq $envelope -or
+          $envelope.schema -ne 'openslack.github_app_installation_list.v1' -or
+          -not $hasInstallations) {
+        Write-Error 'GitHub App installation list response is invalid.'
+        $exitCode = 1
+      } else {
+        $installations = @($envelope.installations)
+        foreach ($installation in $installations) {
+          Write-Output ("{0}`t{1}`t{2}" -f $installation.id, $installation.account, $installation.repositorySelection)
+        }
+        $exitCode = 0
       }
-      $exitCode = 0
     }
   } else {
     if (-not $OpenSlackArgs -or $OpenSlackArgs.Count -eq 0) {

@@ -3,55 +3,17 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSy
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  readBotGitHubPublicConfig,
+  resolveBotGitHubRepository,
+} from '../../../../packages/github/src/bot-auth.js';
 
 const repoRoot = resolve(process.cwd());
 const forbiddenInstallationId = ['135', '500', '236'].join('');
 
-interface Installation {
-  id: string;
-  account: string;
-  repositorySelection: 'all' | 'selected';
-}
-
 interface BotTokenModule {
-  acquireConfiguredInstallationCredentials(options: Record<string, unknown>): Promise<{
-    appId: string;
-    appSlug: string;
-    installationId: string;
-    owner: string;
-    repo: string;
-    repository: string;
-    value: string;
-  }>;
-  listGitHubAppInstallations(options: Record<string, unknown>): Promise<readonly Installation[]>;
-  parseInstallationTokenResponse(
-    data: unknown,
-    installationId: string,
-    now?: number,
-  ): { value: string; expiresAt: string; installationId: string };
-  readPublicConfig(path?: string): {
-    schema: string;
-    appId: string;
-    appSlug: string;
-    repository: string;
-  };
-  resolveAppIdentity(options: Record<string, unknown>): {
-    appId: string;
-    appSlug: string;
-    installationHint: string | null;
-  };
-  resolveTargetRepository(options: Record<string, unknown>): {
-    owner: string;
-    repo: string;
-    fullName: string;
-    source: string;
-  };
-  selectInstallationForOwner(
-    installations: readonly Installation[],
-    owner: string,
-    hint?: string | null,
-  ): Installation & { replacedHint: boolean };
+  loadBotAuth(): Promise<Record<string, unknown>>;
 }
 
 function tokenModule(): BotTokenModule {
@@ -73,39 +35,22 @@ describe('bot-auth wrapper scripts', () => {
 
   it('keeps App identifiers configurable and token acquisition in-process', () => {
     const tokenScript = readFileSync(scriptPath('bot-gh-token.js'), 'utf8');
-    expect(tokenScript).toContain('.openslack.local');
-    expect(tokenScript).toContain('github-app.json');
-    expect(tokenScript).toContain('github-app-public.json');
-    expect(tokenScript).toContain('acquireConfiguredInstallationToken');
+    expect(tokenScript).toContain("require('tsx/esm/api')");
+    expect(tokenScript).toContain("'packages', 'github', 'src', 'bot-auth.ts'");
+    expect(tokenScript).not.toMatch(/createSign|node:https|app\/installations\?/u);
     expect(tokenScript).not.toContain('3728623');
     expect(tokenScript).not.toContain(forbiddenInstallationId);
-    expect(tokenScript).not.toContain('50 * 60 * 1000');
   });
 
-  it('requires a valid endpoint-provided installation token expiry', () => {
+  it('loads the package-owned implementation through a cwd-independent bridge', async () => {
     const token = tokenModule();
-    const expiresAt = '2030-01-01T00:00:00.000Z';
-    expect(
-      token.parseInstallationTokenResponse(
-        { token: 'token-canary', expires_at: expiresAt },
-        '456',
-        Date.parse('2029-01-01T00:00:00.000Z'),
-      ),
-    ).toMatchObject({ value: 'token-canary', expiresAt, installationId: '456' });
-    expect(() => token.parseInstallationTokenResponse({ token: 'token-canary' }, '456')).toThrow(
-      'response was invalid',
-    );
-    expect(() =>
-      token.parseInstallationTokenResponse(
-        { token: 'token-canary', expires_at: '2020-01-01T00:00:00.000Z' },
-        '456',
-        Date.parse('2029-01-01T00:00:00.000Z'),
-      ),
-    ).toThrow('expiry was invalid');
+    await expect(token.loadBotAuth()).resolves.toMatchObject({
+      acquireBotGitHubToken: expect.any(Function),
+      resolveBotGitHubRepository: expect.any(Function),
+    });
   });
 
-  it('reads only the exact canonical public GitHub App identity shape', () => {
-    const token = tokenModule();
+  it('reads only the closed public GitHub App identity shape', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-bot-public-'));
     const path = join(root, 'github-app-public.json');
     const value = {
@@ -116,67 +61,75 @@ describe('bot-auth wrapper scripts', () => {
     };
     try {
       writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-      expect(token.readPublicConfig(path)).toEqual(value);
+      expect(readBotGitHubPublicConfig(path)).toEqual(value);
 
       writeFileSync(path, `${JSON.stringify({ ...value, installationId: '456' }, null, 2)}\n`);
-      expect(() => token.readPublicConfig(path)).toThrow('configuration is invalid');
+      expect(() => readBotGitHubPublicConfig(path)).toThrow('configuration is invalid');
 
       writeFileSync(
         path,
         '{"schema":"openslack.github_app_public.v1","appId":"123","appId":"456","appSlug":"test-app","repository":"Public-Owner/public-repo"}\n',
       );
-      expect(() => token.readPublicConfig(path)).toThrow('configuration is not canonical');
+      expect(() => readBotGitHubPublicConfig(path)).toThrow('configuration is invalid');
 
       if (process.platform !== 'win32') {
         const target = join(root, 'target.json');
         writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
         rmSync(path);
         symlinkSync(target, path, 'file');
-        expect(() => token.readPublicConfig(path)).toThrow('configuration');
+        expect(() => readBotGitHubPublicConfig(path)).toThrow('configuration');
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('resolves repository precedence as explicit, complete env, verified origin, then public', () => {
-    const token = tokenModule();
+  it('resolves repository precedence as explicit, complete env, verified origin, then public', async () => {
     const publicConfig = {
-      schema: 'openslack.github_app_public.v1',
+      schema: 'openslack.github_app_public.v1' as const,
       appId: '123',
       appSlug: 'test-app',
       repository: 'public-owner/public-repo',
     };
     expect(
-      token.resolveTargetRepository({
-        args: ['pr', 'comment', '1', '--repo', 'explicit-owner/explicit-repo'],
+      resolveBotGitHubRepository({
+        ghArgs: ['pr', 'comment', '1', '--repo', 'explicit-owner/explicit-repo'],
         env: { GITHUB_OWNER: 'env-owner', GITHUB_REPO: 'env-repo' },
         gitOrigin: 'https://github.com/origin-owner/origin-repo.git',
         publicConfig,
       }),
     ).toMatchObject({ fullName: 'explicit-owner/explicit-repo', source: 'explicit' });
     expect(
-      token.resolveTargetRepository({
-        args: [],
+      resolveBotGitHubRepository({
         env: { GITHUB_OWNER: 'env-owner', GITHUB_REPO: 'env-repo' },
         gitOrigin: 'https://github.com/origin-owner/origin-repo.git',
         publicConfig,
       }),
     ).toMatchObject({ fullName: 'env-owner/env-repo', source: 'environment' });
     expect(
-      token.resolveTargetRepository({
-        args: [],
+      resolveBotGitHubRepository({
         env: {},
+        cwd: tmpdir(),
         gitOrigin: 'git@github.com:origin-owner/origin-repo.git',
         publicConfig,
       }),
     ).toMatchObject({ fullName: 'origin-owner/origin-repo', source: 'git_origin' });
-    expect(
-      token.resolveTargetRepository({ args: [], env: {}, gitOrigin: null, publicConfig }),
-    ).toMatchObject({ fullName: 'public-owner/public-repo', source: 'public_config' });
+    const publicRoot = mkdtempSync(join(tmpdir(), 'openslack-public-target-'));
+    try {
+      expect(
+        resolveBotGitHubRepository({
+          repoRoot: publicRoot,
+          cwd: publicRoot,
+          env: {},
+          gitOrigin: null,
+          publicConfig,
+        }),
+      ).toMatchObject({ fullName: 'public-owner/public-repo', source: 'public_config' });
+    } finally {
+      rmSync(publicRoot, { recursive: true, force: true });
+    }
     expect(() =>
-      token.resolveTargetRepository({
-        args: [],
+      resolveBotGitHubRepository({
         env: { GITHUB_OWNER: 'partial-owner' },
         gitOrigin: null,
         publicConfig,
@@ -184,167 +137,43 @@ describe('bot-auth wrapper scripts', () => {
     ).toThrow('must be configured together');
   });
 
-  it('selects exactly one owner installation and treats any configured id as a hint', () => {
-    const token = tokenModule();
-    const installations: Installation[] = [
-      { id: '111', account: 'another-owner', repositorySelection: 'all' },
-      { id: '222', account: 'Target-Owner', repositorySelection: 'selected' },
-    ];
-    expect(token.selectInstallationForOwner(installations, 'target-owner', '111')).toMatchObject({
-      id: '222',
-      replacedHint: true,
-    });
-    expect(token.selectInstallationForOwner(installations, 'TARGET-OWNER')).toMatchObject({
-      id: '222',
-      replacedHint: false,
-    });
-    expect(() => token.selectInstallationForOwner(installations, 'missing-owner', '111')).toThrow(
-      'No GitHub App installation matches',
-    );
-    expect(() =>
-      token.selectInstallationForOwner(
-        [...installations, { id: '333', account: 'target-owner', repositorySelection: 'all' }],
-        'target-owner',
-      ),
-    ).toThrow('Multiple GitHub App installations match');
+  it('keeps repository installation discovery out of the bridge implementation', () => {
+    const source = readFileSync(scriptPath('bot-gh-token.js'), 'utf8');
+    expect(source).not.toContain('/app/installations');
+    expect(source).not.toContain('selectInstallationForOwner');
   });
 
-  it('discovers bounded installation pages without numeric or response-body downgrade', async () => {
-    const token = tokenModule();
-    const pages: number[] = [];
-    const timeouts: number[] = [];
-    const first = Array.from({ length: 100 }, (_, index) => ({
-      id: index + 1,
-      account: { login: `owner-${index}` },
-      repository_selection: 'selected',
-    }));
-    const installations = await token.listGitHubAppInstallations({
-      appId: '123',
-      privateKey: 'not-used',
-      bearer: 'jwt-canary',
-      requestPage: ({ page, timeoutMs }: { page: number; timeoutMs: number }) => {
-        pages.push(page);
-        timeouts.push(timeoutMs);
-        return page === 1
-          ? first
-          : [{ id: 101, account: { login: 'target-owner' }, repository_selection: 'all' }];
-      },
-    });
-    expect(pages).toEqual([1, 2]);
-    expect(timeouts).toEqual([15_000, 15_000]);
-    expect(installations).toHaveLength(101);
-    expect(installations.at(-1)).toEqual({
-      id: '101',
-      account: 'target-owner',
-      repositorySelection: 'all',
-    });
-
-    await expect(
-      token.listGitHubAppInstallations({
-        appId: '123',
-        privateKey: 'not-used',
-        bearer: 'jwt-canary',
-        requestPage: () => {
-          throw new Error('sensitive-response-canary');
-        },
-      }),
-    ).rejects.toThrow('installations could not be discovered');
-    await expect(
-      token.listGitHubAppInstallations({
-        appId: '123',
-        privateKey: 'not-used',
-        bearer: 'jwt-canary',
-        requestPage: () => [
-          { id: 'unsafe-number', account: { login: 'owner' }, repository_selection: 'all' },
-        ],
-      }),
-    ).rejects.toThrow('installation response is invalid');
-
-    const boundedPages: number[] = [];
-    await expect(
-      token.listGitHubAppInstallations({
-        appId: '123',
-        privateKey: 'not-used',
-        bearer: 'jwt-canary',
-        requestPage: ({ page }: { page: number }) => {
-          boundedPages.push(page);
-          return Array.from({ length: 100 }, (_, index) => ({
-            id: page * 1000 + index + 1,
-            account: { login: `page-${page}-owner-${index}` },
-            repository_selection: 'selected',
-          }));
-        },
-      }),
-    ).rejects.toThrow('pagination exceeded its limit');
-    expect(boundedPages).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-
-    const clock = [0, 0, 30_000];
-    await expect(
-      token.listGitHubAppInstallations({
-        appId: '123',
-        privateKey: 'not-used',
-        bearer: 'jwt-canary',
-        now: () => clock.shift() ?? 30_000,
-        requestPage: () => first,
-      }),
-    ).rejects.toThrow('installation discovery timed out');
+  it('uses a dedicated installation-list entry point with a stable envelope', () => {
+    const powershell = readFileSync(scriptPath('openslack-bot.ps1'), 'utf8');
+    const listScript = readFileSync(scriptPath('bot-list-installations.js'), 'utf8');
+    expect(powershell).toContain('bot-list-installations.js');
+    expect(powershell).toContain('openslack.github_app_installation_list.v1');
+    expect(listScript).toContain('installations');
+    expect(listScript).not.toContain('process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID');
   });
 
-  it('uses env identity over local/public metadata but replaces a stale installation hint', async () => {
-    const token = tokenModule();
-    const publicConfig = {
-      schema: 'openslack.github_app_public.v1',
-      appId: '123',
-      appSlug: 'public-app',
-      repository: 'target-owner/target-repo',
+  it('passes grammar-aware target inputs into the shared token resolver', async () => {
+    const wrapper = (await tokenModule().loadBotAuth()) as {
+      parseGhRepositoryArguments(args: string[]): string | null;
     };
+    expect(wrapper.parseGhRepositoryArguments(['pr', 'edit', '1', '-Rowner/repo'])).toBe(
+      'owner/repo',
+    );
     expect(
-      token.resolveAppIdentity({
-        env: {},
-        localConfig: { appId: '456', installationId: '444', appSlug: 'local-app' },
-        publicConfig,
-      }),
-    ).toEqual({ appId: '456', appSlug: 'local-app', installationHint: '444' });
-    const credentials = await token.acquireConfiguredInstallationCredentials({
-      args: [],
-      env: {
-        OPENSLACK_GITHUB_APP_ID: '789',
-        OPENSLACK_GITHUB_APP_INSTALLATION_ID: '111',
-        OPENSLACK_GITHUB_APP_SLUG: 'env-app',
-      },
-      localConfig: { appId: '456', installationId: '444', appSlug: 'local-app' },
-      publicConfig,
-      gitOrigin: null,
-      privateKey: 'not-used',
-      bearer: 'jwt-canary',
-      requestPage: () => [
-        { id: 222, account: { login: 'TARGET-OWNER' }, repository_selection: 'selected' },
-      ],
-      getInstallationToken: async (_appId: string, installationId: string) => ({
-        value: 'installation-token-canary',
-        expiresAt: '2030-01-01T00:00:00.000Z',
-        installationId,
-        permissions: {},
-      }),
-    });
-    expect(credentials).toMatchObject({
-      appId: '789',
-      appSlug: 'env-app',
-      installationId: '222',
-      repository: 'target-owner/target-repo',
-      value: 'installation-token-canary',
-    });
+      wrapper.parseGhRepositoryArguments(['pr', 'comment', '1', '--body', '--repo=body/value']),
+    ).toBeNull();
   });
 
   it('PR creation wrappers delegate to the package-backed delivery path', () => {
     const compat = readFileSync(scriptPath('bot-delivery-compat.js'), 'utf8');
     expect(compat).toContain("['delivery', 'publish']");
-    expect(compat).toContain('cwd: process.cwd()');
+    expect(compat).toContain('withConfiguredBotInstallation');
+    expect(compat).toContain('mappedRepository');
+    expect(compat).toContain('openSlackInvocation');
     expect(compat).not.toContain('3728623');
     expect(compat).not.toContain(forbiddenInstallationId);
     expect(compat).not.toContain('OPENSLACK_GITHUB_APP_PRIVATE_KEY =');
     expect(compat).not.toContain('{ ...process.env }');
-    expect(compat).toContain('createChildEnvironment');
     expect(readFileSync(scriptPath('bot-gh-pr-create.sh'), 'utf8')).toContain(
       'bot-delivery-compat.js',
     );
@@ -365,12 +194,14 @@ describe('bot-auth wrapper scripts', () => {
   });
 
   it('shares public identity and discovery without env-file loading or PowerShell defaults', () => {
-    const publicConfig = JSON.parse(
-      readFileSync(
-        resolve(repoRoot, '.openslack', 'integrations', 'github-app-public.json'),
-        'utf8',
-      ),
-    ) as Record<string, unknown>;
+    const publicConfigPath = resolve(
+      repoRoot,
+      '.openslack',
+      'integrations',
+      'github-app-public.json',
+    );
+    const publicConfigBytes = readFileSync(publicConfigPath, 'utf8');
+    const publicConfig = JSON.parse(publicConfigBytes) as Record<string, unknown>;
     expect(publicConfig).toEqual({
       schema: 'openslack.github_app_public.v1',
       appId: '3728623',
@@ -380,6 +211,7 @@ describe('bot-auth wrapper scripts', () => {
     expect(publicConfig).not.toHaveProperty('installationId');
     expect(publicConfig).not.toHaveProperty('token');
     expect(publicConfig).not.toHaveProperty('privateKeyPath');
+    expect(publicConfigBytes).toBe(`${JSON.stringify(publicConfig, null, 2)}\n`);
 
     const powershell = readFileSync(scriptPath('openslack-bot.ps1'), 'utf8');
     const gate = readFileSync(scriptPath('openslack-pr-gate.ps1'), 'utf8');
@@ -390,49 +222,116 @@ describe('bot-auth wrapper scripts', () => {
       expect(source).not.toContain('Get-Content -Raw');
       expect(source).not.toContain('createSign');
     }
-    expect(launcher).toContain('acquireConfiguredInstallationCredentials');
-    expect(launcher).toContain('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN');
-    expect(launcher).not.toContain('OPENSLACK_GITHUB_APP_PRIVATE_KEY');
+    expect(launcher).toContain('withConfiguredBotLaunchIdentity');
+    expect(launcher).not.toContain('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN');
     const require = createRequire(import.meta.url);
     const openSlackLauncher = require(scriptPath('bot-openslack-command.js')) as {
-      createChildEnvironment(credentials: Record<string, unknown>): Record<string, string>;
+      createChildEnvironment(
+        credentials: Record<string, unknown>,
+        parent?: Record<string, string>,
+      ): Record<string, string>;
     };
-    const child = openSlackLauncher.createChildEnvironment({
-      appId: '123',
-      appSlug: 'test-app',
-      installationId: '456',
-      owner: 'target-owner',
-      repo: 'target-repo',
-      value: 'installation-token-canary',
-      expiresAt: '2030-01-01T00:00:00.000Z',
-      permissions: { contents: 'write', pull_requests: 'write' },
-    });
+    const child = openSlackLauncher.createChildEnvironment(
+      {
+        appId: '123',
+        appSlug: 'test-app',
+        installationId: '456',
+        owner: 'target-owner',
+        repo: 'target-repo',
+        privateKey: 'private-key-canary',
+        forwardPrivateKey: true,
+      },
+      {
+        PATH: 'path-canary',
+        OPENSLACK_LLM_ENDPOINT: 'llm-canary',
+        GITHUB_TOKEN: 'human-token-canary',
+      },
+    );
     expect(child).toMatchObject({
       OPENSLACK_GITHUB_AUTH_MODE: 'app',
       OPENSLACK_GITHUB_APP_ID: '123',
       OPENSLACK_GITHUB_APP_INSTALLATION_ID: '456',
-      OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN: 'installation-token-canary',
-      OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT: '2030-01-01T00:00:00.000Z',
-      OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS: JSON.stringify({
-        contents: 'write',
-        pull_requests: 'write',
-      }),
+      OPENSLACK_GITHUB_APP_PRIVATE_KEY: 'private-key-canary',
+      OPENSLACK_LLM_ENDPOINT: 'llm-canary',
       GITHUB_OWNER: 'target-owner',
       GITHUB_REPO: 'target-repo',
     });
     expect(child).not.toHaveProperty('GITHUB_TOKEN');
     expect(child).not.toHaveProperty('GH_TOKEN');
-    expect(child).not.toHaveProperty('OPENSLACK_GITHUB_APP_PRIVATE_KEY');
+    expect(child).not.toHaveProperty('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN');
+    const keychainChild = openSlackLauncher.createChildEnvironment(
+      {
+        appId: '123',
+        appSlug: 'test-app',
+        installationId: '456',
+        owner: 'target-owner',
+        repo: 'target-repo',
+        privateKey: 'private-key-canary',
+        forwardPrivateKey: false,
+      },
+      {
+        OPENSLACK_GITHUB_APP_ID: 'stale-app-id',
+        OPENSLACK_GITHUB_APP_PRIVATE_KEY: 'stale-key',
+      },
+    );
+    expect(keychainChild).not.toHaveProperty('OPENSLACK_GITHUB_AUTH_MODE');
+    expect(keychainChild).not.toHaveProperty('OPENSLACK_GITHUB_APP_ID');
+    expect(keychainChild).not.toHaveProperty('OPENSLACK_GITHUB_APP_INSTALLATION_ID');
+    expect(keychainChild).not.toHaveProperty('OPENSLACK_GITHUB_APP_PRIVATE_KEY');
+    expect(keychainChild).toMatchObject({
+      GITHUB_OWNER: 'target-owner',
+      GITHUB_REPO: 'target-repo',
+    });
     expect(readFileSync(scriptPath('bot-gh-token.js'), 'utf8')).not.toMatch(
       /(?:source\s+[^\n]*\.env|dotenv|github-app\.env)/u,
     );
 
-    const forbidden = spawnSync('git', ['grep', '-n', forbiddenInstallationId, '--', '.'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    });
-    expect(forbidden.status).toBe(1);
-    expect(forbidden.stdout).toBe('');
+    for (const path of [
+      scriptPath('bot-gh-token.js'),
+      scriptPath('bot-openslack-command.js'),
+      scriptPath('bot-delivery-compat.js'),
+      resolve(repoRoot, 'packages', 'github', 'src', 'bot-auth.ts'),
+    ]) {
+      expect(readFileSync(path, 'utf8')).not.toContain(forbiddenInstallationId);
+    }
+  });
+
+  it('leaves typed OpenSlack repository arguments to the product launcher', async () => {
+    const require = createRequire(import.meta.url);
+    const launcher = require(scriptPath('bot-openslack-command.js')) as {
+      main(args: string[], dependencies: Record<string, unknown>): Promise<number>;
+    };
+    const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
+    const withIdentity = async (
+      _options: unknown,
+      consumer: (identity: Record<string, unknown>) => number,
+    ) =>
+      consumer({
+        appId: '123',
+        appSlug: 'test-app',
+        installationId: null,
+        privateKey: 'private-key-canary',
+        forwardPrivateKey: true,
+      });
+    const spawn = (_command: string, args: string[], options: { env: Record<string, string> }) => {
+      calls.push({ args, env: options.env });
+      return { status: 0 };
+    };
+    await expect(
+      launcher.main(['setup', 'github'], { withIdentity, spawn, env: {} }),
+    ).resolves.toBe(0);
+    await expect(
+      launcher.main(['github', 'watch', 'once', '--repo', 'OpenSlack'], {
+        withIdentity,
+        spawn,
+        env: {},
+      }),
+    ).resolves.toBe(0);
+    expect(calls[0].args.slice(-2)).toEqual(['setup', 'github']);
+    expect(calls[1].args.slice(-5)).toEqual(['github', 'watch', 'once', '--repo', 'OpenSlack']);
+    expect(calls[1].env).not.toHaveProperty('GITHUB_OWNER');
+    expect(calls[1].env).not.toHaveProperty('GITHUB_REPO');
+    expect(calls[1].env).not.toHaveProperty('OPENSLACK_GITHUB_APP_INSTALLATION_ID');
   });
 
   it('does not expose the installation token through the token script stdout', () => {
@@ -444,13 +343,90 @@ describe('bot-auth wrapper scripts', () => {
     expect(result.stderr).toContain('Direct token output is disabled');
   });
 
+  it.each([
+    { installations: [] },
+    { installations: [{ id: '1', account: 'one', repositorySelection: 'all' }] },
+    {
+      installations: [
+        { id: '1', account: 'one', repositorySelection: 'all' },
+        { id: '2', account: 'two', repositorySelection: 'selected' },
+      ],
+    },
+  ])('emits a stable installation-list envelope', async ({ installations }) => {
+    const writes: string[] = [];
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const list = require(scriptPath('bot-list-installations.js')) as {
+      main(dependencies: Record<string, unknown>): Promise<number>;
+    };
+    await expect(list.main({ list: async () => installations })).resolves.toBe(0);
+    stdout.mockRestore();
+    expect(JSON.parse(writes.join(''))).toEqual({
+      schema: 'openslack.github_app_installation_list.v1',
+      installations,
+    });
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7',
+    () => {
+      const shells = ['powershell'];
+      if (spawnSync('where.exe', ['pwsh'], { encoding: 'utf8' }).status === 0) shells.push('pwsh');
+      for (const shell of shells) {
+        for (const installations of [
+          [],
+          [{ id: '1', account: 'one', repositorySelection: 'all' }],
+          [
+            { id: '1', account: 'one', repositorySelection: 'all' },
+            { id: '2', account: 'two', repositorySelection: 'selected' },
+          ],
+        ]) {
+          const root = mkdtempSync(join(tmpdir(), 'openslack-node-shim-'));
+          try {
+            const envelope = JSON.stringify({
+              schema: 'openslack.github_app_installation_list.v1',
+              installations,
+            });
+            writeFileSync(
+              join(root, 'node.cmd'),
+              '@echo off\r\necho ' + envelope + '\r\nexit /b 0\r\n',
+            );
+            const result = spawnSync(
+              shell,
+              [
+                '-NoProfile',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                scriptPath('openslack-bot.ps1'),
+                '-ListInstallations',
+              ],
+              {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: root + ';' + (process.env.PATH ?? '') },
+              },
+            );
+            expect(result.status, result.stderr).toBe(0);
+            expect(result.stdout.split(/\r?\n/u).filter(Boolean)).toHaveLength(
+              installations.length,
+            );
+          } finally {
+            rmSync(root, { recursive: true, force: true });
+          }
+        }
+      }
+    },
+  );
+
   it('rejects token-revealing or extension gh commands before loading credentials', () => {
     const result = spawnSync(process.execPath, [scriptPath('bot-gh-command.js'), 'auth', 'token'], {
       encoding: 'utf8',
     });
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('permits only pr edit, pr comment, pr ready, and issue edit');
+    expect(result.stderr).toContain('BOT_GH_COMMAND_FORBIDDEN');
   });
 
   it('allows the non-secret PR lifecycle commands needed after publication', () => {

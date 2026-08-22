@@ -11,6 +11,7 @@ const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('node:https', () => ({ request: requestMock }));
 
 import { clearTokenCache, getAppInstallationToken, requireAppInstallationToken } from '../auth.js';
+import { listGitHubAppInstallations } from '../app-installation-resolution.js';
 import { boundedJsonPost } from '../bounded-json-post.js';
 import { getClient } from '../client.js';
 
@@ -30,6 +31,8 @@ interface MockResponseOptions {
   networkError?: Error;
   responseError?: Error;
   neverRespond?: boolean;
+  prematureClose?: boolean;
+  aborted?: boolean;
 }
 
 function installResponse(options: MockResponseOptions = {}): { destroy: ReturnType<typeof vi.fn> } {
@@ -52,11 +55,20 @@ function installResponse(options: MockResponseOptions = {}): { destroy: ReturnTy
           const response = Object.assign(new EventEmitter(), {
             statusCode: options.statusCode ?? 201,
             resume: vi.fn(),
+            complete: !options.prematureClose,
           });
           callback(response);
           queueMicrotask(() => {
             if (options.responseError) {
               response.emit('error', options.responseError);
+              return;
+            }
+            if (options.aborted) {
+              response.emit('aborted');
+              return;
+            }
+            if (options.prematureClose) {
+              response.emit('close');
               return;
             }
             for (const chunk of options.chunks ?? []) response.emit('data', chunk);
@@ -128,9 +140,65 @@ describe('GitHub App installation token response handling', () => {
       appId: '123',
       installationId: '456',
       permissions: { contents: 'write', pull_requests: 'write' },
+      appSlug: undefined,
+      installationHintReplaced: false,
     });
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('validates a repository installation and replaces a stale hint in process', async () => {
+    const diagnostics: string[] = [];
+    installResponse({
+      statusCode: 200,
+      chunks: [JSON.stringify(installationResponse('789', 'acme'))],
+    });
+    installResponse({ chunks: [JSON.stringify(tokenResponse('repository-token'))] });
+
+    await expect(
+      requireAppInstallationToken({
+        repository: { owner: 'acme', repo: 'project' },
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.code),
+      }),
+    ).resolves.toMatchObject({
+      token: 'repository-token',
+      installationId: '789',
+      installationHintReplaced: true,
+    });
+    expect(diagnostics).toEqual(['APP_INSTALLATION_HINT_REPLACED']);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when the App is not installed for the exact repository', async () => {
+    installResponse({ statusCode: 404, chunks: ['not-installed-response-canary'] });
+    await expect(
+      requireAppInstallationToken({ repository: { owner: 'acme', repo: 'missing' } }),
+    ).rejects.toMatchObject({ code: 'APP_INSTALLATION_NOT_FOUND' });
+    expect(requestMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps paginated installation listing as a bounded diagnostic operation', async () => {
+    const first = Array.from({ length: 100 }, (_, index) =>
+      installationResponse(String(index + 1), `owner-${index}`),
+    );
+    installResponse({ statusCode: 200, chunks: [JSON.stringify(first)] });
+    installResponse({
+      statusCode: 200,
+      chunks: [JSON.stringify([installationResponse('101', 'last-owner')])],
+    });
+
+    await expect(listGitHubAppInstallations({ jwt: 'jwt-canary' })).resolves.toHaveLength(101);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects malformed diagnostic installation pages', async () => {
+    installResponse({
+      statusCode: 200,
+      chunks: [JSON.stringify([{ id: 'unsafe', account: { login: 'owner' } }])],
+    });
+    await expect(listGitHubAppInstallations({ jwt: 'jwt-canary' })).rejects.toMatchObject({
+      code: 'APP_INSTALLATION_RESPONSE_INVALID',
+    });
   });
 
   it.each([
@@ -166,6 +234,16 @@ describe('GitHub App installation token response handling', () => {
   it('bounds the response body and keeps the compatibility API fail-closed', async () => {
     installResponse({ chunks: ['x'.repeat(64 * 1024), 'oversized-response-secret-canary'] });
     await expect(getAppInstallationToken()).resolves.toBeNull();
+  });
+
+  it.each([
+    { name: 'clean premature close', options: { prematureClose: true } },
+    { name: 'aborted response', options: { aborted: true } },
+  ])('rejects a $name exactly as a network failure', async ({ options }) => {
+    installResponse(options);
+    await expect(
+      boundedJsonPost({ url: 'https://api.github.com/test', body: '{}' }),
+    ).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
   });
 
   it('returns a fixed timeout without exposing transport details', async () => {
@@ -244,6 +322,10 @@ describe('GitHub App installation token cache', () => {
     const backend = new MemoryKeychainBackend();
     const store = new CredentialStore([backend]);
     store.putIfAbsent('keychain:openslack/test-app', PRIVATE_KEY);
+    installResponse({
+      statusCode: 200,
+      chunks: [JSON.stringify(installationResponse('456', 'acme'))],
+    });
     installResponse({ chunks: [JSON.stringify(tokenResponse('local-installation-token'))] });
 
     const client = await getClient({
@@ -267,7 +349,34 @@ describe('GitHub App installation token cache', () => {
       }),
     ).resolves.toMatchObject({ tokenExpiresAt: client.tokenExpiresAt });
     expect(JSON.stringify(requestMock.mock.calls)).not.toContain(PRIVATE_KEY);
-    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a whitespace private-key environment value as absent', async () => {
+    const root = createWorkspace();
+    const backend = new MemoryKeychainBackend();
+    const store = new CredentialStore([backend]);
+    store.putIfAbsent('keychain:openslack/test-app', PRIVATE_KEY);
+    process.env.OPENSLACK_GITHUB_APP_ID = '123';
+    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID = '456';
+    process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY = '   ';
+    installResponse({ chunks: [JSON.stringify(tokenResponse('fallback-token'))] });
+
+    await expect(
+      requireAppInstallationToken({
+        localStateRoot: join(root, '.openslack.local'),
+        credentialStore: store,
+      }),
+    ).resolves.toMatchObject({ token: 'fallback-token', installationId: '456' });
+  });
+
+  it('maps a non-empty invalid private key to a stable error before HTTP', async () => {
+    process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY = 'invalid-private-key-canary';
+    await expect(requireAppInstallationToken()).rejects.toMatchObject({
+      code: 'APP_TOKEN_INVALID',
+      message: 'GitHub App private-key credential is unavailable or invalid.',
+    });
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it('redacts credential backend failures and never mixes partial environment config', async () => {
@@ -340,6 +449,14 @@ function tokenResponse(token: string): TokenResponse {
     token,
     expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     permissions: { contents: 'write', pull_requests: 'write' },
+  };
+}
+
+function installationResponse(id: string, account: string): Record<string, unknown> {
+  return {
+    id: Number(id),
+    account: { login: account },
+    repository_selection: 'selected',
   };
 }
 

@@ -1,8 +1,9 @@
 import type { CredentialStore } from '@openslack/credentials';
 
 import {
-  createGitHubAppJwtContext,
+  resolveGitHubAppJwtContext,
   requireAppInstallationToken,
+  type GitHubAppJwtContext,
   type GitHubAppInstallationTokenOptions,
 } from './auth.js';
 import { GITHUB_APP_DEFAULT_EVENTS, GITHUB_APP_DEFAULT_PERMISSIONS } from './app-manifest.js';
@@ -81,6 +82,11 @@ export interface GitHubAppInstallationSource {
 
 export interface GitHubAppInstallationDiagnosticDependencies {
   loadInstallation?: () => Promise<GitHubAppInstallationSource>;
+  resolveJwtContext?: (
+    options: GitHubAppInstallationTokenOptions & {
+      repository: { owner: string; repo: string };
+    },
+  ) => Promise<GitHubAppJwtContext>;
   inspectRepositoryAccess?: () => Promise<GitHubInstallationRepositoryAccess>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -126,7 +132,7 @@ export async function diagnoseGitHubAppInstallation(
   try {
     source = await (dependencies.loadInstallation
       ? dependencies.loadInstallation()
-      : loadInstallation(tokenOptions, dependencies));
+      : loadInstallation(input, tokenOptions, dependencies));
   } catch (error) {
     if (error instanceof GitHubAppInstallationDiagnosticError) throw error;
     throw new GitHubAppInstallationDiagnosticError(
@@ -241,12 +247,16 @@ export async function diagnoseGitHubAppInstallation(
 }
 
 async function loadInstallation(
+  input: GitHubAppInstallationDiagnosticInput,
   tokenOptions: GitHubAppInstallationTokenOptions,
   dependencies: GitHubAppInstallationDiagnosticDependencies,
 ): Promise<GitHubAppInstallationSource> {
   let context;
   try {
-    context = createGitHubAppJwtContext(tokenOptions);
+    context = await (dependencies.resolveJwtContext ?? resolveGitHubAppJwtContext)({
+      ...tokenOptions,
+      repository: { owner: input.owner, repo: input.repo },
+    });
   } catch {
     throw new GitHubAppInstallationDiagnosticError(
       'APP_INSTALLATION_CONFIG_INVALID',
@@ -271,7 +281,10 @@ async function inspectRepository(
   input: GitHubAppInstallationDiagnosticInput,
   tokenOptions: GitHubAppInstallationTokenOptions,
 ): Promise<GitHubInstallationRepositoryAccess> {
-  const installationToken = await requireAppInstallationToken(tokenOptions);
+  const installationToken = await requireAppInstallationToken({
+    ...tokenOptions,
+    repository: { owner: input.owner, repo: input.repo },
+  });
   return inspectInstallationRepositoryAccess({
     token: installationToken.token,
     owner: input.owner,
