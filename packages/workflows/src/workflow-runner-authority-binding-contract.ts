@@ -13,15 +13,14 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   WorkflowBudgetAuthorityContractError,
+  WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA,
   canonicalWorkflowBudgetAuthorityJson,
   hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
   workflowBudgetAuthorityChargeNanoUsd,
-  validateWorkflowBudgetLedgerEntry,
   validateWorkflowBudgetPreparedRequest,
   validateWorkflowBudgetReceipt,
-  validateWorkflowBudgetReceiptForResult,
-  validateWorkflowBudgetReserveDecision,
+  validateWorkflowBudgetReceiptResult,
   validateWorkflowBudgetReserveRequest,
   validateWorkflowBudgetSettlementRequest,
   type WorkflowBudgetLedgerEntry,
@@ -1804,31 +1803,27 @@ function validateBudgetSourceResultForPrepared(
     );
   }
   const reserveRequest = request as WorkflowBudgetReserveRequest;
-  const decision = validateBudgetContractForBinding('$/budgetSourceResult/decision', () =>
-    validateWorkflowBudgetReserveDecision(own(record, 'decision')),
-  );
-  const ledgerEntry = validateBudgetContractForBinding('$/budgetSourceResult/ledgerEntry', () =>
-    validateWorkflowBudgetLedgerEntry(own(record, 'ledgerEntry')),
-  );
   const durableReceiptBytes = own(record, 'durableReceiptBytes');
   const durable = parseBudgetDurableReceipt(durableReceiptBytes);
   const durableReceipt = durable.value;
-  if (`${canonicalWorkflowBudgetAuthorityJson(decision.request)}\n` !== prepared.body) {
-    fail(
-      'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',
-      '$/budgetSourceResult',
-      'Budget source result does not prove the exact accepted prepared reserve.',
-    );
-  }
-  const receipt = validateBudgetContractForBinding('$/budgetSourceResult/receipt', () =>
-    validateWorkflowBudgetReceiptForResult(
+  const budgetResult = validateBudgetContractForBinding('$/budgetSourceResult/receipt', () =>
+    validateWorkflowBudgetReceiptResult(
       durableReceipt.operationalProjection,
       prepared,
-      decision,
-      ledgerEntry,
+      own(record, 'decision'),
+      own(record, 'ledgerEntry'),
       null,
     ),
   );
+  const { receipt, ledger: ledgerEntry } = budgetResult;
+  if (budgetResult.record.schema !== WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      '$/budgetSourceResult/decision',
+      'A budget authorization requires an exact reserve decision.',
+    );
+  }
+  const decision = budgetResult.record;
   if (
     receipt.operation !== 'reserve' ||
     receipt.status !== 'accepted' ||

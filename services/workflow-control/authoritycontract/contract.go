@@ -11,6 +11,10 @@ const (
 	V1ProtocolVersion = "openslack.workflow_runner.v1"
 	IdempotencyPrefix = "openslack.workflow-control-authority.v2."
 
+	BudgetEnvelopeRevisionPlane         = "runner_global"
+	BudgetCommittedRevisionPlane        = "budget_source_run"
+	BudgetRevisionPlaneEqualityRequired = false
+
 	// Authority identifies the current and only Workflow Control writer in
 	// GS9-A. It is deliberately not configurable from this package.
 	Authority = "typescript"

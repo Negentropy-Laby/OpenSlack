@@ -618,10 +618,13 @@ source-lock, framing, evidence, and closed boundary inventories are likewise aut
 architecture documents must link to that record rather than duplicate its matrices or
 `NOT_CLAIMED` list.
 
-F2a contributes only the exact TypeScript contract and pure Go validator. It neither registers the
-future profile nor composes persistence, HTTP, scheduler/worker, recovery, or domain adapters.
-GS9-F1 remains the active foundation, TypeScript remains the production Workflow authority, and
-GS9-F2b must implement and qualify every runtime capability listed by the manifest as not delivered.
+F2a contributes the exact TypeScript contract and pure Go validator. The GS9-F1 runner store uses a
+narrow subset of that proof to validate the exact durable budget-receipt bytes, their SHA-256,
+operation/status, reservation identity, and accepted budget source-run revision on fresh,
+response-loss, and stored replay paths. It does not persist the full F2a source result or compose
+the remaining domain adapters, scheduler/worker recovery, or future profile. TypeScript remains the
+production Workflow authority, and GS9-F2b must implement and qualify every runtime capability
+listed by the manifest as not delivered.
 
 A budget decision delivery is a post-event contextual proof, not a projection of the pre-event
 resolution ACK. For `budget_reserve`, the control-delivery validator consumes the same exact E1
@@ -642,5 +645,6 @@ Hash selection is kind-bound rather than caller-selected: `budget_authorization`
 the exact canonical durable receipt bytes, while `effect_authorization` and `resume_offer` use the
 binding receipt domain hash. Kinds without an authority-receipt payload declare no algorithm. The
 TypeScript and Go validators consume the same generated operation facts and one validation-session
-cache, so this hardening removes structural drift and repeated parsing; it does not claim or repair
-a live Go runtime divergence, because F2a still has no live runtime composition.
+cache, so this hardening removes structural drift and repeated parsing. The live Go runner-store
+check described above is intentionally narrower: migration `000008` and the F2b recovery protocol
+are required before the full decision/ledger source-result proof can be persisted and reconstructed.

@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sync"
 	"testing"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 )
 
 type runnerBindingManifest struct {
@@ -44,7 +47,7 @@ type runnerBindingManifest struct {
 		RevisionPlanes struct {
 			Envelope         string `json:"envelope"`
 			Committed        string `json:"committed"`
-			EqualityRequired bool   `json:"equalityRequired"`
+			EqualityRequired *bool  `json:"equalityRequired"`
 		} `json:"revisionPlanes"`
 	} `json:"budgetDecisionDelivery"`
 	Operations []struct {
@@ -73,12 +76,34 @@ type runnerBindingManifest struct {
 		Path   string `json:"path"`
 		SHA256 string `json:"sha256"`
 	} `json:"sourceLocks"`
-	BundleFiles []string `json:"bundleFiles"`
-	Artifacts   map[string]struct {
+	BundleFiles       []string `json:"bundleFiles"`
+	NegativeVectorIDs []string `json:"negativeVectorIds"`
+	Artifacts         map[string]struct {
 		Path       string `json:"path"`
 		ByteLength int    `json:"byteLength"`
 		SHA256     string `json:"sha256"`
 	} `json:"artifacts"`
+}
+
+var (
+	runnerBindingManifestOnce  sync.Once
+	runnerBindingManifestValue runnerBindingManifest
+	runnerBindingManifestErr   error
+)
+
+func loadRunnerBindingManifest(t *testing.T) runnerBindingManifest {
+	t.Helper()
+	runnerBindingManifestOnce.Do(func() {
+		var contents []byte
+		contents, runnerBindingManifestErr = BundleFile("manifest.json")
+		if runnerBindingManifestErr == nil {
+			runnerBindingManifestErr = json.Unmarshal(contents, &runnerBindingManifestValue)
+		}
+	})
+	if runnerBindingManifestErr != nil {
+		t.Fatalf("decode runner binding manifest: %v", runnerBindingManifestErr)
+	}
+	return runnerBindingManifestValue
 }
 
 func TestGeneratedBundleIsExactTypeScriptMirror(t *testing.T) {
@@ -108,14 +133,7 @@ func TestGeneratedBundleIsExactTypeScriptMirror(t *testing.T) {
 
 func TestManifestLocksClosedContractAndAuthorityCeiling(t *testing.T) {
 	t.Parallel()
-	manifestBytes, err := BundleFile("manifest.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest runnerBindingManifest
-	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
-		t.Fatalf("decode manifest: %v", err)
-	}
+	manifest := loadRunnerBindingManifest(t)
 	if manifest.Schema != "openslack.workflow_runner_authority_binding_contract_manifest.v1" ||
 		manifest.ContractVersion != ContractVersion || manifest.Profile != FutureRuntimeProfile {
 		t.Fatalf("manifest identity drifted: %+v", manifest)
@@ -155,8 +173,10 @@ func TestManifestLocksClosedContractAndAuthorityCeiling(t *testing.T) {
 		t.Fatalf("protocol invariants drifted: %+v", protocol)
 	}
 	revisionPlanes := manifest.BudgetDecisionDelivery.RevisionPlanes
-	if revisionPlanes.Envelope != "runner_global" || revisionPlanes.Committed != "budget_source_run" ||
-		revisionPlanes.EqualityRequired {
+	if revisionPlanes.Envelope != authoritycontract.BudgetEnvelopeRevisionPlane ||
+		revisionPlanes.Committed != authoritycontract.BudgetCommittedRevisionPlane ||
+		revisionPlanes.EqualityRequired == nil ||
+		*revisionPlanes.EqualityRequired != authoritycontract.BudgetRevisionPlaneEqualityRequired {
 		t.Fatalf("budget revision planes drifted: %+v", revisionPlanes)
 	}
 	if !manifest.Evidence.Closed || manifest.Evidence.ProviderIdentity != "hash_only" ||

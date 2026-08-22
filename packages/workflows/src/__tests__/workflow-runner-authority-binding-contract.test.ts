@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 
-import { prepareWorkflowControlAuthorityMessage } from '../workflow-control-authority-contract.js';
+import {
+  WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
+  prepareWorkflowControlAuthorityMessage,
+} from '../workflow-control-authority-contract.js';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
@@ -24,6 +27,7 @@ import {
   hashWorkflowRunnerAuthorityBindingResolution,
   hashWorkflowRunnerAuthorityBindingStage,
   hashWorkflowRunnerBudgetSourceReceipt,
+  parseWorkflowRunnerBudgetDurableReceiptBytes,
   parseWorkflowRunnerAuthorityBindingReceiptBytes,
   parseWorkflowRunnerAuthorityBindingResolutionBytes,
   parseWorkflowRunnerAuthorityBindingStageBytes,
@@ -47,9 +51,10 @@ import {
 } from '../workflow-runner-authority-binding-contract.js';
 import {
   canonicalWorkflowBudgetAuthorityJson,
+  parseWorkflowBudgetAuthorityBytes,
   prepareWorkflowBudgetAuthorityRequest,
-  type WorkflowBudgetReserveRequest,
-  type WorkflowBudgetSettlementRequest,
+  validateWorkflowBudgetReserveRequest,
+  validateWorkflowBudgetSettlementRequest,
 } from '../workflow-budget-authority-contract.js';
 import {
   withWorkflowRunnerAuthorityBindingEncodingObserver,
@@ -61,7 +66,8 @@ const bundleRoot = resolve(
   root,
   'packages/workflows/contracts/workflow-runner-authority-binding/v1',
 );
-const load = (path: string) => JSON.parse(readFileSync(resolve(bundleRoot, path), 'utf8')) as Json;
+const load = <T = Json>(path: string): T =>
+  JSON.parse(readFileSync(resolve(bundleRoot, path), 'utf8')) as T;
 const sha = (path: string) =>
   createHash('sha256')
     .update(readFileSync(resolve(root, path)))
@@ -94,6 +100,11 @@ function asJson(value: unknown, label: string): Json {
     throw new Error(`${label} must be an object.`);
   }
   return value as Json;
+}
+
+function asSafeInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value)) throw new Error(`${label} must be a safe integer.`);
+  return value as number;
 }
 
 interface ExactVector {
@@ -179,8 +190,14 @@ interface Golden {
   }>;
 }
 
-const golden = load('golden-vectors.json') as unknown as Golden;
+const golden = load<Golden>('golden-vectors.json');
 const manifest = load('manifest.json');
+
+function findNegative(id: string): Golden['negative'][number] {
+  const vector = golden.negative.find((candidate) => candidate.id === id);
+  if (vector === undefined) throw new Error(`Missing negative golden vector ${id}.`);
+  return vector;
+}
 
 function controlArtifact(reference: string): ControlDeliveryArtifact {
   const artifact = golden.positive.controlDelivery.artifacts[reference];
@@ -347,11 +364,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     expect(manifest.budgetDecisionDelivery).toEqual({
       sourceResultRequired: true,
       durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
-      revisionPlanes: {
-        envelope: 'runner_global',
-        committed: 'budget_source_run',
-        equalityRequired: false,
-      },
+      revisionPlanes: WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
       authorityReceiptHash: 'canonical_durable_receipt_sha256',
       acceptedStates: {
         reserved: 'requested_amounts',
@@ -446,8 +459,22 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         const resolution = asJson(exchange.resolution.value, 'budget resolution');
         const evidence = asJson(resolution.evidence, 'budget evidence');
         const prepared = asJson(evidence.preparedRequest, 'budget prepared request');
-        const request = JSON.parse(String(prepared.body)) as Json;
-        expect(request.expectedRunRevision).not.toBe(runnerAuthority.expectedGlobalRunRevision);
+        const request =
+          row.operation === 'budget_reserve'
+            ? validateWorkflowBudgetReserveRequest(
+                parseWorkflowBudgetAuthorityBytes(Buffer.from(String(prepared.body), 'utf8')),
+              )
+            : validateWorkflowBudgetSettlementRequest(
+                parseWorkflowBudgetAuthorityBytes(Buffer.from(String(prepared.body), 'utf8')),
+              );
+        expect(request.expectedAccountRevision).toBe(
+          asJson(evidence.sourceAuthority, 'budget source authority').expectedRevision,
+        );
+        expect(Number.isSafeInteger(request.expectedRunRevision)).toBe(true);
+        expect(runnerAuthority.acceptedGlobalRunRevision).toBe(
+          asSafeInteger(runnerAuthority.expectedGlobalRunRevision, 'expected global run revision') +
+            row.runnerDelta.revision,
+        );
       }
     }
   });
@@ -525,13 +552,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       const stage = asJson(exchange.stage.value, 'budget stage');
       const runnerAuthority = asJson(stage.runnerAuthority, 'runner authority');
       const sourceResult = asJson(item.budgetSourceResult, 'budget source result');
-      const durableReceipt = JSON.parse(String(sourceResult.durableReceiptBytes)) as Json;
+      const durableReceipt = parseWorkflowRunnerBudgetDurableReceiptBytes(
+        sourceResult.durableReceiptBytes,
+      );
       const sourceReceipt = asJson(durableReceipt.operationalProjection, 'budget source receipt');
       expect(payload.status).toBe(status);
       expect(payload.authorizedCalls).toBe(status === 'reserved' ? '1' : '0');
       expect(message.runRevision).toBe(runnerAuthority.acceptedGlobalRunRevision);
       expect(payload.committedRunRevision).toBe(sourceReceipt.acceptedRunRevision);
-      expect(payload.committedRunRevision).not.toBe(message.runRevision);
     }
   });
 
@@ -693,7 +721,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     const open = structuredClone(golden.positive.operations.checkpoint_commit.stage.value) as Json;
     open.unexpected = true;
     expect(ajv.getSchema(ids.stage)!(open)).toBe(false);
-    const sensitive = golden.negative.find(({ id }) => id === 'raw-provider-forbidden')!;
+    const sensitive = findNegative('raw-provider-forbidden');
     expect(ajv.getSchema(ids.resolution)!(sensitive.input)).toBe(false);
     const closedError = {
       schema: 'openslack.workflow_runner_authority_binding_error.v1',
@@ -746,7 +774,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     );
     expect(ajv.getSchema(ids.receipt)!(invalidControlStatus)).toBe(false);
 
-    const invalidRate = golden.negative.find(({ id }) => id === 'budget-rate-invalid')!;
+    const invalidRate = findNegative('budget-rate-invalid');
     expect(() => validateWorkflowRunnerAuthorityBindingResolution(invalidRate.input)).toThrow(
       WorkflowRunnerAuthorityBindingContractError,
     );
@@ -754,76 +782,10 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
   });
 
   it('replays every frozen negative with the same stable code and JSON path', () => {
-    expect(golden.negative.map(({ id }) => id)).toEqual([
-      'stage-unknown-field',
-      'runner-revision-drift',
-      'resolution-evidence-hash-drift',
-      'stage-receipt-cross-splice',
-      'resolution-receipt-cross-splice',
-      'control-delivery-digest-drift',
-      'raw-provider-forbidden',
-      'resume-generation-drift',
-      'source-global-revision-swap',
-      'stage-before-resolution',
-      'same-key-body-drift',
-      'target-body-cross-splice',
-      'target-key-cross-splice',
-      'target-fingerprint-cross-splice',
-      'resolution-alien-stage-receipt',
-      'resolution-alien-stage-hash',
-      'resolution-receipt-alien-stage-receipt',
-      'resolution-receipt-stage-hash-drift',
-      'checkpoint-nested-contract-error',
-      'checkpoint-deep-path-contract-error',
-      'budget-nested-contract-error',
-      'effect-approved-expiry-boundary',
-      'effect-expired-future-boundary',
-      'effect-rejected-expiry-boundary',
-      'control-event-receipt-target-drift',
-      'control-decision-budget-evidence-drift',
-      'budget-decision-source-missing',
-      'budget-decision-source-null',
-      'non-budget-decision-source-present',
-      'budget-decision-status-drift',
-      'budget-decision-amount-drift',
-      'budget-decision-receipt-hash-drift',
-      'budget-decision-committed-run-revision-drift',
-      'budget-runner-envelope-revision-drift',
-      'budget-decision-source-result-cross-splice',
-      'budget-decision-valid-source-result-cross-splice',
-      'budget-durable-manifest-drift',
-      'budget-durable-build-drift',
-      'budget-durable-projection-hash-drift',
-      'budget-source-ts-local-go-outer-cross-splice',
-      'budget-durable-bytes-whitespace-drift',
-      'budget-durable-bytes-duplicate-key-drift',
-      'budget-durable-bytes-trailing-drift',
-      'budget-durable-bytes-size-overflow',
-      'budget-decision-database-unknown-no-seq4',
-      'budget-decision-source-before-resolution-ack',
-      'budget-decision-time-inversion',
-      'control-decision-effect-evidence-drift',
-      'control-decision-resume-attempt-drift',
-      'control-decision-ordering-drift',
-      'control-route-cross-splice',
-      'control-delivery-alien-stage-receipt',
-      'control-decision-missing-prior-event-ack',
-      'control-cancel-missing-prior-event-ack',
-      'control-decision-alien-prior-event-ack',
-      'control-decision-sequence-gap',
-      'control-decision-prior-time-inversion',
-      'budget-rate-invalid',
-      'budget-settle-receipt-hash-drift',
-      'budget-settle-token-drift',
-      'budget-settle-cost-drift',
-      'budget-settle-call-drift',
-      'budget-settle-disposition-drift',
-      'resume-logical-attempt-active-reuse',
-    ]);
-    expect(golden.negative).toHaveLength(64);
-    const envelopeDrift = golden.negative.find(
-      ({ id }) => id === 'budget-runner-envelope-revision-drift',
-    )!;
+    const negativeIds = golden.negative.map(({ id }) => id);
+    expect(negativeIds).toEqual(manifest.negativeVectorIds);
+    expect(new Set(negativeIds).size).toBe(negativeIds.length);
+    const envelopeDrift = findNegative('budget-runner-envelope-revision-drift');
     const envelopeMessage = asJson(envelopeDrift.input.message, 'drifted budget message');
     const envelopeReceipt = asJson(envelopeDrift.input.receipt, 'drifted budget receipt');
     const envelopeStage = asJson(envelopeDrift.input.stage, 'budget stage');
@@ -831,7 +793,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     const envelopePayload = asJson(envelopeMessage.payload, 'budget payload');
     const envelopeSource = asJson(envelopeDrift.input.budgetSourceResult, 'budget source result');
     const envelopeDurable = asJson(
-      JSON.parse(String(envelopeSource.durableReceiptBytes)),
+      parseWorkflowRunnerBudgetDurableReceiptBytes(envelopeSource.durableReceiptBytes),
       'budget durable receipt',
     );
     const envelopeSourceReceipt = asJson(
@@ -841,13 +803,18 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     expect(envelopeReceipt.messageDigest).toBe(
       prepareWorkflowControlAuthorityMessage(envelopeMessage).messageDigest,
     );
-    expect(envelopeMessage.runRevision).not.toBe(envelopeRunner.acceptedGlobalRunRevision);
+    const originalBudgetMessage = asJson(
+      controlArtifact(golden.positive.controlDelivery.budgetAuthorization.reserved).message,
+      'original budget message',
+    );
+    expect(envelopeMessage.runRevision).toBe(
+      asSafeInteger(originalBudgetMessage.runRevision, 'original budget run revision') + 1,
+    );
+    expect(envelopeRunner.acceptedGlobalRunRevision).toBe(originalBudgetMessage.runRevision);
     expect(envelopePayload.committedRunRevision).toBe(envelopeSourceReceipt.acceptedRunRevision);
     expect(envelopeDrift.expectedError).toMatchObject({ path: '$' });
 
-    const validSourceCrossSplice = golden.negative.find(
-      ({ id }) => id === 'budget-decision-valid-source-result-cross-splice',
-    )!;
+    const validSourceCrossSplice = findNegative('budget-decision-valid-source-result-cross-splice');
     const siblingSource = asJson(
       validSourceCrossSplice.input.budgetSourceResult,
       'sibling budget source result',
@@ -856,7 +823,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     const siblingRequest = asJson(siblingDecision.request, 'sibling budget request');
     const siblingPrepared = prepareWorkflowBudgetAuthorityRequest(
       'reserve',
-      siblingRequest as unknown as WorkflowBudgetReserveRequest,
+      validateWorkflowBudgetReserveRequest(siblingRequest),
       'qualification-caller',
     );
     expect(validateWorkflowRunnerBudgetSourceResult(siblingSource, siblingPrepared)).toEqual(
@@ -873,7 +840,20 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     );
     expect(siblingPrepared.body).not.toBe(originalPrepared.body);
     expect(validSourceCrossSplice.expectedError).toMatchObject({
-      path: '$/budgetSourceResult',
+      path: '$/budgetSourceResult/receipt',
+    });
+    const requestCrossSplice = findNegative('budget-durable-request-cross-splice');
+    const requestCrossSource = asJson(
+      requestCrossSplice.input.budgetSourceResult,
+      'request cross-spliced budget source result',
+    );
+    const requestCrossDecision = asJson(requestCrossSource.decision, 'cross-spliced decision');
+    const requestCrossRequest = validateWorkflowBudgetReserveRequest(requestCrossDecision.request);
+    expect(`${canonicalWorkflowBudgetAuthorityJson(requestCrossRequest)}\n`).not.toBe(
+      originalPrepared.body,
+    );
+    expect(requestCrossSplice.expectedError).toMatchObject({
+      path: '$/budgetSourceResult/receipt/request',
     });
     for (const item of golden.negative) {
       try {
@@ -1011,7 +991,13 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     const resolution = structuredClone(vectors.resolution.value) as Json;
     const evidence = asJson(resolution.evidence, 'evidence');
     const prepared = asJson(evidence.preparedRequest, 'preparedRequest');
-    const request = JSON.parse(String(prepared.body)) as Json;
+    const request = asJson(
+      structuredClone(
+        parseWorkflowBudgetAuthorityBytes(Buffer.from(String(prepared.body), 'utf8')),
+      ),
+      'settlement request',
+    );
+    validateWorkflowBudgetSettlementRequest(request);
     request.rateNanoUsdPerToken = '1000000';
     const providerUsage = asJson(request.providerUsage, 'providerUsage');
     providerUsage.inputTokens = '9007199254740991';
@@ -1024,13 +1010,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       .update(canonicalWorkflowBudgetAuthorityJson(unsignedUsage), 'utf8')
       .digest('hex')}`;
     request.usageReceiptHash = providerUsage.receiptHash;
+    const validatedRequest = validateWorkflowBudgetSettlementRequest(request);
     const nextPrepared = prepareWorkflowBudgetAuthorityRequest(
       'settle',
-      request as unknown as WorkflowBudgetSettlementRequest,
+      validatedRequest,
       String(prepared.callerId),
     );
     evidence.preparedRequest = nextPrepared;
-    evidence.rateNanoUsdPerToken = request.rateNanoUsdPerToken;
+    evidence.rateNanoUsdPerToken = validatedRequest.rateNanoUsdPerToken;
     evidence.providerUsageReceiptHash = providerUsage.receiptHash;
     asJson(evidence.sourceAuthority, 'sourceAuthority').requestHash = nextPrepared.requestHash;
     resolution.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(evidence, 'budget_settle');

@@ -34,6 +34,7 @@ import {
   canonicalWorkflowBudgetAuthorityJson,
   evaluateWorkflowBudgetReserve,
   evaluateWorkflowBudgetSettlement,
+  hashWorkflowBudgetAuthorityValue,
   prepareWorkflowBudgetAuthorityRequest,
   validateWorkflowBudgetAccount,
   validateWorkflowBudgetAuthorityDecimal,
@@ -404,6 +405,82 @@ describe('Workflow budget authority GS9-E1 contract', () => {
         ),
         name,
       ).toEqual(fold.receipt);
+    }
+
+    const reserve = folds.reserve!;
+    const prepared = prepareWorkflowBudgetAuthorityRequest(
+      'reserve',
+      validateWorkflowBudgetReserveRequest(reserve.request),
+      'qualification-caller',
+    );
+    const crossSplicedDecision = structuredClone(reserve.decision) as Record<string, unknown>;
+    const crossSplicedRequest = structuredClone(crossSplicedDecision.request) as Record<
+      string,
+      unknown
+    >;
+    crossSplicedRequest.expectedModelHash = `sha256:${'f'.repeat(64)}`;
+    crossSplicedDecision.request = crossSplicedRequest;
+    crossSplicedDecision.requestHash = hashWorkflowBudgetAuthorityValue(
+      'reserve-request',
+      crossSplicedRequest,
+    );
+    const crossSplicedLedger = structuredClone(reserve.ledgerEntry) as Record<string, unknown>;
+    const decisionHash = hashWorkflowBudgetAuthorityValue('reserve-decision', crossSplicedDecision);
+    crossSplicedLedger.decisionHash = decisionHash;
+    const crossSplicedReceipt = structuredClone(reserve.receipt) as Record<string, unknown>;
+    crossSplicedReceipt.recordHash = decisionHash;
+    crossSplicedReceipt.ledgerEntryHash = hashWorkflowBudgetAuthorityValue(
+      'ledger-entry',
+      crossSplicedLedger,
+    );
+    expect(() =>
+      validateWorkflowBudgetReceiptForResult(
+        crossSplicedReceipt,
+        prepared,
+        crossSplicedDecision,
+        crossSplicedLedger,
+        null,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'WORKFLOW_BUDGET_AUTHORITY_IDENTITY_MISMATCH',
+        path: '$/request',
+      }),
+    );
+    for (const [label, candidateReceipt, candidateDecision, candidateLedger, path] of [
+      [
+        'receipt',
+        { ...crossSplicedReceipt, operation: 'invalid' },
+        crossSplicedDecision,
+        crossSplicedLedger,
+        '$/operation',
+      ],
+      [
+        'ledger',
+        crossSplicedReceipt,
+        crossSplicedDecision,
+        { ...crossSplicedLedger, kind: 'invalid' },
+        '$/kind',
+      ],
+      [
+        'decision',
+        crossSplicedReceipt,
+        { ...crossSplicedDecision, status: 'invalid' },
+        crossSplicedLedger,
+        '$/status',
+      ],
+    ] as const) {
+      expect(
+        () =>
+          validateWorkflowBudgetReceiptForResult(
+            candidateReceipt,
+            prepared,
+            candidateDecision,
+            candidateLedger,
+            null,
+          ),
+        label,
+      ).toThrowError(expect.objectContaining({ path }));
     }
   });
 

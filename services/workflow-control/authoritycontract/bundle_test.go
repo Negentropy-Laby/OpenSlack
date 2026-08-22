@@ -45,7 +45,7 @@ type bundleManifest struct {
 		RevisionPlanes               struct {
 			Envelope         string `json:"envelope"`
 			Committed        string `json:"committed"`
-			EqualityRequired bool   `json:"equalityRequired"`
+			EqualityRequired *bool  `json:"equalityRequired"`
 		} `json:"revisionPlanes"`
 	} `json:"budget"`
 	Limits struct {
@@ -115,8 +115,9 @@ func TestManifestParityAndAuthorityCeiling(t *testing.T) {
 	}
 	if manifest.Budget.Max != "9223372036854775807" || manifest.Budget.MoneyUnit != CostUnit ||
 		manifest.Budget.MoneyScale != CostScale || manifest.Budget.Rounding != RoundingMode ||
-		manifest.Budget.BinaryFloatingPointAuthority || manifest.Budget.RevisionPlanes.Envelope != "runner_global" ||
-		manifest.Budget.RevisionPlanes.Committed != "budget_source_run" || manifest.Budget.RevisionPlanes.EqualityRequired {
+		manifest.Budget.BinaryFloatingPointAuthority || manifest.Budget.RevisionPlanes.Envelope != BudgetEnvelopeRevisionPlane ||
+		manifest.Budget.RevisionPlanes.Committed != BudgetCommittedRevisionPlane || manifest.Budget.RevisionPlanes.EqualityRequired == nil ||
+		*manifest.Budget.RevisionPlanes.EqualityRequired != BudgetRevisionPlaneEqualityRequired {
 		t.Fatalf("budget contract drifted: %+v", manifest.Budget)
 	}
 	limits := manifest.Limits

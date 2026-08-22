@@ -182,6 +182,10 @@ func ValidateReceiptForRequest(receiptValue, preparedValue any) (Record, error) 
 	if err != nil {
 		return nil, err
 	}
+	return bindReceiptToPreparedRequest(receipt, prepared, request)
+}
+
+func bindReceiptToPreparedRequest(receipt Record, prepared PreparedRequest, request Record) (Record, error) {
 	pairs := [][2]any{{receipt["operation"], prepared.Operation}, {receipt["workspaceId"], request["workspaceId"]}, {receipt["runId"], request["runId"]}, {receipt["accountId"], request["accountId"]}, {receipt["reservationId"], request["reservationId"]}, {receipt["callId"], request["callId"]}, {receipt["expectedAccountRevision"], request["expectedAccountRevision"]}, {receipt["expectedRunRevision"], request["expectedRunRevision"]}, {receipt["correlationId"], request["correlationId"]}, {receipt["requestHash"], prepared.RequestHash}, {receipt["idempotencyKey"], prepared.IdempotencyKey}, {receipt["requestFingerprint"], prepared.RequestFingerprint}}
 	for _, pair := range pairs {
 		if pair[0] != pair[1] {
@@ -199,25 +203,47 @@ func ValidateReceiptForRequest(receiptValue, preparedValue any) (Record, error) 
 // durable decision, ledger entry, and (when required) provider reconciliation.
 // Database-unknown receipts intentionally cannot pass this validator because
 // their durable mutation outcome is not known.
-func ValidateReceiptForResult(receiptValue, preparedValue, recordValue, ledgerValue, reconciliationValue any) (Record, error) {
-	receipt, err := ValidateReceiptForRequest(receiptValue, preparedValue)
+type ValidatedReceiptResult struct {
+	Receipt Record
+	Record  Record
+	Ledger  Record
+}
+
+func ValidateReceiptResult(receiptValue, preparedValue, recordValue, ledgerValue, reconciliationValue any) (ValidatedReceiptResult, error) {
+	receipt, err := ValidateReceipt(receiptValue)
 	if err != nil {
-		return nil, err
+		return ValidatedReceiptResult{}, err
+	}
+	prepared, preparedRequest, err := ValidatePreparedRequestRecord(preparedValue)
+	if err != nil {
+		return ValidatedReceiptResult{}, err
+	}
+	receipt, err = bindReceiptToPreparedRequest(receipt, prepared, preparedRequest)
+	if err != nil {
+		return ValidatedReceiptResult{}, err
 	}
 	ledger, err := ValidateLedgerEntry(ledgerValue)
 	if err != nil {
-		return nil, err
+		return ValidatedReceiptResult{}, err
 	}
 	var record Record
+	var canonicalRecordRequest string
 	recordDomain := "settlement"
 	if receipt["operation"] == "reserve" {
-		record, err = ValidateReserveDecision(recordValue)
+		record, canonicalRecordRequest, err = validateReserveDecisionWithRequest(recordValue)
 		recordDomain = "reserve-decision"
 	} else {
 		record, err = ValidateSettlement(recordValue)
+		if err == nil {
+			canonicalRecordRequest, err = CanonicalJSON(record["request"])
+		}
 	}
 	if err != nil {
-		return nil, err
+		return ValidatedReceiptResult{}, err
+	}
+	preparedCanonical := strings.TrimSuffix(prepared.Body, "\n")
+	if canonicalRecordRequest != preparedCanonical {
+		return ValidatedReceiptResult{}, failure(ErrorIdentityMismatch, "$/request", "Durable budget result does not bind the prepared request.")
 	}
 	recordHash, _ := hashValue(recordDomain, record)
 	ledgerHash, _ := hashValue("ledger-entry", ledger)
@@ -238,12 +264,12 @@ func ValidateReceiptForResult(receiptValue, preparedValue, recordValue, ledgerVa
 		receipt["committedAt"] != after["updatedAt"] || ledger["kind"] != expectedLedgerKind ||
 		ledger["decisionHash"] != recordHash || ledger["accountHash"] != accountHash ||
 		ledger["accountRevision"] != after["accountRevision"] || ledger["runRevision"] != after["runRevision"] {
-		return nil, failure(ErrorIdentityMismatch, "$", "Receipt does not bind the durable budget result.")
+		return ValidatedReceiptResult{}, failure(ErrorIdentityMismatch, "$", "Receipt does not bind the durable budget result.")
 	}
 	if record["schema"] == SchemaSettlement && record["status"] == "reconciliation_required" {
 		reconciliation, reconcileErr := ValidateReconciliation(reconciliationValue)
 		if reconcileErr != nil {
-			return nil, reconcileErr
+			return ValidatedReceiptResult{}, reconcileErr
 		}
 		request := record["request"].(Record)
 		if receipt["status"] != "provider_reconciliation_required" ||
@@ -255,12 +281,17 @@ func ValidateReceiptForResult(receiptValue, preparedValue, recordValue, ledgerVa
 			reconciliation["accountHash"] != accountHash ||
 			reconciliation["reservationHash"] != record["reservationHash"] ||
 			reconciliation["observedAt"] != record["committedAt"] {
-			return nil, failure(ErrorIdentityMismatch, "$/reconciliationToken", "Provider reconciliation receipt binding drifted.")
+			return ValidatedReceiptResult{}, failure(ErrorIdentityMismatch, "$/reconciliationToken", "Provider reconciliation receipt binding drifted.")
 		}
 	} else if receipt["status"] != "accepted" || !nilBudgetRecord(reconciliationValue) {
-		return nil, failure(ErrorIdentityMismatch, "$/status", "Accepted result receipt status drifted.")
+		return ValidatedReceiptResult{}, failure(ErrorIdentityMismatch, "$/status", "Accepted result receipt status drifted.")
 	}
-	return receipt, nil
+	return ValidatedReceiptResult{Receipt: receipt, Record: record, Ledger: ledger}, nil
+}
+
+func ValidateReceiptForResult(receiptValue, preparedValue, recordValue, ledgerValue, reconciliationValue any) (Record, error) {
+	result, err := ValidateReceiptResult(receiptValue, preparedValue, recordValue, ledgerValue, reconciliationValue)
+	return result.Receipt, err
 }
 
 // nilBudgetRecord treats a typed nil Record passed through an interface as the

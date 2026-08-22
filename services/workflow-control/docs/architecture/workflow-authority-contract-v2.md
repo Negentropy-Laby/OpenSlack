@@ -134,10 +134,12 @@ v2 rule. A rejected or reconciliation-required authorization carries zero author
 and calls, so it can never be interpreted as permission to spend. GS9-A validates these calculations
 only and does not gate a provider call.
 
-For `budget_authorization`, the message envelope `runRevision` belongs to the runner-global CAS
-plane, while `payload.committedRunRevision` belongs to the budget source-run CAS plane and must
-match the exact durable budget receipt. The two revisions are independently monotonic; equality is
-neither required nor evidence that either plane committed.
+The canonical dual-revision rule is defined in
+[`docs/architecture/contracts/workflow-control.md`](../../../../docs/architecture/contracts/workflow-control.md#gs9-f2a-authority-binding-coordinator-contract).
+This service validates the exact durable budget receipt, its SHA-256, operation/status,
+reservation identity, and accepted source revision before fresh or replayed delivery. It does not
+persist the complete F2a decision/ledger source-result proof; that remains an F2b recovery and
+migration `000008` responsibility.
 
 ## Evidence ceiling
 

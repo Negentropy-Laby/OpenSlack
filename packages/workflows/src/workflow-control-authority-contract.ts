@@ -27,6 +27,11 @@ export const WORKFLOW_CONTROL_AUTHORITY_IDEMPOTENCY_PREFIX =
 export const WORKFLOW_CONTROL_AUTHORITY_MONEY_UNIT = 'nano_usd' as const;
 export const WORKFLOW_CONTROL_AUTHORITY_MONEY_SCALE = 9 as const;
 export const WORKFLOW_CONTROL_AUTHORITY_ROUNDING = 'half_up_nonnegative' as const;
+export const WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES = Object.freeze({
+  envelope: 'runner_global',
+  committed: 'budget_source_run',
+  equalityRequired: false,
+} as const);
 export const WORKFLOW_CONTROL_AUTHORITY_MAX_INT64 = '9223372036854775807' as const;
 
 export const WORKFLOW_CONTROL_AUTHORITY_RUN_STATES = Object.freeze([

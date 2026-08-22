@@ -219,8 +219,12 @@ func hashValue(domain string, value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return hashCanonicalValue(domain, canonical), nil
+}
+
+func hashCanonicalValue(domain, canonical string) string {
 	digest := sha256.Sum256([]byte("openslack.workflow-budget-authority." + domain + ".v1\x00" + canonical))
-	return hex.EncodeToString(digest[:]), nil
+	return hex.EncodeToString(digest[:])
 }
 
 func HashValue(domain string, value any) (string, error) { return hashValue(domain, value) }
