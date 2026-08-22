@@ -1,8 +1,9 @@
 const { resolve } = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const repoRoot = resolve(__dirname, '..');
 const openSlackEntry = resolve(repoRoot, 'apps', 'cli', 'src', 'index.ts');
-const tsxLoader = require.resolve('tsx');
+const tsxLoader = pathToFileURL(require.resolve('tsx')).href;
 
 const managedChildKeys = [
   'GITHUB_TOKEN',

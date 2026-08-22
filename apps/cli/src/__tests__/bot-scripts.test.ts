@@ -301,6 +301,10 @@ describe('bot-auth wrapper scripts', () => {
     const launcher = require(scriptPath('bot-openslack-command.js')) as {
       main(args: string[], dependencies: Record<string, unknown>): Promise<number>;
     };
+    const launchEnvironment = require(scriptPath('bot-launch-environment.js')) as {
+      openSlackInvocation(args: string[]): { command: string; args: string[] };
+      tsxLoader: string;
+    };
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
     const withIdentity = async (
       _options: unknown,
@@ -332,6 +336,22 @@ describe('bot-auth wrapper scripts', () => {
     expect(calls[1].env).not.toHaveProperty('GITHUB_OWNER');
     expect(calls[1].env).not.toHaveProperty('GITHUB_REPO');
     expect(calls[1].env).not.toHaveProperty('OPENSLACK_GITHUB_APP_INSTALLATION_ID');
+
+    const externalCwd = mkdtempSync(join(tmpdir(), 'openslack-bot-launch-'));
+    try {
+      expect(new URL(launchEnvironment.tsxLoader).protocol).toBe('file:');
+      const invocation = launchEnvironment.openSlackInvocation(['--help']);
+      const result = spawnSync(invocation.command, invocation.args, {
+        cwd: externalCwd,
+        encoding: 'utf8',
+        env: process.env,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).not.toContain('ERR_UNSUPPORTED_ESM_URL_SCHEME');
+      expect(result.stdout).toContain('Usage:');
+    } finally {
+      rmSync(externalCwd, { recursive: true, force: true });
+    }
   });
 
   it('does not expose the installation token through the token script stdout', () => {
