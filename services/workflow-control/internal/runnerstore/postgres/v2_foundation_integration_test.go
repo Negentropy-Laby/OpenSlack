@@ -166,8 +166,11 @@ func TestGS9F1QualificationFoundation(t *testing.T) {
 				budget := v2BudgetReserve(t, lease, 2, "event-budget-planes-"+strings.ReplaceAll(test.name, " ", "-"))
 				recorded, err := repository.RecordV2Event(ctx, budget)
 				if test.wantAuthorityBindingErr {
-					if !runnerstore.IsCode(err, runnerstore.ErrorAuthorityBinding) {
-						t.Fatalf("drifted budget binding was not rejected: %v", err)
+					var reconciliation *runnerstore.Error
+					if !runnerstore.IsCode(err, runnerstore.ErrorReconciliation) ||
+						!errors.As(err, &reconciliation) ||
+						!runnerstore.IsCode(reconciliation.Cause, runnerstore.ErrorAuthorityBinding) {
+						t.Fatalf("drifted committed budget binding did not latch its mismatch for reconciliation: %v", err)
 					}
 					return
 				}
