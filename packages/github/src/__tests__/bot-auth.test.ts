@@ -202,6 +202,7 @@ describe('package-owned bot GitHub authentication', () => {
 
   it('uses the default PEM when the inline key is blank and does not eagerly read public config', async () => {
     const root = temporaryRoot();
+    const unrelatedWorkspace = temporaryWorkspace('unrelated-owner', 'unrelated-repo');
     mkdirSync(join(root, '.openslack.local'), { recursive: true });
     writeFileSync(join(root, '.openslack.local', 'github-app.pem'), PRIVATE_KEY);
     const resolveInstallation = vi.fn(async () => ({
@@ -213,6 +214,7 @@ describe('package-owned bot GitHub authentication', () => {
       withBotGitHubInstallation(
         {
           repoRoot: root,
+          cwd: unrelatedWorkspace,
           publicConfigPath: join(root, 'missing-public.json'),
           explicitRepository: 'Target-Owner/target-repo',
           publicConfig: PUBLIC_CONFIG,

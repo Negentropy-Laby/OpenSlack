@@ -535,7 +535,7 @@ function resolveBotIdentity(
     (!inlinePrivateKey && !configuredPath);
   const localStateRoot =
     options.localStateRoot ??
-    resolveGitHubAppLocalStateRoot(options.cwd ?? process.cwd()) ??
+    resolveGitHubAppLocalStateRoot(options.repoRoot ?? options.cwd ?? process.cwd()) ??
     join(repoRoot, '.openslack.local');
   let localConfig = options.localConfig;
   if (localConfig === undefined && needsLocal) {
