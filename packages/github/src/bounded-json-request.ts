@@ -46,11 +46,10 @@ export async function boundedJsonRequest(options: BoundedJsonRequestOptions): Pr
   return new Promise((resolve, reject) => {
     let settled = false;
     let responseReceived = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     let request: ReturnType<typeof httpsRequest> | undefined;
 
     const cleanup = (): void => {
-      if (timeout !== undefined) clearTimeout(timeout);
+      clearTimeout(timeout);
       options.signal?.removeEventListener('abort', abortRequest);
     };
     const rejectSafe = (code: BoundedJsonRequestFailureCode, status?: number): void => {
@@ -69,6 +68,10 @@ export async function boundedJsonRequest(options: BoundedJsonRequestOptions): Pr
       rejectSafe('ABORTED');
       request?.destroy();
     };
+    const timeout = setTimeout(() => {
+      rejectSafe('TIMEOUT');
+      request?.destroy();
+    }, timeoutMs);
 
     try {
       request = httpsRequest(
@@ -144,10 +147,6 @@ export async function boundedJsonRequest(options: BoundedJsonRequestOptions): Pr
     request.on('close', () => {
       if (!responseReceived) rejectSafe('NETWORK_ERROR');
     });
-    timeout = setTimeout(() => {
-      rejectSafe('TIMEOUT');
-      request?.destroy();
-    }, timeoutMs);
     options.signal?.addEventListener('abort', abortRequest, { once: true });
     if (options.signal?.aborted) {
       abortRequest();

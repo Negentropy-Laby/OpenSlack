@@ -358,6 +358,7 @@ describe('bot-auth wrapper scripts', () => {
       writes.push(String(chunk));
       return true;
     });
+    const require = createRequire(import.meta.url);
     const list = require(scriptPath('bot-list-installations.js')) as {
       main(dependencies: Record<string, unknown>): Promise<number>;
     };
