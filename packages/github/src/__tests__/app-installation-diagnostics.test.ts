@@ -7,6 +7,7 @@ import {
   GitHubAppInstallationDiagnosticError,
   type GitHubAppInstallationSource,
 } from '../app-installation-diagnostics.js';
+import { createGitHubAppJwtContext } from '../auth.js';
 
 const OWNER = 'acme';
 const REPO = 'project';
@@ -226,6 +227,7 @@ describe('GitHub App installation diagnostics', () => {
       },
       {
         fetchImpl,
+        resolveJwtContext: async (options) => createGitHubAppJwtContext(options),
         inspectRepositoryAccess: async () => repositoryAccess(),
       },
     );
@@ -257,6 +259,7 @@ describe('GitHub App installation diagnostics', () => {
         { owner: OWNER, repo: REPO, env },
         {
           fetchImpl: vi.fn(async () => response),
+          resolveJwtContext: async (options) => createGitHubAppJwtContext(options),
           maxResponseBytes: 64,
           inspectRepositoryAccess: async () => repositoryAccess(),
         },

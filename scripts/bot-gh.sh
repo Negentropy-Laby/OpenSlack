@@ -34,13 +34,7 @@ if ! command -v gh &> /dev/null; then
   exit 1
 fi
 
-pem_path="${repo_root}/.openslack.local/github-app.pem"
-if [[ -z "${OPENSLACK_GITHUB_APP_PRIVATE_KEY:-}" ]] && [[ ! -f "$pem_path" ]]; then
-  echo "Error: No GitHub App private key found." >&2
-  echo "  Set OPENSLACK_GITHUB_APP_PRIVATE_KEY or place PEM at: $pem_path" >&2
-  exit 1
-fi
-
 # The Node launcher keeps the installation token in memory and injects it only
-# into the gh child environment. Shell variables and xtrace never see it.
+# into the gh child environment. It resolves public identity, repository, and
+# installation selection without sourcing arbitrary environment files.
 exec node "${repo_root}/scripts/bot-gh-command.js" "$@"

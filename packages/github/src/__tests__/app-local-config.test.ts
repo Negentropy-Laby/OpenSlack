@@ -33,6 +33,24 @@ describe('GitHub App non-secret local config', () => {
     expect(() => readGitHubAppLocalConfig(root)).toThrow('local configuration is invalid');
   });
 
+  it('accepts both the five-field binding and the eight-field Manifest shape', () => {
+    const manifest = localState({
+      appSlug: 'OpenSlack-Agent-Operator',
+      clientId: 'Iv1.test-client',
+      webhookSecretRef: 'keychain:openslack/app-webhook',
+      clientSecretRef: 'keychain:openslack/app-client',
+    });
+    expect(readGitHubAppLocalConfig(manifest)).toMatchObject({
+      appSlug: 'OpenSlack-Agent-Operator',
+      clientId: 'Iv1.test-client',
+      webhookSecretRef: 'keychain:openslack/app-webhook',
+      clientSecretRef: 'keychain:openslack/app-client',
+    });
+
+    const incomplete = localState({ clientId: 'Iv1.test-client' });
+    expect(() => readGitHubAppLocalConfig(incomplete)).toThrow('local configuration is invalid');
+  });
+
   it('rejects oversized and malformed UTF-8 config evidence', () => {
     const oversized = localState({});
     writeFileSync(join(oversized, 'github-app.json'), Buffer.alloc(65_537, 0x61));
@@ -60,6 +78,10 @@ function localState(
   override: Partial<{
     installationId: string | null;
     privateKeyRef: string;
+    appSlug: string;
+    clientId: string;
+    webhookSecretRef: string;
+    clientSecretRef: string;
   }>,
 ): string {
   const root = mkdtempSync(join(tmpdir(), 'openslack-app-config-'));

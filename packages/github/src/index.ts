@@ -63,6 +63,7 @@ export {
   GitHubAppTokenError,
 } from './auth.js';
 export type { GitHubAppInstallationToken, GitHubAppInstallationTokenOptions } from './auth.js';
+export type { GitHubAppAuthDiagnostic, GitHubAppRepositoryTarget } from './auth.js';
 export {
   readGitHubAppLocalConfig,
   bindGitHubAppInstallation,

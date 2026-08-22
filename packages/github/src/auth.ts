@@ -1,8 +1,12 @@
-import { createSign } from 'node:crypto';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import { boundedJsonPost, BoundedJsonPostError } from './bounded-json-post.js';
 import { GitHubAppLocalConfigError, readGitHubAppLocalConfig } from './app-local-config.js';
 import { isGitHubAppSlug } from './app-slug.js';
+import { createGitHubAppJwt, POSITIVE_GITHUB_ID_PATTERN } from './app-jwt.js';
+import {
+  GitHubAppInstallationResolutionError,
+  resolveGitHubAppRepositoryInstallation,
+} from './app-installation-resolution.js';
 
 export interface GitHubAppInstallationToken {
   token: string;
@@ -12,6 +16,17 @@ export interface GitHubAppInstallationToken {
   installationId: string;
   appSlug?: string;
   permissions: Record<string, string>;
+  installationHintReplaced: boolean;
+}
+
+export interface GitHubAppRepositoryTarget {
+  owner: string;
+  repo: string;
+}
+
+export interface GitHubAppAuthDiagnostic {
+  code: 'APP_INSTALLATION_HINT_REPLACED';
+  message: string;
 }
 
 export interface GitHubAppInstallationTokenOptions {
@@ -19,6 +34,8 @@ export interface GitHubAppInstallationTokenOptions {
   localStateRoot?: string;
   credentialStore?: Pick<CredentialStore, 'withSecret'>;
   signal?: AbortSignal;
+  repository?: GitHubAppRepositoryTarget;
+  onDiagnostic?: (diagnostic: GitHubAppAuthDiagnostic) => void;
 }
 
 /** Internal App-auth context for endpoints that require a JWT rather than an installation token. */
@@ -27,6 +44,7 @@ export interface GitHubAppJwtContext {
   appId: string;
   installationId: string;
   appSlug?: string;
+  installationHintReplaced?: boolean;
 }
 
 interface TokenCache {
@@ -39,6 +57,8 @@ export class GitHubAppTokenError extends Error {
   readonly code:
     | 'APP_CONFIG_MISSING'
     | 'APP_CONFIG_INVALID'
+    | 'APP_INSTALLATION_NOT_FOUND'
+    | 'APP_INSTALLATION_REQUEST_FAILED'
     | 'APP_TOKEN_REQUEST_FAILED'
     | 'APP_TOKEN_INVALID';
 
@@ -63,30 +83,6 @@ function assertNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError();
 }
 
-function base64urlEncode(buf: Buffer): string {
-  return buf.toString('base64url').replace(/=+$/, '');
-}
-
-function createJwt(appId: string, privateKey: string): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64urlEncode(Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
-  const payload = base64urlEncode(
-    Buffer.from(
-      JSON.stringify({
-        iat: now - 60, // 60s clock skew tolerance
-        exp: now + 600, // 10 minute expiry (GitHub max)
-        iss: appId,
-      }),
-    ),
-  );
-
-  const sign = createSign('RSA-SHA256');
-  sign.update(`${header}.${payload}`);
-  const signature = base64urlEncode(sign.sign(privateKey));
-
-  return `${header}.${payload}.${signature}`;
-}
-
 /**
  * Resolves the same fail-closed credential source used for installation tokens,
  * signs a short-lived App JWT, and never returns the private key.
@@ -98,10 +94,10 @@ export function createGitHubAppJwtContext(
   options: GitHubAppInstallationTokenOptions = {},
 ): GitHubAppJwtContext {
   assertNotAborted(options.signal);
-  const source = resolveAppCredentialSource(options);
+  const source = resolveGitHubAppCredentialSource(options);
   let jwt: string;
   try {
-    jwt = source.withPrivateKey((privateKey) => createJwt(source.appId, privateKey));
+    jwt = source.withPrivateKey((privateKey) => createGitHubAppJwt(source.appId, privateKey));
   } catch (error) {
     if (error instanceof GitHubAppTokenError) throw error;
     throw new GitHubAppTokenError(
@@ -112,8 +108,62 @@ export function createGitHubAppJwtContext(
   return {
     jwt,
     appId: source.appId,
-    installationId: source.installationId,
+    installationId: requireInstallationHint(source.installationHint),
     appSlug: source.appSlug,
+  };
+}
+
+export async function resolveGitHubAppJwtContext(
+  options: GitHubAppInstallationTokenOptions & { repository: GitHubAppRepositoryTarget },
+): Promise<GitHubAppJwtContext> {
+  assertNotAborted(options.signal);
+  const source = resolveGitHubAppCredentialSource(options);
+  let jwt: string;
+  try {
+    jwt = source.withPrivateKey((privateKey) => createGitHubAppJwt(source.appId, privateKey));
+  } catch (error) {
+    if (error instanceof GitHubAppTokenError) throw error;
+    throw new GitHubAppTokenError(
+      'APP_TOKEN_INVALID',
+      'GitHub App private-key credential is unavailable or invalid.',
+    );
+  }
+  let installation;
+  try {
+    installation = await resolveGitHubAppRepositoryInstallation({
+      jwt,
+      owner: options.repository.owner,
+      repo: options.repository.repo,
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (error instanceof GitHubAppInstallationResolutionError) {
+      throw new GitHubAppTokenError(
+        error.code === 'APP_INSTALLATION_NOT_FOUND'
+          ? 'APP_INSTALLATION_NOT_FOUND'
+          : 'APP_INSTALLATION_REQUEST_FAILED',
+        error.code === 'APP_INSTALLATION_NOT_FOUND'
+          ? 'GitHub App is not installed for the target repository.'
+          : 'GitHub App installation could not be resolved safely.',
+      );
+    }
+    throw error;
+  }
+  const installationHintReplaced =
+    source.installationHint !== null && source.installationHint !== installation.id;
+  if (installationHintReplaced) {
+    options.onDiagnostic?.({
+      code: 'APP_INSTALLATION_HINT_REPLACED',
+      message:
+        'Configured GitHub App installation hint did not match the target repository; the verified repository installation is used for this process.',
+    });
+  }
+  return {
+    jwt,
+    appId: source.appId,
+    installationId: installation.id,
+    appSlug: source.appSlug,
+    installationHintReplaced,
   };
 }
 
@@ -121,9 +171,11 @@ export async function requireAppInstallationToken(
   options: GitHubAppInstallationTokenOptions = {},
 ): Promise<GitHubAppInstallationToken> {
   assertNotAborted(options.signal);
-  const source = resolveAppCredentialSource(options);
-  const { appId, installationId } = source;
-  const identityKey = `${appId}\0${installationId}`;
+  const source = resolveGitHubAppCredentialSource(options);
+  const targetKey = options.repository
+    ? `${options.repository.owner.toLowerCase()}/${options.repository.repo.toLowerCase()}`
+    : '';
+  const identityKey = `${source.appId}\0${source.installationHint ?? ''}\0${targetKey}`;
 
   // Return cached token if still valid (with 5-minute safety margin)
   if (
@@ -134,9 +186,19 @@ export async function requireAppInstallationToken(
   }
   if (!options.signal && inFlight?.identityKey === identityKey) return inFlight.promise;
 
-  let jwt: string;
+  let promise: Promise<GitHubAppInstallationToken>;
   try {
-    jwt = source.withPrivateKey((privateKey) => createJwt(appId, privateKey));
+    promise = source.withPrivateKey((privateKey) =>
+      resolveAndRefreshInstallationToken({
+        source,
+        privateKey,
+        repository: options.repository,
+        onDiagnostic: options.onDiagnostic,
+        identityKey,
+        generation: cacheGeneration,
+        signal: options.signal,
+      }),
+    );
   } catch (error) {
     if (error instanceof GitHubAppTokenError) throw error;
     throw new GitHubAppTokenError(
@@ -144,15 +206,6 @@ export async function requireAppInstallationToken(
       'GitHub App private-key credential is unavailable or invalid.',
     );
   }
-  const promise = refreshInstallationToken({
-    appId,
-    installationId,
-    appSlug: source.appSlug,
-    jwt,
-    identityKey,
-    generation: cacheGeneration,
-    signal: options.signal,
-  });
   if (!options.signal) inFlight = { identityKey, promise };
   try {
     return await promise;
@@ -161,10 +214,78 @@ export async function requireAppInstallationToken(
   }
 }
 
+async function resolveAndRefreshInstallationToken(input: {
+  source: GitHubAppCredentialSource;
+  privateKey: string;
+  repository?: GitHubAppRepositoryTarget;
+  onDiagnostic?: (diagnostic: GitHubAppAuthDiagnostic) => void;
+  identityKey: string;
+  generation: number;
+  signal?: AbortSignal;
+}): Promise<GitHubAppInstallationToken> {
+  let jwt: string;
+  try {
+    jwt = createGitHubAppJwt(input.source.appId, input.privateKey);
+  } catch {
+    throw new GitHubAppTokenError(
+      'APP_TOKEN_INVALID',
+      'GitHub App private-key credential is unavailable or invalid.',
+    );
+  }
+  let installationId: string;
+  let installationHintReplaced = false;
+  if (input.repository) {
+    let resolved;
+    try {
+      resolved = await resolveGitHubAppRepositoryInstallation({
+        jwt,
+        owner: input.repository.owner,
+        repo: input.repository.repo,
+        signal: input.signal,
+      });
+    } catch (error) {
+      if (error instanceof GitHubAppInstallationResolutionError) {
+        throw new GitHubAppTokenError(
+          error.code === 'APP_INSTALLATION_NOT_FOUND'
+            ? 'APP_INSTALLATION_NOT_FOUND'
+            : 'APP_INSTALLATION_REQUEST_FAILED',
+          error.code === 'APP_INSTALLATION_NOT_FOUND'
+            ? 'GitHub App is not installed for the target repository.'
+            : 'GitHub App installation could not be resolved safely.',
+        );
+      }
+      throw error;
+    }
+    installationId = resolved.id;
+    installationHintReplaced =
+      input.source.installationHint !== null && input.source.installationHint !== installationId;
+    if (installationHintReplaced) {
+      input.onDiagnostic?.({
+        code: 'APP_INSTALLATION_HINT_REPLACED',
+        message:
+          'Configured GitHub App installation hint did not match the target repository; the verified repository installation is used for this process.',
+      });
+    }
+  } else {
+    installationId = requireInstallationHint(input.source.installationHint);
+  }
+  return refreshInstallationToken({
+    appId: input.source.appId,
+    installationId,
+    appSlug: input.source.appSlug,
+    installationHintReplaced,
+    jwt,
+    identityKey: input.identityKey,
+    generation: input.generation,
+    signal: input.signal,
+  });
+}
+
 async function refreshInstallationToken(input: {
   appId: string;
   installationId: string;
   appSlug?: string;
+  installationHintReplaced: boolean;
   jwt: string;
   identityKey: string;
   generation: number;
@@ -214,6 +335,7 @@ async function refreshInstallationToken(input: {
       installationId: input.installationId,
       appSlug: input.appSlug,
       permissions,
+      installationHintReplaced: input.installationHintReplaced,
     };
     if (input.generation === cacheGeneration) {
       cachedToken = {
@@ -267,27 +389,30 @@ function readStringRecord(value: unknown): Record<string, string> {
   );
 }
 
-interface GitHubAppCredentialSource {
+export interface GitHubAppCredentialSource {
   appId: string;
-  installationId: string;
+  installationHint: string | null;
   appSlug?: string;
   withPrivateKey<T>(consumer: (privateKey: string) => T): T;
 }
 
-function resolveAppCredentialSource(
+export function resolveGitHubAppCredentialSource(
   options: GitHubAppInstallationTokenOptions,
 ): GitHubAppCredentialSource {
   const env = options.env ?? process.env;
   const appId = env.OPENSLACK_GITHUB_APP_ID;
   const installationId = env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
-  const privateKey = env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
-  if (appId || installationId || privateKey) {
+  const rawPrivateKey = env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
+  const privateKey = rawPrivateKey && rawPrivateKey.trim() ? rawPrivateKey : undefined;
+  const blankPrivateKeyWasExplicit =
+    rawPrivateKey !== undefined && rawPrivateKey.trim().length === 0;
+  if (privateKey || ((appId || installationId) && !blankPrivateKeyWasExplicit)) {
     if (
       !appId ||
-      !installationId ||
       !privateKey ||
-      !/^\d+$/.test(appId) ||
-      !/^\d+$/.test(installationId)
+      !POSITIVE_GITHUB_ID_PATTERN.test(appId) ||
+      (installationId !== undefined && !POSITIVE_GITHUB_ID_PATTERN.test(installationId)) ||
+      (!installationId && !options.repository)
     ) {
       throw new GitHubAppTokenError(
         'APP_CONFIG_INVALID',
@@ -296,7 +421,7 @@ function resolveAppCredentialSource(
     }
     return {
       appId,
-      installationId,
+      installationHint: installationId ?? null,
       appSlug: validAppSlug(env.OPENSLACK_GITHUB_APP_SLUG),
       withPrivateKey: (consumer) => consumer(privateKey),
     };
@@ -320,7 +445,7 @@ function resolveAppCredentialSource(
       'GitHub App installation credentials are not configured.',
     );
   }
-  if (!config.installationId) {
+  if (!config.installationId && !options.repository) {
     throw new GitHubAppTokenError(
       'APP_CONFIG_MISSING',
       'GitHub App installation is not bound in local configuration.',
@@ -330,7 +455,7 @@ function resolveAppCredentialSource(
   const store = options.credentialStore ?? createDefaultCredentialStore(env);
   return {
     appId: config.appId,
-    installationId: config.installationId,
+    installationHint: config.installationId,
     appSlug: config.appSlug,
     withPrivateKey<T>(consumer: (privateKey: string) => T): T {
       try {
@@ -343,6 +468,16 @@ function resolveAppCredentialSource(
       }
     },
   };
+}
+
+function requireInstallationHint(value: string | null): string {
+  if (!value) {
+    throw new GitHubAppTokenError(
+      'APP_CONFIG_MISSING',
+      'GitHub App installation is not bound and no repository target was supplied.',
+    );
+  }
+  return value;
 }
 
 function validAppSlug(value: string | undefined): string | undefined {

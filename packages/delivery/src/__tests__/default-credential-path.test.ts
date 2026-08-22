@@ -67,6 +67,7 @@ describe('default installed-workspace credential path', () => {
 
     expect(requireToken).toHaveBeenCalledWith({
       localStateRoot: resolve(rootDir, '.openslack.local'),
+      repository: { owner: 'acme', repo: 'project' },
     });
     expect(resolveLocalStateRoot).toHaveBeenCalledWith(rootDir);
   });
@@ -92,10 +93,72 @@ describe('default installed-workspace credential path', () => {
 
     expect(requireToken).toHaveBeenCalledWith({
       localStateRoot: resolve(rootDir, '.openslack.local'),
+      repository: { owner: 'acme', repo: 'project' },
     });
     expect(resolveLocalStateRoot).toHaveBeenCalledWith(rootDir);
   });
+
+  it('does not mistake an installation hint for a forwarded token and can refresh after 401', async () => {
+    const previousInstallationId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
+    const previousToken = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN;
+    const previousExpiry = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT;
+    const previousPermissions = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS;
+    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID = '456';
+    delete process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN;
+    delete process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT;
+    delete process.env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS;
+    const first = {
+      findOpenPullRequests: vi.fn(async () => {
+        throw { status: 401 };
+      }),
+      createDraftPullRequest: vi.fn(async () => pullRequest()),
+      updatePullRequest: vi.fn(async () => pullRequest()),
+      getPullRequest: vi.fn(async () => pullRequest()),
+      listChecks: vi.fn(async () => []),
+    };
+    const second = {
+      findOpenPullRequests: vi.fn(async () => []),
+      createDraftPullRequest: vi.fn(async () => pullRequest()),
+      updatePullRequest: vi.fn(async () => pullRequest()),
+      getPullRequest: vi.fn(async () => pullRequest()),
+      listChecks: vi.fn(async () => []),
+    };
+    const service = new GitHubDeliveryService({
+      gitPublisher: {
+        push: vi.fn(() => ({ branchSha: sha, remoteSha: sha })),
+        readRemoteSha: vi.fn(() => sha),
+      },
+      githubApiFactory: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second),
+      sleep: async () => {},
+    });
+
+    try {
+      await expect(
+        service.publish({
+          rootDir,
+          owner: 'acme',
+          repo: 'project',
+          branch: 'agent/topic',
+          base: 'main',
+          title: 'runtime: publish topic',
+          body: 'body',
+        }),
+      ).resolves.toMatchObject({ state: 'AWAITING_GATES' });
+      expect(requireToken).toHaveBeenCalledTimes(2);
+      expect(clearTokenCache).toHaveBeenCalledTimes(2);
+    } finally {
+      restoreEnvironment('OPENSLACK_GITHUB_APP_INSTALLATION_ID', previousInstallationId);
+      restoreEnvironment('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN', previousToken);
+      restoreEnvironment('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT', previousExpiry);
+      restoreEnvironment('OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS', previousPermissions);
+    }
+  });
 });
+
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 function pullRequest() {
   return {

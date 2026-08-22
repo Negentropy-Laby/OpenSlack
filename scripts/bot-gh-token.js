@@ -1,172 +1,66 @@
 #!/usr/bin/env node
-// Acquire a GitHub App installation token for an in-process child launcher.
-// Direct token output is intentionally disabled so credentials never transit
-// shell variables, argv, Git configuration, or logs.
+// CWD-independent CommonJS bridge into the package-owned bot authentication.
+// This file intentionally contains no JWT, HTTP, repository, or config parser.
 
-const { createSign } = require('node:crypto');
-const https = require('node:https');
-const fs = require('node:fs');
-const path = require('node:path');
+const { resolve } = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { tsImport } = require('tsx/esm/api');
 
-const MAX_RESPONSE_BYTES = 64 * 1024;
-const REQUEST_TIMEOUT_MS = 10_000;
+const repoRoot = resolve(__dirname, '..');
+const moduleUrl = pathToFileURL(resolve(repoRoot, 'packages', 'github', 'src', 'bot-auth.ts')).href;
+const parentURL = pathToFileURL(__filename).href;
+let modulePromise;
 
-function readLocalConfig() {
-  const configPath = process.env.OPENSLACK_GITHUB_APP_CONFIG_PATH
-    ? path.resolve(process.env.OPENSLACK_GITHUB_APP_CONFIG_PATH)
-    : path.resolve(__dirname, '..', '.openslack.local', 'github-app.json');
-  if (!fs.existsSync(configPath)) return {};
-  const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+function loadBotAuth() {
+  modulePromise ??= tsImport(moduleUrl, { parentURL });
+  return modulePromise;
 }
 
-function b64url(input) {
-  return Buffer.from(input).toString('base64url').replace(/=+$/, '');
+async function withConfiguredBotInstallation(options, consumer) {
+  const auth = await loadBotAuth();
+  return auth.withBotGitHubInstallation({ repoRoot, ...options }, consumer);
 }
 
-function jwt(appId, privateKey) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ iat: now - 60, exp: now + 600, iss: appId }));
-  const signer = createSign('RSA-SHA256');
-  signer.update(`${header}.${payload}`);
-  const signature = signer.sign(privateKey).toString('base64url').replace(/=+$/, '');
-  return `${header}.${payload}.${signature}`;
+async function withConfiguredBotLaunchIdentity(options, consumer) {
+  const auth = await loadBotAuth();
+  return auth.withBotGitHubLaunchIdentity({ repoRoot, ...options }, consumer);
 }
 
-function getInstallationToken(appId, installationId, privateKey) {
-  return new Promise((resolve, reject) => {
-    const bearer = jwt(appId, privateKey);
-    let settled = false;
-    const finish = (callback) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      callback();
-    };
-    const req = https.request(
-      {
-        hostname: 'api.github.com',
-        path: `/app/installations/${installationId}/access_tokens`,
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'openslack-bot-gh',
-        },
-      },
-      (res) => {
-        const chunks = [];
-        let byteLength = 0;
-        res.on('data', (chunk) => {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          byteLength += buffer.byteLength;
-          if (byteLength > MAX_RESPONSE_BYTES) {
-            finish(() => reject(new Error('GitHub App token response exceeded the size limit.')));
-            req.destroy();
-            return;
-          }
-          chunks.push(buffer);
-        });
-        res.on('end', () => {
-          finish(() => {
-            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-              reject(
-                new Error(`GitHub App token request failed with HTTP ${res.statusCode ?? 0}.`),
-              );
-              return;
-            }
-            try {
-              const data = JSON.parse(Buffer.concat(chunks, byteLength).toString('utf8'));
-              resolve(parseInstallationTokenResponse(data, installationId));
-            } catch {
-              reject(new Error('GitHub App token response was invalid.'));
-            }
-          });
-        });
-      },
-    );
-    req.on('error', () => {
-      finish(() => reject(new Error('GitHub App token request failed safely.')));
-    });
-    const timeout = setTimeout(() => {
-      finish(() => reject(new Error('GitHub App token request timed out.')));
-      req.destroy();
-    }, REQUEST_TIMEOUT_MS);
-    timeout.unref();
-    req.end();
-  });
+async function acquireConfiguredInstallationCredentials(options = {}) {
+  const auth = await loadBotAuth();
+  return auth.acquireBotGitHubToken({ repoRoot, ...options });
 }
 
-function parseInstallationTokenResponse(data, installationId, now = Date.now()) {
+async function listConfiguredInstallations(options = {}) {
+  const auth = await loadBotAuth();
+  return auth.listConfiguredBotGitHubInstallations({ repoRoot, ...options });
+}
+
+function formatBotAuthError(error) {
   if (
-    !data ||
-    typeof data !== 'object' ||
-    typeof data.token !== 'string' ||
-    data.token.trim().length === 0 ||
-    typeof data.expires_at !== 'string'
+    error &&
+    typeof error === 'object' &&
+    typeof error.code === 'string' &&
+    typeof error.message === 'string' &&
+    /^BOT_[A-Z_]+$/u.test(error.code)
   ) {
-    throw new Error('GitHub App token response was invalid.');
+    return `${error.code}: ${error.message}`;
   }
-  const expiry = Date.parse(data.expires_at);
-  if (Number.isNaN(expiry) || expiry <= now) {
-    throw new Error('GitHub App token response expiry was invalid.');
-  }
-  const permissions =
-    data.permissions && typeof data.permissions === 'object' && !Array.isArray(data.permissions)
-      ? Object.fromEntries(
-          Object.entries(data.permissions).filter((entry) => typeof entry[1] === 'string'),
-        )
-      : {};
-  return {
-    value: data.token,
-    expiresAt: data.expires_at,
-    installationId: String(installationId),
-    permissions,
-  };
-}
-
-async function acquireConfiguredInstallationCredentials() {
-  const localConfig = readLocalConfig();
-  const appId = process.env.OPENSLACK_GITHUB_APP_ID || localConfig.appId;
-  const installationId =
-    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID || localConfig.installationId;
-  if (!appId || !installationId) {
-    throw new Error('GitHub App identifiers are not configured.');
-  }
-
-  let privateKey = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
-  if (!privateKey) {
-    const pemPath = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH
-      ? path.resolve(process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH)
-      : path.resolve(__dirname, '..', '.openslack.local', 'github-app.pem');
-    privateKey = fs.readFileSync(pemPath, 'utf8');
-  }
-  if (!privateKey || !privateKey.includes('PRIVATE KEY')) {
-    throw new Error('GitHub App private key is not configured.');
-  }
-
-  return getInstallationToken(String(appId), String(installationId), privateKey);
-}
-
-async function acquireConfiguredInstallationToken() {
-  return (await acquireConfiguredInstallationCredentials()).value;
-}
-
-async function main() {
-  process.stderr.write(
-    'Direct token output is disabled. Use bot-gh.sh, bot-gh.ps1, or openslack delivery publish.\n',
-  );
-  return 2;
+  return 'BOT_AUTH_FAILED: GitHub App authentication failed safely.';
 }
 
 module.exports = {
   acquireConfiguredInstallationCredentials,
-  acquireConfiguredInstallationToken,
-  parseInstallationTokenResponse,
+  formatBotAuthError,
+  listConfiguredInstallations,
+  loadBotAuth,
+  withConfiguredBotInstallation,
+  withConfiguredBotLaunchIdentity,
 };
 
 if (require.main === module) {
-  void main().then((status) => process.exit(status));
+  process.stderr.write(
+    'Direct token output is disabled. Use bot-gh.sh, bot-gh.ps1, or openslack delivery publish.\n',
+  );
+  process.exitCode = 2;
 }

@@ -52,20 +52,8 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$pemPath = Join-Path $repoRoot '.openslack.local/github-app.pem'
-$hasPemEnv = -not [string]::IsNullOrWhiteSpace($env:OPENSLACK_GITHUB_APP_PRIVATE_KEY)
-$hasPemFile = Test-Path -LiteralPath $pemPath -PathType Leaf
-
-if (-not $hasPemEnv -and -not $hasPemFile) {
-    Write-Error @"
-No GitHub App private key found.
-  Set OPENSLACK_GITHUB_APP_PRIVATE_KEY environment variable, or
-  Place PEM at: $pemPath
-"@
-    exit 1
-}
-
 # The Node launcher keeps the installation token in memory and injects it only
-# into the gh child environment. PowerShell variables never receive it.
+# into the gh child environment. It resolves public identity, repository, and
+# installation selection without sourcing arbitrary environment files.
 & node (Join-Path $PSScriptRoot 'bot-gh-command.js') @GhArgs
 exit $LASTEXITCODE

@@ -1,19 +1,20 @@
-import { request as httpsRequest } from 'node:https';
+import {
+  boundedJsonRequest,
+  BoundedJsonRequestError,
+  DEFAULT_JSON_REQUEST_TIMEOUT_MS,
+  DEFAULT_JSON_RESPONSE_MAX_BYTES,
+  type BoundedJsonRequestFailureCode,
+} from './bounded-json-request.js';
 
-export const DEFAULT_JSON_RESPONSE_MAX_BYTES = 64 * 1024;
-export const DEFAULT_JSON_REQUEST_TIMEOUT_MS = 10_000;
+export { DEFAULT_JSON_REQUEST_TIMEOUT_MS, DEFAULT_JSON_RESPONSE_MAX_BYTES };
 
-export type BoundedJsonPostFailureCode =
-  | 'ABORTED'
-  | 'HTTP_ERROR'
-  | 'INVALID_JSON'
-  | 'INVALID_RESPONSE'
-  | 'NETWORK_ERROR'
-  | 'RESPONSE_TOO_LARGE'
-  | 'TIMEOUT';
+export type BoundedJsonPostFailureCode = BoundedJsonRequestFailureCode | 'INVALID_RESPONSE';
 
 export class BoundedJsonPostError extends Error {
-  constructor(readonly code: BoundedJsonPostFailureCode) {
+  constructor(
+    readonly code: BoundedJsonPostFailureCode,
+    readonly status?: number,
+  ) {
     super(code);
     this.name = 'BoundedJsonPostError';
   }
@@ -35,118 +36,17 @@ export interface BoundedJsonPostOptions {
 export async function boundedJsonPost(
   options: BoundedJsonPostOptions,
 ): Promise<Record<string, unknown>> {
-  if (options.signal?.aborted) throw new BoundedJsonPostError('ABORTED');
-  const endpoint = new URL(options.url);
-  const requestBody = Buffer.isBuffer(options.body) ? options.body : Buffer.from(options.body);
-  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_JSON_RESPONSE_MAX_BYTES;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_JSON_REQUEST_TIMEOUT_MS;
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const requestState: { timeout?: ReturnType<typeof setTimeout> } = {};
-    let req: ReturnType<typeof httpsRequest> | undefined;
-    const cleanup = (): void => {
-      if (requestState.timeout) clearTimeout(requestState.timeout);
-      options.signal?.removeEventListener('abort', abortRequest);
-    };
-
-    const rejectSafe = (code: BoundedJsonPostFailureCode): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new BoundedJsonPostError(code));
-    };
-
-    const resolveSafe = (value: Record<string, unknown>): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(value);
-    };
-
-    const abortRequest = (): void => {
-      rejectSafe('ABORTED');
-      req?.destroy();
-    };
-
-    try {
-      req = httpsRequest(
-        {
-          hostname: endpoint.hostname,
-          port: endpoint.port || undefined,
-          path: endpoint.pathname + endpoint.search,
-          method: 'POST',
-          headers: {
-            ...options.headers,
-            'Content-Length': requestBody.byteLength,
-          },
-        },
-        (response) => {
-          response.on('error', () => rejectSafe('NETWORK_ERROR'));
-          response.on('aborted', () => rejectSafe('NETWORK_ERROR'));
-
-          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-            rejectSafe('HTTP_ERROR');
-            req?.destroy();
-            return;
-          }
-
-          const chunks: Buffer[] = [];
-          let responseBytes = 0;
-
-          response.on('data', (chunk: Buffer | string) => {
-            if (settled) return;
-            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            responseBytes += bytes.byteLength;
-            if (responseBytes > maxResponseBytes) {
-              chunks.length = 0;
-              rejectSafe('RESPONSE_TOO_LARGE');
-              req?.destroy();
-              return;
-            }
-            chunks.push(bytes);
-          });
-          response.on('end', () => {
-            if (settled) return;
-
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(Buffer.concat(chunks, responseBytes).toString('utf8'));
-            } catch {
-              rejectSafe('INVALID_JSON');
-              return;
-            }
-
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-              rejectSafe('INVALID_RESPONSE');
-              return;
-            }
-            resolveSafe(parsed as Record<string, unknown>);
-          });
-        },
-      );
-    } catch {
-      rejectSafe('NETWORK_ERROR');
-      return;
+  let parsed: unknown;
+  try {
+    parsed = await boundedJsonRequest({ ...options, method: 'POST' });
+  } catch (error) {
+    if (error instanceof BoundedJsonRequestError) {
+      throw new BoundedJsonPostError(error.code, error.status);
     }
-
-    requestState.timeout = setTimeout(() => {
-      rejectSafe('TIMEOUT');
-      req?.destroy();
-    }, timeoutMs);
-    requestState.timeout.unref();
-    req.on('error', () => rejectSafe('NETWORK_ERROR'));
-    options.signal?.addEventListener('abort', abortRequest, { once: true });
-    if (options.signal?.aborted) {
-      abortRequest();
-      return;
-    }
-
-    try {
-      req.write(requestBody);
-      req.end();
-    } catch {
-      rejectSafe('NETWORK_ERROR');
-    }
-  });
+    throw error;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new BoundedJsonPostError('INVALID_RESPONSE');
+  }
+  return parsed as Record<string, unknown>;
 }
