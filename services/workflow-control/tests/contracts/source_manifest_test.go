@@ -164,11 +164,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		},
 		"runnerV2EventSource": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_event.go",
-			SHA256: "1c7fdf8fbc4ba7edbe4d084c7f2b9d886fb8e1635af02131e96cfe78388ad29a",
+			SHA256: "2aea68d320edd8f11190daf0d3b22184e3ab941708539f2e7126a44023ad8578",
 		},
 		"runnerV2FoundationIntegrationTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go",
-			SHA256: "5a67b1462a7939ce5fa3378be8cf2246d280e35984efa259f527f83df67f5de0",
+			SHA256: "b90b2889a94e96b158f88c77b7def0251d73b24f2eb62ecfdf940bb2a5b4c243",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
