@@ -193,19 +193,19 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		},
 		"workflowControlAuthorityContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
-			SHA256: "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
+			SHA256: "2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877",
 		},
 		"workflowEffectControlContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-effect-control/v1/manifest.json",
-			SHA256: "36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65",
+			SHA256: "6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4",
 		},
 		"workflowEffectShadowContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
-			SHA256: "72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e",
+			SHA256: "55acf993ae4b951a7426c2d4771733d0ef578095d2b616f7bca0394a43f33b42",
 		},
 		"workflowBudgetAuthorityContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
-			SHA256: "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714",
+			SHA256: "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548",
 		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
@@ -229,7 +229,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		},
 		"budgetAuthorityOpenapi": {
 			Path:   "services/workflow-control/docs/api/budget-authority-openapi.yaml",
-			SHA256: "e3560807d3de6656167a93a11d1abbeb1fa39017f9835c0f0a70423dd98cd1e0",
+			SHA256: "008c529cc7938946834f6653c89c800a113a8ec9803311ec04c51fccb0dbcb8a",
 		},
 	}
 	if !reflect.DeepEqual(manifest.ContractInputs, wantContractInputs) {

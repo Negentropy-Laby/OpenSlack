@@ -192,8 +192,8 @@
     "duplicateKeys": "rejected"
   },
   "sourceLocks": {
-    "authorityV2ManifestSha256": "62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1",
-    "authorityV2GoldenSha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe",
+    "authorityV2ManifestSha256": "2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877",
+    "authorityV2GoldenSha256": "6cb37581c70a6ec83a66c8e0be5dc66e594aaa97488c6fdae6bbccf00ec5420f",
     "runnerV1ManifestSha256": "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6",
     "runnerV1GoldenSha256": "b4569ca9e9e3f9b027c1bf3d531760ca9fbf87ecd3f7818204eca367a7fce844"
   },

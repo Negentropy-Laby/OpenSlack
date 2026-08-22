@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 )
 
 func validateControlGolden(
@@ -164,6 +165,30 @@ func TestGoldenPositiveSemanticVariants(t *testing.T) {
 	}
 }
 
+func TestGoldenBudgetRevisionPlanesAreIndependent(t *testing.T) {
+	t.Parallel()
+	golden := loadBindingGolden(t)
+	for _, operation := range []Operation{OperationBudgetReserve, OperationBudgetSettle} {
+		operation := operation
+		t.Run(string(operation), func(t *testing.T) {
+			t.Parallel()
+			exchange := golden.Positive.Operations[string(operation)]
+			stage := assertGoldenPrepared(t, exchange.Stage, "stage")
+			resolution := assertGoldenPrepared(t, exchange.Resolution, "resolution")
+			evidence := resolution["evidence"].(Record)
+			prepared := evidence["preparedRequest"].(budgetcontract.PreparedRequest)
+			_, request, err := validateBudgetPreparedWithSession(prepared, newBindingValidationSession(nil))
+			if err != nil {
+				t.Fatalf("validate budget prepared request: %v", err)
+			}
+			runnerHead := stage["runnerAuthority"].(Record)
+			if request["expectedRunRevision"] == runnerHead["expectedGlobalRunRevision"] {
+				t.Fatal("budget source and runner-global revisions must be independently exercised")
+			}
+		})
+	}
+}
+
 func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
@@ -273,6 +298,7 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			t.Parallel()
 			exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
+			stage := assertGoldenPrepared(t, exchange.Stage, "stage")
 			validated, err := validateControlGolden(
 				receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
 				exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value,
@@ -283,6 +309,19 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 			if validated["controlKind"] != string(authoritycontract.KindBudgetAuthorization) {
 				t.Fatalf("budget %s control kind drifted: %+v", status, validated)
+			}
+			message, ok := asRecord(control.Message)
+			if !ok {
+				t.Fatal("budget control message must be an object")
+			}
+			payload, ok := asRecord(message["payload"])
+			if !ok {
+				t.Fatal("budget control payload must be an object")
+			}
+			runnerHead := stage["runnerAuthority"].(Record)
+			if message["runRevision"] != runnerHead["acceptedGlobalRunRevision"] ||
+				payload["committedRunRevision"] == message["runRevision"] {
+				t.Fatalf("budget %s revision planes were conflated: message=%+v runner=%+v", status, message, runnerHead)
 			}
 		})
 	}
@@ -414,7 +453,7 @@ func goldenPriorEventDelivery(t *testing.T, golden bindingGoldenVectors, operati
 func TestGoldenNegativeReplay(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Negative) != 62 {
+	if len(golden.Negative) != 64 {
 		t.Fatalf("negative count = %d", len(golden.Negative))
 	}
 	for _, vector := range golden.Negative {
@@ -432,6 +471,62 @@ func TestGoldenNegativeReplay(t *testing.T) {
 				t.Fatalf("negative parity mismatch: got=%+v want=%+v", contractErr, vector.Expected)
 			}
 		})
+	}
+}
+
+func TestGoldenBudgetNegativeEvidenceIsNotFalseGreen(t *testing.T) {
+	t.Parallel()
+	golden := loadBindingGolden(t)
+	for _, vector := range golden.Negative {
+		input, ok := asRecord(vector.Input)
+		if !ok {
+			t.Fatalf("negative %s input must be an object", vector.ID)
+		}
+		switch vector.ID {
+		case "budget-runner-envelope-revision-drift":
+			message, messageOK := asRecord(input["message"])
+			receipt, receiptOK := asRecord(input["receipt"])
+			stage, stageOK := asRecord(input["stage"])
+			runnerHead, runnerOK := asRecord(stage["runnerAuthority"])
+			payload, payloadOK := asRecord(message["payload"])
+			source, sourceOK := asRecord(input["budgetSourceResult"])
+			if !messageOK || !receiptOK || !stageOK || !runnerOK || !payloadOK || !sourceOK {
+				t.Fatal("budget envelope drift evidence shape is invalid")
+			}
+			prepared, err := authoritycontract.PrepareMessage(map[string]any(message))
+			if err != nil {
+				t.Fatalf("prepare drifted budget message: %v", err)
+			}
+			durable, err := parseBudgetDurableReceiptWithSession(source["durableReceiptBytes"], newBindingValidationSession(nil))
+			if err != nil {
+				t.Fatalf("parse drifted budget source receipt: %v", err)
+			}
+			if receipt["messageDigest"] != prepared.MessageDigest ||
+				message["runRevision"] == runnerHead["acceptedGlobalRunRevision"] ||
+				payload["committedRunRevision"] != durable.projection["acceptedRunRevision"] {
+				t.Fatal("budget envelope drift must preserve its exact digest and source-receipt binding")
+			}
+		case "budget-decision-valid-source-result-cross-splice":
+			source, sourceOK := asRecord(input["budgetSourceResult"])
+			decision, decisionOK := asRecord(source["decision"])
+			request, requestOK := asRecord(decision["request"])
+			resolution, resolutionOK := asRecord(input["resolution"])
+			evidence, evidenceOK := asRecord(resolution["evidence"])
+			originalPrepared, preparedOK := asRecord(evidence["preparedRequest"])
+			if !sourceOK || !decisionOK || !requestOK || !resolutionOK || !evidenceOK || !preparedOK {
+				t.Fatal("valid sibling budget source evidence shape is invalid")
+			}
+			prepared, err := budgetcontract.PrepareRequest("reserve", map[string]any(request), "qualification-caller")
+			if err != nil {
+				t.Fatalf("prepare valid sibling budget request: %v", err)
+			}
+			if _, err := ValidateBudgetSourceResult(source, prepared); err != nil {
+				t.Fatalf("valid sibling budget source result must validate independently: %v", err)
+			}
+			if prepared.Body == originalPrepared["body"] {
+				t.Fatal("sibling budget source result must differ from the original prepared request")
+			}
+		}
 	}
 }
 

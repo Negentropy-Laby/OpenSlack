@@ -134,6 +134,11 @@ v2 rule. A rejected or reconciliation-required authorization carries zero author
 and calls, so it can never be interpreted as permission to spend. GS9-A validates these calculations
 only and does not gate a provider call.
 
+For `budget_authorization`, the message envelope `runRevision` belongs to the runner-global CAS
+plane, while `payload.committedRunRevision` belongs to the budget source-run CAS plane and must
+match the exact durable budget receipt. The two revisions are independently monotonic; equality is
+neither required nor evidence that either plane committed.
+
 ## Evidence ceiling
 
 `GS9-A LOCAL_PASS` means only that the TypeScript-owned exact-byte v2 artifacts, generated Go

@@ -782,10 +782,11 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     }
     this.#assertLeaseIdentity(message, true);
     this.#assertIncreasingControlSequence(message);
-    // The frozen parser proves authorityReceiptHash is a syntactically valid
-    // hash and binds budget committedRunRevision to the envelope. Only the Go
-    // control authority can recompute that receipt from its durable record;
-    // this TS session never treats the hash itself as a locally minted grant.
+    // The frozen parser proves authorityReceiptHash and committedRunRevision
+    // have the closed wire shape. The F2a runtime binding validator binds the
+    // budget source revision to the exact durable receipt independently from
+    // this envelope's runner-global revision; this session never treats the
+    // hash itself as a locally minted grant.
     if (
       message.kind !== outstanding.expectedDecision.kind ||
       !outstanding.expectedDecision.match(message)

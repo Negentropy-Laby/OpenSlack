@@ -627,7 +627,10 @@ A budget decision delivery is a post-event contextual proof, not a projection of
 resolution ACK. For `budget_reserve`, the control-delivery validator consumes the same exact E1
 prepared request together with the durable accepted budget receipt, reserve decision, and ledger
 entry. `reserved` authorizes the requested amounts; `rejected` authorizes zero. The control message
-binds the accepted run revision and the SHA-256 of the exact canonical Go durable-receipt envelope,
+envelope binds the runner-global accepted revision, while `payload.committedRunRevision` binds the
+independent budget source-run revision from the exact durable receipt; equality between those CAS
+planes is neither required nor accepted as substitute evidence. The message also binds the SHA-256
+of the exact canonical Go durable-receipt envelope,
 whose operational projection is that same E1 receipt and whose manifest, build, writer, mode,
 record kind, and projection hash are revalidated. An E1
 `database_reconciliation_required` receipt has no accepted revision or durable result, so it closes

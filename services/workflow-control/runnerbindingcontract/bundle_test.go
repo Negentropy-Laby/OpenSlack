@@ -40,6 +40,13 @@ type runnerBindingManifest struct {
 		ControlDeliveryAck                        bool     `json:"controlDeliveryAck"`
 		ExactReplayReturnsOriginalReceiptBytes    bool     `json:"exactReplayReturnsOriginalReceiptBytes"`
 	} `json:"protocol"`
+	BudgetDecisionDelivery struct {
+		RevisionPlanes struct {
+			Envelope         string `json:"envelope"`
+			Committed        string `json:"committed"`
+			EqualityRequired bool   `json:"equalityRequired"`
+		} `json:"revisionPlanes"`
+	} `json:"budgetDecisionDelivery"`
 	Operations []struct {
 		Operation             Operation   `json:"operation"`
 		TargetKind            string      `json:"targetKind"`
@@ -146,6 +153,11 @@ func TestManifestLocksClosedContractAndAuthorityCeiling(t *testing.T) {
 		!protocol.ResolutionAckPrecedesFrozenTargetDelivery || !protocol.ControlDeliveryAck ||
 		!protocol.ExactReplayReturnsOriginalReceiptBytes {
 		t.Fatalf("protocol invariants drifted: %+v", protocol)
+	}
+	revisionPlanes := manifest.BudgetDecisionDelivery.RevisionPlanes
+	if revisionPlanes.Envelope != "runner_global" || revisionPlanes.Committed != "budget_source_run" ||
+		revisionPlanes.EqualityRequired {
+		t.Fatalf("budget revision planes drifted: %+v", revisionPlanes)
 	}
 	if !manifest.Evidence.Closed || manifest.Evidence.ProviderIdentity != "hash_only" ||
 		manifest.Evidence.ResultIdentity != "hash_only" ||

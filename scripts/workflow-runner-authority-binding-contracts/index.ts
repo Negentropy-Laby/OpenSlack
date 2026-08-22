@@ -202,6 +202,11 @@ const authorityBoundary = Object.freeze({
 const budgetDecisionDelivery = Object.freeze({
   sourceResultRequired: true,
   durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
+  revisionPlanes: Object.freeze({
+    envelope: 'runner_global',
+    committed: 'budget_source_run',
+    equalityRequired: false,
+  }),
   authorityReceiptHash:
     WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS.budget_reserve.authorityReceiptHashAlgorithm,
   acceptedStates: Object.freeze({
@@ -279,7 +284,9 @@ const NEGATIVE_IDS = Object.freeze([
   'budget-decision-amount-drift',
   'budget-decision-receipt-hash-drift',
   'budget-decision-committed-run-revision-drift',
+  'budget-runner-envelope-revision-drift',
   'budget-decision-source-result-cross-splice',
+  'budget-decision-valid-source-result-cross-splice',
   'budget-durable-manifest-drift',
   'budget-durable-build-drift',
   'budget-durable-projection-hash-drift',
@@ -1034,7 +1041,7 @@ async function makeExchanges(
     fencingToken: 11,
     correlationId: reserveRequest.correlationId as string,
     buildHash: reserveRoute.authorityBuildHash as string,
-    expectedRevision: reserveRequest.expectedRunRevision as number,
+    expectedRevision: 40,
     expectedGeneration: 0,
     sequence: 41,
     sentAt: '2026-08-20T00:04:00.000Z',
@@ -1072,7 +1079,7 @@ async function makeExchanges(
     ...reserveIdentity,
     correlationId: settlementRequest.correlationId as string,
     buildHash: settlementRoute.authorityBuildHash as string,
-    expectedRevision: settlementRequest.expectedRunRevision as number,
+    expectedRevision: 41,
     sequence: 42,
     sentAt: '2026-08-20T00:05:00.000Z',
   };
@@ -1217,7 +1224,7 @@ function budgetDecisionFixtures(budgetRecords: Json) {
       fencingToken: 19,
       correlationId: request.correlationId,
       buildHash: authorityBuildHash,
-      expectedRevision: request.expectedRunRevision,
+      expectedRevision: 60,
       expectedGeneration: 0,
       sequence: 61,
       sentAt: BUDGET_DELIVERY_TIMELINE.requestedAt,
@@ -1281,11 +1288,12 @@ function budgetDecisionFixtures(budgetRecords: Json) {
     request,
     offsetTimestamp(BUDGET_DELIVERY_TIMELINE.priorEventSentAt, 1),
   );
-  const result = (
+  const resultFor = (
+    preparedRequest: ReturnType<typeof prepareWorkflowBudgetAuthorityRequest>,
     decision: WorkflowBudgetReserveDecision,
     ledgerEntry: WorkflowBudgetLedgerEntry,
   ): WorkflowRunnerBudgetSourceResult => {
-    const receipt = acceptedBudgetReserveReceipt(prepared, decision, ledgerEntry);
+    const receipt = acceptedBudgetReserveReceipt(preparedRequest, decision, ledgerEntry);
     return validateWorkflowRunnerBudgetSourceResult(
       {
         schema: WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
@@ -1293,16 +1301,39 @@ function budgetDecisionFixtures(budgetRecords: Json) {
         decision,
         ledgerEntry,
       },
-      prepared,
+      preparedRequest,
     );
   };
+  const siblingAccount = validateWorkflowBudgetAccount({
+    ...goAccount,
+    runRevision: goAccount.runRevision + 10,
+  });
+  const siblingRequest = validateWorkflowBudgetReserveRequest({
+    ...request,
+    reservationId: `${request.reservationId}.sibling`,
+    callId: `${request.callId}.sibling`,
+    correlationId: `${request.correlationId}.sibling`,
+    expectedRunRevision: siblingAccount.runRevision,
+    requestedAt: '2026-08-20T00:06:00.250Z',
+  });
+  const siblingPrepared = prepareWorkflowBudgetAuthorityRequest(
+    'reserve',
+    siblingRequest,
+    'qualification-caller',
+  );
+  const siblingEvaluation = evaluateWorkflowBudgetReserve(
+    siblingAccount,
+    siblingRequest,
+    '2026-08-20T00:06:04.250Z',
+  );
   return {
     exchange: exchangeValue,
     prepared,
-    reserved: result(reserved.decision, reserved.ledgerEntry),
-    rejected: result(rejected.decision, rejected.ledgerEntry),
-    early: result(early.decision, early.ledgerEntry),
-    late: result(late.decision, late.ledgerEntry),
+    reserved: resultFor(prepared, reserved.decision, reserved.ledgerEntry),
+    rejected: resultFor(prepared, rejected.decision, rejected.ledgerEntry),
+    early: resultFor(prepared, early.decision, early.ledgerEntry),
+    late: resultFor(prepared, late.decision, late.ledgerEntry),
+    sibling: resultFor(siblingPrepared, siblingEvaluation.decision, siblingEvaluation.ledgerEntry),
   };
 }
 
@@ -1486,7 +1517,7 @@ async function budgetSemanticVariants(
         fencingToken: base.fencingToken,
         correlationId: request.correlationId,
         buildHash: request.route.authorityBuildHash,
-        expectedRevision: request.expectedRunRevision,
+        expectedRevision: 70 + index,
         expectedGeneration: base.runnerAuthority.expectedResumeGeneration,
         sequence: 70 + index,
         sentAt: `2026-08-20T00:${String(14 + index).padStart(2, '0')}:00.000Z`,
@@ -2063,18 +2094,14 @@ async function goldenVectors() {
       payload.authorityReceiptHash = h('0');
     },
   );
-  const budgetCommittedRunRevisionDriftMessage = structuredClone(
-    controlKindMessages.budget_authorization,
-  ) as unknown as Json;
-  const budgetCommittedRunRevisionDriftReceipt = structuredClone(
-    controlKinds.budget_authorization.receipt,
-  ) as unknown as Json;
-  const committedRevisionPayload = asJson(
-    budgetCommittedRunRevisionDriftMessage.payload,
-    'budget authorization payload',
-  );
-  committedRevisionPayload.committedRunRevision =
-    (committedRevisionPayload.committedRunRevision as number) + 1;
+  const [budgetCommittedRunRevisionDriftMessage, budgetCommittedRunRevisionDriftReceipt] =
+    driftBudgetMessage((payload) => {
+      payload.committedRunRevision = (payload.committedRunRevision as number) + 1;
+    });
+  const [budgetRunnerEnvelopeRevisionDriftMessage, budgetRunnerEnvelopeRevisionDriftReceipt] =
+    driftBudgetMessage((_payload, message) => {
+      message.runRevision = (message.runRevision as number) + 1;
+    });
 
   const missingBudgetSourceInput = budgetDeliveryInput(
     controlKindMessages.budget_authorization,
@@ -2734,10 +2761,22 @@ async function goldenVectors() {
             budgetDecisions.reserved,
           ],
           [
+            'budget-runner-envelope-revision-drift',
+            budgetRunnerEnvelopeRevisionDriftMessage,
+            budgetRunnerEnvelopeRevisionDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
             'budget-decision-source-result-cross-splice',
             controlKindMessages.budget_authorization,
             controlKinds.budget_authorization.receipt,
             sourceResultCrossSplice,
+          ],
+          [
+            'budget-decision-valid-source-result-cross-splice',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            budgetDecisions.sibling,
           ],
           [
             'budget-durable-manifest-drift',

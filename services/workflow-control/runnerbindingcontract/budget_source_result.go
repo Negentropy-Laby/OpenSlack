@@ -202,19 +202,22 @@ func validateBudgetSourceResultForPrepared(
 	if err != nil {
 		return validatedBudgetSourceResult{}, err
 	}
+	decisionRequest, decisionRequestOK := asBudgetRecord(decision["request"])
+	decisionCanonical, canonicalErr := budgetcontract.CanonicalJSON(decisionRequest)
+	if !decisionRequestOK || canonicalErr != nil || decisionCanonical+"\n" != prepared.Body {
+		return validatedBudgetSourceResult{}, failure(ErrorIdentityMismatch, "$/budgetSourceResult", "Budget source result does not prove the exact accepted prepared reserve.")
+	}
 	receipt := durable.projection
 	if _, err := budgetcontract.ValidateReceiptForResult(receipt, prepared, decision, ledger, nil); err != nil {
 		return validatedBudgetSourceResult{}, embeddedBudgetFailure(err, "$/budgetSourceResult/receipt")
 	}
-	decisionRequest, decisionRequestOK := asBudgetRecord(decision["request"])
 	route, routeOK := asBudgetRecord(decisionRequest["route"])
 	requestRoute, requestRouteOK := asBudgetRecord(request["route"])
-	decisionCanonical, canonicalErr := budgetcontract.CanonicalJSON(decisionRequest)
 	acceptedRevision, accepted := receipt["acceptedRunRevision"].(int64)
 	committedAt, committed := receipt["committedAt"].(string)
-	if !decisionRequestOK || !routeOK || !requestRouteOK || canonicalErr != nil ||
+	if !routeOK || !requestRouteOK ||
 		receipt["operation"] != "reserve" || receipt["status"] != "accepted" || !accepted || acceptedRevision < 1 ||
-		!committed || committedAt == "" || decisionCanonical+"\n" != prepared.Body ||
+		!committed || committedAt == "" ||
 		route["backend"] != "go" || route["authority"] != "workflow-control" ||
 		requestRoute["backend"] != "go" || requestRoute["authority"] != "workflow-control" {
 		return validatedBudgetSourceResult{}, failure(ErrorIdentityMismatch, "$/budgetSourceResult", "Budget source result does not prove the exact accepted prepared reserve.")

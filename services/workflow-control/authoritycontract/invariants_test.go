@@ -111,9 +111,13 @@ func TestCrossFieldAuthorityBindingsFailClosed(t *testing.T) {
 	assertContractFailure(t, err, ErrorIdentityMismatch, "$/payload/newAttemptId")
 
 	budget := goldenMessageObject(t, KindBudgetAuthorization)
-	budget["payload"].(map[string]any)["committedRunRevision"] = budget["runRevision"].(int64) + 1
-	_, err = ValidateMessage(budget)
-	assertContractFailure(t, err, ErrorStaleRevision, "$/payload/committedRunRevision")
+	committedRunRevision := budget["payload"].(map[string]any)["committedRunRevision"].(int64)
+	if committedRunRevision == budget["runRevision"].(int64) {
+		t.Fatal("budget source revision must be independently exercised from the runner-global revision")
+	}
+	if _, err = ValidateMessage(budget); err != nil {
+		t.Fatalf("independent budget and runner revisions must validate: %v", err)
+	}
 
 	budget = goldenMessageObject(t, KindBudgetAuthorization)
 	budget["payload"].(map[string]any)["status"] = "rejected"

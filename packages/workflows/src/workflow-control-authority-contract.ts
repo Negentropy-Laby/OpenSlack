@@ -1457,18 +1457,6 @@ export function validateWorkflowControlAuthorityMessage(
       'Resume offer must mint a new workflow resume identity.',
     );
   }
-  if (
-    kind === 'budget_authorization' &&
-    typeof payload.committedRunRevision === 'number' &&
-    runRevision !== null &&
-    payload.committedRunRevision !== runRevision
-  ) {
-    fail(
-      'WORKFLOW_CONTROL_AUTHORITY_STALE_REVISION',
-      '$/payload/committedRunRevision',
-      'Budget authorization must bind the envelope run revision.',
-    );
-  }
   const result = immutable({
     schema: WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
     protocolVersion: WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,

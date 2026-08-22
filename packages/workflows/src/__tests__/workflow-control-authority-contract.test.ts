@@ -285,6 +285,22 @@ describe('Workflow Control authority v2 contract', () => {
     );
   });
 
+  it('keeps budget-source and runner-global run revisions independent', () => {
+    const authorization = validateWorkflowControlAuthorityMessage(
+      message('budget_authorization', {
+        reservationId: 'reservation-1',
+        status: 'reserved',
+        authorizedTokens: '1',
+        authorizedCostNanoUsd: '10',
+        authorizedCalls: '1',
+        authorityReceiptHash: HASHES.receipt,
+        committedRunRevision: 17,
+      }),
+    );
+    expect(authorization.runRevision).toBe(4);
+    expect(authorization.payload.committedRunRevision).toBe(17);
+  });
+
   it('validates and prepares checkpoint messages with exact one-LF bytes', () => {
     const validated = validateWorkflowControlAuthorityMessage(checkpointMessage());
     const prepared = prepareWorkflowControlAuthorityMessage(validated);

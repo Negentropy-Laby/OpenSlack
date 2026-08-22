@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 
+import { prepareWorkflowControlAuthorityMessage } from '../workflow-control-authority-contract.js';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
@@ -47,6 +48,7 @@ import {
 import {
   canonicalWorkflowBudgetAuthorityJson,
   prepareWorkflowBudgetAuthorityRequest,
+  type WorkflowBudgetReserveRequest,
   type WorkflowBudgetSettlementRequest,
 } from '../workflow-budget-authority-contract.js';
 import {
@@ -345,6 +347,11 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     expect(manifest.budgetDecisionDelivery).toEqual({
       sourceResultRequired: true,
       durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
+      revisionPlanes: {
+        envelope: 'runner_global',
+        committed: 'budget_source_run',
+        equalityRequired: false,
+      },
       authorityReceiptHash: 'canonical_durable_receipt_sha256',
       acceptedStates: {
         reserved: 'requested_amounts',
@@ -433,6 +440,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       if (row.operation.startsWith('budget_')) {
         expect(row.sourceEvidenceState).toBe('prepared');
         expect(row.sourceRevisionDelta).toBe(0);
+        const exchange = golden.positive.operations[row.operation];
+        const stage = asJson(exchange.stage.value, 'budget stage');
+        const runnerAuthority = asJson(stage.runnerAuthority, 'budget runner authority');
+        const resolution = asJson(exchange.resolution.value, 'budget resolution');
+        const evidence = asJson(resolution.evidence, 'budget evidence');
+        const prepared = asJson(evidence.preparedRequest, 'budget prepared request');
+        const request = JSON.parse(String(prepared.body)) as Json;
+        expect(request.expectedRunRevision).not.toBe(runnerAuthority.expectedGlobalRunRevision);
       }
     }
   });
@@ -505,9 +520,18 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         ),
         status,
       ).toEqual(receipt);
-      const payload = asJson(asJson(item.message, 'message').payload, 'payload');
+      const message = asJson(item.message, 'message');
+      const payload = asJson(message.payload, 'payload');
+      const stage = asJson(exchange.stage.value, 'budget stage');
+      const runnerAuthority = asJson(stage.runnerAuthority, 'runner authority');
+      const sourceResult = asJson(item.budgetSourceResult, 'budget source result');
+      const durableReceipt = JSON.parse(String(sourceResult.durableReceiptBytes)) as Json;
+      const sourceReceipt = asJson(durableReceipt.operationalProjection, 'budget source receipt');
       expect(payload.status).toBe(status);
       expect(payload.authorizedCalls).toBe(status === 'reserved' ? '1' : '0');
+      expect(message.runRevision).toBe(runnerAuthority.acceptedGlobalRunRevision);
+      expect(payload.committedRunRevision).toBe(sourceReceipt.acceptedRunRevision);
+      expect(payload.committedRunRevision).not.toBe(message.runRevision);
     }
   });
 
@@ -764,7 +788,9 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budget-decision-amount-drift',
       'budget-decision-receipt-hash-drift',
       'budget-decision-committed-run-revision-drift',
+      'budget-runner-envelope-revision-drift',
       'budget-decision-source-result-cross-splice',
+      'budget-decision-valid-source-result-cross-splice',
       'budget-durable-manifest-drift',
       'budget-durable-build-drift',
       'budget-durable-projection-hash-drift',
@@ -794,7 +820,61 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budget-settle-disposition-drift',
       'resume-logical-attempt-active-reuse',
     ]);
-    expect(golden.negative).toHaveLength(62);
+    expect(golden.negative).toHaveLength(64);
+    const envelopeDrift = golden.negative.find(
+      ({ id }) => id === 'budget-runner-envelope-revision-drift',
+    )!;
+    const envelopeMessage = asJson(envelopeDrift.input.message, 'drifted budget message');
+    const envelopeReceipt = asJson(envelopeDrift.input.receipt, 'drifted budget receipt');
+    const envelopeStage = asJson(envelopeDrift.input.stage, 'budget stage');
+    const envelopeRunner = asJson(envelopeStage.runnerAuthority, 'budget runner authority');
+    const envelopePayload = asJson(envelopeMessage.payload, 'budget payload');
+    const envelopeSource = asJson(envelopeDrift.input.budgetSourceResult, 'budget source result');
+    const envelopeDurable = asJson(
+      JSON.parse(String(envelopeSource.durableReceiptBytes)),
+      'budget durable receipt',
+    );
+    const envelopeSourceReceipt = asJson(
+      envelopeDurable.operationalProjection,
+      'budget source receipt',
+    );
+    expect(envelopeReceipt.messageDigest).toBe(
+      prepareWorkflowControlAuthorityMessage(envelopeMessage).messageDigest,
+    );
+    expect(envelopeMessage.runRevision).not.toBe(envelopeRunner.acceptedGlobalRunRevision);
+    expect(envelopePayload.committedRunRevision).toBe(envelopeSourceReceipt.acceptedRunRevision);
+    expect(envelopeDrift.expectedError).toMatchObject({ path: '$' });
+
+    const validSourceCrossSplice = golden.negative.find(
+      ({ id }) => id === 'budget-decision-valid-source-result-cross-splice',
+    )!;
+    const siblingSource = asJson(
+      validSourceCrossSplice.input.budgetSourceResult,
+      'sibling budget source result',
+    );
+    const siblingDecision = asJson(siblingSource.decision, 'sibling budget decision');
+    const siblingRequest = asJson(siblingDecision.request, 'sibling budget request');
+    const siblingPrepared = prepareWorkflowBudgetAuthorityRequest(
+      'reserve',
+      siblingRequest as unknown as WorkflowBudgetReserveRequest,
+      'qualification-caller',
+    );
+    expect(validateWorkflowRunnerBudgetSourceResult(siblingSource, siblingPrepared)).toEqual(
+      siblingSource,
+    );
+    const originalResolution = asJson(
+      validSourceCrossSplice.input.resolution,
+      'original budget resolution',
+    );
+    const originalEvidence = asJson(originalResolution.evidence, 'original budget evidence');
+    const originalPrepared = asJson(
+      originalEvidence.preparedRequest,
+      'original budget prepared request',
+    );
+    expect(siblingPrepared.body).not.toBe(originalPrepared.body);
+    expect(validSourceCrossSplice.expectedError).toMatchObject({
+      path: '$/budgetSourceResult',
+    });
     for (const item of golden.negative) {
       try {
         executeNegative(item.operation, item.input);

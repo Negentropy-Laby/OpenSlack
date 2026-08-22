@@ -570,7 +570,6 @@ func assertControlPayloadForBinding(
 			payload["authorizedTokens"] != authorization["tokens"] || payload["authorizedCostNanoUsd"] != authorization["nanoUsd"] ||
 			payload["authorizedCalls"] != authorization["calls"] || payload["authorityReceiptHash"] != budgetSourceResult.durable.hash ||
 			payload["committedRunRevision"] != budgetSourceResult.receipt["acceptedRunRevision"] ||
-			budgetSourceResult.receipt["acceptedRunRevision"] != runnerHead["acceptedGlobalRunRevision"] ||
 			route["backend"] != "go" || route["authority"] != "workflow-control" ||
 			route["authorityBuildHash"] != budgetSourceResult.durable.record["authorityBuildHash"] {
 			return nil, failure(ErrorIdentityMismatch, "$/payload", "Budget decision differs from the exact prepared authority evidence.")
