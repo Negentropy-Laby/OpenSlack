@@ -618,12 +618,7 @@ function resolveBotIdentity(
       },
     };
   }
-  return fileKeyIdentity(
-    appId,
-    appSlug,
-    hint,
-    join(repoRoot, '.openslack.local', 'github-app.pem'),
-  );
+  return fileKeyIdentity(appId, appSlug, hint, join(localStateRoot, 'github-app.pem'));
 }
 
 function fileKeyIdentity(

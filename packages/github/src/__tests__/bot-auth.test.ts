@@ -223,6 +223,23 @@ describe('package-owned bot GitHub authentication', () => {
       ),
     ).resolves.toBe('456');
 
+    const sharedLocalState = join(root, 'primary-local-state');
+    mkdirSync(sharedLocalState, { recursive: true });
+    writeFileSync(join(sharedLocalState, 'github-app.pem'), PRIVATE_KEY);
+    await expect(
+      withBotGitHubInstallation(
+        {
+          repoRoot: root,
+          localStateRoot: sharedLocalState,
+          explicitRepository: 'Target-Owner/target-repo',
+          publicConfig: PUBLIC_CONFIG,
+          env: { OPENSLACK_GITHUB_APP_PRIVATE_KEY: '   ' },
+          resolveInstallation,
+        },
+        (context) => context.installationId,
+      ),
+    ).resolves.toBe('456');
+
     await expect(
       withBotGitHubInstallation(
         {
