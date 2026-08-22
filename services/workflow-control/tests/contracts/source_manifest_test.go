@@ -112,7 +112,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 	wantSourceInputs := map[string]manifestReference{
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",
-			SHA256: "f353d33bea5d87c25402839cf9cf0a5a9bf86a8b696508ccb2834936f21abacc",
+			SHA256: "67d82836f02c2d6e4427de945bc8e166d36350de9272cefa682a11ea3b6fe5b4",
 		},
 		"goMod": {
 			Path:   "services/workflow-control/go.mod",

@@ -14,6 +14,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY authoritycontract ./authoritycontract
 COPY budgetcontract ./budgetcontract
+COPY runnerbindingcontract ./runnerbindingcontract
 COPY runnerprotocol ./runnerprotocol
 COPY workflowcontrol.go shadow_contract.go ./
 

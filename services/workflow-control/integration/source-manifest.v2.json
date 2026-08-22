@@ -18,7 +18,7 @@
   "sourceInputs": {
     "dockerfile": {
       "path": "services/workflow-control/Dockerfile",
-      "sha256": "f353d33bea5d87c25402839cf9cf0a5a9bf86a8b696508ccb2834936f21abacc"
+      "sha256": "67d82836f02c2d6e4427de945bc8e166d36350de9272cefa682a11ea3b6fe5b4"
     },
     "goMod": {
       "path": "services/workflow-control/go.mod",
