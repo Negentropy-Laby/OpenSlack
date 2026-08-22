@@ -219,6 +219,48 @@ func TestWorkflowBudgetAuthorityRejectsFramingAndAuthorityDrift(t *testing.T) {
 	); err != nil {
 		t.Fatalf("typed nil reconciliation rejected an accepted result: %v", err)
 	}
+	crossDecision := goldenObject(t, cloneValue(t, golden.Vectors.Records["reserveReserved"].Value), "reserve decision")
+	crossRequest := goldenObject(t, crossDecision["request"], "reserve decision request")
+	crossRequest["expectedModelHash"] = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	crossRequestHash, err := hashValue("reserve-request", crossRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossDecision["requestHash"] = crossRequestHash
+	crossDecisionHash, err := hashValue("reserve-decision", crossDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossLedger := goldenObject(t, cloneValue(t, golden.Vectors.Records["reserveLedger"].Value), "reserve ledger")
+	crossLedger["decisionHash"] = crossDecisionHash
+	crossLedgerHash, err := hashValue("ledger-entry", crossLedger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossReceipt := goldenObject(t, cloneValue(t, receipt), "reserve receipt")
+	crossReceipt["recordHash"], crossReceipt["ledgerEntryHash"] = crossDecisionHash, crossLedgerHash
+	_, err = ValidateReceiptForResult(crossReceipt, prepared, crossDecision, crossLedger, nil)
+	var crossErr *ContractError
+	if !errors.As(err, &crossErr) || crossErr.Code != ErrorIdentityMismatch || crossErr.Path != "$/request" {
+		t.Fatalf("cross-spliced decision request returned %v", err)
+	}
+	assertResultPath := func(label string, candidateReceipt, candidateDecision, candidateLedger any, path string) {
+		t.Helper()
+		_, candidateErr := ValidateReceiptForResult(candidateReceipt, prepared, candidateDecision, candidateLedger, nil)
+		var contractErr *ContractError
+		if !errors.As(candidateErr, &contractErr) || contractErr.Path != path {
+			t.Fatalf("%s error precedence returned %v", label, candidateErr)
+		}
+	}
+	invalidReceipt := goldenObject(t, cloneValue(t, crossReceipt), "invalid receipt")
+	invalidReceipt["operation"] = "invalid"
+	assertResultPath("receipt", invalidReceipt, crossDecision, crossLedger, "$/operation")
+	invalidLedger := goldenObject(t, cloneValue(t, crossLedger), "invalid ledger")
+	invalidLedger["kind"] = "invalid"
+	assertResultPath("ledger", crossReceipt, crossDecision, invalidLedger, "$/kind")
+	invalidDecision := goldenObject(t, cloneValue(t, crossDecision), "invalid decision")
+	invalidDecision["status"] = "invalid"
+	assertResultPath("decision", crossReceipt, invalidDecision, crossLedger, "$/status")
 	driftedReceipt := cloneValue(t, receipt).(map[string]any)
 	driftedReceipt["serviceBuildHash"] = "6" + driftedReceipt["serviceBuildHash"].(string)[1:]
 	if _, err := ValidateReceiptForRequest(driftedReceipt, prepared); !hasCode(err, ErrorIdentityMismatch) {
@@ -487,6 +529,15 @@ func cloneValue(t *testing.T, value any) any {
 		t.Fatal(err)
 	}
 	return result
+}
+
+func goldenObject(t *testing.T, value any, label string) map[string]any {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not an object", label)
+	}
+	return object
 }
 
 func hasCode(err error, code ErrorCode) bool {

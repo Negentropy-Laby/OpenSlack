@@ -134,6 +134,13 @@ v2 rule. A rejected or reconciliation-required authorization carries zero author
 and calls, so it can never be interpreted as permission to spend. GS9-A validates these calculations
 only and does not gate a provider call.
 
+The canonical dual-revision rule is defined in
+[`docs/architecture/contracts/workflow-control.md`](../../../../docs/architecture/contracts/workflow-control.md#gs9-f2a-authority-binding-coordinator-contract).
+This service validates the exact durable budget receipt, its SHA-256, operation/status,
+reservation identity, and accepted source revision before fresh or replayed delivery. It does not
+persist the complete F2a decision/ledger source-result proof; that remains an F2b recovery and
+migration `000008` responsibility.
+
 ## Evidence ceiling
 
 `GS9-A LOCAL_PASS` means only that the TypeScript-owned exact-byte v2 artifacts, generated Go

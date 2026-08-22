@@ -13,6 +13,7 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
@@ -621,15 +622,34 @@ func validateV2AuthorityResult(message authoritycontract.Message, decisionSequen
 			decision.WorkspaceID != message.WorkspaceID || decision.CorrelationID != message.CorrelationID {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 authority decision binding is invalid", prepareErr)
 		}
-		receiptHash := sha256.Sum256(result.ExactReceiptBytes)
-		if decision.Payload["authorityReceiptHash"] != hex.EncodeToString(receiptHash[:]) {
+		var (
+			exactReceiptHash string
+			budgetProof      *runnerbindingcontract.BudgetDurableReceiptProof
+		)
+		if message.Kind == authoritycontract.KindBudgetReserveRequest {
+			proof, proofErr := runnerbindingcontract.ProveBudgetDurableReceiptBytes(string(result.ExactReceiptBytes))
+			if proofErr != nil {
+				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 budget decision durable receipt is invalid", proofErr)
+			}
+			budgetProof = &proof
+			exactReceiptHash = proof.ReceiptHash
+		} else {
+			receiptHash := sha256.Sum256(result.ExactReceiptBytes)
+			exactReceiptHash = hex.EncodeToString(receiptHash[:])
+		}
+		if decision.Payload["authorityReceiptHash"] != exactReceiptHash {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 decision does not bind the exact authority receipt", nil)
 		}
 		if advance.decisionKind == "" || decision.Kind != advance.decisionKind {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 authority decision kind does not match the triggering event", nil)
 		}
-		if message.Kind == authoritycontract.KindBudgetReserveRequest && decision.Payload["reservationId"] != message.Payload["reservationId"] {
-			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 budget decision reservation differs", nil)
+		if message.Kind == authoritycontract.KindBudgetReserveRequest {
+			if budgetProof == nil || message.AuthorityBuildHash == nil || budgetProof.Operation != "reserve" || budgetProof.Status != "accepted" ||
+				budgetProof.ReservationID != message.Payload["reservationId"] || decision.Payload["reservationId"] != message.Payload["reservationId"] ||
+				budgetProof.AcceptedRunRevision != decision.Payload["committedRunRevision"] ||
+				budgetProof.AuthorityBuildHash != *message.AuthorityBuildHash {
+				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 budget decision does not bind its exact durable receipt", nil)
+			}
 		}
 		if message.Kind == authoritycontract.KindEffectIntent && (decision.Payload["effectId"] != message.Payload["effectId"] || decision.Payload["effectHash"] != message.Payload["effectHash"]) {
 			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 effect decision identity differs", nil)

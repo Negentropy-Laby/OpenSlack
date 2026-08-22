@@ -34,22 +34,30 @@ func TestHandshakeBoundsAndClosedCapabilityVocabulary(t *testing.T) {
 	base := goldenMessageObject(t, KindHello)
 	tests := []struct {
 		name string
-		edit func(map[string]any)
+		edit func(*testing.T, map[string]any)
 		code ErrorCode
 		path string
 	}{
-		{"runtime", func(message map[string]any) { message["payload"].(map[string]any)["runtimeName"] = "python" }, ErrorInvalid, "$/payload/runtimeName"},
-		{"semver", func(message map[string]any) { message["payload"].(map[string]any)["runtimeVersion"] = "latest" }, ErrorInvalid, "$/payload/runtimeVersion"},
-		{"capability-unknown", func(message map[string]any) { message["payload"].(map[string]any)["capabilities"] = []any{"shell"} }, ErrorInvalid, "$/payload/capabilities"},
-		{"capability-duplicate", func(message map[string]any) {
-			message["payload"].(map[string]any)["capabilities"] = []any{"cancel_ack", "cancel_ack"}
+		{"runtime", func(t *testing.T, message map[string]any) {
+			mustObjectField(t, message, "payload")["runtimeName"] = "python"
+		}, ErrorInvalid, "$/payload/runtimeName"},
+		{"semver", func(t *testing.T, message map[string]any) {
+			mustObjectField(t, message, "payload")["runtimeVersion"] = "latest"
+		}, ErrorInvalid, "$/payload/runtimeVersion"},
+		{"capability-unknown", func(t *testing.T, message map[string]any) {
+			mustObjectField(t, message, "payload")["capabilities"] = []any{"shell"}
 		}, ErrorInvalid, "$/payload/capabilities"},
-		{"concurrency", func(message map[string]any) { message["payload"].(map[string]any)["maxConcurrentJobs"] = int64(1_025) }, ErrorLimitExceeded, "$/payload/maxConcurrentJobs"},
+		{"capability-duplicate", func(t *testing.T, message map[string]any) {
+			mustObjectField(t, message, "payload")["capabilities"] = []any{"cancel_ack", "cancel_ack"}
+		}, ErrorInvalid, "$/payload/capabilities"},
+		{"concurrency", func(t *testing.T, message map[string]any) {
+			mustObjectField(t, message, "payload")["maxConcurrentJobs"] = int64(1_025)
+		}, ErrorLimitExceeded, "$/payload/maxConcurrentJobs"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			message := cloneObject(t, base)
-			test.edit(message)
+			test.edit(t, message)
 			_, err := ValidateMessage(message)
 			assertContractFailure(t, err, test.code, test.path)
 		})
@@ -79,7 +87,7 @@ func TestHandshakeBoundsAndClosedCapabilityVocabulary(t *testing.T) {
 		{"leaseOfferTimeoutMs", 86_400_001, ErrorLimitExceeded, "$/payload"},
 	} {
 		message := cloneObject(t, helloAck)
-		message["payload"].(map[string]any)[test.field] = test.value
+		mustObjectField(t, message, "payload")[test.field] = test.value
 		_, err := ValidateMessage(message)
 		assertContractFailure(t, err, test.code, test.path)
 	}
@@ -91,32 +99,43 @@ func TestCrossFieldAuthorityBindingsFailClosed(t *testing.T) {
 	if _, err := ValidateState(state); err != nil {
 		t.Fatalf("a resumed run must retain the last checkpoint from an older generation: %v", err)
 	}
-	state["checkpointHead"].(map[string]any)["resumeGeneration"] = int64(3)
+	mustObjectField(t, state, "checkpointHead")["resumeGeneration"] = int64(3)
 	_, err := ValidateState(state)
 	assertContractFailure(t, err, ErrorStaleRevision, "$/checkpointHead")
 
 	effect := goldenMessageObject(t, KindEffectAuthorization)
-	effect["payload"].(map[string]any)["expiresAt"] = effect["sentAt"]
+	mustObjectField(t, effect, "payload")["expiresAt"] = effect["sentAt"]
 	_, err = ValidateMessage(effect)
 	assertContractFailure(t, err, ErrorInvalid, "$/payload/expiresAt")
 
 	resume := goldenMessageObject(t, KindResumeOffer)
-	resume["payload"].(map[string]any)["newResumeGeneration"] = resume["resumeGeneration"]
+	mustObjectField(t, resume, "payload")["newResumeGeneration"] = resume["resumeGeneration"]
 	_, err = ValidateMessage(resume)
 	assertContractFailure(t, err, ErrorStaleResumeGeneration, "$/payload/newResumeGeneration")
 
 	resume = goldenMessageObject(t, KindResumeOffer)
-	resume["payload"].(map[string]any)["newAttemptId"] = resume["attemptId"]
+	mustObjectField(t, resume, "payload")["newAttemptId"] = resume["attemptId"]
 	_, err = ValidateMessage(resume)
 	assertContractFailure(t, err, ErrorIdentityMismatch, "$/payload/newAttemptId")
 
 	budget := goldenMessageObject(t, KindBudgetAuthorization)
-	budget["payload"].(map[string]any)["committedRunRevision"] = budget["runRevision"].(int64) + 1
-	_, err = ValidateMessage(budget)
-	assertContractFailure(t, err, ErrorStaleRevision, "$/payload/committedRunRevision")
+	budgetPayload := mustObjectField(t, budget, "payload")
+	runnerRevision := mustInt64Field(t, budget, "runRevision")
+	if _, err = ValidateMessage(budget); err != nil {
+		t.Fatalf("golden budget authorization must validate: %v", err)
+	}
+	equalPlanes := cloneObject(t, budget)
+	mustObjectField(t, equalPlanes, "payload")["committedRunRevision"] = runnerRevision
+	if _, err = ValidateMessage(equalPlanes); err != nil {
+		t.Fatalf("equal budget and runner revisions must validate: %v", err)
+	}
+	unequalPlanes := cloneObject(t, budget)
+	mustObjectField(t, unequalPlanes, "payload")["committedRunRevision"] = runnerRevision + 1
+	if _, err = ValidateMessage(unequalPlanes); err != nil {
+		t.Fatalf("unequal budget and runner revisions must validate: %v", err)
+	}
 
-	budget = goldenMessageObject(t, KindBudgetAuthorization)
-	budget["payload"].(map[string]any)["status"] = "rejected"
+	budgetPayload["status"] = "rejected"
 	_, err = ValidateMessage(budget)
 	assertContractFailure(t, err, ErrorInvalid, "$/payload")
 
@@ -170,6 +189,24 @@ func cloneObject(t *testing.T, value map[string]any) map[string]any {
 		t.Fatal(err)
 	}
 	return mustStrictObject(t, encoded)
+}
+
+func mustObjectField(t *testing.T, value map[string]any, key string) map[string]any {
+	t.Helper()
+	field, ok := value[key].(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not an object", key)
+	}
+	return field
+}
+
+func mustInt64Field(t *testing.T, value map[string]any, key string) int64 {
+	t.Helper()
+	field, ok := value[key].(int64)
+	if !ok {
+		t.Fatalf("%s is not an int64", key)
+	}
+	return field
 }
 
 func assertContractFailure(t *testing.T, err error, code ErrorCode, path string) {

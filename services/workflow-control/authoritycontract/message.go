@@ -125,9 +125,6 @@ func ValidateMessage(value any) (Message, error) {
 	if kind == KindResumeOffer && payload["newAttemptId"].(string) == *attemptID {
 		return Message{}, failure(ErrorIdentityMismatch, "$/payload/newAttemptId", "resume offer must mint a new workflow resume identity")
 	}
-	if kind == KindBudgetAuthorization && payload["committedRunRevision"].(int64) != *runRevision {
-		return Message{}, failure(ErrorStaleRevision, "$/payload/committedRunRevision", "budget authorization must bind the envelope run revision")
-	}
 	result := Message{
 		Schema: MessageSchema, ProtocolVersion: ProtocolVersion, Kind: kind, WorkspaceID: workspaceID,
 		JobID: jobID, WorkflowRunID: workflowRunID, AttemptID: attemptID, LeaseID: leaseID,

@@ -13,7 +13,7 @@ const (
 	DurableRecordSchema       = "openslack.workflow_control_budget_durable_record.v1"
 	DurableWriter             = "workflow-control/budget-authority-server"
 	DurableAuthorityMode      = "local-qualification-v1"
-	ContractManifestSHA256    = "5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714"
+	ContractManifestSHA256    = "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548"
 	MaxDurableAccountBytes    = 128 * 1024
 	MaxDurableRecordBytes     = 512 * 1024
 	RecordKindAccount         = "account"

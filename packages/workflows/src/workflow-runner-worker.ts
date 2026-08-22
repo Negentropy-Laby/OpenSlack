@@ -59,6 +59,7 @@ import {
 import {
   WorkflowRunnerV2Session,
   WorkflowRunnerV2SessionError,
+  workflowRunnerV2BudgetDecisionMatchesRequest,
   type WorkflowRunnerV2ExecutionContext,
   type WorkflowRunnerV2SourceLoader,
 } from './workflow-runner-v2-session.js';
@@ -952,18 +953,32 @@ function createWorkflowRunnerV2ProviderAttemptPort(
         .slice(0, 32);
       const reservationId = `reservation-${identity}`;
       const callId = `call-${identity}`;
+      const requestedCostNanoUsd = workflowBudgetAuthorityChargeNanoUsd(
+        input.requestedTokens,
+        descriptor.budgetPolicy.rateNanoUsdPerToken,
+      );
       const decision = await context.reserveBudget({
         reservationId,
         callId,
         policyHash: descriptor.budgetPolicy.policyHash,
         requestedTokens: input.requestedTokens,
-        requestedCostNanoUsd: workflowBudgetAuthorityChargeNanoUsd(
-          input.requestedTokens,
-          descriptor.budgetPolicy.rateNanoUsdPerToken,
-        ),
+        requestedCostNanoUsd,
         requestedCalls: '1',
       });
       const payload = decision.payload;
+      if (
+        !workflowRunnerV2BudgetDecisionMatchesRequest(decision, {
+          reservationId,
+          requestedTokens: input.requestedTokens,
+          requestedCostNanoUsd,
+          requestedCalls: '1',
+        })
+      ) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
+          'Budget authorization does not bind the requested provider attempt.',
+        );
+      }
       if (payload.status === 'reconciliation_required') {
         throw new WorkflowRunnerV2BudgetBoundaryError(
           'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
@@ -976,23 +991,10 @@ function createWorkflowRunnerV2ProviderAttemptPort(
           'Budget authority rejected the provider attempt.',
         );
       }
-      if (
-        payload.reservationId !== reservationId ||
-        typeof payload.authorizedTokens !== 'string' ||
-        !/^(?:0|[1-9][0-9]*)$/u.test(payload.authorizedTokens) ||
-        BigInt(payload.authorizedTokens) < 1n ||
-        BigInt(payload.authorizedTokens) > BigInt(input.requestedTokens) ||
-        payload.authorizedCalls !== '1'
-      ) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
-          'Budget authorization does not bind the requested provider attempt.',
-        );
-      }
       const reservation = Object.freeze({
         reservationId,
         callId,
-        authorizedTokens: payload.authorizedTokens,
+        authorizedTokens: input.requestedTokens,
       });
       reservations.set(reservationId, {
         reservation,

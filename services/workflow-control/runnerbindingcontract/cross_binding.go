@@ -76,7 +76,7 @@ func assertEvidenceForStage(evidence, stage Record, resolutionSentAt string, ses
 			return embeddedBudgetFailure(preparedErr, "$/evidence/preparedRequest/body")
 		}
 		if request["workspaceId"] != stage["workspaceId"] || request["runId"] != stage["runId"] ||
-			request["correlationId"] != stage["correlationId"] || request["expectedRunRevision"] != runnerHead["expectedGlobalRunRevision"] ||
+			request["correlationId"] != stage["correlationId"] ||
 			request["expectedAccountRevision"] != source["expectedRevision"] || source["acceptedRevision"] != nil ||
 			source["acceptedResumeGeneration"] != runnerHead["expectedResumeGeneration"] || !sameCanonical(request["route"], route) ||
 			request["reservationId"] != payload["reservationId"] || request["callId"] != payload["callId"] {

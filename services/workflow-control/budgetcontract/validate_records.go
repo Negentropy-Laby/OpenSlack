@@ -1,43 +1,47 @@
 package budgetcontract
 
-func ValidateReserveDecision(value any) (Record, error) {
+func validateReserveDecisionWithRequest(value any) (Record, string, error) {
 	root, err := closed(value, withBase("schema", "status", "request", "requestHash", "beforeAccountHash", "afterAccount", "authorization", "insufficientDimensions", "legacyBudgetApprovalAuthority", "decidedAt"), "$")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	status, err := enumString(root["status"], []string{"reserved", "rejected"}, "$/status")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	request, err := ValidateReserveRequest(root["request"])
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	after, err := ValidateAccount(root["afterAccount"])
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := assertBaseIdentity(after, request); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if after["accountRevision"].(int64) != request["expectedAccountRevision"].(int64)+1 || after["runRevision"].(int64) != request["expectedRunRevision"].(int64)+1 {
-		return nil, failure(ErrorStaleRevision, "$/afterAccount", "Reserve did not advance revisions once.")
+		return nil, "", failure(ErrorStaleRevision, "$/afterAccount", "Reserve did not advance revisions once.")
 	}
 	requestHash, err := hash(root["requestHash"], "$/requestHash")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	expectedHash, _ := hashValue("reserve-request", request)
+	canonicalRequest, err := CanonicalJSON(request)
+	if err != nil {
+		return nil, "", err
+	}
+	expectedHash := hashCanonicalValue("reserve-request", canonicalRequest)
 	if requestHash != expectedHash {
-		return nil, failure(ErrorHashMismatch, "$/requestHash", "Reserve request hash drifted.")
+		return nil, "", failure(ErrorHashMismatch, "$/requestHash", "Reserve request hash drifted.")
 	}
 	authorization, err := quantities(root["authorization"], "$/authorization")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	dimensions, ok := root["insufficientDimensions"].([]any)
 	if !ok {
-		return nil, failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
+		return nil, "", failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
 	}
 	allowedOrder := []string{"tokens", "nano_usd", "calls"}
 	next := 0
@@ -45,51 +49,56 @@ func ValidateReserveDecision(value any) (Record, error) {
 	for _, raw := range dimensions {
 		value, ok := raw.(string)
 		if !ok || seen[value] {
-			return nil, failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
+			return nil, "", failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
 		}
 		for next < len(allowedOrder) && allowedOrder[next] != value {
 			next++
 		}
 		if next == len(allowedOrder) {
-			return nil, failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
+			return nil, "", failure(ErrorInvalid, "$/insufficientDimensions", "Insufficient dimensions are invalid.")
 		}
 		seen[value] = true
 		next++
 	}
 	if status == "reserved" && (!quantitiesEqual(authorization, request["requested"].(Record)) || len(dimensions) != 0) || status == "rejected" && (!quantitiesEqual(authorization, zeroQuantities()) || len(dimensions) == 0) {
-		return nil, failure(ErrorInvalid, "$/authorization", "Reserve authorization does not match status.")
+		return nil, "", failure(ErrorInvalid, "$/authorization", "Reserve authorization does not match status.")
 	}
 	decidedAt, err := canonicalTimestamp(root["decidedAt"], "$/decidedAt")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if decidedAt != after["updatedAt"] || decidedAt < request["requestedAt"].(string) {
-		return nil, failure(ErrorIdentityMismatch, "$/decidedAt", "Reserve decision time is inconsistent.")
+		return nil, "", failure(ErrorIdentityMismatch, "$/decidedAt", "Reserve decision time is inconsistent.")
 	}
 	base, err := authorityBase(root)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	result := copyRecord(base)
 	result["schema"], err = literalString(root["schema"], SchemaReserveDecision, "$/schema")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	result["status"], result["request"], result["requestHash"] = status, request, requestHash
 	result["beforeAccountHash"], err = hash(root["beforeAccountHash"], "$/beforeAccountHash")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	result["afterAccount"], result["authorization"], result["insufficientDimensions"] = after, authorization, dimensions
 	result["legacyBudgetApprovalAuthority"], err = boolLiteral(root["legacyBudgetApprovalAuthority"], false, "$/legacyBudgetApprovalAuthority")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	result["decidedAt"] = decidedAt
 	if err := assertExact(result, MaxRecordBytes); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return result, nil
+	return result, canonicalRequest, nil
+}
+
+func ValidateReserveDecision(value any) (Record, error) {
+	result, _, err := validateReserveDecisionWithRequest(value)
+	return result, err
 }
 
 func ValidateReservationForDecision(reservationValue, decisionValue any) (Record, error) {

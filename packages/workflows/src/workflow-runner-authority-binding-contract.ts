@@ -13,15 +13,14 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   WorkflowBudgetAuthorityContractError,
+  WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA,
   canonicalWorkflowBudgetAuthorityJson,
   hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
   workflowBudgetAuthorityChargeNanoUsd,
-  validateWorkflowBudgetLedgerEntry,
   validateWorkflowBudgetPreparedRequest,
   validateWorkflowBudgetReceipt,
-  validateWorkflowBudgetReceiptForResult,
-  validateWorkflowBudgetReserveDecision,
+  validateWorkflowBudgetReceiptResult,
   validateWorkflowBudgetReserveRequest,
   validateWorkflowBudgetSettlementRequest,
   type WorkflowBudgetLedgerEntry,
@@ -208,11 +207,11 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS = Object.freeze({
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS = Object.freeze({
   runnerV1Manifest: '908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6',
-  authorityV2Manifest: '62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1',
+  authorityV2Manifest: '2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877',
   checkpointManifest: 'e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000',
-  effectControlManifest: '36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65',
-  effectShadowManifest: '72c5f1cc74cf9f21628bd084fceea177d6b32d1321b2b13fb5c17fc8d86e546e',
-  budgetManifest: '5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714',
+  effectControlManifest: '6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4',
+  effectShadowManifest: '55acf993ae4b951a7426c2d4771733d0ef578095d2b616f7bca0394a43f33b42',
+  budgetManifest: '662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548',
   migration7Up: 'bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722',
   migration7Down: '251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7',
 } as const);
@@ -1804,30 +1803,32 @@ function validateBudgetSourceResultForPrepared(
     );
   }
   const reserveRequest = request as WorkflowBudgetReserveRequest;
-  const decision = validateBudgetContractForBinding('$/budgetSourceResult/decision', () =>
-    validateWorkflowBudgetReserveDecision(own(record, 'decision')),
-  );
-  const ledgerEntry = validateBudgetContractForBinding('$/budgetSourceResult/ledgerEntry', () =>
-    validateWorkflowBudgetLedgerEntry(own(record, 'ledgerEntry')),
-  );
   const durableReceiptBytes = own(record, 'durableReceiptBytes');
   const durable = parseBudgetDurableReceipt(durableReceiptBytes);
   const durableReceipt = durable.value;
-  const receipt = validateBudgetContractForBinding('$/budgetSourceResult/receipt', () =>
-    validateWorkflowBudgetReceiptForResult(
+  const budgetResult = validateBudgetContractForBinding('$/budgetSourceResult/receipt', () =>
+    validateWorkflowBudgetReceiptResult(
       durableReceipt.operationalProjection,
       prepared,
-      decision,
-      ledgerEntry,
+      own(record, 'decision'),
+      own(record, 'ledgerEntry'),
       null,
     ),
   );
+  const { receipt, ledger: ledgerEntry } = budgetResult;
+  if (budgetResult.record.schema !== WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA) {
+    fail(
+      'WORKFLOW_RUNNER_AUTHORITY_BINDING_AUTHORITY_PLANE_MISMATCH',
+      '$/budgetSourceResult/decision',
+      'A budget authorization requires an exact reserve decision.',
+    );
+  }
+  const decision = budgetResult.record;
   if (
     receipt.operation !== 'reserve' ||
     receipt.status !== 'accepted' ||
     receipt.acceptedRunRevision === null ||
     receipt.committedAt === null ||
-    `${canonicalWorkflowBudgetAuthorityJson(decision.request)}\n` !== prepared.body ||
     decision.request.route.backend !== 'go' ||
     decision.request.route.authority !== 'workflow-control'
   ) {
@@ -2143,7 +2144,6 @@ function assertEvidenceForStage(
         request.workspaceId !== stage.workspaceId ||
         request.runId !== stage.runId ||
         request.correlationId !== stage.correlationId ||
-        request.expectedRunRevision !== stage.runnerAuthority.expectedGlobalRunRevision ||
         request.expectedAccountRevision !== source.expectedRevision ||
         source.acceptedRevision !== null ||
         source.acceptedResumeGeneration !== stage.runnerAuthority.expectedResumeGeneration ||
@@ -2853,7 +2853,6 @@ function validateControlDeliveryForValidatedContext(
         payload.authorizedCalls !== authorization.calls ||
         payload.authorityReceiptHash !== budgetSourceResult.durable.receiptHash ||
         payload.committedRunRevision !== sourceReceipt.acceptedRunRevision ||
-        sourceReceipt.acceptedRunRevision !== stage.runnerAuthority.acceptedGlobalRunRevision ||
         stage.route.backend !== 'go' ||
         stage.route.authority !== 'workflow-control' ||
         stage.route.authorityBuildHash !== durableReceipt.authorityBuildHash

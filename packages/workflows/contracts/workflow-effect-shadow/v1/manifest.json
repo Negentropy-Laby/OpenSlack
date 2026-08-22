@@ -11,7 +11,7 @@
     "defaultMode": "disabled"
   },
   "sourceLocks": {
-    "effectControlManifest": "36c356d1753f32f23b13717b957e86d11a264b9c9f16f697e47a4ecaf9253a65",
+    "effectControlManifest": "6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4",
     "effectControlGolden": "2ec002b70d27c9658d692bac233ac7c28cd25faf5e1d789bfb055411597aa329"
   },
   "operations": ["approval_created", "approval_decided", "audit_recorded"],

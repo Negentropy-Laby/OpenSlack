@@ -215,7 +215,7 @@
           "authority": "typescript",
           "routingEpoch": 1,
           "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
-          "runRevision": 5,
+          "runRevision": 4,
           "resumeGeneration": 1,
           "eventId": "event-budget_authorization",
           "correlationId": "corr-gs9-001",
@@ -233,10 +233,10 @@
         "prepared": {
           "schema": "openslack.workflow_control_authority_prepared_message.v2",
           "direction": "control-to-runner",
-          "body": "{\"attemptId\":\"attempt-gs9-001\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66\",\"correlationId\":\"corr-gs9-001\",\"eventId\":\"event-budget_authorization\",\"fencingToken\":7,\"jobId\":\"job-gs9-001\",\"kind\":\"budget_authorization\",\"leaseId\":\"lease-gs9-001\",\"payload\":{\"authorityReceiptHash\":\"6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad\",\"authorizedCalls\":\"1\",\"authorizedCostNanoUsd\":\"125000001\",\"authorizedTokens\":\"9007199254740993\",\"committedRunRevision\":5,\"reservationId\":\"reservation-1\",\"status\":\"reserved\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":1,\"routingEpoch\":1,\"runRevision\":5,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-04T03:01:00.000Z\",\"sequence\":11,\"workflowRunId\":\"run-gs9-001\",\"workspaceId\":\"workspace-gs9\"}\n",
-          "messageDigest": "15c10e808acf2d250e6a704532990df84a2b6d9ef19f2d28e0a8e172ea249036",
-          "idempotencyKey": "openslack.workflow-control-authority.v2.15c10e808acf2d250e6a704532990df84a2b6d9ef19f2d28e0a8e172ea249036",
-          "requestFingerprint": "sha256:cd22370cc7f09ecce381aeb2afb45f30b8f59fd20f3295343819c3e6a93f99f6"
+          "body": "{\"attemptId\":\"attempt-gs9-001\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66\",\"correlationId\":\"corr-gs9-001\",\"eventId\":\"event-budget_authorization\",\"fencingToken\":7,\"jobId\":\"job-gs9-001\",\"kind\":\"budget_authorization\",\"leaseId\":\"lease-gs9-001\",\"payload\":{\"authorityReceiptHash\":\"6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad\",\"authorizedCalls\":\"1\",\"authorizedCostNanoUsd\":\"125000001\",\"authorizedTokens\":\"9007199254740993\",\"committedRunRevision\":5,\"reservationId\":\"reservation-1\",\"status\":\"reserved\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":1,\"routingEpoch\":1,\"runRevision\":4,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-04T03:01:00.000Z\",\"sequence\":11,\"workflowRunId\":\"run-gs9-001\",\"workspaceId\":\"workspace-gs9\"}\n",
+          "messageDigest": "51bf707b404d65db14e6b294d7b33021d6c4ba0bb55a909f79a2f37337f6b490",
+          "idempotencyKey": "openslack.workflow-control-authority.v2.51bf707b404d65db14e6b294d7b33021d6c4ba0bb55a909f79a2f37337f6b490",
+          "requestFingerprint": "sha256:98c4c6d4fd0df0ea5f929613aae394088146fa1def53061682732f9c86193c98"
         }
       },
       {
@@ -767,7 +767,7 @@
         "authority": "typescript",
         "routingEpoch": 1,
         "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
-        "runRevision": 5,
+        "runRevision": 4,
         "resumeGeneration": 1,
         "eventId": "event-budget_authorization",
         "correlationId": "corr-gs9-001",

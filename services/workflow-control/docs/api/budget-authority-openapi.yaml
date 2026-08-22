@@ -448,7 +448,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: account },
           operationalProjection: { $ref: '#/components/schemas/QualificationAccountProjection' },
@@ -477,7 +477,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reserve_decision },
           operationalProjection:
@@ -494,7 +494,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reservation },
           operationalProjection:
@@ -511,7 +511,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: settlement },
           operationalProjection: { $ref: '#/components/schemas/QualificationSettlementProjection' },
@@ -527,7 +527,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: ledger_entry },
           operationalProjection:
@@ -546,7 +546,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: receipt },
           operationalProjection:
@@ -565,7 +565,7 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { const: 5ba1027cb0c33bb833cff6a5095934231f42700bc6613e8ec815195ca812e714 },
+            { const: 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548 },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reconciliation },
           operationalProjection:

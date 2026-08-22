@@ -26,6 +26,7 @@ import {
   hashWorkflowRunnerAuthorityBindingResolution,
   hashWorkflowRunnerAuthorityBindingStage,
   hashWorkflowRunnerBudgetSourceReceipt,
+  parseWorkflowRunnerBudgetDurableReceiptBytes,
   prepareWorkflowRunnerAuthorityBindingReceipt,
   prepareWorkflowRunnerAuthorityBindingResolution,
   prepareWorkflowRunnerAuthorityBindingStage,
@@ -44,7 +45,6 @@ import {
   type WorkflowRunnerAuthorityBindingReceipt,
   type WorkflowRunnerAuthorityBindingResolution,
   type WorkflowRunnerAuthorityBindingStage,
-  type WorkflowRunnerAuthorityEvidence,
   type WorkflowRunnerBudgetSourceResult,
 } from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
 import {
@@ -52,6 +52,7 @@ import {
   canonicalWorkflowBudgetAuthorityJson,
   evaluateWorkflowBudgetReserve,
   hashWorkflowBudgetAuthorityValue,
+  parseWorkflowBudgetAuthorityBytes,
   prepareWorkflowBudgetAuthorityRequest,
   validateWorkflowBudgetAccount,
   validateWorkflowBudgetReceipt,
@@ -65,15 +66,31 @@ import {
 } from '../../packages/workflows/src/workflow-budget-authority-contract.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
   WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
   canonicalWorkflowControlAuthorityJson,
+  parseWorkflowControlAuthorityMessageBytes,
   prepareWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityMessage,
 } from '../../packages/workflows/src/workflow-control-authority-contract.js';
 
 type Json = Record<string, unknown>;
+
+const BUDGET_RUNNER_REVISION_OFFSET = 10;
+
+function independentBudgetRunnerRevision(sourceRevision: number): number {
+  const revision = sourceRevision + BUDGET_RUNNER_REVISION_OFFSET;
+  if (
+    !Number.isSafeInteger(sourceRevision) ||
+    sourceRevision < 0 ||
+    !Number.isSafeInteger(revision)
+  ) {
+    throw new Error('Budget source revision cannot produce a safe runner-global fixture revision.');
+  }
+  return revision;
+}
 
 function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
   receipt: unknown,
@@ -202,6 +219,7 @@ const authorityBoundary = Object.freeze({
 const budgetDecisionDelivery = Object.freeze({
   sourceResultRequired: true,
   durableReceiptSchema: 'openslack.workflow_control_budget_durable_record.v1',
+  revisionPlanes: WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
   authorityReceiptHash:
     WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS.budget_reserve.authorityReceiptHashAlgorithm,
   acceptedStates: Object.freeze({
@@ -245,76 +263,23 @@ const OPERATION_MATRIX = Object.freeze(
   })),
 );
 
-const NEGATIVE_IDS = Object.freeze([
-  'stage-unknown-field',
-  'runner-revision-drift',
-  'resolution-evidence-hash-drift',
-  'stage-receipt-cross-splice',
-  'resolution-receipt-cross-splice',
-  'control-delivery-digest-drift',
-  'raw-provider-forbidden',
-  'resume-generation-drift',
-  'source-global-revision-swap',
-  'stage-before-resolution',
-  'same-key-body-drift',
-  'target-body-cross-splice',
-  'target-key-cross-splice',
-  'target-fingerprint-cross-splice',
-  'resolution-alien-stage-receipt',
-  'resolution-alien-stage-hash',
-  'resolution-receipt-alien-stage-receipt',
-  'resolution-receipt-stage-hash-drift',
-  'checkpoint-nested-contract-error',
-  'checkpoint-deep-path-contract-error',
-  'budget-nested-contract-error',
-  'effect-approved-expiry-boundary',
-  'effect-expired-future-boundary',
-  'effect-rejected-expiry-boundary',
-  'control-event-receipt-target-drift',
-  'control-decision-budget-evidence-drift',
-  'budget-decision-source-missing',
-  'budget-decision-source-null',
-  'non-budget-decision-source-present',
-  'budget-decision-status-drift',
-  'budget-decision-amount-drift',
-  'budget-decision-receipt-hash-drift',
-  'budget-decision-committed-run-revision-drift',
-  'budget-decision-source-result-cross-splice',
-  'budget-durable-manifest-drift',
-  'budget-durable-build-drift',
-  'budget-durable-projection-hash-drift',
-  'budget-source-ts-local-go-outer-cross-splice',
-  'budget-durable-bytes-whitespace-drift',
-  'budget-durable-bytes-duplicate-key-drift',
-  'budget-durable-bytes-trailing-drift',
-  'budget-durable-bytes-size-overflow',
-  'budget-decision-database-unknown-no-seq4',
-  'budget-decision-source-before-resolution-ack',
-  'budget-decision-time-inversion',
-  'control-decision-effect-evidence-drift',
-  'control-decision-resume-attempt-drift',
-  'control-decision-ordering-drift',
-  'control-route-cross-splice',
-  'control-delivery-alien-stage-receipt',
-  'control-decision-missing-prior-event-ack',
-  'control-cancel-missing-prior-event-ack',
-  'control-decision-alien-prior-event-ack',
-  'control-decision-sequence-gap',
-  'control-decision-prior-time-inversion',
-  'budget-rate-invalid',
-  'budget-settle-receipt-hash-drift',
-  'budget-settle-token-drift',
-  'budget-settle-cost-drift',
-  'budget-settle-call-drift',
-  'budget-settle-disposition-drift',
-  'resume-logical-attempt-active-reuse',
-] as const);
-
 function asJson(value: unknown, label: string): Json {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${label} must be an object.`);
   }
   return value as Json;
+}
+
+function cloneJson(value: unknown, label: string): Json {
+  return asJson(structuredClone(value), label);
+}
+
+function requiredExchange(values: Readonly<Record<string, Exchange>>, key: string): Exchange {
+  const value = values[key];
+  if (value === undefined) {
+    throw new Error(`Missing generated exchange ${key}.`);
+  }
+  return value;
 }
 
 function strict(properties: Json, required: readonly string[] = Object.keys(properties)): Json {
@@ -713,7 +678,7 @@ function acceptedStageReceipt(
 
 function exchange(
   staged: WorkflowRunnerAuthorityBindingStage,
-  evidence: WorkflowRunnerAuthorityEvidence,
+  evidence: unknown,
   offset: number,
 ): Exchange {
   const stageReceipt = acceptedStageReceipt(staged, offset);
@@ -748,7 +713,7 @@ function exchange(
       bindingId: staged.bindingId,
       operation: staged.operation,
       status: 'accepted',
-      controlBuildHash: evidence.sourceAuthority.authorityBuildHash,
+      controlBuildHash: resolution.evidence.sourceAuthority.authorityBuildHash,
       committedAt: `2026-08-20T00:${String(offset).padStart(2, '0')}:03.000Z`,
       reconciliationToken: null,
       requestHash: hashWorkflowRunnerAuthorityBindingResolution(resolution),
@@ -779,7 +744,10 @@ function settlementStageDrift(
   readonly stage: WorkflowRunnerAuthorityBindingStage;
   readonly stageReceipt: WorkflowRunnerAuthorityBindingReceipt;
 } {
-  const originalMessage = JSON.parse(original.stage.target.body) as Json;
+  const originalMessage = asJson(
+    parseWorkflowControlAuthorityMessageBytes(Buffer.from(original.stage.target.body, 'utf8')),
+    'budget settlement message',
+  );
   const payload = structuredClone(asJson(originalMessage.payload, 'budget settlement payload'));
   payload[field] = value;
   const staged = stage(
@@ -803,7 +771,7 @@ function settlementStageDrift(
     payload,
   );
   const stageReceipt = acceptedStageReceipt(staged, 5);
-  const candidate = structuredClone(original.resolution) as unknown as Json;
+  const candidate = cloneJson(original.resolution, 'drifted settlement resolution');
   candidate.bindingId = staged.bindingId;
   candidate.stageHash = hashWorkflowRunnerAuthorityBindingStage(staged);
   candidate.stageReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(stageReceipt);
@@ -885,7 +853,7 @@ async function makeExchanges(
     }),
     envelope: checkpointEnvelope,
     envelopeHash: checkpointEnvelopeHash,
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   const resumeStage = stage(
     'resume_advance',
@@ -926,7 +894,7 @@ async function makeExchanges(
     nextPhaseIndex: resumeObservation.nextPhaseIndex,
     logicalResumeAttemptId: 'logical.resume.attempt.1',
     expiresAt: '2026-08-20T00:16:00.000Z',
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   const effectBuild = h('1');
   const effectIdentity = {
@@ -980,7 +948,7 @@ async function makeExchanges(
     claimHash: grantHash,
     grantHash,
     expiresAt: '2026-08-20T00:12:00.000Z',
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   const completionIdentity = {
     ...effectIdentity,
@@ -1012,7 +980,7 @@ async function makeExchanges(
     status: 'executed',
     outcomeHash,
     reconciliationToken: null,
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   const preparedReserve = asJson(
     asJson(budgetRecords.preparedReserve, 'prepared reserve').value,
@@ -1022,9 +990,13 @@ async function makeExchanges(
     asJson(budgetRecords.preparedSettlement, 'prepared settlement').value,
     'prepared settlement value',
   );
-  const reserveRequest = JSON.parse(preparedReserve.body as string) as Json;
-  const settlementRequest = JSON.parse(preparedSettlement.body as string) as Json;
-  const reserveRoute = asJson(reserveRequest.route, 'reserve route');
+  const reserveRequest = validateWorkflowBudgetReserveRequest(
+    parseWorkflowBudgetAuthorityBytes(Buffer.from(preparedReserve.body as string, 'utf8')),
+  );
+  const settlementRequest = validateWorkflowBudgetSettlementRequest(
+    parseWorkflowBudgetAuthorityBytes(Buffer.from(preparedSettlement.body as string, 'utf8')),
+  );
+  const reserveRoute = reserveRequest.route;
   const reserveIdentity: StageIdentity = {
     workspaceId: reserveRequest.workspaceId as string,
     jobId: 'job.budget',
@@ -1034,7 +1006,7 @@ async function makeExchanges(
     fencingToken: 11,
     correlationId: reserveRequest.correlationId as string,
     buildHash: reserveRoute.authorityBuildHash as string,
-    expectedRevision: reserveRequest.expectedRunRevision as number,
+    expectedRevision: independentBudgetRunnerRevision(reserveRequest.expectedRunRevision),
     expectedGeneration: 0,
     sequence: 41,
     sentAt: '2026-08-20T00:04:00.000Z',
@@ -1064,7 +1036,7 @@ async function makeExchanges(
     policyHash: reserveRequest.policyHash,
     rateNanoUsdPerToken: reserveRequest.rateNanoUsdPerToken,
     providerUsageReceiptHash: null,
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   const usage = asJson(settlementRequest.providerUsage, 'provider usage');
   const settlementRoute = asJson(settlementRequest.route, 'settlement route');
@@ -1072,7 +1044,7 @@ async function makeExchanges(
     ...reserveIdentity,
     correlationId: settlementRequest.correlationId as string,
     buildHash: settlementRoute.authorityBuildHash as string,
-    expectedRevision: settlementRequest.expectedRunRevision as number,
+    expectedRevision: independentBudgetRunnerRevision(settlementRequest.expectedRunRevision),
     sequence: 42,
     sentAt: '2026-08-20T00:05:00.000Z',
   };
@@ -1105,7 +1077,7 @@ async function makeExchanges(
     policyHash: settlementRequest.policyHash,
     rateNanoUsdPerToken: settlementRequest.rateNanoUsdPerToken,
     providerUsageReceiptHash: settlementRequest.usageReceiptHash,
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
 
   return {
     checkpoint_commit: exchange(checkpointStage, checkpointEvidence, 1),
@@ -1217,7 +1189,7 @@ function budgetDecisionFixtures(budgetRecords: Json) {
       fencingToken: 19,
       correlationId: request.correlationId,
       buildHash: authorityBuildHash,
-      expectedRevision: request.expectedRunRevision,
+      expectedRevision: independentBudgetRunnerRevision(request.expectedRunRevision),
       expectedGeneration: 0,
       sequence: 61,
       sentAt: BUDGET_DELIVERY_TIMELINE.requestedAt,
@@ -1250,7 +1222,7 @@ function budgetDecisionFixtures(budgetRecords: Json) {
     policyHash: request.policyHash,
     rateNanoUsdPerToken: request.rateNanoUsdPerToken,
     providerUsageReceiptHash: null,
-  } as unknown as WorkflowRunnerAuthorityEvidence;
+  };
   const exchangeValue = exchange(staged, evidence, 6);
   const goAccount = validateWorkflowBudgetAccount({
     ...account,
@@ -1281,11 +1253,12 @@ function budgetDecisionFixtures(budgetRecords: Json) {
     request,
     offsetTimestamp(BUDGET_DELIVERY_TIMELINE.priorEventSentAt, 1),
   );
-  const result = (
+  const resultFor = (
+    preparedRequest: ReturnType<typeof prepareWorkflowBudgetAuthorityRequest>,
     decision: WorkflowBudgetReserveDecision,
     ledgerEntry: WorkflowBudgetLedgerEntry,
   ): WorkflowRunnerBudgetSourceResult => {
-    const receipt = acceptedBudgetReserveReceipt(prepared, decision, ledgerEntry);
+    const receipt = acceptedBudgetReserveReceipt(preparedRequest, decision, ledgerEntry);
     return validateWorkflowRunnerBudgetSourceResult(
       {
         schema: WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
@@ -1293,16 +1266,39 @@ function budgetDecisionFixtures(budgetRecords: Json) {
         decision,
         ledgerEntry,
       },
-      prepared,
+      preparedRequest,
     );
   };
+  const siblingAccount = validateWorkflowBudgetAccount({
+    ...goAccount,
+    runRevision: goAccount.runRevision + 10,
+  });
+  const siblingRequest = validateWorkflowBudgetReserveRequest({
+    ...request,
+    reservationId: `${request.reservationId}.sibling`,
+    callId: `${request.callId}.sibling`,
+    correlationId: `${request.correlationId}.sibling`,
+    expectedRunRevision: siblingAccount.runRevision,
+    requestedAt: '2026-08-20T00:06:00.250Z',
+  });
+  const siblingPrepared = prepareWorkflowBudgetAuthorityRequest(
+    'reserve',
+    siblingRequest,
+    'qualification-caller',
+  );
+  const siblingEvaluation = evaluateWorkflowBudgetReserve(
+    siblingAccount,
+    siblingRequest,
+    '2026-08-20T00:06:04.250Z',
+  );
   return {
     exchange: exchangeValue,
     prepared,
-    reserved: result(reserved.decision, reserved.ledgerEntry),
-    rejected: result(rejected.decision, rejected.ledgerEntry),
-    early: result(early.decision, early.ledgerEntry),
-    late: result(late.decision, late.ledgerEntry),
+    reserved: resultFor(prepared, reserved.decision, reserved.ledgerEntry),
+    rejected: resultFor(prepared, rejected.decision, rejected.ledgerEntry),
+    early: resultFor(prepared, early.decision, early.ledgerEntry),
+    late: resultFor(prepared, late.decision, late.ledgerEntry),
+    sibling: resultFor(siblingPrepared, siblingEvaluation.decision, siblingEvaluation.ledgerEntry),
   };
 }
 
@@ -1310,7 +1306,7 @@ function effectSemanticVariants(
   exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
 ): Record<string, Exchange> {
   const authorized = exchanges.effect_authorize;
-  const authorizedEvidence = authorized.resolution.evidence as unknown as Json;
+  const authorizedEvidence = asJson(authorized.resolution.evidence, 'authorized effect evidence');
   const baseEffect = {
     effectId: authorizedEvidence.effectId as string,
     effectHash: authorizedEvidence.effectHash as string,
@@ -1372,12 +1368,12 @@ function effectSemanticVariants(
       claimHash: null,
       grantHash: null,
       expiresAt: status === 'expired' ? '2026-08-20T00:12:02.000Z' : '2026-08-20T00:21:00.000Z',
-    } as unknown as WorkflowRunnerAuthorityEvidence;
+    };
     return exchange(staged, evidence, 10 + index);
   };
 
   const completed = exchanges.effect_complete;
-  const completedEvidence = completed.resolution.evidence as unknown as Json;
+  const completedEvidence = asJson(completed.resolution.evidence, 'completed effect evidence');
   const completion = (status: 'failed' | 'reconciliation_required', index: number): Exchange => {
     const outcomeHash = H(`semantic-effect-outcome-${status}`);
     const staged = stage(
@@ -1418,7 +1414,7 @@ function effectSemanticVariants(
       outcomeHash,
       reconciliationToken:
         status === 'reconciliation_required' ? 'reconcile.effect.completion' : null,
-    } as unknown as WorkflowRunnerAuthorityEvidence;
+    };
     return exchange(staged, evidence, 12 + index);
   };
 
@@ -1434,7 +1430,9 @@ function goRouteSemanticVariant(
   exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
 ): Exchange {
   const checkpoint = exchanges.checkpoint_commit;
-  const target = validateWorkflowControlAuthorityMessage(JSON.parse(checkpoint.stage.target.body));
+  const target = parseWorkflowControlAuthorityMessageBytes(
+    Buffer.from(checkpoint.stage.target.body, 'utf8'),
+  );
   const staged = stage(
     'checkpoint_commit',
     {
@@ -1486,7 +1484,7 @@ async function budgetSemanticVariants(
         fencingToken: base.fencingToken,
         correlationId: request.correlationId,
         buildHash: request.route.authorityBuildHash,
-        expectedRevision: request.expectedRunRevision,
+        expectedRevision: 70 + index,
         expectedGeneration: base.runnerAuthority.expectedResumeGeneration,
         sequence: 70 + index,
         sentAt: `2026-08-20T00:${String(14 + index).padStart(2, '0')}:00.000Z`,
@@ -1518,7 +1516,7 @@ async function budgetSemanticVariants(
       policyHash: request.policyHash,
       rateNanoUsdPerToken: request.rateNanoUsdPerToken,
       providerUsageReceiptHash: receiptHash,
-    } as unknown as WorkflowRunnerAuthorityEvidence;
+    };
     return exchange(staged, evidence, 20 + index);
   };
 
@@ -1547,8 +1545,8 @@ function controlMessage(
   budgetSourceResult: WorkflowRunnerBudgetSourceResult | null = null,
 ): WorkflowControlAuthorityMessage {
   const staged = exchangeValue.stage;
-  const target = validateWorkflowControlAuthorityMessage(JSON.parse(staged.target.body));
-  const resolutionEvidence = exchangeValue.resolution.evidence as unknown as Json;
+  const target = parseWorkflowControlAuthorityMessageBytes(Buffer.from(staged.target.body, 'utf8'));
+  const resolutionEvidence = asJson(exchangeValue.resolution.evidence, 'resolution evidence');
   const decision = kind !== 'event_receipt';
   const sentAt = decision
     ? CONTROL_DELIVERY_TIMELINE.decisionSentAt
@@ -1611,7 +1609,9 @@ function controlMessage(
       if (budgetSourceResult === null) {
         throw new Error('Budget authorization requires its exact durable source result.');
       }
-      const durableReceipt = JSON.parse(budgetSourceResult.durableReceiptBytes) as Json;
+      const durableReceipt = parseWorkflowRunnerBudgetDurableReceiptBytes(
+        budgetSourceResult.durableReceiptBytes,
+      );
       const sourceReceipt = asJson(
         durableReceipt.operationalProjection,
         'durable budget receipt projection',
@@ -1756,8 +1756,8 @@ function negative(id: string, operation: string, input: Json, execute: () => unk
 
 function exactNegatives(values: Json[]): Json[] {
   const ids = values.map((value) => value.id);
-  if (JSON.stringify(ids) !== JSON.stringify(NEGATIVE_IDS)) {
-    throw new Error(`Negative ID inventory drifted: ${JSON.stringify(ids)}`);
+  if (ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length) {
+    throw new Error(`Negative ID inventory is invalid: ${JSON.stringify(ids)}`);
   }
   return values;
 }
@@ -1773,6 +1773,8 @@ async function goldenVectors() {
   const exchanges = await makeExchanges(budgetRecords);
   const budgetDecisions = budgetDecisionFixtures(budgetRecords);
   const effectVariants = effectSemanticVariants(exchanges);
+  const expiredEffectVariant = requiredExchange(effectVariants, 'effectAuthorizeExpired');
+  const rejectedEffectVariant = requiredExchange(effectVariants, 'effectAuthorizeRejected');
   const semanticVariants = {
     ...effectVariants,
     ...(await budgetSemanticVariants(exchanges, budgetRecords)),
@@ -1816,9 +1818,10 @@ async function goldenVectors() {
     'accepted',
     null,
   );
-  const budgetDatabaseReconciliationMessageValue = structuredClone(
+  const budgetDatabaseReconciliationMessageValue = cloneJson(
     budgetPriorMessage,
-  ) as unknown as Json;
+    'budget database reconciliation message',
+  );
   const budgetDatabaseReconciliationPayload = asJson(
     budgetDatabaseReconciliationMessageValue.payload,
     'budget database reconciliation event receipt payload',
@@ -1909,64 +1912,66 @@ async function goldenVectors() {
 
   const checkpoint = exchanges.checkpoint_commit;
   const badStageUnknown = { ...structuredClone(checkpoint.stage), rawPrompt: 'forbidden' } as Json;
-  const badStageRevision = structuredClone(checkpoint.stage) as unknown as Json;
+  const badStageRevision = cloneJson(checkpoint.stage, 'bad stage revision');
   asJson(badStageRevision.runnerAuthority, 'runner authority').acceptedGlobalRunRevision = 99;
-  const badResolutionHash = structuredClone(checkpoint.resolution) as unknown as Json;
+  const badResolutionHash = cloneJson(checkpoint.resolution, 'bad resolution hash');
   badResolutionHash.evidenceHash = h('0');
-  const badStageReceipt = structuredClone(checkpoint.stageReceipt) as unknown as Json;
+  const badStageReceipt = cloneJson(checkpoint.stageReceipt, 'bad stage receipt');
   badStageReceipt.targetEventId = 'event.cross-spliced';
-  const badResolutionReceipt = structuredClone(checkpoint.resolutionReceipt) as unknown as Json;
+  const badResolutionReceipt = cloneJson(checkpoint.resolutionReceipt, 'bad resolution receipt');
   badResolutionReceipt.evidenceHash = h('f');
-  const badControl = structuredClone(deliveries.accepted.checkpoint_commit) as unknown as Json;
+  const badControl = cloneJson(deliveries.accepted.checkpoint_commit, 'bad control receipt');
   badControl.messageDigest = h('f');
-  const sensitiveEvidence = structuredClone(
+  const sensitiveEvidence = cloneJson(
     exchanges.effect_authorize.resolution,
-  ) as unknown as Json;
+    'sensitive effect resolution',
+  );
   asJson(sensitiveEvidence.evidence, 'effect evidence').providerId = 'raw-provider';
-  const staleResume = structuredClone(exchanges.resume_advance.resolution) as unknown as Json;
+  const staleResume = cloneJson(exchanges.resume_advance.resolution, 'stale resume resolution');
   asJson(
     asJson(staleResume.evidence, 'resume evidence').sourceAuthority,
     'source authority',
   ).acceptedResumeGeneration = 0;
-  const swappedSourceRevision = structuredClone(checkpoint.resolution) as unknown as Json;
+  const swappedSourceRevision = cloneJson(checkpoint.resolution, 'swapped source revision');
   const swappedEvidence = asJson(swappedSourceRevision.evidence, 'swapped evidence');
   const swappedSource = asJson(swappedEvidence.sourceAuthority, 'swapped source authority');
   const runnerAuthority = checkpoint.stage.runnerAuthority;
   swappedSource.expectedRevision = runnerAuthority.expectedGlobalRunRevision;
   swappedSource.acceptedRevision = runnerAuthority.acceptedGlobalRunRevision;
-  const unacceptedStageReceipt = structuredClone(checkpoint.stageReceipt) as unknown as Json;
+  const unacceptedStageReceipt = cloneJson(checkpoint.stageReceipt, 'unaccepted stage receipt');
   unacceptedStageReceipt.status = 'reconciliation_required';
   unacceptedStageReceipt.committedAt = null;
   unacceptedStageReceipt.reconciliationToken = 'reconcile.stage.before-resolution';
-  const sameKeyBodyDrift = structuredClone(checkpoint.stage) as unknown as Json;
+  const sameKeyBodyDrift = cloneJson(checkpoint.stage, 'same-key body drift');
   const sameKeyTarget = asJson(sameKeyBodyDrift.target, 'same-key target');
   sameKeyTarget.body = (sameKeyTarget.body as string).replace(/\n$/u, ' \n');
-  const bodyCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  const bodyCrossSplice = cloneJson(checkpoint.stage, 'body cross-splice');
   asJson(bodyCrossSplice.target, 'body cross-splice target').body =
     exchanges.resume_advance.stage.target.body;
-  const keyCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  const keyCrossSplice = cloneJson(checkpoint.stage, 'key cross-splice');
   asJson(keyCrossSplice.target, 'key cross-splice target').idempotencyKey =
     exchanges.resume_advance.stage.target.idempotencyKey;
-  const fingerprintCrossSplice = structuredClone(checkpoint.stage) as unknown as Json;
+  const fingerprintCrossSplice = cloneJson(checkpoint.stage, 'fingerprint cross-splice');
   asJson(fingerprintCrossSplice.target, 'fingerprint cross-splice target').requestFingerprint =
     exchanges.resume_advance.stage.target.requestFingerprint;
   const alienStageReceipt = exchanges.resume_advance.stageReceipt;
-  const alienStageHashResolution = structuredClone(checkpoint.resolution) as unknown as Json;
+  const alienStageHashResolution = cloneJson(checkpoint.resolution, 'alien stage hash resolution');
   alienStageHashResolution.stageHash = hashWorkflowRunnerAuthorityBindingStage(
     exchanges.resume_advance.stage,
   );
-  const driftedResolutionReceiptStageHash = structuredClone(
+  const driftedResolutionReceiptStageHash = cloneJson(
     checkpoint.resolutionReceipt,
-  ) as unknown as Json;
+    'drifted resolution receipt stage hash',
+  );
   driftedResolutionReceiptStageHash.stageHash = hashWorkflowRunnerAuthorityBindingStage(
     exchanges.resume_advance.stage,
   );
-  const checkpointNestedError = structuredClone(checkpoint.resolution) as unknown as Json;
+  const checkpointNestedError = cloneJson(checkpoint.resolution, 'checkpoint nested error');
   asJson(
     asJson(checkpointNestedError.evidence, 'checkpoint evidence').envelope,
     'checkpoint envelope',
   ).unexpected = true;
-  const checkpointDeepPathError = structuredClone(checkpoint.resolution) as unknown as Json;
+  const checkpointDeepPathError = cloneJson(checkpoint.resolution, 'checkpoint deep path error');
   asJson(
     asJson(
       asJson(
@@ -1977,55 +1982,57 @@ async function goldenVectors() {
     ).runner,
     'checkpoint runner',
   ).unexpected = true;
-  const budgetNestedError = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
+  const budgetNestedError = cloneJson(exchanges.budget_reserve.resolution, 'budget nested error');
   asJson(
     asJson(budgetNestedError.evidence, 'budget evidence').preparedRequest,
     'budget prepared request',
   ).unexpected = true;
-  const approvedExpiryBoundary = structuredClone(
+  const approvedExpiryBoundary = cloneJson(
     exchanges.effect_authorize.resolution,
-  ) as unknown as Json;
+    'approved expiry boundary',
+  );
   asJson(approvedExpiryBoundary.evidence, 'approved effect evidence').expiresAt =
     approvedExpiryBoundary.sentAt;
   approvedExpiryBoundary.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
     approvedExpiryBoundary.evidence,
     'effect_authorize',
   );
-  const expiredExpiryFuture = structuredClone(
-    effectVariants['effectAuthorizeExpired']!.resolution,
-  ) as unknown as Json;
+  const expiredExpiryFuture = cloneJson(expiredEffectVariant.resolution, 'expired expiry future');
   asJson(expiredExpiryFuture.evidence, 'expired effect evidence').expiresAt =
     '2026-08-20T00:12:03.000Z';
   expiredExpiryFuture.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
     expiredExpiryFuture.evidence,
     'effect_authorize',
   );
-  const rejectedExpiryBoundary = structuredClone(
-    effectVariants['effectAuthorizeRejected']!.resolution,
-  ) as unknown as Json;
+  const rejectedExpiryBoundary = cloneJson(
+    rejectedEffectVariant.resolution,
+    'rejected expiry boundary',
+  );
   asJson(rejectedExpiryBoundary.evidence, 'rejected effect evidence').expiresAt =
     rejectedExpiryBoundary.sentAt;
   rejectedExpiryBoundary.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
     rejectedExpiryBoundary.evidence,
     'effect_authorize',
   );
-  const badEventMessage = structuredClone(controlKindMessages.event_receipt) as unknown as Json;
+  const badEventMessage = cloneJson(controlKindMessages.event_receipt, 'bad event message');
   asJson(badEventMessage.payload, 'event receipt payload').receivedEventId = 'event.alien';
-  const badEventDelivery = structuredClone(controlKinds.event_receipt.receipt) as unknown as Json;
+  const badEventDelivery = cloneJson(controlKinds.event_receipt.receipt, 'bad event delivery');
   badEventDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badEventMessage).messageDigest;
-  const badResumeMessage = structuredClone(controlKindMessages.resume_offer) as unknown as Json;
+  const badResumeMessage = cloneJson(controlKindMessages.resume_offer, 'bad resume message');
   asJson(badResumeMessage.payload, 'resume offer payload').newAttemptId = 'logical.resume.alien';
-  const badResumeDelivery = structuredClone(controlKinds.resume_offer.receipt) as unknown as Json;
+  const badResumeDelivery = cloneJson(controlKinds.resume_offer.receipt, 'bad resume delivery');
   badResumeDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badResumeMessage).messageDigest;
-  const badBudgetMessage = structuredClone(
+  const badBudgetMessage = cloneJson(
     controlKindMessages.budget_authorization,
-  ) as unknown as Json;
+    'bad budget message',
+  );
   asJson(badBudgetMessage.payload, 'budget authorization payload').authorizedTokens = '1';
-  const badBudgetDelivery = structuredClone(
+  const badBudgetDelivery = cloneJson(
     controlKinds.budget_authorization.receipt,
-  ) as unknown as Json;
+    'bad budget delivery',
+  );
   badBudgetDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badBudgetMessage).messageDigest;
   const budgetDeliveryInput = (
@@ -2043,9 +2050,9 @@ async function goldenVectors() {
     budgetSourceResult: sourceResult,
   });
   const driftBudgetMessage = (mutate: (payload: Json, message: Json) => void): [Json, Json] => {
-    const message = structuredClone(controlKindMessages.budget_authorization) as unknown as Json;
+    const message = cloneJson(controlKindMessages.budget_authorization, 'drifted budget message');
     mutate(asJson(message.payload, 'budget authorization payload'), message);
-    const receipt = structuredClone(controlKinds.budget_authorization.receipt) as unknown as Json;
+    const receipt = cloneJson(controlKinds.budget_authorization.receipt, 'drifted budget receipt');
     receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message).messageDigest;
     return [message, receipt];
   };
@@ -2063,18 +2070,14 @@ async function goldenVectors() {
       payload.authorityReceiptHash = h('0');
     },
   );
-  const budgetCommittedRunRevisionDriftMessage = structuredClone(
-    controlKindMessages.budget_authorization,
-  ) as unknown as Json;
-  const budgetCommittedRunRevisionDriftReceipt = structuredClone(
-    controlKinds.budget_authorization.receipt,
-  ) as unknown as Json;
-  const committedRevisionPayload = asJson(
-    budgetCommittedRunRevisionDriftMessage.payload,
-    'budget authorization payload',
-  );
-  committedRevisionPayload.committedRunRevision =
-    (committedRevisionPayload.committedRunRevision as number) + 1;
+  const [budgetCommittedRunRevisionDriftMessage, budgetCommittedRunRevisionDriftReceipt] =
+    driftBudgetMessage((payload) => {
+      payload.committedRunRevision = (payload.committedRunRevision as number) + 1;
+    });
+  const [budgetRunnerEnvelopeRevisionDriftMessage, budgetRunnerEnvelopeRevisionDriftReceipt] =
+    driftBudgetMessage((_payload, message) => {
+      message.runRevision = (message.runRevision as number) + 1;
+    });
 
   const missingBudgetSourceInput = budgetDeliveryInput(
     controlKindMessages.budget_authorization,
@@ -2104,14 +2107,42 @@ async function goldenVectors() {
     ...structuredClone(budgetDecisions.reserved),
     decision: budgetDecisions.rejected.decision,
   };
+  const decisionRequestCrossSplice = cloneJson(
+    budgetDecisions.reserved,
+    'decision request cross-splice',
+  );
+  decisionRequestCrossSplice.decision = structuredClone(budgetDecisions.sibling.decision);
+  decisionRequestCrossSplice.ledgerEntry = structuredClone(budgetDecisions.sibling.ledgerEntry);
+  const decisionRequestDurable = cloneJson(
+    parseWorkflowRunnerBudgetDurableReceiptBytes(decisionRequestCrossSplice.durableReceiptBytes),
+    'decision request durable receipt',
+  );
+  const decisionRequestProjection = asJson(
+    decisionRequestDurable.operationalProjection,
+    'decision-request cross-splice projection',
+  );
+  decisionRequestProjection.recordHash = hashWorkflowBudgetAuthorityValue(
+    'reserve-decision',
+    decisionRequestCrossSplice.decision,
+  );
+  decisionRequestProjection.ledgerEntryHash = hashWorkflowBudgetAuthorityValue(
+    'ledger-entry',
+    decisionRequestCrossSplice.ledgerEntry,
+  );
+  decisionRequestDurable.operationalProjectionHash = hashWorkflowBudgetAuthorityValue(
+    'receipt',
+    decisionRequestProjection,
+  );
+  decisionRequestCrossSplice.durableReceiptBytes =
+    canonicalWorkflowBudgetAuthorityJson(decisionRequestDurable);
   const driftDurableSource = (
     source: WorkflowRunnerBudgetSourceResult,
     mutate: (durable: Json) => void,
   ): Json => {
-    const result = structuredClone(source) as unknown as Json;
-    const durable = asJson(
-      JSON.parse(String(result.durableReceiptBytes)),
-      'durable budget receipt',
+    const result = cloneJson(source, 'drifted durable source');
+    const durable = cloneJson(
+      parseWorkflowRunnerBudgetDurableReceiptBytes(result.durableReceiptBytes),
+      'drifted durable receipt',
     );
     mutate(durable);
     result.durableReceiptBytes = canonicalWorkflowBudgetAuthorityJson(durable);
@@ -2137,25 +2168,26 @@ async function goldenVectors() {
     projection.reconciliationToken = 'database-reconciliation-binding';
     durable.operationalProjectionHash = hashWorkflowBudgetAuthorityValue('receipt', projection);
   });
-  const whitespaceBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  const whitespaceBytes = cloneJson(budgetDecisions.reserved, 'whitespace durable bytes');
   whitespaceBytes.durableReceiptBytes = ` ${String(whitespaceBytes.durableReceiptBytes)}`;
-  const duplicateBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  const duplicateBytes = cloneJson(budgetDecisions.reserved, 'duplicate durable bytes');
   duplicateBytes.durableReceiptBytes = String(duplicateBytes.durableReceiptBytes).replace(
     /^\{"authority":"workflow-control",/u,
     '{"authority":"workflow-control","authority":"workflow-control",',
   );
-  const trailingBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  const trailingBytes = cloneJson(budgetDecisions.reserved, 'trailing durable bytes');
   trailingBytes.durableReceiptBytes = `${String(trailingBytes.durableReceiptBytes)}x`;
-  const oversizedBytes = structuredClone(budgetDecisions.reserved) as unknown as Json;
+  const oversizedBytes = cloneJson(budgetDecisions.reserved, 'oversized durable bytes');
   oversizedBytes.durableReceiptBytes = 'x'.repeat(524_289);
   const earlyBudgetMessage = controlMessage(
     budgetDecisions.exchange,
     'budget_authorization',
     budgetDecisions.early,
   );
-  const earlyBudgetReceipt = structuredClone(
+  const earlyBudgetReceipt = cloneJson(
     controlKinds.budget_authorization.receipt,
-  ) as unknown as Json;
+    'early budget receipt',
+  );
   earlyBudgetReceipt.messageDigest =
     prepareWorkflowControlAuthorityMessage(earlyBudgetMessage).messageDigest;
   const lateBudgetMessage = controlMessage(
@@ -2163,9 +2195,10 @@ async function goldenVectors() {
     'budget_authorization',
     budgetDecisions.late,
   );
-  const lateBudgetReceipt = structuredClone(
+  const lateBudgetReceipt = cloneJson(
     controlKinds.budget_authorization.receipt,
-  ) as unknown as Json;
+    'late budget receipt',
+  );
   lateBudgetReceipt.messageDigest =
     prepareWorkflowControlAuthorityMessage(lateBudgetMessage).messageDigest;
   const tsPrepared = asJson(
@@ -2200,58 +2233,66 @@ async function goldenVectors() {
       'reserve ledger value',
     ),
   };
-  const badEffectMessage = structuredClone(
+  const badEffectMessage = cloneJson(
     controlKindMessages.effect_authorization,
-  ) as unknown as Json;
+    'bad effect message',
+  );
   asJson(badEffectMessage.payload, 'effect authorization payload').effectId = 'effect.alien';
-  const badEffectDelivery = structuredClone(
+  const badEffectDelivery = cloneJson(
     controlKinds.effect_authorization.receipt,
-  ) as unknown as Json;
+    'bad effect delivery',
+  );
   badEffectDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badEffectMessage).messageDigest;
-  const badDecisionOrdering = structuredClone(
+  const badDecisionOrdering = cloneJson(
     controlKinds.effect_authorization.receipt,
-  ) as unknown as Json;
+    'bad decision ordering',
+  );
   badDecisionOrdering.companionSequence = 3;
-  const badRouteMessage = structuredClone(controlKindMessages.event_receipt) as unknown as Json;
+  const badRouteMessage = cloneJson(controlKindMessages.event_receipt, 'bad route message');
   badRouteMessage.authorityBackend = 'go';
   badRouteMessage.authority = 'workflow-control';
-  const badRouteDelivery = structuredClone(controlKinds.event_receipt.receipt) as unknown as Json;
+  const badRouteDelivery = cloneJson(controlKinds.event_receipt.receipt, 'bad route delivery');
   badRouteDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(badRouteMessage).messageDigest;
-  const alienControlResolution = structuredClone(checkpoint.resolution) as unknown as Json;
+  const alienControlResolution = cloneJson(checkpoint.resolution, 'alien control resolution');
   alienControlResolution.stageReceiptHash = hashWorkflowRunnerAuthorityBindingReceipt(
     exchanges.resume_advance.stageReceipt,
   );
   alienControlResolution.sentAt = '2026-08-20T00:06:02.000Z';
-  const alienControlResolutionReceipt = structuredClone(
+  const alienControlResolutionReceipt = cloneJson(
     checkpoint.resolutionReceipt,
-  ) as unknown as Json;
+    'alien control resolution receipt',
+  );
   alienControlResolutionReceipt.stageReceiptHash = alienControlResolution.stageReceiptHash;
   alienControlResolutionReceipt.requestHash = hashWorkflowRunnerAuthorityBindingResolution(
-    alienControlResolution as unknown as WorkflowRunnerAuthorityBindingResolution,
+    validateWorkflowRunnerAuthorityBindingResolution(alienControlResolution),
   );
   alienControlResolutionReceipt.committedAt = '2026-08-20T00:06:03.000Z';
-  const sequenceGapMessage = structuredClone(
+  const sequenceGapMessage = cloneJson(
     controlKindMessages.effect_authorization,
-  ) as unknown as Json;
+    'sequence gap message',
+  );
   sequenceGapMessage.sequence = (sequenceGapMessage.sequence as number) + 1;
-  const sequenceGapDelivery = structuredClone(
+  const sequenceGapDelivery = cloneJson(
     controlKinds.effect_authorization.receipt,
-  ) as unknown as Json;
+    'sequence gap delivery',
+  );
   sequenceGapDelivery.controlSequence = sequenceGapMessage.sequence;
   sequenceGapDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(sequenceGapMessage).messageDigest;
-  const timeInversionMessage = structuredClone(
+  const timeInversionMessage = cloneJson(
     controlKindMessages.effect_authorization,
-  ) as unknown as Json;
+    'time inversion message',
+  );
   timeInversionMessage.sentAt = '2026-08-20T00:07:00.500Z';
-  const timeInversionDelivery = structuredClone(
+  const timeInversionDelivery = cloneJson(
     controlKinds.effect_authorization.receipt,
-  ) as unknown as Json;
+    'time inversion delivery',
+  );
   timeInversionDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(timeInversionMessage).messageDigest;
-  const budgetRateInvalid = structuredClone(exchanges.budget_reserve.resolution) as unknown as Json;
+  const budgetRateInvalid = cloneJson(exchanges.budget_reserve.resolution, 'budget rate invalid');
   asJson(budgetRateInvalid.evidence, 'budget evidence').rateNanoUsdPerToken = 'not-a-rate';
   const budgetSettleReceiptHashDrift = settlementStageDrift(
     exchanges.budget_settle,
@@ -2274,9 +2315,10 @@ async function goldenVectors() {
     'settlementStatus',
     'reconciliation_required',
   );
-  const resumeLogicalAttemptReuse = structuredClone(
+  const resumeLogicalAttemptReuse = cloneJson(
     exchanges.resume_advance.resolution,
-  ) as unknown as Json;
+    'resume logical attempt reuse',
+  );
   asJson(resumeLogicalAttemptReuse.evidence, 'resume evidence').logicalResumeAttemptId =
     exchanges.resume_advance.stage.runnerAttemptId;
   resumeLogicalAttemptReuse.evidenceHash = hashWorkflowRunnerAuthorityBindingEvidence(
@@ -2591,14 +2633,14 @@ async function goldenVectors() {
         'validate_resolution_for_stage',
         {
           resolution: expiredExpiryFuture,
-          stage: effectVariants['effectAuthorizeExpired']!.stage,
-          stageReceipt: effectVariants['effectAuthorizeExpired']!.stageReceipt,
+          stage: expiredEffectVariant.stage,
+          stageReceipt: expiredEffectVariant.stageReceipt,
         },
         () =>
           validateWorkflowRunnerAuthorityBindingResolutionForStage(
             expiredExpiryFuture,
-            effectVariants['effectAuthorizeExpired']!.stage,
-            effectVariants['effectAuthorizeExpired']!.stageReceipt,
+            expiredEffectVariant.stage,
+            expiredEffectVariant.stageReceipt,
           ),
       ),
       negative(
@@ -2606,14 +2648,14 @@ async function goldenVectors() {
         'validate_resolution_for_stage',
         {
           resolution: rejectedExpiryBoundary,
-          stage: effectVariants['effectAuthorizeRejected']!.stage,
-          stageReceipt: effectVariants['effectAuthorizeRejected']!.stageReceipt,
+          stage: rejectedEffectVariant.stage,
+          stageReceipt: rejectedEffectVariant.stageReceipt,
         },
         () =>
           validateWorkflowRunnerAuthorityBindingResolutionForStage(
             rejectedExpiryBoundary,
-            effectVariants['effectAuthorizeRejected']!.stage,
-            effectVariants['effectAuthorizeRejected']!.stageReceipt,
+            rejectedEffectVariant.stage,
+            rejectedEffectVariant.stageReceipt,
           ),
       ),
       negative(
@@ -2734,10 +2776,28 @@ async function goldenVectors() {
             budgetDecisions.reserved,
           ],
           [
+            'budget-runner-envelope-revision-drift',
+            budgetRunnerEnvelopeRevisionDriftMessage,
+            budgetRunnerEnvelopeRevisionDriftReceipt,
+            budgetDecisions.reserved,
+          ],
+          [
             'budget-decision-source-result-cross-splice',
             controlKindMessages.budget_authorization,
             controlKinds.budget_authorization.receipt,
             sourceResultCrossSplice,
+          ],
+          [
+            'budget-decision-valid-source-result-cross-splice',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            budgetDecisions.sibling,
+          ],
+          [
+            'budget-durable-request-cross-splice',
+            controlKindMessages.budget_authorization,
+            controlKinds.budget_authorization.receipt,
+            decisionRequestCrossSplice,
           ],
           [
             'budget-durable-manifest-drift',
@@ -3285,7 +3345,11 @@ async function outputs(): Promise<Map<string, Buffer>> {
   const generatedSchemas = await schemas(golden);
   const map = new Map<string, Buffer>();
   for (let index = 0; index < generatedSchemas.length; index += 1) {
-    map.set(bundleFiles[index]!, await pretty(generatedSchemas[index]));
+    const path = bundleFiles[index];
+    if (path === undefined) {
+      throw new Error(`Missing bundle path for generated schema ${index}.`);
+    }
+    map.set(path, await pretty(generatedSchemas[index]));
   }
   map.set(bundleFiles[4], await pretty(golden));
   const artifacts = Object.fromEntries(
@@ -3314,6 +3378,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
         operation,
         ...WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation],
       })),
+      negativeVectorIds: golden.negative.map((vector) => vector.id),
       evidence: {
         closed: true,
         rawFieldsForbidden: [

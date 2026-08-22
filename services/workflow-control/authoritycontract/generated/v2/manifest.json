@@ -130,7 +130,12 @@
     "binaryFloatingPointAuthority": false,
     "flow": ["reserve_before_provider_call", "settle_by_exact_provider_receipt"],
     "nonReservedAuthorization": "zero_tokens_cost_and_calls",
-    "unknownSettlement": "reconciliation_required"
+    "unknownSettlement": "reconciliation_required",
+    "revisionPlanes": {
+      "envelope": "runner_global",
+      "committed": "budget_source_run",
+      "equalityRequired": false
+    }
   },
   "receipts": {
     "operations": [
@@ -221,7 +226,7 @@
     "golden-vectors.json": {
       "path": "golden-vectors.json",
       "byteLength": 44447,
-      "sha256": "4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe"
+      "sha256": "6cb37581c70a6ec83a66c8e0be5dc66e594aaa97488c6fdae6bbccf00ec5420f"
     }
   },
   "bundleFiles": [

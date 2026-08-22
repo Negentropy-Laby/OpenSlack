@@ -17,6 +17,7 @@ import {
 } from '../workflow-runner-v2-descriptor.js';
 import {
   WorkflowRunnerV2Session,
+  workflowRunnerV2BudgetDecisionMatchesRequest,
   type WorkflowRunnerV2ExecutionContext,
 } from '../workflow-runner-v2-session.js';
 import type { RunResult } from '../types.js';
@@ -534,7 +535,7 @@ describe('WorkflowRunnerV2Session', () => {
     expect(value.closed).toEqual([2]);
   });
 
-  it('binds a budget decision to the receipt-advanced run revision', async () => {
+  it('binds a budget decision to the exact request without conflating revision planes', async () => {
     const value = harness(0);
     await handshake(value);
     const offerTask = value.session.receive(leaseOffer(value.sealed));
@@ -559,29 +560,67 @@ describe('WorkflowRunnerV2Session', () => {
       resumeGeneration: 0,
     });
     await value.session.receive(receipt(reserve, 3, 2));
-    await value.session.receive(
-      controlMessage({
-        kind: 'budget_authorization',
-        workflowRunId: value.sealed.workflowRunId,
-        sequence: 4,
-        runRevision: 2,
-        resumeGeneration: 0,
-        correlationId: value.sealed.correlationId,
-        payload: {
-          reservationId: 'reservation.v2',
-          status: 'reserved',
-          authorizedTokens: '100',
-          authorizedCostNanoUsd: '1000',
-          authorizedCalls: '1',
-          authorityReceiptHash: HASH_C,
-          committedRunRevision: 2,
+    const requested = {
+      reservationId: 'reservation.v2',
+      requestedTokens: '100',
+      requestedCostNanoUsd: '1000',
+      requestedCalls: '1',
+    };
+    const decision = controlMessage({
+      kind: 'budget_authorization',
+      workflowRunId: value.sealed.workflowRunId,
+      sequence: 4,
+      runRevision: 2,
+      resumeGeneration: 0,
+      correlationId: value.sealed.correlationId,
+      payload: {
+        reservationId: 'reservation.v2',
+        status: 'reserved',
+        authorizedTokens: '100',
+        authorizedCostNanoUsd: '1000',
+        authorizedCalls: '1',
+        authorityReceiptHash: HASH_C,
+        committedRunRevision: 12,
+      },
+    });
+    expect(workflowRunnerV2BudgetDecisionMatchesRequest(decision, requested)).toBe(true);
+    for (const payload of [
+      { ...decision.payload, authorizedTokens: '99' },
+      { ...decision.payload, authorizedCostNanoUsd: '999' },
+      { ...decision.payload, authorizedCalls: '0' },
+      { ...decision.payload, reservationId: 'reservation.sibling' },
+      {
+        ...decision.payload,
+        status: 'rejected',
+        authorizedTokens: '100',
+        authorizedCostNanoUsd: '0',
+        authorizedCalls: '0',
+      },
+    ]) {
+      expect(
+        workflowRunnerV2BudgetDecisionMatchesRequest({ ...decision, payload }, requested),
+      ).toBe(false);
+    }
+    expect(
+      workflowRunnerV2BudgetDecisionMatchesRequest(
+        {
+          ...decision,
+          payload: {
+            ...decision.payload,
+            status: 'rejected',
+            authorizedTokens: '0',
+            authorizedCostNanoUsd: '0',
+            authorizedCalls: '0',
+          },
         },
-      }),
-    );
+        requested,
+      ),
+    ).toBe(true);
+    await value.session.receive(decision);
     await expect(reserveTask).resolves.toMatchObject({
       kind: 'budget_authorization',
       runRevision: 2,
-      payload: { committedRunRevision: 2 },
+      payload: { committedRunRevision: 12 },
     });
   });
 

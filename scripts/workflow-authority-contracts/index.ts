@@ -8,6 +8,7 @@ import {
   WORKFLOW_CONTROL_AUTHORITY_ADDED_MESSAGE_KINDS,
   WORKFLOW_CONTROL_AUTHORITY_APPROVAL_PLANES,
   WORKFLOW_CONTROL_AUTHORITY_APPROVAL_STATUSES,
+  WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
   WORKFLOW_CONTROL_AUTHORITY_CLAIM,
   WORKFLOW_CONTROL_AUTHORITY_CONTRACT_VERSION,
   WORKFLOW_CONTROL_AUTHORITY_DIRECTIONS,
@@ -586,8 +587,6 @@ function positiveMessages(): WorkflowControlAuthorityMessage[] {
       lastReceiptSequence: 3,
     }),
   ];
-  const budgetAuthorization = values.find((entry) => entry.kind === 'budget_authorization');
-  if (budgetAuthorization !== undefined) budgetAuthorization.runRevision = 5;
   const hello = message('hello', {
     runtimeName: 'node',
     runtimeVersion: '22.14.0',
@@ -885,6 +884,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
         flow: ['reserve_before_provider_call', 'settle_by_exact_provider_receipt'],
         nonReservedAuthorization: 'zero_tokens_cost_and_calls',
         unknownSettlement: 'reconciliation_required',
+        revisionPlanes: WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
       },
       receipts: {
         operations: WORKFLOW_CONTROL_AUTHORITY_RECEIPT_OPERATIONS,

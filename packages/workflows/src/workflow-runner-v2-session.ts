@@ -81,6 +81,31 @@ export interface WorkflowRunnerV2ExecutionContext {
   reportEffectOutcome(payload: Readonly<Record<string, unknown>>): Promise<void>;
 }
 
+export type WorkflowRunnerV2BudgetDecisionRequest = Readonly<Record<string, unknown>>;
+
+export function workflowRunnerV2BudgetDecisionMatchesRequest(
+  decision: WorkflowControlAuthorityMessage,
+  request: WorkflowRunnerV2BudgetDecisionRequest,
+): boolean {
+  const payload = messagePayload(decision);
+  if (payload.reservationId !== request.reservationId) return false;
+  if (payload.status === 'reserved') {
+    return (
+      payload.authorizedTokens === request.requestedTokens &&
+      payload.authorizedCostNanoUsd === request.requestedCostNanoUsd &&
+      payload.authorizedCalls === request.requestedCalls
+    );
+  }
+  if (payload.status === 'rejected' || payload.status === 'reconciliation_required') {
+    return (
+      payload.authorizedTokens === '0' &&
+      payload.authorizedCostNanoUsd === '0' &&
+      payload.authorizedCalls === '0'
+    );
+  }
+  return false;
+}
+
 export interface WorkflowRunnerV2SessionOptions<TPrepared, TWorkflow = WorkflowModule> {
   readonly workspaceId: string;
   readonly runnerBuildHash: string;
@@ -499,7 +524,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
           'budget_reserve_request',
           payload,
           'budget_authorization',
-          (message) => messagePayload(message).reservationId === payload.reservationId,
+          (message) => workflowRunnerV2BudgetDecisionMatchesRequest(message, payload),
         );
       },
       reportBudgetUsage: async (payload: Readonly<Record<string, unknown>>) => {
@@ -782,10 +807,11 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     }
     this.#assertLeaseIdentity(message, true);
     this.#assertIncreasingControlSequence(message);
-    // The frozen parser proves authorityReceiptHash is a syntactically valid
-    // hash and binds budget committedRunRevision to the envelope. Only the Go
-    // control authority can recompute that receipt from its durable record;
-    // this TS session never treats the hash itself as a locally minted grant.
+    // The frozen parser proves the closed wire shape. The Go runner store binds
+    // budget authorityReceiptHash and committedRunRevision to the exact durable
+    // receipt before delivery; this TypeScript session binds only the decision
+    // amounts to its outstanding request and never conflates either revision
+    // plane. Full F2a source-result replay remains a qualification contract.
     if (
       message.kind !== outstanding.expectedDecision.kind ||
       !outstanding.expectedDecision.match(message)

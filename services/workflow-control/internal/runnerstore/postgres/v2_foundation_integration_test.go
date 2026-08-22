@@ -21,12 +21,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
 func TestGS9F1QualificationFoundation(t *testing.T) {
+	t.Run("budget fixture produces an exact canonical E1 receipt", func(t *testing.T) {
+		route := &authoritycontract.Route{Backend: budgetstore.Backend, Authority: budgetstore.Authority,
+			RoutingEpoch: 1, AuthorityBuildHash: strings.Repeat("a", 64)}
+		lease := runnerstore.AttemptLease{WorkspaceID: "workspace.fixture", JobID: "job.fixture",
+			WorkflowRunID: "run.fixture", CorrelationID: "correlation.fixture", AttemptID: "attempt.fixture",
+			LeaseID: "lease.fixture", FencingToken: 1, AuthorityRoute: route, RunRevision: 1, ResumeGeneration: 0}
+		input := v2BudgetReserve(t, lease, 2, "event-budget-fixture")
+		adapter := &budgetFoundationAdapter{}
+		outcome, err := adapter.ReserveBudget(t.Context(), runnerstore.V2AuthorityRequest{
+			Message: input.Message, ExactBytes: input.ExactBytes, Lease: lease,
+		})
+		if err != nil || len(outcome.ExactReceiptBytes) == 0 || outcome.Decision == nil || outcome.Decision.Sequence == nil {
+			t.Fatalf("budget fixture did not produce durable authority evidence: %+v %v", outcome, err)
+		}
+		if _, _, err := validateV2AuthorityResult(input.Message, *outcome.Decision.Sequence, outcome); err != nil {
+			t.Fatalf("budget fixture failed the live runner binding: %v", err)
+		}
+	})
+
 	marker, configured := os.LookupEnv("WORKFLOW_RUNNER_GS9F1_QUALIFICATION")
 	if !configured || marker == "" {
 		t.Skip("GS9-F1 qualification marker is not configured")
@@ -121,6 +142,53 @@ func TestGS9F1QualificationFoundation(t *testing.T) {
 		conflict.ExactBytes = []byte(prepared.Body)
 		if _, err := repository.RecordV2Event(ctx, conflict); !runnerstore.IsCode(err, runnerstore.ErrorIdempotencyConflict) || adapter.applyCalls != 1 {
 			t.Fatalf("eventId conflict reached authority: calls=%d err=%v", adapter.applyCalls, err)
+		}
+	})
+
+	t.Run("budget authority binds durable and runner revision planes independently", func(t *testing.T) {
+		zeroOffset := int64(0)
+		for _, test := range []struct {
+			name                    string
+			adapter                 *budgetFoundationAdapter
+			wantAuthorityBindingErr bool
+		}{
+			{name: "distinct revisions", adapter: &budgetFoundationAdapter{}},
+			{name: "coincident revisions", adapter: &budgetFoundationAdapter{sourceRevisionOffset: &zeroOffset}},
+			{name: "committed revision drift", adapter: &budgetFoundationAdapter{committedRevisionDelta: 1}, wantAuthorityBindingErr: true},
+			{name: "receipt hash drift", adapter: &budgetFoundationAdapter{driftReceiptHash: true}, wantAuthorityBindingErr: true},
+			{name: "receipt operation drift", adapter: &budgetFoundationAdapter{driftReceiptOperation: true}, wantAuthorityBindingErr: true},
+			{name: "receipt status drift", adapter: &budgetFoundationAdapter{driftReceiptStatus: true}, wantAuthorityBindingErr: true},
+			{name: "receipt reservation drift", adapter: &budgetFoundationAdapter{driftReceiptReservation: true}, wantAuthorityBindingErr: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				repository := NewWithV2Authorities(pool, runnerstore.V2AuthorityPorts{Budget: test.adapter})
+				lease := startV2Lease(t, repository, "budget-planes-"+strings.ReplaceAll(test.name, " ", "-"))
+				budget := v2BudgetReserve(t, lease, 2, "event-budget-planes-"+strings.ReplaceAll(test.name, " ", "-"))
+				recorded, err := repository.RecordV2Event(ctx, budget)
+				if test.wantAuthorityBindingErr {
+					var reconciliation *runnerstore.Error
+					if !runnerstore.IsCode(err, runnerstore.ErrorReconciliation) ||
+						!errors.As(err, &reconciliation) ||
+						!runnerstore.IsCode(reconciliation.Cause, runnerstore.ErrorAuthorityBinding) {
+						t.Fatalf("drifted committed budget binding did not latch its mismatch for reconciliation: %v", err)
+					}
+					return
+				}
+				if err != nil || recorded.Decision == nil {
+					t.Fatalf("valid budget revision planes were rejected: %+v %v", recorded, err)
+				}
+				payload := recorded.Decision.Payload
+				committedRevision, ok := payload["committedRunRevision"].(int64)
+				if !ok {
+					t.Fatalf("budget committed revision is not int64: %T", payload["committedRunRevision"])
+				}
+				if test.adapter.sourceRevisionOffset == nil && committedRevision == *recorded.Decision.RunRevision {
+					t.Fatal("independent budget fixture accidentally conflated its revision planes")
+				}
+				if test.adapter.sourceRevisionOffset != nil && committedRevision != *recorded.Decision.RunRevision {
+					t.Fatal("coincident revision values were rejected as if equality were forbidden")
+				}
+			})
 		}
 	})
 
@@ -790,37 +858,164 @@ func deliverV2Control(t testing.TB, repository *Repository, attemptID, eventID, 
 }
 
 type budgetFoundationAdapter struct {
-	applyCalls, readCalls int
-	failApplyResponse     bool
-	failRead              bool
-	stored                runnerstore.V2AuthorityOutcome
+	applyCalls, readCalls   int
+	failApplyResponse       bool
+	failRead                bool
+	sourceRevisionOffset    *int64
+	committedRevisionDelta  int64
+	driftReceiptHash        bool
+	driftReceiptOperation   bool
+	driftReceiptStatus      bool
+	driftReceiptReservation bool
+	stored                  runnerstore.V2AuthorityOutcome
 }
 
 func (adapter *budgetFoundationAdapter) ReserveBudget(_ context.Context, request runnerstore.V2AuthorityRequest) (runnerstore.V2AuthorityOutcome, error) {
 	adapter.applyCalls++
-	receipt := []byte(`{"schema":"test-only-budget-receipt"}`)
+	const defaultSourceRevisionOffset int64 = 10
+	runnerRevision, generation := *request.Message.RunRevision+1, *request.Message.ResumeGeneration
+	sourceRevisionOffset := defaultSourceRevisionOffset
+	if adapter.sourceRevisionOffset != nil {
+		sourceRevisionOffset = *adapter.sourceRevisionOffset
+	}
+	sourceRunRevision := *request.Message.RunRevision + sourceRevisionOffset
+	requestedAt, err := time.Parse(time.RFC3339Nano, request.Message.SentAt)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	committedAt := runnerstore.CanonicalTimestamp(requestedAt.Add(time.Millisecond))
+	zeroQuantities := func() budgetcontract.Record {
+		return budgetcontract.Record{"tokens": "0", "nanoUsd": "0", "calls": "0"}
+	}
+	buildHash := *request.Message.AuthorityBuildHash
+	route := budgetcontract.Record{
+		"backend": budgetstore.Backend, "authority": budgetstore.Authority,
+		"routingEpoch": *request.Message.RoutingEpoch, "authorityBuildHash": buildHash,
+	}
+	account, err := budgetcontract.ValidateAccount(budgetcontract.Record{
+		"schema": budgetcontract.SchemaAccount, "contractVersion": budgetcontract.ContractVersion,
+		"authority": budgetcontract.Authority, "writer": budgetcontract.Writer, "goRole": budgetcontract.GoRole,
+		"goAuthorityClaim": budgetcontract.GoAuthorityClaim, "goAuthorityEligible": false,
+		"workspaceId": request.Message.WorkspaceID, "runId": *request.Message.WorkflowRunID,
+		"accountId": "account-1", "policyHash": request.Message.Payload["policyHash"], "route": route,
+		"accountRevision": int64(0), "runRevision": sourceRunRevision,
+		"limit":    budgetcontract.Record{"tokens": "100", "nanoUsd": "100", "calls": "10"},
+		"reserved": zeroQuantities(), "settled": zeroQuantities(),
+		"updatedAt": runnerstore.CanonicalTimestamp(requestedAt.Add(-time.Millisecond)),
+	})
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	reserveRequest := budgetcontract.Record{
+		"schema": budgetcontract.SchemaReserveRequest, "contractVersion": budgetcontract.ContractVersion,
+		"authority": budgetcontract.Authority, "writer": budgetcontract.Writer, "goRole": budgetcontract.GoRole,
+		"goAuthorityClaim": budgetcontract.GoAuthorityClaim, "goAuthorityEligible": false,
+		"workspaceId": request.Message.WorkspaceID, "runId": *request.Message.WorkflowRunID,
+		"accountId": "account-1", "reservationId": request.Message.Payload["reservationId"],
+		"callId": request.Message.Payload["callId"], "providerAttempt": "1",
+		"expectedProviderHash":    "sha256:" + strings.Repeat("1", 64),
+		"expectedModelHash":       "sha256:" + strings.Repeat("2", 64),
+		"expectedProviderRunHash": "sha256:" + strings.Repeat("3", 64),
+		"correlationId":           request.Message.CorrelationID,
+		"policyHash":              request.Message.Payload["policyHash"], "route": route,
+		"expectedAccountRevision": int64(0), "expectedRunRevision": sourceRunRevision,
+		"rateNanoUsdPerToken": "1",
+		"requested": budgetcontract.Record{
+			"tokens":  request.Message.Payload["requestedTokens"],
+			"nanoUsd": request.Message.Payload["requestedCostNanoUsd"],
+			"calls":   request.Message.Payload["requestedCalls"],
+		},
+		"requestedAt": request.Message.SentAt,
+	}
+	preparedBudget, err := budgetcontract.PrepareRequest("reserve", reserveRequest, "runner-v2-foundation")
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	evaluation, err := budgetcontract.EvaluateReserve(account, reserveRequest, committedAt)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	recordHash, err := budgetcontract.HashValue("reserve-decision", evaluation.Decision)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	ledgerHash, err := budgetcontract.HashValue("ledger-entry", evaluation.LedgerEntry)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	budgetReceipt, err := budgetcontract.ValidateReceipt(budgetcontract.Record{
+		"schema": budgetcontract.SchemaReceipt, "contractVersion": budgetcontract.ContractVersion,
+		"authority": budgetcontract.Authority, "writer": budgetcontract.Writer, "goRole": budgetcontract.GoRole,
+		"goAuthorityClaim": budgetcontract.GoAuthorityClaim, "goAuthorityEligible": false,
+		"operation": "reserve", "status": "accepted", "workspaceId": request.Message.WorkspaceID,
+		"runId": *request.Message.WorkflowRunID, "accountId": "account-1",
+		"reservationId": request.Message.Payload["reservationId"], "callId": request.Message.Payload["callId"],
+		"expectedAccountRevision": int64(0), "acceptedAccountRevision": int64(1),
+		"expectedRunRevision": sourceRunRevision, "acceptedRunRevision": sourceRunRevision + 1,
+		"idempotencyKey": preparedBudget.IdempotencyKey, "requestFingerprint": preparedBudget.RequestFingerprint,
+		"requestHash": preparedBudget.RequestHash, "recordHash": recordHash, "ledgerEntryHash": ledgerHash,
+		"correlationId": request.Message.CorrelationID, "serviceBuildHash": buildHash,
+		"committedAt": committedAt, "reconciliationToken": nil,
+	})
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	if _, err := budgetcontract.ValidateReceiptForResult(budgetReceipt, preparedBudget, evaluation.Decision, evaluation.LedgerEntry, nil); err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	durableReceipt, err := budgetstore.NewDurableRecord(budgetstore.RecordKindReceipt, budgetReceipt, buildHash)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
+	if adapter.driftReceiptOperation {
+		durableReceipt.OperationalProjection["operation"] = "settle"
+	}
+	if adapter.driftReceiptStatus {
+		durableReceipt.OperationalProjection["status"] = "provider_reconciliation_required"
+		durableReceipt.OperationalProjection["reconciliationToken"] = "budget-fixture-reconciliation"
+	}
+	if adapter.driftReceiptReservation {
+		durableReceipt.OperationalProjection["reservationId"] = "reservation.sibling"
+	}
+	if adapter.driftReceiptOperation || adapter.driftReceiptStatus || adapter.driftReceiptReservation {
+		durableReceipt.OperationalProjectionHash, err = budgetcontract.HashValue("receipt", durableReceipt.OperationalProjection)
+		if err != nil {
+			return runnerstore.V2AuthorityOutcome{}, err
+		}
+	}
+	receipt, err := budgetstore.EncodeDurableRecord(durableReceipt)
+	if err != nil {
+		return runnerstore.V2AuthorityOutcome{}, err
+	}
 	receiptHash := sha256.Sum256(receipt)
-	revision, generation := *request.Message.RunRevision+1, *request.Message.ResumeGeneration
+	receiptHashText := hex.EncodeToString(receiptHash[:])
+	if adapter.driftReceiptHash {
+		receiptHashText = strings.Repeat("f", 64)
+	}
 	sequence := *request.Message.Sequence + 2
-	expiresAt := runnerstore.CanonicalTimestamp(time.Now().UTC().Add(time.Minute))
+	authorization, authorizationOK := evaluation.Decision["authorization"].(budgetcontract.Record)
+	acceptedSourceRevision, revisionOK := budgetReceipt["acceptedRunRevision"].(int64)
+	if !authorizationOK || !revisionOK {
+		return runnerstore.V2AuthorityOutcome{}, errors.New("validated budget fixture lost its typed projection")
+	}
 	decision := authoritycontract.Message{Schema: authoritycontract.MessageSchema, ProtocolVersion: authoritycontract.ProtocolVersion,
 		Kind: authoritycontract.KindBudgetAuthorization, WorkspaceID: request.Message.WorkspaceID, JobID: request.Message.JobID,
 		WorkflowRunID: request.Message.WorkflowRunID, AttemptID: request.Message.AttemptID, LeaseID: request.Message.LeaseID,
 		FencingToken: request.Message.FencingToken, Sequence: &sequence, AuthorityBackend: request.Message.AuthorityBackend,
 		Authority: request.Message.Authority, RoutingEpoch: request.Message.RoutingEpoch, AuthorityBuildHash: request.Message.AuthorityBuildHash,
-		RunRevision: &revision, ResumeGeneration: &generation, EventID: "decision-" + request.Message.EventID,
+		RunRevision: &runnerRevision, ResumeGeneration: &generation, EventID: "decision-" + request.Message.EventID,
 		CorrelationID: request.Message.CorrelationID, SentAt: request.Message.SentAt, Payload: map[string]any{
-			"reservationId": request.Message.Payload["reservationId"], "status": "reserved", "authorizedTokens": "1",
-			"authorizedCostNanoUsd": "1", "authorizedCalls": "1", "authorityReceiptHash": hex.EncodeToString(receiptHash[:]),
-			"committedRunRevision": revision,
+			"reservationId": request.Message.Payload["reservationId"], "status": evaluation.Decision["status"],
+			"authorizedTokens": authorization["tokens"], "authorizedCostNanoUsd": authorization["nanoUsd"],
+			"authorizedCalls": authorization["calls"], "authorityReceiptHash": receiptHashText,
+			"committedRunRevision": acceptedSourceRevision + adapter.committedRevisionDelta,
 		}}
-	_ = expiresAt // budget decisions do not carry expiry; keep the test clock explicit.
 	prepared, err := prepareV2Message(decision)
 	if err != nil {
 		return runnerstore.V2AuthorityOutcome{}, err
 	}
 	adapter.stored = runnerstore.V2AuthorityOutcome{Operation: authoritycontract.ReceiptBudgetReserve, ExactReceiptBytes: receipt,
-		AcceptedRunRevision: revision, AcceptedResumeGeneration: generation, Decision: &decision, DecisionBytes: []byte(prepared.Body)}
+		AcceptedRunRevision: runnerRevision, AcceptedResumeGeneration: generation, Decision: &decision, DecisionBytes: []byte(prepared.Body)}
 	if adapter.failApplyResponse {
 		return runnerstore.V2AuthorityOutcome{}, errors.New("simulated authority response loss")
 	}
@@ -833,6 +1028,9 @@ func (adapter *budgetFoundationAdapter) ReadBudgetReceipt(context.Context, autho
 	adapter.readCalls++
 	if adapter.failRead {
 		return runnerstore.V2AuthorityOutcome{}, errors.New("simulated unreadable authority receipt")
+	}
+	if len(adapter.stored.ExactReceiptBytes) == 0 {
+		return runnerstore.V2AuthorityOutcome{}, errors.New("budget foundation fixture has no durable receipt")
 	}
 	return adapter.stored, nil
 }

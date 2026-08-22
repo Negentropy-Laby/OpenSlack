@@ -20,9 +20,9 @@ export const WORKFLOW_BUDGET_AUTHORITY_ROUNDING = 'half_up_nonnegative' as const
 export const WORKFLOW_BUDGET_AUTHORITY_IDEMPOTENCY_PREFIX =
   'openslack.workflow-budget-authority.v1.' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_V2_MANIFEST_SHA256 =
-  '62ae5761447347dd5b6a8c408f5d453a4043f02226163bb5671c552cb8f556f1' as const;
+  '2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_V2_GOLDEN_SHA256 =
-  '4e969ba38dbc5f73ff500244e76769d40a771171e830031d0300629a99fee3fe' as const;
+  '6cb37581c70a6ec83a66c8e0be5dc66e594aaa97488c6fdae6bbccf00ec5420f' as const;
 export const WORKFLOW_BUDGET_RUNNER_V1_MANIFEST_SHA256 =
   '908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6' as const;
 export const WORKFLOW_BUDGET_RUNNER_V1_GOLDEN_SHA256 =
@@ -576,11 +576,15 @@ function quantitiesEqual(left: WorkflowBudgetQuantities, right: WorkflowBudgetQu
   );
 }
 
-function hashValue(domain: string, value: unknown): string {
+function hashCanonicalValue(domain: string, canonical: string): string {
   return createHash('sha256')
     .update(`openslack.workflow-budget-authority.${domain}.v1\0`, 'utf8')
-    .update(canonicalWorkflowEffectJson(value), 'utf8')
+    .update(canonical, 'utf8')
     .digest('hex');
+}
+
+function hashValue(domain: string, value: unknown): string {
+  return hashCanonicalValue(domain, canonicalWorkflowEffectJson(value));
 }
 
 export function hashWorkflowBudgetAuthorityValue(domain: string, value: unknown): string {
@@ -907,9 +911,14 @@ export function evaluateWorkflowBudgetReserve(
   return immutableContractValue({ decision, reservation, ledgerEntry });
 }
 
-export function validateWorkflowBudgetReserveDecision(
+interface ValidatedWorkflowBudgetReserveDecision {
+  readonly decision: WorkflowBudgetReserveDecision;
+  readonly canonicalRequest: string;
+}
+
+function validateWorkflowBudgetReserveDecisionWithRequest(
   value: unknown,
-): WorkflowBudgetReserveDecision {
+): ValidatedWorkflowBudgetReserveDecision {
   const root = closed(
     value,
     [
@@ -942,7 +951,8 @@ export function validateWorkflowBudgetReserveDecision(
     );
   }
   const requestHash = hash(own(root, 'requestHash'), '$/requestHash');
-  if (requestHash !== hashWorkflowBudgetAuthorityValue('reserve-request', request)) {
+  const canonicalRequest = canonicalWorkflowBudgetAuthorityJson(request);
+  if (requestHash !== hashCanonicalValue('reserve-request', canonicalRequest)) {
     fail(
       'WORKFLOW_BUDGET_AUTHORITY_HASH_MISMATCH',
       '$/requestHash',
@@ -1005,7 +1015,13 @@ export function validateWorkflowBudgetReserveDecision(
     decidedAt,
   } satisfies WorkflowBudgetReserveDecision);
   assertExact(result);
-  return result;
+  return { decision: result, canonicalRequest };
+}
+
+export function validateWorkflowBudgetReserveDecision(
+  value: unknown,
+): WorkflowBudgetReserveDecision {
+  return validateWorkflowBudgetReserveDecisionWithRequest(value).decision;
 }
 
 export function validateWorkflowBudgetReservation(value: unknown): WorkflowBudgetReservation {
@@ -1811,9 +1827,15 @@ export function prepareWorkflowBudgetAuthorityRequest(
   });
 }
 
-export function validateWorkflowBudgetPreparedRequest(
+interface ValidatedWorkflowBudgetPreparedRequest {
+  readonly prepared: WorkflowBudgetPreparedRequest;
+  readonly request: WorkflowBudgetReserveRequest | WorkflowBudgetSettlementRequest;
+  readonly canonicalRequest: string;
+}
+
+function validateWorkflowBudgetPreparedRequestWithRecord(
   value: unknown,
-): WorkflowBudgetPreparedRequest {
+): ValidatedWorkflowBudgetPreparedRequest {
   const root = closed(
     value,
     [
@@ -1854,7 +1876,8 @@ export function validateWorkflowBudgetPreparedRequest(
     operation === 'reserve'
       ? validateWorkflowBudgetReserveRequest(parsed)
       : validateWorkflowBudgetSettlementRequest(parsed);
-  if (`${canonicalWorkflowBudgetAuthorityJson(request)}\n` !== body) {
+  const canonicalRequest = canonicalWorkflowBudgetAuthorityJson(request);
+  if (`${canonicalRequest}\n` !== body) {
     fail(
       'WORKFLOW_BUDGET_AUTHORITY_HASH_MISMATCH',
       '$/body',
@@ -1888,7 +1911,7 @@ export function validateWorkflowBudgetPreparedRequest(
       'Request fingerprint drifted.',
     );
   }
-  return immutableContractValue({
+  const prepared = immutableContractValue({
     schema: literal(own(root, 'schema'), WORKFLOW_BUDGET_PREPARED_REQUEST_SCHEMA, '$/schema'),
     operation,
     method: literal(own(root, 'method'), 'POST' as const, '$/method'),
@@ -1899,19 +1922,20 @@ export function validateWorkflowBudgetPreparedRequest(
     idempotencyKey,
     requestFingerprint: fingerprint,
   } satisfies WorkflowBudgetPreparedRequest);
+  return { prepared, request, canonicalRequest };
 }
 
-export function validateWorkflowBudgetReceiptForRequest(
-  receiptValue: unknown,
-  preparedValue: unknown,
+export function validateWorkflowBudgetPreparedRequest(
+  value: unknown,
+): WorkflowBudgetPreparedRequest {
+  return validateWorkflowBudgetPreparedRequestWithRecord(value).prepared;
+}
+
+function validateWorkflowBudgetReceiptForPreparedRequest(
+  receipt: WorkflowBudgetReceipt,
+  validatedPrepared: ValidatedWorkflowBudgetPreparedRequest,
 ): WorkflowBudgetReceipt {
-  const receipt = validateWorkflowBudgetReceipt(receiptValue);
-  const prepared = validateWorkflowBudgetPreparedRequest(preparedValue);
-  const parsed = parseWorkflowBudgetAuthorityBytes(Buffer.from(prepared.body, 'utf8'));
-  const request =
-    prepared.operation === 'reserve'
-      ? validateWorkflowBudgetReserveRequest(parsed)
-      : validateWorkflowBudgetSettlementRequest(parsed);
+  const { prepared, request } = validatedPrepared;
   if (
     receipt.operation !== prepared.operation ||
     receipt.workspaceId !== request.workspaceId ||
@@ -1934,6 +1958,16 @@ export function validateWorkflowBudgetReceiptForRequest(
     );
   }
   return receipt;
+}
+
+export function validateWorkflowBudgetReceiptForRequest(
+  receiptValue: unknown,
+  preparedValue: unknown,
+): WorkflowBudgetReceipt {
+  return validateWorkflowBudgetReceiptForPreparedRequest(
+    validateWorkflowBudgetReceipt(receiptValue),
+    validateWorkflowBudgetPreparedRequestWithRecord(preparedValue),
+  );
 }
 
 export function validateWorkflowBudgetLedgerEntry(value: unknown): WorkflowBudgetLedgerEntry {
@@ -2157,19 +2191,37 @@ export function validateWorkflowBudgetReceipt(value: unknown): WorkflowBudgetRec
   return result;
 }
 
-export function validateWorkflowBudgetReceiptForResult(
+interface ValidatedWorkflowBudgetReceiptResult {
+  readonly receipt: WorkflowBudgetReceipt;
+  readonly record: WorkflowBudgetReserveDecision | WorkflowBudgetSettlement;
+  readonly ledger: WorkflowBudgetLedgerEntry;
+}
+
+export function validateWorkflowBudgetReceiptResult(
   receiptValue: unknown,
   preparedValue: unknown,
   recordValue: unknown,
   ledgerValue: unknown,
   reconciliationValue: unknown | null,
-): WorkflowBudgetReceipt {
-  const receipt = validateWorkflowBudgetReceiptForRequest(receiptValue, preparedValue);
+): ValidatedWorkflowBudgetReceiptResult {
+  const receipt = validateWorkflowBudgetReceipt(receiptValue);
+  const validatedPrepared = validateWorkflowBudgetPreparedRequestWithRecord(preparedValue);
+  validateWorkflowBudgetReceiptForPreparedRequest(receipt, validatedPrepared);
   const ledger = validateWorkflowBudgetLedgerEntry(ledgerValue);
-  const record =
+  const reserve =
     receipt.operation === 'reserve'
-      ? validateWorkflowBudgetReserveDecision(recordValue)
-      : validateWorkflowBudgetSettlement(recordValue);
+      ? validateWorkflowBudgetReserveDecisionWithRequest(recordValue)
+      : null;
+  const record = reserve?.decision ?? validateWorkflowBudgetSettlement(recordValue);
+  const canonicalRecordRequest =
+    reserve?.canonicalRequest ?? canonicalWorkflowBudgetAuthorityJson(record.request);
+  if (canonicalRecordRequest !== validatedPrepared.canonicalRequest) {
+    fail(
+      'WORKFLOW_BUDGET_AUTHORITY_IDENTITY_MISMATCH',
+      '$/request',
+      'Durable budget result does not bind the prepared request.',
+    );
+  }
   const recordDomain = receipt.operation === 'reserve' ? 'reserve-decision' : 'settlement';
   const recordHash = hashWorkflowBudgetAuthorityValue(recordDomain, record);
   const ledgerHash = hashWorkflowBudgetAuthorityValue('ledger-entry', ledger);
@@ -2230,7 +2282,23 @@ export function validateWorkflowBudgetReceiptForResult(
       'Accepted result receipt status drifted.',
     );
   }
-  return receipt;
+  return { receipt, record, ledger };
+}
+
+export function validateWorkflowBudgetReceiptForResult(
+  receiptValue: unknown,
+  preparedValue: unknown,
+  recordValue: unknown,
+  ledgerValue: unknown,
+  reconciliationValue: unknown | null,
+): WorkflowBudgetReceipt {
+  return validateWorkflowBudgetReceiptResult(
+    receiptValue,
+    preparedValue,
+    recordValue,
+    ledgerValue,
+    reconciliationValue,
+  ).receipt;
 }
 
 export function validateWorkflowBudgetReconciliation(value: unknown): WorkflowBudgetReconciliation {
