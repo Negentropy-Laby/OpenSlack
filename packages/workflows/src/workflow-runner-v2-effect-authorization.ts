@@ -127,7 +127,7 @@ function hasExactKeys(value: unknown, keys: readonly string[]): value is Record<
 }
 
 class WorkflowRunnerV2EffectSiblingJournal {
-  readonly #root: string;
+  #root: string;
   readonly #security = productionJournalSecurity();
   #records?: string;
   #locks?: string;
@@ -138,6 +138,7 @@ class WorkflowRunnerV2EffectSiblingJournal {
 
   async initialize(): Promise<void> {
     const root = await ensureOwnerDirectory(this.#root, this.#security);
+    this.#root = root;
     const entries = await readdir(root, { withFileTypes: true });
     if (
       entries.some(

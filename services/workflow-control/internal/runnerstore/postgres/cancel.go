@@ -247,7 +247,7 @@ func (repository *Repository) MarkControlDelivered(ctx context.Context, attemptI
 		}
 	}
 	if state == "pending" {
-		tag, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_control_messages SET delivery_state='delivered',delivered_at=$1 WHERE attempt_id=$2 AND control_event_id=$3 AND kind=$4 AND delivery_state='pending'`, deliveredAt.UTC(), attemptID, eventID, kind)
+		tag, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_control_messages SET delivery_state='delivered',delivery_started_at=$1,delivered_at=$1 WHERE attempt_id=$2 AND control_event_id=$3 AND kind=$4 AND delivery_state='pending'`, deliveredAt.UTC(), attemptID, eventID, kind)
 		if updateErr != nil {
 			return mapWriteFailure("mark runner control delivered", updateErr)
 		}

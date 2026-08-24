@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   canonicalWorkflowControlAuthorityJson,
@@ -66,6 +66,11 @@ import {
   createWorkflowRunnerV2RuntimeAdmissionClient,
   prepareWorkflowRunnerV2RuntimeAdmission,
 } from '../workflow-runner-v2-runtime-admission.js';
+
+// Real Windows ACL hardening is intentionally subprocess-backed. Hosted runners
+// and developer machines can exceed the generic 5s unit-test budget while still
+// remaining within each security subprocess's closed timeout.
+vi.setConfig({ testTimeout: process.platform === 'win32' ? 120_000 : 30_000 });
 
 type ExactVector<T> = { readonly value: T; readonly canonicalBytes: string };
 type Exchange = {
@@ -149,8 +154,6 @@ async function journalRoot(): Promise<string> {
   await chmod(root, 0o700);
   roots.push(root);
   const journal = resolve(root, 'binding-journal');
-  await mkdir(journal, { mode: 0o700 });
-  await chmod(journal, 0o700);
   return journal;
 }
 

@@ -454,6 +454,32 @@ func TestNegotiationWithIndependentPreleaseCorrelation(t *testing.T) {
 	}
 }
 
+func TestV1ControlDeliverySatisfiesF2BPhaseConstraint(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := t.Context()
+	repository := New(pool)
+	lease := submitAndClaim(t, repository, "v1-control-delivery-phase")
+	hello := helloEnvelope(lease.WorkspaceID, "hello-correlation-delivery-phase", exactCapabilities(), int64(1))
+	negotiation, err := repository.RecordNegotiation(ctx, negotiationInput(t, lease, hello))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveredAt := time.Now().UTC().Truncate(time.Millisecond)
+	for _, control := range []runnerprotocol.Envelope{negotiation.HelloAck, lease.LeaseOffer} {
+		if err := repository.MarkControlDelivered(ctx, lease.AttemptID, control.EventID, string(control.Kind), deliveredAt); err != nil {
+			t.Fatalf("deliver %s control under F2b phase constraint: %v", control.Kind, err)
+		}
+		var state string
+		var startedAt, completedAt time.Time
+		if err := pool.QueryRow(ctx, `SELECT delivery_state,delivery_started_at,delivered_at FROM workflow_runner_control_messages WHERE control_event_id=$1`, control.EventID).Scan(&state, &startedAt, &completedAt); err != nil {
+			t.Fatal(err)
+		}
+		if state != "delivered" || !startedAt.Equal(deliveredAt) || !completedAt.Equal(deliveredAt) {
+			t.Fatalf("%s control delivery phase mismatch: state=%s started=%s delivered=%s", control.Kind, state, startedAt, completedAt)
+		}
+	}
+}
+
 func TestNegotiationRejectsIncompleteRuntimeCapabilities(t *testing.T) {
 	tests := []struct {
 		name          string

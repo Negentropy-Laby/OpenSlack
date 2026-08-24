@@ -469,7 +469,7 @@ describe('GS8-B workflow runner worker', () => {
       expect(authorizationCalls).toBe(1);
       expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
     }
-  }, 20_000);
+  }, process.platform === 'win32' ? 120_000 : 20_000);
 
   it('is default-off and requires a closed valid startup configuration', () => {
     expect(() => loadWorkflowRunnerWorkerConfig({})).toThrow(WorkflowRunnerWorkerConfigError);

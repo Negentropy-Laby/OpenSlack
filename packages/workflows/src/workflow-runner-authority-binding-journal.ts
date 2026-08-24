@@ -233,7 +233,7 @@ export function workflowRunnerAuthorityBindingJournalEntryClosed(
 }
 
 export class WorkflowRunnerAuthorityBindingJournal {
-  readonly #root: string;
+  #root: string;
   readonly #security: WorkflowControlShadowJournalSecurityDependencies;
   #bindings?: string;
   #locks?: string;
@@ -254,6 +254,7 @@ export class WorkflowRunnerAuthorityBindingJournal {
 
   async initialize(): Promise<void> {
     const root = await ensureOwnerDirectory(this.#root, this.#security);
+    this.#root = root;
     const entries = await readdir(root, { withFileTypes: true });
     for (const entry of entries) {
       if (
