@@ -28,6 +28,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerapp"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerscheduler"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	runnerpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
@@ -61,6 +62,9 @@ func main() {
 	if config.V2QualificationEnabled {
 		schemaRange = databaseready.RunnerV2FoundationProfile
 	}
+	if config.V2RuntimeDeliveryEnabled {
+		schemaRange = databaseready.RunnerV2RuntimeDeliveryProfile
+	}
 	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, schemaRange)
 	if err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
@@ -85,17 +89,25 @@ func main() {
 	}
 	registry, err := workerregistry.Load(config.BundleRoot, config.BundleManifestSHA256, workerregistry.Runtime{
 		WorkspaceID: config.WorkspaceID, WorkspaceRoot: config.WorkspaceRoot,
-		DescriptorRoot:              config.DescriptorRoot,
-		CheckpointShadowEnabled:     config.CheckpointShadowEnabled,
-		CheckpointShadowEndpoint:    config.CheckpointShadowEndpoint,
-		CheckpointShadowBearerToken: config.CheckpointShadowBearerToken,
-		CheckpointShadowCallerID:    config.CheckpointShadowCallerID,
-		CheckpointShadowJournalRoot: config.CheckpointShadowJournalRoot,
-		EffectShadowEnabled:         config.EffectShadowEnabled,
-		EffectShadowEndpoint:        config.EffectShadowEndpoint,
-		EffectShadowBearerToken:     config.EffectShadowBearerToken,
-		EffectShadowCallerID:        config.EffectShadowCallerID,
-		EffectShadowJournalRoot:     config.EffectShadowJournalRoot,
+		DescriptorRoot:                config.DescriptorRoot,
+		CheckpointShadowEnabled:       config.CheckpointShadowEnabled,
+		CheckpointShadowEndpoint:      config.CheckpointShadowEndpoint,
+		CheckpointShadowBearerToken:   config.CheckpointShadowBearerToken,
+		CheckpointShadowCallerID:      config.CheckpointShadowCallerID,
+		CheckpointShadowJournalRoot:   config.CheckpointShadowJournalRoot,
+		EffectShadowEnabled:           config.EffectShadowEnabled,
+		EffectShadowEndpoint:          config.EffectShadowEndpoint,
+		EffectShadowBearerToken:       config.EffectShadowBearerToken,
+		EffectShadowCallerID:          config.EffectShadowCallerID,
+		EffectShadowJournalRoot:       config.EffectShadowJournalRoot,
+		V2RuntimeDeliveryEnabled:      config.V2RuntimeDeliveryEnabled,
+		V2RuntimeDeliveryOrigin:       config.V2RuntimeDeliveryOrigin,
+		V2RuntimeDeliveryBearerToken:  config.V2RuntimeDeliveryBearerToken,
+		V2RuntimeDeliveryBearerSHA256: config.BearerTokenSHA256,
+		V2RuntimeDeliveryJournalRoot:  config.V2RuntimeDeliveryJournalRoot,
+		V2BudgetOrigin:                config.V2BudgetOrigin,
+		V2BudgetBearerToken:           config.V2BudgetBearerToken,
+		V2BudgetCallerID:              config.V2BudgetCallerID,
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")
@@ -107,6 +119,9 @@ func main() {
 		os.Exit(1)
 	}
 	store := runnerpostgres.NewForSchema(pool, schemaVersion)
+	if config.V2RuntimeDeliveryEnabled {
+		store = runnerpostgres.NewForV2RuntimeDelivery(pool, runnerstore.V2AuthorityPorts{})
+	}
 	var v2Session runnerscheduler.ProtocolSession
 	if config.V2QualificationEnabled {
 		v2Supervisor, supervisorErr := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion)
@@ -139,6 +154,7 @@ func main() {
 	scheduler, err := runnerscheduler.New(runnerscheduler.Config{
 		Store: store, Session: session, WorkspaceID: config.WorkspaceID,
 		V2Session: v2Session, V2Qualification: config.V2QualificationEnabled,
+		V2RuntimeDelivery:    config.V2RuntimeDeliveryEnabled,
 		SupervisorInstanceID: bootInstanceID, MaxProcesses: config.MaxProcesses,
 		LeaseOfferTimeout: config.LeaseOfferTimeout, LeaseDuration: config.LeaseDuration,
 		PollInterval: config.PollInterval, RecoveryInterval: config.RecoveryInterval,
@@ -149,7 +165,8 @@ func main() {
 	}
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
-		V2Store: store, V2Qualification: config.V2QualificationEnabled, SchemaVersion: schemaVersion,
+		V2Store: store, BindingStore: store, AdmissionStore: store, V2Qualification: config.V2QualificationEnabled,
+		V2RuntimeDelivery: config.V2RuntimeDeliveryEnabled, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
 	})
 	if err != nil {
@@ -161,6 +178,7 @@ func main() {
 		"workspace_id", config.WorkspaceID, "build_sha", config.ServiceBuildSHA,
 		"worker_bundle_id", registry.BundleID(), "worker_build_hash", registry.RunnerBuildHash(),
 		"v2_qualification", config.V2QualificationEnabled, "routing_activated", false,
+		"v2_runtime_delivery_qualification", config.V2RuntimeDeliveryEnabled,
 	)
 	if err := run(ctx, service, scheduler, config); err != nil {
 		logger.Error("workflow_runner_control_stopped_with_error", "code", "RUNNER_CONTROL_FAILED")

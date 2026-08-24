@@ -60,3 +60,27 @@ not duplicate them.
 F2a does not alter this service's scheduler, worker, store, image entry point, active GS9-F1
 profile, or source manifest. TypeScript remains the production Workflow authority, Go remains a
 pure validator, and GS9-F2b must implement and qualify the manifest's not-delivered runtime work.
+
+## GS9-F2b default-off runtime delivery
+
+Schema 8 adds an independent authority-binding coordinator without changing the frozen runner-v1,
+runner-v2, authority-v2, or F2a bytes. A Go-route qualification job durably seals whether its
+RunStore lifecycle is initial or resume before the attempt may interpret `lease_accept`; the first
+resume is therefore not inferred from generation zero. Each binding preserves the job, attempt,
+lease, fence, route, global revision/generation, target exact bytes, source evidence, and the two
+independent ACKs.
+
+The worker stages future exact bytes before calling the TypeScript-owned checkpoint/effect/resume
+source or the isolated E2 budget authority. Go accepts the later event only after the matching
+resolution was acknowledged, advances the coordinator head exactly once, and persists its exact
+event receipt in the same transaction. Receipt delivery is marked `awaiting_ack` before the socket
+write; only the worker's exact control-delivery ACK makes it delivered. A decision, when required,
+uses the next sequence and has its own ACK.
+
+Crash, lease expiry, missing source result, stale route/head, cross-binding control, cancellation
+that cannot preserve sequence order, or unknown commit outcome moves the affected binding and
+attempt to reconciliation. The Go scheduler quarantines that durable state and does not replay or
+continue the TypeScript-owned source mutation. An explicit owner-local TypeScript recovery mode
+may point-read the original immutable source and companion receipts under the same idempotency key;
+it never changes that key, invents an outcome, or falls back to local authority. Production
+submission and routing remain disabled; GS9-G owns any new-record canary or writer cutover.

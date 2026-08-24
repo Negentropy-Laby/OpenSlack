@@ -1,6 +1,8 @@
 package runnerconfig
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -79,6 +81,72 @@ func TestV2QualificationIsDefaultOffAndRequiresExactEnablement(t *testing.T) {
 			t.Fatalf("non-exact v2 enablement accepted: %q", value)
 		}
 	}
+}
+
+func TestV2RuntimeDeliveryConfigurationIsSealedAndDefaultOff(t *testing.T) {
+	base := validEnvironment(t)
+	workspace := strings.TrimPrefix(firstEnvironment(base, "WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT"), "WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=")
+	token := strings.Repeat("r", 40)
+	digest := sha256.Sum256([]byte(token))
+	for index := range base {
+		if strings.HasPrefix(base[index], "WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256=") {
+			base[index] = fmt.Sprintf("WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256=%x", digest[:])
+		}
+	}
+	runtimeValues := []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ORIGIN=http://127.0.0.1:8081",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_BEARER_TOKEN=" + token,
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_JOURNAL_ROOT=" + filepath.Join(workspace, ".openslack.local", "workflow-runner-v2-runtime-delivery"),
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_ORIGIN=http://127.0.0.1:8085",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_BEARER_TOKEN=" + strings.Repeat("e", 40),
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_CALLER_ID=runner-control",
+	}
+	config, err := LoadEnvironment(append(append([]string{}, base...), runtimeValues...))
+	if err != nil || !config.V2RuntimeDeliveryEnabled || config.V2RuntimeDeliveryBearerToken != token {
+		t.Fatalf("sealed runtime config rejected: %+v %v", config, err)
+	}
+	if _, err := LoadEnvironment(append(append([]string{}, base...), runtimeValues[2:]...)); err == nil {
+		t.Fatal("disabled runtime accepted credential-bearing configuration")
+	}
+	for _, replacement := range []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ORIGIN=http://localhost:8081",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_BEARER_TOKEN=" + strings.Repeat("x", 40),
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_JOURNAL_ROOT=" + workspace,
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_ORIGIN=https://127.0.0.1:8085",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_BEARER_TOKEN=short",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_CALLER_ID=invalid caller",
+	} {
+		candidate := append(append([]string{}, base...), runtimeValues...)
+		name, _, _ := strings.Cut(replacement, "=")
+		for index := range candidate {
+			if strings.HasPrefix(candidate[index], name+"=") {
+				candidate[index] = replacement
+			}
+		}
+		if _, err := LoadEnvironment(candidate); err == nil {
+			t.Fatalf("invalid sealed runtime config accepted: %s", replacement)
+		}
+	}
+	withoutQualification := append(append([]string{}, base...), runtimeValues[1:]...)
+	if _, err := LoadEnvironment(withoutQualification); err == nil {
+		t.Fatal("runtime delivery was enabled without v2 qualification")
+	}
+	internal := append(append([]string{}, base...), runtimeValues...)
+	internal = append(internal, "WORKFLOW_RUNNER_CONTROL_NETWORK_MODE=internal")
+	if _, err := LoadEnvironment(internal); err == nil {
+		t.Fatal("runtime delivery was enabled outside loopback network mode")
+	}
+}
+
+func firstEnvironment(environment []string, name string) string {
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, name+"=") {
+			return entry
+		}
+	}
+	return ""
 }
 
 func TestCheckpointShadowRunnerConfigIsExplicitAndClosed(t *testing.T) {

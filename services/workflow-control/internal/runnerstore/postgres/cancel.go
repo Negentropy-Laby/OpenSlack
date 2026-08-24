@@ -68,6 +68,25 @@ WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','rec
 		if authorityLaneBusy {
 			return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorConflict, "v2 cancellation is blocked by an unsettled authority event", nil)
 		}
+		if repository.v2RuntimeDelivery {
+			var pendingDecision bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (
+SELECT 1 FROM workflow_runner_v2_decision_bindings pair
+JOIN workflow_runner_control_messages decision ON decision.control_event_id=pair.decision_control_event_id
+JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=pair.received_event_id
+WHERE binding.attempt_id=$1 AND binding.state='runner_committed'
+  AND decision.delivery_state IN ('pending','delivering','awaiting_ack','reconciliation_required')
+)`, input.ExpectedAttemptID).Scan(&pendingDecision); err != nil {
+				return runnerstore.CancelControl{}, databaseFailure("read v2 cancellation decision lane", err)
+			}
+			if pendingDecision {
+				// A decision-producing event has already reserved the exact next
+				// control sequence. The immutable decision must settle before a
+				// normal later cancellation can be admitted; skipping it would
+				// create a sequence gap at the worker.
+				return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorConflict, "v2 cancellation must follow the durable authority decision", nil)
+			}
+		}
 	}
 	var workflowRunID, correlationID, leaseID string
 	if err := tx.QueryRow(ctx, `

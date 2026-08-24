@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-20
+updated: 2026-08-22
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -17,10 +17,10 @@ sources:
 
 # Workflow Runner Protocol Contract
 
-Status: GS8-B local implementation plus the GS9-F1 default-off runner-v2 foundation and GS9-F2a
-authority-binding contract freeze. GS8-A remains the immutable `openslack.workflow_runner.v1`
-bidirectional TypeScript/Go contract. F2a adds only exact contract parity; the normal CLI/TUI route,
-F1 runtime profile/source manifest and production Workflow authority remain unchanged.
+Status: GS8-B local implementation plus the GS9-F1 default-off runner-v2 foundation, GS9-F2a
+authority-binding contract freeze, and GS9-F2b default-off runtime-delivery qualification. GS8-A
+remains the immutable `openslack.workflow_runner.v1` bidirectional TypeScript/Go contract. The
+normal CLI/TUI route and production Workflow authority remain unchanged.
 
 ## Purpose
 
@@ -391,6 +391,23 @@ budget decision. The authority-v2 reconciliation status remains part of the froz
 future evidence that can prove an accepted revision, but current E1 database-unknown evidence is
 not such proof.
 
-The active runtime profile and service source manifest continue to describe GS9-F1. TypeScript
-remains the production Workflow authority; the Go mirror remains validator-only with durable
-authority false.
+At the F2a boundary, the active runtime profile and service source manifest still described
+GS9-F1. F2a itself left TypeScript as the production Workflow authority and the Go mirror as a
+validator with durable authority false; the qualification-only F2b profile below is the separately
+reviewed runtime composition that supersedes those F1 profile/manifest facts.
+
+## GS9-F2b authority-binding runtime delivery
+
+F2b activates the F2a companion only inside an explicit default-off qualification profile. The
+sealed worker determines initial versus resume from durable RunStore state, stages the future exact
+runner event, obtains and ACKs its companion resolution around the existing C/D/E source, and then
+sends the byte-identical event. Go verifies the exact resolution, advances the independent global
+head, persists the exact event receipt, and requires a distinct control-delivery ACK before sending
+any effect, budget, or resume decision.
+
+Checkpoint commit, effect authorize/complete, budget reserve/settle, and resume advance retain
+their original single-writer source boundaries. The E2 budget result is independently point-read by
+Go and bound into the same event transaction; Go never re-reserves on behalf of the TypeScript
+adapter. Recovery preserves the original binding/key and latches unknown outcomes. F2b does not
+activate production v2 submission, new-record routing, canary, cutover, or TypeScript writer
+retirement; those remain later independently reviewed batches.

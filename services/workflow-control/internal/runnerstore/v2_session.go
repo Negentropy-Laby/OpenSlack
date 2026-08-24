@@ -32,14 +32,15 @@ type V2RecordEventInput struct {
 }
 
 type V2RecordedEvent struct {
-	Receipt       authoritycontract.Message
-	ReceiptBytes  []byte
-	Decision      *authoritycontract.Message
-	DecisionBytes []byte
-	Status        ReceiptStatus
-	JobState      JobState
-	AttemptState  AttemptState
-	Duplicate     bool
+	Receipt            authoritycontract.Message
+	ReceiptBytes       []byte
+	Decision           *authoritycontract.Message
+	DecisionBytes      []byte
+	Status             ReceiptStatus
+	JobState           JobState
+	AttemptState       AttemptState
+	Duplicate          bool
+	AuthorityBindingID *string
 }
 
 type V2CancelControl struct {
@@ -76,6 +77,7 @@ type V2AuthorityOutcome struct {
 	AcceptedResumeGeneration int64
 	Decision                 *authoritycontract.Message
 	DecisionBytes            []byte
+	RuntimeBinding           *V2AuthorityBindingView
 }
 
 type V2CheckpointAuthority interface {

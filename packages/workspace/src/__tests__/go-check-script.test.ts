@@ -94,7 +94,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       [
         'capabilities=database,distribution,http-openapi,prometheus,worker',
         'docker_target=app',
-        'runtime_profile=workflow-control-runner-v2-foundation-v1',
+        'runtime_profile=workflow-control-runner-v2-runtime-delivery-v1',
         '',
       ].join('\n'),
     );
@@ -952,7 +952,6 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       'WORKFLOW_RUNNER_V2_RESUME_ADAPTER',
       'WORKFLOW_RUNNER_GS9F2',
     ]) {
-      expect(goCheckSource).not.toContain(deferredAdapter);
       expect(log).not.toContain(deferredAdapter);
     }
     const restartSchemas = [
@@ -998,6 +997,101 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       'Workflow Control runner test selector matched no tests:',
     );
   }, 30_000);
+
+  it('runs the Workflow Control GS9-F2b runtime-delivery profile as a real F1 superset', () => {
+    const fixture = createFixture();
+    const moduleRoot = join(fixture.root, 'services/pure');
+    addFullServiceCapabilities(moduleRoot);
+    addWorkflowRunnerEvidence(moduleRoot);
+    addWorkflowRunnerV2FoundationEvidence(moduleRoot);
+    addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot);
+    addWorkflowAuthorityEvidence(moduleRoot);
+    addWorkflowCheckpointShadowEvidence(moduleRoot);
+    addWorkflowEffectShadowEvidence(moduleRoot);
+    addWorkflowBudgetAuthorityEvidence(moduleRoot);
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status, result.stderr).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_QUALIFICATION=1');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1');
+    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRuntimeDelivery\\$');
+    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingMigrationGuards\\$');
+    expect(log).toContain('-run \\^TestGS9F2Qualification\\$');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify');
+    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRestartRecovery\\$');
+    expect(log).toContain('-run \\^TestGS9F2ImageDefaultOff\\$');
+    expect(log).toContain(
+      'WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN=http://runner-v2-runtime-delivery-default-off:8081',
+    );
+    expect(log).toContain('--entrypoint /runner-server');
+    expect(log).toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
+    expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1');
+    expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
+    expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
+    const restartSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA=(workflow_control_gs9f2_restart_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(4);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log.match(/ restart /gu)).toHaveLength(8);
+
+    const failureFixture = createFixture();
+    const failureModuleRoot = join(failureFixture.root, 'services/pure');
+    addFullServiceCapabilities(failureModuleRoot);
+    addWorkflowRunnerEvidence(failureModuleRoot);
+    addWorkflowRunnerV2FoundationEvidence(failureModuleRoot);
+    addWorkflowRunnerV2RuntimeDeliveryEvidence(failureModuleRoot);
+    addWorkflowAuthorityEvidence(failureModuleRoot);
+    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
+    addWorkflowEffectShadowEvidence(failureModuleRoot);
+    addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
+    writeServiceConfig(failureFixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus,worker',
+      dockerTarget: 'app',
+      runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
+    });
+    commitFixture(failureFixture.root);
+
+    const failure = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9F2_FAIL_PHASE: 'runner-v2-runtime-delivery-bounds',
+      FAKE_GS9F2_FAIL_STATUS: '53',
+    });
+    expect(failure.status).toBe(53);
+    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+    expect(failureLog).toContain('-qualification-runner-v2-runtime-delivery-bounds');
+    expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
+
+    for (const phase of [
+      'runner-v2-runtime-delivery-migration',
+      'runner-v2-runtime-delivery-worker',
+      'runner-v2-runtime-delivery-restart-seed',
+      'runner-v2-runtime-delivery-restart-verify',
+      'runner-v2-runtime-delivery-image-default-off',
+    ]) {
+      const phaseFailure = runGoCheck(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_FAIL_PHASE: phase,
+        FAKE_GS9F2_FAIL_STATUS: '53',
+      });
+      expect(phaseFailure.status, phase).toBe(53);
+    }
+
+    const skipped = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
+    });
+    expect(skipped.status).toBe(1);
+    expect(skipped.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
+  }, 90_000);
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
     'propagates a Workflow Control GS7-B %s qualification failure before completion',
@@ -1788,6 +1882,72 @@ function addWorkflowRunnerV2FoundationEvidence(moduleRoot: string): void {
   );
 }
 
+function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
+  for (const directory of [
+    'migrations',
+    'internal/runnerconfig',
+    'internal/runnerstore',
+    'internal/runnerstore/postgres',
+  ]) {
+    mkdirSync(join(moduleRoot, directory), { recursive: true });
+  }
+  writeFileSync(
+    join(moduleRoot, 'migrations/000008_deliver_workflow_runner_authority_bindings.up.sql'),
+    'BEGIN;\nCOMMIT;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'migrations/000008_deliver_workflow_runner_authority_bindings.down.sql'),
+    'BEGIN;\nCOMMIT;\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/v2_binding.go'),
+    'package runnerstore\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/v2_binding.go'),
+    'package postgres\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerconfig/gs9f2.go'),
+    'package runnerconfig\n\nconst marker = "WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED"\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/gs9f2_runtime_integration_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9F2AuthorityBindingRuntimeDelivery(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_QUALIFICATION" }',
+      'func TestGS9F2AuthorityBindingRestartRecovery(t *testing.T) {',
+      '\t_ = "WORKFLOW_RUNNER_GS9F2_RESTART_PHASE"',
+      '\t_ = "WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA"',
+      '}',
+      'func TestGS9F2AuthorityBindingMigrationGuards(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'cmd/runner-server/gs9f2_qualification_test.go'),
+    [
+      'package main',
+      '',
+      'import "testing"',
+      '',
+      'func TestGS9F2Qualification(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_QUALIFICATION" }',
+      'func TestGS9F2ImageDefaultOff(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN" }',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 function addWorkflowAuthorityEvidence(moduleRoot: string): void {
   for (const directory of [
     'cmd/authority-server',
@@ -2473,6 +2633,18 @@ function writeFakeExecutables(bin: string): void {
       '    fi',
       '    if [ -n "${FAKE_GS9F1_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9F1_FAIL_PHASE}"* ]]; then',
       '      exit "${FAKE_GS9F1_FAIL_STATUS:-52}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS9F2_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS9F2_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS9F2_FAIL_STATUS:-53}"',
+      '    fi',
+      '    if [[ "$joined" == *"go test -json -race"* && "$joined" =~ OPENSLACK_GO_CHECK_EXPECT_TEST=([A-Za-z0-9_]+) ]]; then',
+      '      selected_test="${BASH_REMATCH[1]}"',
+      '      if [ "${FAKE_GS9F2_SKIP_TEST:-}" = "$selected_test" ]; then',
+      '        printf "{\\\"Action\\\":\\\"skip\\\",\\\"Test\\\":\\\"%s\\\"}\\n" "$selected_test"',
+      '      else',
+      '        printf "{\\\"Action\\\":\\\"pass\\\",\\\"Test\\\":\\\"%s\\\"}\\n" "$selected_test"',
+      '      fi',
+      '      exit 0',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

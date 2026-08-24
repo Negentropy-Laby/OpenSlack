@@ -155,6 +155,54 @@ func ValidateBudgetSourceResult(value, preparedValue any) (Record, error) {
 	return result.record, nil
 }
 
+// ParseBudgetSourceResultBytes proves both the strict canonical outer bytes and
+// their contextual binding to the exact E1 prepared request. The terminating
+// LF is part of the durable runner-side artifact.
+func ParseBudgetSourceResultBytes(input []byte, preparedValue any) (Record, error) {
+	if len(input) == 0 || len(input) > MaxFrameBytes || !hasExactlyOneLF(input) {
+		return nil, failure(ErrorLimitExceeded, "$", "Budget source result frame size or LF framing is invalid.")
+	}
+	parsed, err := parseStrictJSON(input[:len(input)-1], MaxFrameBytes, MaxJSONDepth, MaxJSONNodes, MaxStringBytes, MaxSafeInteger)
+	if err != nil {
+		return nil, failure(ErrorInvalid, "$", "Budget source result bytes are not strict JSON.")
+	}
+	validated, err := ValidateBudgetSourceResult(parsed, preparedValue)
+	if err != nil {
+		return nil, err
+	}
+	canonical, err := budgetcontract.CanonicalJSON(validated)
+	if err != nil || !bytes.Equal(append([]byte(canonical), '\n'), input) {
+		return nil, failure(ErrorInvalid, "$", "Budget source result bytes are not exact canonical bytes.")
+	}
+	return validated, nil
+}
+
+// ParseBudgetSettlementSourceReceiptBytes validates the exact immutable E2
+// durable receipt retained for a budget-settle binding. Settlement has no
+// control decision and therefore deliberately does not reuse the reserve-only
+// workflow_runner_budget_source_result.v1 outer record.
+func ParseBudgetSettlementSourceReceiptBytes(input []byte, preparedValue any) (Record, error) {
+	prepared, _, err := validateBudgetPreparedWithSession(preparedValue, newBindingValidationSession(nil))
+	if err != nil {
+		return nil, embeddedBudgetFailure(err, "$/budgetSettlementSource/preparedRequest")
+	}
+	if prepared.Operation != "settle" {
+		return nil, failure(ErrorAuthorityPlaneMismatch, "$/budgetSettlementSource", "A budget settlement requires an exact settle receipt.")
+	}
+	durable, err := parseBudgetDurableReceiptWithSession(string(input), newBindingValidationSession(nil))
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := budgetcontract.ValidateReceiptForRequest(durable.projection, prepared)
+	if err != nil {
+		return nil, embeddedBudgetFailure(err, "$/budgetSettlementSource/receipt")
+	}
+	if receipt["operation"] != "settle" || receipt["status"] != "accepted" || receipt["reconciliationToken"] != nil {
+		return nil, failure(ErrorIdentityMismatch, "$/budgetSettlementSource/receipt", "Budget settlement source receipt is not an exact accepted result.")
+	}
+	return durable.record, nil
+}
+
 func validateBudgetDurableReceipt(value any) (Record, budgetcontract.Record, error) {
 	record, err := closedRecord(value, []string{
 		"schema", "authority", "writer", "authorityMode", "productionAuthority",

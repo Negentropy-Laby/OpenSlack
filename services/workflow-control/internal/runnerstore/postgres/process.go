@@ -91,9 +91,14 @@ func (repository *Repository) RecordProcessExit(ctx context.Context, input runne
 		jobState, attemptState = runnerstore.JobReconciliationRequired, runnerstore.AttemptReconciliationRequired
 		terminalStatus, terminalReason, reconciliationID = string(runnerprotocol.TerminalReconciliationRequired), "commit_outcome_unknown", value
 		if v2Outstanding.authority {
+			if repository.v2RuntimeDelivery {
+				if latchErr := repository.latchProcessAuthorityBindings(ctx, tx, input.AttemptID, "process_crash", now); latchErr != nil {
+					return runnerstore.JobView{}, latchErr
+				}
+			}
 			if _, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_v2_event_inbox
 SET state='reconciliation_required',reconciliation_id=$1,updated_at=$2
-WHERE attempt_id=$3 AND state IN ('pending_authority','authority_committed','reconciliation_required')`, value, now, input.AttemptID); updateErr != nil {
+WHERE attempt_id=$3 AND state IN ('pending_authority','authority_committed','runner_committed')`, value, now, input.AttemptID); updateErr != nil {
 				return runnerstore.JobView{}, mapWriteFailure("latch v2 process reconciliation", updateErr)
 			}
 		}
@@ -235,9 +240,14 @@ func (repository *Repository) recoverExpiredOne(ctx context.Context, workspaceID
 		if insertErr != nil {
 			return result, insertErr
 		}
+		if repository.v2RuntimeDelivery && v2Outstanding.authority {
+			if latchErr := repository.latchProcessAuthorityBindings(ctx, tx, attemptID, "process_crash", now); latchErr != nil {
+				return result, latchErr
+			}
+		}
 		if _, err := tx.Exec(ctx, `UPDATE workflow_runner_v2_event_inbox
 SET state='reconciliation_required',reconciliation_id=$1,updated_at=$2
-WHERE attempt_id=$3 AND state IN ('pending_authority','authority_committed','reconciliation_required')`, reconciliationID, now, attemptID); err != nil {
+WHERE attempt_id=$3 AND state IN ('pending_authority','authority_committed','runner_committed')`, reconciliationID, now, attemptID); err != nil {
 			return result, mapWriteFailure("latch expired v2 reconciliation", err)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE workflow_runner_attempts SET state='reconciliation_required',finished_at=$1,updated_at=$1 WHERE attempt_id=$2`, now, attemptID); err != nil {
@@ -304,10 +314,19 @@ SELECT 1 FROM workflow_runner_v2_event_inbox
 WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','reconciliation_required'))`, attemptID).Scan(&state.authority); err != nil {
 		return v2OutstandingState{}, databaseFailure("read outstanding v2 authority event", err)
 	}
+	if repository.v2RuntimeDelivery {
+		var authorityBinding bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+SELECT 1 FROM workflow_runner_authority_bindings
+WHERE attempt_id=$1 AND state IN ('staged','resolved','runner_committed','reconciliation_required'))`, attemptID).Scan(&authorityBinding); err != nil {
+			return v2OutstandingState{}, databaseFailure("read outstanding authority binding", err)
+		}
+		state.authority = state.authority || authorityBinding
+	}
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM workflow_runner_control_messages message
 JOIN workflow_runner_v2_attempt_bindings binding ON binding.attempt_id=message.attempt_id
-WHERE message.attempt_id=$1 AND message.delivery_state IN ('delivering','reconciliation_required')
+WHERE message.attempt_id=$1 AND message.delivery_state IN ('delivering','awaiting_ack','reconciliation_required')
   AND NOT (message.kind='event_receipt' AND EXISTS (
     SELECT 1 FROM workflow_runner_event_receipts receipt
     JOIN workflow_runner_worker_events event ON event.event_id=receipt.received_event_id
@@ -316,6 +335,71 @@ WHERE message.attempt_id=$1 AND message.delivery_state IN ('delivering','reconci
 		return v2OutstandingState{}, databaseFailure("read uncertain v2 control delivery", err)
 	}
 	return state, nil
+}
+
+func (repository *Repository) latchProcessAuthorityBindings(ctx context.Context, tx pgx.Tx, attemptID, reason string, now time.Time) error {
+	rows, err := tx.Query(ctx, `SELECT binding_id,workspace_id,job_id
+FROM workflow_runner_authority_bindings
+WHERE attempt_id=$1 AND state IN ('staged','resolved','runner_committed')
+ORDER BY binding_id FOR UPDATE`, attemptID)
+	if err != nil {
+		return databaseFailure("lock process authority bindings", err)
+	}
+	type bindingIdentity struct{ bindingID, workspaceID, jobID string }
+	bindings := make([]bindingIdentity, 0, 2)
+	for rows.Next() {
+		var binding bindingIdentity
+		if err := rows.Scan(&binding.bindingID, &binding.workspaceID, &binding.jobID); err != nil {
+			rows.Close()
+			return databaseFailure("scan process authority binding", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return databaseFailure("iterate process authority bindings", err)
+	}
+	rows.Close()
+	for _, binding := range bindings {
+		reconciliationID, err := randomToken("wfrunner-reconciliation")
+		if err != nil {
+			return databaseFailure("generate process authority reconciliation identity", err)
+		}
+		evidence := sha256.Sum256([]byte(binding.bindingID + "\x00" + reason + "\x00" + runnerstore.CanonicalTimestamp(now)))
+		if _, err := tx.Exec(ctx, `INSERT INTO workflow_runner_authority_reconciliations
+(reconciliation_id,binding_id,workspace_id,job_id,attempt_id,reason,evidence_hash,created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, reconciliationID, binding.bindingID, binding.workspaceID,
+			binding.jobID, attemptID, reason, evidence[:], now); err != nil {
+			return mapWriteFailure("insert process authority reconciliation", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE workflow_runner_authority_bindings
+SET state='reconciliation_required',reconciliation_id=$2,reconciliation_reason=$3,updated_at=$4
+WHERE binding_id=$1 AND state IN ('staged','resolved','runner_committed')`, binding.bindingID, reconciliationID, reason, now); err != nil {
+			return mapWriteFailure("latch process authority reconciliation", err)
+		}
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE workflow_runner_control_messages control
+SET delivery_state=CASE WHEN control.delivery_state='pending' THEN 'abandoned' ELSE 'reconciliation_required' END
+WHERE control.attempt_id=$1 AND control.delivery_state IN ('pending','delivering','awaiting_ack') AND (
+  EXISTS (
+    SELECT 1 FROM workflow_runner_event_receipts receipt
+    JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=receipt.received_event_id
+    WHERE receipt.receipt_event_id=control.control_event_id AND binding.attempt_id=$1
+  ) OR EXISTS (
+    SELECT 1 FROM workflow_runner_v2_decision_bindings decision
+    JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=decision.received_event_id
+    WHERE decision.decision_control_event_id=control.control_event_id AND binding.attempt_id=$1
+  ) OR (control.kind='cancel_request' AND EXISTS (
+    SELECT 1 FROM workflow_runner_authority_bindings binding
+    WHERE binding.attempt_id=$1 AND binding.state='reconciliation_required'
+  ))
+)`, attemptID); err != nil {
+		return mapWriteFailure("latch process authority control delivery", err)
+	}
+	return nil
 }
 
 func (repository *Repository) RecoverOrphans(ctx context.Context, supervisorInstanceID string, now time.Time, limit int) ([]runnerstore.RecoveryResult, error) {

@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-20
+updated: 2026-08-22
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -537,10 +537,22 @@ GS9-F2b  durable checkpoint/effect/budget/resume adapters + end-to-end runtime d
 
 F2a's generated [authority-binding manifest](../../packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json)
 is the normative source for its exact contract, operation facts, protocol ordering, source locks,
-and authority ceiling. F2a remains contract-only, the Go mirror remains validator-only, and the F1
-profile and source manifest remain active. F2b owns every item in the manifest's `notDelivered`
+and authority ceiling. F2a remains contract-only and the Go mirror remains validator-only; until
+F2b, the F1 profile and source manifest stayed active. F2b owns every item in the manifest's `notDelivered`
 inventory; later routing/cutover stages may not infer authority from contract parity or remove any
 `notActivated`, `notClaimed`, or `separateGates` entry without new reviewed evidence.
+
+F2b delivers that inventory only through a default-off schema-8 qualification profile. It binds
+every checkpoint, effect, budget, and resume event to one durable companion lifecycle with exact
+stage/resolution/control ACKs, one-outstanding-event ordering, immutable source point-read, and
+reconciliation on crash, response loss, drift, or ambiguous cancellation ordering. The first
+resume from generation zero requires a durable resume disposition and cannot be inferred from the
+wire head alone. The default image and public submission/routing remain unchanged.
+
+This does not collapse the remaining migration batches. GS9-G must separately establish immutable
+new-record route receipts and canary evidence before Go owns any production record. GS9-H follows
+only after old TypeScript-owned active runs are drained or explicitly reconciled. GS9-I remains an
+independent deletion PR after authenticated external and long-running recovery evidence.
 
 ### GS10–GS13 — Platform Runtime
 

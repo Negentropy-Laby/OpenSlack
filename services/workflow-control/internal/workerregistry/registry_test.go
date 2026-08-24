@@ -59,6 +59,54 @@ func TestV2QualificationSupervisorStripsIncompatibleShadowInjection(t *testing.T
 	}
 }
 
+func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
+	reserved := []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID",
+	}
+	for _, name := range reserved {
+		root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{name + "=evil"} })
+		if _, err := Load(root, hash, runtimeConfig); err == nil {
+			t.Fatalf("manifest override %s was accepted", name)
+		}
+	}
+	root, hash, runtimeConfig := writeBundle(t, nil)
+	token := strings.Repeat("r", 40)
+	digest := sha256.Sum256([]byte(token))
+	runtimeConfig.V2RuntimeDeliveryEnabled = true
+	runtimeConfig.V2RuntimeDeliveryOrigin = "http://127.0.0.1:8081"
+	runtimeConfig.V2RuntimeDeliveryBearerToken = token
+	runtimeConfig.V2RuntimeDeliveryBearerSHA256 = fmt.Sprintf("%x", digest[:])
+	runtimeConfig.V2RuntimeDeliveryJournalRoot = filepath.Join(root, ".openslack.local", "workflow-runner-v2-runtime-delivery")
+	runtimeConfig.V2BudgetOrigin = "http://127.0.0.1:8085"
+	runtimeConfig.V2BudgetBearerToken = strings.Repeat("b", 40)
+	runtimeConfig.V2BudgetCallerID = "runner-control"
+	registry, err := Load(root, hash, runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1 := strings.Join(selectProtocolEnvironment(registry.command.Environment, "openslack.workflow_runner.v1"), "\n")
+	v2 := strings.Join(selectProtocolEnvironment(registry.command.Environment, authoritycontract.ProtocolVersion), "\n")
+	for _, name := range reserved {
+		if strings.Contains(v1, name+"=") {
+			t.Fatalf("v1 supervisor received %s", name)
+		}
+		if !strings.Contains(v2, name+"=") {
+			t.Fatalf("v2 runtime supervisor missed %s", name)
+		}
+	}
+	runtimeConfig.V2RuntimeDeliveryBearerSHA256 = strings.Repeat("f", 64)
+	if _, err := Load(root, hash, runtimeConfig); err == nil {
+		t.Fatal("mismatched raw companion token hash was accepted")
+	}
+}
+
 func writeBundle(t *testing.T, mutate func(*Manifest)) (string, string, Runtime) {
 	t.Helper()
 	root := filepath.Clean(t.TempDir())

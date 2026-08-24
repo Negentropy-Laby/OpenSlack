@@ -25,7 +25,7 @@ JOIN workflow_runner_jobs j
 WHERE r.idempotency_key=$1`
 
 func (repository *Repository) SubmitV2(ctx context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
-	if err := runnerstore.ValidateV2SubmitInput(input); err != nil {
+	if err := runnerstore.ValidateV2SubmitInputForProfile(input, repository.v2RuntimeDelivery); err != nil {
 		return runnerstore.V2JobReceipt{}, err
 	}
 	fingerprint, err := decodeFingerprint(input.RequestFingerprint)

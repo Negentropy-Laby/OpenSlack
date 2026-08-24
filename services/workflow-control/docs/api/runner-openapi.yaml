@@ -3,21 +3,28 @@ info:
   title: OpenSlack Workflow Runner Control API
   version: 1.0.0
   description: >-
-    Private GS8-B runner lifecycle admission service. It is default-off and
-    must be explicitly enabled for one configured workspace. TypeScript remains
-    authoritative for workflow source execution, RunStore state, effects,
-    approvals, budgets, checkpoints, and resume. Go owns only runner jobs,
-    attempts, leases, fencing, cancellation controls, and durable receipts.
+    Private default-off runner lifecycle qualification service. GS9-F2b adds a
+    separately enabled loopback-only authority-binding companion for exact
+    checkpoint, effect, budget, and resume delivery. TypeScript remains the
+    production Workflow authority and production v2 submission/routing remains
+    disabled. Go owns only the explicitly qualified runner lifecycle and
+    durable companion records described here.
 servers:
   - url: http://127.0.0.1:8081
 security: []
 x-openslack-default-off: true
 x-openslack-workspace-mode: single
 x-openslack-workflow-authority: typescript
-x-openslack-go-authority: [job, attempt, lease, fence, cancel, receipt]
+x-openslack-go-authority:
+  [job, attempt, lease, fence, cancel, receipt, runtime_admission, authority_binding]
 x-openslack-authority-eligible: false
+x-openslack-v2-runtime-delivery-default-off: true
+x-openslack-production-v2-submission: false
+x-openslack-production-v2-routing: false
 x-openslack-network-modes: [loopback, internal]
-x-openslack-max-request-bytes: 65536
+x-openslack-max-request-bytes: 1048576
+x-openslack-job-request-max-bytes: 65536
+x-openslack-authority-binding-request-max-bytes: 1048576
 x-openslack-forbidden-authority-fields:
   [
     command,
@@ -111,6 +118,182 @@ paths:
         '413': { $ref: '#/components/responses/TooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/authority-bindings:stage:
+    post:
+      operationId: stageWorkflowRunnerAuthorityBinding
+      description: >-
+        Qualification-only companion sequence 1. Durably reserve the exact
+        future runner event before its source authority is committed.
+      x-openslack-canonical-json-lf: required
+      x-openslack-qualification-only: true
+      x-openslack-runtime-delivery-enable-required: true
+      x-openslack-loopback-only: true
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/BindingIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorityBindingStage' }
+      responses:
+        '201': { $ref: '#/components/responses/AuthorityBindingAccepted' }
+        '200': { $ref: '#/components/responses/AuthorityBindingDuplicate' }
+        '202': { $ref: '#/components/responses/AuthorityBindingReconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/runtime-admissions:seal:
+    post:
+      operationId: sealWorkflowRunnerV2RuntimeAdmission
+      description: >-
+        Qualification-only durable admission between the sealed worker's
+        RunStore disposition point-read and its lease_accept event. It is the
+        explicit proof that distinguishes an initial generation-zero run from
+        the first resume without changing frozen runner-v2 or F2a bytes.
+      x-openslack-canonical-json-lf: required
+      x-openslack-qualification-only: true
+      x-openslack-runtime-delivery-enable-required: true
+      x-openslack-loopback-only: true
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/RuntimeAdmissionIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/V2RuntimeAdmission' }
+      responses:
+        '201':
+          description: Exact runtime disposition sealed before lease acceptance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/V2RuntimeAdmissionReceipt' }
+        '200':
+          description: Exact original runtime-admission receipt replayed byte-for-byte.
+          headers:
+            Idempotency-Replayed:
+              schema: { const: 'true' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/V2RuntimeAdmissionReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/authority-bindings/{bindingId}:resolve:
+    post:
+      operationId: resolveWorkflowRunnerAuthorityBinding
+      description: >-
+        Qualification-only companion sequence 2. Bind the exact source
+        authority evidence to the previously staged event.
+      x-openslack-canonical-json-lf: required
+      x-openslack-qualification-only: true
+      x-openslack-runtime-delivery-enable-required: true
+      x-openslack-loopback-only: true
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BindingID'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/BindingIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorityBindingResolution' }
+      responses:
+        '201': { $ref: '#/components/responses/AuthorityBindingAccepted' }
+        '200': { $ref: '#/components/responses/AuthorityBindingDuplicate' }
+        '202': { $ref: '#/components/responses/AuthorityBindingReconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/authority-bindings/{bindingId}:ack-control:
+    post:
+      operationId: acknowledgeWorkflowRunnerAuthorityControl
+      description: >-
+        Persist companion sequence 3 or 4 for the exact event receipt,
+        optional decision, or outstanding-binding cancellation. Sequence 4
+        cannot overtake the exact accepted sequence-3 ACK.
+      x-openslack-canonical-json-lf: required
+      x-openslack-qualification-only: true
+      x-openslack-runtime-delivery-enable-required: true
+      x-openslack-loopback-only: true
+      x-openslack-replay-response: exact-original
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BindingID'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/BindingIdempotencyKey'
+        - $ref: '#/components/parameters/RequestFingerprint'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
+      responses:
+        '201': { $ref: '#/components/responses/AuthorityBindingAccepted' }
+        '200': { $ref: '#/components/responses/AuthorityBindingDuplicate' }
+        '202': { $ref: '#/components/responses/AuthorityBindingReconciliation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '408': { $ref: '#/components/responses/Timeout' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/authority-bindings/receipts/{idempotencyKey}:
+    get:
+      operationId: getWorkflowRunnerAuthorityBindingReceipt
+      description: >-
+        Point-read the exact durable companion receipt after a lost POST
+        response. A missing receipt never authorizes replay under another key.
+      x-openslack-qualification-only: true
+      x-openslack-runtime-delivery-enable-required: true
+      x-openslack-loopback-only: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BindingReceiptKey'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+      responses:
+        '200':
+          description: Exact original durable authority-binding receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/Unavailable' }
   /v1/runner/jobs/{jobId}:
@@ -267,6 +450,38 @@ components:
         type: string
         pattern: '^openslack\.workflow-runner-cancel\.v1\.[0-9a-f]{64}$'
         maxLength: 160
+    BindingID:
+      name: bindingId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^WFRUNNER-BINDING-[0-9a-f]{64}$'
+        maxLength: 81
+    BindingReceiptKey:
+      name: idempotencyKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-authority-binding\.v1\.[0-9a-f]{64}$'
+        maxLength: 160
+    BindingIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-authority-binding\.v1\.[0-9a-f]{64}$'
+        maxLength: 160
+    RuntimeAdmissionIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^openslack\.workflow-runner-v2-runtime-admission\.v1\.[0-9a-f]{64}$'
+        maxLength: 160
     RequestFingerprint:
       name: X-OpenSlack-Request-Fingerprint
       in: header
@@ -285,6 +500,24 @@ components:
     JobReconciliation:
       description: Submission commit outcome requires durable reconciliation.
       content: { application/json: { schema: { $ref: '#/components/schemas/JobReceipt' } } }
+    AuthorityBindingAccepted:
+      description: Exact authority-binding phase committed durably.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
+    AuthorityBindingDuplicate:
+      description: Exact original authority-binding receipt replayed byte-for-byte.
+      headers:
+        Idempotency-Replayed:
+          schema: { const: 'true' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
+    AuthorityBindingReconciliation:
+      description: Exact durable receipt requires reconciliation; no source/event replay is authorized.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
     Unauthorized:
       description: Bearer or single-workspace identity is invalid.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -295,7 +528,9 @@ components:
       description: Idempotency, identity, lease, or fencing precondition conflicted.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     TooLarge:
-      description: Exact request exceeds 64 KiB.
+      description: >-
+        Exact request exceeds its route-specific frozen limit: 64 KiB for job,
+        runtime-admission, and cancellation requests; 1 MiB for authority-binding frames.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     UnsupportedMediaType:
       description: Content-Type is not exactly application/json.
@@ -304,7 +539,7 @@ components:
       description: Closed shape, canonical bytes, hash, or header binding is invalid.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
-      description: The bound runner job does not exist.
+      description: The bound runner job, authority binding, or idempotency receipt does not exist.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Internal:
       description: Sanitized internal integrity failure.
@@ -419,10 +654,17 @@ components:
       type: object
       additionalProperties: false
       unevaluatedProperties: false
+      oneOf:
+        - properties:
+            backend: { const: ts-local }
+            authority: { const: typescript }
+        - properties:
+            backend: { const: go }
+            authority: { const: workflow-control }
       required: [backend, authority, routingEpoch, authorityBuildHash]
       properties:
-        backend: { const: ts-local }
-        authority: { const: typescript }
+        backend: { enum: [ts-local, go] }
+        authority: { enum: [typescript, workflow-control] }
         routingEpoch: { $ref: '#/components/schemas/SafePositiveInteger' }
         authorityBuildHash: { $ref: '#/components/schemas/Hash' }
     V2JobSpec:
@@ -539,6 +781,70 @@ components:
         reconciliationId:
           type: [string, 'null']
           maxLength: 512
+    V2RuntimeAdmission:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          attemptId,
+          leaseId,
+          fencingToken,
+          jobSpecHash,
+          disposition,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_v2_runtime_admission.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        attemptId: { $ref: '#/components/schemas/Identifier' }
+        leaseId: { $ref: '#/components/schemas/Identifier' }
+        fencingToken: { $ref: '#/components/schemas/SafePositiveInteger' }
+        jobSpecHash: { $ref: '#/components/schemas/Hash' }
+        disposition: { enum: [initial, resume] }
+    V2RuntimeAdmissionReceipt:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          status,
+          workspaceId,
+          jobId,
+          workflowRunId,
+          attemptId,
+          leaseId,
+          fencingToken,
+          jobSpecHash,
+          disposition,
+          idempotencyKey,
+          requestFingerprint,
+          committedAt,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_v2_runtime_admission_receipt.v1 }
+        status: { const: accepted }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        jobId: { $ref: '#/components/schemas/Identifier' }
+        workflowRunId: { $ref: '#/components/schemas/Identifier' }
+        attemptId: { $ref: '#/components/schemas/Identifier' }
+        leaseId: { $ref: '#/components/schemas/Identifier' }
+        fencingToken: { $ref: '#/components/schemas/SafePositiveInteger' }
+        jobSpecHash: { $ref: '#/components/schemas/Hash' }
+        disposition: { enum: [initial, resume] }
+        idempotencyKey:
+          type: string
+          pattern: '^openslack\.workflow-runner-v2-runtime-admission\.v1\.[0-9a-f]{64}$'
+        requestFingerprint:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        committedAt: { $ref: '#/components/schemas/Timestamp' }
     JobView:
       type: object
       additionalProperties: false
@@ -694,6 +1000,12 @@ components:
         requestFingerprint:
           type: string
           pattern: '^sha256:[0-9a-f]{64}$'
+    AuthorityBindingStage:
+      $ref: '../../runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json'
+    AuthorityBindingResolution:
+      $ref: '../../runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-resolution.v1.schema.json'
+    AuthorityBindingReceipt:
+      $ref: '../../runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-receipt.v1.schema.json'
     Health:
       type: object
       additionalProperties: false
@@ -712,11 +1024,13 @@ components:
         schemaVersion:
           type: integer
           minimum: 2
-          maximum: 7
+          maximum: 8
         mode: { const: runner-control-explicit }
         workflowAuthority: { const: typescript }
         v2QualificationAdmission: { type: boolean }
         routingActivated: { const: false }
+        v2RuntimeDeliveryQualification: { type: boolean }
+        productionRoutingActivated: { const: false }
     Error:
       type: object
       additionalProperties: false

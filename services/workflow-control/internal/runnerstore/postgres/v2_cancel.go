@@ -73,6 +73,21 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, control.CancelID, message.Even
 		backend, authority, routingEpoch, build, runRevision, resumeGeneration, v1Hash[:], v2Digest, []byte(prepared.Body)); err != nil {
 		return runnerstore.V2CancelControl{}, mapWriteFailure("insert durable v2 cancel binding", err)
 	}
+	if repository.v2RuntimeDelivery {
+		var pendingDecision bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+SELECT 1 FROM workflow_runner_v2_decision_bindings pair
+JOIN workflow_runner_control_messages decision ON decision.control_event_id=pair.decision_control_event_id
+JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=pair.received_event_id
+WHERE binding.attempt_id=$1 AND binding.state='runner_committed'
+  AND decision.delivery_state IN ('pending','delivering','awaiting_ack','reconciliation_required')
+)`, control.AttemptID).Scan(&pendingDecision); err != nil {
+			return runnerstore.V2CancelControl{}, databaseFailure("read v2 cancel decision predecessor", err)
+		}
+		if pendingDecision {
+			return runnerstore.V2CancelControl{}, runnerstore.Failure(runnerstore.ErrorSequenceConflict, "v2 cancel cannot replace an immutable authority decision", nil)
+		}
+	}
 	if err := repository.commit(ctx, tx); err != nil {
 		return runnerstore.V2CancelControl{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "v2 cancel binding commit outcome is unknown", err)
 	}

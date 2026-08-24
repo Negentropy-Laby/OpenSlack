@@ -23,31 +23,40 @@ import (
 )
 
 const (
-	RouteJobs                 = "/v1/runner/jobs"
-	RouteV2Jobs               = "/v2/runner/jobs"
-	RouteJob                  = "/v1/runner/jobs/{jobId}"
-	RouteCancellation         = "/v1/runner/jobs/{jobId}/cancellations"
-	RouteLive                 = "/health/live"
-	RouteReady                = "/health/ready"
-	RouteVersion              = "/health/version"
-	RouteMetrics              = "/metrics"
-	HeaderWorkspaceID         = "X-OpenSlack-Workspace-ID"
-	HeaderRequestFingerprint  = "X-OpenSlack-Request-Fingerprint"
-	HeaderIdempotencyReplayed = "Idempotency-Replayed"
-	MaxResponseBodyBytes      = 2 * 1024 * 1024
-	requestDeadline           = 30 * time.Second
-	readDeadline              = 5 * time.Second
+	RouteJobs                  = "/v1/runner/jobs"
+	RouteV2Jobs                = "/v2/runner/jobs"
+	RouteAuthorityBindingStage = "/v2/runner/authority-bindings:stage"
+	RouteAuthorityBinding      = "/v2/runner/authority-bindings/{bindingAction}"
+	RouteAuthorityReceipt      = "/v2/runner/authority-bindings/receipts/{idempotencyKey}"
+	RouteV2RuntimeAdmission    = "/v2/runner/runtime-admissions:seal"
+	RouteJob                   = "/v1/runner/jobs/{jobId}"
+	RouteCancellation          = "/v1/runner/jobs/{jobId}/cancellations"
+	RouteLive                  = "/health/live"
+	RouteReady                 = "/health/ready"
+	RouteVersion               = "/health/version"
+	RouteMetrics               = "/metrics"
+	HeaderWorkspaceID          = "X-OpenSlack-Workspace-ID"
+	HeaderRequestFingerprint   = "X-OpenSlack-Request-Fingerprint"
+	HeaderIdempotencyReplayed  = "Idempotency-Replayed"
+	MaxResponseBodyBytes       = 2 * 1024 * 1024
+	requestDeadline            = 30 * time.Second
+	readDeadline               = 5 * time.Second
 )
 
 var (
-	hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	safeID      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$`)
+	hashPattern       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	safeID            = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$`)
+	bindingIDPattern  = regexp.MustCompile(`^WFRUNNER-BINDING-[0-9a-f]{64}$`)
+	bindingKeyPattern = regexp.MustCompile(`^openslack\.workflow-runner-authority-binding\.v1\.[0-9a-f]{64}$`)
 )
 
 type Options struct {
 	Store             runnerstore.Store
 	V2Store           runnerstore.V2JobStore
+	BindingStore      runnerstore.V2AuthorityBindingStore
+	AdmissionStore    runnerstore.V2RuntimeAdmissionStore
 	V2Qualification   bool
+	V2RuntimeDelivery bool
 	SchemaVersion     int64
 	BuildSHA          string
 	WorkspaceID       string
@@ -56,15 +65,18 @@ type Options struct {
 }
 
 type Service struct {
-	store         runnerstore.Store
-	v2Store       runnerstore.V2JobStore
-	v2Enabled     bool
-	schemaVersion int64
-	buildSHA      string
-	workspaceID   string
-	tokenHash     [sha256.Size]byte
-	logger        *slog.Logger
-	handler       http.Handler
+	store             runnerstore.Store
+	v2Store           runnerstore.V2JobStore
+	bindingStore      runnerstore.V2AuthorityBindingStore
+	admissionStore    runnerstore.V2RuntimeAdmissionStore
+	v2Enabled         bool
+	v2RuntimeDelivery bool
+	schemaVersion     int64
+	buildSHA          string
+	workspaceID       string
+	tokenHash         [sha256.Size]byte
+	logger            *slog.Logger
+	handler           http.Handler
 
 	requests      atomic.Int64
 	unauthorized  atomic.Int64
@@ -93,12 +105,19 @@ func New(options Options) (*Service, error) {
 	}
 	service := &Service{
 		store: options.Store, buildSHA: options.BuildSHA,
-		v2Store: options.V2Store, v2Enabled: options.V2Qualification,
-		schemaVersion: options.SchemaVersion,
-		workspaceID:   options.WorkspaceID, logger: options.Logger,
+		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore, v2Enabled: options.V2Qualification,
+		v2RuntimeDelivery: options.V2RuntimeDelivery,
+		schemaVersion:     options.SchemaVersion,
+		workspaceID:       options.WorkspaceID, logger: options.Logger,
 	}
 	if service.v2Enabled && service.v2Store == nil {
 		return nil, fmt.Errorf("runner v2 qualification Store is required when enabled")
+	}
+	if service.v2RuntimeDelivery && !service.v2Enabled {
+		return nil, fmt.Errorf("runner v2 runtime delivery requires v2 qualification")
+	}
+	if service.v2RuntimeDelivery && (service.bindingStore == nil || service.admissionStore == nil) {
+		return nil, fmt.Errorf("runner authority-binding and runtime-admission Stores are required for runtime delivery")
 	}
 	if service.schemaVersion == 0 {
 		service.schemaVersion = 2
@@ -115,6 +134,12 @@ func (service *Service) routes() http.Handler {
 	mux.Handle("POST "+RouteJobs, service.requireIdentity(http.HandlerFunc(service.handleSubmit)))
 	if service.v2Enabled {
 		mux.Handle("POST "+RouteV2Jobs, service.requireIdentity(http.HandlerFunc(service.handleV2Submit)))
+	}
+	if service.v2RuntimeDelivery {
+		mux.Handle("POST "+RouteV2RuntimeAdmission, service.requireIdentity(http.HandlerFunc(service.handleV2RuntimeAdmission)))
+		mux.Handle("POST "+RouteAuthorityBindingStage, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingStage)))
+		mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
+		mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
 	}
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 )
 
 const cancellationSchema = "openslack.workflow_runner_cancel_request.v1"
@@ -89,7 +90,12 @@ func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Requ
 		writeReadError(w, ctx, err)
 		return
 	}
-	prepared, err := runnerstore.ParseV2JobSpec(body)
+	var prepared runnerstore.PreparedV2JobSpec
+	if service.v2RuntimeDelivery {
+		prepared, err = runnerstore.ParseV2RuntimeJobSpec(body)
+	} else {
+		prepared, err = runnerstore.ParseV2JobSpec(body)
+	}
 	if err != nil || prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
 		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 job specification is invalid")
 		return
@@ -122,6 +128,191 @@ func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Requ
 		service.accepted.Add(1)
 	}
 	writeExactJSON(w, status, exact)
+}
+
+func (service *Service) handleAuthorityBindingStage(w http.ResponseWriter, request *http.Request) {
+	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
+	defer cancel()
+	request = request.WithContext(ctx)
+	if !requireMutationHeaders(w, request) {
+		return
+	}
+	body, err := readAuthorityBindingBody(w, request)
+	if err != nil {
+		writeReadError(w, ctx, err)
+		return
+	}
+	value, err := runnerbindingcontract.ParseStageBytes(body)
+	if err != nil {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding stage is invalid")
+		return
+	}
+	prepared, err := runnerbindingcontract.PrepareStage(value)
+	if err != nil || prepared.Body != string(body) || !bindingHeadersMatch(request, prepared) {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding stage headers do not bind the exact LF body")
+		return
+	}
+	receipt, err := service.bindingStore.StageAuthorityBinding(ctx, runnerstore.V2AuthorityBindingInput{
+		WorkspaceID: service.workspaceID, Prepared: prepared,
+		IdempotencyKey: request.Header.Get("Idempotency-Key"), RequestFingerprint: request.Header.Get(HeaderRequestFingerprint),
+	})
+	service.writeAuthorityBindingReceipt(w, receipt, err)
+}
+
+func (service *Service) handleV2RuntimeAdmission(w http.ResponseWriter, request *http.Request) {
+	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
+	defer cancel()
+	request = request.WithContext(ctx)
+	if !requireMutationHeaders(w, request) {
+		return
+	}
+	body, err := readBoundedBody(w, request)
+	if err != nil {
+		writeReadError(w, ctx, err)
+		return
+	}
+	prepared, err := runnerstore.ParseV2RuntimeAdmission(body)
+	if err != nil || prepared.Value.WorkspaceID != service.workspaceID ||
+		request.Header.Get("Idempotency-Key") != prepared.IdempotencyKey ||
+		request.Header.Get(HeaderRequestFingerprint) != prepared.RequestFingerprint {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_INVALID", "v2 runtime admission headers do not bind the exact LF body")
+		return
+	}
+	receipt, err := service.admissionStore.SealV2RuntimeAdmission(ctx, runnerstore.V2RuntimeAdmissionInput{
+		WorkspaceID: service.workspaceID, Prepared: prepared,
+		IdempotencyKey: prepared.IdempotencyKey, RequestFingerprint: prepared.RequestFingerprint,
+	})
+	if err != nil {
+		service.writeStoreError(w, err)
+		return
+	}
+	exact, prepareErr := runnerstore.PrepareV2RuntimeAdmissionReceipt(receipt)
+	if prepareErr != nil || !bytes.Equal(exact, receipt.ExactBytes) {
+		service.logger.Error("workflow_runner_invalid_v2_runtime_admission_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner v2 control failure")
+		return
+	}
+	status := http.StatusCreated
+	if receipt.Replay {
+		status = http.StatusOK
+		w.Header().Set(HeaderIdempotencyReplayed, "true")
+	}
+	writeExactJSON(w, status, exact)
+}
+
+func (service *Service) handleAuthorityBindingAction(w http.ResponseWriter, request *http.Request) {
+	action := request.PathValue("bindingAction")
+	bindingID, operation, ok := strings.Cut(action, ":")
+	if !ok || !bindingIDPattern.MatchString(bindingID) || (operation != "resolve" && operation != "ack-control") {
+		writeFailure(w, http.StatusNotFound, "WORKFLOW_RUNNER_NOT_FOUND", "authority-binding action was not found")
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
+	defer cancel()
+	request = request.WithContext(ctx)
+	if !requireMutationHeaders(w, request) {
+		return
+	}
+	body, err := readAuthorityBindingBody(w, request)
+	if err != nil {
+		writeReadError(w, ctx, err)
+		return
+	}
+	if operation == "resolve" {
+		value, parseErr := runnerbindingcontract.ParseResolutionBytes(body)
+		if parseErr != nil {
+			writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding resolution is invalid")
+			return
+		}
+		prepared, prepareErr := runnerbindingcontract.PrepareResolution(value)
+		if prepareErr != nil || prepared.Body != string(body) || !bindingHeadersMatch(request, prepared) {
+			writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding resolution headers do not bind the exact LF body")
+			return
+		}
+		receipt, storeErr := service.bindingStore.ResolveAuthorityBinding(ctx, bindingID, runnerstore.V2AuthorityBindingInput{
+			WorkspaceID: service.workspaceID, Prepared: prepared,
+			IdempotencyKey: request.Header.Get("Idempotency-Key"), RequestFingerprint: request.Header.Get(HeaderRequestFingerprint),
+		})
+		service.writeAuthorityBindingReceipt(w, receipt, storeErr)
+		return
+	}
+	value, parseErr := runnerbindingcontract.ParseReceiptBytes(body)
+	if parseErr != nil || value["phase"] != "control_delivery" {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding control ACK is invalid")
+		return
+	}
+	prepared, prepareErr := runnerbindingcontract.PrepareReceipt(value)
+	if prepareErr != nil || prepared.Body != string(body) || !bindingHeadersMatch(request, prepared) {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID", "authority-binding control ACK headers do not bind the exact LF body")
+		return
+	}
+	receipt, storeErr := service.bindingStore.AcknowledgeV2Control(ctx, runnerstore.V2ControlAcknowledgementInput{
+		BindingID: bindingID, WorkspaceID: service.workspaceID, Prepared: prepared,
+		IdempotencyKey: request.Header.Get("Idempotency-Key"), RequestFingerprint: request.Header.Get(HeaderRequestFingerprint),
+	})
+	service.writeAuthorityBindingReceipt(w, receipt, storeErr)
+}
+
+func (service *Service) handleAuthorityBindingReceipt(w http.ResponseWriter, request *http.Request) {
+	if !requireNoQuery(w, request) {
+		return
+	}
+	key := request.PathValue("idempotencyKey")
+	if !bindingKeyPattern.MatchString(key) {
+		writeFailure(w, http.StatusNotFound, "WORKFLOW_RUNNER_NOT_FOUND", "authority-binding receipt was not found")
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), readDeadline)
+	defer cancel()
+	receipt, err := service.bindingStore.ReadAuthorityBindingReceipt(ctx, service.workspaceID, key)
+	if err != nil {
+		service.writeStoreError(w, err)
+		return
+	}
+	if value, parseErr := runnerbindingcontract.ParseReceiptBytes(receipt.ExactBytes); parseErr != nil || value["bindingId"] != receipt.Value["bindingId"] {
+		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+		return
+	}
+	writeExactJSON(w, http.StatusOK, receipt.ExactBytes)
+}
+
+func bindingHeadersMatch(request *http.Request, prepared runnerbindingcontract.Prepared) bool {
+	return request.Header.Get("Idempotency-Key") == prepared.IdempotencyKey &&
+		request.Header.Get(HeaderRequestFingerprint) == prepared.RequestFingerprint
+}
+
+func (service *Service) writeAuthorityBindingReceipt(w http.ResponseWriter, receipt runnerstore.V2AuthorityBindingReceipt, err error) {
+	if err != nil {
+		service.writeStoreError(w, err)
+		return
+	}
+	value, parseErr := runnerbindingcontract.ParseReceiptBytes(receipt.ExactBytes)
+	if parseErr != nil || value["bindingId"] != receipt.Value["bindingId"] {
+		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+		return
+	}
+	status := http.StatusCreated
+	if receipt.Replay {
+		w.Header().Set(HeaderIdempotencyReplayed, "true")
+		status = http.StatusOK
+	} else if value["status"] == "reconciliation_required" {
+		status = http.StatusAccepted
+	}
+	writeExactJSON(w, status, receipt.ExactBytes)
+}
+
+func readAuthorityBindingBody(w http.ResponseWriter, request *http.Request) ([]byte, error) {
+	request.Body = http.MaxBytesReader(w, request.Body, runnerbindingcontract.MaxFrameBytes)
+	body, err := io.ReadAll(&contextReader{ctx: request.Context(), reader: request.Body})
+	if err != nil {
+		return nil, err
+	}
+	if len(body) == 0 || len(body) > runnerbindingcontract.MaxFrameBytes {
+		return nil, fmt.Errorf("authority-binding request body size is invalid")
+	}
+	return body, nil
 }
 
 func v2JobReceiptBytes(receipt runnerstore.V2JobReceipt) ([]byte, error) {
@@ -268,6 +459,10 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 	if service.v2Enabled {
 		version["v2QualificationAdmission"] = true
 		version["routingActivated"] = false
+	}
+	if service.v2RuntimeDelivery {
+		version["v2RuntimeDeliveryQualification"] = true
+		version["productionRoutingActivated"] = false
 	}
 	writeCanonical(w, http.StatusOK, version)
 }

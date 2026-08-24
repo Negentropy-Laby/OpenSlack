@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,8 +71,8 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-F1" ||
-		manifest.Service.Authority != "GO_QUALIFICATION_SPINE_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
+		manifest.Service.MigrationPhase != "GS9-F2b" ||
+		manifest.Service.Authority != "GO_QUALIFICATION_COORDINATOR_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
 			"WORKFLOW_RUNNER_ATTEMPT_LEASE_FENCING",
@@ -102,11 +102,20 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 			"WORKFLOW_RUNNER_V2_FOUNDATION_NEGOTIATION",
 			"WORKFLOW_RUNNER_V2_FOUNDATION_RECEIPT_BEFORE_DECISION_TRANSPORT",
 			"WORKFLOW_RUNNER_V2_LOCAL_PROVIDER_ATTEMPT_ORDERING_SEAM",
+			"WORKFLOW_RUNNER_V2_AUTHORITY_BINDING_COORDINATOR",
+			"WORKFLOW_RUNNER_V2_AUTHORITY_BINDING_RECOVERY",
+			"WORKFLOW_RUNNER_V2_CHECKPOINT_ADAPTER",
+			"WORKFLOW_RUNNER_V2_EFFECT_ADAPTER",
+			"WORKFLOW_RUNNER_V2_BUDGET_ADAPTER",
+			"WORKFLOW_RUNNER_V2_BUDGET_IDENTITY_BINDING",
+			"WORKFLOW_RUNNER_V2_RESUME_ADAPTER",
+			"WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_QUALIFICATION",
+			"WORKFLOW_BUDGET_QUALIFICATION_RUNTIME_CLIENT",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 15 || len(manifest.ContractInputs) != 14 {
+		len(manifest.SourceInputs) != 35 || len(manifest.ContractInputs) != 15 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -164,11 +173,91 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		},
 		"runnerV2EventSource": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_event.go",
-			SHA256: "2aea68d320edd8f11190daf0d3b22184e3ab941708539f2e7126a44023ad8578",
+			SHA256: "d2ba598c58be6cf62e97f82966cbb2ef8b1fb696156c08cf91ba56582d7f948e",
 		},
 		"runnerV2FoundationIntegrationTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go",
 			SHA256: "b6e8a85d519fe3fbde69b6d4a83b2218201e0635fd1afdd92bcef1bc399dcfde",
+		},
+		"runnerV2RuntimeDeliveryMigrationUp": {
+			Path:   "services/workflow-control/migrations/000008_deliver_workflow_runner_authority_bindings.up.sql",
+			SHA256: "6d258d930f7f201ea837e0ef098e1759094a4bfc211446c46896a99f26385eea",
+		},
+		"runnerV2RuntimeDeliveryMigrationDown": {
+			Path:   "services/workflow-control/migrations/000008_deliver_workflow_runner_authority_bindings.down.sql",
+			SHA256: "1abaac1f58443cce2a44a23566b47eb3fc7eada20c0fd141715f25dcd789e438",
+		},
+		"runnerV2RuntimeAdmissionSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_admission.go",
+			SHA256: "56a18476b7d887ee1c03297a65eb590a31d80444ddfd63f403aaeeca8deb2cdb",
+		},
+		"runnerV2AuthorityBindingSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_binding.go",
+			SHA256: "9873b0eb87637526e4ac5eab7d1927eecddf79fa264c0a72baa6cfcbd794963c",
+		},
+		"runnerV2RuntimeDeliveryIntegrationTest": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/gs9f2_runtime_integration_test.go",
+			SHA256: "9c2f7868e64a004645d023b54a64303ee080c5fdfac409b19d48741e82d68f39",
+		},
+		"runnerV2RuntimeDeliveryHTTPQualificationTest": {
+			Path:   "services/workflow-control/cmd/runner-server/gs9f2_qualification_test.go",
+			SHA256: "d80932d0e330918739e481be9b5079f6acf04ee131139ade4e34e7aaec086d83",
+		},
+		"runnerV2AuthorityBindingDomainSource": {
+			Path:   "services/workflow-control/internal/runnerstore/v2_binding.go",
+			SHA256: "a9a4c777bea1fb7e626523afc1247a53b41766cc57275ee38d515268ebde51f2",
+		},
+		"runnerV2AuthorityBindingLifecycleTest": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/gs9f2_binding_lifecycle_test.go",
+			SHA256: "1449b74573f03b24283b8d034b78b754bb5351b36325b3051933c0bd3ad71300",
+		},
+		"runnerV2RuntimeDeliverySchedulerSource": {
+			Path:   "services/workflow-control/internal/runnerscheduler/session_v2.go",
+			SHA256: "e3413ab4bebc28f6242f9b46e930958466431b0dd394e01e480ce6f00cc3f93a",
+		},
+		"runnerV2RuntimeDeliverySchedulerTest": {
+			Path:   "services/workflow-control/internal/runnerscheduler/session_v2_runtime_delivery_test.go",
+			SHA256: "e821f85301debf686a428acbc412654569a9328e22aedfbe6bd7c8cd896c9d93",
+		},
+		"runnerV2RuntimeDeliveryConfigSource": {
+			Path:   "services/workflow-control/internal/runnerconfig/config.go",
+			SHA256: "554bdb94a248c9464f7dbe1e59c0d435dafbffc84be59f616b6dbdd51c9bb179",
+		},
+		"runnerV2RuntimeDeliveryWorkerRegistrySource": {
+			Path:   "services/workflow-control/internal/workerregistry/registry.go",
+			SHA256: "83b432e3f61e69e287cf50790fe187e7b5620b4d2799258880574d1e0bf55993",
+		},
+		"runnerV2RuntimeDeliveryClaimSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/claim.go",
+			SHA256: "5927c342e399ee46c5176235d623ce6a26c62ea039d92375abc6028851733e60",
+		},
+		"runnerV2RuntimeDeliveryStateMachineSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_delivery.go",
+			SHA256: "f9ce99fbd79e326a0d9c4015be92a163353a7ff173fdc82a0f4ee7c85c907398",
+		},
+		"runnerV2RuntimeDeliveryCancellationSource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/v2_cancel.go",
+			SHA256: "2d9a213e3e781b32b39981da947abec950d5ebd7bd24d913d69c10961f2b9e2c",
+		},
+		"runnerV2RuntimeDeliveryProcessRecoverySource": {
+			Path:   "services/workflow-control/internal/runnerstore/postgres/process.go",
+			SHA256: "8993acc692f1ce20e193de93ecf570d2afe24ef5672430b5ec4a67268be4b0ad",
+		},
+		"runnerV2BudgetPointReadSource": {
+			Path:   "services/workflow-control/internal/budgetstore/postgres/read.go",
+			SHA256: "20638b616e20d95ae714b02ade675e3eee4b746a324a3eaaf699517708acf3be",
+		},
+		"runnerV2RuntimeDeliveryHTTPHandlersSource": {
+			Path:   "services/workflow-control/internal/runnerapp/handlers.go",
+			SHA256: "5f24a84106314357d6909faa61425407abfde476f911256d40a38a718ea6f380",
+		},
+		"runnerV2RuntimeDeliveryHTTPServerSource": {
+			Path:   "services/workflow-control/internal/runnerapp/server.go",
+			SHA256: "c27e700fd59c67a162720b763699160b0bdf17e0652336d644a6319d7a151402",
+		},
+		"runnerV2RuntimeDeliveryCompositionRootSource": {
+			Path:   "services/workflow-control/cmd/runner-server/main.go",
+			SHA256: "dd7e0d3e0feea1cc7e5a3bdbef49cf1fafd0233e6f8f6b6d34172c5b782be8ab",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
@@ -207,13 +296,17 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 			Path:   "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
 			SHA256: "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548",
 		},
+		"workflowRunnerAuthorityBindingContractManifest": {
+			Path:   "packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json",
+			SHA256: "706dff30cffec4fa02b9abf6c7d54e76b0c29103fe778fbbf5d70718630010f0",
+		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
 			SHA256: "3215e50eadda34c7675cf06449c8b26f567f7f369a26d409c95fe7a7f901343f",
 		},
 		"runnerOpenapi": {
 			Path:   "services/workflow-control/docs/api/runner-openapi.yaml",
-			SHA256: "70830c01a17cd51ffbb7aa966c4c7bf63a5c80e92304b5c143a118d95b2ab6fa",
+			SHA256: "84d334e542d94d363ddc631fdda525ab89dc8b4f50c27f2ea62f8b55666d5c4e",
 		},
 		"authorityOpenapi": {
 			Path:   "services/workflow-control/docs/api/authority-openapi.yaml",
@@ -239,15 +332,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F1Inputs(t *testing.T) {
 		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",
 		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "REMOTE_CONNECTOR",
 		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_PRODUCTION_AUTHORITY",
-		"WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE", "WORKFLOW_BUDGET_RUNTIME_CLIENT",
+		"WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE",
 		"WORKFLOW_CONTROL_AUTHORITY_CUTOVER", "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
 		"WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
 		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_ROUTING_CANARY_CUTOVER",
-		"WORKFLOW_RUNNER_V2_BUDGET_ADAPTER", "WORKFLOW_RUNNER_V2_BUDGET_IDENTITY_BINDING",
-		"WORKFLOW_RUNNER_V2_CHECKPOINT_ADAPTER",
-		"WORKFLOW_RUNNER_V2_EFFECT_ADAPTER",
 		"WORKFLOW_RUNNER_V2_PRODUCTION_ROUTING", "WORKFLOW_RUNNER_V2_PRODUCTION_SUBMISSION",
-		"WORKFLOW_RUNNER_V2_RESUME_ADAPTER", "WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY",
 		"WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)

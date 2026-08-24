@@ -58,7 +58,7 @@ func (repository *Repository) ClaimNext(ctx context.Context, input runnerstore.C
 		return runnerstore.AttemptLease{}, err
 	}
 	var job claimRecord
-	err = tx.QueryRow(ctx, claimJobSQL, input.WorkspaceID, now, protocols).Scan(
+	err = tx.QueryRow(ctx, claimJobSQL, input.WorkspaceID, now, protocols, repository.v2RuntimeDelivery).Scan(
 		&job.workspaceID, &job.jobID, &job.workflowRunID, &job.correlationID,
 		&job.descriptorRef, &job.descriptorHash, &job.jobSpecHash,
 		&job.workflowID, &job.workflowVersion, &job.sourceHash, &job.manifestHash, &job.inputHash,
@@ -176,12 +176,13 @@ func (repository *Repository) ClaimNext(ctx context.Context, input runnerstore.C
 		return runnerstore.AttemptLease{}, runnerstore.Failure(runnerstore.ErrorConflict, "runner job claim CAS lost", nil)
 	}
 	if job.requiredProtocol == authoritycontract.ProtocolVersion {
-		if _, err := tx.Exec(ctx, `INSERT INTO workflow_runner_v2_attempt_bindings (
+		insert := `INSERT INTO workflow_runner_v2_attempt_bindings (
 attempt_id,workspace_id,job_id,authority_backend,workflow_authority,routing_epoch,authority_build_hash,
 initial_run_revision,initial_resume_generation,current_run_revision,current_resume_generation,required_capabilities,created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9,$10,$11)`,
-			attemptID, job.workspaceID, job.jobID, *job.authorityBackend, *job.authority, *job.routingEpoch,
-			job.authorityBuildHash, *job.runRevision, *job.resumeGeneration, job.requiredCapabilities, now); err != nil {
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9,$10,$11)`
+		args := []any{attemptID, job.workspaceID, job.jobID, *job.authorityBackend, *job.authority, *job.routingEpoch,
+			job.authorityBuildHash, *job.runRevision, *job.resumeGeneration, job.requiredCapabilities, now}
+		if _, err := tx.Exec(ctx, insert, args...); err != nil {
 			return runnerstore.AttemptLease{}, mapWriteFailure("insert v2 attempt binding", err)
 		}
 	}

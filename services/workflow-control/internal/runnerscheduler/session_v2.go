@@ -118,7 +118,7 @@ func (session *V2Session) Run(ctx context.Context, lease runnerstore.AttemptLeas
 			// A cancellation admitted before this event committed owns an earlier
 			// control sequence and must leave first. A cancellation admitted after
 			// commit necessarily follows the atomic receipt/decision pair.
-			if !cancelSent && recorded.Receipt.Sequence != nil {
+			if recorded.AuthorityBindingID == nil && !cancelSent && recorded.Receipt.Sequence != nil {
 				sent, sendErr := session.sendPendingV2Cancel(ctx, process, lease, *recorded.Receipt.Sequence)
 				if sendErr != nil {
 					return session.base.failProcess(ctx, process, lease, runnerstore.ProcessForced, sendErr)
@@ -129,15 +129,17 @@ func (session *V2Session) Run(ctx context.Context, lease runnerstore.AttemptLeas
 					cancelTimerChannel = cancelTimer.C
 				}
 			}
-			// Receipt is always delivered and durably marked before a decision;
-			// cancellation polling cannot interleave in this synchronous lane.
-			if err := session.send(ctx, process, lease.AttemptID, recorded.Receipt, recorded.ReceiptBytes); err != nil {
-				return session.base.failProcess(ctx, process, lease, runnerstore.ProcessForced, fmt.Errorf("send runner v2 event receipt: %w", err))
+			authorityCancelSent, sendErr := session.sendRecordedV2Controls(ctx, process, lease, recorded, !cancelSent)
+			if sendErr != nil {
+				return session.base.failProcess(ctx, process, lease, runnerstore.ProcessForced, sendErr)
 			}
-			if recorded.Decision != nil {
-				if err := session.send(ctx, process, lease.AttemptID, *recorded.Decision, recorded.DecisionBytes); err != nil {
-					return session.base.failProcess(ctx, process, lease, runnerstore.ProcessForced, fmt.Errorf("send runner v2 authority decision: %w", err))
+			if authorityCancelSent {
+				if !cancelSent {
+					cancelSent = true
+					cancelTimer = time.NewTimer(session.config.CancelGrace)
+					cancelTimerChannel = cancelTimer.C
 				}
+				continue
 			}
 			if frame.message.Kind == authoritycontract.KindLeaseReject {
 				return session.base.finishRejectedProcess(process, lease, recorded.JobState)
@@ -220,6 +222,46 @@ func (session *V2Session) Run(ctx context.Context, lease runnerstore.AttemptLeas
 	}
 }
 
+// sendRecordedV2Controls serializes one durable worker event's outbound lane.
+// An authority-bound receipt is ACKed before its immutable decision, and that
+// decision is ACKed before a later normal cancellation. Operations without a
+// decision may instead use the optional cancellation companion immediately
+// after the receipt. A cancellation that already owns a lower sequence proves
+// the event raced a state transition and is never emitted out of order.
+func (session *V2Session) sendRecordedV2Controls(
+	ctx context.Context,
+	process WorkerProcess,
+	lease runnerstore.AttemptLease,
+	recorded runnerstore.V2RecordedEvent,
+	allowAuthorityCancel bool,
+) (bool, error) {
+	if recorded.AuthorityBindingID != nil {
+		pending, err := session.config.Store.PendingCancel(ctx, lease.WorkspaceID, lease.JobID, lease.AttemptID)
+		if err != nil {
+			return false, fmt.Errorf("read runner v2 pre-authority cancellation: %w", err)
+		}
+		if pending != nil && recorded.Receipt.Sequence != nil && pending.ControlSequence < *recorded.Receipt.Sequence {
+			return false, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 cancellation predates an authority-bound receipt", nil)
+		}
+	}
+	if err := session.send(ctx, process, lease.AttemptID, recorded.Receipt, recorded.ReceiptBytes); err != nil {
+		return false, fmt.Errorf("send runner v2 event receipt: %w", err)
+	}
+	if recorded.Decision != nil {
+		if err := session.send(ctx, process, lease.AttemptID, *recorded.Decision, recorded.DecisionBytes); err != nil {
+			return false, fmt.Errorf("send runner v2 authority decision: %w", err)
+		}
+	}
+	if recorded.AuthorityBindingID == nil || !allowAuthorityCancel {
+		return false, nil
+	}
+	sent, err := session.sendPendingV2Cancel(ctx, process, lease, 0)
+	if err != nil {
+		return false, fmt.Errorf("send runner v2 post-authority cancellation: %w", err)
+	}
+	return sent, nil
+}
+
 func (session *V2Session) sendPendingV2Cancel(ctx context.Context, process WorkerProcess, lease runnerstore.AttemptLease, beforeSequence int64) (bool, error) {
 	control, err := session.config.Store.PendingCancel(ctx, lease.WorkspaceID, lease.JobID, lease.AttemptID)
 	if err != nil || control == nil {
@@ -267,6 +309,16 @@ func (session *V2Session) send(ctx context.Context, process WorkerProcess, attem
 	if err := session.config.Store.MarkV2ControlDelivered(ctx, attemptID, message.EventID, string(message.Kind), session.config.Now()); err != nil {
 		markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
 		return errors.Join(err, markErr)
+	}
+	if waiter, ok := session.config.Store.(interface {
+		WaitV2ControlAcknowledged(context.Context, string, string) error
+	}); ok {
+		ackContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := waiter.WaitV2ControlAcknowledged(ackContext, attemptID, message.EventID); err != nil {
+			markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
+			return errors.Join(err, markErr)
+		}
 	}
 	return nil
 }

@@ -20,6 +20,7 @@ type Config struct {
 	Session              *Session
 	V2Session            ProtocolSession
 	V2Qualification      bool
+	V2RuntimeDelivery    bool
 	WorkspaceID          string
 	SupervisorInstanceID string
 	MaxProcesses         int
@@ -60,6 +61,15 @@ func New(config Config) (*Scheduler, error) {
 func (scheduler *Scheduler) Run(ctx context.Context) error {
 	if _, err := scheduler.config.Store.RecoverOrphans(ctx, scheduler.config.SupervisorInstanceID, scheduler.config.Now(), 1000); err != nil {
 		return fmt.Errorf("recover orphan runner attempts: %w", err)
+	}
+	if scheduler.config.V2RuntimeDelivery {
+		if recovery, ok := scheduler.config.Store.(interface {
+			RecoverAuthorityBindings(context.Context, string, time.Time, int) ([]runnerstore.V2AuthorityBindingView, error)
+		}); ok {
+			if _, err := recovery.RecoverAuthorityBindings(ctx, scheduler.config.WorkspaceID, scheduler.config.Now(), 1000); err != nil {
+				return fmt.Errorf("recover workflow runner authority bindings: %w", err)
+			}
+		}
 	}
 	groupCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

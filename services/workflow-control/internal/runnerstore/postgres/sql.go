@@ -33,7 +33,8 @@ SELECT workspace_id, job_id, workflow_run_id, correlation_id,
 	  AND dispatch_not_before <= $2 AND whole_deadline > $2
 	  AND required_protocol_version = ANY($3::TEXT[])
 	  AND (required_protocol_version <> 'openslack.workflow_runner.v2'
-	       OR (authority_backend='ts-local' AND workflow_authority='typescript'))
+	       OR ($4::BOOLEAN AND authority_backend='go' AND workflow_authority='workflow-control')
+	       OR (NOT $4::BOOLEAN AND authority_backend='ts-local' AND workflow_authority='typescript'))
 ORDER BY created_at, workspace_id, job_id
 FOR UPDATE SKIP LOCKED
 LIMIT 1`

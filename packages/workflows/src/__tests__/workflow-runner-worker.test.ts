@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -10,19 +11,40 @@ import {
   createSealedWorkflowRunnerSourceLoader,
   loadWorkflowRunnerV2QualificationWorkerConfig,
   loadWorkflowRunnerWorkerConfig,
+  prepareWorkflowRunnerV2BudgetReserveSource,
+  createWorkflowRunnerV2ProviderAttemptPort,
+  executeWorkflowRunnerV2QualificationJob,
+  type WorkflowRunnerV2BudgetAuthorityBoundary,
   WorkflowRunnerV2RuntimeBoundaryUnavailableError,
   WorkflowRunnerWorkerConfigError,
 } from '../workflow-runner-worker.js';
+import {
+  parseWorkflowBudgetAuthorityBytes,
+  type WorkflowBudgetAccount,
+  type WorkflowBudgetReserveRequest,
+} from '../workflow-budget-authority-contract.js';
 import {
   createWorkflowRunnerV2ExecutionDescriptor,
   type WorkflowRunnerV2ExecutionDescriptor,
 } from '../workflow-runner-v2-descriptor.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
+import type { WorkflowRunnerV2ExecutionContext } from '../workflow-runner-v2-session.js';
+import type { WorkflowRunnerAuthoritySourceAdapter } from '../workflow-runner-authority-binding-runtime.js';
+import type { WorkflowRunnerAuthorityBindingStage } from '../workflow-runner-authority-binding-contract.js';
+import { createWorkflowRunnerV2EffectAuthorizationPort } from '../workflow-runner-v2-effect-authorization.js';
+import { createWorkflowEffectDecisionAuthority } from '../workflow-effect-approval.js';
+import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
+import {
+  WorkflowEffectApprovalPendingError,
+  WorkflowEffectReconciliationRequiredError,
+} from '../internal/workflow-effect-authorization-contract.js';
+import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
+import { RunStore } from '../run-store.js';
 import {
   classifyWorkflowRunnerRunState,
   WorkflowRunnerRunStateError,
 } from '../workflow-runner-run-state.js';
-import type { WorkflowMeta } from '../types.js';
+import type { WorkflowMeta, WorkflowModule } from '../types.js';
 
 const roots: string[] = [];
 const sourceBytes = Buffer.from('this is deliberately not valid JavaScript', 'utf8');
@@ -120,6 +142,335 @@ afterEach(async () => {
 });
 
 describe('GS8-B workflow runner worker', () => {
+  it('binds budget E1 to provider/model/run/attempt and independent E account revisions', () => {
+    const base = v2Descriptor(0);
+    const sealed = {
+      ...base,
+      runRevision: 9,
+      authorityRoute: {
+        backend: 'go' as const,
+        authority: 'workflow-control' as const,
+        routingEpoch: 1,
+        authorityBuildHash: 'a'.repeat(64),
+      },
+    };
+    const provider = {
+      providerId: 'provider.one',
+      modelId: 'model.one',
+      providerRunId: 'provider-run.one',
+      providerAttempt: '1',
+      requestedTokens: '100',
+    };
+    const prepare = (override: Partial<typeof provider> = {}) =>
+      prepareWorkflowRunnerV2BudgetReserveSource({
+        descriptor: sealed,
+        provider: { ...provider, ...override },
+        reservationId: 'reservation.identity.1',
+        callId: 'call.identity.1',
+        expectedAccountRevision: 2,
+        expectedRunRevision: 5,
+        callerId: 'workflow-runner-v2',
+        requestedAt: '2026-08-22T00:00:00.000Z',
+      });
+    const exact = prepare();
+    const request = parseWorkflowBudgetAuthorityBytes(
+      Buffer.from(exact.body, 'utf8'),
+    ) as WorkflowBudgetReserveRequest;
+    expect(request).toMatchObject({
+      providerAttempt: '1',
+      accountId: sealed.budgetPolicy.accountId,
+      policyHash: sealed.budgetPolicy.policyHash,
+      rateNanoUsdPerToken: sealed.budgetPolicy.rateNanoUsdPerToken,
+      expectedAccountRevision: 2,
+      expectedRunRevision: 5,
+    });
+    expect(request.expectedRunRevision).not.toBe(sealed.runRevision);
+    for (const splice of [
+      { providerId: 'provider.two' },
+      { modelId: 'model.two' },
+      { providerRunId: 'provider-run.two' },
+      { providerAttempt: '2' },
+    ]) {
+      expect(prepare(splice).requestHash).not.toBe(exact.requestHash);
+    }
+  });
+
+  it('stamps first-resume budget evidence with accepted generation 1 rather than offer generation 0', async () => {
+    const base = v2Descriptor(0);
+    const sealed = {
+      ...base,
+      authorityRoute: {
+        backend: 'go' as const,
+        authority: 'workflow-control' as const,
+        routingEpoch: 1,
+        authorityBuildHash: 'a'.repeat(64),
+      },
+    };
+    let observedGeneration: number | undefined;
+    const stop = new Error('generation captured');
+    const context = {
+      resumeOffer: { resumeGeneration: 0, payload: { newResumeGeneration: 1 } },
+      resumeGeneration: 1,
+      async reserveBudget(
+        _payload: Readonly<Record<string, unknown>>,
+        source?: WorkflowRunnerAuthoritySourceAdapter,
+      ) {
+        const probe = await source!.probe({
+          operation: 'budget_reserve',
+        } as WorkflowRunnerAuthorityBindingStage);
+        if (
+          probe.state !== 'committed' ||
+          probe.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1'
+        ) {
+          throw new Error('prepared reserve evidence unavailable');
+        }
+        observedGeneration = probe.evidence.sourceAuthority.expectedResumeGeneration;
+        throw stop;
+      },
+    } as unknown as WorkflowRunnerV2ExecutionContext;
+    const account = {
+      accountId: sealed.budgetPolicy.accountId,
+      policyHash: sealed.budgetPolicy.policyHash,
+      accountRevision: 2,
+      runRevision: 5,
+    } as unknown as WorkflowBudgetAccount;
+    const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary = {
+      callerId: 'workflow-runner-v2',
+      client: {
+        async readAccount() {
+          return account;
+        },
+        async mutate() {
+          throw new Error('E2 mutation must not run before the generation assertion');
+        },
+        async pointRead() {
+          return null;
+        },
+      },
+      now: () => '2026-08-22T00:00:00.000Z',
+    };
+    const port = createWorkflowRunnerV2ProviderAttemptPort(sealed, context, budgetAuthority);
+    await expect(
+      port.reserve({
+        providerId: 'provider.one',
+        modelId: 'model.one',
+        providerRunId: 'provider-run.one',
+        providerAttempt: '1',
+        requestedTokens: '100',
+      }),
+    ).rejects.toBe(stop);
+    expect(observedGeneration).toBe(1);
+  });
+
+  it('executes the bundled v2 effect path and preserves durable replay across outcome response loss', async () => {
+    for (const responseLost of [false, true]) {
+      const secureTemporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
+      const workspaceRoot = await mkdtemp(join(secureTemporaryRoot, 'openslack-runner-v2-effect-'));
+      roots.push(workspaceRoot);
+      const suffix = responseLost ? 'lost' : 'accepted';
+      const workflowRunId = `run.worker.v2.effect.${suffix}`;
+      const current = Date.now();
+      const base = v2Descriptor(0);
+      const sealed: WorkflowRunnerV2ExecutionDescriptor = {
+        ...base,
+        descriptorRef: `descriptor.worker.v2.effect.${suffix}`,
+        workflowRunId,
+        correlationId: `correlation.worker.v2.effect.${suffix}`,
+        confirmationPolicy: {
+          ...base.confirmationPolicy,
+          runId: workflowRunId,
+        },
+        authorityRoute: {
+          backend: 'go',
+          authority: 'workflow-control',
+          routingEpoch: 1,
+          authorityBuildHash: 'a'.repeat(64),
+        },
+        createdAt: new Date(current - 60_000).toISOString(),
+        expiresAt: new Date(current + 60 * 60_000).toISOString(),
+      };
+      const checkpointAuthority = createWorkflowCheckpointLeaseAuthority({
+        workspaceId: sealed.workspaceId,
+        jobId: `job.effect.${suffix}`,
+        workflowRunId,
+        attemptId: `attempt.effect.${suffix}`,
+        leaseId: `lease.effect.${suffix}`,
+        fencingToken: 1,
+        correlationId: sealed.correlationId,
+        runnerBuildHash: sealed.authorityRoute.authorityBuildHash,
+        workflowSourceHash: sealed.workflowSourceHash,
+        manifestHash: sealed.manifestHash,
+        inputHash: sealed.inputHash,
+      });
+      let authorizationCalls = 0;
+      let completionCalls = 0;
+      const commit = async (
+        operation: WorkflowRunnerAuthorityBindingStage['operation'],
+        source?: WorkflowRunnerAuthoritySourceAdapter,
+      ) => {
+        if (!source) throw new Error(`Missing ${operation} source adapter.`);
+        const stage = { operation } as WorkflowRunnerAuthorityBindingStage;
+        const probe = await source.probe(stage);
+        return probe.state === 'committed' ? probe.evidence : source.commit(stage, {} as never);
+      };
+      const context = {
+        signal: new AbortController().signal,
+        resumeOffer: null,
+        resumeGeneration: 0,
+        checkpointAuthority,
+        async checkpointCommit(
+          _payload: Readonly<Record<string, unknown>>,
+          source?: WorkflowRunnerAuthoritySourceAdapter,
+        ) {
+          await commit('checkpoint_commit', source);
+        },
+        async reserveBudget() {
+          throw new Error('Budget reserve is outside this effect-only execution.');
+        },
+        async reportBudgetUsage() {
+          throw new Error('Budget settlement is outside this effect-only execution.');
+        },
+        async authorizeEffect(
+          _payload: Readonly<Record<string, unknown>>,
+          source?: WorkflowRunnerAuthoritySourceAdapter,
+        ) {
+          authorizationCalls += 1;
+          const evidence = await commit('effect_authorize', source);
+          expect(evidence.schema).toBe('openslack.workflow_runner_effect_authority_evidence.v1');
+          return { payload: { approvalStatus: 'approved' } } as never;
+        },
+        async reportEffectOutcome(
+          payload: Readonly<Record<string, unknown>>,
+          source?: WorkflowRunnerAuthoritySourceAdapter,
+        ) {
+          completionCalls += 1;
+          const evidence = await commit('effect_complete', source);
+          expect(evidence.schema).toBe('openslack.workflow_runner_effect_completion_evidence.v1');
+          if (evidence.schema !== 'openslack.workflow_runner_effect_completion_evidence.v1') {
+            throw new Error('Effect completion returned a different authority evidence kind.');
+          }
+          expect(evidence.status).toBe(payload.status);
+          if (responseLost && payload.status === 'executed') {
+            throw new Error('simulated effect outcome response loss');
+          }
+        },
+      } as unknown as WorkflowRunnerV2ExecutionContext;
+
+      const seed = await createWorkflowRunnerV2EffectAuthorizationPort({
+        workspaceRoot,
+        descriptor: sealed,
+        context,
+      });
+      const prepared = await seed.prepare({
+        runId: workflowRunId,
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      let approvalId: string | undefined;
+      try {
+        await seed.authorize(prepared);
+      } catch (error) {
+        if (error instanceof WorkflowEffectApprovalPendingError) approvalId = error.approvalId;
+        else throw error;
+      }
+      expect(approvalId).toBeDefined();
+      const decisionAuthority = createWorkflowEffectDecisionAuthority({
+        workspaceId: sealed.workspaceId,
+        humanPrincipalIds: ['wsman'],
+        capabilities: ['workflow.effect.decide'],
+        maxBindingTtlMs: 60_000,
+      });
+      let decisionNow = new Date().toISOString();
+      const approvals = new LocalWorkflowEffectApprovalStore(
+        join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals'),
+        decisionAuthority,
+        () => decisionNow,
+      );
+      const pending = await approvals.read(workflowRunId, approvalId!);
+      expect(pending?.status).toBe('pending');
+      const binding = decisionAuthority.issueHumanDecisionBinding({
+        principalId: 'wsman',
+        capability: 'workflow.effect.decide',
+        runId: workflowRunId,
+        approvalId: approvalId!,
+        correlationId: sealed.correlationId,
+        approvalExpiresAt: pending!.expiresAt,
+        decision: 'approved',
+        reasonHash: '5'.repeat(64),
+        expiresAt: new Date(
+          Math.min(Date.now() + 30_000, Date.parse(pending!.expiresAt) - 1),
+        ).toISOString(),
+      });
+      decisionNow = binding.issuedAt;
+      await approvals.decide({
+        runId: workflowRunId,
+        approvalId: approvalId!,
+        expectedRevision: 0,
+        decision: 'approved',
+        reasonHash: '5'.repeat(64),
+        binding,
+      });
+
+      const workflow: WorkflowModule = {
+        format: 'openslack-native',
+        hash: sealed.workflowSourceHash,
+        meta: manifest,
+        async run(runtime) {
+          await runtime.openslack.governance.audit('bounded audit');
+          return { status: 'completed' };
+        },
+      };
+      const execution = executeWorkflowRunnerV2QualificationJob(
+        workflow,
+        sealed,
+        context,
+        workspaceRoot,
+        true,
+      );
+      if (responseLost) {
+        await expect(execution).rejects.toThrow(/effect|reconciliation/iu);
+      } else {
+        await expect(execution).resolves.toMatchObject({
+          status: 'completed',
+          runId: workflowRunId,
+        });
+      }
+      expect(authorizationCalls).toBe(1);
+      expect(completionCalls).toBe(1);
+      const runStore = new RunStore({
+        baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+      });
+      expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
+
+      const restarted = await createWorkflowRunnerV2EffectAuthorizationPort({
+        workspaceRoot,
+        descriptor: sealed,
+        context,
+      });
+      const replayPrepared = await restarted.prepare({
+        runId: workflowRunId,
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'bounded audit',
+      });
+      await expect(restarted.authorize(replayPrepared)).resolves.toMatchObject({
+        disposition: 'replay',
+      });
+      const crossSpliced = await restarted.prepare({
+        runId: workflowRunId,
+        evaluationIndex: 1,
+        operation: 'openslack.governance.audit',
+        detail: 'different audit at the same durable occurrence',
+      });
+      await expect(restarted.authorize(crossSpliced)).rejects.toBeInstanceOf(
+        WorkflowEffectReconciliationRequiredError,
+      );
+      expect(authorizationCalls).toBe(1);
+      expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
+    }
+  }, 20_000);
+
   it('is default-off and requires a closed valid startup configuration', () => {
     expect(() => loadWorkflowRunnerWorkerConfig({})).toThrow(WorkflowRunnerWorkerConfigError);
     expect(() =>
@@ -157,6 +508,39 @@ describe('GS8-B workflow runner worker', () => {
         OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED: '1',
       }),
     ).toThrowError(/cannot configure checkpoint or effect authority boundaries/u);
+
+    const companionToken = 'c'.repeat(48);
+    expect(
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED: '1',
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN: companionToken,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256: createHash('sha256')
+          .update(companionToken, 'utf8')
+          .digest('hex'),
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT: join(
+          workspaceRoot,
+          '.openslack.local',
+          'workflow-runner-v2-authority-bindings',
+        ),
+        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN: 'http://127.0.0.1:8089',
+        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN: 'b'.repeat(48),
+        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID: 'workflow-runner-v2',
+      }),
+    ).toMatchObject({
+      runtimeBoundaryMode: 'authority-binding-f2b',
+      runtimeDelivery: {
+        companionOrigin: 'http://127.0.0.1:8088',
+        budgetOrigin: 'http://127.0.0.1:8089',
+      },
+    });
+    expect(() =>
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
+      }),
+    ).toThrowError(/must be empty/u);
   });
 
   it('rejects v2 resume delivery before source preparation in the F1 worker', async () => {
