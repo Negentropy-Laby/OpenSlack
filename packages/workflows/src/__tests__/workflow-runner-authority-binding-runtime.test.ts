@@ -70,7 +70,7 @@ import {
 // Real Windows ACL hardening is intentionally subprocess-backed. Hosted runners
 // and developer machines can exceed the generic 5s unit-test budget while still
 // remaining within each security subprocess's closed timeout.
-vi.setConfig({ testTimeout: process.platform === 'win32' ? 120_000 : 30_000 });
+vi.setConfig({ testTimeout: process.platform === 'win32' ? 240_000 : 30_000 });
 
 type ExactVector<T> = { readonly value: T; readonly canonicalBytes: string };
 type Exchange = {
