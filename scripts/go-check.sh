@@ -1049,8 +1049,8 @@ detect_capabilities() {
       fail "Workflow Control budget authority runtime profile is missing TestBudgetAuthorityOpenAPIContract"
     local budget_authority_named_test test_path test_function
     for budget_authority_named_test in \
-      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughSeven' \
-      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationSevenWithoutRaisingExistingMinimums' \
+      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEight' \
+      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
       'internal/budgetapp/server_test.go|TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics' \
