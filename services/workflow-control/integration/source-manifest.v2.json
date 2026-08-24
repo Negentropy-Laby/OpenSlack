@@ -78,7 +78,7 @@
     },
     "runnerV2RuntimeDeliveryMigrationUp": {
       "path": "services/workflow-control/migrations/000008_deliver_workflow_runner_authority_bindings.up.sql",
-      "sha256": "6d258d930f7f201ea837e0ef098e1759094a4bfc211446c46896a99f26385eea"
+      "sha256": "85107d67c14707e1baf53ae058daf1e8f9d96955848fc18a9b2240391708a998"
     },
     "runnerV2RuntimeDeliveryMigrationDown": {
       "path": "services/workflow-control/migrations/000008_deliver_workflow_runner_authority_bindings.down.sql",
@@ -94,7 +94,7 @@
     },
     "runnerV2RuntimeDeliveryIntegrationTest": {
       "path": "services/workflow-control/internal/runnerstore/postgres/gs9f2_runtime_integration_test.go",
-      "sha256": "9c2f7868e64a004645d023b54a64303ee080c5fdfac409b19d48741e82d68f39"
+      "sha256": "8f5fd155d8ddec770c18402250599747313ddc4d2ae6a978b8d9354f86cbcdfd"
     },
     "runnerV2RuntimeDeliveryHTTPQualificationTest": {
       "path": "services/workflow-control/cmd/runner-server/gs9f2_qualification_test.go",

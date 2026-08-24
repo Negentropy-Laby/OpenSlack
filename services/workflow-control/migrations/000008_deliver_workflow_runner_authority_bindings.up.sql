@@ -159,17 +159,35 @@ BEGIN
        OR NEW.last_authority_event_id IS NULL
        OR NEW.last_authority_event_id IS NOT DISTINCT FROM OLD.last_authority_event_id
        OR NOT (
-          (NEW.last_authority_operation IN (
-                'checkpoint_commit','effect_authorize','budget_reserve','budget_settle'
-           )
-             AND NEW.current_run_revision=OLD.current_run_revision+1
-             AND NEW.current_resume_generation=OLD.current_resume_generation)
-          OR (NEW.last_authority_operation='effect_complete'
-             AND NEW.current_run_revision=OLD.current_run_revision
-             AND NEW.current_resume_generation=OLD.current_resume_generation)
-          OR (NEW.last_authority_operation='resume_advance'
-             AND NEW.current_run_revision=OLD.current_run_revision+1
-             AND NEW.current_resume_generation=OLD.current_resume_generation+1)
+          -- Rows that predate an explicit F2b runtime admission retain the
+          -- schema-7/F1 transition matrix. A migration must not reinterpret
+          -- already-created v2 work as the new qualification profile.
+          (OLD.admission_disposition IS NULL AND (
+             (NEW.last_authority_operation IN ('checkpoint_commit','effect_authorize')
+                AND NEW.current_run_revision=OLD.current_run_revision
+                AND NEW.current_resume_generation=OLD.current_resume_generation)
+             OR (NEW.last_authority_operation IN ('budget_reserve','budget_settle')
+                AND NEW.current_run_revision=OLD.current_run_revision+1
+                AND NEW.current_resume_generation=OLD.current_resume_generation)
+             OR (NEW.last_authority_operation='resume_advance'
+                AND NEW.current_run_revision=OLD.current_run_revision+1
+                AND NEW.current_resume_generation=OLD.current_resume_generation+1)
+          ))
+          -- Only an exact, immutable runtime-admission seal opts an attempt
+          -- into the F2b six-operation runner-head matrix.
+          OR (OLD.admission_disposition IS NOT NULL AND (
+             (NEW.last_authority_operation IN (
+                   'checkpoint_commit','effect_authorize','budget_reserve','budget_settle'
+              )
+                AND NEW.current_run_revision=OLD.current_run_revision+1
+                AND NEW.current_resume_generation=OLD.current_resume_generation)
+             OR (NEW.last_authority_operation='effect_complete'
+                AND NEW.current_run_revision=OLD.current_run_revision
+                AND NEW.current_resume_generation=OLD.current_resume_generation)
+             OR (NEW.last_authority_operation='resume_advance'
+                AND NEW.current_run_revision=OLD.current_run_revision+1
+                AND NEW.current_resume_generation=OLD.current_resume_generation+1)
+          ))
        ) THEN
         RAISE EXCEPTION 'workflow runner v2 attempt binding transition is invalid';
     END IF;

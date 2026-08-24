@@ -103,6 +103,7 @@ func TestGS9F2AuthorityBindingRuntimeDelivery(t *testing.T) {
 		}
 		for index, row := range matrix {
 			lease := claimV2(t, repository, v2JobInput(t, fmt.Sprintf("f2-matrix-valid-%d", index), "go", "workflow-control"))
+			sealRuntimeAdmission(t, repository, lease, "initial")
 			delta, err := runnerbindingcontract.RunnerHeadDelta(row.operation)
 			if err != nil || delta.Revision != row.runDelta || delta.Generation != row.generationDelta {
 				t.Fatalf("contract matrix %s drifted: %+v %v", row.operation, delta, err)
@@ -116,6 +117,7 @@ SET current_run_revision=current_run_revision+$2,current_resume_generation=curre
 		}
 		for index, row := range matrix {
 			lease := claimV2(t, repository, v2JobInput(t, fmt.Sprintf("f2-matrix-invalid-%d", index), "go", "workflow-control"))
+			sealRuntimeAdmission(t, repository, lease, "initial")
 			wrongRun, wrongGeneration := row.runDelta, row.generationDelta
 			if row.operation == runnerbindingcontract.OperationEffectComplete {
 				wrongRun = 1
