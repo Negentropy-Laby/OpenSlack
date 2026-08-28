@@ -40,19 +40,19 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 		} else if !runnerstore.IsCode(bindingErr, runnerstore.ErrorNotFound) {
 			return runnerstore.V2RecordedEvent{}, bindingErr
 		}
-	}
-	if replay, found, replayErr := readV2EventReplayRow(
-		repository.pool.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey),
-		prepared,
-		input.ExactBytes,
-		replayBinding,
-	); replayErr != nil {
-		return runnerstore.V2RecordedEvent{}, replayErr
-	} else if found {
-		if replayBinding != nil {
-			replay.AuthorityBindingID = &replayBinding.BindingID
+		if replay, found, replayErr := readV2EventReplayRow(
+			repository.pool.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey),
+			prepared,
+			input.ExactBytes,
+			replayBinding,
+		); replayErr != nil {
+			return runnerstore.V2RecordedEvent{}, replayErr
+		} else if found {
+			if replayBinding != nil {
+				replay.AuthorityBindingID = &replayBinding.BindingID
+			}
+			return replay, nil
 		}
-		return replay, nil
 	}
 	if repository.v2RuntimeDelivery && runtimeBindingKind(message.Kind) {
 		if replayBinding == nil {

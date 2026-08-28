@@ -70,7 +70,7 @@
     },
     "runnerV2EventSource": {
       "path": "services/workflow-control/internal/runnerstore/postgres/v2_event.go",
-      "sha256": "aad65231ae4276ba1f9c09c742ed3aa4478cf1170c93677394c4cdbfcd5ac93d"
+      "sha256": "1eafdc3ca4c0e22f421afa017dab7bc2a98f6de30237302e838206d406f9e33a"
     },
     "runnerV2FoundationIntegrationTest": {
       "path": "services/workflow-control/internal/runnerstore/postgres/v2_foundation_integration_test.go",
