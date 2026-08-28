@@ -75,6 +75,18 @@ import {
   validateWorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityMessage,
 } from '../../packages/workflows/src/workflow-control-authority-contract.js';
+import { canonicalWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
+import {
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
+  prepareWorkflowRunnerV2RuntimeAdmission,
+  validateWorkflowRunnerV2RuntimeAdmissionReceipt,
+  type WorkflowRunnerV2RuntimeAdmission,
+  type WorkflowRunnerV2RuntimeAdmissionReceipt,
+} from '../../packages/workflows/src/workflow-runner-runtime-admission-contract.js';
 
 type Json = Record<string, unknown>;
 
@@ -137,9 +149,21 @@ export const bundleFiles = Object.freeze([
   'schemas/workflow-runner-authority-binding-resolution.v1.schema.json',
   'schemas/workflow-runner-authority-binding-receipt.v1.schema.json',
   'schemas/workflow-runner-authority-binding-error.v1.schema.json',
+  'schemas/workflow-runner-v2-runtime-admission.v1.schema.json',
+  'schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json',
   'golden-vectors.json',
   'manifest.json',
 ] as const);
+
+const GOLDEN_BUNDLE_FILE = 'golden-vectors.json' as const;
+const MANIFEST_BUNDLE_FILE = 'manifest.json' as const;
+
+const runnerOpenAPIPath = resolve(
+  repositoryRoot,
+  'services/workflow-control/docs/api/runner-openapi.yaml',
+);
+const openAPIBindingSchemaStart = '    # BEGIN GENERATED WORKFLOW RUNNER AUTHORITY BINDING SCHEMAS';
+const openAPIBindingSchemaEnd = '    # END GENERATED WORKFLOW RUNNER AUTHORITY BINDING SCHEMAS';
 
 const sourceLockPaths = Object.freeze({
   runnerV1Manifest: 'packages/workflows/contracts/workflow-runner/v1/manifest.json',
@@ -248,6 +272,8 @@ const OPERATION_MATRIX = Object.freeze(
   WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
     operation,
     targetKind: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind,
+    completionControlKind:
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].completionControlKind,
     runnerDelta: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].runnerDelta,
     sourcePlane: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].sourcePlane,
     sourceEvidenceState:
@@ -1738,6 +1764,31 @@ function vector(value: unknown, domain: 'stage' | 'resolution' | 'receipt') {
   };
 }
 
+function runtimeAdmissionVector(
+  value: WorkflowRunnerV2RuntimeAdmission,
+  body: string,
+  idempotencyKey: string,
+  requestFingerprint: string,
+) {
+  return {
+    value,
+    canonicalBytes: body,
+    byteLength: Buffer.byteLength(body),
+    sha256: H(body),
+    prepared: { idempotencyKey, requestFingerprint },
+  };
+}
+
+function runtimeAdmissionReceiptVector(value: WorkflowRunnerV2RuntimeAdmissionReceipt) {
+  const canonicalBytes = `${canonicalWorkflowEffectJson(value)}\n`;
+  return {
+    value,
+    canonicalBytes,
+    byteLength: Buffer.byteLength(canonicalBytes),
+    sha256: H(canonicalBytes),
+  };
+}
+
 function errorOf(operation: () => unknown) {
   try {
     operation();
@@ -2340,6 +2391,45 @@ async function goldenVectors() {
       ];
     }),
   );
+  const runtimeAdmissionPrepared = prepareWorkflowRunnerV2RuntimeAdmission({
+    schema: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
+    workspaceId: 'workspace-qualification',
+    jobId: 'job-qualification',
+    workflowRunId: 'run-qualification',
+    attemptId: 'attempt-qualification',
+    leaseId: 'lease-qualification',
+    fencingToken: 41,
+    jobSpecHash: h('8'),
+    disposition: 'resume',
+  });
+  const runtimeAdmissionReceipt = validateWorkflowRunnerV2RuntimeAdmissionReceipt(
+    {
+      schema: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
+      status: 'accepted',
+      ...Object.fromEntries(
+        Object.entries(runtimeAdmissionPrepared.value).filter(([key]) => key !== 'schema'),
+      ),
+      idempotencyKey: runtimeAdmissionPrepared.idempotencyKey,
+      requestFingerprint: runtimeAdmissionPrepared.requestFingerprint,
+      committedAt: '2026-08-22T00:00:00.000Z',
+    },
+    runtimeAdmissionPrepared,
+  );
+  const runtimeAdmissionReceiptCrossSplice = cloneJson(
+    runtimeAdmissionReceipt,
+    'runtime admission receipt cross-splice',
+  );
+  runtimeAdmissionReceiptCrossSplice.jobId = 'job-alien';
+  const runtimeAdmissionReceiptInvalidTimestamp = cloneJson(
+    runtimeAdmissionReceipt,
+    'runtime admission receipt invalid timestamp',
+  );
+  runtimeAdmissionReceiptInvalidTimestamp.committedAt = '2026-13-22T00:00:00.000Z';
+  const runtimeAdmissionDispositionDrift = cloneJson(
+    runtimeAdmissionPrepared.value,
+    'runtime admission disposition drift',
+  );
+  runtimeAdmissionDispositionDrift.disposition = 'retry';
 
   return {
     schema: 'openslack.workflow_runner_authority_binding_golden_vectors.v1',
@@ -2417,7 +2507,33 @@ async function goldenVectors() {
           reconciliationRequired: controlKindMessages.cancel_request,
         },
       },
+      runtimeAdmission: {
+        request: runtimeAdmissionVector(
+          runtimeAdmissionPrepared.value,
+          runtimeAdmissionPrepared.body,
+          runtimeAdmissionPrepared.idempotencyKey,
+          runtimeAdmissionPrepared.requestFingerprint,
+        ),
+        receipt: runtimeAdmissionReceiptVector(runtimeAdmissionReceipt),
+      },
     },
+    runtimeAdmissionNegative: [
+      {
+        id: 'runtime-admission-disposition-drift',
+        operation: 'validate_runtime_admission',
+        input: runtimeAdmissionDispositionDrift,
+      },
+      {
+        id: 'runtime-admission-receipt-cross-splice',
+        operation: 'validate_runtime_admission_receipt',
+        input: runtimeAdmissionReceiptCrossSplice,
+      },
+      {
+        id: 'runtime-admission-receipt-invalid-timestamp',
+        operation: 'validate_runtime_admission_receipt',
+        input: runtimeAdmissionReceiptInvalidTimestamp,
+      },
+    ],
     negative: exactNegatives([
       negative('stage-unknown-field', 'validate_stage', badStageUnknown, () =>
         validateWorkflowRunnerAuthorityBindingStage(badStageUnknown),
@@ -3291,6 +3407,39 @@ async function schemas(golden: Awaited<ReturnType<typeof goldenVectors>>) {
   errorProperties.operation = {
     oneOf: [{ enum: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS }, { type: 'null' }],
   };
+  const runtimeAdmission = asJson(
+    asJson(asJson(golden.positive, 'positive').runtimeAdmission, 'runtime admission').request,
+    'runtime admission request vector',
+  );
+  const runtimeAdmissionRequest = asJson(runtimeAdmission.value, 'runtime admission request');
+  const runtimeAdmissionReceipt = asJson(
+    asJson(
+      asJson(asJson(golden.positive, 'positive').runtimeAdmission, 'runtime admission').receipt,
+      'runtime admission receipt vector',
+    ).value,
+    'runtime admission receipt',
+  );
+  const runtimeAdmissionSchema = schemaForValue(runtimeAdmissionRequest);
+  runtimeAdmissionSchema.unevaluatedProperties = false;
+  replaceRootConst(runtimeAdmissionSchema, 'schema', WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA);
+  const runtimeAdmissionProperties = asJson(
+    runtimeAdmissionSchema.properties,
+    'runtime admission properties',
+  );
+  runtimeAdmissionProperties.disposition = { enum: ['initial', 'resume'] };
+  const runtimeAdmissionReceiptSchema = schemaForValue(runtimeAdmissionReceipt);
+  runtimeAdmissionReceiptSchema.unevaluatedProperties = false;
+  replaceRootConst(
+    runtimeAdmissionReceiptSchema,
+    'schema',
+    WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
+  );
+  replaceRootConst(runtimeAdmissionReceiptSchema, 'status', 'accepted');
+  const runtimeAdmissionReceiptProperties = asJson(
+    runtimeAdmissionReceiptSchema.properties,
+    'runtime admission receipt properties',
+  );
+  runtimeAdmissionReceiptProperties.disposition = { enum: ['initial', 'resume'] };
   return [
     unionSchema(
       'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json',
@@ -3315,6 +3464,18 @@ async function schemas(golden: Awaited<ReturnType<typeof goldenVectors>>) {
       $id: 'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-error.v1.schema.json',
       title: 'OpenSlack GS9-F2a authority-binding closed error',
       ...errorSchema,
+    },
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-v2-runtime-admission.v1.schema.json',
+      title: 'OpenSlack Workflow Runner v2 runtime admission',
+      ...runtimeAdmissionSchema,
+    },
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json',
+      title: 'OpenSlack Workflow Runner v2 runtime admission receipt',
+      ...runtimeAdmissionReceiptSchema,
     },
   ];
 }
@@ -3351,7 +3512,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
     }
     map.set(path, await pretty(generatedSchemas[index]));
   }
-  map.set(bundleFiles[4], await pretty(golden));
+  map.set(GOLDEN_BUNDLE_FILE, await pretty(golden));
   const artifacts = Object.fromEntries(
     [...map].map(([path, bytes]) => [
       path,
@@ -3359,7 +3520,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
     ]),
   );
   map.set(
-    bundleFiles[5],
+    MANIFEST_BUNDLE_FILE,
     await pretty({
       schema: 'openslack.workflow_runner_authority_binding_contract_manifest.v1',
       contractVersion: WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
@@ -3373,6 +3534,14 @@ async function outputs(): Promise<Map<string, Buffer>> {
         resolutionAckPrecedesFrozenTargetDelivery: true,
         controlDeliveryAck: true,
         exactReplayReturnsOriginalReceiptBytes: true,
+      },
+      runtimeAdmission: {
+        requestSchema: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
+        receiptSchema: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
+        keyPrefix: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
+        domains: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
+        limits: WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
+        negativeVectorIds: golden.runtimeAdmissionNegative.map((vector) => vector.id),
       },
       operations: WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => ({
         operation,
@@ -3433,6 +3602,41 @@ async function inventory(root: string): Promise<string[]> {
   return result.sort();
 }
 
+function openAPIBindingSchemaBlock(map: ReadonlyMap<string, Buffer>): string {
+  const entries = [
+    ['AuthorityBindingStage', bundleFiles[0]],
+    ['AuthorityBindingResolution', bundleFiles[1]],
+    ['AuthorityBindingReceipt', bundleFiles[2]],
+    ['WorkflowRunnerV2RuntimeAdmission', bundleFiles[4]],
+    ['WorkflowRunnerV2RuntimeAdmissionReceipt', bundleFiles[5]],
+  ] as const;
+  const lines = [openAPIBindingSchemaStart];
+  for (const [name, path] of entries) {
+    const bytes = map.get(path);
+    if (!bytes) throw new Error(`Missing generated OpenAPI schema source ${path}.`);
+    const schema = JSON.parse(bytes.toString('utf8')) as Json;
+    lines.push(`    ${name}:`);
+    lines.push(
+      ...JSON.stringify(schema, null, 2)
+        .split('\n')
+        .map((line) => `      ${line}`),
+    );
+  }
+  lines.push(openAPIBindingSchemaEnd);
+  return lines.join('\n');
+}
+
+async function projectedRunnerOpenAPI(map: ReadonlyMap<string, Buffer>): Promise<string> {
+  const current = await readFile(runnerOpenAPIPath, 'utf8');
+  const start = current.indexOf(openAPIBindingSchemaStart);
+  const end = current.indexOf(openAPIBindingSchemaEnd);
+  if (start < 0 || end < start) {
+    throw new Error('Runner OpenAPI authority-binding schema marker is missing or invalid.');
+  }
+  const after = end + openAPIBindingSchemaEnd.length;
+  return `${current.slice(0, start)}${openAPIBindingSchemaBlock(map)}${current.slice(after)}`;
+}
+
 async function generate(): Promise<void> {
   const map = await outputs();
   for (const [, root] of selectedOutputRoots()) {
@@ -3442,6 +3646,7 @@ async function generate(): Promise<void> {
       await writeFile(destination, bytes);
     }
   }
+  await writeFile(runnerOpenAPIPath, await projectedRunnerOpenAPI(map), 'utf8');
 }
 
 async function check(): Promise<void> {
@@ -3460,6 +3665,9 @@ async function check(): Promise<void> {
       if (actual === null || !actual.equals(expected)) stale.push(`${label}:${path}`);
     }
   }
+  const currentOpenAPI = await readFile(runnerOpenAPIPath, 'utf8');
+  const expectedOpenAPI = await projectedRunnerOpenAPI(map);
+  if (currentOpenAPI !== expectedOpenAPI) stale.push('runner-openapi:authority-binding-schemas');
   if (stale.length > 0) {
     throw new Error(
       `Authority-binding contracts are stale:\n${stale.join('\n')}\nRun: bun run workflow:runner-authority-binding-golden -- --generate`,

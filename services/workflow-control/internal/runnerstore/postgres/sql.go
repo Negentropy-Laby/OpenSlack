@@ -78,6 +78,14 @@ JOIN workflow_runner_attempts a ON a.attempt_id=e.attempt_id
 JOIN workflow_runner_jobs j ON j.workspace_id=e.workspace_id AND j.job_id=e.job_id
 WHERE e.idempotency_key=$1`
 
+	pendingV2AuthorityDecisionSQL = `SELECT EXISTS (
+SELECT 1 FROM workflow_runner_v2_decision_bindings pair
+JOIN workflow_runner_control_messages decision ON decision.control_event_id=pair.decision_control_event_id
+JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=pair.received_event_id
+WHERE binding.attempt_id=$1 AND binding.state='runner_committed'
+  AND decision.delivery_state IN ('pending','delivering','awaiting_ack','reconciliation_required')
+)`
+
 	activeAttemptForUpdateSQL = `
 SELECT j.state, j.revision, j.current_fence, j.current_attempt_id,
        a.state, a.worker_sequence, a.control_sequence,

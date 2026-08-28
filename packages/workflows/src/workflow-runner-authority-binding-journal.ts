@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { lstat, readdir, rename, rmdir } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import {
   canonicalWorkflowControlAuthorityJson,
@@ -9,6 +9,7 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   hashWorkflowRunnerAuthorityBindingEvidence,
+  workflowRunnerAuthorityBindingCompletionControlKind,
   parseWorkflowRunnerAuthorityBindingReceiptBytes,
   parseWorkflowRunnerAuthorityBindingResolutionBytes,
   parseWorkflowRunnerAuthorityBindingStageBytes,
@@ -85,14 +86,6 @@ const STATIC_FILES = new Set([
   'resolution-receipt.json',
   'budget-source-result.json',
 ]);
-const DECISION_KIND: Partial<
-  Record<WorkflowRunnerAuthorityBindingOperation, WorkflowControlAuthorityMessage['kind']>
-> = Object.freeze({
-  budget_reserve: 'budget_authorization',
-  effect_authorize: 'effect_authorization',
-  resume_advance: 'resume_offer',
-});
-
 function fail(
   code: WorkflowRunnerAuthorityBindingJournalError['code'],
   message: string,
@@ -209,7 +202,6 @@ export function workflowRunnerAuthorityBindingJournalEntryClosed(
     return false;
   }
   if (
-    entry.controlDeliveries.length < 1 ||
     entry.controlDeliveries.some(
       (delivery, index) =>
         delivery.companionSequence !== index + 3 ||
@@ -220,8 +212,8 @@ export function workflowRunnerAuthorityBindingJournalEntryClosed(
   ) {
     return false;
   }
-  const decisionKind = DECISION_KIND[entry.stage.operation];
-  if (!decisionKind) return true;
+  const decisionKind = workflowRunnerAuthorityBindingCompletionControlKind(entry.stage.operation);
+  if (decisionKind === 'event_receipt') return true;
   const decision = entry.controlDeliveries.find(
     (delivery) => delivery.message.kind === decisionKind,
   );
@@ -235,8 +227,19 @@ export function workflowRunnerAuthorityBindingJournalEntryClosed(
 export class WorkflowRunnerAuthorityBindingJournal {
   #root: string;
   readonly #security: WorkflowControlShadowJournalSecurityDependencies;
-  #bindings?: string;
+  #active?: string;
+  #closed?: string;
   #locks?: string;
+  readonly #activeByRun = new Map<string, Set<string>>();
+  readonly #entryCache = new Map<
+    string,
+    {
+      readonly parent: string;
+      readonly identity: string;
+      readonly entry: WorkflowRunnerAuthorityBindingJournalEntry;
+    }
+  >();
+  #activeDirectoryIdentity?: string;
 
   constructor(
     root: string,
@@ -258,7 +261,7 @@ export class WorkflowRunnerAuthorityBindingJournal {
     const entries = await readdir(root, { withFileTypes: true });
     for (const entry of entries) {
       if (
-        (entry.name !== 'bindings' && entry.name !== 'locks') ||
+        !['active', 'bindings', 'closed', 'locks'].includes(entry.name) ||
         !entry.isDirectory() ||
         entry.isSymbolicLink()
       ) {
@@ -268,22 +271,66 @@ export class WorkflowRunnerAuthorityBindingJournal {
         );
       }
     }
-    this.#bindings = await ensureOwnerDirectory(join(root, 'bindings'), this.#security, root);
+    this.#active = await ensureOwnerDirectory(join(root, 'active'), this.#security, root);
+    this.#closed = await ensureOwnerDirectory(join(root, 'closed'), this.#security, root);
     this.#locks = await ensureOwnerDirectory(join(root, 'locks'), this.#security, root);
-  }
-
-  async runAttemptExclusive<T>(attemptId: string, operation: () => Promise<T>): Promise<T> {
-    const { locks } = this.#paths();
-    const release = await acquireOwnerJournalLock(
-      locks,
-      sha256(`openslack.workflow-runner-authority-binding.attempt.v1\0${attemptId}`),
-      this.#security,
-    );
-    try {
-      return await operation();
-    } finally {
-      await release();
+    this.#activeByRun.clear();
+    this.#entryCache.clear();
+    const legacy = join(root, 'bindings');
+    if (await present(legacy)) {
+      await assertOwnerDirectory(legacy, this.#security, root);
+      for (const directory of await readdir(legacy, { withFileTypes: true })) {
+        if (
+          !SAFE_DIRECTORY.test(directory.name) ||
+          !directory.isDirectory() ||
+          directory.isSymbolicLink()
+        ) {
+          return fail(
+            'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_PATH_UNSAFE',
+            'Legacy authority-binding journal contains an unsafe entry.',
+          );
+        }
+        const source = join(legacy, directory.name);
+        const entry = await this.#readBinding(source, directory.name, legacy);
+        const destinationRoot = workflowRunnerAuthorityBindingJournalEntryClosed(entry)
+          ? this.#closed
+          : this.#active;
+        await rename(source, join(destinationRoot, directory.name));
+        await syncDirectory(destinationRoot);
+      }
+      await rmdir(legacy);
+      await syncDirectory(root);
     }
+    for (const [partition, expectedClosed] of [
+      [this.#active, false],
+      [this.#closed, true],
+    ] as const) {
+      for (const directory of await readdir(partition, { withFileTypes: true })) {
+        if (
+          !SAFE_DIRECTORY.test(directory.name) ||
+          !directory.isDirectory() ||
+          directory.isSymbolicLink()
+        ) {
+          return fail(
+            'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_PATH_UNSAFE',
+            'Authority-binding journal partition contains an unsafe entry.',
+          );
+        }
+        const entry = await this.#readBinding(
+          join(partition, directory.name),
+          directory.name,
+          partition,
+        );
+        if (workflowRunnerAuthorityBindingJournalEntryClosed(entry) !== expectedClosed) {
+          return fail(
+            'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CORRUPT',
+            'Authority-binding journal partition does not match its closure state.',
+          );
+        }
+        if (!expectedClosed) this.#indexActive(entry);
+      }
+    }
+    this.#activeDirectoryIdentity = await this.#pathIdentity(this.#active);
   }
 
   async runWorkflowExclusive<T>(runId: string, operation: () => Promise<T>): Promise<T> {
@@ -301,10 +348,11 @@ export class WorkflowRunnerAuthorityBindingJournal {
   }
 
   async list(): Promise<readonly WorkflowRunnerAuthorityBindingJournalEntry[]> {
-    const { bindings } = this.#paths();
-    await assertOwnerDirectory(bindings, this.#security, this.#root);
+    const { active } = this.#paths();
+    await assertOwnerDirectory(active, this.#security, this.#root);
     const result: WorkflowRunnerAuthorityBindingJournalEntry[] = [];
-    for (const directory of await readdir(bindings, { withFileTypes: true })) {
+    this.#activeByRun.clear();
+    for (const directory of await readdir(active, { withFileTypes: true })) {
       if (
         !SAFE_DIRECTORY.test(directory.name) ||
         !directory.isDirectory() ||
@@ -315,33 +363,63 @@ export class WorkflowRunnerAuthorityBindingJournal {
           'Authority-binding journal contains an unsafe binding entry.',
         );
       }
-      result.push(await this.#readBinding(join(bindings, directory.name), directory.name));
+      const entry = await this.#readBinding(join(active, directory.name), directory.name, active);
+      result.push(entry);
+      this.#indexActive(entry);
     }
+    this.#activeDirectoryIdentity = await this.#pathIdentity(active);
     return Object.freeze(
       result.sort((left, right) => left.stage.bindingId.localeCompare(right.stage.bindingId)),
     );
   }
 
-  async read(bindingId: string): Promise<WorkflowRunnerAuthorityBindingJournalEntry | null> {
-    const { bindings } = this.#paths();
-    const name = bindingDirectoryName(bindingId);
-    const directory = join(bindings, name);
-    if (!(await present(directory))) return null;
-    const entry = await this.#readBinding(directory, name);
-    if (entry.stage.bindingId !== bindingId) {
-      return fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
-        'Authority-binding journal directory was cross-spliced.',
-      );
+  async activeForRun(
+    runId: string,
+  ): Promise<readonly WorkflowRunnerAuthorityBindingJournalEntry[]> {
+    await this.#refreshActiveIndexIfDrifted();
+    const { active } = this.#paths();
+    const names = [...(this.#activeByRun.get(runId) ?? [])].sort();
+    const entries: WorkflowRunnerAuthorityBindingJournalEntry[] = [];
+    for (const name of names) {
+      const directory = join(active, name);
+      if (!(await present(directory))) {
+        await this.#refreshActiveIndex(true);
+        return this.activeForRun(runId);
+      }
+      const entry = await this.#readBinding(directory, name, active);
+      if (entry.stage.runId !== runId || workflowRunnerAuthorityBindingJournalEntryClosed(entry)) {
+        await this.#refreshActiveIndex(true);
+        return this.activeForRun(runId);
+      }
+      entries.push(entry);
     }
-    return entry;
+    return Object.freeze(entries);
+  }
+
+  async read(bindingId: string): Promise<WorkflowRunnerAuthorityBindingJournalEntry | null> {
+    const name = bindingDirectoryName(bindingId);
+    for (const parent of [this.#paths().active, this.#paths().closed]) {
+      const directory = join(parent, name);
+      if (!(await present(directory))) continue;
+      const entry = await this.#readBinding(directory, name, parent);
+      if (entry.stage.bindingId !== bindingId) {
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+          'Authority-binding journal directory was cross-spliced.',
+        );
+      }
+      return entry;
+    }
+    return null;
   }
 
   async putStage(stage: WorkflowRunnerAuthorityBindingStage): Promise<void> {
-    const { bindings } = this.#paths();
+    const { active } = this.#paths();
     const name = bindingDirectoryName(stage.bindingId);
-    const directory = await ensureOwnerDirectory(join(bindings, name), this.#security, bindings);
+    const directory = await ensureOwnerDirectory(join(active, name), this.#security, active);
     await this.#putSlot(join(directory, 'stage.json'), canonical(stage));
+    this.#indexActive({ stage });
+    this.#activeDirectoryIdentity = await this.#pathIdentity(active);
   }
 
   async putStageReceipt(
@@ -418,16 +496,20 @@ export class WorkflowRunnerAuthorityBindingJournal {
       `confirmed-${sequenceName(value.companionSequence)}.json`,
       canonical(value),
     );
+    const entry = await this.read(bindingId);
+    if (entry && workflowRunnerAuthorityBindingJournalEntryClosed(entry)) {
+      await this.#archiveClosed(entry);
+    }
   }
 
-  #paths(): { bindings: string; locks: string } {
-    if (!this.#bindings || !this.#locks) {
+  #paths(): { active: string; closed: string; locks: string } {
+    if (!this.#active || !this.#closed || !this.#locks) {
       return fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_PATH_UNSAFE',
         'Authority-binding journal is not initialized.',
       );
     }
-    return { bindings: this.#bindings, locks: this.#locks };
+    return { active: this.#active, closed: this.#closed, locks: this.#locks };
   }
 
   async #putBindingSlot(bindingId: string, name: string, bytes: string): Promise<void> {
@@ -438,11 +520,18 @@ export class WorkflowRunnerAuthorityBindingJournal {
         'Authority-binding stage is missing before a later journal slot.',
       );
     }
-    const directory = join(this.#paths().bindings, bindingDirectoryName(bindingId));
+    const directory = join(this.#paths().active, bindingDirectoryName(bindingId));
+    if (!(await present(directory))) {
+      return fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+        'A closed authority-binding journal entry cannot accept another slot.',
+      );
+    }
     await this.#putSlot(join(directory, name), bytes);
   }
 
   async #putSlot(path: string, bytes: string): Promise<void> {
+    this.#invalidateDirectory(dirname(path));
     try {
       await writeExclusive(path, bytes, this.#security);
       await syncDirectory(resolve(path, '..'));
@@ -462,8 +551,12 @@ export class WorkflowRunnerAuthorityBindingJournal {
   async #readBinding(
     directory: string,
     expectedName: string,
+    parent: string,
   ): Promise<WorkflowRunnerAuthorityBindingJournalEntry> {
-    await assertOwnerDirectory(directory, this.#security, this.#paths().bindings);
+    await assertOwnerDirectory(directory, this.#security, parent);
+    const identity = await this.#pathIdentity(directory);
+    const cached = this.#entryCache.get(expectedName);
+    if (cached?.parent === parent && cached.identity === identity) return cached.entry;
     const files = await readdir(directory, { withFileTypes: true });
     const names = new Set<string>();
     for (const file of files) {
@@ -733,7 +826,7 @@ export class WorkflowRunnerAuthorityBindingJournal {
         error,
       );
     }
-    return Object.freeze({
+    const entry = Object.freeze({
       stage,
       ...(validatedStageReceipt ? { stageReceipt: validatedStageReceipt } : {}),
       ...(sourceEvidence ? { sourceEvidence } : {}),
@@ -742,5 +835,65 @@ export class WorkflowRunnerAuthorityBindingJournal {
       ...(budgetSourceResult ? { budgetSourceResult } : {}),
       controlDeliveries: Object.freeze(controlDeliveries),
     });
+    this.#entryCache.set(expectedName, { parent, identity, entry });
+    return entry;
+  }
+
+  #indexActive(entry: Pick<WorkflowRunnerAuthorityBindingJournalEntry, 'stage'>): void {
+    const name = bindingDirectoryName(entry.stage.bindingId);
+    const bindings = this.#activeByRun.get(entry.stage.runId) ?? new Set<string>();
+    bindings.add(name);
+    this.#activeByRun.set(entry.stage.runId, bindings);
+  }
+
+  #unindexActive(entry: Pick<WorkflowRunnerAuthorityBindingJournalEntry, 'stage'>): void {
+    const bindings = this.#activeByRun.get(entry.stage.runId);
+    if (!bindings) return;
+    bindings.delete(bindingDirectoryName(entry.stage.bindingId));
+    if (bindings.size === 0) this.#activeByRun.delete(entry.stage.runId);
+  }
+
+  async #archiveClosed(entry: WorkflowRunnerAuthorityBindingJournalEntry): Promise<void> {
+    const { active, closed } = this.#paths();
+    const name = bindingDirectoryName(entry.stage.bindingId);
+    const source = join(active, name);
+    const destination = join(closed, name);
+    if (!(await present(source))) return;
+    if (await present(destination)) {
+      return fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+        'Authority-binding journal contains the same binding in both partitions.',
+      );
+    }
+    await rename(source, destination);
+    await syncDirectory(active);
+    await syncDirectory(closed);
+    this.#entryCache.delete(name);
+    this.#unindexActive(entry);
+    this.#activeDirectoryIdentity = await this.#pathIdentity(active);
+  }
+
+  async #refreshActiveIndexIfDrifted(): Promise<void> {
+    const { active } = this.#paths();
+    const identity = await this.#pathIdentity(active);
+    if (identity !== this.#activeDirectoryIdentity) await this.#refreshActiveIndex(true);
+  }
+
+  async #refreshActiveIndex(force = false): Promise<void> {
+    const { active } = this.#paths();
+    const identity = await this.#pathIdentity(active);
+    if (!force && identity === this.#activeDirectoryIdentity) return;
+    await this.list();
+  }
+
+  #invalidateDirectory(directory: string): void {
+    for (const [name, cached] of this.#entryCache) {
+      if (join(cached.parent, name) === directory) this.#entryCache.delete(name);
+    }
+  }
+
+  async #pathIdentity(path: string): Promise<string> {
+    const stat = await lstat(path);
+    return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, stat.mode].join(':');
   }
 }

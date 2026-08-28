@@ -2,7 +2,7 @@ import { readdir, readFile, rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import { createWorkflowEffectDecisionAuthority } from '../workflow-effect-approval.js';
@@ -230,16 +230,17 @@ describe('Workflow runner v2 effect authorization bridge', () => {
           outcome.reason instanceof WorkflowEffectAuthorizationBusyError,
       ),
     ).toHaveLength(1);
-    let effectExecutions = 0;
-    effectExecutions += 1;
-    await attempts[claimed[0]!.index]!.port.complete(claimed[0]!.authority, { ok: true });
-    expect(effectExecutions).toBe(1);
+    const executeEffect = vi.fn(async () =>
+      attempts[claimed[0]!.index]!.port.complete(claimed[0]!.authority, { ok: true }),
+    );
+    await executeEffect();
+    expect(executeEffect).toHaveBeenCalledTimes(1);
     const restarted = await prepareExact(value);
     await expect(restarted.port.authorize(restarted.prepared)).resolves.toMatchObject({
       disposition: 'replay',
       value: { ok: true },
     });
-    expect(effectExecutions).toBe(1);
+    expect(executeEffect).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a claim when authority expires while the Go decision is in flight', async () => {

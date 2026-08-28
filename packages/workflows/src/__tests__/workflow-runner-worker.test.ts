@@ -262,214 +262,220 @@ describe('GS8-B workflow runner worker', () => {
     expect(observedGeneration).toBe(1);
   });
 
-  it('executes the bundled v2 effect path and preserves durable replay across outcome response loss', async () => {
-    for (const responseLost of [false, true]) {
-      const secureTemporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
-      const workspaceRoot = await mkdtemp(join(secureTemporaryRoot, 'openslack-runner-v2-effect-'));
-      roots.push(workspaceRoot);
-      const suffix = responseLost ? 'lost' : 'accepted';
-      const workflowRunId = `run.worker.v2.effect.${suffix}`;
-      const current = Date.now();
-      const base = v2Descriptor(0);
-      const sealed: WorkflowRunnerV2ExecutionDescriptor = {
-        ...base,
-        descriptorRef: `descriptor.worker.v2.effect.${suffix}`,
-        workflowRunId,
-        correlationId: `correlation.worker.v2.effect.${suffix}`,
-        confirmationPolicy: {
-          ...base.confirmationPolicy,
-          runId: workflowRunId,
-        },
-        authorityRoute: {
-          backend: 'go',
-          authority: 'workflow-control',
-          routingEpoch: 1,
-          authorityBuildHash: 'a'.repeat(64),
-        },
-        createdAt: new Date(current - 60_000).toISOString(),
-        expiresAt: new Date(current + 60 * 60_000).toISOString(),
-      };
-      const checkpointAuthority = createWorkflowCheckpointLeaseAuthority({
-        workspaceId: sealed.workspaceId,
-        jobId: `job.effect.${suffix}`,
-        workflowRunId,
-        attemptId: `attempt.effect.${suffix}`,
-        leaseId: `lease.effect.${suffix}`,
-        fencingToken: 1,
-        correlationId: sealed.correlationId,
-        runnerBuildHash: sealed.authorityRoute.authorityBuildHash,
-        workflowSourceHash: sealed.workflowSourceHash,
-        manifestHash: sealed.manifestHash,
-        inputHash: sealed.inputHash,
-      });
-      let authorizationCalls = 0;
-      let completionCalls = 0;
-      const commit = async (
-        operation: WorkflowRunnerAuthorityBindingStage['operation'],
-        source?: WorkflowRunnerAuthoritySourceAdapter,
-      ) => {
-        if (!source) throw new Error(`Missing ${operation} source adapter.`);
-        const stage = { operation } as WorkflowRunnerAuthorityBindingStage;
-        const probe = await source.probe(stage);
-        return probe.state === 'committed' ? probe.evidence : source.commit(stage, {} as never);
-      };
-      const context = {
-        signal: new AbortController().signal,
-        resumeOffer: null,
-        resumeGeneration: 0,
-        checkpointAuthority,
-        async checkpointCommit(
-          _payload: Readonly<Record<string, unknown>>,
-          source?: WorkflowRunnerAuthoritySourceAdapter,
-        ) {
-          await commit('checkpoint_commit', source);
-        },
-        async reserveBudget() {
-          throw new Error('Budget reserve is outside this effect-only execution.');
-        },
-        async reportBudgetUsage() {
-          throw new Error('Budget settlement is outside this effect-only execution.');
-        },
-        async authorizeEffect(
-          _payload: Readonly<Record<string, unknown>>,
-          source?: WorkflowRunnerAuthoritySourceAdapter,
-        ) {
-          authorizationCalls += 1;
-          const evidence = await commit('effect_authorize', source);
-          expect(evidence.schema).toBe('openslack.workflow_runner_effect_authority_evidence.v1');
-          return { payload: { approvalStatus: 'approved' } } as never;
-        },
-        async reportEffectOutcome(
-          payload: Readonly<Record<string, unknown>>,
-          source?: WorkflowRunnerAuthoritySourceAdapter,
-        ) {
-          completionCalls += 1;
-          const evidence = await commit('effect_complete', source);
-          expect(evidence.schema).toBe('openslack.workflow_runner_effect_completion_evidence.v1');
-          if (evidence.schema !== 'openslack.workflow_runner_effect_completion_evidence.v1') {
-            throw new Error('Effect completion returned a different authority evidence kind.');
-          }
-          expect(evidence.status).toBe(payload.status);
-          if (responseLost && payload.status === 'executed') {
-            throw new Error('simulated effect outcome response loss');
-          }
-        },
-      } as unknown as WorkflowRunnerV2ExecutionContext;
-
-      const seed = await createWorkflowRunnerV2EffectAuthorizationPort({
-        workspaceRoot,
-        descriptor: sealed,
-        context,
-      });
-      const prepared = await seed.prepare({
-        runId: workflowRunId,
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      });
-      let approvalId: string | undefined;
-      try {
-        await seed.authorize(prepared);
-      } catch (error) {
-        if (error instanceof WorkflowEffectApprovalPendingError) approvalId = error.approvalId;
-        else throw error;
-      }
-      expect(approvalId).toBeDefined();
-      const decisionAuthority = createWorkflowEffectDecisionAuthority({
-        workspaceId: sealed.workspaceId,
-        humanPrincipalIds: ['wsman'],
-        capabilities: ['workflow.effect.decide'],
-        maxBindingTtlMs: 60_000,
-      });
-      let decisionNow = new Date().toISOString();
-      const approvals = new LocalWorkflowEffectApprovalStore(
-        join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals'),
-        decisionAuthority,
-        () => decisionNow,
-      );
-      const pending = await approvals.read(workflowRunId, approvalId!);
-      expect(pending?.status).toBe('pending');
-      const binding = decisionAuthority.issueHumanDecisionBinding({
-        principalId: 'wsman',
-        capability: 'workflow.effect.decide',
-        runId: workflowRunId,
-        approvalId: approvalId!,
-        correlationId: sealed.correlationId,
-        approvalExpiresAt: pending!.expiresAt,
-        decision: 'approved',
-        reasonHash: '5'.repeat(64),
-        expiresAt: new Date(
-          Math.min(Date.now() + 30_000, Date.parse(pending!.expiresAt) - 1),
-        ).toISOString(),
-      });
-      decisionNow = binding.issuedAt;
-      await approvals.decide({
-        runId: workflowRunId,
-        approvalId: approvalId!,
-        expectedRevision: 0,
-        decision: 'approved',
-        reasonHash: '5'.repeat(64),
-        binding,
-      });
-
-      const workflow: WorkflowModule = {
-        format: 'openslack-native',
-        hash: sealed.workflowSourceHash,
-        meta: manifest,
-        async run(runtime) {
-          await runtime.openslack.governance.audit('bounded audit');
-          return { status: 'completed' };
-        },
-      };
-      const execution = executeWorkflowRunnerV2QualificationJob(
-        workflow,
-        sealed,
-        context,
-        workspaceRoot,
-        true,
-      );
-      if (responseLost) {
-        await expect(execution).rejects.toThrow(/effect|reconciliation/iu);
-      } else {
-        await expect(execution).resolves.toMatchObject({
-          status: 'completed',
-          runId: workflowRunId,
+  it(
+    'executes the bundled v2 effect path and preserves durable replay across outcome response loss',
+    async () => {
+      for (const responseLost of [false, true]) {
+        const secureTemporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
+        const workspaceRoot = await mkdtemp(
+          join(secureTemporaryRoot, 'openslack-runner-v2-effect-'),
+        );
+        roots.push(workspaceRoot);
+        const suffix = responseLost ? 'lost' : 'accepted';
+        const workflowRunId = `run.worker.v2.effect.${suffix}`;
+        const current = Date.now();
+        const base = v2Descriptor(0);
+        const sealed: WorkflowRunnerV2ExecutionDescriptor = {
+          ...base,
+          descriptorRef: `descriptor.worker.v2.effect.${suffix}`,
+          workflowRunId,
+          correlationId: `correlation.worker.v2.effect.${suffix}`,
+          confirmationPolicy: {
+            ...base.confirmationPolicy,
+            runId: workflowRunId,
+          },
+          authorityRoute: {
+            backend: 'go',
+            authority: 'workflow-control',
+            routingEpoch: 1,
+            authorityBuildHash: 'a'.repeat(64),
+          },
+          createdAt: new Date(current - 60_000).toISOString(),
+          expiresAt: new Date(current + 60 * 60_000).toISOString(),
+        };
+        const checkpointAuthority = createWorkflowCheckpointLeaseAuthority({
+          workspaceId: sealed.workspaceId,
+          jobId: `job.effect.${suffix}`,
+          workflowRunId,
+          attemptId: `attempt.effect.${suffix}`,
+          leaseId: `lease.effect.${suffix}`,
+          fencingToken: 1,
+          correlationId: sealed.correlationId,
+          runnerBuildHash: sealed.authorityRoute.authorityBuildHash,
+          workflowSourceHash: sealed.workflowSourceHash,
+          manifestHash: sealed.manifestHash,
+          inputHash: sealed.inputHash,
         });
-      }
-      expect(authorizationCalls).toBe(1);
-      expect(completionCalls).toBe(1);
-      const runStore = new RunStore({
-        baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
-      });
-      expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
+        let authorizationCalls = 0;
+        let completionCalls = 0;
+        const commit = async (
+          operation: WorkflowRunnerAuthorityBindingStage['operation'],
+          source?: WorkflowRunnerAuthoritySourceAdapter,
+        ) => {
+          if (!source) throw new Error(`Missing ${operation} source adapter.`);
+          const stage = { operation } as WorkflowRunnerAuthorityBindingStage;
+          const probe = await source.probe(stage);
+          return probe.state === 'committed' ? probe.evidence : source.commit(stage, {} as never);
+        };
+        const context = {
+          signal: new AbortController().signal,
+          resumeOffer: null,
+          resumeGeneration: 0,
+          checkpointAuthority,
+          async checkpointCommit(
+            _payload: Readonly<Record<string, unknown>>,
+            source?: WorkflowRunnerAuthoritySourceAdapter,
+          ) {
+            await commit('checkpoint_commit', source);
+          },
+          async reserveBudget() {
+            throw new Error('Budget reserve is outside this effect-only execution.');
+          },
+          async reportBudgetUsage() {
+            throw new Error('Budget settlement is outside this effect-only execution.');
+          },
+          async authorizeEffect(
+            _payload: Readonly<Record<string, unknown>>,
+            source?: WorkflowRunnerAuthoritySourceAdapter,
+          ) {
+            authorizationCalls += 1;
+            const evidence = await commit('effect_authorize', source);
+            expect(evidence.schema).toBe('openslack.workflow_runner_effect_authority_evidence.v1');
+            return { payload: { approvalStatus: 'approved' } } as never;
+          },
+          async reportEffectOutcome(
+            payload: Readonly<Record<string, unknown>>,
+            source?: WorkflowRunnerAuthoritySourceAdapter,
+          ) {
+            completionCalls += 1;
+            const evidence = await commit('effect_complete', source);
+            expect(evidence.schema).toBe('openslack.workflow_runner_effect_completion_evidence.v1');
+            if (evidence.schema !== 'openslack.workflow_runner_effect_completion_evidence.v1') {
+              throw new Error('Effect completion returned a different authority evidence kind.');
+            }
+            expect(evidence.status).toBe(payload.status);
+            if (responseLost && payload.status === 'executed') {
+              throw new Error('simulated effect outcome response loss');
+            }
+          },
+        } as unknown as WorkflowRunnerV2ExecutionContext;
 
-      const restarted = await createWorkflowRunnerV2EffectAuthorizationPort({
-        workspaceRoot,
-        descriptor: sealed,
-        context,
-      });
-      const replayPrepared = await restarted.prepare({
-        runId: workflowRunId,
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      });
-      await expect(restarted.authorize(replayPrepared)).resolves.toMatchObject({
-        disposition: 'replay',
-      });
-      const crossSpliced = await restarted.prepare({
-        runId: workflowRunId,
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'different audit at the same durable occurrence',
-      });
-      await expect(restarted.authorize(crossSpliced)).rejects.toBeInstanceOf(
-        WorkflowEffectReconciliationRequiredError,
-      );
-      expect(authorizationCalls).toBe(1);
-      expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
-    }
-  }, process.platform === 'win32' ? 120_000 : 20_000);
+        const seed = await createWorkflowRunnerV2EffectAuthorizationPort({
+          workspaceRoot,
+          descriptor: sealed,
+          context,
+        });
+        const prepared = await seed.prepare({
+          runId: workflowRunId,
+          evaluationIndex: 1,
+          operation: 'openslack.governance.audit',
+          detail: 'bounded audit',
+        });
+        let approvalId: string | undefined;
+        try {
+          await seed.authorize(prepared);
+        } catch (error) {
+          if (error instanceof WorkflowEffectApprovalPendingError) approvalId = error.approvalId;
+          else throw error;
+        }
+        expect(approvalId).toBeDefined();
+        const decisionAuthority = createWorkflowEffectDecisionAuthority({
+          workspaceId: sealed.workspaceId,
+          humanPrincipalIds: ['wsman'],
+          capabilities: ['workflow.effect.decide'],
+          maxBindingTtlMs: 60_000,
+        });
+        let decisionNow = new Date().toISOString();
+        const approvals = new LocalWorkflowEffectApprovalStore(
+          join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals'),
+          decisionAuthority,
+          () => decisionNow,
+        );
+        const pending = await approvals.read(workflowRunId, approvalId!);
+        expect(pending?.status).toBe('pending');
+        const binding = decisionAuthority.issueHumanDecisionBinding({
+          principalId: 'wsman',
+          capability: 'workflow.effect.decide',
+          runId: workflowRunId,
+          approvalId: approvalId!,
+          correlationId: sealed.correlationId,
+          approvalExpiresAt: pending!.expiresAt,
+          decision: 'approved',
+          reasonHash: '5'.repeat(64),
+          expiresAt: new Date(
+            Math.min(Date.now() + 30_000, Date.parse(pending!.expiresAt) - 1),
+          ).toISOString(),
+        });
+        decisionNow = binding.issuedAt;
+        await approvals.decide({
+          runId: workflowRunId,
+          approvalId: approvalId!,
+          expectedRevision: 0,
+          decision: 'approved',
+          reasonHash: '5'.repeat(64),
+          binding,
+        });
+
+        const workflow: WorkflowModule = {
+          format: 'openslack-native',
+          hash: sealed.workflowSourceHash,
+          meta: manifest,
+          async run(runtime) {
+            await runtime.openslack.governance.audit('bounded audit');
+            return { status: 'completed' };
+          },
+        };
+        const execution = executeWorkflowRunnerV2QualificationJob(
+          workflow,
+          sealed,
+          context,
+          workspaceRoot,
+          true,
+        );
+        if (responseLost) {
+          await expect(execution).rejects.toBeInstanceOf(WorkflowEffectReconciliationRequiredError);
+        } else {
+          await expect(execution).resolves.toMatchObject({
+            status: 'completed',
+            runId: workflowRunId,
+          });
+        }
+        expect(authorizationCalls).toBe(1);
+        expect(completionCalls).toBe(1);
+        const runStore = new RunStore({
+          baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+        });
+        expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
+
+        const restarted = await createWorkflowRunnerV2EffectAuthorizationPort({
+          workspaceRoot,
+          descriptor: sealed,
+          context,
+        });
+        const replayPrepared = await restarted.prepare({
+          runId: workflowRunId,
+          evaluationIndex: 1,
+          operation: 'openslack.governance.audit',
+          detail: 'bounded audit',
+        });
+        await expect(restarted.authorize(replayPrepared)).resolves.toMatchObject({
+          disposition: 'replay',
+        });
+        const crossSpliced = await restarted.prepare({
+          runId: workflowRunId,
+          evaluationIndex: 1,
+          operation: 'openslack.governance.audit',
+          detail: 'different audit at the same durable occurrence',
+        });
+        await expect(restarted.authorize(crossSpliced)).rejects.toBeInstanceOf(
+          WorkflowEffectReconciliationRequiredError,
+        );
+        expect(authorizationCalls).toBe(1);
+        expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
+      }
+    },
+    process.platform === 'win32' ? 120_000 : 20_000,
+  );
 
   it('is default-off and requires a closed valid startup configuration', () => {
     expect(() => loadWorkflowRunnerWorkerConfig({})).toThrow(WorkflowRunnerWorkerConfigError);

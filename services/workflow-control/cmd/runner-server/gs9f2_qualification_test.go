@@ -107,10 +107,6 @@ func qualifyGS9F2CheckpointHTTP(t *testing.T, repository *runnerpostgres.Reposit
 			"capabilities":              []any{"cancel_ack", "effect_receipts", "lease_heartbeat"}, "maxConcurrentJobs": int64(1),
 		}}
 	preparedHello := gs9f2HTTPPrepareMessage(t, hello)
-	var err error
-	if err != nil {
-		t.Fatal(err)
-	}
 	negotiation, err := repository.RecordV2Negotiation(t.Context(), runnerstore.V2NegotiationInput{
 		Lease: lease, Hello: hello, ExactBytes: []byte(preparedHello.Body), ControlBuildHash: strings.Repeat("f", 64),
 		ExpectedRunnerBuildHash: strings.Repeat("e", 64), HeartbeatInterval: time.Second,

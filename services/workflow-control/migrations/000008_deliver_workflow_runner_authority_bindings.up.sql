@@ -1017,7 +1017,7 @@ BEFORE UPDATE OR DELETE ON workflow_runner_authority_reconciliations
 FOR EACH ROW EXECUTE FUNCTION workflow_runner_reject_immutable_mutation();
 
 CREATE INDEX workflow_runner_authority_bindings_recovery_idx
-    ON workflow_runner_authority_bindings(state,created_at,binding_id);
+    ON workflow_runner_authority_bindings(workspace_id,state,updated_at,binding_id);
 CREATE INDEX workflow_runner_authority_bindings_attempt_idx
     ON workflow_runner_authority_bindings(attempt_id,state,target_sequence);
 CREATE INDEX workflow_runner_authority_control_acks_binding_idx

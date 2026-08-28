@@ -34,6 +34,7 @@ WHERE attempt_id=$2 AND control_event_id=$3 AND kind=$4 AND delivery_state IN ('
 	if tag.RowsAffected() != 1 {
 		return runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 uncertain delivery could not be latched", nil)
 	}
+	repository.signalV2ControlAcknowledged(attemptID, eventID)
 	return nil
 }
 
@@ -154,30 +155,64 @@ SET state='sent' WHERE control_event_id=$1 AND state='pending'`, eventID)
 	return repository.commit(ctx, tx)
 }
 
-// WaitV2ControlAcknowledged blocks only for schema-8 authority-bound controls.
-// F1 and non-binding controls are already delivered when this returns.
-func (repository *Repository) WaitV2ControlAcknowledged(ctx context.Context, attemptID, eventID string) error {
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var state string
-		if err := repository.pool.QueryRow(ctx, `SELECT delivery_state FROM workflow_runner_control_messages
-WHERE attempt_id=$1 AND control_event_id=$2`, attemptID, eventID).Scan(&state); err != nil {
-			return databaseFailure("wait for v2 control ACK", err)
-		}
-		switch state {
-		case "delivered":
-			return nil
-		case "reconciliation_required", "abandoned":
-			return runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 control delivery cannot be proven by exact ACK", nil)
-		case "awaiting_ack":
-		default:
-			return runnerstore.Failure(runnerstore.ErrorSequenceConflict, "v2 control is not awaiting its exact ACK", nil)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
+func v2ControlACKWaitKey(attemptID, eventID string) string { return attemptID + "\x00" + eventID }
+
+func (repository *Repository) signalV2ControlAcknowledged(attemptID, eventID string) {
+	if value, ok := repository.v2ControlACKWaiters.LoadAndDelete(v2ControlACKWaitKey(attemptID, eventID)); ok {
+		close(value.(chan struct{}))
 	}
+}
+
+func (repository *Repository) readV2ControlAcknowledgement(ctx context.Context, attemptID, eventID string) (runnerstore.V2ControlDeliveryDisposition, bool, error) {
+	var state string
+	if err := repository.pool.QueryRow(ctx, `SELECT delivery_state FROM workflow_runner_control_messages
+WHERE attempt_id=$1 AND control_event_id=$2`, attemptID, eventID).Scan(&state); err != nil {
+		return "", false, databaseFailure("wait for v2 control ACK", err)
+	}
+	switch state {
+	case "delivered":
+		return runnerstore.V2ControlDeliveryAccepted, true, nil
+	case "reconciliation_required", "abandoned":
+		return runnerstore.V2ControlDeliveryReconciliationRequired, true, nil
+	case "awaiting_ack":
+		return "", false, nil
+	default:
+		return "", false, runnerstore.Failure(runnerstore.ErrorSequenceConflict, "v2 control is not awaiting its exact ACK", nil)
+	}
+}
+
+// WaitV2ControlAcknowledged uses an in-process wakeup for the common path and
+// the database row as the durable fact. The second point-read closes the race
+// between registering the waiter and a concurrently committed HTTP ACK.
+func (repository *Repository) WaitV2ControlAcknowledged(ctx context.Context, attemptID, eventID string) (runnerstore.V2ControlDeliveryDisposition, error) {
+	if disposition, complete, err := repository.readV2ControlAcknowledgement(ctx, attemptID, eventID); err != nil || complete {
+		return disposition, err
+	}
+	key := v2ControlACKWaitKey(attemptID, eventID)
+	wake := make(chan struct{})
+	actual, loaded := repository.v2ControlACKWaiters.LoadOrStore(key, wake)
+	if loaded {
+		wake = actual.(chan struct{})
+	}
+	defer repository.v2ControlACKWaiters.CompareAndDelete(key, wake)
+	if disposition, complete, err := repository.readV2ControlAcknowledgement(ctx, attemptID, eventID); err != nil || complete {
+		return disposition, err
+	}
+	select {
+	case <-wake:
+		return repository.waitV2ControlAcknowledgementPointRead(ctx, attemptID, eventID)
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (repository *Repository) waitV2ControlAcknowledgementPointRead(ctx context.Context, attemptID, eventID string) (runnerstore.V2ControlDeliveryDisposition, error) {
+	disposition, complete, err := repository.readV2ControlAcknowledgement(ctx, attemptID, eventID)
+	if err != nil {
+		return "", err
+	}
+	if !complete {
+		return "", runnerstore.Failure(runnerstore.ErrorSequenceConflict, "v2 control ACK wakeup has no durable successor", nil)
+	}
+	return disposition, nil
 }

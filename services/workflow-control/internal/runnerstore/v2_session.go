@@ -49,6 +49,13 @@ type V2CancelControl struct {
 	ExactBytes []byte
 }
 
+type V2ControlDeliveryDisposition string
+
+const (
+	V2ControlDeliveryAccepted               V2ControlDeliveryDisposition = "accepted"
+	V2ControlDeliveryReconciliationRequired V2ControlDeliveryDisposition = "reconciliation_required"
+)
+
 type V2SessionStore interface {
 	Store
 	RecordAttemptFailure(context.Context, AttemptFailureInput) (JobView, error)
@@ -58,6 +65,7 @@ type V2SessionStore interface {
 	MarkV2ControlDeliveryStarted(context.Context, string, string, string, time.Time) error
 	MarkV2ControlDelivered(context.Context, string, string, string, time.Time) error
 	MarkV2ControlDeliveryReconciliation(context.Context, string, string, string, time.Time) error
+	WaitV2ControlAcknowledged(context.Context, string, string) (V2ControlDeliveryDisposition, error)
 }
 
 type V2AuthorityRequest struct {

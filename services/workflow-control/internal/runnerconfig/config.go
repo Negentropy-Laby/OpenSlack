@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -74,6 +73,31 @@ type Config struct {
 	TerminalExitGrace time.Duration
 	PollInterval      time.Duration
 	RecoveryInterval  time.Duration
+}
+
+// V2RuntimeDeliveryRuntime is produced only after LoadEnvironment validates
+// the complete schema-8 runtime-delivery configuration. Downstream worker
+// injection consumes this typed value without maintaining a second validator.
+type V2RuntimeDeliveryRuntime struct {
+	Origin         string
+	BearerToken    string
+	BearerSHA256   string
+	JournalRoot    string
+	BudgetOrigin   string
+	BudgetToken    string
+	BudgetCallerID string
+}
+
+func (config Config) V2RuntimeDeliveryRuntime() *V2RuntimeDeliveryRuntime {
+	if !config.V2RuntimeDeliveryEnabled {
+		return nil
+	}
+	return &V2RuntimeDeliveryRuntime{
+		Origin: config.V2RuntimeDeliveryOrigin, BearerToken: config.V2RuntimeDeliveryBearerToken,
+		BearerSHA256: config.BearerTokenSHA256, JournalRoot: config.V2RuntimeDeliveryJournalRoot,
+		BudgetOrigin: config.V2BudgetOrigin, BudgetToken: config.V2BudgetBearerToken,
+		BudgetCallerID: config.V2BudgetCallerID,
+	}
 }
 
 func Load() (Config, error) { return LoadEnvironment(os.Environ()) }
@@ -298,23 +322,8 @@ func v2RuntimeDeliveryConfig(values map[string]string, workspaceRoot, expectedTo
 }
 
 func exactLoopbackOrigin(value, name string) (string, error) {
-	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n\x00") {
-		return "", fmt.Errorf("%s must be an exact loopback HTTP origin", name)
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.Port() == "" {
-		return "", fmt.Errorf("%s must be an exact loopback HTTP origin", name)
-	}
-	host := parsed.Hostname()
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return "", fmt.Errorf("%s must be an exact loopback HTTP origin", name)
-	}
-	if parsed.Path == "/" {
-		parsed.Path = ""
-	}
-	canonical := parsed.String()
-	if _, _, err := net.SplitHostPort(parsed.Host); err != nil || canonical != value {
+	canonical, err := localshadowconfig.ExactLoopbackOrigin(value)
+	if err != nil {
 		return "", fmt.Errorf("%s must be an exact loopback HTTP origin", name)
 	}
 	return canonical, nil

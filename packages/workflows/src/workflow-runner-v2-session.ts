@@ -21,6 +21,7 @@ import {
   type WorkflowRunnerV2ExecutionDescriptor,
 } from './workflow-runner-v2-descriptor.js';
 import {
+  workflowRunnerAuthorityBindingOperationForKind,
   workflowRunnerAuthorityBindingRunnerDelta,
   type WorkflowRunnerAuthorityBindingOperation,
   type WorkflowRunnerBudgetSourceResult,
@@ -93,7 +94,7 @@ export interface WorkflowRunnerV2ExecutionContext {
   reserveBudget(
     payload: Readonly<Record<string, unknown>>,
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
-  ): Promise<WorkflowControlAuthorityMessage>;
+  ): Promise<WorkflowRunnerV2BudgetReservationResult>;
   reportBudgetUsage(
     payload: Readonly<Record<string, unknown>>,
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
@@ -106,6 +107,11 @@ export interface WorkflowRunnerV2ExecutionContext {
     payload: Readonly<Record<string, unknown>>,
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
   ): Promise<void>;
+}
+
+export interface WorkflowRunnerV2BudgetReservationResult {
+  readonly decision: WorkflowControlAuthorityMessage;
+  readonly budgetSourceResult?: WorkflowRunnerBudgetSourceResult;
 }
 
 export interface WorkflowRunnerV2RuntimeDeliveryPort {
@@ -280,6 +286,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #terminalReceiptAccepted = false;
   #eventLaneTail: Promise<void> = Promise.resolve();
   #eventLanePending = 0;
+  #controlLaneTail: Promise<void> = Promise.resolve();
 
   constructor(options: WorkflowRunnerV2SessionOptions<TPrepared, TWorkflow>) {
     if (!HASH.test(options.runnerBuildHash)) {
@@ -363,42 +370,65 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
 
   async receive(value: WorkflowControlAuthorityMessage): Promise<void> {
     if (this.#state === 'closed') return;
-    const message = validateWorkflowControlAuthorityMessage(value);
-    if (workflowControlAuthorityDirectionForKind(message.kind) !== 'control-to-runner') {
-      return this.#fatal(
-        new WorkflowRunnerV2SessionError(
+    let message: WorkflowControlAuthorityMessage;
+    try {
+      message = validateWorkflowControlAuthorityMessage(value);
+      if (workflowControlAuthorityDirectionForKind(message.kind) !== 'control-to-runner') {
+        throw new WorkflowRunnerV2SessionError(
           'WORKFLOW_RUNNER_V2_SESSION_DIRECTION',
           `Runner cannot receive ${message.kind}.`,
-        ),
-      );
-    }
-    if (message.workspaceId !== this.#options.workspaceId) {
-      return this.#fatal(
-        new WorkflowRunnerV2SessionError(
+        );
+      }
+      if (message.workspaceId !== this.#options.workspaceId) {
+        throw new WorkflowRunnerV2SessionError(
           'WORKFLOW_RUNNER_V2_SESSION_IDENTITY',
           'Incoming workspace differs from the sealed worker.',
-        ),
-      );
-    }
-    try {
-      if (message.kind === 'hello_ack') return this.#handleHelloAck(message);
-      if (message.kind === 'lease_offer') return await this.#handleLeaseOffer(message);
-      if (message.kind === 'event_receipt') return await this.#handleReceipt(message);
-      if (
-        message.kind === 'budget_authorization' ||
-        message.kind === 'effect_authorization' ||
-        message.kind === 'resume_offer'
-      ) {
-        return await this.#handleDecision(message);
+        );
       }
-      if (message.kind === 'cancel_request') return await this.#handleCancel(message);
-      throw new WorkflowRunnerV2SessionError(
-        'WORKFLOW_RUNNER_V2_SESSION_DIRECTION',
-        `Unsupported v2 control message ${message.kind}.`,
-      );
     } catch (error) {
-      await this.#fatal(error);
+      return this.#fatal(error);
     }
+    const dispatch = async () => {
+      if (this.#state === 'closed') return;
+      try {
+        if (message.kind === 'hello_ack') return this.#handleHelloAck(message);
+        if (message.kind === 'lease_offer') return await this.#handleLeaseOffer(message);
+        if (message.kind === 'event_receipt') return await this.#handleReceipt(message);
+        if (
+          message.kind === 'budget_authorization' ||
+          message.kind === 'effect_authorization' ||
+          message.kind === 'resume_offer'
+        ) {
+          return await this.#handleDecision(message);
+        }
+        if (message.kind === 'cancel_request') return await this.#handleCancel(message);
+        throw new WorkflowRunnerV2SessionError(
+          'WORKFLOW_RUNNER_V2_SESSION_DIRECTION',
+          `Unsupported v2 control message ${message.kind}.`,
+        );
+      } catch (error) {
+        await this.#fatal(error);
+      }
+    };
+    // hello_ack and lease_offer establish the session and then intentionally
+    // wait for future control frames. Serializing those long-lived handlers
+    // would deadlock their own receipt. Only the mutable receipt/decision/
+    // cancel lane is sequenced to completion in arrival order.
+    if (message.kind === 'hello_ack' || message.kind === 'lease_offer') {
+      return dispatch();
+    }
+    if (message.kind === 'cancel_request') {
+      const started = this.#controlLaneTail
+        .catch(() => undefined)
+        .then(() => ({
+          completion: dispatch(),
+        }));
+      this.#controlLaneTail = started.then(() => undefined);
+      return (await started).completion;
+    }
+    const current = this.#controlLaneTail.catch(() => undefined).then(dispatch);
+    this.#controlLaneTail = current.catch(() => undefined);
+    return current;
   }
 
   #handleHelloAck(message: WorkflowControlAuthorityMessage): void {
@@ -637,15 +667,17 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         payload: Readonly<Record<string, unknown>>,
         authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
       ) => {
-        return this.#emitWithDecision(
-          'effect_intent',
-          payload,
-          'effect_authorization',
-          (message) =>
-            messagePayload(message).effectId === payload.effectId &&
-            messagePayload(message).effectHash === payload.effectHash,
-          authoritySource,
-        );
+        return (
+          await this.#emitWithDecision(
+            'effect_intent',
+            payload,
+            'effect_authorization',
+            (message) =>
+              messagePayload(message).effectId === payload.effectId &&
+              messagePayload(message).effectHash === payload.effectHash,
+            authoritySource,
+          )
+        ).decision;
       },
       reportEffectOutcome: async (
         payload: Readonly<Record<string, unknown>>,
@@ -743,12 +775,16 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     decisionKind: 'budget_authorization' | 'effect_authorization',
     match: (message: WorkflowControlAuthorityMessage) => boolean,
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
-  ): Promise<WorkflowControlAuthorityMessage> {
+  ): Promise<WorkflowRunnerV2BudgetReservationResult> {
+    let budgetSourceResult: WorkflowRunnerBudgetSourceResult | undefined;
     const decisionPromise = this.#emitReceiptable(
       kind,
       payload,
       { kind: decisionKind, match },
       authoritySource,
+      (context) => {
+        budgetSourceResult = context.budgetSourceResult;
+      },
     );
     const decision = await decisionPromise;
     if (!decision) {
@@ -758,7 +794,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       );
     }
     await this.#afterDecisionLane();
-    return decision;
+    return Object.freeze({
+      decision,
+      ...(budgetSourceResult === undefined ? {} : { budgetSourceResult }),
+    });
   }
 
   async #emitReceiptable(
@@ -769,9 +808,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       readonly match: (message: WorkflowControlAuthorityMessage) => boolean;
     },
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
+    onCommitted?: (context: WorkflowRunnerAuthorityBindingCommittedContext) => void,
   ): Promise<WorkflowControlAuthorityMessage | undefined> {
     return this.#withEventLane(() =>
-      this.#emitReceiptableNow(kind, payload, expectedDecision, authoritySource),
+      this.#emitReceiptableNow(kind, payload, expectedDecision, authoritySource, onCommitted),
     );
   }
 
@@ -783,6 +823,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       readonly match: (message: WorkflowControlAuthorityMessage) => boolean;
     },
     authoritySource?: WorkflowRunnerAuthoritySourceAdapter,
+    onCommitted?: (context: WorkflowRunnerAuthorityBindingCommittedContext) => void,
   ): Promise<WorkflowControlAuthorityMessage | undefined> {
     const lease = this.#requireLease();
     if (this.#outstanding) {
@@ -835,6 +876,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         `F2b ${authorityOperation} requires the explicit runtime-delivery port.`,
       );
     }
+    if (authorityContext) onCommitted?.(authorityContext);
     if (authorityContext && authorityContext.exactEventBytes !== prepared.body) {
       throw new WorkflowRunnerV2SessionError(
         'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
@@ -969,21 +1011,30 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       await this.#options.close(2);
       return;
     }
+    const cancelledBeforeReceipt = Boolean(this.#queuedCancel && outstanding.authorityBindingId);
     if (outstanding.authorityBindingId) {
       await this.#options.runtimeDelivery!.acknowledgeControl(
         outstanding.authorityBindingId,
         message,
-        { disposition: 'accepted' },
+        { disposition: cancelledBeforeReceipt ? 'reconciliation_required' : 'accepted' },
       );
+    }
+    if (cancelledBeforeReceipt) {
+      const error = new WorkflowRunnerV2SessionError(
+        'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+        'Control cancellation preceded the authority receipt acknowledgement.',
+      );
+      this.#queuedCancel = undefined;
+      outstanding.rejectReceipt(error);
+      outstanding.rejectDecision?.(error);
+      this.#outstanding = undefined;
+      this.#state = 'reconciliation_required';
+      await this.#options.close(2);
+      return;
     }
     outstanding.receiptAccepted = true;
     this.#lastReceiptSequence = outstanding.message.sequence ?? 0;
     if (message.runRevision !== null) this.#requireLease().runRevision = message.runRevision;
-    if (this.#queuedCancel && outstanding.authorityBindingId) {
-      await this.#reconcileAuthorityCancel(outstanding, this.#queuedCancel);
-      outstanding.resolveReceipt();
-      return;
-    }
     outstanding.resolveReceipt();
     if (!outstanding.expectedDecision) {
       this.#outstanding = undefined;
@@ -1042,7 +1093,6 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
         },
       );
     }
-    if (message.runRevision !== null) this.#requireLease().runRevision = message.runRevision;
     this.#outstanding = undefined;
     outstanding.resolveDecision?.(message);
   }
@@ -1263,22 +1313,8 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     ) {
       return undefined;
     }
-    switch (kind) {
-      case 'checkpoint_commit':
-        return 'checkpoint_commit';
-      case 'effect_intent':
-        return 'effect_authorize';
-      case 'effect_outcome':
-        return 'effect_complete';
-      case 'budget_reserve_request':
-        return 'budget_reserve';
-      case 'budget_usage_report':
-        return 'budget_settle';
-      case 'lease_accept':
-        return this.#resumeRequired ? 'resume_advance' : undefined;
-      default:
-        return undefined;
-    }
+    const operation = workflowRunnerAuthorityBindingOperationForKind(kind);
+    return operation === 'resume_advance' && !this.#resumeRequired ? undefined : operation;
   }
 
   #requireLease(): LeaseBinding {

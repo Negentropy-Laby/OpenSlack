@@ -658,6 +658,29 @@ lifecycle. Global revision changes are operation-specific and independent from c
 budget source revisions and from runner attempt/lease fencing. A source receipt cannot substitute
 for the matching global-head CAS, and a durable event receipt cannot substitute for its worker ACK.
 
+The worker consumes receipt, decision, and cancel controls through one serial inbound lane. Only an
+accepted event receipt advances the persisted global revision; a decision validates that accepted
+head and cannot overwrite it. Cancellation may use the operation's declared completion control
+kind only at the next legal companion position. A non-contiguous or earlier cancel is acknowledged
+as `reconciliation_required` on the existing receipt path and no second conflicting decision ACK is
+written. Every ACK wait returns either `accepted` or `reconciliation_required`; the coordinator
+must not send a dependent decision after the latter.
+
+There is no independent 30-second ACK correctness deadline. The hard bound is the earlier of the
+lease expiry and whole-job deadline. An in-process notification wakes the common wait path, while a
+database point-read before and after waiter registration remains the durable fact and closes the
+notification race. Explicit rejection, uncertain persistence, process cancellation, or expiry of
+that hard bound latches reconciliation. A slow but successful ACK before the hard bound does not.
+
+Exact-key replay is evaluated before current-attempt admission, so an initial `lease_accept` may
+replay its original bytes after the attempt becomes running. Fresh, response-loss, and stored
+replay paths revalidate the same binding/source evidence, sequence, revision, payload identity, and
+durable receipt hash. The runtime-delivery profile admits only `go/workflow-control` v2 jobs;
+`ts-local` submissions fail before they can remain queued. Checkpoint evidence is selected by the
+requested phase index, budget decisions remain coupled to their durable source result, and effect
+grants expire at the earliest of approval expiry, descriptor expiry, and sixty seconds after the
+decision, with checks both before claim and immediately before the side effect.
+
 The Go scheduler quarantines staged, resolved, runner-committed, or unacknowledged binding state
 after process loss or lease expiry, discards its in-memory delivery view, and does not replay or
 continue the TypeScript-owned source mutation. The binding remains reconciliation-required. An

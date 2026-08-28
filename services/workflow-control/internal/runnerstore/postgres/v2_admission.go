@@ -5,9 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"io"
 
 	"github.com/jackc/pgx/v5"
 
@@ -136,19 +134,9 @@ func readV2RuntimeAdmissionReceipt(row rowScanner, workspaceID string, fingerpri
 		prepared.Value.JobSpecHash != jobSpecHash || prepared.Value.Disposition != disposition {
 		return runnerstore.V2RuntimeAdmissionReceipt{}, false, runnerstore.Failure(runnerstore.ErrorHashMismatch, "stored v2 runtime admission request and columns are cross-spliced", err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(exactReceipt))
-	decoder.DisallowUnknownFields()
-	var receipt runnerstore.V2RuntimeAdmissionReceipt
-	if err := decoder.Decode(&receipt); err != nil {
-		return runnerstore.V2RuntimeAdmissionReceipt{}, false, databaseFailure("decode v2 runtime admission receipt", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return runnerstore.V2RuntimeAdmissionReceipt{}, false, runnerstore.Failure(runnerstore.ErrorHashMismatch, "stored v2 runtime admission receipt has trailing content", err)
-	}
-	canonical, err := runnerstore.PrepareV2RuntimeAdmissionReceipt(receipt)
-	if err != nil || !bytes.Equal(canonical, exactReceipt) {
-		return runnerstore.V2RuntimeAdmissionReceipt{}, false, runnerstore.Failure(runnerstore.ErrorHashMismatch, "stored v2 runtime admission receipt is not exact", err)
+	receipt, err := runnerstore.ParseV2RuntimeAdmissionReceipt(exactReceipt, prepared)
+	if err != nil {
+		return runnerstore.V2RuntimeAdmissionReceipt{}, false, err
 	}
 	value := prepared.Value
 	if receipt.WorkspaceID != value.WorkspaceID || receipt.JobID != value.JobID || receipt.WorkflowRunID != value.WorkflowRunID ||
@@ -157,6 +145,5 @@ func readV2RuntimeAdmissionReceipt(row rowScanner, workspaceID string, fingerpri
 		receipt.IdempotencyKey != prepared.IdempotencyKey || receipt.RequestFingerprint != prepared.RequestFingerprint {
 		return runnerstore.V2RuntimeAdmissionReceipt{}, false, runnerstore.Failure(runnerstore.ErrorHashMismatch, "stored v2 runtime admission receipt and request are cross-spliced", nil)
 	}
-	receipt.ExactBytes = append([]byte(nil), exactReceipt...)
 	return receipt, true, nil
 }

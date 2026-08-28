@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,8 +42,9 @@ type Repository struct {
 	v2BudgetResults   interface {
 		ReadMutationResult(context.Context, string, string) (budgetstore.MutationResult, error)
 	}
-	schemaVersion     int64
-	v2RuntimeDelivery bool
+	schemaVersion       int64
+	v2RuntimeDelivery   bool
+	v2ControlACKWaiters sync.Map
 }
 
 func New(pool *pgxpool.Pool) *Repository {

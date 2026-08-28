@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,11 +22,28 @@ import (
 const bindingLockDomain = "openslack.workflow-runner-authority-binding.v1\x00"
 
 type storedBindingReceipt struct {
-	workspaceID string
-	fingerprint []byte
-	request     []byte
-	receipt     []byte
+	workspaceID  string
+	kind         string
+	expectedHash []byte
+	fingerprint  []byte
+	request      []byte
+	receipt      []byte
 }
+
+const authorityBindingReceiptByKeySQL = `SELECT workspace_id,receipt_kind,expected_hash,request_fingerprint,exact_request_bytes,exact_receipt_bytes FROM (
+ SELECT workspace_id,'binding_receipt' AS receipt_kind,stage_receipt_hash AS expected_hash,
+        stage_request_fingerprint AS request_fingerprint,exact_stage_bytes AS exact_request_bytes,
+        exact_stage_receipt_bytes AS exact_receipt_bytes
+   FROM workflow_runner_authority_bindings WHERE stage_idempotency_key=$1
+ UNION ALL
+ SELECT workspace_id,'binding_receipt',resolution_receipt_hash,resolution_request_fingerprint,
+        exact_resolution_bytes,exact_resolution_receipt_bytes
+   FROM workflow_runner_authority_bindings WHERE resolution_idempotency_key=$1
+ UNION ALL
+ SELECT b.workspace_id,'control_ack',a.ack_hash,a.ack_request_fingerprint,a.exact_ack_bytes,a.exact_ack_bytes
+   FROM workflow_runner_authority_control_acks a JOIN workflow_runner_authority_bindings b ON b.binding_id=a.binding_id
+  WHERE a.ack_idempotency_key=$1
+) receipts`
 
 func validateBindingPrepared(
 	input runnerstore.V2AuthorityBindingInput,
@@ -86,9 +105,7 @@ func (repository *Repository) StageAuthorityBinding(ctx context.Context, input r
 	if err := lockScopes(ctx, tx, bindingLockDomain+input.IdempotencyKey, workspaceID, bindingString(stage, "jobId")); err != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, err
 	}
-	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, `
-SELECT workspace_id,stage_request_fingerprint,exact_stage_bytes,exact_stage_receipt_bytes
-FROM workflow_runner_authority_bindings WHERE stage_idempotency_key=$1`, input.IdempotencyKey), workspaceID, fingerprint, []byte(input.Prepared.Body)); readErr != nil {
+	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, authorityBindingReceiptByKeySQL, input.IdempotencyKey), workspaceID, fingerprint, []byte(input.Prepared.Body), true); readErr != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, readErr
 	} else if found {
 		replay.Replay = true
@@ -215,9 +232,7 @@ func (repository *Repository) ResolveAuthorityBinding(ctx context.Context, bindi
 	if err := lockScopes(ctx, tx, bindingLockDomain+input.IdempotencyKey, input.WorkspaceID, bindingID); err != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, err
 	}
-	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, `
-SELECT workspace_id,resolution_request_fingerprint,exact_resolution_bytes,exact_resolution_receipt_bytes
-FROM workflow_runner_authority_bindings WHERE resolution_idempotency_key=$1`, input.IdempotencyKey), input.WorkspaceID, fingerprint, []byte(input.Prepared.Body)); readErr != nil {
+	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, authorityBindingReceiptByKeySQL, input.IdempotencyKey), input.WorkspaceID, fingerprint, []byte(input.Prepared.Body), true); readErr != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, readErr
 	} else if found {
 		replay.Replay = true
@@ -417,11 +432,7 @@ func (repository *Repository) AcknowledgeV2Control(ctx context.Context, input ru
 	if err := lockScopes(ctx, tx, bindingLockDomain+input.IdempotencyKey, input.WorkspaceID, input.BindingID); err != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, err
 	}
-	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, `
-SELECT b.workspace_id,a.ack_request_fingerprint,a.exact_ack_bytes,a.exact_ack_bytes
-FROM workflow_runner_authority_control_acks a
-JOIN workflow_runner_authority_bindings b ON b.binding_id=a.binding_id
-WHERE a.ack_idempotency_key=$1`, input.IdempotencyKey), input.WorkspaceID, fingerprint, []byte(input.Prepared.Body)); readErr != nil {
+	if replay, found, readErr := readBindingReceiptRow(tx.QueryRow(ctx, authorityBindingReceiptByKeySQL, input.IdempotencyKey), input.WorkspaceID, fingerprint, []byte(input.Prepared.Body), true); readErr != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, readErr
 	} else if found {
 		replay.Replay = true
@@ -574,10 +585,11 @@ WHERE binding_id=$1 AND state='runner_committed'`, input.BindingID, reconciliati
 			return runnerstore.V2AuthorityBindingReceipt{}, mapWriteFailure("latch control ACK reconciliation", err)
 		}
 	} else {
-		completes := (message.Kind == authoritycontract.KindEventReceipt &&
-			(operation == "checkpoint_commit" || operation == "effect_complete" || operation == "budget_settle")) ||
-			message.Kind == authoritycontract.KindEffectAuthorization || message.Kind == authoritycontract.KindBudgetAuthorization ||
-			message.Kind == authoritycontract.KindResumeOffer
+		completionKind, completionErr := runnerbindingcontract.CompletionControlKind(runnerbindingcontract.Operation(operation))
+		if completionErr != nil {
+			return runnerstore.V2AuthorityBindingReceipt{}, bindingContractFailure("authority-binding completion operation is invalid", completionErr)
+		}
+		completes := message.Kind == completionKind
 		if completes && message.Kind == authoritycontract.KindEventReceipt {
 			var pendingCancel bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (
@@ -595,8 +607,13 @@ WHERE binding_id=$1 AND state='runner_committed'`, input.BindingID, now); err !=
 		}
 	}
 	if err := repository.commit(ctx, tx); err != nil {
-		return repository.recoverBindingReceipt(ctx, workspaceID, input.IdempotencyKey, fingerprint, []byte(input.Prepared.Body), err)
+		recovered, recoverErr := repository.recoverBindingReceipt(ctx, workspaceID, input.IdempotencyKey, fingerprint, []byte(input.Prepared.Body), err)
+		if recoverErr == nil {
+			repository.signalV2ControlAcknowledged(attemptID, controlEventID)
+		}
+		return recovered, recoverErr
 	}
+	repository.signalV2ControlAcknowledged(attemptID, controlEventID)
 	return runnerstore.V2AuthorityBindingReceipt{Value: receipt, ExactBytes: []byte(input.Prepared.Body)}, nil
 }
 
@@ -643,19 +660,26 @@ func bindingRecord(record runnerbindingcontract.Record, name string) runnerbindi
 	}
 }
 
-func readBindingReceiptRow(row pgx.Row, workspaceID string, fingerprint, request []byte) (runnerstore.V2AuthorityBindingReceipt, bool, error) {
+func readBindingReceiptRow(row pgx.Row, workspaceID string, fingerprint, request []byte, bindRequest bool) (runnerstore.V2AuthorityBindingReceipt, bool, error) {
 	var stored storedBindingReceipt
-	if err := row.Scan(&stored.workspaceID, &stored.fingerprint, &stored.request, &stored.receipt); err != nil {
+	if err := row.Scan(&stored.workspaceID, &stored.kind, &stored.expectedHash, &stored.fingerprint, &stored.request, &stored.receipt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return runnerstore.V2AuthorityBindingReceipt{}, false, nil
 		}
 		return runnerstore.V2AuthorityBindingReceipt{}, false, databaseFailure("read authority-binding receipt", err)
 	}
-	if (workspaceID != "" && stored.workspaceID != workspaceID) || subtle.ConstantTimeCompare(stored.fingerprint, fingerprint) != 1 || !bytes.Equal(stored.request, request) {
+	if (workspaceID != "" && stored.workspaceID != workspaceID) || (bindRequest && (subtle.ConstantTimeCompare(stored.fingerprint, fingerprint) != 1 || !bytes.Equal(stored.request, request))) {
 		return runnerstore.V2AuthorityBindingReceipt{}, false, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "authority-binding key is bound to different exact bytes", nil)
 	}
 	value, err := runnerbindingcontract.ParseReceiptBytes(stored.receipt)
-	if err != nil {
+	hashValid := false
+	if stored.kind == "control_ack" {
+		digest := sha256.Sum256(stored.receipt)
+		hashValid = subtle.ConstantTimeCompare(digest[:], stored.expectedHash) == 1
+	} else if stored.kind == "binding_receipt" {
+		hashValid = ensureReceiptHash(stored.receipt, stored.expectedHash) == nil
+	}
+	if err != nil || !hashValid {
 		return runnerstore.V2AuthorityBindingReceipt{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding receipt is invalid", err)
 	}
 	return runnerstore.V2AuthorityBindingReceipt{Value: value, ExactBytes: stored.receipt}, true, nil
@@ -665,40 +689,15 @@ func (repository *Repository) ReadAuthorityBindingReceipt(ctx context.Context, w
 	if !repository.v2RuntimeDelivery || repository.schemaVersion < 8 {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "schema-8 runtime delivery is disabled", nil)
 	}
-	var storedWorkspace, receiptKind string
-	var expectedHash, exact []byte
-	err := repository.pool.QueryRow(ctx, `SELECT workspace_id,receipt_kind,expected_hash,exact_receipt_bytes FROM (
- SELECT workspace_id,'binding_receipt' AS receipt_kind,stage_receipt_hash AS expected_hash,exact_stage_receipt_bytes AS exact_receipt_bytes,
-        stage_idempotency_key AS idempotency_key
-   FROM workflow_runner_authority_bindings
- UNION ALL
- SELECT workspace_id,'binding_receipt',resolution_receipt_hash,exact_resolution_receipt_bytes,resolution_idempotency_key
-   FROM workflow_runner_authority_bindings WHERE resolution_idempotency_key IS NOT NULL
- UNION ALL
- SELECT b.workspace_id,'control_ack',a.ack_hash,a.exact_ack_bytes,a.ack_idempotency_key
-   FROM workflow_runner_authority_control_acks a JOIN workflow_runner_authority_bindings b ON b.binding_id=a.binding_id
-) receipts WHERE idempotency_key=$1`, key).Scan(&storedWorkspace, &receiptKind, &expectedHash, &exact)
+	receipt, found, err := readBindingReceiptRow(repository.pool.QueryRow(ctx, authorityBindingReceiptByKeySQL, key), workspaceID, nil, nil, false)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorNotFound, "authority-binding receipt was not found", err)
-		}
-		return runnerstore.V2AuthorityBindingReceipt{}, databaseFailure("read authority-binding receipt", err)
+		return runnerstore.V2AuthorityBindingReceipt{}, err
 	}
-	if storedWorkspace != workspaceID {
+	if !found {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorNotFound, "authority-binding receipt was not found", nil)
 	}
-	value, err := runnerbindingcontract.ParseReceiptBytes(exact)
-	hashValid := false
-	if receiptKind == "control_ack" {
-		digest := sha256.Sum256(exact)
-		hashValid = subtle.ConstantTimeCompare(digest[:], expectedHash) == 1
-	} else if receiptKind == "binding_receipt" {
-		hashValid = ensureReceiptHash(exact, expectedHash) == nil
-	}
-	if err != nil || !hashValid {
-		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding receipt failed exact integrity validation", err)
-	}
-	return runnerstore.V2AuthorityBindingReceipt{Value: value, ExactBytes: exact, Replay: true}, nil
+	receipt.Replay = true
+	return receipt, nil
 }
 
 func scanAuthorityBindingView(row pgx.Row) (runnerstore.V2AuthorityBindingView, error) {
@@ -725,6 +724,14 @@ fencing_token,expected_run_revision,accepted_run_revision,expected_resume_genera
 target_event_id,target_kind,target_sequence,exact_target_bytes,exact_stage_bytes,exact_stage_receipt_bytes,
 exact_resolution_bytes,exact_resolution_receipt_bytes,source_plane,source_evidence_state,
 exact_source_result_bytes,source_result_hash,reconciliation_id,reconciliation_reason,created_at,updated_at`
+
+func qualifiedAuthorityBindingViewColumns(alias string) string {
+	columns := strings.Split(authorityBindingViewColumns, ",")
+	for index := range columns {
+		columns[index] = alias + "." + strings.TrimSpace(columns[index])
+	}
+	return strings.Join(columns, ",")
+}
 
 func (repository *Repository) loadAuthorityBindingACKs(ctx context.Context, bindingID string) ([]runnerstore.V2ControlAcknowledgementView, error) {
 	rows, err := repository.pool.Query(ctx, `SELECT a.control_event_id,a.control_kind,a.control_sequence,a.companion_sequence,
@@ -849,33 +856,185 @@ func (repository *Repository) RecoverAuthorityBindings(ctx context.Context, work
 	if limit < 1 || limit > 1000 {
 		return nil, runnerstore.Failure(runnerstore.ErrorLimitExceeded, "authority-binding recovery limit is invalid", nil)
 	}
-	rows, err := repository.pool.Query(ctx, `SELECT `+authorityBindingViewColumns+`
-FROM workflow_runner_authority_bindings
-WHERE workspace_id=$1 AND state<>'completed' AND updated_at<=$2
-ORDER BY updated_at,binding_id LIMIT $3`, workspaceID, before.UTC(), limit)
+	return repository.recoverAuthorityBindingsJoined(ctx, workspaceID, before, limit)
+}
+
+func (repository *Repository) recoverAuthorityBindingsJoined(ctx context.Context, workspaceID string, before time.Time, limit int) ([]runnerstore.V2AuthorityBindingView, error) {
+	rows, err := repository.pool.Query(ctx, `WITH candidates AS (
+ SELECT * FROM workflow_runner_authority_bindings
+ WHERE workspace_id=$1 AND state<>'completed' AND updated_at<=$2
+ ORDER BY updated_at,binding_id LIMIT $3
+)
+SELECT `+qualifiedAuthorityBindingViewColumns("binding")+`,ack.control_event_id,ack.control_kind,
+ ack.control_sequence,ack.companion_sequence,ack.disposition,
+ CASE WHEN control.kind='cancel_request' THEN cancel.exact_v2_message_bytes ELSE control.exact_message_bytes END,
+ ack.exact_ack_bytes,ack.processed_at
+FROM candidates binding
+LEFT JOIN workflow_runner_authority_control_acks ack ON ack.binding_id=binding.binding_id
+LEFT JOIN workflow_runner_control_messages control ON control.control_event_id=ack.control_event_id
+LEFT JOIN workflow_runner_v2_cancel_bindings cancel ON cancel.control_event_id=ack.control_event_id
+ORDER BY binding.updated_at,binding.binding_id,ack.companion_sequence`, workspaceID, before.UTC(), limit)
 	if err != nil {
 		return nil, databaseFailure("recover authority bindings", err)
 	}
 	defer rows.Close()
 	views := make([]runnerstore.V2AuthorityBindingView, 0, limit)
+	viewIndex := make(map[string]int, limit)
 	for rows.Next() {
-		view, scanErr := scanAuthorityBindingView(rows)
+		view, ack, scanErr := scanAuthorityBindingRecoveryRow(rows)
 		if scanErr != nil {
 			return nil, databaseFailure("scan recovered authority binding", scanErr)
 		}
-		if validateErr := validateRecoveredBinding(view); validateErr != nil {
-			return nil, validateErr
+		index, exists := viewIndex[view.BindingID]
+		if !exists {
+			index = len(views)
+			viewIndex[view.BindingID] = index
+			views = append(views, view)
 		}
-		view.ControlACKs, scanErr = repository.loadAuthorityBindingACKs(ctx, view.BindingID)
-		if scanErr != nil {
-			return nil, scanErr
+		if ack != nil {
+			if err := validateRecoveredACK(view, *ack); err != nil {
+				return nil, err
+			}
+			views[index].ControlACKs = append(views[index].ControlACKs, *ack)
 		}
-		views = append(views, view)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, databaseFailure("iterate recovered authority bindings", err)
 	}
+	for _, view := range views {
+		if validateErr := validateRecoveredBinding(view); validateErr != nil {
+			return nil, validateErr
+		}
+	}
 	return views, nil
+}
+
+func scanAuthorityBindingRecoveryRow(row pgx.Row) (runnerstore.V2AuthorityBindingView, *runnerstore.V2ControlAcknowledgementView, error) {
+	var view runnerstore.V2AuthorityBindingView
+	var operation string
+	var controlEventID, controlKind, disposition *string
+	var controlSequence, companionSequence *int64
+	var exactControlBytes, exactACKBytes []byte
+	var processedAt *time.Time
+	err := row.Scan(
+		&view.BindingID, &operation, &view.State, &view.WorkspaceID, &view.JobID, &view.RunID,
+		&view.AttemptID, &view.LeaseID, &view.FencingToken, &view.ExpectedRunRevision, &view.AcceptedRunRevision,
+		&view.ExpectedGeneration, &view.AcceptedGeneration, &view.TargetEventID, &view.TargetKind,
+		&view.TargetSequence, &view.ExactTargetBytes, &view.ExactStageBytes, &view.ExactStageReceipt,
+		&view.ExactResolutionBytes, &view.ExactResolutionReceipt, &view.SourcePlane, &view.SourceEvidenceState,
+		&view.ExactSourceResult, &view.SourceResultHash, &view.ReconciliationID, &view.ReconciliationReason,
+		&view.CreatedAt, &view.UpdatedAt,
+		&controlEventID, &controlKind, &controlSequence, &companionSequence, &disposition,
+		&exactControlBytes, &exactACKBytes, &processedAt,
+	)
+	if err != nil {
+		return runnerstore.V2AuthorityBindingView{}, nil, err
+	}
+	view.Operation = runnerbindingcontract.Operation(operation)
+	if controlEventID == nil {
+		return view, nil, nil
+	}
+	if controlKind == nil || controlSequence == nil || companionSequence == nil || disposition == nil || processedAt == nil {
+		return runnerstore.V2AuthorityBindingView{}, nil, fmt.Errorf("authority-binding ACK join is partial")
+	}
+	return view, &runnerstore.V2ControlAcknowledgementView{
+		ControlEventID: *controlEventID, ControlKind: *controlKind, ControlSequence: *controlSequence,
+		CompanionSequence: *companionSequence, Disposition: *disposition,
+		ExactControlBytes: exactControlBytes, ExactACKBytes: exactACKBytes, ProcessedAt: *processedAt,
+	}, nil
+}
+
+func validateRecoveredACK(view runnerstore.V2AuthorityBindingView, ack runnerstore.V2ControlAcknowledgementView) error {
+	message, err := decodeExactAuthorityMessage(ack.ExactControlBytes)
+	if err != nil {
+		return err
+	}
+	receipt, err := runnerbindingcontract.ParseReceiptBytes(ack.ExactACKBytes)
+	if err != nil {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding ACK is invalid", err)
+	}
+	if message.EventID != ack.ControlEventID || string(message.Kind) != ack.ControlKind || message.Sequence == nil ||
+		*message.Sequence != ack.ControlSequence || bindingString(receipt, "bindingId") != view.BindingID ||
+		bindingString(receipt, "controlEventId") != ack.ControlEventID ||
+		bindingString(receipt, "controlKind") != ack.ControlKind ||
+		bindingInt(receipt, "controlSequence") != ack.ControlSequence ||
+		bindingInt(receipt, "companionSequence") != ack.CompanionSequence ||
+		bindingString(receipt, "disposition") != ack.Disposition {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding ACK is cross-spliced", nil)
+	}
+	return nil
+}
+
+func (repository *Repository) RecoverAuthorityBindingsAtStartup(ctx context.Context, workspaceID string, before time.Time, limit int) (runnerstore.V2AuthorityRecoverySummary, error) {
+	views, err := repository.RecoverAuthorityBindings(ctx, workspaceID, before, limit)
+	if err != nil {
+		return runnerstore.V2AuthorityRecoverySummary{}, err
+	}
+	type recoveryInput struct {
+		BindingID        string `json:"binding_id"`
+		ExpectedState    string `json:"expected_state"`
+		WorkspaceID      string `json:"workspace_id"`
+		JobID            string `json:"job_id"`
+		AttemptID        string `json:"attempt_id"`
+		ReconciliationID string `json:"reconciliation_id"`
+		EvidenceHash     string `json:"evidence_hash"`
+	}
+	inputs := make([]recoveryInput, 0, len(views))
+	for _, view := range views {
+		if view.State == "reconciliation_required" {
+			continue
+		}
+		id, tokenErr := randomToken("wfrunner-reconciliation")
+		if tokenErr != nil {
+			return runnerstore.V2AuthorityRecoverySummary{}, databaseFailure("generate startup authority reconciliation identity", tokenErr)
+		}
+		digest := sha256.Sum256([]byte(view.BindingID + "\x00process_crash\x00" + runnerstore.CanonicalTimestamp(before.UTC())))
+		inputs = append(inputs, recoveryInput{
+			BindingID: view.BindingID, ExpectedState: view.State, WorkspaceID: view.WorkspaceID,
+			JobID: view.JobID, AttemptID: view.AttemptID, ReconciliationID: id,
+			EvidenceHash: hex.EncodeToString(digest[:]),
+		})
+	}
+	summary := runnerstore.V2AuthorityRecoverySummary{Examined: len(views)}
+	if len(inputs) == 0 {
+		return summary, nil
+	}
+	payload, err := json.Marshal(inputs)
+	if err != nil {
+		return runnerstore.V2AuthorityRecoverySummary{}, databaseFailure("encode startup authority recovery", err)
+	}
+	var reconciled int
+	err = repository.pool.QueryRow(ctx, `WITH input AS (
+ SELECT * FROM jsonb_to_recordset($1::jsonb) AS value(
+  binding_id text,expected_state text,workspace_id text,job_id text,attempt_id text,
+  reconciliation_id text,evidence_hash text)
+), eligible AS (
+ SELECT binding.binding_id,binding.workspace_id,binding.job_id,binding.attempt_id,
+        input.reconciliation_id,input.evidence_hash
+ FROM workflow_runner_authority_bindings binding JOIN input USING(binding_id)
+ WHERE binding.state=input.expected_state AND binding.workspace_id=input.workspace_id
+   AND binding.job_id=input.job_id AND binding.attempt_id=input.attempt_id
+ FOR UPDATE OF binding
+), inserted AS (
+ INSERT INTO workflow_runner_authority_reconciliations
+ (reconciliation_id,binding_id,workspace_id,job_id,attempt_id,reason,evidence_hash,created_at)
+ SELECT reconciliation_id,binding_id,workspace_id,job_id,attempt_id,'process_crash',decode(evidence_hash,'hex'),$2
+ FROM eligible RETURNING binding_id,reconciliation_id
+), updated AS (
+ UPDATE workflow_runner_authority_bindings binding
+ SET state='reconciliation_required',reconciliation_id=inserted.reconciliation_id,
+     reconciliation_reason='process_crash',updated_at=$2
+ FROM inserted WHERE binding.binding_id=inserted.binding_id
+ RETURNING binding.binding_id
+) SELECT count(*) FROM updated`, payload, before.UTC()).Scan(&reconciled)
+	if err != nil {
+		return runnerstore.V2AuthorityRecoverySummary{}, databaseFailure("latch startup authority recovery", err)
+	}
+	if reconciled != len(inputs) {
+		return runnerstore.V2AuthorityRecoverySummary{}, runnerstore.Failure(runnerstore.ErrorReconciliation, "authority-binding startup recovery CAS drifted", nil)
+	}
+	summary.Reconciled = reconciled
+	return summary, nil
 }
 
 func (repository *Repository) recoverBindingReceipt(ctx context.Context, workspaceID, key string, fingerprint, request []byte, commitErr error) (runnerstore.V2AuthorityBindingReceipt, error) {
@@ -888,27 +1047,11 @@ func (repository *Repository) recoverBindingReceipt(ctx context.Context, workspa
 }
 
 func (repository *Repository) readBindingReceipt(ctx context.Context, workspaceID, key string, fingerprint, request []byte) (runnerstore.V2AuthorityBindingReceipt, bool, error) {
-	return readBindingReceiptRow(repository.pool.QueryRow(ctx, `
-SELECT workspace_id,request_fingerprint,exact_request_bytes,exact_receipt_bytes FROM (
- SELECT workspace_id,stage_request_fingerprint AS request_fingerprint,exact_stage_bytes AS exact_request_bytes,
-        exact_stage_receipt_bytes AS exact_receipt_bytes,stage_idempotency_key AS idempotency_key
-   FROM workflow_runner_authority_bindings
- UNION ALL
- SELECT workspace_id,resolution_request_fingerprint,exact_resolution_bytes,exact_resolution_receipt_bytes,resolution_idempotency_key
-   FROM workflow_runner_authority_bindings WHERE resolution_idempotency_key IS NOT NULL
- UNION ALL
- SELECT b.workspace_id,a.ack_request_fingerprint,a.exact_ack_bytes,a.exact_ack_bytes,a.ack_idempotency_key
-   FROM workflow_runner_authority_control_acks a JOIN workflow_runner_authority_bindings b ON b.binding_id=a.binding_id
-) receipts WHERE idempotency_key=$1`, key), workspaceID, fingerprint, request)
+	return readBindingReceiptRow(repository.pool.QueryRow(ctx, authorityBindingReceiptByKeySQL, key), workspaceID, fingerprint, request, true)
 }
 
 func bindingDigestBytes(value string) []byte {
 	decoded, _ := hex.DecodeString(value)
-	return decoded
-}
-
-func bindingFingerprintBytes(value string) []byte {
-	decoded, _ := hex.DecodeString(string(bytes.TrimPrefix([]byte(value), []byte("sha256:"))))
 	return decoded
 }
 

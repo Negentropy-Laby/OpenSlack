@@ -544,8 +544,11 @@ describe('WorkflowRunnerV2Session', () => {
         }),
       );
       await expect(reserveTask).resolves.toMatchObject({
-        kind: 'budget_authorization',
-        payload: { status },
+        decision: {
+          kind: 'budget_authorization',
+          payload: { status },
+        },
+        budgetSourceResult,
       });
       expect(acknowledgements).toHaveLength(2);
       expect(acknowledgements[0]).toMatchObject({
@@ -608,7 +611,7 @@ describe('WorkflowRunnerV2Session', () => {
     expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
   });
 
-  it('ACKs a queued cancel on the same binding after its event receipt', async () => {
+  it('reconciles a queued non-contiguous cancel through the event-receipt ACK', async () => {
     const acknowledged: Array<{
       bindingId: string;
       kind: WorkflowControlAuthorityMessage['kind'];
@@ -650,11 +653,10 @@ describe('WorkflowRunnerV2Session', () => {
     await value.session.receive(cancelRequest(value.sealed, 3, 2));
     expect(value.context()!.signal.aborted).toBe(true);
     await value.session.receive(receipt(checkpoint, 4, 2));
-    await expect(checkpointTask).resolves.toBeUndefined();
-    expect(acknowledged).toEqual([
-      { bindingId, kind: 'event_receipt' },
-      { bindingId, kind: 'cancel_request' },
-    ]);
+    await expect(checkpointTask).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+    });
+    expect(acknowledged).toEqual([{ bindingId, kind: 'event_receipt' }]);
     expect(value.closed).toEqual([2]);
     expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
   });
@@ -787,7 +789,9 @@ describe('WorkflowRunnerV2Session', () => {
         },
       }),
     );
-    await expect(reserveTask).resolves.toMatchObject({ kind: 'budget_authorization' });
+    await expect(reserveTask).resolves.toMatchObject({
+      decision: { kind: 'budget_authorization' },
+    });
     expect(acknowledged).toEqual(['event_receipt', 'budget_authorization']);
 
     const cancelTask = value.session.receive(cancelRequest(value.sealed, 5, 2));
@@ -1194,9 +1198,11 @@ describe('WorkflowRunnerV2Session', () => {
     ).toBe(true);
     await value.session.receive(decision);
     await expect(reserveTask).resolves.toMatchObject({
-      kind: 'budget_authorization',
-      runRevision: 2,
-      payload: { committedRunRevision: 12 },
+      decision: {
+        kind: 'budget_authorization',
+        runRevision: 2,
+        payload: { committedRunRevision: 12 },
+      },
     });
   });
 

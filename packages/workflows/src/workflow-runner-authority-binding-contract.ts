@@ -85,8 +85,15 @@ export type WorkflowRunnerAuthorityReceiptHashAlgorithm =
   | 'canonical_durable_receipt_sha256'
   | null;
 
+export type WorkflowRunnerAuthorityCompletionControlKind =
+  | 'event_receipt'
+  | 'budget_authorization'
+  | 'effect_authorization'
+  | 'resume_offer';
+
 export interface WorkflowRunnerAuthorityBindingOperationFact {
   readonly targetKind: WorkflowControlAuthorityMessageKind;
+  readonly completionControlKind: WorkflowRunnerAuthorityCompletionControlKind;
   readonly runnerDelta: Readonly<{ revision: number; generation: number }>;
   readonly sourcePlane:
     | 'checkpoint_control'
@@ -103,6 +110,7 @@ export interface WorkflowRunnerAuthorityBindingOperationFact {
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContractValue({
   checkpoint_commit: {
     targetKind: 'checkpoint_commit',
+    completionControlKind: 'event_receipt',
     runnerDelta: { revision: 1, generation: 0 },
     sourcePlane: 'checkpoint_control',
     sourceEvidenceState: 'committed',
@@ -113,6 +121,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
   },
   effect_authorize: {
     targetKind: 'effect_intent',
+    completionControlKind: 'effect_authorization',
     runnerDelta: { revision: 1, generation: 0 },
     sourcePlane: 'effect_v2_sibling',
     sourceEvidenceState: 'committed',
@@ -123,6 +132,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
   },
   effect_complete: {
     targetKind: 'effect_outcome',
+    completionControlKind: 'event_receipt',
     runnerDelta: { revision: 0, generation: 0 },
     sourcePlane: 'effect_v2_sibling',
     sourceEvidenceState: 'committed',
@@ -133,6 +143,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
   },
   budget_reserve: {
     targetKind: 'budget_reserve_request',
+    completionControlKind: 'budget_authorization',
     runnerDelta: { revision: 1, generation: 0 },
     sourcePlane: 'budget_account',
     sourceEvidenceState: 'prepared',
@@ -143,6 +154,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
   },
   budget_settle: {
     targetKind: 'budget_usage_report',
+    completionControlKind: 'event_receipt',
     runnerDelta: { revision: 1, generation: 0 },
     sourcePlane: 'budget_account',
     sourceEvidenceState: 'prepared',
@@ -153,6 +165,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS = immutableContra
   },
   resume_advance: {
     targetKind: 'lease_accept',
+    completionControlKind: 'resume_offer',
     runnerDelta: { revision: 1, generation: 1 },
     sourcePlane: 'resume_control',
     sourceEvidenceState: 'committed',
@@ -905,6 +918,29 @@ export function workflowRunnerAuthorityBindingExpectedKind(
   operation: WorkflowRunnerAuthorityBindingOperation,
 ): WorkflowControlAuthorityMessageKind {
   return WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind;
+}
+
+export function workflowRunnerAuthorityBindingCompletionControlKind(
+  operation: WorkflowRunnerAuthorityBindingOperation,
+): WorkflowRunnerAuthorityCompletionControlKind {
+  return WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].completionControlKind;
+}
+
+const WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_BY_KIND = immutableContractValue(
+  Object.fromEntries(
+    WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS[operation].targetKind,
+      operation,
+    ]),
+  ) as Partial<
+    Record<WorkflowControlAuthorityMessageKind, WorkflowRunnerAuthorityBindingOperation>
+  >,
+);
+
+export function workflowRunnerAuthorityBindingOperationForKind(
+  kind: WorkflowControlAuthorityMessageKind,
+): WorkflowRunnerAuthorityBindingOperation | undefined {
+  return WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_BY_KIND[kind];
 }
 
 export function workflowRunnerAuthorityBindingRunnerDelta(

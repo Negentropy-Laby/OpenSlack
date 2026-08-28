@@ -443,6 +443,8 @@ function createRuntimeInternal(
     let value: T;
     try {
       throwIfAborted('effect_execution');
+      await effectAuthorizationPort.assertExecutable?.(claim);
+      throwIfAborted('effect_execution');
       value = await effect();
     } catch (error) {
       try {

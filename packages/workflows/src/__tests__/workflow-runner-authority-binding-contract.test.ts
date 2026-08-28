@@ -181,6 +181,10 @@ interface Golden {
         readonly reconciliationRequired: unknown;
       };
     };
+    readonly runtimeAdmission: {
+      readonly request: { readonly value: unknown };
+      readonly receipt: { readonly value: unknown };
+    };
   };
   readonly negative: Array<{
     readonly id: string;
@@ -397,7 +401,9 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       ...readdirSync(bundleRoot).filter((name) => name.endsWith('.json')),
     ].sort();
     expect(actual).toEqual([...(manifest.bundleFiles as string[])].sort());
-    expect(Object.keys(manifest.artifacts as Json)).toHaveLength(5);
+    expect(Object.keys(manifest.artifacts as Json)).toHaveLength(
+      (manifest.bundleFiles as string[]).length - 1,
+    );
     expect(manifest.evidence).toMatchObject({
       closed: true,
       providerIdentity: 'hash_only',
@@ -665,7 +671,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     expect(databaseUnknown.decision).toBeNull();
   });
 
-  it('keeps runtime validators and all four closed JSON Schemas aligned', () => {
+  it('keeps runtime validators and all six closed JSON Schemas aligned', () => {
     const ajv = schemaValidator();
     const ids = {
       stage:
@@ -676,6 +682,10 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-receipt.v1.schema.json',
       error:
         'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-authority-binding-error.v1.schema.json',
+      runtimeAdmission:
+        'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-v2-runtime-admission.v1.schema.json',
+      runtimeAdmissionReceipt:
+        'https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json',
     } as const;
     const exchanges = [
       ...Object.values(golden.positive.operations),
@@ -733,6 +743,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     };
     expect(ajv.getSchema(ids.error)!(closedError)).toBe(true);
     expect(ajv.getSchema(ids.error)!({ ...closedError, credential: 'forbidden' })).toBe(false);
+    expect(
+      ajv.getSchema(ids.runtimeAdmission)!(golden.positive.runtimeAdmission.request.value),
+      ajv.errorsText(ajv.getSchema(ids.runtimeAdmission)!.errors),
+    ).toBe(true);
+    expect(
+      ajv.getSchema(ids.runtimeAdmissionReceipt)!(golden.positive.runtimeAdmission.receipt.value),
+      ajv.errorsText(ajv.getSchema(ids.runtimeAdmissionReceipt)!.errors),
+    ).toBe(true);
 
     const goStage = golden.positive.semanticVariants.goRouteCheckpoint.stage.value;
     expect(validateWorkflowRunnerAuthorityBindingStage(goStage)).toEqual(goStage);

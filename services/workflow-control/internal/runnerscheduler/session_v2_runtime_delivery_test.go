@@ -73,19 +73,49 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 			t.Fatalf("decision response loss was not latched: %s", got)
 		}
 	})
+
+	t.Run("durable reconciliation ACK stops before decision and cancel", func(t *testing.T) {
+		store, process, lease, recorded := authorityControlFixture(authoritycontract.KindBudgetAuthorization, true, 12)
+		store.reconciliationAcknowledgement = recorded.Receipt.EventID
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
+		sent, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, true)
+		if sent || !runnerstore.IsCode(err, runnerstore.ErrorReconciliation) ||
+			strings.Contains(strings.Join(store.delivered, ","), string(authoritycontract.KindBudgetAuthorization)) ||
+			strings.Contains(strings.Join(store.delivered, ","), "cancel_request") {
+			t.Fatalf("reconciliation ACK advanced into dependent control: sent=%v delivered=%v err=%v", sent, store.delivered, err)
+		}
+	})
+
+	t.Run("ACK deadline is the lease and job hard bound rather than thirty seconds", func(t *testing.T) {
+		store, process, lease, recorded := authorityControlFixture("", false, 11)
+		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
+		lease.WholeDeadline = now.Add(5 * time.Minute)
+		store.expectedDeadline = lease.LeaseExpiresAt
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		if _, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false); err != nil {
+			t.Fatalf("deliver control before hard deadline: %v", err)
+		}
+		if !store.observedDeadline.Equal(lease.LeaseExpiresAt) || store.observedDeadline.Equal(now.Add(30*time.Second)) {
+			t.Fatalf("ACK deadline = %s, want lease hard bound %s", store.observedDeadline, lease.LeaseExpiresAt)
+		}
+	})
 }
 
 type v2ControlOrderStore struct {
 	runnerstore.V2SessionStore
-	mu                  sync.Mutex
-	sequences           map[string]int64
-	pending             *runnerstore.CancelControl
-	preparedCancel      runnerstore.V2CancelControl
-	delivered           []string
-	acknowledged        []string
-	reconciled          []string
-	failAcknowledgement string
-	authorityACK        map[string]bool
+	mu                            sync.Mutex
+	sequences                     map[string]int64
+	pending                       *runnerstore.CancelControl
+	preparedCancel                runnerstore.V2CancelControl
+	delivered                     []string
+	acknowledged                  []string
+	reconciled                    []string
+	failAcknowledgement           string
+	reconciliationAcknowledgement string
+	expectedDeadline              time.Time
+	observedDeadline              time.Time
+	authorityACK                  map[string]bool
 }
 
 func (store *v2ControlOrderStore) PendingCancel(context.Context, string, string, string) (*runnerstore.CancelControl, error) {
@@ -114,14 +144,23 @@ func (store *v2ControlOrderStore) MarkV2ControlDeliveryReconciliation(_ context.
 	return nil
 }
 
-func (store *v2ControlOrderStore) WaitV2ControlAcknowledged(_ context.Context, _ string, eventID string) error {
+func (store *v2ControlOrderStore) WaitV2ControlAcknowledged(ctx context.Context, _ string, eventID string) (runnerstore.V2ControlDeliveryDisposition, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if deadline, ok := ctx.Deadline(); ok {
+		store.observedDeadline = deadline
+		if !store.expectedDeadline.IsZero() && !deadline.Equal(store.expectedDeadline) {
+			return "", errors.New("unexpected acknowledgement deadline")
+		}
+	}
 	if !store.authorityACK[eventID] {
-		return nil
+		return runnerstore.V2ControlDeliveryAccepted, nil
+	}
+	if eventID == store.reconciliationAcknowledgement {
+		return runnerstore.V2ControlDeliveryReconciliationRequired, nil
 	}
 	if eventID == store.failAcknowledgement {
-		return errors.New("simulated acknowledgement response loss")
+		return "", errors.New("simulated acknowledgement response loss")
 	}
 	kind := "unknown"
 	for candidate, sequence := range store.sequences {
@@ -131,7 +170,7 @@ func (store *v2ControlOrderStore) WaitV2ControlAcknowledged(_ context.Context, _
 		}
 	}
 	store.acknowledged = append(store.acknowledged, kind)
-	return nil
+	return runnerstore.V2ControlDeliveryAccepted, nil
 }
 
 func authorityControlFixture(

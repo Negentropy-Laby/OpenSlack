@@ -88,10 +88,31 @@
     "controlDeliveryAck": true,
     "exactReplayReturnsOriginalReceiptBytes": true
   },
+  "runtimeAdmission": {
+    "requestSchema": "openslack.workflow_runner_v2_runtime_admission.v1",
+    "receiptSchema": "openslack.workflow_runner_v2_runtime_admission_receipt.v1",
+    "keyPrefix": "openslack.workflow-runner-v2-runtime-admission.v1.",
+    "domains": {
+      "idempotency": "openslack.workflow-runner-v2-runtime-admission.idempotency.v1\u0000",
+      "fingerprint": "openslack.workflow-runner-v2-runtime-admission.fingerprint.v1\u0000"
+    },
+    "limits": {
+      "maxFrameBytes": 65536,
+      "maxDepth": 16,
+      "maxNodes": 8192,
+      "maxStringBytes": 524288
+    },
+    "negativeVectorIds": [
+      "runtime-admission-disposition-drift",
+      "runtime-admission-receipt-cross-splice",
+      "runtime-admission-receipt-invalid-timestamp"
+    ]
+  },
   "operations": [
     {
       "operation": "checkpoint_commit",
       "targetKind": "checkpoint_commit",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "checkpoint_control",
       "sourceEvidenceState": "committed",
@@ -103,6 +124,7 @@
     {
       "operation": "effect_authorize",
       "targetKind": "effect_intent",
+      "completionControlKind": "effect_authorization",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
@@ -114,6 +136,7 @@
     {
       "operation": "effect_complete",
       "targetKind": "effect_outcome",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 0, "generation": 0 },
       "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
@@ -125,6 +148,7 @@
     {
       "operation": "budget_reserve",
       "targetKind": "budget_reserve_request",
+      "completionControlKind": "budget_authorization",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
@@ -136,6 +160,7 @@
     {
       "operation": "budget_settle",
       "targetKind": "budget_usage_report",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
@@ -147,6 +172,7 @@
     {
       "operation": "resume_advance",
       "targetKind": "lease_accept",
+      "completionControlKind": "resume_offer",
       "runnerDelta": { "revision": 1, "generation": 1 },
       "sourcePlane": "resume_control",
       "sourceEvidenceState": "committed",
@@ -284,6 +310,8 @@
     "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
     "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
     "schemas/workflow-runner-authority-binding-error.v1.schema.json",
+    "schemas/workflow-runner-v2-runtime-admission.v1.schema.json",
+    "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json",
     "golden-vectors.json",
     "manifest.json"
   ],
@@ -308,10 +336,20 @@
       "byteLength": 1954,
       "sha256": "57927dfa43d7237a6f3822ae4f5445ddb6d4894527addff573d1e0ada7e28d23"
     },
+    "schemas/workflow-runner-v2-runtime-admission.v1.schema.json": {
+      "path": "schemas/workflow-runner-v2-runtime-admission.v1.schema.json",
+      "byteLength": 1492,
+      "sha256": "daad499aeaa4381a4037b30b6a213b45eb7500d501703048952601d72ad85234"
+    },
+    "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json": {
+      "path": "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json",
+      "byteLength": 1934,
+      "sha256": "f68a3e2c21573a9c5529e6de1e68b554c9aa5a5c92c1731c8c1abc087e6e9ec7"
+    },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 1689183,
-      "sha256": "e435a0c7c3456c796799f569360dde2cdce2c973653f400f39b37032b9ef8b64"
+      "byteLength": 1695045,
+      "sha256": "5dfeaa1ef33829100651fbb8378d099b45dba9011a0bc845706e6a1ea3aa83a0"
     }
   }
 }

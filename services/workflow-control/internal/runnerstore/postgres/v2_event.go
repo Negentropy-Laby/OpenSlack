@@ -32,18 +32,40 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 	if direction != authoritycontract.DirectionRunnerToControl || message.JobID == nil || message.AttemptID == nil || message.LeaseID == nil || message.FencingToken == nil || message.Sequence == nil || message.RunRevision == nil || message.ResumeGeneration == nil {
 		return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorIdentityMismatch, "v2 leased event binding is incomplete", nil)
 	}
+	var replayBinding *runnerstore.V2AuthorityBindingView
 	if repository.v2RuntimeDelivery && runtimeBindingKind(message.Kind) {
 		binding, bindingErr := repository.ReadAuthorityBindingForEvent(ctx, message.EventID, input.ExactBytes)
-		if bindingErr != nil {
+		if bindingErr == nil {
+			replayBinding = &binding
+		} else if !runnerstore.IsCode(bindingErr, runnerstore.ErrorNotFound) {
+			return runnerstore.V2RecordedEvent{}, bindingErr
+		}
+	}
+	if replay, found, replayErr := readV2EventReplayRow(
+		repository.pool.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey),
+		prepared,
+		input.ExactBytes,
+		replayBinding,
+	); replayErr != nil {
+		return runnerstore.V2RecordedEvent{}, replayErr
+	} else if found {
+		if replayBinding != nil {
+			replay.AuthorityBindingID = &replayBinding.BindingID
+		}
+		return replay, nil
+	}
+	if repository.v2RuntimeDelivery && runtimeBindingKind(message.Kind) {
+		if replayBinding == nil {
 			// Only an independently sealed initial admission may omit a resume
 			// authority binding. In particular, revision/generation and binding
 			// absence are never used to classify a first resume as initial.
-			if runnerstore.IsCode(bindingErr, runnerstore.ErrorNotFound) && message.Kind == authoritycontract.KindLeaseAccept &&
+			if message.Kind == authoritycontract.KindLeaseAccept &&
 				repository.isInitialV2LeaseAccept(ctx, message) {
 				return repository.finalizeV2Event(ctx, input, prepared, nil)
 			}
-			return runnerstore.V2RecordedEvent{}, bindingErr
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorNotFound, "authority binding for event was not found", nil)
 		}
+		binding := *replayBinding
 		if message.Kind == authoritycontract.KindLeaseAccept &&
 			(binding.Operation != runnerbindingcontract.OperationResumeAdvance || !repository.isResumeV2LeaseAccept(ctx, message)) {
 			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "lease accept binding lacks a sealed resume admission", nil)
@@ -246,13 +268,8 @@ WHERE binding_id=$1 AND state='resolved'`, binding.BindingID, reconciliationID, 
 }
 
 func runtimeBindingKind(kind authoritycontract.Kind) bool {
-	switch kind {
-	case authoritycontract.KindCheckpointCommit, authoritycontract.KindEffectIntent, authoritycontract.KindEffectOutcome,
-		authoritycontract.KindBudgetReserveRequest, authoritycontract.KindBudgetUsageReport, authoritycontract.KindLeaseAccept:
-		return true
-	default:
-		return false
-	}
+	_, ok := runnerbindingcontract.OperationForKind(kind)
+	return ok
 }
 
 func (repository *Repository) isInitialV2LeaseAccept(ctx context.Context, message authoritycontract.Message) bool {
@@ -459,14 +476,16 @@ func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessag
 			}
 		}
 		outcome := runnerstore.V2AuthorityOutcome{Operation: authoritycontract.ReceiptOperation(*authorityOperation), ExactReceiptBytes: authorityReceiptBytes,
-			AcceptedRunRevision: expectedRevision, AcceptedResumeGeneration: expectedGeneration, Decision: result.Decision, DecisionBytes: result.DecisionBytes}
+			AcceptedRunRevision: expectedRevision, AcceptedResumeGeneration: expectedGeneration, Decision: result.Decision, DecisionBytes: result.DecisionBytes,
+			RuntimeBinding: runtimeBinding}
 		if runtimeReceipt {
 			decisionExpected := *authorityOperation == string(runnerbindingcontract.OperationEffectAuthorize) ||
 				*authorityOperation == string(runnerbindingcontract.OperationBudgetReserve) || *authorityOperation == string(runnerbindingcontract.OperationResumeAdvance)
 			if decisionExpected != (result.Decision != nil) {
 				return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored runtime authority decision presence drifted", nil)
 			}
-		} else if _, _, validateErr := validateV2AuthorityResult(event, receiptControlSequence+1, outcome); validateErr != nil {
+		}
+		if _, _, validateErr := validateV2AuthorityResult(event, receiptControlSequence+1, outcome); validateErr != nil {
 			return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored v2 authority replay binding is invalid", validateErr)
 		}
 	} else if result.Decision != nil {

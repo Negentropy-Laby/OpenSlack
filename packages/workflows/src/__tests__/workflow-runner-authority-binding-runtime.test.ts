@@ -64,6 +64,7 @@ import {
 } from '../workflow-runner-budget-authority-client.js';
 import {
   createWorkflowRunnerV2RuntimeAdmissionClient,
+  parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes,
   prepareWorkflowRunnerV2RuntimeAdmission,
 } from '../workflow-runner-v2-runtime-admission.js';
 
@@ -1182,8 +1183,8 @@ describe('Workflow runner F2b runtime delivery', () => {
       committedAt: null,
       reconciliationToken: 'reconciliation.runtime.stage',
     };
-    const bindingDirectory = (await readdir(join(root, 'bindings')))[0]!;
-    const receiptPath = join(root, 'bindings', bindingDirectory, 'stage-receipt.json');
+    const bindingDirectory = (await readdir(join(root, 'active')))[0]!;
+    const receiptPath = join(root, 'active', bindingDirectory, 'stage-receipt.json');
     await writeFile(receiptPath, `${canonicalWorkflowControlAuthorityJson(rejected)}\n`, 'utf8');
     await chmod(receiptPath, 0o600);
 
@@ -1249,8 +1250,8 @@ describe('Workflow runner F2b runtime delivery', () => {
       committedAt: null,
       reconciliationToken: 'reconciliation.runtime.resolution',
     };
-    const bindingDirectory = (await readdir(join(root, 'bindings')))[0]!;
-    const receiptPath = join(root, 'bindings', bindingDirectory, 'resolution-receipt.json');
+    const bindingDirectory = (await readdir(join(root, 'active')))[0]!;
+    const receiptPath = join(root, 'active', bindingDirectory, 'resolution-receipt.json');
     await writeFile(receiptPath, `${canonicalWorkflowControlAuthorityJson(rejected)}\n`, 'utf8');
     await chmod(receiptPath, 0o600);
 
@@ -1300,14 +1301,14 @@ describe('Workflow runner F2b runtime delivery', () => {
     await expect(
       runtime.commit(inputFor('checkpoint_commit', unknownSource())),
     ).rejects.toBeInstanceOf(WorkflowRunnerAuthorityBindingRuntimeError);
-    const bindingDirectory = (await readdir(join(crossRoot, 'bindings')))[0]!;
+    const bindingDirectory = (await readdir(join(crossRoot, 'active')))[0]!;
     const spliced = operationVector('effect_complete').stageReceipt.canonicalBytes;
     await writeFile(
-      join(crossRoot, 'bindings', bindingDirectory, 'stage-receipt.json'),
+      join(crossRoot, 'active', bindingDirectory, 'stage-receipt.json'),
       spliced,
       'utf8',
     );
-    await chmod(join(crossRoot, 'bindings', bindingDirectory, 'stage-receipt.json'), 0o600);
+    await chmod(join(crossRoot, 'active', bindingDirectory, 'stage-receipt.json'), 0o600);
     await expect(
       new WorkflowRunnerAuthorityBindingJournal(crossRoot).list(),
     ).rejects.toBeInstanceOf(WorkflowRunnerAuthorityBindingJournalError);
@@ -1316,9 +1317,9 @@ describe('Workflow runner F2b runtime delivery', () => {
     const unsafe = new WorkflowRunnerAuthorityBindingJournal(unsafeRoot);
     await unsafe.initialize();
     if (process.platform === 'win32') {
-      await writeFile(join(unsafeRoot, 'bindings', 'a'.repeat(64)), 'unsafe', 'utf8');
+      await writeFile(join(unsafeRoot, 'active', 'a'.repeat(64)), 'unsafe', 'utf8');
     } else {
-      await symlink(unsafeRoot, join(unsafeRoot, 'bindings', 'a'.repeat(64)));
+      await symlink(unsafeRoot, join(unsafeRoot, 'active', 'a'.repeat(64)));
     }
     await expect(unsafe.list()).rejects.toMatchObject({
       code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_PATH_UNSAFE',
@@ -1341,6 +1342,8 @@ describe('Workflow runner F2b runtime delivery', () => {
     const eventReceipt = acceptedEventReceipt(context);
     now = '2026-08-20T00:40:01.000Z';
     await runtime.acknowledgeControl({ bindingId: context.stage.bindingId, message: eventReceipt });
+    expect(await readdir(join(root, 'active'))).toHaveLength(0);
+    expect(await readdir(join(root, 'closed'))).toHaveLength(1);
     now = '2026-08-20T00:07:03.000Z';
     await expect(
       runtime.acknowledgeControl({
@@ -1690,6 +1693,18 @@ it('seals exact runtime admission identity and recovers a lost response by ident
       'x-openslack-request-fingerprint': prepared.requestFingerprint,
     });
     expect(observed[1]!.headers['idempotency-key']).toBe(prepared.idempotencyKey);
+    expect(
+      parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes(Buffer.from(exactReceipt), prepared),
+    ).toMatchObject({ status: 'accepted', disposition: 'resume' });
+    expect(() =>
+      parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes(
+        Buffer.from(exactReceipt.replace('2026-08-22', '2026-13-22')),
+        prepared,
+      ),
+    ).toThrow('Runtime admission receipt binding is invalid.');
+    expect(() =>
+      prepareWorkflowRunnerV2RuntimeAdmission({ ...admission, unexpected: true } as never),
+    ).toThrow('Runtime admission field set is invalid.');
   } finally {
     await new Promise<void>((resolveClose, rejectClose) =>
       server.close((error) => (error ? rejectClose(error) : resolveClose())),

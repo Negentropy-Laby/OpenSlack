@@ -2,6 +2,8 @@ package runnerbindingcontract
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +66,23 @@ type negativeGoldenVector struct {
 	} `json:"expectedError"`
 }
 
+type runtimeAdmissionGoldenVector struct {
+	Value          any    `json:"value"`
+	CanonicalBytes string `json:"canonicalBytes"`
+	ByteLength     int    `json:"byteLength"`
+	SHA256         string `json:"sha256"`
+	Prepared       struct {
+		IdempotencyKey     string `json:"idempotencyKey"`
+		RequestFingerprint string `json:"requestFingerprint"`
+	} `json:"prepared"`
+}
+
+type runtimeAdmissionNegativeGolden struct {
+	ID        string `json:"id"`
+	Operation string `json:"operation"`
+	Input     any    `json:"input"`
+}
+
 type bindingGoldenVectors struct {
 	Schema          string            `json:"schema"`
 	ContractVersion string            `json:"contractVersion"`
@@ -72,6 +91,7 @@ type bindingGoldenVectors struct {
 	OperationMatrix []struct {
 		Operation             Operation                      `json:"operation"`
 		TargetKind            string                         `json:"targetKind"`
+		CompletionControlKind string                         `json:"completionControlKind"`
 		RunnerDelta           RunnerDelta                    `json:"runnerDelta"`
 		SourcePlane           string                         `json:"sourcePlane"`
 		SourceEvidenceState   string                         `json:"sourceEvidenceState"`
@@ -100,8 +120,58 @@ type bindingGoldenVectors struct {
 			} `json:"budgetDatabaseReconciliation"`
 			Messages map[string]any `json:"messages"`
 		} `json:"controlDelivery"`
+		RuntimeAdmission struct {
+			Request runtimeAdmissionGoldenVector `json:"request"`
+			Receipt runtimeAdmissionGoldenVector `json:"receipt"`
+		} `json:"runtimeAdmission"`
 	} `json:"positive"`
-	Negative []negativeGoldenVector `json:"negative"`
+	RuntimeAdmissionNegative []runtimeAdmissionNegativeGolden `json:"runtimeAdmissionNegative"`
+	Negative                 []negativeGoldenVector           `json:"negative"`
+}
+
+func TestGoldenRuntimeAdmissionParity(t *testing.T) {
+	t.Parallel()
+	golden := loadBindingGolden(t)
+	request := golden.Positive.RuntimeAdmission.Request
+	prepared, err := PrepareRuntimeAdmission(request.Value)
+	if err != nil {
+		t.Fatalf("prepare runtime admission: %v", err)
+	}
+	requestHash := sha256.Sum256(prepared.ExactBytes)
+	if string(prepared.ExactBytes) != request.CanonicalBytes || len(prepared.ExactBytes) != request.ByteLength ||
+		hex.EncodeToString(requestHash[:]) != request.SHA256 ||
+		prepared.IdempotencyKey != request.Prepared.IdempotencyKey ||
+		prepared.RequestFingerprint != request.Prepared.RequestFingerprint {
+		t.Fatalf("runtime admission request parity drifted: %+v", prepared)
+	}
+	receipt := golden.Positive.RuntimeAdmission.Receipt
+	receiptHash := sha256.Sum256([]byte(receipt.CanonicalBytes))
+	parsed, err := ParseRuntimeAdmissionReceiptBytes([]byte(receipt.CanonicalBytes), prepared)
+	if err != nil {
+		t.Fatalf("parse runtime admission receipt: %v", err)
+	}
+	parsedBytes, err := canonicalLF(parsed)
+	if err != nil {
+		t.Fatalf("canonicalize runtime admission receipt: %v", err)
+	}
+	if string(parsedBytes) != receipt.CanonicalBytes || len(receipt.CanonicalBytes) != receipt.ByteLength ||
+		hex.EncodeToString(receiptHash[:]) != receipt.SHA256 {
+		t.Fatalf("runtime admission receipt parity drifted: got=%+v want=%+v", parsed, receipt.Value)
+	}
+	for _, vector := range golden.RuntimeAdmissionNegative {
+		var validationErr error
+		switch vector.Operation {
+		case "validate_runtime_admission":
+			_, validationErr = ValidateRuntimeAdmission(vector.Input)
+		case "validate_runtime_admission_receipt":
+			_, validationErr = ValidateRuntimeAdmissionReceipt(vector.Input, prepared)
+		default:
+			t.Fatalf("unknown runtime admission golden operation %q", vector.Operation)
+		}
+		if validationErr == nil {
+			t.Fatalf("runtime admission negative %q unexpectedly passed", vector.ID)
+		}
+	}
 }
 
 func TestGoldenPositiveOperationExchanges(t *testing.T) {
@@ -873,7 +943,8 @@ func assertGoldenOperationMatrix(t *testing.T, golden bindingGoldenVectors) {
 		if operation == OperationResumeAdvance {
 			sourceGenerationDelta = 1
 		}
-		if entry.Operation != operation || entry.TargetKind != string(kind) || entry.RunnerDelta != delta ||
+		completionKind, completionErr := CompletionControlKind(operation)
+		if entry.Operation != operation || entry.TargetKind != string(kind) || completionErr != nil || entry.CompletionControlKind != string(completionKind) || entry.RunnerDelta != delta ||
 			entry.SourceEvidenceState != state || entry.SourceRevisionDelta != sourceRevisionDelta ||
 			entry.SourceGenerationDelta != sourceGenerationDelta ||
 			!nullableStringsEqual(entry.SourceReceiptSchema, receiptSchema) ||

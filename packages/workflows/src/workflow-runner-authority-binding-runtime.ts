@@ -239,12 +239,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
   async outstandingForRun(
     runId: string,
   ): Promise<readonly WorkflowRunnerAuthorityBindingJournalEntry[]> {
-    return Object.freeze(
-      (await this.#journal.list()).filter(
-        (entry) =>
-          entry.stage.runId === runId && !workflowRunnerAuthorityBindingJournalEntryClosed(entry),
-      ),
-    );
+    return this.#journal.activeForRun(runId);
   }
 
   async assertRunReady(runId: string): Promise<void> {
@@ -268,11 +263,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
     }
     const stage = this.#prepareStage(input);
     return this.#journal.runWorkflowExclusive(input.lease.runId, async () => {
-      const outstanding = (await this.#journal.list()).filter(
-        (entry) =>
-          entry.stage.runId === stage.value.runId &&
-          !workflowRunnerAuthorityBindingJournalEntryClosed(entry),
-      );
+      const outstanding = await this.outstandingForRun(stage.value.runId);
       const foreign = outstanding.find((entry) => entry.stage.bindingId !== stage.value.bindingId);
       if (foreign) {
         return fail(

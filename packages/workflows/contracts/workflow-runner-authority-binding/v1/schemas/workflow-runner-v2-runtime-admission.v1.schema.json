@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/workflow-runner-v2-runtime-admission.v1.schema.json",
+  "title": "OpenSlack Workflow Runner v2 runtime admission",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "openslack.workflow_runner_v2_runtime_admission.v1" },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "workflowRunId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "attemptId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "leaseId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+      "maxLength": 256
+    },
+    "fencingToken": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "jobSpecHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "disposition": { "enum": ["initial", "resume"] }
+  },
+  "required": [
+    "schema",
+    "workspaceId",
+    "jobId",
+    "workflowRunId",
+    "attemptId",
+    "leaseId",
+    "fencingToken",
+    "jobSpecHash",
+    "disposition"
+  ],
+  "unevaluatedProperties": false
+}

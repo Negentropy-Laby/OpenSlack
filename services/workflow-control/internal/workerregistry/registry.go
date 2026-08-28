@@ -21,6 +21,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
@@ -56,27 +57,20 @@ type Manifest struct {
 }
 
 type Runtime struct {
-	WorkspaceID                   string
-	WorkspaceRoot                 string
-	DescriptorRoot                string
-	CheckpointShadowEnabled       bool
-	CheckpointShadowEndpoint      string
-	CheckpointShadowBearerToken   string
-	CheckpointShadowCallerID      string
-	CheckpointShadowJournalRoot   string
-	EffectShadowEnabled           bool
-	EffectShadowEndpoint          string
-	EffectShadowBearerToken       string
-	EffectShadowCallerID          string
-	EffectShadowJournalRoot       string
-	V2RuntimeDeliveryEnabled      bool
-	V2RuntimeDeliveryOrigin       string
-	V2RuntimeDeliveryBearerToken  string
-	V2RuntimeDeliveryBearerSHA256 string
-	V2RuntimeDeliveryJournalRoot  string
-	V2BudgetOrigin                string
-	V2BudgetBearerToken           string
-	V2BudgetCallerID              string
+	WorkspaceID                 string
+	WorkspaceRoot               string
+	DescriptorRoot              string
+	CheckpointShadowEnabled     bool
+	CheckpointShadowEndpoint    string
+	CheckpointShadowBearerToken string
+	CheckpointShadowCallerID    string
+	CheckpointShadowJournalRoot string
+	EffectShadowEnabled         bool
+	EffectShadowEndpoint        string
+	EffectShadowBearerToken     string
+	EffectShadowCallerID        string
+	EffectShadowJournalRoot     string
+	V2RuntimeDelivery           *runnerconfig.V2RuntimeDeliveryRuntime
 }
 
 type Registry struct {
@@ -280,30 +274,16 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 			"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT="+runtimeConfig.EffectShadowJournalRoot,
 		)
 	}
-	if runtimeConfig.V2RuntimeDeliveryEnabled {
-		bearerDigest := sha256.Sum256([]byte(runtimeConfig.V2RuntimeDeliveryBearerToken))
-		protectedRoot := filepath.Join(workspaceRoot, ".openslack.local")
-		journalRelative, journalErr := filepath.Rel(protectedRoot, runtimeConfig.V2RuntimeDeliveryJournalRoot)
-		if !hashPattern.MatchString(runtimeConfig.V2RuntimeDeliveryBearerSHA256) ||
-			hex.EncodeToString(bearerDigest[:]) != runtimeConfig.V2RuntimeDeliveryBearerSHA256 ||
-			len(runtimeConfig.V2RuntimeDeliveryBearerToken) < 32 || len(runtimeConfig.V2RuntimeDeliveryBearerToken) > 4096 ||
-			len(runtimeConfig.V2BudgetBearerToken) < 32 || len(runtimeConfig.V2BudgetBearerToken) > 4096 ||
-			strings.ContainsAny(runtimeConfig.V2RuntimeDeliveryBearerToken+runtimeConfig.V2BudgetBearerToken, "\r\n\x00") ||
-			!safeIDPattern.MatchString(runtimeConfig.V2BudgetCallerID) ||
-			runtimeConfig.V2RuntimeDeliveryOrigin == "" || runtimeConfig.V2BudgetOrigin == "" ||
-			journalErr != nil || journalRelative == "." || journalRelative == ".." ||
-			strings.HasPrefix(journalRelative, ".."+string(filepath.Separator)) || filepath.IsAbs(journalRelative) {
-			return nil, fmt.Errorf("v2 runtime-delivery injection is invalid")
-		}
+	if delivery := runtimeConfig.V2RuntimeDelivery; delivery != nil {
 		result = append(result,
 			"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1",
-			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN="+runtimeConfig.V2RuntimeDeliveryOrigin,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN="+runtimeConfig.V2RuntimeDeliveryBearerToken,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256="+runtimeConfig.V2RuntimeDeliveryBearerSHA256,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT="+runtimeConfig.V2RuntimeDeliveryJournalRoot,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN="+runtimeConfig.V2BudgetOrigin,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN="+runtimeConfig.V2BudgetBearerToken,
-			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID="+runtimeConfig.V2BudgetCallerID,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN="+delivery.Origin,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN="+delivery.BearerToken,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256="+delivery.BearerSHA256,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT="+delivery.JournalRoot,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN="+delivery.BudgetOrigin,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN="+delivery.BudgetToken,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID="+delivery.BudgetCallerID,
 		)
 	}
 	return result, nil

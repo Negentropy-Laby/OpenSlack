@@ -1,23 +1,17 @@
 package runnerstore
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"io"
 	"time"
 
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 )
 
 const (
-	V2RuntimeAdmissionSchema        = "openslack.workflow_runner_v2_runtime_admission.v1"
-	V2RuntimeAdmissionReceiptSchema = "openslack.workflow_runner_v2_runtime_admission_receipt.v1"
-	V2RuntimeAdmissionKeyPrefix     = "openslack.workflow-runner-v2-runtime-admission.v1."
+	V2RuntimeAdmissionSchema        = runnerbindingcontract.RuntimeAdmissionSchema
+	V2RuntimeAdmissionReceiptSchema = runnerbindingcontract.RuntimeAdmissionReceiptSchema
+	V2RuntimeAdmissionKeyPrefix     = runnerbindingcontract.RuntimeAdmissionKeyPrefix
 )
 
 type V2RuntimeAdmission struct {
@@ -65,62 +59,89 @@ type V2RuntimeAdmissionInput struct {
 }
 
 func PrepareV2RuntimeAdmission(value V2RuntimeAdmission) (PreparedV2RuntimeAdmission, error) {
-	if value.Schema != V2RuntimeAdmissionSchema || value.Disposition != "initial" && value.Disposition != "resume" ||
-		!safeIDPattern.MatchString(value.WorkspaceID) || !safeIDPattern.MatchString(value.JobID) ||
-		!safeIDPattern.MatchString(value.WorkflowRunID) || !safeIDPattern.MatchString(value.AttemptID) ||
-		!safeIDPattern.MatchString(value.LeaseID) || value.FencingToken < 1 || value.FencingToken > authoritycontract.MaxSafeInteger ||
-		!hashPattern.MatchString(value.JobSpecHash) {
-		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission is invalid", nil)
-	}
-	body, err := canonicaljson.Encode(value)
+	prepared, err := runnerbindingcontract.PrepareRuntimeAdmission(runtimeAdmissionRecord(value))
 	if err != nil {
-		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission cannot be canonicalized", err)
+		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission is invalid", err)
 	}
-	body = append(body, '\n')
-	keyHash := sha256.Sum256(append([]byte("openslack.workflow-runner-v2-runtime-admission.idempotency.v1\x00"), body...))
-	fingerprintHash := sha256.Sum256(append([]byte("openslack.workflow-runner-v2-runtime-admission.fingerprint.v1\x00"), body...))
-	return PreparedV2RuntimeAdmission{Value: value, ExactBytes: body,
-		IdempotencyKey:     V2RuntimeAdmissionKeyPrefix + hex.EncodeToString(keyHash[:]),
-		RequestFingerprint: "sha256:" + hex.EncodeToString(fingerprintHash[:])}, nil
+	return preparedV2RuntimeAdmission(prepared), nil
 }
 
 func ParseV2RuntimeAdmission(input []byte) (PreparedV2RuntimeAdmission, error) {
-	if len(input) < 2 || len(input) > MaxJobSpecBytes || input[len(input)-1] != '\n' || bytes.Contains(input[:len(input)-1], []byte{'\n'}) {
-		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission must be one exact LF record", nil)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(input[:len(input)-1]))
-	decoder.DisallowUnknownFields()
-	var value V2RuntimeAdmission
-	if err := decoder.Decode(&value); err != nil {
-		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission is not closed JSON", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return PreparedV2RuntimeAdmission{}, Failure(ErrorInputInvalid, "v2 runtime admission has trailing content", err)
-	}
-	prepared, err := PrepareV2RuntimeAdmission(value)
-	if err != nil || !bytes.Equal(prepared.ExactBytes, input) {
+	prepared, err := runnerbindingcontract.ParseRuntimeAdmissionBytes(input)
+	if err != nil {
 		return PreparedV2RuntimeAdmission{}, Failure(ErrorHashMismatch, "v2 runtime admission is not exact canonical LF bytes", err)
 	}
-	return prepared, nil
+	return preparedV2RuntimeAdmission(prepared), nil
 }
 
 func PrepareV2RuntimeAdmissionReceipt(value V2RuntimeAdmissionReceipt) ([]byte, error) {
-	if value.Schema != V2RuntimeAdmissionReceiptSchema || value.Status != "accepted" || value.CommittedAt == "" {
-		return nil, Failure(ErrorHashMismatch, "v2 runtime admission receipt is invalid", nil)
-	}
 	prepared, err := PrepareV2RuntimeAdmission(V2RuntimeAdmission{Schema: V2RuntimeAdmissionSchema,
 		WorkspaceID: value.WorkspaceID, JobID: value.JobID, WorkflowRunID: value.WorkflowRunID,
 		AttemptID: value.AttemptID, LeaseID: value.LeaseID, FencingToken: value.FencingToken,
 		JobSpecHash: value.JobSpecHash, Disposition: value.Disposition})
-	if err != nil || prepared.IdempotencyKey != value.IdempotencyKey || prepared.RequestFingerprint != value.RequestFingerprint {
-		return nil, Failure(ErrorHashMismatch, "v2 runtime admission receipt bindings are invalid", err)
-	}
-	body, err := canonicaljson.Encode(value)
 	if err != nil {
 		return nil, err
 	}
+	contractPrepared, contractErr := runnerbindingcontract.PrepareRuntimeAdmission(runtimeAdmissionRecord(prepared.Value))
+	if contractErr != nil {
+		return nil, Failure(ErrorHashMismatch, "v2 runtime admission receipt bindings are invalid", contractErr)
+	}
+	validated, contractErr := runnerbindingcontract.ValidateRuntimeAdmissionReceipt(runtimeAdmissionReceiptRecord(value), contractPrepared)
+	if contractErr != nil {
+		return nil, Failure(ErrorHashMismatch, "v2 runtime admission receipt bindings are invalid", contractErr)
+	}
+	body, contractErr := canonicaljson.Encode(validated)
+	if contractErr != nil {
+		return nil, contractErr
+	}
 	return append(body, '\n'), nil
+}
+
+func ParseV2RuntimeAdmissionReceipt(input []byte, prepared PreparedV2RuntimeAdmission) (V2RuntimeAdmissionReceipt, error) {
+	contractPrepared, err := runnerbindingcontract.PrepareRuntimeAdmission(runtimeAdmissionRecord(prepared.Value))
+	if err != nil {
+		return V2RuntimeAdmissionReceipt{}, Failure(ErrorHashMismatch, "v2 runtime admission receipt request is invalid", err)
+	}
+	record, err := runnerbindingcontract.ParseRuntimeAdmissionReceiptBytes(input, contractPrepared)
+	if err != nil {
+		return V2RuntimeAdmissionReceipt{}, Failure(ErrorHashMismatch, "v2 runtime admission receipt is not exact", err)
+	}
+	return V2RuntimeAdmissionReceipt{Schema: V2RuntimeAdmissionReceiptSchema, Status: "accepted",
+		WorkspaceID: record["workspaceId"].(string), JobID: record["jobId"].(string),
+		WorkflowRunID: record["workflowRunId"].(string), AttemptID: record["attemptId"].(string),
+		LeaseID: record["leaseId"].(string), FencingToken: record["fencingToken"].(int64),
+		JobSpecHash: record["jobSpecHash"].(string), Disposition: record["disposition"].(string),
+		IdempotencyKey: record["idempotencyKey"].(string), RequestFingerprint: record["requestFingerprint"].(string),
+		CommittedAt: record["committedAt"].(string), ExactBytes: append([]byte(nil), input...)}, nil
+}
+
+func runtimeAdmissionRecord(value V2RuntimeAdmission) runnerbindingcontract.Record {
+	return runnerbindingcontract.Record{"schema": value.Schema, "workspaceId": value.WorkspaceID,
+		"jobId": value.JobID, "workflowRunId": value.WorkflowRunID, "attemptId": value.AttemptID,
+		"leaseId": value.LeaseID, "fencingToken": value.FencingToken, "jobSpecHash": value.JobSpecHash,
+		"disposition": value.Disposition}
+}
+
+func runtimeAdmissionReceiptRecord(value V2RuntimeAdmissionReceipt) runnerbindingcontract.Record {
+	record := runtimeAdmissionRecord(V2RuntimeAdmission{Schema: V2RuntimeAdmissionSchema,
+		WorkspaceID: value.WorkspaceID, JobID: value.JobID, WorkflowRunID: value.WorkflowRunID,
+		AttemptID: value.AttemptID, LeaseID: value.LeaseID, FencingToken: value.FencingToken,
+		JobSpecHash: value.JobSpecHash, Disposition: value.Disposition})
+	record["schema"], record["status"] = value.Schema, value.Status
+	record["idempotencyKey"], record["requestFingerprint"] = value.IdempotencyKey, value.RequestFingerprint
+	record["committedAt"] = value.CommittedAt
+	return record
+}
+
+func preparedV2RuntimeAdmission(prepared runnerbindingcontract.PreparedRuntimeAdmission) PreparedV2RuntimeAdmission {
+	value := prepared.Value
+	return PreparedV2RuntimeAdmission{Value: V2RuntimeAdmission{Schema: V2RuntimeAdmissionSchema,
+		WorkspaceID: value["workspaceId"].(string), JobID: value["jobId"].(string),
+		WorkflowRunID: value["workflowRunId"].(string), AttemptID: value["attemptId"].(string),
+		LeaseID: value["leaseId"].(string), FencingToken: value["fencingToken"].(int64),
+		JobSpecHash: value["jobSpecHash"].(string), Disposition: value["disposition"].(string)},
+		ExactBytes: prepared.ExactBytes, IdempotencyKey: prepared.IdempotencyKey,
+		RequestFingerprint: prepared.RequestFingerprint}
 }
 
 // V2AuthorityBindingInput carries one exact F2a companion frame. Prepared is
@@ -192,6 +213,11 @@ type V2AuthorityBindingView struct {
 	UpdatedAt              time.Time
 }
 
+type V2AuthorityRecoverySummary struct {
+	Examined   int
+	Reconciled int
+}
+
 // V2AuthorityBindingStore is exposed only by the schema-8, loopback,
 // qualification-only composition root.
 type V2AuthorityBindingStore interface {
@@ -201,6 +227,10 @@ type V2AuthorityBindingStore interface {
 	ReadAuthorityBindingReceipt(context.Context, string, string) (V2AuthorityBindingReceipt, error)
 	ReadAuthorityBindingForEvent(context.Context, string, []byte) (V2AuthorityBindingView, error)
 	RecoverAuthorityBindings(context.Context, string, time.Time, int) ([]V2AuthorityBindingView, error)
+}
+
+type V2AuthorityRecoveryStore interface {
+	RecoverAuthorityBindingsAtStartup(context.Context, string, time.Time, int) (V2AuthorityRecoverySummary, error)
 }
 
 type V2RuntimeAdmissionStore interface {

@@ -75,13 +75,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, control.CancelID, message.Even
 	}
 	if repository.v2RuntimeDelivery {
 		var pendingDecision bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (
-SELECT 1 FROM workflow_runner_v2_decision_bindings pair
-JOIN workflow_runner_control_messages decision ON decision.control_event_id=pair.decision_control_event_id
-JOIN workflow_runner_authority_bindings binding ON binding.target_event_id=pair.received_event_id
-WHERE binding.attempt_id=$1 AND binding.state='runner_committed'
-  AND decision.delivery_state IN ('pending','delivering','awaiting_ack','reconciliation_required')
-)`, control.AttemptID).Scan(&pendingDecision); err != nil {
+		if err := tx.QueryRow(ctx, pendingV2AuthorityDecisionSQL, control.AttemptID).Scan(&pendingDecision); err != nil {
 			return runnerstore.V2CancelControl{}, databaseFailure("read v2 cancel decision predecessor", err)
 		}
 		if pendingDecision {

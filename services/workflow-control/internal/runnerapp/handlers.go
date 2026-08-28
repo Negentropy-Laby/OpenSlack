@@ -37,7 +37,7 @@ func (service *Service) handleSubmit(w http.ResponseWriter, request *http.Reques
 	if !requireMutationHeaders(w, request) {
 		return
 	}
-	body, err := readBoundedBody(w, request)
+	body, err := readBoundedBody(w, request, runnerstore.MaxJobSpecBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -85,7 +85,7 @@ func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Requ
 	if !requireMutationHeaders(w, request) {
 		return
 	}
-	body, err := readBoundedBody(w, request)
+	body, err := readBoundedBody(w, request, runnerstore.MaxJobSpecBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -137,7 +137,7 @@ func (service *Service) handleAuthorityBindingStage(w http.ResponseWriter, reque
 	if !requireMutationHeaders(w, request) {
 		return
 	}
-	body, err := readAuthorityBindingBody(w, request)
+	body, err := readBoundedBody(w, request, runnerbindingcontract.MaxFrameBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -166,7 +166,7 @@ func (service *Service) handleV2RuntimeAdmission(w http.ResponseWriter, request 
 	if !requireMutationHeaders(w, request) {
 		return
 	}
-	body, err := readBoundedBody(w, request)
+	body, err := readBoundedBody(w, request, runnerstore.MaxJobSpecBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -213,7 +213,7 @@ func (service *Service) handleAuthorityBindingAction(w http.ResponseWriter, requ
 	if !requireMutationHeaders(w, request) {
 		return
 	}
-	body, err := readAuthorityBindingBody(w, request)
+	body, err := readBoundedBody(w, request, runnerbindingcontract.MaxFrameBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -269,9 +269,7 @@ func (service *Service) handleAuthorityBindingReceipt(w http.ResponseWriter, req
 		service.writeStoreError(w, err)
 		return
 	}
-	if value, parseErr := runnerbindingcontract.ParseReceiptBytes(receipt.ExactBytes); parseErr != nil || value["bindingId"] != receipt.Value["bindingId"] {
-		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
-		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+	if _, ok := service.validateAuthorityBindingReceipt(w, receipt); !ok {
 		return
 	}
 	writeExactJSON(w, http.StatusOK, receipt.ExactBytes)
@@ -287,10 +285,8 @@ func (service *Service) writeAuthorityBindingReceipt(w http.ResponseWriter, rece
 		service.writeStoreError(w, err)
 		return
 	}
-	value, parseErr := runnerbindingcontract.ParseReceiptBytes(receipt.ExactBytes)
-	if parseErr != nil || value["bindingId"] != receipt.Value["bindingId"] {
-		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
-		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+	value, ok := service.validateAuthorityBindingReceipt(w, receipt)
+	if !ok {
 		return
 	}
 	status := http.StatusCreated
@@ -303,16 +299,20 @@ func (service *Service) writeAuthorityBindingReceipt(w http.ResponseWriter, rece
 	writeExactJSON(w, status, receipt.ExactBytes)
 }
 
-func readAuthorityBindingBody(w http.ResponseWriter, request *http.Request) ([]byte, error) {
-	request.Body = http.MaxBytesReader(w, request.Body, runnerbindingcontract.MaxFrameBytes)
-	body, err := io.ReadAll(&contextReader{ctx: request.Context(), reader: request.Body})
-	if err != nil {
-		return nil, err
+func (service *Service) validateAuthorityBindingReceipt(w http.ResponseWriter, receipt runnerstore.V2AuthorityBindingReceipt) (runnerbindingcontract.Record, bool) {
+	value, parseErr := runnerbindingcontract.ParseReceiptBytes(receipt.ExactBytes)
+	if parseErr != nil {
+		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+		return nil, false
 	}
-	if len(body) == 0 || len(body) > runnerbindingcontract.MaxFrameBytes {
-		return nil, fmt.Errorf("authority-binding request body size is invalid")
+	prepared, prepareErr := runnerbindingcontract.PrepareReceipt(value)
+	if prepareErr != nil || prepared.Body != string(receipt.ExactBytes) || value["bindingId"] != receipt.Value["bindingId"] || value["phase"] != receipt.Value["phase"] {
+		service.logger.Error("workflow_runner_invalid_authority_binding_receipt")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner authority-binding failure")
+		return nil, false
 	}
-	return body, nil
+	return value, true
 }
 
 func v2JobReceiptBytes(receipt runnerstore.V2JobReceipt) ([]byte, error) {
@@ -359,7 +359,7 @@ func (service *Service) handleCancellation(w http.ResponseWriter, request *http.
 		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_UNPROCESSABLE", "runner job identity is invalid")
 		return
 	}
-	body, err := readBoundedBody(w, request)
+	body, err := readBoundedBody(w, request, runnerstore.MaxJobSpecBytes)
 	if err != nil {
 		writeReadError(w, ctx, err)
 		return
@@ -529,13 +529,13 @@ func requireNoQuery(w http.ResponseWriter, request *http.Request) bool {
 	return false
 }
 
-func readBoundedBody(w http.ResponseWriter, request *http.Request) ([]byte, error) {
-	request.Body = http.MaxBytesReader(w, request.Body, runnerstore.MaxJobSpecBytes)
+func readBoundedBody(w http.ResponseWriter, request *http.Request, maximum int64) ([]byte, error) {
+	request.Body = http.MaxBytesReader(w, request.Body, maximum)
 	body, err := io.ReadAll(&contextReader{ctx: request.Context(), reader: request.Body})
 	if err != nil {
 		return nil, err
 	}
-	if len(body) == 0 || len(body) > runnerstore.MaxJobSpecBytes {
+	if len(body) == 0 || int64(len(body)) > maximum {
 		return nil, fmt.Errorf("request body size is invalid")
 	}
 	return body, nil
@@ -590,10 +590,10 @@ func (service *Service) writeStoreError(w http.ResponseWriter, err error) {
 		writeFailure(w, http.StatusNotFound, "WORKFLOW_RUNNER_NOT_FOUND", "runner job was not found")
 	case runnerstore.ErrorIdempotencyConflict, runnerstore.ErrorSequenceConflict,
 		runnerstore.ErrorStaleFence, runnerstore.ErrorIdentityMismatch, runnerstore.ErrorConflict,
-		runnerstore.ErrorLeaseExpired:
+		runnerstore.ErrorLeaseExpired, runnerstore.ErrorAuthorityBinding:
 		service.conflicts.Add(1)
 		writeFailure(w, http.StatusConflict, "WORKFLOW_RUNNER_CONFLICT", "runner control precondition conflicted")
-	case runnerstore.ErrorDatabase, runnerstore.ErrorCommitUnknown:
+	case runnerstore.ErrorDatabase, runnerstore.ErrorCommitUnknown, runnerstore.ErrorAuthorityUnavailable:
 		writeFailure(w, http.StatusServiceUnavailable, "WORKFLOW_RUNNER_UNAVAILABLE", "runner control store is unavailable")
 	case runnerstore.ErrorReconciliation:
 		writeFailure(w, http.StatusAccepted, "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED", "runner lifecycle requires reconciliation")

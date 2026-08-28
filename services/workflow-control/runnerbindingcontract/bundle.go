@@ -18,6 +18,8 @@ var bundleFiles = []string{
 	"schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
 	"schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
 	"schemas/workflow-runner-authority-binding-error.v1.schema.json",
+	"schemas/workflow-runner-v2-runtime-admission.v1.schema.json",
+	"schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json",
 	"golden-vectors.json",
 	"manifest.json",
 }

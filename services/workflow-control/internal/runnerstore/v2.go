@@ -231,17 +231,12 @@ func ValidateV2SubmitInputForProfile(input V2SubmitInput, runtimeDelivery bool) 
 	return nil
 }
 
-// ValidateV2QualificationAdmission narrows the frozen v2 wire contract to the
-// F1 operational profile. The contract can describe a future Go authority
-// route, but a TypeScript worker must never execute such a job before the real
-// authority adapters and writer cutover exist.
-func ValidateV2QualificationAdmission(value V2JobSpec) error {
-	return ValidateV2Admission(value, false)
-}
-
 func ValidateV2Admission(value V2JobSpec, runtimeDelivery bool) error {
-	if runtimeDelivery && value.AuthorityRoute.Backend == "go" && value.AuthorityRoute.Authority == "workflow-control" {
-		return nil
+	if runtimeDelivery {
+		if value.AuthorityRoute.Backend == "go" && value.AuthorityRoute.Authority == "workflow-control" {
+			return nil
+		}
+		return Failure(ErrorAuthorityUnavailable, "v2 runtime delivery admits only the Go workflow-control route", nil)
 	}
 	if value.AuthorityRoute.Backend != "ts-local" || value.AuthorityRoute.Authority != "typescript" {
 		return Failure(ErrorAuthorityUnavailable, "v2 qualification admits only the TypeScript authority route", nil)

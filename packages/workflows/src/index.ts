@@ -1036,11 +1036,18 @@ export {
   createWorkflowRunnerResumeSourceAdapter,
 } from './workflow-runner-runtime-authorities.js';
 export {
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
   WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
   WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
   WorkflowRunnerV2RuntimeAdmissionError,
   createWorkflowRunnerV2RuntimeAdmissionClient,
+  parseWorkflowRunnerV2RuntimeAdmissionBytes,
+  parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes,
   prepareWorkflowRunnerV2RuntimeAdmission,
+  validateWorkflowRunnerV2RuntimeAdmission,
+  validateWorkflowRunnerV2RuntimeAdmissionReceipt,
 } from './workflow-runner-v2-runtime-admission.js';
 export type {
   WorkflowRunnerV2PreparedRuntimeAdmission,

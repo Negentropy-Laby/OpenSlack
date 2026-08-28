@@ -33,6 +33,7 @@ import {
   type WorkflowRunnerEffectCompletionEvidence,
 } from './workflow-runner-authority-binding-contract.js';
 import type { WorkflowRunnerAuthoritySourceAdapter } from './workflow-runner-authority-binding-runtime.js';
+import { createWorkflowRunnerEffectSourceAdapter } from './workflow-runner-runtime-authorities.js';
 import {
   hashWorkflowRunnerDomain,
   hashWorkflowRunnerEffect,
@@ -87,6 +88,7 @@ interface ClaimState {
   readonly prepared: PreparedState;
   readonly executionId: string;
   readonly claimHash: string;
+  readonly expiresAt: string;
 }
 
 const PREPARED = new WeakMap<object, PreparedState>();
@@ -479,6 +481,104 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
   );
   await journal.initialize();
 
+  const completionSource = (input: {
+    readonly claim: ClaimState;
+    readonly identity: string;
+    readonly status: 'executed' | 'reconciliation_required';
+    readonly outcomeHash: string;
+    readonly reconciliationToken: string | null;
+    readonly replay?: ReplayValue;
+  }) => {
+    let committed: WorkflowRunnerEffectCompletionEvidence | undefined;
+    const source = createWorkflowRunnerEffectSourceAdapter('effect_complete', {
+      async pointRead() {
+        const foundValue = await journal.read(input.identity);
+        const found = foundValue
+          ? assertSiblingForPrepared(
+              foundValue,
+              input.claim.prepared,
+              options.descriptor,
+              options.context.resumeGeneration,
+            )
+          : null;
+        if (found?.completion) committed = found.completion;
+        return found?.completion
+          ? { state: 'committed' as const, evidence: found.completion }
+          : { state: 'not_committed' as const };
+      },
+      async commit() {
+        return journal.runExclusive(input.identity, async () => {
+          const currentValue = await journal.read(input.identity);
+          const current = currentValue
+            ? assertSiblingForPrepared(
+                currentValue,
+                input.claim.prepared,
+                options.descriptor,
+                options.context.resumeGeneration,
+              )
+            : null;
+          if (!current || current.authorization.executionId !== input.claim.executionId) {
+            throw new WorkflowEffectReconciliationRequiredError(
+              `Effect ${input.status === 'executed' ? 'completion' : 'reconciliation'} lost its durable one-time claim.`,
+            );
+          }
+          if (current.completion) {
+            committed = current.completion;
+            return current.completion;
+          }
+          const expectedRevision = current.authorization.decisionRevision;
+          const record = {
+            identity: input.identity,
+            executionId: input.claim.executionId,
+            claimHash: input.claim.claimHash,
+            outcomeHash: input.outcomeHash,
+            ...(input.reconciliationToken
+              ? { reconciliationToken: input.reconciliationToken }
+              : {}),
+            status: input.status,
+          };
+          const recordHash = hashWorkflowEffectControlDomain(
+            'runner-v2-effect-completion-record',
+            record,
+          );
+          const evidence: WorkflowRunnerEffectCompletionEvidence = {
+            schema: 'openslack.workflow_runner_effect_completion_evidence.v1',
+            sourceAuthority: {
+              plane: 'effect_v2_sibling',
+              evidenceState: 'committed',
+              expectedRevision,
+              acceptedRevision: expectedRevision + 1,
+              expectedResumeGeneration: options.context.resumeGeneration,
+              acceptedResumeGeneration: options.context.resumeGeneration,
+              requestHash: input.claim.claimHash,
+              receiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
+              receiptHash: sourceReceiptHash(
+                'openslack.workflow_runner_effect_completion_receipt.v1',
+                recordHash,
+                expectedRevision + 1,
+              ),
+              recordHash,
+              authorityBuildHash: options.descriptor.authorityRoute.authorityBuildHash,
+            },
+            occurrenceId: input.claim.prepared.occurrenceId,
+            effectId: input.claim.prepared.effectId,
+            effectHash: input.claim.prepared.effectHash,
+            executionId: input.claim.executionId,
+            claimHash: input.claim.claimHash,
+            status: input.status,
+            outcomeHash: input.outcomeHash,
+            reconciliationToken: input.reconciliationToken,
+          };
+          hashWorkflowRunnerAuthorityBindingEvidence(evidence, 'effect_complete');
+          await journal.putCompletion(current, evidence, input.replay);
+          committed = evidence;
+          return evidence;
+        });
+      },
+    });
+    return Object.freeze({ source, committed: () => committed });
+  };
+
   const port: WorkflowEffectAuthorizationPort = Object.freeze({
     async prepare(input: Parameters<WorkflowEffectAuthorizationPort['prepare']>[0]) {
       if (input.runId !== options.descriptor.workflowRunId || input.evaluationIndex < 1) {
@@ -623,7 +723,11 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
         );
       }
       const authorityExpiresAt = new Date(
-        Math.min(Date.parse(approval.expiresAt), Date.parse(options.descriptor.expiresAt)),
+        Math.min(
+          Date.parse(approval.expiresAt),
+          Date.parse(options.descriptor.expiresAt),
+          Date.parse(approval.decision!.decidedAt) + 60_000,
+        ),
       ).toISOString();
       const expired = Date.parse(authorityExpiresAt) <= Date.parse(now());
       const humanDecision = expired
@@ -631,13 +735,7 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
         : projectWorkflowEffectHumanDecision({
             approval,
             issuedAt: approval.decision!.decidedAt,
-            expiresAt: new Date(
-              Math.min(
-                Date.parse(approval.expiresAt),
-                Date.parse(options.descriptor.expiresAt),
-                Date.parse(approval.decision!.decidedAt) + 60_000,
-              ),
-            ).toISOString(),
+            expiresAt: authorityExpiresAt,
           });
       const approvalStatus = expired ? ('expired' as const) : approval.status;
       const approvalRecordHash = expired ? null : hashWorkflowEffectApprovalRecord(approval);
@@ -789,7 +887,13 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
           kind: 'workflow_effect_claim_authorization' as const,
           executionId,
         });
-        CLAIMS.set(authority, { port, prepared: state, executionId, claimHash });
+        CLAIMS.set(authority, {
+          port,
+          prepared: state,
+          executionId,
+          claimHash,
+          expiresAt: authorityExpiresAt,
+        });
         try {
           await port.reconcile(authority, causeCode);
         } catch (error) {
@@ -815,8 +919,26 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
         kind: 'workflow_effect_claim_authorization' as const,
         executionId,
       });
-      CLAIMS.set(authority, { port, prepared: state, executionId, claimHash });
+      CLAIMS.set(authority, {
+        port,
+        prepared: state,
+        executionId,
+        claimHash,
+        expiresAt: authorityExpiresAt,
+      });
       return Object.freeze({ disposition: 'claimed' as const, authority, executionId });
+    },
+
+    async assertExecutable(authority: WorkflowEffectClaimAuthorization) {
+      const claim = CLAIMS.get(authority);
+      if (!claim || claim.port !== port) {
+        throw new TypeError('Workflow runner v2 effect claim is not host-minted.');
+      }
+      if (Date.parse(now()) < Date.parse(claim.expiresAt)) return;
+      await port.reconcile(authority, 'human_decision_expired_before_execution');
+      throw new WorkflowEffectReconciliationRequiredError(
+        'Workflow effect human decision expired before side-effect execution.',
+      );
     },
 
     async complete(authority: WorkflowEffectClaimAuthorization, value: unknown) {
@@ -826,107 +948,26 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
       }
       const identity = identityHash(options.descriptor, claim.prepared.evaluationIndex);
       const replay = replayValue(value);
-      let completionEvidence: WorkflowRunnerEffectCompletionEvidence | undefined;
-      const source: WorkflowRunnerAuthoritySourceAdapter = {
-        async probe(stage) {
-          if (stage.operation !== 'effect_complete') {
-            throw new WorkflowEffectReconciliationRequiredError(
-              'Effect completion source operation changed.',
-            );
-          }
-          const foundValue = await journal.read(identity);
-          const found = foundValue
-            ? assertSiblingForPrepared(
-                foundValue,
-                claim.prepared,
-                options.descriptor,
-                options.context.resumeGeneration,
-              )
-            : null;
-          return found?.completion
-            ? { state: 'committed' as const, evidence: found.completion }
-            : { state: 'not_committed' as const };
-        },
-        async commit(stage) {
-          if (stage.operation !== 'effect_complete') {
-            throw new WorkflowEffectReconciliationRequiredError(
-              'Effect completion source operation changed.',
-            );
-          }
-          return journal.runExclusive(identity, async () => {
-            const currentValue = await journal.read(identity);
-            const current = currentValue
-              ? assertSiblingForPrepared(
-                  currentValue,
-                  claim.prepared,
-                  options.descriptor,
-                  options.context.resumeGeneration,
-                )
-              : null;
-            if (!current || current.authorization.executionId !== claim.executionId) {
-              throw new WorkflowEffectReconciliationRequiredError(
-                'Effect completion lost its durable one-time claim.',
-              );
-            }
-            if (current.completion) return current.completion;
-            const expectedRevision = current.authorization.decisionRevision;
-            const recordHash = hashWorkflowEffectControlDomain(
-              'runner-v2-effect-completion-record',
-              {
-                identity,
-                executionId: claim.executionId,
-                claimHash: claim.claimHash,
-                outcomeHash: replay.outcomeHash,
-                status: 'executed',
-              },
-            );
-            const evidence: WorkflowRunnerEffectCompletionEvidence = {
-              schema: 'openslack.workflow_runner_effect_completion_evidence.v1',
-              sourceAuthority: {
-                plane: 'effect_v2_sibling',
-                evidenceState: 'committed',
-                expectedRevision,
-                acceptedRevision: expectedRevision + 1,
-                expectedResumeGeneration: options.context.resumeGeneration,
-                acceptedResumeGeneration: options.context.resumeGeneration,
-                requestHash: claim.claimHash,
-                receiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
-                receiptHash: sourceReceiptHash(
-                  'openslack.workflow_runner_effect_completion_receipt.v1',
-                  recordHash,
-                  expectedRevision + 1,
-                ),
-                recordHash,
-                authorityBuildHash: options.descriptor.authorityRoute.authorityBuildHash,
-              },
-              occurrenceId: claim.prepared.occurrenceId,
-              effectId: claim.prepared.effectId,
-              effectHash: claim.prepared.effectHash,
-              executionId: claim.executionId,
-              claimHash: claim.claimHash,
-              status: 'executed',
-              outcomeHash: replay.outcomeHash,
-              reconciliationToken: null,
-            };
-            hashWorkflowRunnerAuthorityBindingEvidence(evidence, 'effect_complete');
-            await journal.putCompletion(current, evidence, replay);
-            completionEvidence = evidence;
-            return evidence;
-          });
-        },
-      };
+      const completion = completionSource({
+        claim,
+        identity,
+        status: 'executed',
+        outcomeHash: replay.outcomeHash,
+        reconciliationToken: null,
+        replay,
+      });
       await options.context.reportEffectOutcome(
         {
           effectId: claim.prepared.effectId,
           status: 'executed',
           outcomeHash: replay.outcomeHash,
         },
-        source,
+        completion.source,
       );
       CLAIMS.delete(authority);
       const durableValue = await journal.read(identity);
       const durable =
-        completionEvidence ??
+        completion.committed() ??
         (durableValue
           ? assertSiblingForPrepared(
               durableValue,
@@ -960,94 +1001,13 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
           identity,
         }),
       )}`;
-      const source: WorkflowRunnerAuthoritySourceAdapter = {
-        async probe(stage) {
-          if (stage.operation !== 'effect_complete') {
-            throw new WorkflowEffectReconciliationRequiredError(
-              'Effect reconciliation source operation changed.',
-            );
-          }
-          const foundValue = await journal.read(identity);
-          const found = foundValue
-            ? assertSiblingForPrepared(
-                foundValue,
-                claim.prepared,
-                options.descriptor,
-                options.context.resumeGeneration,
-              )
-            : null;
-          return found?.completion
-            ? { state: 'committed' as const, evidence: found.completion }
-            : { state: 'not_committed' as const };
-        },
-        async commit(stage) {
-          if (stage.operation !== 'effect_complete') {
-            throw new WorkflowEffectReconciliationRequiredError(
-              'Effect reconciliation source operation changed.',
-            );
-          }
-          return journal.runExclusive(identity, async () => {
-            const currentValue = await journal.read(identity);
-            const current = currentValue
-              ? assertSiblingForPrepared(
-                  currentValue,
-                  claim.prepared,
-                  options.descriptor,
-                  options.context.resumeGeneration,
-                )
-              : null;
-            if (!current || current.authorization.executionId !== claim.executionId) {
-              throw new WorkflowEffectReconciliationRequiredError(
-                'Effect reconciliation lost its durable one-time claim.',
-              );
-            }
-            if (current.completion) return current.completion;
-            const expectedRevision = current.authorization.decisionRevision;
-            const recordHash = hashWorkflowEffectControlDomain(
-              'runner-v2-effect-completion-record',
-              {
-                identity,
-                executionId: claim.executionId,
-                claimHash: claim.claimHash,
-                outcomeHash,
-                reconciliationToken,
-                status: 'reconciliation_required',
-              },
-            );
-            const evidence: WorkflowRunnerEffectCompletionEvidence = {
-              schema: 'openslack.workflow_runner_effect_completion_evidence.v1',
-              sourceAuthority: {
-                plane: 'effect_v2_sibling',
-                evidenceState: 'committed',
-                expectedRevision,
-                acceptedRevision: expectedRevision + 1,
-                expectedResumeGeneration: options.context.resumeGeneration,
-                acceptedResumeGeneration: options.context.resumeGeneration,
-                requestHash: claim.claimHash,
-                receiptSchema: 'openslack.workflow_runner_effect_completion_receipt.v1',
-                receiptHash: sourceReceiptHash(
-                  'openslack.workflow_runner_effect_completion_receipt.v1',
-                  recordHash,
-                  expectedRevision + 1,
-                ),
-                recordHash,
-                authorityBuildHash: options.descriptor.authorityRoute.authorityBuildHash,
-              },
-              occurrenceId: claim.prepared.occurrenceId,
-              effectId: claim.prepared.effectId,
-              effectHash: claim.prepared.effectHash,
-              executionId: claim.executionId,
-              claimHash: claim.claimHash,
-              status: 'reconciliation_required',
-              outcomeHash,
-              reconciliationToken,
-            };
-            hashWorkflowRunnerAuthorityBindingEvidence(evidence, 'effect_complete');
-            await journal.putCompletion(current, evidence);
-            return evidence;
-          });
-        },
-      };
+      const completion = completionSource({
+        claim,
+        identity,
+        status: 'reconciliation_required',
+        outcomeHash,
+        reconciliationToken,
+      });
       try {
         await options.context.reportEffectOutcome(
           {
@@ -1055,7 +1015,7 @@ export async function createWorkflowRunnerV2EffectAuthorizationPort(options: {
             status: 'reconciliation_required',
             outcomeHash,
           },
-          source,
+          completion.source,
         );
       } finally {
         CLAIMS.delete(authority);

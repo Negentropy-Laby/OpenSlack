@@ -73,10 +73,11 @@ func (session *V2Session) Run(ctx context.Context, lease runnerstore.AttemptLeas
 	if err != nil {
 		return session.base.failProcess(ctx, process, lease, runnerstore.ProcessCrashed, fmt.Errorf("persist runner v2 negotiation: %w", err))
 	}
-	if err := session.send(ctx, process, lease.AttemptID, negotiation.HelloAck, negotiation.HelloAckBytes); err != nil {
+	hardDeadline := v2ControlHardDeadline(lease)
+	if _, err := session.send(ctx, process, lease.AttemptID, negotiation.HelloAck, negotiation.HelloAckBytes, hardDeadline); err != nil {
 		return session.base.failProcess(ctx, process, lease, runnerstore.ProcessCrashed, fmt.Errorf("send v2 hello acknowledgement: %w", err))
 	}
-	if err := session.send(ctx, process, lease.AttemptID, *lease.V2LeaseOffer, lease.V2LeaseOfferBytes); err != nil {
+	if _, err := session.send(ctx, process, lease.AttemptID, *lease.V2LeaseOffer, lease.V2LeaseOfferBytes, hardDeadline); err != nil {
 		return session.base.failProcess(ctx, process, lease, runnerstore.ProcessCrashed, fmt.Errorf("send v2 lease offer: %w", err))
 	}
 	poll := time.NewTicker(session.base.config.PollInterval)
@@ -235,8 +236,10 @@ func (session *V2Session) sendRecordedV2Controls(
 	recorded runnerstore.V2RecordedEvent,
 	allowAuthorityCancel bool,
 ) (bool, error) {
+	var pending *runnerstore.CancelControl
 	if recorded.AuthorityBindingID != nil {
-		pending, err := session.config.Store.PendingCancel(ctx, lease.WorkspaceID, lease.JobID, lease.AttemptID)
+		var err error
+		pending, err = session.config.Store.PendingCancel(ctx, lease.WorkspaceID, lease.JobID, lease.AttemptID)
 		if err != nil {
 			return false, fmt.Errorf("read runner v2 pre-authority cancellation: %w", err)
 		}
@@ -244,22 +247,32 @@ func (session *V2Session) sendRecordedV2Controls(
 			return false, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 cancellation predates an authority-bound receipt", nil)
 		}
 	}
-	if err := session.send(ctx, process, lease.AttemptID, recorded.Receipt, recorded.ReceiptBytes); err != nil {
+	receiptDisposition, err := session.send(ctx, process, lease.AttemptID, recorded.Receipt, recorded.ReceiptBytes, v2ControlHardDeadline(lease))
+	if err != nil {
 		return false, fmt.Errorf("send runner v2 event receipt: %w", err)
 	}
+	if receiptDisposition == runnerstore.V2ControlDeliveryReconciliationRequired {
+		return false, runnerstore.Failure(runnerstore.ErrorReconciliation, "runner v2 event receipt ACK requires reconciliation", nil)
+	}
 	if recorded.Decision != nil {
-		if err := session.send(ctx, process, lease.AttemptID, *recorded.Decision, recorded.DecisionBytes); err != nil {
-			return false, fmt.Errorf("send runner v2 authority decision: %w", err)
+		decisionDisposition, sendErr := session.send(ctx, process, lease.AttemptID, *recorded.Decision, recorded.DecisionBytes, v2ControlHardDeadline(lease))
+		if sendErr != nil {
+			return false, fmt.Errorf("send runner v2 authority decision: %w", sendErr)
+		}
+		if decisionDisposition == runnerstore.V2ControlDeliveryReconciliationRequired {
+			return false, runnerstore.Failure(runnerstore.ErrorReconciliation, "runner v2 authority decision ACK requires reconciliation", nil)
 		}
 	}
 	if recorded.AuthorityBindingID == nil || !allowAuthorityCancel {
 		return false, nil
 	}
-	sent, err := session.sendPendingV2Cancel(ctx, process, lease, 0)
-	if err != nil {
+	if pending == nil {
+		return false, nil
+	}
+	if err := session.sendV2Cancel(ctx, process, lease, *pending); err != nil {
 		return false, fmt.Errorf("send runner v2 post-authority cancellation: %w", err)
 	}
-	return sent, nil
+	return true, nil
 }
 
 func (session *V2Session) sendPendingV2Cancel(ctx context.Context, process WorkerProcess, lease runnerstore.AttemptLease, beforeSequence int64) (bool, error) {
@@ -270,11 +283,19 @@ func (session *V2Session) sendPendingV2Cancel(ctx context.Context, process Worke
 	if beforeSequence > 0 && control.ControlSequence >= beforeSequence {
 		return false, nil
 	}
-	wrapped, err := session.config.Store.PrepareV2Cancel(ctx, lease, *control)
+	return true, session.sendV2Cancel(ctx, process, lease, *control)
+}
+
+func (session *V2Session) sendV2Cancel(ctx context.Context, process WorkerProcess, lease runnerstore.AttemptLease, control runnerstore.CancelControl) error {
+	wrapped, err := session.config.Store.PrepareV2Cancel(ctx, lease, control)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return true, session.send(ctx, process, lease.AttemptID, wrapped.Message, wrapped.ExactBytes)
+	disposition, sendErr := session.send(ctx, process, lease.AttemptID, wrapped.Message, wrapped.ExactBytes, v2ControlHardDeadline(lease))
+	if disposition == runnerstore.V2ControlDeliveryReconciliationRequired && sendErr == nil {
+		sendErr = runnerstore.Failure(runnerstore.ErrorReconciliation, "runner v2 cancellation ACK requires reconciliation", nil)
+	}
+	return sendErr
 }
 
 func (session *V2Session) createAndSendV2Cancel(ctx context.Context, process WorkerProcess, lease runnerstore.AttemptLease, reason string) error {
@@ -295,32 +316,40 @@ func (session *V2Session) createAndSendV2Cancel(ctx context.Context, process Wor
 	if err != nil {
 		return err
 	}
-	return session.send(ctx, process, lease.AttemptID, wrapped.Message, wrapped.ExactBytes)
+	disposition, sendErr := session.send(ctx, process, lease.AttemptID, wrapped.Message, wrapped.ExactBytes, v2ControlHardDeadline(lease))
+	if disposition == runnerstore.V2ControlDeliveryReconciliationRequired && sendErr == nil {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "runner v2 cancellation ACK requires reconciliation", nil)
+	}
+	return sendErr
 }
 
-func (session *V2Session) send(ctx context.Context, process WorkerProcess, attemptID string, message authoritycontract.Message, body []byte) error {
+func v2ControlHardDeadline(lease runnerstore.AttemptLease) time.Time {
+	if lease.LeaseExpiresAt.Before(lease.WholeDeadline) {
+		return lease.LeaseExpiresAt
+	}
+	return lease.WholeDeadline
+}
+
+func (session *V2Session) send(ctx context.Context, process WorkerProcess, attemptID string, message authoritycontract.Message, body []byte, hardDeadline time.Time) (runnerstore.V2ControlDeliveryDisposition, error) {
 	if err := session.config.Store.MarkV2ControlDeliveryStarted(ctx, attemptID, message.EventID, string(message.Kind), session.config.Now()); err != nil {
-		return err
+		return "", err
 	}
 	if err := writeFrame(process.Stdin(), body); err != nil {
 		markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
-		return errors.Join(err, markErr)
+		return "", errors.Join(err, markErr)
 	}
 	if err := session.config.Store.MarkV2ControlDelivered(ctx, attemptID, message.EventID, string(message.Kind), session.config.Now()); err != nil {
 		markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
-		return errors.Join(err, markErr)
+		return "", errors.Join(err, markErr)
 	}
-	if waiter, ok := session.config.Store.(interface {
-		WaitV2ControlAcknowledged(context.Context, string, string) error
-	}); ok {
-		ackContext, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		if err := waiter.WaitV2ControlAcknowledged(ackContext, attemptID, message.EventID); err != nil {
-			markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
-			return errors.Join(err, markErr)
-		}
+	ackContext, cancel := context.WithDeadline(ctx, hardDeadline)
+	defer cancel()
+	disposition, err := session.config.Store.WaitV2ControlAcknowledged(ackContext, attemptID, message.EventID)
+	if err != nil {
+		markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
+		return "", errors.Join(err, markErr)
 	}
-	return nil
+	return disposition, nil
 }
 
 func awaitV2Frame(ctx context.Context, frames <-chan protocolDecodedFrame[authoritycontract.Message], timeout time.Duration) (protocolDecodedFrame[authoritycontract.Message], error) {

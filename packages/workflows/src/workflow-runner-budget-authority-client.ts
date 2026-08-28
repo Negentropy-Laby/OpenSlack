@@ -1,14 +1,8 @@
 import {
-  WORKFLOW_BUDGET_AUTHORITY,
-  WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
-  WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
-  WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
-  WORKFLOW_BUDGET_AUTHORITY_WRITER,
-  WORKFLOW_BUDGET_LEDGER_ENTRY_SCHEMA,
   canonicalWorkflowBudgetAuthorityJson,
+  deriveWorkflowBudgetLedgerEntry,
   hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
-  validateWorkflowBudgetLedgerEntry,
   validateWorkflowBudgetAccount,
   validateWorkflowBudgetPreparedRequest,
   validateWorkflowBudgetReceiptForRequest,
@@ -16,13 +10,9 @@ import {
   validateWorkflowBudgetReconciliation,
   validateWorkflowBudgetReserveDecision,
   validateWorkflowBudgetSettlement,
-  type WorkflowBudgetLedgerEntry,
   type WorkflowBudgetAccount,
   type WorkflowBudgetPreparedRequest,
-  type WorkflowBudgetQuantities,
   type WorkflowBudgetReceipt,
-  type WorkflowBudgetReserveDecision,
-  type WorkflowBudgetSettlement,
   type WorkflowBudgetRoute,
 } from './workflow-budget-authority-contract.js';
 import {
@@ -31,6 +21,10 @@ import {
   validateWorkflowRunnerBudgetSourceResult,
   type WorkflowRunnerBudgetSourceResult,
 } from './workflow-runner-authority-binding-contract.js';
+import {
+  cancelWorkflowRunnerResponseBody,
+  readWorkflowRunnerResponseBytes,
+} from './workflow-runner-control-http.js';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const HASH = /^[0-9a-f]{64}$/u;
@@ -38,7 +32,6 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const RESPONSE_SCHEMA = 'openslack.workflow_control_budget_mutation_response.v1';
 const DURABLE_SCHEMA = 'openslack.workflow_control_budget_durable_record.v1';
 const DURABLE_WRITER = 'workflow-control/budget-authority-server';
-const ZERO: WorkflowBudgetQuantities = Object.freeze({ tokens: '0', nanoUsd: '0', calls: '0' });
 
 type Data = Record<string, unknown>;
 
@@ -130,6 +123,11 @@ function durable(
     record.contractManifestSha256 !==
       WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest ||
     record.authorityBuildHash !== buildHash ||
+    typeof projection !== 'object' ||
+    projection === null ||
+    (kind === 'receipt' &&
+      (projection as { readonly serviceBuildHash?: unknown }).serviceBuildHash !==
+        record.authorityBuildHash) ||
     record.recordKind !== kind ||
     record.operationalProjectionHash !== hashWorkflowBudgetAuthorityValue(domain, projection)
   ) {
@@ -142,98 +140,6 @@ function durable(
     value: record,
     projection,
     exactBytes: canonicalWorkflowBudgetAuthorityJson(record),
-  });
-}
-
-function ledgerForReserve(decision: WorkflowBudgetReserveDecision): WorkflowBudgetLedgerEntry {
-  const decisionHash = hashWorkflowBudgetAuthorityValue('reserve-decision', decision);
-  const kind = decision.status === 'reserved' ? 'reserve_reserved' : 'reserve_rejected';
-  return validateWorkflowBudgetLedgerEntry({
-    schema: WORKFLOW_BUDGET_LEDGER_ENTRY_SCHEMA,
-    contractVersion: WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
-    authority: WORKFLOW_BUDGET_AUTHORITY,
-    writer: WORKFLOW_BUDGET_AUTHORITY_WRITER,
-    goRole: WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
-    goAuthorityClaim: WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
-    goAuthorityEligible: false,
-    kind,
-    entryId: `WFBUDGETLEDGER-${hashWorkflowBudgetAuthorityValue('ledger-entry-id', {
-      accountId: decision.afterAccount.accountId,
-      accountRevision: decision.afterAccount.accountRevision,
-      decisionHash,
-      kind,
-      reservationId: decision.request.reservationId,
-    })}`,
-    workspaceId: decision.afterAccount.workspaceId,
-    runId: decision.afterAccount.runId,
-    accountId: decision.afterAccount.accountId,
-    reservationId: decision.request.reservationId,
-    callId: decision.request.callId,
-    accountRevision: decision.afterAccount.accountRevision,
-    runRevision: decision.afterAccount.runRevision,
-    previousAccountHash: decision.beforeAccountHash,
-    accountHash: hashWorkflowBudgetAuthorityValue('account', decision.afterAccount),
-    decisionHash,
-    encumbered: decision.status === 'reserved' ? decision.authorization : ZERO,
-    settled: ZERO,
-    released: ZERO,
-    providerUsageHash: null,
-    reasonCode: null,
-    recordedAt: decision.decidedAt,
-  });
-}
-
-function ledgerForSettlement(settlement: WorkflowBudgetSettlement): WorkflowBudgetLedgerEntry {
-  const decisionHash = hashWorkflowBudgetAuthorityValue('settlement', settlement);
-  const kind =
-    settlement.status === 'settled' ? 'settlement_settled' : 'settlement_reconciliation_required';
-  const usage = settlement.request.providerUsage;
-  const settled: WorkflowBudgetQuantities =
-    settlement.status === 'settled' && usage?.status === 'reported'
-      ? {
-          tokens: usage.totalTokens!,
-          nanoUsd:
-            BigInt(usage.totalTokens!) === 0n
-              ? '0'
-              : (
-                  BigInt(settlement.reservation.reserved.nanoUsd) -
-                  BigInt(settlement.released!.nanoUsd)
-                ).toString(),
-          calls: usage.calls,
-        }
-      : ZERO;
-  return validateWorkflowBudgetLedgerEntry({
-    schema: WORKFLOW_BUDGET_LEDGER_ENTRY_SCHEMA,
-    contractVersion: WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
-    authority: WORKFLOW_BUDGET_AUTHORITY,
-    writer: WORKFLOW_BUDGET_AUTHORITY_WRITER,
-    goRole: WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
-    goAuthorityClaim: WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
-    goAuthorityEligible: false,
-    kind,
-    entryId: `WFBUDGETLEDGER-${hashWorkflowBudgetAuthorityValue('ledger-entry-id', {
-      accountId: settlement.afterAccount.accountId,
-      accountRevision: settlement.afterAccount.accountRevision,
-      decisionHash,
-      kind,
-      reservationId: settlement.reservation.reservationId,
-    })}`,
-    workspaceId: settlement.afterAccount.workspaceId,
-    runId: settlement.afterAccount.runId,
-    accountId: settlement.afterAccount.accountId,
-    reservationId: settlement.reservation.reservationId,
-    callId: settlement.reservation.callId,
-    accountRevision: settlement.afterAccount.accountRevision,
-    runRevision: settlement.afterAccount.runRevision,
-    previousAccountHash: settlement.beforeAccountHash,
-    accountHash: hashWorkflowBudgetAuthorityValue('account', settlement.afterAccount),
-    decisionHash,
-    encumbered: ZERO,
-    settled,
-    released: settlement.released ?? ZERO,
-    providerUsageHash: settlement.request.usageReceiptHash,
-    reasonCode: settlement.reasonCode,
-    recordedAt: settlement.committedAt,
   });
 }
 
@@ -307,7 +213,7 @@ function decodeMutationResponse(
   );
   if (prepared.operation === 'reserve') {
     const decision = validateWorkflowBudgetReserveDecision(recordOuter.projection);
-    const ledger = ledgerForReserve(decision);
+    const ledger = deriveWorkflowBudgetLedgerEntry(decision);
     validateWorkflowBudgetReceiptForResult(receipt, prepared, decision, ledger, null);
     return Object.freeze({
       receipt,
@@ -323,7 +229,7 @@ function decodeMutationResponse(
     });
   }
   const settlement = validateWorkflowBudgetSettlement(recordOuter.projection);
-  const ledger = ledgerForSettlement(settlement);
+  const ledger = deriveWorkflowBudgetLedgerEntry(settlement);
   const reconciliation =
     response.reconciliation === null
       ? null
@@ -340,15 +246,39 @@ function decodeMutationResponse(
   return Object.freeze({ receipt });
 }
 
-async function exactBody(response: Response): Promise<string> {
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_RESPONSE_BYTES) {
+async function exactBody(response: Response, signal?: AbortSignal): Promise<string> {
+  const bytes = await readWorkflowRunnerResponseBytes(response, {
+    maxBytes: MAX_RESPONSE_BYTES,
+    signal,
+    validateContentLength: true,
+    minimumBytes: 2,
+    failure: (message, options) => {
+      throw new WorkflowRunnerBudgetAuthorityClientError(
+        'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+        message,
+        options,
+      );
+    },
+    messages: {
+      contentType: 'Budget authority response content type is invalid.',
+      contentLength: 'Budget authority response content length is invalid.',
+      missingBody: 'Budget authority response body is missing.',
+      readFailed: 'Budget authority response body could not be read.',
+      exceeded: 'Budget authority response exceeds its byte limit.',
+      empty: 'Budget authority response body is empty.',
+      lengthMismatch: 'Budget authority response body length is inconsistent.',
+      aborted: 'Budget authority response read was aborted.',
+    },
+  });
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (error) {
     throw new WorkflowRunnerBudgetAuthorityClientError(
       'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
-      'Budget mutation response exceeds its byte limit.',
+      'Budget authority response is not valid UTF-8.',
+      { cause: error },
     );
   }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
 export interface WorkflowRunnerBudgetAuthorityClient {
@@ -424,17 +354,17 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
       );
     }
     if (method === 'GET' && response.status === 404) {
-      await response.body?.cancel();
+      await cancelWorkflowRunnerResponseBody(response);
       return null;
     }
     if (![200, 201, 202].includes(response.status)) {
-      await response.body?.cancel();
+      await cancelWorkflowRunnerResponseBody(response);
       throw new WorkflowRunnerBudgetAuthorityClientError(
         'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         `Budget authority returned HTTP ${response.status}.`,
       );
     }
-    return decodeMutationResponse(await exactBody(response), prepared);
+    return decodeMutationResponse(await exactBody(response, signal), prepared);
   };
   return Object.freeze({
     async mutate(prepared: WorkflowBudgetPreparedRequest, signal?: AbortSignal) {
@@ -477,17 +407,17 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
         );
       }
       if (response.status === 404) {
-        await response.body?.cancel();
+        await cancelWorkflowRunnerResponseBody(response);
         return null;
       }
       if (response.status !== 200) {
-        await response.body?.cancel();
+        await cancelWorkflowRunnerResponseBody(response);
         throw new WorkflowRunnerBudgetAuthorityClientError(
           'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
           `Budget account point-read returned HTTP ${response.status}.`,
         );
       }
-      const exactBytes = await exactBody(response);
+      const exactBytes = await exactBody(response, signal);
       if (!exactBytes.endsWith('\n') || exactBytes.endsWith('\n\n')) {
         throw new WorkflowRunnerBudgetAuthorityClientError(
           'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',

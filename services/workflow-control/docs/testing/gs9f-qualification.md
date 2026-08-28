@@ -101,6 +101,13 @@ process crash after source commit, cancellation before/after the event receipt, 
 revision/generation drift, cross-binding splice, and downgrade rejection. No named test may be
 missing or skipped.
 
+The ACK gate must also prove notification-before-registration recovery, database point-read after a
+lost notification, an ACK that arrives after thirty seconds but before the lease/job hard deadline,
+and true hard-deadline expiry. Startup recovery must report and consume its examined/reconciled
+summary, use a query count independent of the number of recovered bindings, and preserve exact
+replay of closed evidence. Admission request/receipt schema and golden parity are generated in the
+authority-binding family and replayed by both TypeScript and Go.
+
 Passing establishes at most:
 
 ```text

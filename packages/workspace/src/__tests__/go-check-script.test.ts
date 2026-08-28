@@ -953,6 +953,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       'WORKFLOW_RUNNER_GS9F2',
     ]) {
       expect(log).not.toContain(deferredAdapter);
+      expect(goCheckSource).not.toContain(deferredAdapter);
     }
     const restartSchemas = [
       ...log.matchAll(

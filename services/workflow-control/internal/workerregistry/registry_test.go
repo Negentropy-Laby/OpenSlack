@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 )
 
 func TestProtocolSupervisorsUseMutuallyExclusiveReservedEnablement(t *testing.T) {
@@ -79,14 +80,13 @@ func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
 	root, hash, runtimeConfig := writeBundle(t, nil)
 	token := strings.Repeat("r", 40)
 	digest := sha256.Sum256([]byte(token))
-	runtimeConfig.V2RuntimeDeliveryEnabled = true
-	runtimeConfig.V2RuntimeDeliveryOrigin = "http://127.0.0.1:8081"
-	runtimeConfig.V2RuntimeDeliveryBearerToken = token
-	runtimeConfig.V2RuntimeDeliveryBearerSHA256 = fmt.Sprintf("%x", digest[:])
-	runtimeConfig.V2RuntimeDeliveryJournalRoot = filepath.Join(root, ".openslack.local", "workflow-runner-v2-runtime-delivery")
-	runtimeConfig.V2BudgetOrigin = "http://127.0.0.1:8085"
-	runtimeConfig.V2BudgetBearerToken = strings.Repeat("b", 40)
-	runtimeConfig.V2BudgetCallerID = "runner-control"
+	runtimeConfig.V2RuntimeDelivery = &runnerconfig.V2RuntimeDeliveryRuntime{
+		Origin: "http://127.0.0.1:8081", BearerToken: token,
+		BearerSHA256: fmt.Sprintf("%x", digest[:]),
+		JournalRoot:  filepath.Join(root, ".openslack.local", "workflow-runner-v2-runtime-delivery"),
+		BudgetOrigin: "http://127.0.0.1:8085", BudgetToken: strings.Repeat("b", 40),
+		BudgetCallerID: "runner-control",
+	}
 	registry, err := Load(root, hash, runtimeConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -100,10 +100,6 @@ func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
 		if !strings.Contains(v2, name+"=") {
 			t.Fatalf("v2 runtime supervisor missed %s", name)
 		}
-	}
-	runtimeConfig.V2RuntimeDeliveryBearerSHA256 = strings.Repeat("f", 64)
-	if _, err := Load(root, hash, runtimeConfig); err == nil {
-		t.Fatal("mismatched raw companion token hash was accepted")
 	}
 }
 

@@ -16,7 +16,6 @@ func loadRunnerOpenAPI(t *testing.T) *openapi3.T {
 	_, filename, _, _ := runtime.Caller(0)
 	path := filepath.Join(filepath.Dir(filename), "..", "..", "docs", "api", "runner-openapi.yaml")
 	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
 	document, err := loader.LoadFromFile(path)
 	if err != nil {
 		t.Fatalf("load runner OpenAPI: %v", err)
