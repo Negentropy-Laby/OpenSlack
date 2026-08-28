@@ -950,11 +950,11 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       'WORKFLOW_RUNNER_V2_EFFECT_ADAPTER',
       'WORKFLOW_RUNNER_V2_BUDGET_ADAPTER',
       'WORKFLOW_RUNNER_V2_RESUME_ADAPTER',
-      'WORKFLOW_RUNNER_GS9F2',
     ]) {
       expect(log).not.toContain(deferredAdapter);
       expect(goCheckSource).not.toContain(deferredAdapter);
     }
+    expect(log).not.toContain('WORKFLOW_RUNNER_GS9F2');
     const restartSchemas = [
       ...log.matchAll(
         /WORKFLOW_RUNNER_GS9F1_RESTART_SCHEMA=(workflow_control_gs9f1_restart_[a-z0-9]+)/gu,
