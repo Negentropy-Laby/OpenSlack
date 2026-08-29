@@ -82,6 +82,17 @@ type V2JobStore interface {
 }
 
 func ParseV2JobSpec(input []byte) (PreparedV2JobSpec, error) {
+	return parseV2JobSpec(input, false)
+}
+
+// ParseV2RuntimeJobSpec admits the schema-8 qualification-only Go route. The
+// caller must already have proven that the runtime-delivery profile is
+// explicitly enabled; production routing remains a later batch.
+func ParseV2RuntimeJobSpec(input []byte) (PreparedV2JobSpec, error) {
+	return parseV2JobSpec(input, true)
+}
+
+func parseV2JobSpec(input []byte, runtimeDelivery bool) (PreparedV2JobSpec, error) {
 	if len(input) == 0 || len(input) > MaxJobSpecBytes || !utf8.Valid(input) {
 		return PreparedV2JobSpec{}, Failure(ErrorLimitExceeded, "v2 job specification bytes are invalid", nil)
 	}
@@ -98,7 +109,7 @@ func ParseV2JobSpec(input []byte) (PreparedV2JobSpec, error) {
 	if err != nil {
 		return PreparedV2JobSpec{}, err
 	}
-	if err := ValidateV2QualificationAdmission(value); err != nil {
+	if err := ValidateV2Admission(value, runtimeDelivery); err != nil {
 		return PreparedV2JobSpec{}, err
 	}
 	return prepared, nil
@@ -199,6 +210,10 @@ func ValidateV2JobReceiptForSubmit(value V2JobReceipt, input V2SubmitInput) erro
 }
 
 func ValidateV2SubmitInput(input V2SubmitInput) error {
+	return ValidateV2SubmitInputForProfile(input, false)
+}
+
+func ValidateV2SubmitInputForProfile(input V2SubmitInput, runtimeDelivery bool) error {
 	prepared, err := PrepareV2JobSpec(input.Prepared.Spec)
 	if err != nil {
 		return err
@@ -210,17 +225,19 @@ func ValidateV2SubmitInput(input V2SubmitInput) error {
 	if input.IdempotencyKey != key || input.RequestFingerprint != fingerprint {
 		return Failure(ErrorHashMismatch, "v2 job request bindings do not match the exact specification", nil)
 	}
-	if err := ValidateV2QualificationAdmission(input.Prepared.Spec); err != nil {
+	if err := ValidateV2Admission(input.Prepared.Spec, runtimeDelivery); err != nil {
 		return err
 	}
 	return nil
 }
 
-// ValidateV2QualificationAdmission narrows the frozen v2 wire contract to the
-// F1 operational profile. The contract can describe a future Go authority
-// route, but a TypeScript worker must never execute such a job before the real
-// authority adapters and writer cutover exist.
-func ValidateV2QualificationAdmission(value V2JobSpec) error {
+func ValidateV2Admission(value V2JobSpec, runtimeDelivery bool) error {
+	if runtimeDelivery {
+		if value.AuthorityRoute.Backend == "go" && value.AuthorityRoute.Authority == "workflow-control" {
+			return nil
+		}
+		return Failure(ErrorAuthorityUnavailable, "v2 runtime delivery admits only the Go workflow-control route", nil)
+	}
 	if value.AuthorityRoute.Backend != "ts-local" || value.AuthorityRoute.Authority != "typescript" {
 		return Failure(ErrorAuthorityUnavailable, "v2 qualification admits only the TypeScript authority route", nil)
 	}

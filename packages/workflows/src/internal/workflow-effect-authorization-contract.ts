@@ -89,6 +89,8 @@ export interface WorkflowEffectAuthorizationPort {
     prepared: WorkflowEffectPreparedAuthorization,
     signal?: AbortSignal,
   ): Promise<WorkflowEffectAuthorizationDisposition>;
+  /** Revalidates ephemeral claim conditions immediately before side effects run. */
+  assertExecutable?(authority: WorkflowEffectClaimAuthorization): Promise<void>;
   complete(
     authority: WorkflowEffectClaimAuthorization,
     value: unknown,

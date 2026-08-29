@@ -16,6 +16,7 @@
     {
       "operation": "checkpoint_commit",
       "targetKind": "checkpoint_commit",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "checkpoint_control",
       "sourceEvidenceState": "committed",
@@ -27,6 +28,7 @@
     {
       "operation": "effect_authorize",
       "targetKind": "effect_intent",
+      "completionControlKind": "effect_authorization",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
@@ -38,6 +40,7 @@
     {
       "operation": "effect_complete",
       "targetKind": "effect_outcome",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 0, "generation": 0 },
       "sourcePlane": "effect_v2_sibling",
       "sourceEvidenceState": "committed",
@@ -49,6 +52,7 @@
     {
       "operation": "budget_reserve",
       "targetKind": "budget_reserve_request",
+      "completionControlKind": "budget_authorization",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
@@ -60,6 +64,7 @@
     {
       "operation": "budget_settle",
       "targetKind": "budget_usage_report",
+      "completionControlKind": "event_receipt",
       "runnerDelta": { "revision": 1, "generation": 0 },
       "sourcePlane": "budget_account",
       "sourceEvidenceState": "prepared",
@@ -71,6 +76,7 @@
     {
       "operation": "resume_advance",
       "targetKind": "lease_accept",
+      "completionControlKind": "resume_offer",
       "runnerDelta": { "revision": 1, "generation": 1 },
       "sourcePlane": "resume_control",
       "sourceEvidenceState": "committed",
@@ -3978,8 +3984,105 @@
           }
         }
       }
+    },
+    "runtimeAdmission": {
+      "request": {
+        "value": {
+          "schema": "openslack.workflow_runner_v2_runtime_admission.v1",
+          "workspaceId": "workspace-qualification",
+          "jobId": "job-qualification",
+          "workflowRunId": "run-qualification",
+          "attemptId": "attempt-qualification",
+          "leaseId": "lease-qualification",
+          "fencingToken": 41,
+          "jobSpecHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "disposition": "resume"
+        },
+        "canonicalBytes": "{\"attemptId\":\"attempt-qualification\",\"disposition\":\"resume\",\"fencingToken\":41,\"jobId\":\"job-qualification\",\"jobSpecHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"leaseId\":\"lease-qualification\",\"schema\":\"openslack.workflow_runner_v2_runtime_admission.v1\",\"workflowRunId\":\"run-qualification\",\"workspaceId\":\"workspace-qualification\"}\n",
+        "byteLength": 357,
+        "sha256": "d9ba7e1ac246852c7dca2f4511f0691c1d2f259ba3f54a6cad5f70fe3a7ea0bc",
+        "prepared": {
+          "idempotencyKey": "openslack.workflow-runner-v2-runtime-admission.v1.8791271090f6a64f3fd71ea5ababf337b86be391b9a1d4ac0f50e23433436455",
+          "requestFingerprint": "sha256:6b5db49288e96b81573f0d33344b3560e77e126df8465a09879c9dce1b7b0376"
+        }
+      },
+      "receipt": {
+        "value": {
+          "schema": "openslack.workflow_runner_v2_runtime_admission_receipt.v1",
+          "status": "accepted",
+          "workspaceId": "workspace-qualification",
+          "jobId": "job-qualification",
+          "workflowRunId": "run-qualification",
+          "attemptId": "attempt-qualification",
+          "leaseId": "lease-qualification",
+          "fencingToken": 41,
+          "jobSpecHash": "8888888888888888888888888888888888888888888888888888888888888888",
+          "disposition": "resume",
+          "idempotencyKey": "openslack.workflow-runner-v2-runtime-admission.v1.8791271090f6a64f3fd71ea5ababf337b86be391b9a1d4ac0f50e23433436455",
+          "requestFingerprint": "sha256:6b5db49288e96b81573f0d33344b3560e77e126df8465a09879c9dce1b7b0376",
+          "committedAt": "2026-08-22T00:00:00.000Z"
+        },
+        "canonicalBytes": "{\"attemptId\":\"attempt-qualification\",\"committedAt\":\"2026-08-22T00:00:00.000Z\",\"disposition\":\"resume\",\"fencingToken\":41,\"idempotencyKey\":\"openslack.workflow-runner-v2-runtime-admission.v1.8791271090f6a64f3fd71ea5ababf337b86be391b9a1d4ac0f50e23433436455\",\"jobId\":\"job-qualification\",\"jobSpecHash\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"leaseId\":\"lease-qualification\",\"requestFingerprint\":\"sha256:6b5db49288e96b81573f0d33344b3560e77e126df8465a09879c9dce1b7b0376\",\"schema\":\"openslack.workflow_runner_v2_runtime_admission_receipt.v1\",\"status\":\"accepted\",\"workflowRunId\":\"run-qualification\",\"workspaceId\":\"workspace-qualification\"}\n",
+        "byteLength": 655,
+        "sha256": "8094a1c63431dbc67f5aaa18a884ae2fb20a911cb0c242aadb2ffe7d3245ddb6"
+      }
     }
   },
+  "runtimeAdmissionNegative": [
+    {
+      "id": "runtime-admission-disposition-drift",
+      "operation": "validate_runtime_admission",
+      "input": {
+        "schema": "openslack.workflow_runner_v2_runtime_admission.v1",
+        "workspaceId": "workspace-qualification",
+        "jobId": "job-qualification",
+        "workflowRunId": "run-qualification",
+        "attemptId": "attempt-qualification",
+        "leaseId": "lease-qualification",
+        "fencingToken": 41,
+        "jobSpecHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "disposition": "retry"
+      }
+    },
+    {
+      "id": "runtime-admission-receipt-cross-splice",
+      "operation": "validate_runtime_admission_receipt",
+      "input": {
+        "schema": "openslack.workflow_runner_v2_runtime_admission_receipt.v1",
+        "status": "accepted",
+        "workspaceId": "workspace-qualification",
+        "jobId": "job-alien",
+        "workflowRunId": "run-qualification",
+        "attemptId": "attempt-qualification",
+        "leaseId": "lease-qualification",
+        "fencingToken": 41,
+        "jobSpecHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "disposition": "resume",
+        "idempotencyKey": "openslack.workflow-runner-v2-runtime-admission.v1.8791271090f6a64f3fd71ea5ababf337b86be391b9a1d4ac0f50e23433436455",
+        "requestFingerprint": "sha256:6b5db49288e96b81573f0d33344b3560e77e126df8465a09879c9dce1b7b0376",
+        "committedAt": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "runtime-admission-receipt-invalid-timestamp",
+      "operation": "validate_runtime_admission_receipt",
+      "input": {
+        "schema": "openslack.workflow_runner_v2_runtime_admission_receipt.v1",
+        "status": "accepted",
+        "workspaceId": "workspace-qualification",
+        "jobId": "job-qualification",
+        "workflowRunId": "run-qualification",
+        "attemptId": "attempt-qualification",
+        "leaseId": "lease-qualification",
+        "fencingToken": 41,
+        "jobSpecHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "disposition": "resume",
+        "idempotencyKey": "openslack.workflow-runner-v2-runtime-admission.v1.8791271090f6a64f3fd71ea5ababf337b86be391b9a1d4ac0f50e23433436455",
+        "requestFingerprint": "sha256:6b5db49288e96b81573f0d33344b3560e77e126df8465a09879c9dce1b7b0376",
+        "committedAt": "2026-13-22T00:00:00.000Z"
+      }
+    }
+  ],
   "negative": [
     {
       "id": "stage-unknown-field",

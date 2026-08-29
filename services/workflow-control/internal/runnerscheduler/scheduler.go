@@ -20,6 +20,8 @@ type Config struct {
 	Session              *Session
 	V2Session            ProtocolSession
 	V2Qualification      bool
+	V2RuntimeDelivery    bool
+	AuthorityRecovery    runnerstore.V2AuthorityRecoveryStore
 	WorkspaceID          string
 	SupervisorInstanceID string
 	MaxProcesses         int
@@ -38,6 +40,9 @@ func New(config Config) (*Scheduler, error) {
 	}
 	if config.V2Qualification && config.V2Session == nil {
 		return nil, fmt.Errorf("runner scheduler v2 qualification session is required when enabled")
+	}
+	if config.V2RuntimeDelivery && config.AuthorityRecovery == nil {
+		return nil, fmt.Errorf("runner scheduler authority recovery store is required for runtime delivery")
 	}
 	if config.WorkspaceID == "" || config.SupervisorInstanceID == "" {
 		return nil, fmt.Errorf("runner scheduler identities are required")
@@ -60,6 +65,15 @@ func New(config Config) (*Scheduler, error) {
 func (scheduler *Scheduler) Run(ctx context.Context) error {
 	if _, err := scheduler.config.Store.RecoverOrphans(ctx, scheduler.config.SupervisorInstanceID, scheduler.config.Now(), 1000); err != nil {
 		return fmt.Errorf("recover orphan runner attempts: %w", err)
+	}
+	if scheduler.config.V2RuntimeDelivery {
+		summary, err := scheduler.config.AuthorityRecovery.RecoverAuthorityBindingsAtStartup(ctx, scheduler.config.WorkspaceID, scheduler.config.Now(), 1000)
+		if err != nil {
+			return fmt.Errorf("recover workflow runner authority bindings: %w", err)
+		}
+		if summary.Reconciled > summary.Examined {
+			return fmt.Errorf("recover workflow runner authority bindings: invalid recovery summary")
+		}
 	}
 	groupCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

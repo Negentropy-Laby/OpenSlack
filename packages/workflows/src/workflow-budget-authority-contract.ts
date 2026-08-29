@@ -1738,6 +1738,36 @@ function createLedgerEntry(
   reasonCode: WorkflowBudgetLedgerEntry['reasonCode'],
   recordedAt: string,
 ): WorkflowBudgetLedgerEntry {
+  return createLedgerEntryFromDecision(
+    kind,
+    hashWorkflowBudgetAuthorityValue('account', before),
+    after,
+    reservationId,
+    callId,
+    decision,
+    encumbered,
+    settled,
+    released,
+    providerUsageHash,
+    reasonCode,
+    recordedAt,
+  );
+}
+
+function createLedgerEntryFromDecision(
+  kind: WorkflowBudgetLedgerEntry['kind'],
+  previousAccountHash: string,
+  after: WorkflowBudgetAccount,
+  reservationId: string,
+  callId: string,
+  decision: WorkflowBudgetReserveDecision | WorkflowBudgetSettlement,
+  encumbered: WorkflowBudgetQuantities,
+  settled: WorkflowBudgetQuantities,
+  released: WorkflowBudgetQuantities,
+  providerUsageHash: string | null,
+  reasonCode: WorkflowBudgetLedgerEntry['reasonCode'],
+  recordedAt: string,
+): WorkflowBudgetLedgerEntry {
   const decisionHash = hashWorkflowBudgetAuthorityValue(
     decision.schema === WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA ? 'reserve-decision' : 'settlement',
     decision,
@@ -1760,7 +1790,7 @@ function createLedgerEntry(
     callId,
     accountRevision: after.accountRevision,
     runRevision: after.runRevision,
-    previousAccountHash: hashWorkflowBudgetAuthorityValue('account', before),
+    previousAccountHash,
     accountHash: hashWorkflowBudgetAuthorityValue('account', after),
     decisionHash,
     encumbered,
@@ -1770,6 +1800,55 @@ function createLedgerEntry(
     reasonCode,
     recordedAt,
   });
+}
+
+export function deriveWorkflowBudgetLedgerEntry(
+  decision: WorkflowBudgetReserveDecision | WorkflowBudgetSettlement,
+): WorkflowBudgetLedgerEntry {
+  if (decision.schema === WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA) {
+    return createLedgerEntryFromDecision(
+      decision.status === 'reserved' ? 'reserve_reserved' : 'reserve_rejected',
+      decision.beforeAccountHash,
+      decision.afterAccount,
+      decision.request.reservationId,
+      decision.request.callId,
+      decision,
+      decision.status === 'reserved' ? decision.authorization : ZERO,
+      ZERO,
+      ZERO,
+      null,
+      null,
+      decision.decidedAt,
+    );
+  }
+  const usage = decision.request.providerUsage;
+  const settled: WorkflowBudgetQuantities =
+    decision.status === 'settled' && usage?.status === 'reported'
+      ? {
+          tokens: usage.totalTokens!,
+          nanoUsd:
+            BigInt(usage.totalTokens!) === 0n
+              ? '0'
+              : (
+                  BigInt(decision.reservation.reserved.nanoUsd) - BigInt(decision.released!.nanoUsd)
+                ).toString(),
+          calls: usage.calls,
+        }
+      : ZERO;
+  return createLedgerEntryFromDecision(
+    decision.status === 'settled' ? 'settlement_settled' : 'settlement_reconciliation_required',
+    decision.beforeAccountHash,
+    decision.afterAccount,
+    decision.reservation.reservationId,
+    decision.reservation.callId,
+    decision,
+    ZERO,
+    settled,
+    decision.released ?? ZERO,
+    decision.request.usageReceiptHash,
+    decision.reasonCode,
+    decision.committedAt,
+  );
 }
 
 function requestPath(operation: 'reserve' | 'settle') {

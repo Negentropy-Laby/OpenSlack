@@ -17,6 +17,30 @@ type Options struct {
 	ProtectedRoots []string
 }
 
+// ExactLoopbackOrigin validates the single local authority transport boundary
+// shared by the runner server and its sealed worker. Only the two canonical
+// loopback spellings are accepted; DNS and the rest of 127/8 are intentionally
+// outside the contract.
+func ExactLoopbackOrigin(value string) (string, error) {
+	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n\x00") {
+		return "", fmt.Errorf("origin must be an exact loopback HTTP origin")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.Port() == "" {
+		return "", fmt.Errorf("origin must be an exact loopback HTTP origin")
+	}
+	if host := parsed.Hostname(); host != "127.0.0.1" && host != "::1" {
+		return "", fmt.Errorf("origin must be an exact loopback HTTP origin")
+	}
+	if parsed.Path == "/" {
+		parsed.Path = ""
+	}
+	if canonical := parsed.String(); canonical != value {
+		return "", fmt.Errorf("origin must be an exact loopback HTTP origin")
+	}
+	return value, nil
+}
+
 func Validate(options Options) error {
 	parsed, err := url.Parse(options.Endpoint)
 	if err != nil || parsed == nil {

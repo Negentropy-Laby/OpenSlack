@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
@@ -29,6 +31,80 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 	direction, _ := authoritycontract.DirectionForKind(message.Kind)
 	if direction != authoritycontract.DirectionRunnerToControl || message.JobID == nil || message.AttemptID == nil || message.LeaseID == nil || message.FencingToken == nil || message.Sequence == nil || message.RunRevision == nil || message.ResumeGeneration == nil {
 		return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorIdentityMismatch, "v2 leased event binding is incomplete", nil)
+	}
+	var replayBinding *runnerstore.V2AuthorityBindingView
+	if repository.v2RuntimeDelivery && runtimeBindingKind(message.Kind) {
+		binding, bindingErr := repository.ReadAuthorityBindingForEvent(ctx, message.EventID, input.ExactBytes)
+		if bindingErr == nil {
+			replayBinding = &binding
+		} else if !runnerstore.IsCode(bindingErr, runnerstore.ErrorNotFound) {
+			return runnerstore.V2RecordedEvent{}, bindingErr
+		}
+		if replay, found, replayErr := readV2EventReplayRow(
+			repository.pool.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey),
+			prepared,
+			input.ExactBytes,
+			replayBinding,
+		); replayErr != nil {
+			return runnerstore.V2RecordedEvent{}, replayErr
+		} else if found {
+			if replayBinding != nil {
+				replay.AuthorityBindingID = &replayBinding.BindingID
+			}
+			return replay, nil
+		}
+	}
+	if repository.v2RuntimeDelivery && runtimeBindingKind(message.Kind) {
+		if replayBinding == nil {
+			// Only an independently sealed initial admission may omit a resume
+			// authority binding. In particular, revision/generation and binding
+			// absence are never used to classify a first resume as initial.
+			if message.Kind == authoritycontract.KindLeaseAccept &&
+				repository.isInitialV2LeaseAccept(ctx, message) {
+				return repository.finalizeV2Event(ctx, input, prepared, nil)
+			}
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorNotFound, "authority binding for event was not found", nil)
+		}
+		binding := *replayBinding
+		if message.Kind == authoritycontract.KindLeaseAccept &&
+			(binding.Operation != runnerbindingcontract.OperationResumeAdvance || !repository.isResumeV2LeaseAccept(ctx, message)) {
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "lease accept binding lacks a sealed resume admission", nil)
+		}
+		if binding.State != "resolved" && binding.State != "runner_committed" && binding.State != "completed" {
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorSequenceConflict, "exact authority binding is not resolved for runner consumption", nil)
+		}
+		if binding.State == "resolved" {
+			reason, driftErr := repository.runtimeBindingConsumptionDrift(ctx, binding, message.Kind)
+			if driftErr != nil || reason != "" {
+				if reason == "" {
+					reason = "process_crash"
+				}
+				latchErr := repository.latchRuntimeBindingReconciliation(ctx, binding, reason)
+				return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorReconciliation, "authority binding cannot be consumed after runner lifecycle drift", errors.Join(driftErr, latchErr))
+			}
+		}
+		if binding.State == "resolved" && (binding.Operation == runnerbindingcontract.OperationBudgetReserve || binding.Operation == runnerbindingcontract.OperationBudgetSettle) {
+			exactSource, sourceHash, sourceErr := repository.readRuntimeBudgetSource(ctx, binding)
+			if sourceErr != nil {
+				latchErr := repository.latchRuntimeBindingReconciliation(ctx, binding, "source_outcome_unknown")
+				return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorReconciliation, "exact post-resolution budget outcome cannot be proven", errors.Join(sourceErr, latchErr))
+			}
+			binding.ExactSourceResult = exactSource
+			binding.SourceResultHash = sourceHash
+		}
+		outcome := runnerstore.V2AuthorityOutcome{
+			Operation: authoritycontract.ReceiptOperation(binding.Operation), ExactReceiptBytes: binding.ExactResolutionReceipt,
+			AcceptedRunRevision: binding.AcceptedRunRevision, AcceptedResumeGeneration: binding.AcceptedGeneration,
+			RuntimeBinding: &binding,
+		}
+		recorded, finalizeErr := repository.finalizeV2Event(ctx, input, prepared, &outcome)
+		if finalizeErr == nil {
+			recorded.AuthorityBindingID = &binding.BindingID
+		}
+		return recorded, finalizeErr
+	}
+	if repository.v2RuntimeDelivery {
+		return repository.finalizeV2Event(ctx, input, prepared, nil)
 	}
 	advance := v2Advance(message.Kind, *message.ResumeGeneration)
 	if !advance.needsAuthority {
@@ -63,6 +139,180 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 		return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 authority committed but runner finalization failed", err)
 	}
 	return recorded, nil
+}
+
+func (repository *Repository) runtimeBindingConsumptionDrift(ctx context.Context, binding runnerstore.V2AuthorityBindingView, kind authoritycontract.Kind) (string, error) {
+	var jobState, attemptState, leaseState, currentAttempt string
+	var currentFence, revision, generation int64
+	var pendingCancel bool
+	err := repository.pool.QueryRow(ctx, `SELECT j.state,a.state,l.state,j.current_attempt_id,a.fencing_token,
+b.current_run_revision,b.current_resume_generation,EXISTS (
+ SELECT 1 FROM workflow_runner_cancel_controls c WHERE c.attempt_id=a.attempt_id AND c.state IN ('pending','sent')
+)
+FROM workflow_runner_jobs j
+JOIN workflow_runner_attempts a ON a.attempt_id=$1
+JOIN workflow_runner_leases l ON l.lease_id=$2 AND l.attempt_id=a.attempt_id
+JOIN workflow_runner_v2_attempt_bindings b ON b.attempt_id=a.attempt_id
+WHERE j.workspace_id=$3 AND j.job_id=$4`, binding.AttemptID, binding.LeaseID, binding.WorkspaceID, binding.JobID).Scan(
+		&jobState, &attemptState, &leaseState, &currentAttempt, &currentFence, &revision, &generation, &pendingCancel,
+	)
+	if err != nil {
+		return "process_crash", databaseFailure("read runtime binding consumption head", err)
+	}
+	if pendingCancel || jobState == string(runnerstore.JobCancelling) || attemptState == string(runnerstore.AttemptCancelling) || leaseState == "cancelling" {
+		return "cancelled_with_outstanding_authority", nil
+	}
+	if jobState == string(runnerstore.JobTerminal) || jobState == string(runnerstore.JobReconciliationRequired) ||
+		attemptState == string(runnerstore.AttemptTerminal) || attemptState == string(runnerstore.AttemptReconciliationRequired) {
+		return "terminal_with_outstanding_authority", nil
+	}
+	expectedJob, expectedAttempt, expectedLease := string(runnerstore.JobRunning), string(runnerstore.AttemptRunning), "active"
+	if kind == authoritycontract.KindLeaseAccept {
+		expectedJob, expectedAttempt, expectedLease = string(runnerstore.JobOffered), string(runnerstore.AttemptOffered), "offered"
+	}
+	if currentAttempt != binding.AttemptID || currentFence != binding.FencingToken || revision != binding.ExpectedRunRevision || generation != binding.ExpectedGeneration ||
+		jobState != expectedJob || attemptState != expectedAttempt || leaseState != expectedLease {
+		return "process_crash", nil
+	}
+	return "", nil
+}
+
+func (repository *Repository) readRuntimeBudgetSource(ctx context.Context, binding runnerstore.V2AuthorityBindingView) ([]byte, []byte, error) {
+	if repository.v2BudgetResults == nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "budget result point-read is unavailable", nil)
+	}
+	resolution, err := runnerbindingcontract.ParseResolutionBytes(binding.ExactResolutionBytes)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored budget binding resolution is invalid", err)
+	}
+	evidence := runtimeBindingRecord(resolution["evidence"])
+	preparedValue := evidence["preparedRequest"]
+	prepared, _, err := budgetcontract.ValidatePreparedRequestRecord(preparedValue)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "budget binding prepared request is invalid", err)
+	}
+	result, err := repository.v2BudgetResults.ReadMutationResult(ctx, binding.WorkspaceID, prepared.IdempotencyKey)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "read exact immutable budget result", err)
+	}
+	if result.Operation != prepared.Operation || result.Record == nil || result.LedgerEntry == nil || result.Reconciliation != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "budget point-read did not prove a closed accepted result", nil)
+	}
+	var exact []byte
+	switch binding.Operation {
+	case runnerbindingcontract.OperationBudgetReserve:
+		if prepared.Operation != "reserve" {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "budget reserve binding points at another operation", nil)
+		}
+		value := runnerbindingcontract.Record{
+			"schema": runnerbindingcontract.BudgetSourceResultSchema, "durableReceiptBytes": string(result.ExactReceiptBytes),
+			"decision": result.Record, "ledgerEntry": result.LedgerEntry,
+		}
+		exact, err = canonicaljson.Encode(value)
+		if err == nil {
+			exact = append(exact, '\n')
+			_, err = runnerbindingcontract.ParseBudgetSourceResultBytes(exact, preparedValue)
+		}
+	case runnerbindingcontract.OperationBudgetSettle:
+		if prepared.Operation != "settle" || result.Status != "settled" {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "budget settlement did not produce a terminal accepted result", nil)
+		}
+		exact = append([]byte(nil), result.ExactReceiptBytes...)
+		_, err = runnerbindingcontract.ParseBudgetSettlementSourceReceiptBytes(exact, preparedValue)
+	default:
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "runtime budget point-read was requested for a non-budget binding", nil)
+	}
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "exact immutable budget result is cross-spliced", err)
+	}
+	digest := sha256.Sum256(exact)
+	return exact, digest[:], nil
+}
+
+func (repository *Repository) latchRuntimeBindingReconciliation(ctx context.Context, binding runnerstore.V2AuthorityBindingView, reason string) error {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return databaseFailure("begin budget source reconciliation", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if err := lockScopes(ctx, tx, bindingLockDomain+binding.BindingID, binding.WorkspaceID, binding.JobID); err != nil {
+		return err
+	}
+	var state string
+	if err := tx.QueryRow(ctx, `SELECT state FROM workflow_runner_authority_bindings WHERE binding_id=$1 FOR UPDATE`, binding.BindingID).Scan(&state); err != nil {
+		return databaseFailure("lock budget source reconciliation binding", err)
+	}
+	if state == "reconciliation_required" {
+		return tx.Commit(ctx)
+	}
+	if state != "resolved" {
+		return runnerstore.Failure(runnerstore.ErrorSequenceConflict, "authority-binding reconciliation lost its resolved predecessor", nil)
+	}
+	reconciliationID, err := randomToken("wfrunner-reconciliation")
+	if err != nil {
+		return databaseFailure("generate budget source reconciliation identity", err)
+	}
+	evidenceHash := sha256.Sum256(append(append(append([]byte(binding.BindingID), 0), []byte(reason)...), binding.ExactResolutionReceipt...))
+	if _, err := tx.Exec(ctx, `INSERT INTO workflow_runner_authority_reconciliations
+(reconciliation_id,binding_id,workspace_id,job_id,attempt_id,reason,evidence_hash,created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,clock_timestamp())`, reconciliationID, binding.BindingID,
+		binding.WorkspaceID, binding.JobID, binding.AttemptID, reason, evidenceHash[:]); err != nil {
+		return mapWriteFailure("insert authority-binding reconciliation", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE workflow_runner_authority_bindings
+SET state='reconciliation_required',reconciliation_id=$2,reconciliation_reason=$3,updated_at=clock_timestamp()
+WHERE binding_id=$1 AND state='resolved'`, binding.BindingID, reconciliationID, reason); err != nil {
+		return mapWriteFailure("latch authority-binding reconciliation", err)
+	}
+	return tx.Commit(ctx)
+}
+
+func runtimeBindingKind(kind authoritycontract.Kind) bool {
+	_, ok := runnerbindingcontract.OperationForKind(kind)
+	return ok
+}
+
+func (repository *Repository) isInitialV2LeaseAccept(ctx context.Context, message authoritycontract.Message) bool {
+	return repository.hasV2LeaseAdmission(ctx, message, "initial")
+}
+
+func (repository *Repository) isResumeV2LeaseAccept(ctx context.Context, message authoritycontract.Message) bool {
+	return repository.hasV2LeaseAdmission(ctx, message, "resume")
+}
+
+func (repository *Repository) hasV2LeaseAdmission(ctx context.Context, message authoritycontract.Message, expected string) bool {
+	if message.AttemptID == nil || message.JobID == nil || message.WorkflowRunID == nil || message.LeaseID == nil ||
+		message.FencingToken == nil || message.Sequence == nil || *message.Sequence != 1 {
+		return false
+	}
+	var key, workspaceID string
+	var fingerprint, exactRequest []byte
+	var workerSequence int64
+	err := repository.pool.QueryRow(ctx, `SELECT admission.idempotency_key,admission.workspace_id,
+admission.request_fingerprint,admission.exact_request_bytes,a.worker_sequence
+FROM workflow_runner_attempts a
+JOIN workflow_runner_jobs j ON j.current_attempt_id=a.attempt_id
+JOIN workflow_runner_v2_attempt_bindings b ON b.attempt_id=a.attempt_id
+JOIN workflow_runner_v2_runtime_admissions admission
+  ON admission.attempt_id=b.attempt_id
+ AND admission.workspace_id=b.workspace_id AND admission.job_id=b.job_id
+ AND admission.admission_disposition=b.admission_disposition
+ AND admission.job_spec_hash=b.admission_job_spec_hash
+WHERE a.attempt_id=$1 AND a.workspace_id=$2 AND a.job_id=$3 AND a.state='offered'
+  AND j.workflow_run_id=$4
+  AND admission.lease_id=$5
+  AND admission.fencing_token=$6
+  AND admission.lease_id=(SELECT lease_id FROM workflow_runner_leases
+      WHERE attempt_id=a.attempt_id AND fencing_token=a.fencing_token)`,
+		*message.AttemptID, message.WorkspaceID, *message.JobID, *message.WorkflowRunID,
+		*message.LeaseID, *message.FencingToken).Scan(&key, &workspaceID, &fingerprint, &exactRequest, &workerSequence)
+	if err != nil || workerSequence != 0 {
+		return false
+	}
+	receipt, found, err := readV2RuntimeAdmissionReceipt(
+		repository.pool.QueryRow(ctx, v2RuntimeAdmissionByKeySQL, key), workspaceID, fingerprint, exactRequest,
+	)
+	return err == nil && found && receipt.Disposition == expected
 }
 
 type stagedV2Event struct {
@@ -115,7 +365,7 @@ LEFT JOIN workflow_runner_control_messages d ON d.control_event_id=b.decision_co
 LEFT JOIN workflow_runner_v2_event_inbox i ON i.event_id=e.event_id
 WHERE e.idempotency_key=$1`
 
-func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessage, exactEventBytes []byte) (runnerstore.V2RecordedEvent, bool, error) {
+func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessage, exactEventBytes []byte, runtimeBinding *runnerstore.V2AuthorityBindingView) (runnerstore.V2RecordedEvent, bool, error) {
 	var fingerprint, storedEvent, eventDigest, receiptBytes, receiptDigest, receiptControlBytes, receiptControlDigest []byte
 	var workspaceID, jobID, attemptID, leaseID, eventKind, idempotencyKey string
 	var fence, workerSequence int64
@@ -156,11 +406,18 @@ func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessag
 	}
 	receiptPrepared, err := prepareV2Message(receipt)
 	storedReceiptDigest, _ := hex.DecodeString(receiptPrepared.MessageDigest)
+	runtimeAuthorityReceipt := false
+	var runtimeReceiptValue runnerbindingcontract.Record
+	var runtimeAuthorityErr error
+	if len(authorityReceiptBytes) != 0 {
+		runtimeReceiptValue, runtimeAuthorityErr = runnerbindingcontract.ParseReceiptBytes(authorityReceiptBytes)
+		runtimeAuthorityReceipt = runtimeAuthorityErr == nil
+	}
 	if err != nil || !bytes.Equal([]byte(receiptPrepared.Body), receiptBytes) || !bytes.Equal(receiptControlBytes, receiptBytes) ||
 		subtle.ConstantTimeCompare(receiptDigest, storedReceiptDigest) != 1 || subtle.ConstantTimeCompare(receiptControlDigest, storedReceiptDigest) != 1 ||
 		receiptStatus != string(runnerstore.ReceiptAccepted) || receiptReconciliationID != nil ||
 		receiptControlID != receipt.EventID || receiptControlAttempt != attemptID || receiptControlKind != string(authoritycontract.KindEventReceipt) ||
-		receipt.Sequence == nil || receiptControlSequence != *receipt.Sequence || validateStoredV2EventReceipt(event, prepared, receipt, hex.EncodeToString(durableControlBuildHash)) != nil {
+		receipt.Sequence == nil || receiptControlSequence != *receipt.Sequence || validateStoredV2EventReceipt(event, prepared, receipt, hex.EncodeToString(durableControlBuildHash), authorityOperation, runtimeAuthorityReceipt) != nil {
 		return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored v2 runner receipt binding is invalid", err)
 	}
 	result := runnerstore.V2RecordedEvent{Receipt: receipt, ReceiptBytes: receiptBytes, Status: runnerstore.ReceiptAccepted,
@@ -194,8 +451,40 @@ func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessag
 		advance := v2Advance(event.Kind, *event.ResumeGeneration)
 		expectedRevision := *event.RunRevision + advance.runDelta
 		expectedGeneration := *event.ResumeGeneration + advance.resumeDelta
+		runtimeReceipt := false
+		if _, parseErr := runnerbindingcontract.ParseReceiptBytes(authorityReceiptBytes); parseErr == nil {
+			operation := runnerbindingcontract.Operation(*authorityOperation)
+			delta, deltaErr := runnerbindingcontract.RunnerHeadDelta(operation)
+			expectedKind, kindErr := runnerbindingcontract.ExpectedKind(operation)
+			if deltaErr != nil || kindErr != nil || expectedKind != event.Kind ||
+				bindingString(runtimeReceiptValue, "operation") != *authorityOperation {
+				return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored runtime authority operation is invalid", deltaErr)
+			}
+			expectedRevision = *event.RunRevision + delta.Revision
+			expectedGeneration = *event.ResumeGeneration + delta.Generation
+			runtimeReceipt = true
+			if runtimeBinding == nil || runtimeBinding.Operation != operation ||
+				runtimeBinding.State != "runner_committed" && runtimeBinding.State != "completed" ||
+				runtimeBinding.TargetEventID != event.EventID || runtimeBinding.TargetKind != string(event.Kind) ||
+				runtimeBinding.TargetSequence != *event.Sequence || !bytes.Equal(runtimeBinding.ExactTargetBytes, exactEventBytes) ||
+				runtimeBinding.AttemptID != *event.AttemptID || runtimeBinding.LeaseID != *event.LeaseID ||
+				runtimeBinding.FencingToken != *event.FencingToken || runtimeBinding.ExpectedRunRevision != *event.RunRevision ||
+				runtimeBinding.ExpectedGeneration != *event.ResumeGeneration || runtimeBinding.AcceptedRunRevision != expectedRevision ||
+				runtimeBinding.AcceptedGeneration != expectedGeneration ||
+				!bytes.Equal(runtimeBinding.ExactResolutionReceipt, authorityReceiptBytes) {
+				return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored runtime authority binding replay is cross-spliced", nil)
+			}
+		}
 		outcome := runnerstore.V2AuthorityOutcome{Operation: authoritycontract.ReceiptOperation(*authorityOperation), ExactReceiptBytes: authorityReceiptBytes,
-			AcceptedRunRevision: expectedRevision, AcceptedResumeGeneration: expectedGeneration, Decision: result.Decision, DecisionBytes: result.DecisionBytes}
+			AcceptedRunRevision: expectedRevision, AcceptedResumeGeneration: expectedGeneration, Decision: result.Decision, DecisionBytes: result.DecisionBytes,
+			RuntimeBinding: runtimeBinding}
+		if runtimeReceipt {
+			decisionExpected := *authorityOperation == string(runnerbindingcontract.OperationEffectAuthorize) ||
+				*authorityOperation == string(runnerbindingcontract.OperationBudgetReserve) || *authorityOperation == string(runnerbindingcontract.OperationResumeAdvance)
+			if decisionExpected != (result.Decision != nil) {
+				return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored runtime authority decision presence drifted", nil)
+			}
+		}
 		if _, _, validateErr := validateV2AuthorityResult(event, receiptControlSequence+1, outcome); validateErr != nil {
 			return runnerstore.V2RecordedEvent{}, false, runnerstore.Failure(runnerstore.ErrorReconciliation, "stored v2 authority replay binding is invalid", validateErr)
 		}
@@ -205,14 +494,14 @@ func readV2EventReplayRow(row pgx.Row, prepared authoritycontract.PreparedMessag
 	return result, true, nil
 }
 
-func validateStoredV2EventReceipt(event authoritycontract.Message, prepared authoritycontract.PreparedMessage, receipt authoritycontract.Message, controlBuildHash string) error {
+func validateStoredV2EventReceipt(event authoritycontract.Message, prepared authoritycontract.PreparedMessage, receipt authoritycontract.Message, controlBuildHash string, authorityOperation *string, runtimeAuthority bool) error {
 	if receipt.JobID == nil || receipt.WorkflowRunID == nil || receipt.AttemptID == nil || receipt.LeaseID == nil || receipt.FencingToken == nil ||
 		receipt.AuthorityBackend == nil || receipt.Authority == nil || receipt.RoutingEpoch == nil || receipt.AuthorityBuildHash == nil ||
 		receipt.RunRevision == nil || receipt.ResumeGeneration == nil || receipt.Sequence == nil ||
 		receipt.WorkspaceID != event.WorkspaceID || *receipt.JobID != *event.JobID || *receipt.WorkflowRunID != *event.WorkflowRunID ||
 		*receipt.AttemptID != *event.AttemptID || *receipt.LeaseID != *event.LeaseID || *receipt.FencingToken != *event.FencingToken ||
 		*receipt.AuthorityBackend != *event.AuthorityBackend || *receipt.Authority != *event.Authority || *receipt.RoutingEpoch != *event.RoutingEpoch ||
-		*receipt.AuthorityBuildHash != *event.AuthorityBuildHash || *receipt.ResumeGeneration != *event.ResumeGeneration ||
+		*receipt.AuthorityBuildHash != *event.AuthorityBuildHash ||
 		receipt.EventID != "receipt-"+event.EventID || receipt.CorrelationID != event.CorrelationID ||
 		receipt.Payload["receivedEventId"] != event.EventID || receipt.Payload["receivedKind"] != string(event.Kind) ||
 		receipt.Payload["receivedSequence"] != *event.Sequence || receipt.Payload["receivedDigest"] != prepared.MessageDigest ||
@@ -223,8 +512,15 @@ func validateStoredV2EventReceipt(event authoritycontract.Message, prepared auth
 	}
 	advance := v2Advance(event.Kind, *event.ResumeGeneration)
 	expectedRevision := *event.RunRevision + advance.runDelta
-	if *receipt.RunRevision != expectedRevision {
-		return runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "stored v2 event receipt revision drifted", nil)
+	expectedGeneration := *event.ResumeGeneration + advance.resumeDelta
+	if runtimeAuthority && authorityOperation != nil {
+		if delta, err := runnerbindingcontract.RunnerHeadDelta(runnerbindingcontract.Operation(*authorityOperation)); err == nil {
+			expectedRevision = *event.RunRevision + delta.Revision
+			expectedGeneration = *event.ResumeGeneration + delta.Generation
+		}
+	}
+	if *receipt.RunRevision != expectedRevision || *receipt.ResumeGeneration != expectedGeneration {
+		return runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "stored v2 event receipt revision or generation drifted", nil)
 	}
 	return nil
 }
@@ -338,7 +634,7 @@ func (repository *Repository) stageV2Event(ctx context.Context, input runnerstor
 	if err := lockScopes(ctx, tx, prepared.IdempotencyKey, message.WorkspaceID, *message.JobID); err != nil {
 		return stagedV2Event{}, err
 	}
-	if recorded, found, replayErr := readV2EventReplayRow(tx.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey), prepared, input.ExactBytes); replayErr != nil {
+	if recorded, found, replayErr := readV2EventReplayRow(tx.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey), prepared, input.ExactBytes, nil); replayErr != nil {
 		return stagedV2Event{}, replayErr
 	} else if found {
 		recorded.Duplicate = true
@@ -413,7 +709,11 @@ func (repository *Repository) finalizeV2Event(ctx context.Context, input runners
 	if err := lockScopes(ctx, tx, prepared.IdempotencyKey, message.WorkspaceID, *message.JobID); err != nil {
 		return runnerstore.V2RecordedEvent{}, err
 	}
-	if result, found, readErr := readV2EventReplayRow(tx.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey), prepared, input.ExactBytes); readErr != nil {
+	var replayBinding *runnerstore.V2AuthorityBindingView
+	if authority != nil {
+		replayBinding = authority.RuntimeBinding
+	}
+	if result, found, readErr := readV2EventReplayRow(tx.QueryRow(ctx, v2EventReplaySQL, prepared.IdempotencyKey), prepared, input.ExactBytes, replayBinding); readErr != nil {
 		return runnerstore.V2RecordedEvent{}, readErr
 	} else if found {
 		return result, nil
@@ -440,13 +740,20 @@ func (repository *Repository) finalizeV2Event(ctx context.Context, input runners
 	nextControl := current.controlSequence + 1
 	receiptRunRevision, nextResumeGeneration := *message.RunRevision, *message.ResumeGeneration
 	if authority != nil {
+		if authority.RuntimeBinding != nil {
+			decision, decisionBytes, buildErr := buildRuntimeBindingDecision(message, current.controlSequence+2, now, *authority.RuntimeBinding)
+			if buildErr != nil {
+				return runnerstore.V2RecordedEvent{}, buildErr
+			}
+			authority.Decision, authority.DecisionBytes = decision, decisionBytes
+		}
 		var validateErr error
 		receiptRunRevision, nextResumeGeneration, validateErr = validateV2AuthorityResult(message, current.controlSequence+2, *authority)
 		if validateErr != nil {
 			return runnerstore.V2RecordedEvent{}, validateErr
 		}
 	}
-	receipt := v2EventReceipt(message, prepared, nextControl, receiptRunRevision, *message.ResumeGeneration, input.ControlBuildHash, now)
+	receipt := v2EventReceipt(message, prepared, nextControl, receiptRunRevision, nextResumeGeneration, input.ControlBuildHash, now)
 	receiptPrepared, err := prepareV2Message(receipt)
 	if err != nil {
 		return runnerstore.V2RecordedEvent{}, err
@@ -465,6 +772,35 @@ func (repository *Repository) finalizeV2Event(ctx context.Context, input runners
 	}
 	eventDigest, _ := hex.DecodeString(prepared.MessageDigest)
 	receiptDigest, _ := hex.DecodeString(receiptPrepared.MessageDigest)
+	if authority != nil && authority.RuntimeBinding != nil {
+		binding := authority.RuntimeBinding
+		var bindingState string
+		var boundTarget, boundResolutionReceipt, boundSourceResult, boundSourceHash []byte
+		if err := tx.QueryRow(ctx, `SELECT state,exact_target_bytes,exact_resolution_receipt_bytes,exact_source_result_bytes,source_result_hash
+FROM workflow_runner_authority_bindings WHERE binding_id=$1 AND target_event_id=$2 FOR UPDATE`,
+			binding.BindingID, message.EventID).Scan(&bindingState, &boundTarget, &boundResolutionReceipt, &boundSourceResult, &boundSourceHash); err != nil {
+			return runnerstore.V2RecordedEvent{}, databaseFailure("lock runtime authority binding for runner commit", err)
+		}
+		if bindingState != "resolved" || !bytes.Equal(boundTarget, input.ExactBytes) || !bytes.Equal(boundResolutionReceipt, authority.ExactReceiptBytes) ||
+			len(boundSourceResult) != 0 || len(boundSourceHash) != 0 {
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "runtime authority binding changed before runner commit", nil)
+		}
+		if (binding.Operation == runnerbindingcontract.OperationBudgetReserve || binding.Operation == runnerbindingcontract.OperationBudgetSettle) &&
+			(len(binding.ExactSourceResult) == 0 || len(binding.SourceResultHash) != sha256.Size) {
+			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "runtime budget binding lacks its exact point-read result", nil)
+		}
+		authorityHashValue := sha256.Sum256(authority.ExactReceiptBytes)
+		if _, err := tx.Exec(ctx, `INSERT INTO workflow_runner_v2_event_inbox (
+event_id,workspace_id,job_id,attempt_id,lease_id,fencing_token,worker_sequence,kind,run_revision,resume_generation,
+idempotency_key,request_fingerprint,message_digest,exact_event_bytes,state,authority_operation,authority_receipt_hash,
+exact_authority_receipt_bytes,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'authority_committed',$15,$16,$17,$18,$18)`,
+			message.EventID, message.WorkspaceID, *message.JobID, *message.AttemptID, *message.LeaseID, *message.FencingToken,
+			*message.Sequence, string(message.Kind), *message.RunRevision, *message.ResumeGeneration, prepared.IdempotencyKey,
+			fingerprint, eventDigest, input.ExactBytes, string(binding.Operation), authorityHashValue[:], authority.ExactReceiptBytes, now); err != nil {
+			return runnerstore.V2RecordedEvent{}, mapWriteFailure("stage resolved runtime authority event", err)
+		}
+	}
 	if _, err := tx.Exec(ctx, workerEventInsertSQL, message.EventID, message.WorkspaceID, *message.JobID, *message.AttemptID,
 		*message.LeaseID, *message.FencingToken, *message.Sequence, string(message.Kind), prepared.IdempotencyKey,
 		fingerprint, eventDigest, input.ExactBytes, now); err != nil {
@@ -513,6 +849,18 @@ WHERE attempt_id=$5 AND current_run_revision=$6 AND current_resume_generation=$7
 		}
 		if tag.RowsAffected() != 1 {
 			return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "v2 authority binding CAS lost", nil)
+		}
+		if authority.RuntimeBinding != nil {
+			tag, err = tx.Exec(ctx, `UPDATE workflow_runner_authority_bindings
+SET state='runner_committed',exact_source_result_bytes=$2,source_result_hash=$3,updated_at=$4
+WHERE binding_id=$1 AND state='resolved'`, authority.RuntimeBinding.BindingID,
+				nullableBytes(authority.RuntimeBinding.ExactSourceResult), nullableBytes(authority.RuntimeBinding.SourceResultHash), now)
+			if err != nil {
+				return runnerstore.V2RecordedEvent{}, mapWriteFailure("advance runtime authority binding to runner committed", err)
+			}
+			if tag.RowsAffected() != 1 {
+				return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "runtime authority binding runner commit CAS lost", nil)
+			}
 		}
 	}
 	acceptedAt, startedAt, finishedAt := any(nil), any(nil), any(nil)
@@ -597,7 +945,145 @@ func v2EventReceipt(message authoritycontract.Message, prepared authoritycontrac
 			"committedAt": runnerstore.CanonicalTimestamp(now), "errorCode": nil}}
 }
 
+func runtimeBindingRecord(value any) map[string]any {
+	switch current := value.(type) {
+	case runnerbindingcontract.Record:
+		return map[string]any(current)
+	case budgetcontract.Record:
+		return map[string]any(current)
+	case map[string]any:
+		return current
+	default:
+		return nil
+	}
+}
+
+func buildRuntimeBindingDecision(message authoritycontract.Message, sequence int64, now time.Time, binding runnerstore.V2AuthorityBindingView) (*authoritycontract.Message, []byte, error) {
+	if binding.Operation != runnerbindingcontract.OperationEffectAuthorize && binding.Operation != runnerbindingcontract.OperationBudgetReserve &&
+		binding.Operation != runnerbindingcontract.OperationResumeAdvance {
+		return nil, nil, nil
+	}
+	stage, err := runnerbindingcontract.ParseStageBytes(binding.ExactStageBytes)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding stage is invalid", err)
+	}
+	stageReceipt, err := runnerbindingcontract.ParseReceiptBytes(binding.ExactStageReceipt)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding stage receipt is invalid", err)
+	}
+	resolution, err := runnerbindingcontract.ParseResolutionBytes(binding.ExactResolutionBytes)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution is invalid", err)
+	}
+	resolutionReceipt, err := runnerbindingcontract.ParseReceiptBytes(binding.ExactResolutionReceipt)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution receipt is invalid", err)
+	}
+	if _, err := runnerbindingcontract.ValidateResolutionReceipt(resolutionReceipt, resolution, stage, stageReceipt); err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution exchange is cross-spliced", err)
+	}
+	evidence := runtimeBindingRecord(resolution["evidence"])
+	kind := authoritycontract.Kind("")
+	payload := map[string]any{}
+	runRevision, generation := binding.AcceptedRunRevision, binding.AcceptedGeneration
+	decisionHash, err := runnerbindingcontract.HashReceipt(resolutionReceipt)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "hash runtime binding resolution receipt", err)
+	}
+	switch binding.Operation {
+	case runnerbindingcontract.OperationEffectAuthorize:
+		kind = authoritycontract.KindEffectAuthorization
+		payload = map[string]any{
+			"effectId": evidence["effectId"], "effectHash": evidence["effectHash"], "approvalId": evidence["approvalId"],
+			"approvalStatus": evidence["approvalStatus"], "decisionRevision": evidence["decisionRevision"],
+			"grantHash": evidence["grantHash"], "authorityReceiptHash": decisionHash, "expiresAt": evidence["expiresAt"],
+		}
+	case runnerbindingcontract.OperationResumeAdvance:
+		kind = authoritycontract.KindResumeOffer
+		runRevision, generation = binding.ExpectedRunRevision, binding.ExpectedGeneration
+		payload = map[string]any{
+			"checkpointId": evidence["priorCheckpointId"], "checkpointHash": evidence["priorCheckpointHash"],
+			"nextPhaseId": evidence["nextPhaseId"], "nextPhaseIndex": evidence["nextPhaseIndex"],
+			"newResumeGeneration": binding.AcceptedGeneration, "newAttemptId": evidence["logicalResumeAttemptId"],
+			"authorityReceiptHash": decisionHash, "expiresAt": evidence["expiresAt"],
+		}
+	case runnerbindingcontract.OperationBudgetReserve:
+		if len(binding.ExactSourceResult) == 0 {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "budget runtime binding has no exact durable Go source result", nil)
+		}
+		preparedRequest := evidence["preparedRequest"]
+		source, sourceErr := runnerbindingcontract.ParseBudgetSourceResultBytes(binding.ExactSourceResult, preparedRequest)
+		if sourceErr != nil {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "budget runtime source result is invalid", sourceErr)
+		}
+		decision := runtimeBindingRecord(source["decision"])
+		authorization := runtimeBindingRecord(decision["authorization"])
+		durable, durableErr := runnerbindingcontract.ParseBudgetDurableReceiptBytes(source["durableReceiptBytes"])
+		if durableErr != nil {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "parse durable budget receipt", durableErr)
+		}
+		projection := runtimeBindingRecord(durable["operationalProjection"])
+		committedRunRevision, committedRevisionOK := projection["acceptedRunRevision"].(int64)
+		if !committedRevisionOK || committedRunRevision < 1 {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "durable budget receipt has no accepted source revision", nil)
+		}
+		durableHash, hashErr := runnerbindingcontract.HashBudgetSourceReceipt(source["durableReceiptBytes"])
+		if hashErr != nil {
+			return nil, nil, runnerstore.Failure(runnerstore.ErrorReconciliation, "hash durable budget receipt", hashErr)
+		}
+		kind = authoritycontract.KindBudgetAuthorization
+		payload = map[string]any{
+			"reservationId": message.Payload["reservationId"], "status": decision["status"],
+			"authorizedTokens": authorization["tokens"], "authorizedCostNanoUsd": authorization["nanoUsd"],
+			"authorizedCalls": authorization["calls"], "authorityReceiptHash": durableHash,
+			"committedRunRevision": committedRunRevision,
+		}
+	}
+	decision := authoritycontract.Message{
+		Schema: authoritycontract.MessageSchema, ProtocolVersion: authoritycontract.ProtocolVersion, Kind: kind,
+		WorkspaceID: message.WorkspaceID, JobID: message.JobID, WorkflowRunID: message.WorkflowRunID,
+		AttemptID: message.AttemptID, LeaseID: message.LeaseID, FencingToken: message.FencingToken, Sequence: &sequence,
+		AuthorityBackend: message.AuthorityBackend, Authority: message.Authority, RoutingEpoch: message.RoutingEpoch,
+		AuthorityBuildHash: message.AuthorityBuildHash, RunRevision: &runRevision, ResumeGeneration: &generation,
+		EventID: "binding-" + string(kind) + "-" + binding.BindingID, CorrelationID: message.CorrelationID,
+		SentAt: runnerstore.CanonicalTimestamp(now), Payload: payload,
+	}
+	prepared, err := prepareV2Message(decision)
+	if err != nil {
+		return nil, nil, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "build runtime binding decision", err)
+	}
+	return &decision, []byte(prepared.Body), nil
+}
+
 func validateV2AuthorityResult(message authoritycontract.Message, decisionSequence int64, result runnerstore.V2AuthorityOutcome) (int64, int64, error) {
+	if result.RuntimeBinding != nil {
+		binding := result.RuntimeBinding
+		expectedKind, kindErr := runnerbindingcontract.ExpectedKind(binding.Operation)
+		delta, deltaErr := runnerbindingcontract.RunnerHeadDelta(binding.Operation)
+		if kindErr != nil || deltaErr != nil || expectedKind != message.Kind || binding.TargetEventID != message.EventID ||
+			binding.AttemptID != *message.AttemptID || binding.LeaseID != *message.LeaseID || binding.FencingToken != *message.FencingToken ||
+			binding.ExpectedRunRevision != *message.RunRevision || binding.ExpectedGeneration != *message.ResumeGeneration ||
+			binding.AcceptedRunRevision != *message.RunRevision+delta.Revision ||
+			binding.AcceptedGeneration != *message.ResumeGeneration+delta.Generation ||
+			result.Operation != authoritycontract.ReceiptOperation(binding.Operation) ||
+			result.AcceptedRunRevision != binding.AcceptedRunRevision || result.AcceptedResumeGeneration != binding.AcceptedGeneration ||
+			!bytes.Equal(result.ExactReceiptBytes, binding.ExactResolutionReceipt) {
+			return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "runtime authority binding matrix or exact event identity drifted", errors.Join(kindErr, deltaErr))
+		}
+		decisionExpected := binding.Operation == runnerbindingcontract.OperationEffectAuthorize ||
+			binding.Operation == runnerbindingcontract.OperationBudgetReserve || binding.Operation == runnerbindingcontract.OperationResumeAdvance
+		if decisionExpected != (result.Decision != nil) {
+			return 0, 0, runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime authority binding decision presence drifted", nil)
+		}
+		if result.Decision != nil {
+			prepared, err := prepareV2Message(*result.Decision)
+			if err != nil || !bytes.Equal([]byte(prepared.Body), result.DecisionBytes) || result.Decision.Sequence == nil ||
+				*result.Decision.Sequence != decisionSequence || result.Decision.AttemptID == nil || *result.Decision.AttemptID != binding.AttemptID {
+				return 0, 0, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "runtime authority binding decision bytes drifted", err)
+			}
+		}
+		return binding.AcceptedRunRevision, binding.AcceptedGeneration, nil
+	}
 	if len(result.ExactReceiptBytes) == 0 {
 		return 0, 0, runnerstore.Failure(runnerstore.ErrorReconciliation, "v2 authority receipt is missing", nil)
 	}

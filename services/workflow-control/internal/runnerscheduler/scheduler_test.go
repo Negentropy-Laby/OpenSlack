@@ -37,6 +37,25 @@ func TestSchedulerRateLimitsSettledRetryableSessionFailure(t *testing.T) {
 	}
 }
 
+func TestSchedulerRequiresAndConsumesV2AuthorityRecovery(t *testing.T) {
+	now := time.Now().UTC()
+	base := testScheduler(t, &schedulerStore{}, now).config
+	base.V2RuntimeDelivery = true
+	if _, err := New(base); err == nil || !strings.Contains(err.Error(), "authority recovery store is required") {
+		t.Fatalf("runtime delivery accepted without startup recovery capability: %v", err)
+	}
+	base.AuthorityRecovery = authorityRecoveryFunc(func(context.Context, string, time.Time, int) (runnerstore.V2AuthorityRecoverySummary, error) {
+		return runnerstore.V2AuthorityRecoverySummary{Examined: 1, Reconciled: 2}, nil
+	})
+	scheduler, err := New(base)
+	if err != nil {
+		t.Fatalf("construct runtime-delivery scheduler: %v", err)
+	}
+	if err := scheduler.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "invalid recovery summary") {
+		t.Fatalf("scheduler discarded an invalid startup recovery summary: %v", err)
+	}
+}
+
 func testScheduler(t testing.TB, store SessionStore, now time.Time) *Scheduler {
 	t.Helper()
 	session, err := NewSession(SessionConfig{Store: store, Launcher: processLauncherFunc(func(context.Context) (WorkerProcess, error) { return nil, errors.New("launch failed") }), ControlBuildHash: strings.Repeat("f", 64), HeartbeatInterval: time.Second, LeaseOfferTimeout: time.Second, CancelWindow: time.Second, CancelGrace: 10 * time.Millisecond, TerminalExitGrace: 10 * time.Millisecond, PollInterval: 10 * time.Millisecond, Now: func() time.Time { return now }})
@@ -57,6 +76,12 @@ type schedulerStore struct {
 	claims      int
 	settledView runnerstore.JobView
 	settleErr   error
+}
+
+type authorityRecoveryFunc func(context.Context, string, time.Time, int) (runnerstore.V2AuthorityRecoverySummary, error)
+
+func (function authorityRecoveryFunc) RecoverAuthorityBindingsAtStartup(ctx context.Context, workspaceID string, before time.Time, limit int) (runnerstore.V2AuthorityRecoverySummary, error) {
+	return function(ctx, workspaceID, before, limit)
 }
 
 var _ SessionStore = (*schedulerStore)(nil)

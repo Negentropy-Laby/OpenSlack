@@ -248,10 +248,10 @@ export function createRuntimeWithHostAuthorities(
   checkpointAuthority: WorkflowCheckpointLeaseAuthority,
   effectAuthorizationPort: WorkflowEffectAuthorizationPort,
 ): WorkflowCheckpointRuntime {
-  if (!options.runStore || !options.effectBoundary) {
+  if (!options.runStore) {
     throw workflowCheckpointError(
       'WORKFLOW_CHECKPOINT_BINDING_INVALID',
-      'Workflow host authority requires the accepted runner RunStore and effect boundary.',
+      'Workflow host authority requires the accepted runner RunStore.',
     );
   }
   return createRuntimeInternal(
@@ -311,7 +311,9 @@ function createRuntimeInternal(
     status: 'rejected' | 'executed' | 'failed' | 'reconciliation_required',
     evidence: unknown,
   ): Promise<void> {
-    if (handle) await options.effectBoundary!.outcome(handle, { status, evidence });
+    if (handle && options.effectBoundary) {
+      await options.effectBoundary.outcome(handle, { status, evidence });
+    }
   }
 
   function asEffectIntegrityFailure(error: unknown): Error | undefined {
@@ -440,6 +442,8 @@ function createRuntimeInternal(
     const claim = authorization.authority;
     let value: T;
     try {
+      throwIfAborted('effect_execution');
+      await effectAuthorizationPort.assertExecutable?.(claim);
       throwIfAborted('effect_execution');
       value = await effect();
     } catch (error) {

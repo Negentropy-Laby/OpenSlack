@@ -21,6 +21,14 @@ import {
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
+import {
+  WORKFLOW_CHECKPOINT_SHADOW_ENVELOPE_SCHEMA,
+  WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+  workflowCheckpointBytesHash,
+  workflowCheckpointHash,
+  type WorkflowCheckpointControlState,
+  type WorkflowCheckpointShadowEnvelope,
+} from './workflow-checkpoint-shadow-contract.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import {
   createWorkflowCheckpointObservationPort,
@@ -45,7 +53,24 @@ import type {
   ProviderAttemptReserveInput,
   ProviderUsageReceipt,
 } from '@openslack/agent-runtime';
-import { workflowBudgetAuthorityChargeNanoUsd } from './workflow-budget-authority-contract.js';
+import { buildProviderUsageIdentityHashes } from '@openslack/agent-runtime';
+import {
+  WORKFLOW_BUDGET_AUTHORITY,
+  WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
+  WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
+  WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
+  WORKFLOW_BUDGET_AUTHORITY_WRITER,
+  WORKFLOW_BUDGET_PROVIDER_USAGE_SCHEMA,
+  WORKFLOW_BUDGET_RESERVE_REQUEST_SCHEMA,
+  WORKFLOW_BUDGET_SETTLEMENT_REQUEST_SCHEMA,
+  hashWorkflowBudgetAuthorityValue,
+  parseWorkflowBudgetAuthorityBytes,
+  prepareWorkflowBudgetAuthorityRequest,
+  workflowBudgetAuthorityChargeNanoUsd,
+  type WorkflowBudgetReserveDecision,
+  type WorkflowBudgetReserveRequest,
+  type WorkflowBudgetSettlementRequest,
+} from './workflow-budget-authority-contract.js';
 import {
   decodeWorkflowRunnerV2Frame,
   WorkflowRunnerV2JsonlDecoder,
@@ -61,12 +86,39 @@ import {
   WorkflowRunnerV2SessionError,
   workflowRunnerV2BudgetDecisionMatchesRequest,
   type WorkflowRunnerV2ExecutionContext,
+  type WorkflowRunnerV2RuntimeDeliveryPort,
   type WorkflowRunnerV2SourceLoader,
 } from './workflow-runner-v2-session.js';
+import { createWorkflowRunnerAuthorityBindingClient } from './workflow-runner-authority-binding-client.js';
+import { WorkflowRunnerAuthorityBindingJournal } from './workflow-runner-authority-binding-journal.js';
+import { WorkflowRunnerAuthorityBindingRuntime } from './workflow-runner-authority-binding-runtime.js';
+import {
+  createWorkflowRunnerCheckpointSourceAdapter,
+  createWorkflowRunnerPreparedBudgetSourceAdapter,
+  createWorkflowRunnerResumeSourceAdapter,
+  WorkflowRunnerV2AuthoritySources,
+  type WorkflowRunnerV2AuthoritySourceFactories,
+} from './workflow-runner-runtime-authorities.js';
+import { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
+import { createWorkflowRunnerV2RuntimeAdmissionClient } from './workflow-runner-v2-runtime-admission.js';
+import { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
+import {
+  createWorkflowRunnerBudgetAuthorityClient,
+  type WorkflowRunnerBudgetAuthorityClient,
+} from './workflow-runner-budget-authority-client.js';
+import { canonicalWorkflowControlAuthorityJson } from './workflow-control-authority-contract.js';
+import { exactWorkflowRunnerLoopbackOrigin } from './workflow-runner-control-http.js';
+import type { WorkflowControlAuthorityMessage } from './workflow-control-authority-contract.js';
+import type {
+  WorkflowRunnerCheckpointAuthorityEvidence,
+  WorkflowRunnerResumeAuthorityEvidence,
+} from './workflow-runner-authority-binding-contract.js';
 
 export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
 export const WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV =
   'OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED' as const;
+export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
+  'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED' as const;
 
 export interface WorkflowRunnerWorkerConfig {
   readonly enabled: true;
@@ -91,11 +143,19 @@ export interface WorkflowRunnerWorkerConfig {
 export interface WorkflowRunnerV2QualificationWorkerConfig {
   readonly enabled: true;
   readonly qualificationOnly: true;
-  readonly runtimeBoundaryMode: 'provider-attempt-only';
+  readonly runtimeBoundaryMode: 'provider-attempt-only' | 'authority-binding-f2b';
   readonly workspaceId: string;
   readonly workspaceRoot: string;
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
+  readonly runtimeDelivery?: {
+    readonly companionOrigin: string;
+    readonly companionBearerToken: string;
+    readonly journalRoot: string;
+    readonly budgetOrigin: string;
+    readonly budgetBearerToken: string;
+    readonly budgetCallerId: string;
+  };
 }
 
 export class WorkflowRunnerWorkerConfigError extends Error {
@@ -213,6 +273,19 @@ function absolutePath(value: string | undefined, name: string): string {
     throw new WorkflowRunnerWorkerConfigError(`${name} must be a normalized absolute path.`);
   }
   return value;
+}
+
+function loopbackOrigin(value: string | undefined, name: string): string {
+  return exactWorkflowRunnerLoopbackOrigin(
+    value ?? '',
+    (message) => {
+      throw new WorkflowRunnerWorkerConfigError(message);
+    },
+    {
+      invalid: `${name} must be an exact loopback HTTP origin.`,
+      nonLoopback: `${name} must be an exact loopback HTTP origin.`,
+    },
+  );
 }
 
 export function loadWorkflowRunnerWorkerConfig(
@@ -395,20 +468,94 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
   if (!runnerBuildHash || !HASH.test(runnerBuildHash)) {
     throw new WorkflowRunnerWorkerConfigError('V2 qualification runner build hash is invalid.');
   }
+  const workspaceRoot = absolutePath(
+    environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
+    'V2 qualification workspace root',
+  );
+  const runtimeDeliveryKeys = [
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID',
+  ] as const;
+  const runtimeDeliveryEnabled =
+    environment[WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV] === '1';
+  const runtimeDeliveryFlag = environment[WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV];
+  if (
+    runtimeDeliveryFlag !== undefined &&
+    runtimeDeliveryFlag !== '0' &&
+    runtimeDeliveryFlag !== '1'
+  ) {
+    throw new WorkflowRunnerWorkerConfigError('V2 runtime delivery enablement is invalid.');
+  }
+  if (
+    !runtimeDeliveryEnabled &&
+    runtimeDeliveryKeys.some((key) => environment[key] !== undefined)
+  ) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled v2 runtime-delivery configuration must be empty.',
+    );
+  }
+  let runtimeDelivery: WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery'];
+  if (runtimeDeliveryEnabled) {
+    const companionBearerToken =
+      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN ?? '';
+    const expectedBearerHash =
+      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256 ?? '';
+    const budgetBearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN ?? '';
+    const budgetCallerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID ?? '';
+    if (
+      companionBearerToken.length < 32 ||
+      !HASH.test(expectedBearerHash) ||
+      createHash('sha256').update(companionBearerToken, 'utf8').digest('hex') !==
+        expectedBearerHash ||
+      budgetBearerToken.length < 32 ||
+      !SAFE_ID.test(budgetCallerId)
+    ) {
+      throw new WorkflowRunnerWorkerConfigError(
+        'V2 runtime-delivery bearer or budget caller identity is invalid.',
+      );
+    }
+    const journalRoot = absolutePath(
+      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT,
+      'V2 runtime-delivery journal root',
+    );
+    const localStateRoot = join(workspaceRoot, '.openslack.local');
+    if (!within(localStateRoot, journalRoot) || journalRoot === localStateRoot) {
+      throw new WorkflowRunnerWorkerConfigError(
+        'V2 runtime-delivery journal must be beneath the workspace-local state root.',
+      );
+    }
+    runtimeDelivery = Object.freeze({
+      companionOrigin: loopbackOrigin(
+        environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN,
+        'V2 runtime-delivery companion origin',
+      ),
+      companionBearerToken,
+      journalRoot,
+      budgetOrigin: loopbackOrigin(
+        environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN,
+        'V2 budget authority origin',
+      ),
+      budgetBearerToken,
+      budgetCallerId,
+    });
+  }
   return Object.freeze({
     enabled: true,
     qualificationOnly: true,
-    runtimeBoundaryMode: 'provider-attempt-only',
+    runtimeBoundaryMode: runtimeDeliveryEnabled ? 'authority-binding-f2b' : 'provider-attempt-only',
     workspaceId,
-    workspaceRoot: absolutePath(
-      environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
-      'V2 qualification workspace root',
-    ),
+    workspaceRoot,
     descriptorRoot: absolutePath(
       environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT,
       'V2 qualification descriptor root',
     ),
     runnerBuildHash,
+    ...(runtimeDelivery ? { runtimeDelivery } : {}),
   });
 }
 
@@ -597,12 +744,13 @@ export function createSealedWorkflowRunnerSourceLoader(
 
 export function createSealedWorkflowRunnerV2SourceLoader(
   workspaceRoot: string,
+  runtimeDeliveryEnabled = false,
 ): WorkflowRunnerV2SourceLoader<PreparedWorkflowSource, WorkflowModule> {
   return createSealedWorkflowSourceLoaderCore<WorkflowRunnerV2ExecutionDescriptor>(workspaceRoot, {
     hashSource: hashWorkflowRunnerV2Source,
     hashManifest: hashWorkflowRunnerV2Manifest,
     beforePrepare(descriptor) {
-      if (descriptor.resumeGeneration !== 0) {
+      if (!runtimeDeliveryEnabled && descriptor.resumeGeneration !== 0) {
         throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
       }
     },
@@ -926,9 +1074,99 @@ class WorkflowRunnerV2BudgetBoundaryError extends Error {
   }
 }
 
-function createWorkflowRunnerV2ProviderAttemptPort(
+/** Builds the exact E1 reserve bytes before the reduced frozen runner event is emitted. */
+export function prepareWorkflowRunnerV2BudgetReserveSource(input: {
+  readonly descriptor: WorkflowRunnerV2ExecutionDescriptor;
+  readonly provider: ProviderAttemptReserveInput;
+  readonly reservationId: string;
+  readonly callId: string;
+  readonly expectedAccountRevision: number;
+  readonly expectedRunRevision: number;
+  readonly callerId: string;
+  readonly requestedAt: string;
+}) {
+  const providerIdentity = buildProviderUsageIdentityHashes(
+    input.provider.providerId,
+    input.provider.modelId,
+    input.provider.providerRunId,
+  );
+  const request: WorkflowBudgetReserveRequest = {
+    schema: WORKFLOW_BUDGET_RESERVE_REQUEST_SCHEMA,
+    contractVersion: WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
+    authority: WORKFLOW_BUDGET_AUTHORITY,
+    writer: WORKFLOW_BUDGET_AUTHORITY_WRITER,
+    goRole: WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
+    goAuthorityClaim: WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
+    goAuthorityEligible: false,
+    workspaceId: input.descriptor.workspaceId,
+    runId: input.descriptor.workflowRunId,
+    accountId: input.descriptor.budgetPolicy.accountId,
+    reservationId: input.reservationId,
+    callId: input.callId,
+    providerAttempt: input.provider.providerAttempt,
+    expectedProviderHash: providerIdentity.providerHash,
+    expectedModelHash: providerIdentity.modelHash,
+    expectedProviderRunHash: providerIdentity.runHash,
+    correlationId: input.descriptor.correlationId,
+    policyHash: input.descriptor.budgetPolicy.policyHash,
+    route: input.descriptor.authorityRoute,
+    expectedAccountRevision: input.expectedAccountRevision,
+    expectedRunRevision: input.expectedRunRevision,
+    rateNanoUsdPerToken: input.descriptor.budgetPolicy.rateNanoUsdPerToken,
+    requested: {
+      tokens: input.provider.requestedTokens,
+      nanoUsd: workflowBudgetAuthorityChargeNanoUsd(
+        input.provider.requestedTokens,
+        input.descriptor.budgetPolicy.rateNanoUsdPerToken,
+      ),
+      calls: '1',
+    },
+    requestedAt: input.requestedAt,
+  };
+  return prepareWorkflowBudgetAuthorityRequest('reserve', request, input.callerId);
+}
+
+export interface WorkflowRunnerV2BudgetAuthorityBoundary {
+  readonly callerId: string;
+  readonly client: WorkflowRunnerBudgetAuthorityClient;
+  readonly now?: () => string;
+}
+
+function foldWorkflowRunnerProviderUsage(
+  usage: ProviderUsageReceipt,
+  requestedTokens: string,
+  rateNanoUsdPerToken: string,
+) {
+  const totalTokens = usage.status === 'reported' ? usage.totalTokens : null;
+  const receiptHash = usage.receiptHash.startsWith('sha256:')
+    ? usage.receiptHash.slice('sha256:'.length)
+    : usage.receiptHash;
+  if (!HASH.test(receiptHash)) {
+    throw new WorkflowRunnerV2BudgetBoundaryError(
+      'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+      'Provider usage receipt hash is invalid.',
+    );
+  }
+  const settled = totalTokens !== null && BigInt(totalTokens) <= BigInt(requestedTokens);
+  return Object.freeze({
+    settled,
+    payload: Object.freeze({
+      providerReceiptHash: receiptHash,
+      actualTokens: totalTokens ?? '0',
+      actualCostNanoUsd:
+        totalTokens === null
+          ? '0'
+          : workflowBudgetAuthorityChargeNanoUsd(totalTokens, rateNanoUsdPerToken),
+      actualCalls: usage.calls,
+      settlementStatus: settled ? ('settled' as const) : ('reconciliation_required' as const),
+    }),
+  });
+}
+
+export function createWorkflowRunnerV2ProviderAttemptPort(
   descriptor: WorkflowRunnerV2ExecutionDescriptor,
   context: WorkflowRunnerV2ExecutionContext,
+  budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
 ): ProviderAttemptPort {
   const reservations = new Map<
     string,
@@ -936,14 +1174,84 @@ function createWorkflowRunnerV2ProviderAttemptPort(
       readonly reservation: ProviderAttemptReservation;
       readonly providerAttempt: string;
       readonly requestedTokens: string;
+      readonly reserveDecision?: WorkflowBudgetReserveDecision;
     }
   >();
-  // F1 proves only reserve-before-fetch and settle-after-usage ordering. The
-  // frozen request does not carry expected provider/model/provider-run hashes,
-  // so this seam deliberately makes no E1 identity-propagation or budget-
-  // authority claim.
+  const now = budgetAuthority?.now ?? (() => new Date().toISOString());
+  const resumeGeneration = context.resumeGeneration;
+  if (
+    !Number.isSafeInteger(resumeGeneration) ||
+    resumeGeneration < descriptor.resumeGeneration ||
+    resumeGeneration > descriptor.resumeGeneration + 1
+  ) {
+    throw new WorkflowRunnerV2BudgetBoundaryError(
+      'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+      'Budget source cannot bind an invalid accepted resume generation.',
+    );
+  }
+
+  const readBudgetHead = async () => {
+    if (!budgetAuthority) return undefined;
+    const account = await budgetAuthority.client.readAccount(
+      descriptor.workflowRunId,
+      descriptor.authorityRoute,
+    );
+    if (
+      !account ||
+      account.accountId !== descriptor.budgetPolicy.accountId ||
+      account.policyHash !== descriptor.budgetPolicy.policyHash
+    ) {
+      throw new WorkflowRunnerV2BudgetBoundaryError(
+        'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+        'Budget authority account head is missing or differs from the sealed descriptor.',
+      );
+    }
+    return account;
+  };
+
+  const authorityBase = Object.freeze({
+    contractVersion: WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
+    authority: WORKFLOW_BUDGET_AUTHORITY,
+    writer: WORKFLOW_BUDGET_AUTHORITY_WRITER,
+    goRole: WORKFLOW_BUDGET_AUTHORITY_GO_ROLE,
+    goAuthorityClaim: WORKFLOW_BUDGET_AUTHORITY_GO_CLAIM,
+    goAuthorityEligible: false as const,
+  });
+
+  const sourceFor = (
+    operation: 'budget_reserve' | 'budget_settle',
+    preparedRequest: ReturnType<typeof prepareWorkflowBudgetAuthorityRequest>,
+    capture?: (decision: WorkflowBudgetReserveDecision) => void,
+  ) => {
+    if (!budgetAuthority) return undefined;
+    return createWorkflowRunnerPreparedBudgetSourceAdapter({
+      operation,
+      preparedRequest,
+      resumeGeneration,
+      e2: {
+        async pointRead() {
+          const result = await budgetAuthority.client.pointRead(preparedRequest);
+          if (!result) return { state: 'not_committed' as const };
+          if (result.sourceResult) capture?.(result.sourceResult.decision);
+          return {
+            state: 'committed' as const,
+            ...(result.sourceResult === undefined
+              ? {}
+              : { budgetSourceResult: result.sourceResult }),
+          };
+        },
+        async mutate() {
+          const result = await budgetAuthority.client.mutate(preparedRequest);
+          if (result.sourceResult) capture?.(result.sourceResult.decision);
+          return result.sourceResult;
+        },
+      },
+    });
+  };
+
   return Object.freeze({
     async reserve(input: ProviderAttemptReserveInput) {
+      const account = await readBudgetHead();
       const identity = createHash('sha256')
         .update(
           [descriptor.workflowRunId, input.providerRunId, input.providerAttempt].join('\0'),
@@ -953,25 +1261,48 @@ function createWorkflowRunnerV2ProviderAttemptPort(
         .slice(0, 32);
       const reservationId = `reservation-${identity}`;
       const callId = `call-${identity}`;
-      const requestedCostNanoUsd = workflowBudgetAuthorityChargeNanoUsd(
-        input.requestedTokens,
-        descriptor.budgetPolicy.rateNanoUsdPerToken,
-      );
-      const decision = await context.reserveBudget({
+      const preparedRequest = prepareWorkflowRunnerV2BudgetReserveSource({
+        descriptor,
+        provider: input,
         reservationId,
         callId,
-        policyHash: descriptor.budgetPolicy.policyHash,
-        requestedTokens: input.requestedTokens,
-        requestedCostNanoUsd,
-        requestedCalls: '1',
+        expectedAccountRevision: account?.accountRevision ?? 0,
+        expectedRunRevision: account?.runRevision ?? descriptor.runRevision,
+        requestedAt: now(),
+        callerId: budgetAuthority?.callerId ?? 'workflow-runner-v2-f1',
       });
-      const payload = decision.payload;
+      const reserveRequest = parseWorkflowBudgetAuthorityBytes(
+        Buffer.from(preparedRequest.body, 'utf8'),
+      ) as WorkflowBudgetReserveRequest;
+      let durableDecision: WorkflowBudgetReserveDecision | undefined;
+      const reservationResult = await context.reserveBudget(
+        {
+          reservationId,
+          callId,
+          policyHash: reserveRequest.policyHash,
+          requestedTokens: reserveRequest.requested.tokens,
+          requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
+          requestedCalls: reserveRequest.requested.calls,
+        },
+        sourceFor('budget_reserve', preparedRequest, (value) => {
+          durableDecision = value;
+        }),
+      );
+      const decision = reservationResult.decision;
+      durableDecision = reservationResult.budgetSourceResult?.decision ?? durableDecision;
+      if (budgetAuthority && !durableDecision) {
+        throw new WorkflowRunnerV2BudgetBoundaryError(
+          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+          'Budget reserve completed without its exact durable E2 decision.',
+        );
+      }
+      const decisionPayload = decision.payload;
       if (
         !workflowRunnerV2BudgetDecisionMatchesRequest(decision, {
           reservationId,
-          requestedTokens: input.requestedTokens,
-          requestedCostNanoUsd,
-          requestedCalls: '1',
+          requestedTokens: reserveRequest.requested.tokens,
+          requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
+          requestedCalls: reserveRequest.requested.calls,
         })
       ) {
         throw new WorkflowRunnerV2BudgetBoundaryError(
@@ -979,13 +1310,13 @@ function createWorkflowRunnerV2ProviderAttemptPort(
           'Budget authorization does not bind the requested provider attempt.',
         );
       }
-      if (payload.status === 'reconciliation_required') {
+      if (decisionPayload.status === 'reconciliation_required') {
         throw new WorkflowRunnerV2BudgetBoundaryError(
           'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
           'Budget reserve outcome requires reconciliation.',
         );
       }
-      if (payload.status !== 'reserved') {
+      if (decisionPayload.status !== 'reserved') {
         throw new WorkflowRunnerV2BudgetBoundaryError(
           'WORKFLOW_RUNNER_V2_BUDGET_REJECTED',
           'Budget authority rejected the provider attempt.',
@@ -994,12 +1325,13 @@ function createWorkflowRunnerV2ProviderAttemptPort(
       const reservation = Object.freeze({
         reservationId,
         callId,
-        authorizedTokens: input.requestedTokens,
+        authorizedTokens: reserveRequest.requested.tokens,
       });
       reservations.set(reservationId, {
         reservation,
         providerAttempt: input.providerAttempt,
         requestedTokens: input.requestedTokens,
+        ...(durableDecision === undefined ? {} : { reserveDecision: durableDecision }),
       });
       return reservation;
     },
@@ -1016,34 +1348,99 @@ function createWorkflowRunnerV2ProviderAttemptPort(
           'Provider usage does not bind an open budget reservation.',
         );
       }
-      const totalTokens = usage.status === 'reported' ? usage.totalTokens : null;
-      const receiptHash = usage.receiptHash.startsWith('sha256:')
-        ? usage.receiptHash.slice('sha256:'.length)
-        : usage.receiptHash;
-      if (!HASH.test(receiptHash)) {
+      if (!budgetAuthority || !opened.reserveDecision) {
+        // The F1 provider-only profile retains its reduced event seam and never
+        // claims an E2 authority mutation.
+        const folded = foldWorkflowRunnerProviderUsage(
+          usage,
+          opened.requestedTokens,
+          descriptor.budgetPolicy.rateNanoUsdPerToken,
+        );
+        await context.reportBudgetUsage({
+          reservationId: reservation.reservationId,
+          callId: reservation.callId,
+          ...folded.payload,
+        });
+        reservations.delete(reservation.reservationId);
+        if (!folded.settled) {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+            'Provider usage is missing, unreported, or exceeded its reservation.',
+          );
+        }
+        return;
+      }
+
+      const account = await readBudgetHead();
+      if (!account) {
         throw new WorkflowRunnerV2BudgetBoundaryError(
           'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-          'Provider usage receipt hash is invalid.',
+          'Budget settlement cannot read its durable account head.',
         );
       }
-      const settled = totalTokens !== null && BigInt(totalTokens) <= BigInt(opened.requestedTokens);
-      await context.reportBudgetUsage({
+      const folded = foldWorkflowRunnerProviderUsage(
+        usage,
+        opened.requestedTokens,
+        descriptor.budgetPolicy.rateNanoUsdPerToken,
+      );
+      const reserveDecisionHash = hashWorkflowBudgetAuthorityValue(
+        'reserve-decision',
+        opened.reserveDecision,
+      );
+      const settlementRequest: WorkflowBudgetSettlementRequest = {
+        schema: WORKFLOW_BUDGET_SETTLEMENT_REQUEST_SCHEMA,
+        ...authorityBase,
+        workspaceId: descriptor.workspaceId,
+        runId: descriptor.workflowRunId,
+        accountId: descriptor.budgetPolicy.accountId,
         reservationId: reservation.reservationId,
         callId: reservation.callId,
-        providerReceiptHash: receiptHash,
-        actualTokens: totalTokens ?? '0',
-        actualCostNanoUsd:
-          totalTokens === null
-            ? '0'
-            : workflowBudgetAuthorityChargeNanoUsd(
-                totalTokens,
-                descriptor.budgetPolicy.rateNanoUsdPerToken,
-              ),
-        actualCalls: '1',
-        settlementStatus: settled ? 'settled' : 'reconciliation_required',
-      });
+        providerAttempt: opened.providerAttempt,
+        expectedProviderHash: opened.reserveDecision.request.expectedProviderHash,
+        expectedModelHash: opened.reserveDecision.request.expectedModelHash,
+        expectedProviderRunHash: opened.reserveDecision.request.expectedProviderRunHash,
+        correlationId: descriptor.correlationId,
+        policyHash: descriptor.budgetPolicy.policyHash,
+        route: descriptor.authorityRoute,
+        expectedAccountRevision: account.accountRevision,
+        expectedRunRevision: account.runRevision,
+        reserveDecisionHash,
+        usageEvidenceStatus: 'trusted',
+        usageReceiptHash: usage.receiptHash,
+        providerUsage: {
+          schema: WORKFLOW_BUDGET_PROVIDER_USAGE_SCHEMA,
+          providerHash: usage.providerHash,
+          modelHash: usage.modelHash,
+          runHash: usage.runHash,
+          attempt: usage.attempt,
+          calls: usage.calls,
+          status: usage.status,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          totalTokens: usage.totalTokens,
+          outcome: usage.outcome,
+          requestHash: usage.requestHash,
+          outcomeHash: usage.outcomeHash,
+          receiptHash: usage.receiptHash,
+        },
+        rateNanoUsdPerToken: descriptor.budgetPolicy.rateNanoUsdPerToken,
+        requestedAt: now(),
+      };
+      const preparedRequest = prepareWorkflowBudgetAuthorityRequest(
+        'settle',
+        settlementRequest,
+        budgetAuthority.callerId,
+      );
+      await context.reportBudgetUsage(
+        {
+          reservationId: reservation.reservationId,
+          callId: reservation.callId,
+          ...folded.payload,
+        },
+        sourceFor('budget_settle', preparedRequest),
+      );
       reservations.delete(reservation.reservationId);
-      if (!settled) {
+      if (!folded.settled) {
         throw new WorkflowRunnerV2BudgetBoundaryError(
           'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
           'Provider usage is missing, unreported, or exceeded its reservation.',
@@ -1053,15 +1450,347 @@ function createWorkflowRunnerV2ProviderAttemptPort(
   });
 }
 
-async function executeWorkflowRunnerV2QualificationJob(
+function checkpointEnvelope(
+  state: WorkflowCheckpointControlState,
+  operation: 'checkpoint_commit' | 'resume_advance',
+  checkpointPhaseIndex?: number,
+): WorkflowCheckpointShadowEnvelope {
+  const active = state.activeBinding;
+  const checkpoint =
+    operation === 'checkpoint_commit' && checkpointPhaseIndex !== undefined
+      ? (state.checkpoints[checkpointPhaseIndex] ?? null)
+      : null;
+  const priorCheckpoint =
+    operation === 'resume_advance' ? (state.checkpoints.at(-1) ?? null) : null;
+  const observation = {
+    schema: WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+    authority: 'typescript' as const,
+    goRole: 'observer_only' as const,
+    runId: state.runId,
+    revision: state.revision,
+    resumeGeneration: state.resumeGeneration,
+    checkpoint,
+    priorCheckpoint,
+    nextPhaseId: operation === 'resume_advance' ? `phase-${state.checkpoints.length}` : null,
+    nextPhaseIndex: operation === 'resume_advance' ? state.checkpoints.length : null,
+    workflowSourceHash: active.workflowSourceHash,
+    manifestHash: active.manifestHash,
+    inputHash: active.inputHash,
+    runner: {
+      workspaceId: active.workspaceId,
+      jobId: active.jobId,
+      attemptId: active.attemptId,
+      leaseId: active.leaseId,
+      fencingToken: active.fencingToken,
+      correlationId: active.correlationId,
+      runnerBuildHash: active.runnerBuildHash,
+    },
+  };
+  return Object.freeze({
+    schema: WORKFLOW_CHECKPOINT_SHADOW_ENVELOPE_SCHEMA,
+    goRole: 'observer_only' as const,
+    sourceSequence: state.revision - 1,
+    operation,
+    observation,
+    observationHash: workflowCheckpointHash(observation),
+  });
+}
+
+function checkpointEvidence(
+  state: WorkflowCheckpointControlState,
+  authorityBuildHash: string,
+  phaseIndex: number,
+): WorkflowRunnerCheckpointAuthorityEvidence {
+  const envelope = checkpointEnvelope(state, 'checkpoint_commit', phaseIndex);
+  const envelopeHash = createHash('sha256')
+    .update(canonicalWorkflowControlAuthorityJson(envelope), 'utf8')
+    .digest('hex');
+  return Object.freeze({
+    schema: 'openslack.workflow_runner_checkpoint_authority_evidence.v1',
+    sourceAuthority: {
+      plane: 'checkpoint_control' as const,
+      evidenceState: 'committed' as const,
+      expectedRevision: state.revision - 1,
+      acceptedRevision: state.revision,
+      expectedResumeGeneration: state.resumeGeneration,
+      acceptedResumeGeneration: state.resumeGeneration,
+      requestHash: envelopeHash,
+      receiptSchema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
+      receiptHash: createHash('sha256')
+        .update(
+          canonicalWorkflowControlAuthorityJson({
+            schema: 'openslack.workflow_runner_checkpoint_authority_receipt.v1',
+            envelopeHash,
+            acceptedRevision: state.revision,
+          }),
+          'utf8',
+        )
+        .digest('hex'),
+      recordHash: envelope.observationHash,
+      authorityBuildHash,
+    },
+    envelope,
+    envelopeHash,
+  });
+}
+
+function resumeEvidence(
+  state: WorkflowCheckpointControlState,
+  target: WorkflowControlAuthorityMessage,
+): WorkflowRunnerResumeAuthorityEvidence {
+  const envelope = checkpointEnvelope(state, 'resume_advance');
+  const envelopeHash = createHash('sha256')
+    .update(canonicalWorkflowControlAuthorityJson(envelope), 'utf8')
+    .digest('hex');
+  const priorCheckpoint = envelope.observation.priorCheckpoint;
+  if (
+    !priorCheckpoint ||
+    target.attemptId === null ||
+    target.authorityBuildHash === null ||
+    typeof target.payload.leaseExpiresAt !== 'string'
+  ) {
+    throw new Error('Resume source evidence lacks its prior checkpoint or lease identity.');
+  }
+  return Object.freeze({
+    schema: 'openslack.workflow_runner_resume_authority_evidence.v1',
+    sourceAuthority: {
+      plane: 'resume_control' as const,
+      evidenceState: 'committed' as const,
+      expectedRevision: state.revision - 1,
+      acceptedRevision: state.revision,
+      expectedResumeGeneration: state.resumeGeneration - 1,
+      acceptedResumeGeneration: state.resumeGeneration,
+      requestHash: envelopeHash,
+      receiptSchema: 'openslack.workflow_runner_resume_authority_receipt.v1',
+      receiptHash: createHash('sha256')
+        .update(
+          canonicalWorkflowControlAuthorityJson({
+            schema: 'openslack.workflow_runner_resume_authority_receipt.v1',
+            envelopeHash,
+            acceptedRevision: state.revision,
+            acceptedResumeGeneration: state.resumeGeneration,
+          }),
+          'utf8',
+        )
+        .digest('hex'),
+      recordHash: envelope.observationHash,
+      authorityBuildHash: target.authorityBuildHash,
+    },
+    envelope,
+    envelopeHash,
+    priorCheckpointId: priorCheckpoint.checkpointId,
+    priorCheckpointHash: createHash('sha256')
+      .update(canonicalWorkflowControlAuthorityJson(priorCheckpoint), 'utf8')
+      .digest('hex'),
+    nextPhaseId: envelope.observation.nextPhaseId!,
+    nextPhaseIndex: envelope.observation.nextPhaseIndex!,
+    logicalResumeAttemptId: `logical.resume.${createHash('sha256')
+      .update(`${target.attemptId}\0${state.resumeGeneration}`, 'utf8')
+      .digest('hex')}`,
+    expiresAt: target.payload.leaseExpiresAt,
+  });
+}
+
+function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
+  config: WorkflowRunnerV2QualificationWorkerConfig & {
+    readonly runtimeDelivery: NonNullable<
+      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
+    >;
+  },
+): WorkflowRunnerV2AuthoritySourceFactories {
+  return Object.freeze({
+    async checkpoint() {
+      throw new Error('Checkpoint source must be supplied by the authority-aware RunStore.');
+    },
+    async effect() {
+      throw new Error('Effect source must be supplied by the authority-aware effect boundary.');
+    },
+    async budget() {
+      throw new Error('Budget source must be supplied by the exact provider attempt boundary.');
+    },
+    async resume(target: WorkflowControlAuthorityMessage) {
+      if (
+        target.workflowRunId === null ||
+        target.workspaceId === null ||
+        target.jobId === null ||
+        target.attemptId === null ||
+        target.leaseId === null ||
+        target.fencingToken === null ||
+        target.resumeGeneration === null
+      ) {
+        throw new Error('Resume target lacks its exact runner binding.');
+      }
+      const store = new RunStore({
+        baseDir: join(config.workspaceRoot, '.openslack.local', 'workflows'),
+      });
+      const committedState = async () => {
+        const state = await store.loadCheckpointControl(target.workflowRunId!);
+        return state &&
+          state.activeBinding.workspaceId === target.workspaceId &&
+          state.activeBinding.jobId === target.jobId &&
+          state.activeBinding.attemptId === target.attemptId &&
+          state.activeBinding.leaseId === target.leaseId &&
+          state.activeBinding.fencingToken === target.fencingToken &&
+          state.resumeGeneration === target.resumeGeneration! + 1
+          ? state
+          : null;
+      };
+      return createWorkflowRunnerResumeSourceAdapter({
+        pointRead: async () => {
+          const state = await committedState();
+          return state
+            ? { state: 'committed' as const, evidence: resumeEvidence(state, target) }
+            : { state: 'not_committed' as const };
+        },
+        commit: async () => {
+          const prior = await store.loadCheckpointControl(target.workflowRunId!);
+          const priorCheckpoint = prior?.checkpoints.at(-1);
+          if (!prior || !priorCheckpoint) {
+            throw new Error('Resume source lacks its durable prior checkpoint.');
+          }
+          const binding = {
+            ...prior.activeBinding,
+            workspaceId: target.workspaceId!,
+            jobId: target.jobId!,
+            workflowRunId: target.workflowRunId!,
+            attemptId: target.attemptId!,
+            leaseId: target.leaseId!,
+            fencingToken: target.fencingToken!,
+            correlationId: target.correlationId,
+          };
+          await store.beginCheckpointResumeGeneration(
+            target.workflowRunId!,
+            binding,
+            `phase-${priorCheckpoint.phaseIndex + 1}`,
+            priorCheckpoint.phaseIndex + 1,
+          );
+          const state = await committedState();
+          if (!state) throw new Error('Resume source commit is not point-readable.');
+          return resumeEvidence(state, target);
+        },
+      });
+    },
+  });
+}
+
+class WorkflowRunnerV2CheckpointRunStore extends RunStore {
+  readonly #context: WorkflowRunnerV2ExecutionContext;
+  readonly #descriptor: WorkflowRunnerV2ExecutionDescriptor;
+
+  constructor(
+    baseDir: string,
+    context: WorkflowRunnerV2ExecutionContext,
+    descriptor: WorkflowRunnerV2ExecutionDescriptor,
+  ) {
+    super({ baseDir });
+    this.#context = context;
+    this.#descriptor = descriptor;
+  }
+
+  override async commitWorkflowCheckpoint(
+    runId: string,
+    bindingValue: Parameters<RunStore['commitWorkflowCheckpoint']>[1],
+    phaseId: string,
+    phaseIndex: number,
+    input: Parameters<RunStore['commitWorkflowCheckpoint']>[4],
+  ): ReturnType<RunStore['commitWorkflowCheckpoint']> {
+    const artifactHash = workflowCheckpointBytesHash(input.artifact);
+    const artifactRef = `checkpoint-control/artifacts/${artifactHash}.json`;
+    const checkpointId = `checkpoint-${workflowCheckpointHash({
+      runId,
+      phaseId,
+      phaseIndex,
+      artifactRef,
+      artifactHash,
+      resultHash: input.resultHash ?? null,
+      cacheKeyHash: input.cacheKeyHash ?? null,
+    })}`;
+    let committed: Awaited<ReturnType<RunStore['commitWorkflowCheckpoint']>> | undefined;
+    const matches = (state: WorkflowCheckpointControlState | null) => {
+      const checkpoint = state?.checkpoints[phaseIndex];
+      return checkpoint &&
+        checkpoint.checkpointId === checkpointId &&
+        checkpoint.phaseId === phaseId &&
+        checkpoint.artifactRef === artifactRef &&
+        checkpoint.artifactHash === artifactHash &&
+        checkpoint.resultHash === (input.resultHash ?? null) &&
+        checkpoint.cacheKeyHash === (input.cacheKeyHash ?? null)
+        ? state
+        : null;
+    };
+    const source = createWorkflowRunnerCheckpointSourceAdapter({
+      pointRead: async () => {
+        const state = matches(await this.loadCheckpointControl(runId));
+        return state
+          ? {
+              state: 'committed' as const,
+              evidence: checkpointEvidence(
+                state,
+                this.#descriptor.authorityRoute.authorityBuildHash,
+                phaseIndex,
+              ),
+            }
+          : { state: 'not_committed' as const };
+      },
+      commit: async () => {
+        committed = await super.commitWorkflowCheckpoint(
+          runId,
+          bindingValue,
+          phaseId,
+          phaseIndex,
+          input,
+        );
+        const state = matches(await this.loadCheckpointControl(runId));
+        if (!state) throw new Error('Checkpoint source commit is not point-readable.');
+        return checkpointEvidence(
+          state,
+          this.#descriptor.authorityRoute.authorityBuildHash,
+          phaseIndex,
+        );
+      },
+    });
+    await this.#context.checkpointCommit(
+      {
+        checkpointId,
+        phaseId,
+        phaseIndex,
+        commitPoint: 'after_phase_work',
+        artifactRef,
+        artifactHash,
+        resultHash: input.resultHash ?? null,
+        cacheKeyHash: input.cacheKeyHash ?? null,
+        workflowSourceHash: this.#descriptor.workflowSourceHash,
+        manifestHash: this.#descriptor.manifestHash,
+        inputHash: this.#descriptor.inputHash,
+      },
+      source,
+    );
+    if (committed) return committed;
+    const state = matches(await this.loadCheckpointControl(runId));
+    const checkpoint = state?.checkpoints[phaseIndex];
+    if (!checkpoint || !state) throw new Error('Checkpoint replay result is unavailable.');
+    return Object.freeze({
+      checkpointId: checkpoint.checkpointId,
+      revision: checkpoint.committedRevision,
+      resumeGeneration: checkpoint.resumeGeneration,
+      duplicate: true,
+    });
+  }
+}
+
+/** @internal Exact v2 worker execution seam used by the bundled qualification worker. */
+export async function executeWorkflowRunnerV2QualificationJob(
   workflow: WorkflowModule,
   descriptor: WorkflowRunnerV2ExecutionDescriptor,
   context: WorkflowRunnerV2ExecutionContext,
   workspaceRoot: string,
+  runtimeDeliveryEnabled: boolean,
+  budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
 ): Promise<RunResult> {
-  const store = new RunStore({
-    baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
-  });
+  const baseDir = join(workspaceRoot, '.openslack.local', 'workflows');
+  const store = runtimeDeliveryEnabled
+    ? new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor)
+    : new RunStore({ baseDir });
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
   const disposition = classifyWorkflowRunnerRunState(
@@ -1069,10 +1798,10 @@ async function executeWorkflowRunnerV2QualificationJob(
     exists,
     status?.status ?? null,
   );
-  if (disposition === 'resume') {
+  if (disposition === 'resume' && !runtimeDeliveryEnabled) {
     throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
   }
-  const { executeRunWithStore } = await loadWorkflowExecutionAuthority();
+  const { executeResumeWithStore, executeRunWithStore } = await loadWorkflowExecutionAuthority();
   const tokenLimit = Number(descriptor.budgetPolicy.tokenLimit);
   const costLimitNanoUsd = BigInt(descriptor.budgetPolicy.costLimitNanoUsd);
   const costUsd = Number(costLimitNanoUsd) / 1_000_000_000;
@@ -1095,22 +1824,79 @@ async function executeWorkflowRunnerV2QualificationJob(
         rootDir: workspaceRoot,
         openAICompatible: {
           rootDir: workspaceRoot,
-          providerAttemptPort: createWorkflowRunnerV2ProviderAttemptPort(descriptor, context),
+          providerAttemptPort: createWorkflowRunnerV2ProviderAttemptPort(
+            descriptor,
+            context,
+            budgetAuthority,
+          ),
         },
       });
     })(),
   };
-  // GS9-F1 is qualification-only and deliberately wires only the provider
-  // attempt reserve/settle seam. It does not claim provider-budget delivery or
-  // authority. No checkpoint authority, effect boundary, or effect
-  // authorization port is passed here: ctx.checkpoint therefore stays absent
-  // and every real effect fails closed with the existing authorization-required
-  // error. Durable checkpoint/effect adapters remain explicit GS9-F2 work.
-  return executeRunWithStore(workflow, common, store);
+  const effectAuthorizationPort = runtimeDeliveryEnabled
+    ? await createWorkflowRunnerV2EffectAuthorizationPort({
+        workspaceRoot,
+        descriptor,
+        context,
+      })
+    : undefined;
+  if (disposition === 'resume') {
+    return executeResumeWithStore(
+      workflow,
+      common,
+      store,
+      runtimeDeliveryEnabled ? context.checkpointAuthority : undefined,
+      effectAuthorizationPort,
+    );
+  }
+  return executeRunWithStore(
+    workflow,
+    common,
+    store,
+    runtimeDeliveryEnabled ? context.checkpointAuthority : undefined,
+    effectAuthorizationPort,
+  );
+}
+
+export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
+  config: WorkflowRunnerV2QualificationWorkerConfig & {
+    readonly runtimeDelivery: NonNullable<
+      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
+    >;
+  },
+  sourceFactories: WorkflowRunnerV2AuthoritySourceFactories = createWorkflowRunnerV2DefaultAuthoritySourceFactories(
+    config,
+  ),
+): Promise<WorkflowRunnerV2RuntimeDeliveryPort> {
+  const runtime = new WorkflowRunnerAuthorityBindingRuntime({
+    journal: new WorkflowRunnerAuthorityBindingJournal(config.runtimeDelivery.journalRoot),
+    port: createWorkflowRunnerAuthorityBindingClient({
+      origin: config.runtimeDelivery.companionOrigin,
+      workspaceId: config.workspaceId,
+      bearerToken: config.runtimeDelivery.companionBearerToken,
+    }),
+  });
+  const delivery = new WorkflowRunnerV2RuntimeDelivery({
+    runtime,
+    sources: new WorkflowRunnerV2AuthoritySources(sourceFactories),
+    workspaceRoot: config.workspaceRoot,
+    admissions: createWorkflowRunnerV2RuntimeAdmissionClient({
+      origin: config.runtimeDelivery.companionOrigin,
+      workspaceId: config.workspaceId,
+      bearerToken: config.runtimeDelivery.companionBearerToken,
+    }),
+  });
+  await delivery.initialize();
+  return delivery;
+}
+
+export interface WorkflowRunnerV2QualificationWorkerDependencies {
+  readonly authoritySourceFactories?: WorkflowRunnerV2AuthoritySourceFactories;
 }
 
 export async function runWorkflowRunnerV2QualificationWorker(
   config: WorkflowRunnerV2QualificationWorkerConfig = loadWorkflowRunnerV2QualificationWorkerConfig(),
+  dependencies: WorkflowRunnerV2QualificationWorkerDependencies = {},
 ): Promise<void> {
   installProtocolOnlyStreams();
   const descriptorStore = new WorkflowRunnerDescriptorStore<WorkflowRunnerV2ExecutionDescriptor>(
@@ -1119,6 +1905,31 @@ export async function runWorkflowRunnerV2QualificationWorker(
     WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
   );
   await descriptorStore.initialize();
+  const runtimeDeliveryConfig = config as WorkflowRunnerV2QualificationWorkerConfig & {
+    readonly runtimeDelivery: NonNullable<
+      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
+    >;
+  };
+  const runtimeDelivery = config.runtimeDelivery
+    ? dependencies.authoritySourceFactories
+      ? await createWorkflowRunnerV2QualificationRuntimeDelivery(
+          runtimeDeliveryConfig,
+          dependencies.authoritySourceFactories,
+        )
+      : await createWorkflowRunnerV2QualificationRuntimeDelivery(runtimeDeliveryConfig)
+    : undefined;
+  const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary | undefined =
+    config.runtimeDelivery
+      ? Object.freeze({
+          callerId: config.runtimeDelivery.budgetCallerId,
+          client: createWorkflowRunnerBudgetAuthorityClient({
+            origin: config.runtimeDelivery.budgetOrigin,
+            workspaceId: config.workspaceId,
+            bearerToken: config.runtimeDelivery.budgetBearerToken,
+            callerId: config.runtimeDelivery.budgetCallerId,
+          }),
+        })
+      : undefined;
   let closed = false;
   const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
   const close = async (exitCode: number) => {
@@ -1134,13 +1945,24 @@ export async function runWorkflowRunnerV2QualificationWorker(
     runnerBuildHash: config.runnerBuildHash,
     runtimeVersion: process.versions.node,
     descriptorStore,
-    sourceLoader: createSealedWorkflowRunnerV2SourceLoader(config.workspaceRoot),
+    sourceLoader: createSealedWorkflowRunnerV2SourceLoader(
+      config.workspaceRoot,
+      runtimeDelivery !== undefined,
+    ),
     send: (exactBytes) => {
       writeSync(1, exactBytes, undefined, 'utf8');
     },
     close,
     execute: (workflow, descriptor, context) =>
-      executeWorkflowRunnerV2QualificationJob(workflow, descriptor, context, config.workspaceRoot),
+      executeWorkflowRunnerV2QualificationJob(
+        workflow,
+        descriptor,
+        context,
+        config.workspaceRoot,
+        runtimeDelivery !== undefined,
+        budgetAuthority,
+      ),
+    ...(runtimeDelivery ? { runtimeDelivery } : {}),
   });
   const fatal = async (error: unknown) => {
     if (closed) return;

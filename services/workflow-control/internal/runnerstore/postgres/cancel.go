@@ -68,6 +68,19 @@ WHERE attempt_id=$1 AND state IN ('pending_authority','authority_committed','rec
 		if authorityLaneBusy {
 			return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorConflict, "v2 cancellation is blocked by an unsettled authority event", nil)
 		}
+		if repository.v2RuntimeDelivery {
+			var pendingDecision bool
+			if err := tx.QueryRow(ctx, pendingV2AuthorityDecisionSQL, input.ExpectedAttemptID).Scan(&pendingDecision); err != nil {
+				return runnerstore.CancelControl{}, databaseFailure("read v2 cancellation decision lane", err)
+			}
+			if pendingDecision {
+				// A decision-producing event has already reserved the exact next
+				// control sequence. The immutable decision must settle before a
+				// normal later cancellation can be admitted; skipping it would
+				// create a sequence gap at the worker.
+				return runnerstore.CancelControl{}, runnerstore.Failure(runnerstore.ErrorConflict, "v2 cancellation must follow the durable authority decision", nil)
+			}
+		}
 	}
 	var workflowRunID, correlationID, leaseID string
 	if err := tx.QueryRow(ctx, `
@@ -228,7 +241,7 @@ func (repository *Repository) MarkControlDelivered(ctx context.Context, attemptI
 		}
 	}
 	if state == "pending" {
-		tag, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_control_messages SET delivery_state='delivered',delivered_at=$1 WHERE attempt_id=$2 AND control_event_id=$3 AND kind=$4 AND delivery_state='pending'`, deliveredAt.UTC(), attemptID, eventID, kind)
+		tag, updateErr := tx.Exec(ctx, `UPDATE workflow_runner_control_messages SET delivery_state='delivered',delivery_started_at=$1,delivered_at=$1 WHERE attempt_id=$2 AND control_event_id=$3 AND kind=$4 AND delivery_state='pending'`, deliveredAt.UTC(), attemptID, eventID, kind)
 		if updateErr != nil {
 			return mapWriteFailure("mark runner control delivered", updateErr)
 		}

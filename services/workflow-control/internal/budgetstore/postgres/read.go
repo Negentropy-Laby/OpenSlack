@@ -79,6 +79,21 @@ func (repository *Repository) ReadReceipt(ctx context.Context, workspaceID, key 
 	}, nil
 }
 
+// ReadMutationResult is the narrow immutable point-read used by schema-8
+// runner delivery. It reconstructs and cross-checks the durable receipt,
+// record, ledger entry, and optional reconciliation without replaying either
+// budget mutation.
+func (repository *Repository) ReadMutationResult(ctx context.Context, workspaceID, key string) (budgetstore.MutationResult, error) {
+	if err := budgetstore.ValidateReadIdentity(workspaceID); err != nil {
+		return budgetstore.MutationResult{}, err
+	}
+	if err := budgetstore.ValidateReceiptKey(key); err != nil {
+		return budgetstore.MutationResult{}, err
+	}
+	result, _, err := readMutationResult(ctx, repository.pool, key, workspaceID)
+	return result, err
+}
+
 func (repository *Repository) Ready(ctx context.Context) error {
 	var result int
 	if err := repository.pool.QueryRow(ctx, readinessSQL).Scan(&result); err != nil {

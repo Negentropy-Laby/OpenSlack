@@ -60,3 +60,17 @@ not duplicate them.
 F2a does not alter this service's scheduler, worker, store, image entry point, active GS9-F1
 profile, or source manifest. TypeScript remains the production Workflow authority, Go remains a
 pure validator, and GS9-F2b must implement and qualify the manifest's not-delivered runtime work.
+
+## GS9-F2b default-off runtime delivery
+
+Schema 8 adds the default-off qualification coordinator without changing the frozen runner-v1,
+runner-v2, authority-v2, or F2a bytes. The normative ordering, replay, ACK deadline, cancellation,
+source-evidence, expiry, and recovery rules live in the
+[Workflow Control contract](../../../../docs/architecture/contracts/workflow-control.md#gs9-f2b-coordinator-delivery-boundary).
+This service implements those rules but does not restate a second copy here.
+
+Startup recovery validates the binding and ACK in one joined read, then bulk-CASes unfinished
+bindings to reconciliation. Its examined/reconciled summary is consumed by the scheduler instead
+of being discarded. Active owner-local journal evidence is indexed separately from closed replay
+evidence; external identity drift forces a full validation before the cache is reused. Production
+submission and routing remain disabled; GS9-G owns any new-record canary or writer cutover.

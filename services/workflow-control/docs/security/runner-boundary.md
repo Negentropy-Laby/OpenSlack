@@ -24,3 +24,16 @@
   absent from the wire and API.
 - A receipt is lifecycle evidence, not confirmation, workflow-effect approval, GitHub review, or
   external effect success.
+
+GS9-F2b keeps its runtime-delivery credentials outside the bundle. The host verifies the raw
+loopback companion token against the configured SHA-256 value, reserves every runtime and budget
+environment name against manifest override, and injects them only into a v2 worker when both v2
+qualification and runtime delivery are explicitly enabled. The journal is an owner-local child of
+the workspace `.openslack.local` root. A v1 worker, F1-only v2 worker, default `/server` image, or
+manifest-provided environment cannot acquire these bindings.
+
+Authority is split deliberately: TypeScript remains source authority for checkpoint, effect,
+resume, and workflow execution; the isolated E2 store remains budget qualification authority; Go
+coordinates exact binding/order/ACK evidence. Neither a stage receipt, event receipt, observer
+receipt, nor an unacknowledged decision can be promoted into another plane's authority. Unknown
+outcomes preserve reconciliation and source claims rather than enabling retry with a new identity.

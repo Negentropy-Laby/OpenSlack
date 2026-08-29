@@ -998,6 +998,86 @@ export type {
   WorkflowRunnerSourceAuthority,
 } from './workflow-runner-authority-binding-contract.js';
 
+// ── Workflow Runner GS9-F2b qualification runtime delivery ────────────
+export {
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_ROUTE_PREFIX,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_ROUTE_PREFIX,
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_ROUTE,
+  WorkflowRunnerAuthorityBindingClientError,
+  createWorkflowRunnerAuthorityBindingClient,
+} from './workflow-runner-authority-binding-client.js';
+export type {
+  WorkflowRunnerAuthorityBindingClientConfig,
+  WorkflowRunnerAuthorityBindingPort,
+} from './workflow-runner-authority-binding-client.js';
+export {
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_SCHEMA,
+  WorkflowRunnerAuthorityBindingJournal,
+  WorkflowRunnerAuthorityBindingJournalError,
+  workflowRunnerAuthorityBindingJournalEntryClosed,
+} from './workflow-runner-authority-binding-journal.js';
+export type {
+  WorkflowRunnerAuthorityBindingJournalEntry,
+  WorkflowRunnerAuthorityControlDeliveryJournalEntry,
+} from './workflow-runner-authority-binding-journal.js';
+export {
+  WorkflowRunnerAuthorityBindingRuntime,
+  WorkflowRunnerAuthorityBindingRuntimeError,
+} from './workflow-runner-authority-binding-runtime.js';
+export { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
+export type { WorkflowRunnerV2AuthoritySourceResolver } from './workflow-runner-v2-runtime-delivery.js';
+export { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
+export {
+  WorkflowRunnerV2AuthoritySources,
+  createWorkflowRunnerPreparedBudgetSourceAdapter,
+  createWorkflowRunnerBudgetSourceAdapter,
+  createWorkflowRunnerCheckpointSourceAdapter,
+  createWorkflowRunnerEffectSourceAdapter,
+  createWorkflowRunnerResumeSourceAdapter,
+} from './workflow-runner-runtime-authorities.js';
+export {
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
+  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
+  WorkflowRunnerV2RuntimeAdmissionError,
+  createWorkflowRunnerV2RuntimeAdmissionClient,
+  parseWorkflowRunnerV2RuntimeAdmissionBytes,
+  parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes,
+  prepareWorkflowRunnerV2RuntimeAdmission,
+  validateWorkflowRunnerV2RuntimeAdmission,
+  validateWorkflowRunnerV2RuntimeAdmissionReceipt,
+} from './workflow-runner-v2-runtime-admission.js';
+export type {
+  WorkflowRunnerV2PreparedRuntimeAdmission,
+  WorkflowRunnerV2RuntimeAdmission,
+  WorkflowRunnerV2RuntimeAdmissionPort,
+  WorkflowRunnerV2RuntimeAdmissionReceipt,
+} from './workflow-runner-v2-runtime-admission.js';
+export {
+  WorkflowRunnerBudgetAuthorityClientError,
+  createWorkflowRunnerBudgetAuthorityClient,
+} from './workflow-runner-budget-authority-client.js';
+export type {
+  WorkflowRunnerBudgetAuthorityClient,
+  WorkflowRunnerBudgetMutationResult,
+} from './workflow-runner-budget-authority-client.js';
+export type {
+  WorkflowRunnerBudgetE2Port,
+  WorkflowRunnerDurableAuthorityMutationPort,
+  WorkflowRunnerDurableAuthorityPointRead,
+  WorkflowRunnerV2AuthoritySourceFactories,
+} from './workflow-runner-runtime-authorities.js';
+export type {
+  WorkflowRunnerAuthorityBindingCommitInput,
+  WorkflowRunnerAuthorityBindingCommittedContext,
+  WorkflowRunnerAuthorityBindingLeaseInput,
+  WorkflowRunnerAuthorityControlAckInput,
+  WorkflowRunnerAuthoritySourceAdapter,
+  WorkflowRunnerAuthoritySourceProbe,
+} from './workflow-runner-authority-binding-runtime.js';
+
 // ── Workflow Runner GS9-F qualification-only v2 transport ───────────────
 export {
   assertWorkflowRunnerV2AdmissionBinding,
@@ -1051,6 +1131,7 @@ export type {
   WorkflowRunnerV2SessionOptions,
   WorkflowRunnerV2SessionState,
   WorkflowRunnerV2SourceLoader,
+  WorkflowRunnerV2RuntimeDeliveryPort,
 } from './workflow-runner-v2-session.js';
 export {
   bindLocalHumanSubject,

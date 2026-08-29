@@ -112,6 +112,15 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 			admin.Close()
 			t.Fatalf("create persistent PostgreSQL schema: %v", err)
 		}
+		// Persistent schemas intentionally survive a successful seed process, but
+		// a failed seed must not leak them into the shared qualification database.
+		// Register this immediately after CREATE so every later fatal path is
+		// covered; the ordinary pool cleanup runs first because cleanups are LIFO.
+		t.Cleanup(func() {
+			if t.Failed() {
+				DropSchema(t, schema)
+			}
+		})
 	}
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -264,6 +273,7 @@ func migrationPaths(t testing.TB) []string {
 		filepath.Join(migrationRoot, "000005_create_workflow_control_effect_shadow.up.sql"),
 		filepath.Join(migrationRoot, "000006_create_workflow_control_budget_authority.up.sql"),
 		filepath.Join(migrationRoot, "000007_integrate_workflow_runner_v2.up.sql"),
+		filepath.Join(migrationRoot, "000008_deliver_workflow_runner_authority_bindings.up.sql"),
 	}
 }
 

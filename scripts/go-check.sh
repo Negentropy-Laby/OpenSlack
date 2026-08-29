@@ -511,7 +511,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2 | workflow-control-checkpoint-shadow-v1 | workflow-control-effect-shadow-v1 | workflow-control-budget-authority-v1 | workflow-control-runner-v2-foundation-v1) ;;
+    none | governance-control-v1 | governance-control-v2 | notification-delivery-v1 | organization-graph-v1 | workflow-control-shadow-v1 | workflow-control-runner-v1 | workflow-control-authority-v2 | workflow-control-checkpoint-shadow-v1 | workflow-control-effect-shadow-v1 | workflow-control-budget-authority-v1 | workflow-control-runner-v2-foundation-v1 | workflow-control-runner-v2-runtime-delivery-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -701,7 +701,8 @@ detect_capabilities() {
       "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       local runner_evidence
       for runner_evidence in \
         cmd/runner-server/main.go \
@@ -736,7 +737,8 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]] &&
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]] &&
     ! has_capability "${capabilities}" "worker"; then
     fail "Workflow Control runner runtime profile requires the worker capability"
   fi
@@ -765,7 +767,8 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local workflow_control_evidence
     for workflow_control_evidence in \
       cmd/server/qualification_test.go \
@@ -800,7 +803,8 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local workflow_runner_evidence
     for workflow_runner_evidence in \
       cmd/runner-server/qualification_test.go \
@@ -824,7 +828,8 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local workflow_authority_evidence
     for workflow_authority_evidence in \
       cmd/authority-server/main.go \
@@ -891,7 +896,8 @@ detect_capabilities() {
   if [[ "${runtime_profile_ref}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local checkpoint_shadow_root_evidence
     for checkpoint_shadow_root_evidence in \
       scripts/workflow-checkpoint-shadow-contracts/index.ts \
@@ -930,7 +936,8 @@ detect_capabilities() {
 
   if [[ "${runtime_profile_ref}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local effect_shadow_root_evidence
     for effect_shadow_root_evidence in \
       scripts/workflow-effect-shadow-contracts/index.ts \
@@ -994,7 +1001,8 @@ detect_capabilities() {
   fi
 
   if [[ "${runtime_profile_ref}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local budget_authority_root_evidence
     for budget_authority_root_evidence in \
       scripts/workflow-budget-authority-contracts/index.ts \
@@ -1041,8 +1049,8 @@ detect_capabilities() {
       fail "Workflow Control budget authority runtime profile is missing TestBudgetAuthorityOpenAPIContract"
     local budget_authority_named_test test_path test_function
     for budget_authority_named_test in \
-      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughSeven' \
-      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationSevenWithoutRaisingExistingMinimums' \
+      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEight' \
+      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
       'internal/budgetapp/server_test.go|TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics' \
@@ -1118,7 +1126,8 @@ detect_capabilities() {
       fail "Workflow Control budget authority runtime profile is missing the provider-attempt receipt-binding rebuild case"
   fi
 
-  if [[ "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+  if [[ "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local workflow_runner_v2_test
     local workflow_runner_v2_qualification_source="${module_dir}/internal/runnerstore/postgres/v2_foundation_integration_test.go"
     for workflow_runner_v2_test in \
@@ -1138,6 +1147,48 @@ detect_capabilities() {
       'WORKFLOW_RUNNER_GS9F1_DEFAULT_ORIGIN'; do
       grep -Fq "${workflow_runner_v2_marker}" "${workflow_runner_v2_qualification_source}" ||
         fail "Workflow Control runner v2 foundation is missing semantic marker ${workflow_runner_v2_marker}"
+    done
+  fi
+
+  if [[ "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+    local workflow_runner_v2_runtime_evidence
+    for workflow_runner_v2_runtime_evidence in \
+      migrations/000008_deliver_workflow_runner_authority_bindings.up.sql \
+      migrations/000008_deliver_workflow_runner_authority_bindings.down.sql \
+      internal/runnerstore/v2_binding.go \
+      internal/runnerstore/postgres/v2_binding.go \
+      internal/runnerstore/postgres/gs9f2_runtime_integration_test.go; do
+      [[ -f "${module_dir}/${workflow_runner_v2_runtime_evidence}" ]] ||
+        fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_evidence}"
+    done
+    local workflow_runner_v2_runtime_test
+    for workflow_runner_v2_runtime_test in \
+      TestGS9F2AuthorityBindingRuntimeDelivery \
+      TestGS9F2AuthorityBindingRestartRecovery \
+      TestGS9F2AuthorityBindingMigrationGuards; do
+      grep -Eq "^func[[:space:]]+${workflow_runner_v2_runtime_test}\\(" \
+        "${module_dir}/internal/runnerstore/postgres/gs9f2_runtime_integration_test.go" ||
+        fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_test}"
+    done
+    for workflow_runner_v2_runtime_test in \
+      TestGS9F2Qualification \
+      TestGS9F2ImageDefaultOff; do
+      grep -Eq "^func[[:space:]]+${workflow_runner_v2_runtime_test}\\(" \
+        "${module_dir}/cmd/runner-server/gs9f2_qualification_test.go" ||
+        fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_test}"
+    done
+    local workflow_runner_v2_runtime_marker
+    for workflow_runner_v2_runtime_marker in \
+      'WORKFLOW_RUNNER_GS9F2_QUALIFICATION' \
+      'WORKFLOW_RUNNER_GS9F2_RESTART_PHASE' \
+      'WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA' \
+      'WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN' \
+      'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED'; do
+      grep -RqF "${workflow_runner_v2_runtime_marker}" \
+        "${module_dir}/cmd/runner-server" \
+        "${module_dir}/internal/runnerconfig" \
+        "${module_dir}/internal/runnerstore/postgres" ||
+        fail "Workflow Control runner v2 runtime delivery is missing semantic marker ${workflow_runner_v2_runtime_marker}"
     done
   fi
 
@@ -1363,7 +1414,8 @@ run_module_gate() {
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=127.0.0.1:8080
@@ -1373,7 +1425,8 @@ run_module_gate() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082
@@ -1387,7 +1440,8 @@ run_module_gate() {
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083
@@ -1399,7 +1453,8 @@ run_module_gate() {
     fi
     if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_args+=(
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1
         --env WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084
@@ -1410,7 +1465,8 @@ run_module_gate() {
       )
     fi
     if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       load_workflow_budget_qualification_fixture
       run_args+=(
         --env WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1
@@ -1466,7 +1522,8 @@ run_module_gate() {
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     ((has_database)) || fail "Workflow Control shadow qualification requires PostgreSQL"
     run_workflow_control_qualification \
       "${resource_prefix}" \
@@ -1480,7 +1537,8 @@ run_module_gate() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_runner_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1493,7 +1551,8 @@ run_module_gate() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_authority_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1505,7 +1564,8 @@ run_module_gate() {
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_checkpoint_shadow_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1516,7 +1576,8 @@ run_module_gate() {
     fi
     if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_effect_shadow_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1526,7 +1587,8 @@ run_module_gate() {
         "${run_token}"
     fi
     if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_budget_authority_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -1535,8 +1597,18 @@ run_module_gate() {
         "${resource_owner}" \
         "${run_token}"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       run_workflow_runner_v2_foundation \
+        "${resource_prefix}" \
+        "${network}" \
+        "${database_container}" \
+        "${database_name}" \
+        "${resource_owner}" \
+        "${run_token}"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      run_workflow_runner_v2_runtime_delivery \
         "${resource_prefix}" \
         "${network}" \
         "${database_container}" \
@@ -1904,6 +1976,21 @@ run_workflow_runner_test_container() {
       fail "Workflow Control runner test selector matched no tests: ${package} ${test_name}"
     rm -f -- "${selection_file}"
     command+=(-run "^${test_name}$")
+  fi
+  if [[ "${test_name}" == TestGS9F2* ]]; then
+    local result_file
+    result_file="$(mktemp -t openslack-go-check-runner-results.XXXXXX)"
+    cleanup_files+=("${result_file}")
+    run_args+=(--env "OPENSLACK_GO_CHECK_EXPECT_TEST=${test_name}")
+    command=(go test -json -race "${package}" "-count=${count}" -run "^${test_name}$")
+    docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" "${command[@]}" >"${result_file}"
+    if grep -Fq '"Action":"skip"' "${result_file}"; then
+      fail "Workflow Control GS9-F2b qualification test skipped: ${package} ${test_name}"
+    fi
+    grep -F '"Action":"pass"' "${result_file}" | grep -Fq "\"Test\":\"${test_name}\"" ||
+      fail "Workflow Control GS9-F2b qualification test did not report an exact pass: ${package} ${test_name}"
+    rm -f -- "${result_file}"
+    return
   fi
   docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" "${command[@]}"
 }
@@ -2294,6 +2381,55 @@ run_workflow_runner_v2_foundation() {
     "WORKFLOW_RUNNER_GS9F1_RESTART_SCHEMA=${restart_schema}"
 }
 
+run_workflow_runner_v2_runtime_delivery() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_token="${run_token,,}"
+  local restart_schema="workflow_control_gs9f2_restart_${restart_token//-/}"
+
+  log "qualifying Workflow Control GS9-F2b authority-binding migration and runtime delivery"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-bounds "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2AuthorityBindingRuntimeDelivery 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
+  log "qualifying Workflow Control GS9-F2b schema-8 migration guards"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-migration "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2AuthorityBindingMigrationGuards 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
+  log "qualifying Workflow Control GS9-F2b worker/control lifecycle composition"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-worker "${network}" "${database_name}" "${resource_owner}" \
+    ./cmd/runner-server TestGS9F2Qualification 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
+  log "seeding Workflow Control GS9-F2b authority-binding restart qualification"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2AuthorityBindingRestartRecovery 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
+    WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed \
+    "WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after GS9-F2b runtime-delivery restart"
+
+  log "verifying Workflow Control GS9-F2b authority-binding recovery after PostgreSQL restart"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2AuthorityBindingRestartRecovery 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
+    WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify \
+    "WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA=${restart_schema}"
+}
+
 run_prometheus_gate() {
   local module_dir="$1"
   require_image "${PROMETHEUS_IMAGE}"
@@ -2506,6 +2642,72 @@ run_workflow_budget_authority_image_default_off() {
     go test -race ./cmd/budget-authority-server -run '^TestGS9EImageDefaultOff$' -count=1
 }
 
+run_workflow_runner_v2_runtime_delivery_image_default_off() {
+  local resource_prefix="$1"
+  local image_tag="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local runner_container="${resource_prefix}-runner-v2-runtime-delivery-default-off"
+  local runner_network_alias="runner-v2-runtime-delivery-default-off"
+  local bundle_root workspace_root bundle_mount workspace_mount
+
+  bundle_root="$(mktemp -d -t openslack-gs9f2-image-bundle.XXXXXX)"
+  workspace_root="$(mktemp -d -t openslack-gs9f2-image-workspace.XXXXXX)"
+  cleanup_directories+=("${bundle_root}" "${workspace_root}")
+  mkdir -m 0755 "${workspace_root}/descriptors"
+  chmod 0755 "${bundle_root}" "${workspace_root}"
+  printf '#!/bin/sh\nexit 0\n' >"${bundle_root}/runner-executable"
+  printf '// sealed default-off worker is never launched\n' >"${bundle_root}/workflow-runner-worker.js"
+  printf '%s\n' \
+    '{"schema":"openslack.workflow_runner_bundle.v1","bundleId":"openslack.gs9f2.image.default-off","runnerBuildHash":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad","executable":{"relativePath":"runner-executable","sha256":"306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"},"entrypoint":{"relativePath":"workflow-runner-worker.js","sha256":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad"},"entrypointMode":"first-argument","fixedArguments":[],"fixedEnvironment":["NODE_ENV=test"],"workingDirectory":"."}' \
+    >"${bundle_root}/workflow-runner-bundle.v1.json"
+  chmod 0555 "${bundle_root}/runner-executable"
+  chmod 0444 \
+    "${bundle_root}/workflow-runner-worker.js" \
+    "${bundle_root}/workflow-runner-bundle.v1.json"
+  bundle_mount="$(docker_path "${bundle_root}")"
+  workspace_mount="$(docker_path "${workspace_root}")"
+
+  cleanup_containers+=("${resource_owner}|${runner_container}")
+  docker_cmd_interruptible run -d --pull=never \
+    --name "${runner_container}" \
+    --label "com.openslack.go-check.run=${resource_owner}" \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+    --network "${network}" \
+    --network-alias "${runner_network_alias}" \
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable" \
+    --env WORKFLOW_RUNNER_CONTROL_ENABLED=1 \
+    --env WORKFLOW_RUNNER_CONTROL_HTTP_BIND=0.0.0.0:8081 \
+    --env WORKFLOW_RUNNER_CONTROL_NETWORK_MODE=internal \
+    --env WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --env WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256=3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9 \
+    --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID=workspace.gs9f2.image.default-off \
+    --env WORKFLOW_RUNNER_CONTROL_INSTANCE_ID=runner.gs9f2.image.default-off \
+    --env WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT=/runner-bundle \
+    --env WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=968c388f6b84277910c055f163c6db470ae48cfaa3153f52598c4bbef4afab6a \
+    --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=/runner-workspace \
+    --env WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT=/runner-workspace/descriptors \
+    --env WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1 \
+    --env WORKFLOW_CONTROL_HEALTH_URL=http://127.0.0.1:8081/health/ready \
+    --mount "type=bind,source=${bundle_mount},target=/runner-bundle,readonly" \
+    --mount "type=bind,source=${workspace_mount},target=/runner-workspace,readonly" \
+    --health-cmd /container-healthcheck \
+    --health-interval 1s \
+    --health-timeout 3s \
+    --health-retries 60 \
+    --entrypoint /runner-server \
+    "${image_tag}" >/dev/null
+  require_resource_owned container "${runner_container}" "${resource_owner}"
+  wait_for_healthy_container "${runner_container}" "Workflow Control GS9-F2b runtime-delivery default-off runner"
+
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-v2-runtime-delivery-image-default-off "${network}" "${database_name}" \
+    "${resource_owner}" ./cmd/runner-server TestGS9F2ImageDefaultOff 1 \
+    "WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN=http://${runner_network_alias}:8081"
+}
+
 run_http_smoke() {
   local resource_prefix="$1"
   local image_tag="$2"
@@ -2573,7 +2775,8 @@ run_http_smoke() {
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     run_args+=(
       --env 'WORKFLOW_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env WORKFLOW_CONTROL_HTTP_BIND=:8080
@@ -2611,7 +2814,8 @@ run_http_smoke() {
     "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
     "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     log "verifying Workflow Control GS7-B image API responses"
     run_workflow_control_test_container \
       "${resource_prefix}" image-smoke "${network}" "${database_name}" "${resource_owner}" \
@@ -2622,7 +2826,8 @@ run_http_smoke() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS8-B default image keeps runner disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
@@ -2633,7 +2838,8 @@ run_http_smoke() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS9-B authority image defaults to mutation-off"
       run_workflow_authority_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
@@ -2641,30 +2847,39 @@ run_http_smoke() {
     if [[ "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS9-C checkpoint shadow image defaults to observation-off"
       run_workflow_checkpoint_shadow_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
     if [[ "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS9-D effect shadow image defaults to observation-off"
       run_workflow_effect_shadow_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
     if [[ "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS9-E budget authority image defaults to mutation-off"
       run_workflow_budget_authority_image_default_off \
         "${resource_prefix}" "${image_tag}" "${resource_owner}"
     fi
-    if [[ "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
+    if [[ "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
+      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
       log "verifying Workflow Control GS9-F1 default image keeps runner v2 foundation disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-v2-foundation-image-default-off "${network}" "${database_name}" \
         "${resource_owner}" ./internal/runnerstore/postgres TestGS9F1ImageDefaultOff 1 \
         "WORKFLOW_RUNNER_GS9F1_DEFAULT_ORIGIN=http://${app_network_alias}:8080"
+    fi
+    if [[ "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      log "verifying Workflow Control GS9-F2b default image keeps runtime delivery disabled"
+      run_workflow_runner_v2_runtime_delivery_image_default_off \
+        "${resource_prefix}" "${image_tag}" "${network}" "${database_name}" "${resource_owner}"
     fi
   fi
 }

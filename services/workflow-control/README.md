@@ -5,8 +5,10 @@ contract, the GS7-B PostgreSQL shadow observation service, the explicit GS8-B ru
 control plane, the GS9-B default-off PostgreSQL authority qualification spine, the GS9-C
 checkpoint/resume differential observer, and the GS9-D effect decision/audit differential
 observer. It also contains the GS9-E1 budget operational contract mirror and the GS9-E2 default-off
-PostgreSQL budget qualification authority. The six servers are separate entry points with separate
-configuration and authority boundaries.
+PostgreSQL budget qualification authority, the GS9-F1 runner-v2 transport foundation, the GS9-F2a
+authority-binding contract mirror, and the default-off GS9-F2b runtime-delivery qualification
+profile. The six servers are separate entry points with separate configuration and authority
+boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -217,3 +219,27 @@ NOT_DELIVERED / routing / canary / cutover NOT_ACTIVATED`. There is no productio
 client, provider route, new-record canary, fallback, or TypeScript writer retirement.
 The non-secret qualification seed initializes the first account only and is not accepted on the
 HTTP wire. `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` remains explicit.
+
+## GS9-F2b runtime-delivery qualification
+
+The `workflow-control-runner-v2-runtime-delivery-v1` profile requires schema 8, the existing v2
+qualification switch, loopback network mode, and the separate runtime-delivery switch. It adds
+durable authority-binding stage, resolution, event, receipt, control-delivery ACK, and
+reconciliation records around the frozen runner-v2 and F2a bytes. The sealed TypeScript worker
+remains the JavaScript, RunStore, checkpoint, effect, provider, and source-authority executor; Go
+owns only runner lifecycle, the authority-binding coordinator, exact receipts, and the already
+isolated E2 budget qualification ledger.
+
+Checkpoint, effect, and resume events follow stage -> stage ACK -> source commit/point-read ->
+resolution -> resolution ACK -> byte-identical runner event -> durable event receipt -> receipt ACK
+-> optional decision -> decision ACK. Budget reserve and settle instead bind the exact prepared E1
+request as resolution evidence, wait for the resolution ACK, commit/point-read the isolated E2
+ledger, and only then emit the byte-identical runner event; the later reserve decision is checked
+against that durable E2 result. An individual companion HTTP response loss is point-read with the
+original idempotency key. Missing or drifted source evidence, lease/fence/head mismatch, process
+loss with outstanding authority, or an unprovable control ACK latches reconciliation and never
+chooses another key or locally replays a provider/effect.
+
+This profile remains default-off and qualification-only. The default image entry point, production
+v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, release, and live
+claims remain unchanged and outside GS9-F2b.

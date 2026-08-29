@@ -1,4 +1,4 @@
-# GS9-F1 Foundation and GS9-F2a Contract Qualification
+# GS9-F1 Foundation, GS9-F2a Contract, and GS9-F2b Runtime Qualification
 
 GS9-F1 qualifies only the frozen Workflow Runner v2 admission/storage, negotiation, and
 receipt-before-decision transport foundation plus a local opaque-call ordering seam. It
@@ -77,3 +77,48 @@ projection, and the accepted run revision. An E1
 database-unknown receipt instead produces a reconciliation-required event receipt and no budget
 decision. Cross-spliced prepared requests, decisions, ledgers, receipts, statuses, amounts, hashes,
 or revisions must be rejected identically by TypeScript and Go.
+
+## GS9-F2b runtime-delivery gate
+
+The F2b service profile is `workflow-control-runner-v2-runtime-delivery-v1`. Its local gate is a
+strict superset of F1/F2a and additionally requires the exact named `TestGS9F2*` tests, PostgreSQL
+schema-8 migration guards, restart recovery, race execution, and the default-off image smoke. The
+TypeScript gate covers the real worker composition in addition to contract/session fakes:
+
+```bash
+bun run test -- \
+  packages/workflows/src/__tests__/workflow-runner-authority-binding-runtime.test.ts \
+  packages/workflows/src/__tests__/workflow-runner-v2-effect-authorization.test.ts \
+  packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts \
+  packages/workflows/src/__tests__/workflow-runner-worker.test.ts
+(cd services/workflow-control && go test -race ./internal/runnerstore/postgres ./internal/runnerscheduler ./cmd/runner-server -count=1)
+bash scripts/go-check.sh services/workflow-control
+```
+
+Qualification must cover all six binding operations, first resume `0 -> 1`, exact budget reserve
+source-result point-read, settle evidence, event-receipt and decision ACK response loss, restart,
+process crash after source commit, cancellation before/after the event receipt, lease/fence/route/
+revision/generation drift, cross-binding splice, and downgrade rejection. No named test may be
+missing or skipped.
+
+The ACK gate must also prove notification-before-registration recovery, database point-read after a
+lost notification, an ACK that arrives after thirty seconds but before the lease/job hard deadline,
+and true hard-deadline expiry. Startup recovery must report and consume its examined/reconciled
+summary, use a query count independent of the number of recovered bindings, and preserve exact
+replay of closed evidence. Admission request/receipt schema and golden parity are generated in the
+authority-binding family and replayed by both TypeScript and Go.
+
+Passing establishes at most:
+
+```text
+GS9-F2b RUNTIME DELIVERY LOCAL_PASS
+default-off checkpoint/effect/budget/resume authority adapters delivered
+TypeScript production Workflow authority retained
+production v2 submission and routing NOT_ACTIVATED
+routing / canary / cutover / writer retirement NOT_ACTIVATED
+authenticated external / release / live NOT_CLAIMED
+```
+
+PostgreSQL 18, built-image, hosted exact-head CI, review-thread resolution, and independent human
+approval remain distinct evidence. A local older PostgreSQL run or a credential-free source test
+must not be reported as those gates.

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
+	budgetpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
@@ -36,7 +39,12 @@ type Repository struct {
 	commitTransaction func(context.Context, pgx.Tx) error
 	staleFenceRejects atomic.Int64
 	v2Authorities     runnerstore.V2AuthorityPorts
-	schemaVersion     int64
+	v2BudgetResults   interface {
+		ReadMutationResult(context.Context, string, string) (budgetstore.MutationResult, error)
+	}
+	schemaVersion       int64
+	v2RuntimeDelivery   bool
+	v2ControlACKWaiters sync.Map
 }
 
 func New(pool *pgxpool.Pool) *Repository {
@@ -49,6 +57,16 @@ func NewForSchema(pool *pgxpool.Pool, schemaVersion int64) *Repository {
 
 func NewWithV2Authorities(pool *pgxpool.Pool, authorities runnerstore.V2AuthorityPorts) *Repository {
 	return &Repository{pool: pool, v2Authorities: authorities, schemaVersion: databaseready.CurrentSchemaVersion}
+}
+
+// NewForV2RuntimeDelivery is the only composition path that admits the
+// qualification-only Go route and schema-8 authority-binding sideband.
+func NewForV2RuntimeDelivery(pool *pgxpool.Pool, authorities runnerstore.V2AuthorityPorts) *Repository {
+	return &Repository{
+		pool: pool, v2Authorities: authorities,
+		v2BudgetResults: budgetpostgres.New(pool),
+		schemaVersion:   databaseready.CurrentSchemaVersion, v2RuntimeDelivery: true,
+	}
 }
 
 func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) error) *Repository {

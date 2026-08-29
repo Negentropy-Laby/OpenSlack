@@ -19,6 +19,13 @@ profiles may narrow it. The default-off GS9-F1 v2 qualification profile requires
 and accepts later reviewed current versions. Schema 7 adds typed v2 dispatch and event tables but
 does not activate production v2 routing.
 
+The default-off GS9-F2b profile is `workflow-control-runner-v2-runtime-delivery-v1` and requires
+exactly schema 8. The host, not the bundle manifest, owns the runtime-delivery enable flag,
+loopback companion origin, raw bearer plus its SHA-256 binding, owner-local journal root, and the
+loopback E2 budget origin/token/caller binding. All child environment names are reserved and are
+injected only into a selected v2 runtime-delivery worker; the v1 worker and F1-only v2 profile strip
+them. Never place their values in the bundle, logs, evidence, or repository.
+
 Operational handling is fail closed:
 
 - `reconciliation_required`: stop automatic replay and inspect the runner reconciliation record;
@@ -40,6 +47,13 @@ The silent-session cancellation probe currently polls every 250 ms, matching v1.
 long-lived v2 routing, GS9-F2 must measure per-session query rate, cancellation-latency distribution,
 and database load, then compare bounded backoff and notification-based alternatives. The current
 value is a qualification setting, not an unmeasured production SLO.
+
+Under F2b, inspect the binding, resolution, event receipt, control-delivery ACK, and reconciliation
+rows together. `awaiting_ack` means the exact control bytes may have reached the worker but their
+durable ACK is absent; do not mark them delivered manually. A staged/resolved/runner-committed
+binding surviving process loss is quarantined before scheduler recovery. Cancellation may occupy
+the same binding's decision slot only when it preserves the frozen increasing sequence; otherwise
+the attempt is reconciled rather than resequenced.
 
 The metrics endpoint is authenticated and workspace-bound. When runner control is enabled, add it
 as a separate Prometheus target and load the supplied runner alerts. Logs must use bounded IDs and

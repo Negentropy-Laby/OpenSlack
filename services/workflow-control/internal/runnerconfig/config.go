@@ -4,6 +4,8 @@
 package runnerconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
@@ -31,28 +33,35 @@ var (
 )
 
 type Config struct {
-	DatabaseURL                 string
-	HTTPBind                    string
-	NetworkMode                 string
-	ServiceBuildSHA             string
-	BearerTokenSHA256           string
-	WorkspaceID                 string
-	SupervisorInstanceID        string
-	BundleRoot                  string
-	BundleManifestSHA256        string
-	WorkspaceRoot               string
-	DescriptorRoot              string
-	CheckpointShadowEnabled     bool
-	CheckpointShadowEndpoint    string
-	CheckpointShadowBearerToken string
-	CheckpointShadowCallerID    string
-	CheckpointShadowJournalRoot string
-	EffectShadowEnabled         bool
-	EffectShadowEndpoint        string
-	EffectShadowBearerToken     string
-	EffectShadowCallerID        string
-	EffectShadowJournalRoot     string
-	V2QualificationEnabled      bool
+	DatabaseURL                  string
+	HTTPBind                     string
+	NetworkMode                  string
+	ServiceBuildSHA              string
+	BearerTokenSHA256            string
+	WorkspaceID                  string
+	SupervisorInstanceID         string
+	BundleRoot                   string
+	BundleManifestSHA256         string
+	WorkspaceRoot                string
+	DescriptorRoot               string
+	CheckpointShadowEnabled      bool
+	CheckpointShadowEndpoint     string
+	CheckpointShadowBearerToken  string
+	CheckpointShadowCallerID     string
+	CheckpointShadowJournalRoot  string
+	EffectShadowEnabled          bool
+	EffectShadowEndpoint         string
+	EffectShadowBearerToken      string
+	EffectShadowCallerID         string
+	EffectShadowJournalRoot      string
+	V2QualificationEnabled       bool
+	V2RuntimeDeliveryEnabled     bool
+	V2RuntimeDeliveryOrigin      string
+	V2RuntimeDeliveryBearerToken string
+	V2RuntimeDeliveryJournalRoot string
+	V2BudgetOrigin               string
+	V2BudgetBearerToken          string
+	V2BudgetCallerID             string
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -64,6 +73,31 @@ type Config struct {
 	TerminalExitGrace time.Duration
 	PollInterval      time.Duration
 	RecoveryInterval  time.Duration
+}
+
+// V2RuntimeDeliveryRuntime is produced only after LoadEnvironment validates
+// the complete schema-8 runtime-delivery configuration. Downstream worker
+// injection consumes this typed value without maintaining a second validator.
+type V2RuntimeDeliveryRuntime struct {
+	Origin         string
+	BearerToken    string
+	BearerSHA256   string
+	JournalRoot    string
+	BudgetOrigin   string
+	BudgetToken    string
+	BudgetCallerID string
+}
+
+func (config Config) V2RuntimeDeliveryRuntime() *V2RuntimeDeliveryRuntime {
+	if !config.V2RuntimeDeliveryEnabled {
+		return nil
+	}
+	return &V2RuntimeDeliveryRuntime{
+		Origin: config.V2RuntimeDeliveryOrigin, BearerToken: config.V2RuntimeDeliveryBearerToken,
+		BearerSHA256: config.BearerTokenSHA256, JournalRoot: config.V2RuntimeDeliveryJournalRoot,
+		BudgetOrigin: config.V2BudgetOrigin, BudgetToken: config.V2BudgetBearerToken,
+		BudgetCallerID: config.V2BudgetCallerID,
+	}
 }
 
 func Load() (Config, error) { return LoadEnvironment(os.Environ()) }
@@ -136,6 +170,17 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if v2Qualification != "" && v2Qualification != EnabledValue {
 		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED must be unset or exactly 1")
 	}
+	v2RuntimeDelivery := values["WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED"]
+	if v2RuntimeDelivery != "" && v2RuntimeDelivery != EnabledValue {
+		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED must be unset or exactly 1")
+	}
+	if v2RuntimeDelivery == EnabledValue && (v2Qualification != EnabledValue || mode != NetworkLoopback) {
+		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED requires v2 qualification and loopback network mode")
+	}
+	runtimeOrigin, runtimeToken, runtimeJournal, budgetOrigin, budgetToken, budgetCaller, err := v2RuntimeDeliveryConfig(values, workspaceRoot, tokenHash, v2RuntimeDelivery == EnabledValue)
+	if err != nil {
+		return Config{}, err
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -154,9 +199,15 @@ func LoadEnvironment(environment []string) (Config, error) {
 		CheckpointShadowJournalRoot: checkpointJournal,
 		EffectShadowEnabled:         effectEnabled, EffectShadowEndpoint: effectEndpoint,
 		EffectShadowBearerToken: effectToken, EffectShadowCallerID: effectCaller,
-		EffectShadowJournalRoot: effectJournal,
-		V2QualificationEnabled:  v2Qualification == EnabledValue,
-		ShutdownDeadline:        30 * time.Second, MaxProcesses: maxProcesses,
+		EffectShadowJournalRoot:      effectJournal,
+		V2QualificationEnabled:       v2Qualification == EnabledValue,
+		V2RuntimeDeliveryEnabled:     v2RuntimeDelivery == EnabledValue,
+		V2RuntimeDeliveryOrigin:      runtimeOrigin,
+		V2RuntimeDeliveryBearerToken: runtimeToken,
+		V2RuntimeDeliveryJournalRoot: runtimeJournal,
+		V2BudgetOrigin:               budgetOrigin, V2BudgetBearerToken: budgetToken,
+		V2BudgetCallerID: budgetCaller,
+		ShutdownDeadline: 30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
@@ -166,30 +217,37 @@ func LoadEnvironment(environment []string) (Config, error) {
 
 func parse(environment []string) (map[string]string, error) {
 	allowed := map[string]struct{}{
-		"DATABASE_URL":                                           {},
-		"WORKFLOW_RUNNER_CONTROL_ENABLED":                        {},
-		"WORKFLOW_RUNNER_CONTROL_HTTP_BIND":                      {},
-		"WORKFLOW_RUNNER_CONTROL_NETWORK_MODE":                   {},
-		"WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA":              {},
-		"WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256":            {},
-		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID":                   {},
-		"WORKFLOW_RUNNER_CONTROL_INSTANCE_ID":                    {},
-		"WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT":                    {},
-		"WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256":         {},
-		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT":                 {},
-		"WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT":                {},
-		"WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES":                  {},
-		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED":      {},
-		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT":     {},
-		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN": {},
-		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID":    {},
-		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT": {},
-		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED":          {},
-		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT":         {},
-		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN":     {},
-		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID":        {},
-		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT":     {},
-		"WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED":       {},
+		"DATABASE_URL":                                             {},
+		"WORKFLOW_RUNNER_CONTROL_ENABLED":                          {},
+		"WORKFLOW_RUNNER_CONTROL_HTTP_BIND":                        {},
+		"WORKFLOW_RUNNER_CONTROL_NETWORK_MODE":                     {},
+		"WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA":                {},
+		"WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256":              {},
+		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID":                     {},
+		"WORKFLOW_RUNNER_CONTROL_INSTANCE_ID":                      {},
+		"WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT":                      {},
+		"WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256":           {},
+		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT":                   {},
+		"WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT":                  {},
+		"WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES":                    {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED":        {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT":       {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN":   {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_CALLER_ID":      {},
+		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_JOURNAL_ROOT":   {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENABLED":            {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_ENDPOINT":           {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_BEARER_TOKEN":       {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_CALLER_ID":          {},
+		"WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_JOURNAL_ROOT":       {},
+		"WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED":         {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED":      {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ORIGIN":       {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_BEARER_TOKEN": {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_JOURNAL_ROOT": {},
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_ORIGIN":                 {},
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_BEARER_TOKEN":           {},
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_CALLER_ID":              {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {
@@ -208,6 +266,74 @@ func parse(environment []string) (map[string]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func v2RuntimeDeliveryConfig(values map[string]string, workspaceRoot, expectedTokenHash string, enabled bool) (string, string, string, string, string, string, error) {
+	names := []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ORIGIN",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_BEARER_TOKEN",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_JOURNAL_ROOT",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_ORIGIN",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_BEARER_TOKEN",
+		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_CALLER_ID",
+	}
+	if !enabled {
+		for _, name := range names {
+			if values[name] != "" {
+				return "", "", "", "", "", "", fmt.Errorf("disabled v2 runtime-delivery configuration must be empty")
+			}
+		}
+		return "", "", "", "", "", "", nil
+	}
+	origin, err := exactLoopbackOrigin(values[names[0]], names[0])
+	if err != nil {
+		return "", "", "", "", "", "", err
+	}
+	token := values[names[1]]
+	if err := validateRawToken(token, names[1]); err != nil {
+		return "", "", "", "", "", "", err
+	}
+	tokenDigest := sha256.Sum256([]byte(token))
+	if hex.EncodeToString(tokenDigest[:]) != expectedTokenHash {
+		return "", "", "", "", "", "", fmt.Errorf("%s does not match WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256", names[1])
+	}
+	journal, err := absolutePath(values[names[2]], names[2])
+	if err != nil {
+		return "", "", "", "", "", "", err
+	}
+	localRoot := filepath.Join(workspaceRoot, ".openslack.local")
+	relative, relErr := filepath.Rel(localRoot, journal)
+	if relErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", "", "", "", "", "", fmt.Errorf("%s must be beneath the workspace-local state root", names[2])
+	}
+	budgetOrigin, err := exactLoopbackOrigin(values[names[3]], names[3])
+	if err != nil {
+		return "", "", "", "", "", "", err
+	}
+	budgetToken := values[names[4]]
+	if err := validateRawToken(budgetToken, names[4]); err != nil {
+		return "", "", "", "", "", "", err
+	}
+	budgetCaller := strings.TrimSpace(values[names[5]])
+	if !safeID.MatchString(budgetCaller) {
+		return "", "", "", "", "", "", fmt.Errorf("%s is invalid", names[5])
+	}
+	return origin, token, journal, budgetOrigin, budgetToken, budgetCaller, nil
+}
+
+func exactLoopbackOrigin(value, name string) (string, error) {
+	canonical, err := localshadowconfig.ExactLoopbackOrigin(value)
+	if err != nil {
+		return "", fmt.Errorf("%s must be an exact loopback HTTP origin", name)
+	}
+	return canonical, nil
+}
+
+func validateRawToken(value, name string) error {
+	if len(value) < 32 || len(value) > 4096 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n\x00") {
+		return fmt.Errorf("%s is invalid", name)
+	}
+	return nil
 }
 
 func checkpointShadowConfig(values map[string]string, workspaceRoot string) (bool, string, string, string, string, error) {

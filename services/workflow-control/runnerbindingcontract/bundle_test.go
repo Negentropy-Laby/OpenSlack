@@ -43,6 +43,19 @@ type runnerBindingManifest struct {
 		ControlDeliveryAck                        bool     `json:"controlDeliveryAck"`
 		ExactReplayReturnsOriginalReceiptBytes    bool     `json:"exactReplayReturnsOriginalReceiptBytes"`
 	} `json:"protocol"`
+	RuntimeAdmission struct {
+		RequestSchema string            `json:"requestSchema"`
+		ReceiptSchema string            `json:"receiptSchema"`
+		KeyPrefix     string            `json:"keyPrefix"`
+		Domains       map[string]string `json:"domains"`
+		Limits        struct {
+			MaxFrameBytes  int `json:"maxFrameBytes"`
+			MaxDepth       int `json:"maxDepth"`
+			MaxNodes       int `json:"maxNodes"`
+			MaxStringBytes int `json:"maxStringBytes"`
+		} `json:"limits"`
+		NegativeVectorIDs []string `json:"negativeVectorIds"`
+	} `json:"runtimeAdmission"`
 	BudgetDecisionDelivery struct {
 		RevisionPlanes struct {
 			Envelope         string `json:"envelope"`
@@ -53,6 +66,7 @@ type runnerBindingManifest struct {
 	Operations []struct {
 		Operation             Operation   `json:"operation"`
 		TargetKind            string      `json:"targetKind"`
+		CompletionControlKind string      `json:"completionControlKind"`
 		RunnerDelta           RunnerDelta `json:"runnerDelta"`
 		SourcePlane           string      `json:"sourcePlane"`
 		SourceEvidenceState   string      `json:"sourceEvidenceState"`
@@ -139,6 +153,23 @@ func TestManifestLocksClosedContractAndAuthorityCeiling(t *testing.T) {
 		t.Fatalf("manifest identity drifted: %+v", manifest)
 	}
 	boundary := manifest.AuthorityBoundary
+	runtimeAdmission := manifest.RuntimeAdmission
+	if runtimeAdmission.RequestSchema != RuntimeAdmissionSchema ||
+		runtimeAdmission.ReceiptSchema != RuntimeAdmissionReceiptSchema ||
+		runtimeAdmission.KeyPrefix != RuntimeAdmissionKeyPrefix ||
+		runtimeAdmission.Domains["idempotency"] != RuntimeAdmissionIDDomain ||
+		runtimeAdmission.Domains["fingerprint"] != RuntimeAdmissionFingerprintDomain ||
+		runtimeAdmission.Limits.MaxFrameBytes != MaxReceiptBytes ||
+		runtimeAdmission.Limits.MaxDepth != MaxJSONDepth ||
+		runtimeAdmission.Limits.MaxNodes != MaxJSONNodes ||
+		runtimeAdmission.Limits.MaxStringBytes != MaxStringBytes ||
+		!reflect.DeepEqual(runtimeAdmission.NegativeVectorIDs, []string{
+			"runtime-admission-disposition-drift",
+			"runtime-admission-receipt-cross-splice",
+			"runtime-admission-receipt-invalid-timestamp",
+		}) {
+		t.Fatalf("runtime admission manifest drifted: %+v", runtimeAdmission)
+	}
 	if boundary.Batch != "GS9-F2a" || !boundary.Normative || !boundary.ContractOnly || !boundary.QualificationOnly ||
 		boundary.AuthorityClaim != "NO_AUTHORITY" || boundary.GoAuthorityImplemented ||
 		boundary.RuntimeCompositionImplemented || boundary.ProductionRoutingActivated ||
@@ -224,7 +255,7 @@ func assertManifestOperationMatrix(t *testing.T, manifest runnerBindingManifest)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if entry.Operation != operation || entry.TargetKind != string(fact.TargetKind) || entry.RunnerDelta != fact.RunnerDelta ||
+		if entry.Operation != operation || entry.TargetKind != string(fact.TargetKind) || entry.CompletionControlKind != string(fact.CompletionControlKind) || entry.RunnerDelta != fact.RunnerDelta ||
 			entry.SourcePlane != fact.SourcePlane || entry.SourceEvidenceState != fact.SourceEvidenceState ||
 			entry.SourceRevisionDelta != fact.SourceRevisionDelta || entry.SourceGenerationDelta != fact.SourceGenerationDelta ||
 			!nullableStringsEqual(entry.SourceReceiptSchema, fact.SourceReceiptSchema) {

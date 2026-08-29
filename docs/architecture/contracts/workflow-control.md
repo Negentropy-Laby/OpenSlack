@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-20
+updated: 2026-08-22
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -21,7 +21,8 @@ Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B Postgr
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
 checkpoint/resume differential, the GS9-D effect-control seam plus default-off parity shadow, and
 the GS9-E1 budget operational bundle plus GS9-E2 default-off durable qualification authority,
-the GS9-F1 runner-v2 foundation, and the GS9-F2a authority-binding companion contract freeze.
+the GS9-F1 runner-v2 foundation, the GS9-F2a authority-binding companion contract freeze, and the
+GS9-F2b default-off runtime-delivery qualification profile.
 TypeScript remains the sole production workflow writer, runner, approval, budget, effect, resume,
 and user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision
 and one-time claim, and D3 observes only the three credential-free decision/audit projections. E1
@@ -618,13 +619,13 @@ source-lock, framing, evidence, and closed boundary inventories are likewise aut
 architecture documents must link to that record rather than duplicate its matrices or
 `NOT_CLAIMED` list.
 
-F2a contributes the exact TypeScript contract and pure Go validator. The GS9-F1 runner store uses a
+F2a contributes the exact TypeScript contract and pure Go validator. The GS9-F1 runner store used a
 narrow subset of that proof to validate the exact durable budget-receipt bytes, their SHA-256,
 operation/status, reservation identity, and accepted budget source-run revision on fresh,
-response-loss, and stored replay paths. It does not persist the full F2a source result or compose
-the remaining domain adapters, scheduler/worker recovery, or future profile. TypeScript remains the
-production Workflow authority, and GS9-F2b must implement and qualify every runtime capability
-listed by the manifest as not delivered.
+response-loss, and stored replay paths. F1 did not persist the full F2a source result or compose the
+remaining domain adapters, scheduler/worker recovery, or future profile. TypeScript remains the
+production Workflow authority; the F2b section below implements and qualifies the runtime
+capabilities that the F2a manifest listed as not delivered.
 
 A budget decision delivery is a post-event contextual proof, not a projection of the pre-event
 resolution ACK. For `budget_reserve`, the control-delivery validator consumes the same exact E1
@@ -645,6 +646,47 @@ Hash selection is kind-bound rather than caller-selected: `budget_authorization`
 the exact canonical durable receipt bytes, while `effect_authorization` and `resume_offer` use the
 binding receipt domain hash. Kinds without an authority-receipt payload declare no algorithm. The
 TypeScript and Go validators consume the same generated operation facts and one validation-session
-cache, so this hardening removes structural drift and repeated parsing. The live Go runner-store
-check described above is intentionally narrower: migration `000008` and the F2b recovery protocol
-are required before the full decision/ledger source-result proof can be persisted and reconstructed.
+cache, so this hardening removes structural drift and repeated parsing. The F2a live Go runner-store
+check described above remains intentionally narrower; migration `000008` and the F2b recovery
+protocol below persist and reconstruct the full decision/ledger source-result proof.
+
+## GS9-F2b coordinator delivery boundary
+
+F2b persists the companion stage, stage ACK, source resolution, resolution ACK, runner event,
+event receipt, control-delivery ACK, optional decision, and decision ACK as one ordered binding
+lifecycle. Global revision changes are operation-specific and independent from checkpoint/effect/
+budget source revisions and from runner attempt/lease fencing. A source receipt cannot substitute
+for the matching global-head CAS, and a durable event receipt cannot substitute for its worker ACK.
+
+The worker consumes receipt, decision, and cancel controls through one serial inbound lane. Only an
+accepted event receipt advances the persisted global revision; a decision validates that accepted
+head and cannot overwrite it. Cancellation may use the operation's declared completion control
+kind only at the next legal companion position. A non-contiguous or earlier cancel is acknowledged
+as `reconciliation_required` on the existing receipt path and no second conflicting decision ACK is
+written. Every ACK wait returns either `accepted` or `reconciliation_required`; the coordinator
+must not send a dependent decision after the latter.
+
+There is no independent 30-second ACK correctness deadline. The hard bound is the earlier of the
+lease expiry and whole-job deadline. An in-process notification wakes the common wait path, while a
+database point-read before and after waiter registration remains the durable fact and closes the
+notification race. Explicit rejection, uncertain persistence, process cancellation, or expiry of
+that hard bound latches reconciliation. A slow but successful ACK before the hard bound does not.
+
+Exact-key replay is evaluated before current-attempt admission, so an initial `lease_accept` may
+replay its original bytes after the attempt becomes running. Fresh, response-loss, and stored
+replay paths revalidate the same binding/source evidence, sequence, revision, payload identity, and
+durable receipt hash. The runtime-delivery profile admits only `go/workflow-control` v2 jobs;
+`ts-local` submissions fail before they can remain queued. Checkpoint evidence is selected by the
+requested phase index, budget decisions remain coupled to their durable source result, and effect
+grants expire at the earliest of approval expiry, descriptor expiry, and sixty seconds after the
+decision, with checks both before claim and immediately before the side effect.
+
+The Go scheduler quarantines staged, resolved, runner-committed, or unacknowledged binding state
+after process loss or lease expiry, discards its in-memory delivery view, and does not replay or
+continue the TypeScript-owned source mutation. The binding remains reconciliation-required. An
+explicit owner-local TypeScript recovery mode may point-read the original immutable source and
+companion receipts under the same idempotency key; it never changes that key or invents a source
+outcome. Cancellation may take a decision position only when its sequence remains valid; ambiguous
+ordering is reconciliation-required. This is a qualification coordinator only: TypeScript remains
+production Workflow state-machine and source authority, and GS9-G remains the first batch allowed
+to route new production records to Go.

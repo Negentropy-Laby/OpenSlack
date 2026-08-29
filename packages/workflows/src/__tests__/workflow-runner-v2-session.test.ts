@@ -19,6 +19,7 @@ import {
   WorkflowRunnerV2Session,
   workflowRunnerV2BudgetDecisionMatchesRequest,
   type WorkflowRunnerV2ExecutionContext,
+  type WorkflowRunnerV2RuntimeDeliveryPort,
 } from '../workflow-runner-v2-session.js';
 import type { RunResult } from '../types.js';
 
@@ -151,7 +152,13 @@ function leaseOffer(value: ReturnType<typeof descriptor>, sequence = 1) {
   });
 }
 
-function receipt(event: WorkflowControlAuthorityMessage, controlSequence: number, runRevision = 1) {
+function receipt(
+  event: WorkflowControlAuthorityMessage,
+  controlSequence: number,
+  runRevision = 1,
+  resumeGeneration = event.resumeGeneration,
+  status: 'accepted' | 'reconciliation_required' = 'accepted',
+) {
   const prepared = prepareWorkflowControlAuthorityMessage(event);
   return controlMessage({
     kind: 'event_receipt',
@@ -162,7 +169,7 @@ function receipt(event: WorkflowControlAuthorityMessage, controlSequence: number
     fencingToken: event.fencingToken,
     sequence: controlSequence,
     runRevision,
-    resumeGeneration: event.resumeGeneration,
+    resumeGeneration,
     authorityBackend: event.authorityBackend,
     authority: event.authority,
     routingEpoch: event.routingEpoch,
@@ -175,12 +182,55 @@ function receipt(event: WorkflowControlAuthorityMessage, controlSequence: number
       receivedDigest: prepared.messageDigest,
       receivedIdempotencyKey: prepared.idempotencyKey,
       receivedFingerprint: prepared.requestFingerprint,
-      status: 'accepted',
+      status,
       controlBuildHash: HASH_D,
       committedAt: NOW,
-      errorCode: null,
+      errorCode:
+        status === 'accepted' ? null : 'WORKFLOW_CONTROL_AUTHORITY_RECONCILIATION_REQUIRED',
     },
   });
+}
+
+function cancelRequest(
+  value: ReturnType<typeof descriptor>,
+  sequence: number,
+  runRevision: number,
+  resumeGeneration = value.resumeGeneration,
+) {
+  return controlMessage({
+    kind: 'cancel_request',
+    workflowRunId: value.workflowRunId,
+    sequence,
+    runRevision,
+    resumeGeneration,
+    authorityBackend: value.authorityRoute.backend,
+    authority: value.authorityRoute.authority,
+    routingEpoch: value.authorityRoute.routingEpoch,
+    authorityBuildHash: value.authorityRoute.authorityBuildHash,
+    correlationId: value.correlationId,
+    payload: {
+      cancelId: `cancel.v2.${sequence}`,
+      requestedAt: NOW,
+      expiresAt: LATER,
+      reason: 'operator',
+    },
+  });
+}
+
+function checkpointPayload(value: ReturnType<typeof descriptor>, checkpointId: string) {
+  return {
+    checkpointId,
+    phaseId: 'phase-1',
+    phaseIndex: 0,
+    commitPoint: 'after_phase_work',
+    artifactRef: `checkpoint-control/artifacts/${checkpointId}.json`,
+    artifactHash: HASH_A,
+    resultHash: null,
+    cacheKeyHash: null,
+    workflowSourceHash: value.workflowSourceHash,
+    manifestHash: value.manifestHash,
+    inputHash: value.inputHash,
+  } as const;
 }
 
 async function turn(): Promise<void> {
@@ -193,10 +243,13 @@ function harness(
   options: {
     readonly execute?: (context: WorkflowRunnerV2ExecutionContext) => Promise<RunResult>;
     readonly now?: () => string;
+    readonly runtimeDelivery?: WorkflowRunnerV2RuntimeDeliveryPort;
+    readonly activity?: string[];
   } = {},
 ) {
   const sealed = descriptor(resumeGeneration, authorityRoute);
   const sent: WorkflowControlAuthorityMessage[] = [];
+  const sentBytes: string[] = [];
   const closed: number[] = [];
   let prepared = 0;
   let loaded = 0;
@@ -222,7 +275,10 @@ function harness(
       },
     },
     send(exactBytes) {
-      sent.push(JSON.parse(exactBytes) as WorkflowControlAuthorityMessage);
+      sentBytes.push(exactBytes);
+      const message = JSON.parse(exactBytes) as WorkflowControlAuthorityMessage;
+      sent.push(message);
+      options.activity?.push(`send:${message.kind}`);
     },
     close(exitCode) {
       closed.push(exitCode);
@@ -233,12 +289,14 @@ function harness(
       if (options.execute) return options.execute(context);
       return await new Promise<never>(() => undefined);
     },
+    runtimeDelivery: options.runtimeDelivery,
     now: options.now ?? (() => NOW),
   });
   return {
     session,
     sealed,
     sent,
+    sentBytes,
     closed,
     counts: () => ({ prepared, loaded, executed }),
     context: () => executionContext,
@@ -267,6 +325,528 @@ async function handshake(harnessValue: ReturnType<typeof harness>): Promise<void
 }
 
 describe('WorkflowRunnerV2Session', () => {
+  it('sends exact F2b checkpoint bytes only after companion resolution and ACKs before progress', async () => {
+    const activity: string[] = [];
+    let binding = 0;
+    let committedExactBytes = '';
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume(_descriptor, lease) {
+        expect(lease).toMatchObject({
+          jobId: 'job.v2',
+          workflowRunId: value.sealed.workflowRunId,
+          attemptId: 'attempt.v2',
+          leaseId: 'lease.v2',
+          fencingToken: 1,
+          jobSpecHash: HASH_C,
+        });
+        activity.push('isResume:false');
+        return false;
+      },
+      async commit(operation, target) {
+        activity.push(`commit:${operation}`);
+        binding += 1;
+        committedExactBytes = target.body;
+        return {
+          stage: { bindingId: `WFRUNNER-BINDING-${String(binding).padStart(64, '0')}` },
+          exactEventBytes: target.body,
+        } as never;
+      },
+      async acknowledgeControl(_bindingId, message) {
+        activity.push(`ack:${message.kind}`);
+      },
+    };
+    const route = {
+      backend: 'go' as const,
+      authority: 'workflow-control' as const,
+      routingEpoch: 1,
+      authorityBuildHash: HASH_A,
+    };
+    const value = harness(0, route, { runtimeDelivery, activity });
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    expect(accept.kind).toBe('lease_accept');
+    expect(activity).not.toContain('commit:resume_advance');
+    await value.session.receive(receipt(accept, 2, 1, 0));
+    await offerTask;
+    await turn();
+    activity.length = 0;
+
+    const checkpointTask = value.context()!.checkpointCommit({
+      checkpointId: 'checkpoint.v2.f2b',
+      phaseId: 'phase-1',
+      phaseIndex: 0,
+      commitPoint: 'after_phase_work',
+      artifactRef: 'checkpoint-control/artifacts/f2b.json',
+      artifactHash: HASH_A,
+      resultHash: null,
+      cacheKeyHash: null,
+      workflowSourceHash: value.sealed.workflowSourceHash,
+      manifestHash: value.sealed.manifestHash,
+      inputHash: value.sealed.inputHash,
+    });
+    await turn();
+    const checkpoint = value.sent.at(-1)!;
+    expect(activity).toEqual(['commit:checkpoint_commit', 'send:checkpoint_commit']);
+    expect(value.sentBytes.at(-1)).toBe(committedExactBytes);
+    expect(value.sentBytes.at(-1)).toBe(prepareWorkflowControlAuthorityMessage(checkpoint).body);
+    await value.session.receive(receipt(checkpoint, 3, 2, 0));
+    await checkpointTask;
+    expect(activity).toEqual([
+      'commit:checkpoint_commit',
+      'send:checkpoint_commit',
+      'ack:event_receipt',
+    ]);
+  });
+
+  it('uses durable disposition to distinguish initial gen0 from first resume 0 to 1', async () => {
+    const activity: string[] = [];
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        activity.push('isResume:true');
+        return true;
+      },
+      async commit(operation, target) {
+        activity.push(`commit:${operation}`);
+        return {
+          stage: { bindingId: `WFRUNNER-BINDING-${'9'.repeat(64)}` },
+          exactEventBytes: target.body,
+        } as never;
+      },
+      async acknowledgeControl(_bindingId, message) {
+        activity.push(`ack:${message.kind}`);
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      { runtimeDelivery, activity },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    expect(accept).toMatchObject({ kind: 'lease_accept', runRevision: 1, resumeGeneration: 0 });
+    expect(activity.slice(-2)).toEqual(['commit:resume_advance', 'send:lease_accept']);
+    await value.session.receive(receipt(accept, 2, 2, 1));
+    await turn();
+    expect(value.session.state).toBe('waiting_control_decision');
+    await value.session.receive(
+      controlMessage({
+        kind: 'resume_offer',
+        workflowRunId: value.sealed.workflowRunId,
+        sequence: 3,
+        runRevision: 1,
+        resumeGeneration: 0,
+        authorityBackend: 'go',
+        authority: 'workflow-control',
+        correlationId: value.sealed.correlationId,
+        payload: {
+          checkpointId: 'checkpoint.v2.first-resume',
+          checkpointHash: HASH_B,
+          nextPhaseId: 'phase-1',
+          nextPhaseIndex: 0,
+          newResumeGeneration: 1,
+          newAttemptId: 'attempt.v2.resume.1',
+          authorityReceiptHash: HASH_C,
+          expiresAt: LATER,
+        },
+      }),
+    );
+    await offerTask;
+    await turn();
+    expect(value.counts()).toEqual({ prepared: 1, loaded: 1, executed: 1 });
+    expect(value.context()?.resumeOffer).toMatchObject({
+      kind: 'resume_offer',
+      payload: { newResumeGeneration: 1 },
+    });
+    expect(value.context()?.resumeGeneration).toBe(1);
+    expect(activity).toContain('ack:event_receipt');
+    expect(activity).toContain('ack:resume_offer');
+  });
+
+  it('hands the exact reserve source result to accepted and rejected budget decision ACKs', async () => {
+    for (const status of ['reserved', 'rejected'] as const) {
+      const acknowledgements: Array<{
+        kind: WorkflowControlAuthorityMessage['kind'];
+        context: Parameters<WorkflowRunnerV2RuntimeDeliveryPort['acknowledgeControl']>[2];
+      }> = [];
+      const budgetSourceResult = { status, exact: true } as never;
+      const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+        async isResume() {
+          return false;
+        },
+        async commit(operation, target) {
+          expect(operation).toBe('budget_reserve');
+          return {
+            stage: {
+              bindingId: `WFRUNNER-BINDING-${status === 'reserved' ? '8' : '7'.repeat(64)}`,
+            },
+            exactEventBytes: target.body,
+            budgetSourceResult,
+          } as never;
+        },
+        async acknowledgeControl(_bindingId, message, context) {
+          acknowledgements.push({ kind: message.kind, context });
+        },
+      };
+      const route = {
+        backend: 'go' as const,
+        authority: 'workflow-control' as const,
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      };
+      const value = harness(0, route, { runtimeDelivery });
+      await handshake(value);
+      const offerTask = value.session.receive(leaseOffer(value.sealed));
+      await turn();
+      const accept = value.sent.at(-1)!;
+      await value.session.receive(receipt(accept, 2));
+      await offerTask;
+      await turn();
+
+      const reserveTask = value.context()!.reserveBudget({
+        reservationId: `reservation.v2.${status}`,
+        callId: `call.v2.${status}`,
+        policyHash: HASH_B,
+        requestedTokens: '100',
+        requestedCostNanoUsd: '1000',
+        requestedCalls: '1',
+      });
+      await turn();
+      const reserve = value.sent.at(-1)!;
+      await value.session.receive(receipt(reserve, 3, 2));
+      await value.session.receive(
+        controlMessage({
+          kind: 'budget_authorization',
+          workflowRunId: value.sealed.workflowRunId,
+          sequence: 4,
+          runRevision: 2,
+          resumeGeneration: 0,
+          authorityBackend: 'go',
+          authority: 'workflow-control',
+          correlationId: value.sealed.correlationId,
+          payload: {
+            reservationId: `reservation.v2.${status}`,
+            status,
+            authorizedTokens: status === 'reserved' ? '100' : '0',
+            authorizedCostNanoUsd: status === 'reserved' ? '1000' : '0',
+            authorizedCalls: status === 'reserved' ? '1' : '0',
+            authorityReceiptHash: HASH_C,
+            committedRunRevision: 2,
+          },
+        }),
+      );
+      await expect(reserveTask).resolves.toMatchObject({
+        decision: {
+          kind: 'budget_authorization',
+          payload: { status },
+        },
+        budgetSourceResult,
+      });
+      expect(acknowledgements).toHaveLength(2);
+      expect(acknowledgements[0]).toMatchObject({
+        kind: 'event_receipt',
+        context: { disposition: 'accepted' },
+      });
+      expect(acknowledgements[0]!.context).not.toHaveProperty('budgetSourceResult');
+      expect(acknowledgements[1]).toMatchObject({
+        kind: 'budget_authorization',
+        context: { disposition: 'accepted' },
+      });
+      expect(acknowledgements[1]!.context.budgetSourceResult).toBe(budgetSourceResult);
+    }
+  });
+
+  it('ACKs a reconciliation-required event receipt before closing the binding', async () => {
+    const activity: string[] = [];
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit(_operation, target) {
+        return {
+          stage: { bindingId: `WFRUNNER-BINDING-${'6'.repeat(64)}` },
+          exactEventBytes: target.body,
+        } as never;
+      },
+      async acknowledgeControl(_bindingId, message, context) {
+        activity.push(`ack:${message.kind}:${context.disposition}`);
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      { runtimeDelivery },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+    const checkpointTask = value
+      .context()!
+      .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.reconcile'));
+    await turn();
+    const checkpoint = value.sent.at(-1)!;
+    await value.session.receive(receipt(checkpoint, 3, 2, 0, 'reconciliation_required'));
+    await expect(checkpointTask).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+    });
+    expect(activity).toEqual(['ack:event_receipt:reconciliation_required']);
+    expect(value.closed).toEqual([2]);
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+  });
+
+  it('reconciles a queued non-contiguous cancel through the event-receipt ACK', async () => {
+    const acknowledged: Array<{
+      bindingId: string;
+      kind: WorkflowControlAuthorityMessage['kind'];
+    }> = [];
+    const bindingId = `WFRUNNER-BINDING-${'5'.repeat(64)}`;
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit(_operation, target) {
+        return { stage: { bindingId }, exactEventBytes: target.body } as never;
+      },
+      async acknowledgeControl(receivedBindingId, message) {
+        acknowledged.push({ bindingId: receivedBindingId, kind: message.kind });
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      { runtimeDelivery },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+    const checkpointTask = value
+      .context()!
+      .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.cancel'));
+    await turn();
+    const checkpoint = value.sent.at(-1)!;
+    await value.session.receive(cancelRequest(value.sealed, 3, 2));
+    expect(value.context()!.signal.aborted).toBe(true);
+    await value.session.receive(receipt(checkpoint, 4, 2));
+    await expect(checkpointTask).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+    });
+    expect(acknowledged).toEqual([{ bindingId, kind: 'event_receipt' }]);
+    expect(value.closed).toEqual([2]);
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+  });
+
+  it('uses cancel instead of a pending decision as the same binding sequence four ACK', async () => {
+    const acknowledged: Array<{
+      bindingId: string;
+      kind: WorkflowControlAuthorityMessage['kind'];
+    }> = [];
+    const bindingId = `WFRUNNER-BINDING-${'4'.repeat(64)}`;
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit(_operation, target) {
+        return {
+          stage: { bindingId },
+          exactEventBytes: target.body,
+          budgetSourceResult: {},
+        } as never;
+      },
+      async acknowledgeControl(receivedBindingId, message) {
+        acknowledged.push({ bindingId: receivedBindingId, kind: message.kind });
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      { runtimeDelivery },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+    const reserveTask = value.context()!.reserveBudget({
+      reservationId: 'reservation.v2.cancel',
+      callId: 'call.v2.cancel',
+      policyHash: HASH_B,
+      requestedTokens: '100',
+      requestedCostNanoUsd: '1000',
+      requestedCalls: '1',
+    });
+    await turn();
+    const reserve = value.sent.at(-1)!;
+    await value.session.receive(receipt(reserve, 3, 2));
+    await value.session.receive(cancelRequest(value.sealed, 4, 2));
+    await expect(reserveTask).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+    });
+    expect(acknowledged).toEqual([
+      { bindingId, kind: 'event_receipt' },
+      { bindingId, kind: 'cancel_request' },
+    ]);
+    expect(value.closed).toEqual([2]);
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+  });
+
+  it('keeps cancel after a confirmed decision on the ordinary runner ACK lane', async () => {
+    const acknowledged: WorkflowControlAuthorityMessage['kind'][] = [];
+    const bindingId = `WFRUNNER-BINDING-${'3'.repeat(64)}`;
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit(_operation, target) {
+        return {
+          stage: { bindingId },
+          exactEventBytes: target.body,
+          budgetSourceResult: {},
+        } as never;
+      },
+      async acknowledgeControl(_receivedBindingId, message) {
+        acknowledged.push(message.kind);
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      { runtimeDelivery },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+    const reserveTask = value.context()!.reserveBudget({
+      reservationId: 'reservation.v2.decision-then-cancel',
+      callId: 'call.v2.decision-then-cancel',
+      policyHash: HASH_B,
+      requestedTokens: '100',
+      requestedCostNanoUsd: '1000',
+      requestedCalls: '1',
+    });
+    await turn();
+    const reserve = value.sent.at(-1)!;
+    await value.session.receive(receipt(reserve, 3, 2));
+    await value.session.receive(
+      controlMessage({
+        kind: 'budget_authorization',
+        workflowRunId: value.sealed.workflowRunId,
+        sequence: 4,
+        runRevision: 2,
+        resumeGeneration: 0,
+        authorityBackend: 'go',
+        authority: 'workflow-control',
+        correlationId: value.sealed.correlationId,
+        payload: {
+          reservationId: 'reservation.v2.decision-then-cancel',
+          status: 'reserved',
+          authorizedTokens: '100',
+          authorizedCostNanoUsd: '1000',
+          authorizedCalls: '1',
+          authorityReceiptHash: HASH_C,
+          committedRunRevision: 2,
+        },
+      }),
+    );
+    await expect(reserveTask).resolves.toMatchObject({
+      decision: { kind: 'budget_authorization' },
+    });
+    expect(acknowledged).toEqual(['event_receipt', 'budget_authorization']);
+
+    const cancelTask = value.session.receive(cancelRequest(value.sealed, 5, 2));
+    await turn();
+    const cancelAck = value.sent.at(-1)!;
+    expect(cancelAck.kind).toBe('cancel_ack');
+    expect(acknowledged).toEqual(['event_receipt', 'budget_authorization']);
+    await value.session.receive(receipt(cancelAck, 6, 2));
+    await cancelTask;
+    expect(acknowledged).toEqual(['event_receipt', 'budget_authorization']);
+  });
+
+  it('does not emit terminal after an authority commit outcome becomes unknown', async () => {
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit() {
+        throw Object.assign(new Error('source response unknown'), {
+          code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
+        });
+      },
+      async acknowledgeControl() {
+        throw new Error('no control ACK is possible');
+      },
+    };
+    const value = harness(
+      0,
+      {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: HASH_A,
+      },
+      {
+        runtimeDelivery,
+        execute: async (context) => {
+          await context.checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.unknown'));
+          return { status: 'completed' };
+        },
+      },
+    );
+    await handshake(value);
+    const offerTask = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    const accept = value.sent.at(-1)!;
+    await value.session.receive(receipt(accept, 2));
+    await offerTask;
+    await turn();
+    await turn();
+    expect(value.closed).toEqual([2]);
+    expect(value.session.state).toBe('reconciliation_required');
+    expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+  });
+
   it('rejects a Go-routed lease before source preparation or JavaScript loading', async () => {
     const value = harness(0, {
       backend: 'go',
@@ -618,9 +1198,11 @@ describe('WorkflowRunnerV2Session', () => {
     ).toBe(true);
     await value.session.receive(decision);
     await expect(reserveTask).resolves.toMatchObject({
-      kind: 'budget_authorization',
-      runRevision: 2,
-      payload: { committedRunRevision: 12 },
+      decision: {
+        kind: 'budget_authorization',
+        runRevision: 2,
+        payload: { committedRunRevision: 12 },
+      },
     });
   });
 

@@ -17,6 +17,7 @@ const (
 
 type OperationFact struct {
 	TargetKind            authoritycontract.Kind
+	CompletionControlKind authoritycontract.Kind
 	RunnerDelta           RunnerDelta
 	SourcePlane           string
 	SourceEvidenceState   string
@@ -36,22 +37,22 @@ var orderedOperations = []Operation{
 }
 
 var operationFacts = map[Operation]OperationFact{
-	OperationCheckpointCommit: operationFact(authoritycontract.KindCheckpointCommit, RunnerDelta{Revision: 1}, "checkpoint_control", "committed", 1, 0, "openslack.workflow_runner_checkpoint_authority_receipt.v1", AuthorityReceiptHashNone),
-	OperationEffectAuthorize:  operationFact(authoritycontract.KindEffectIntent, RunnerDelta{Revision: 1}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
-	OperationEffectComplete:   operationFact(authoritycontract.KindEffectOutcome, RunnerDelta{}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_completion_receipt.v1", AuthorityReceiptHashNone),
-	OperationBudgetReserve:    operationFact(authoritycontract.KindBudgetReserveRequest, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashCanonicalDurable),
-	OperationBudgetSettle:     operationFact(authoritycontract.KindBudgetUsageReport, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashNone),
-	OperationResumeAdvance:    operationFact(authoritycontract.KindLeaseAccept, RunnerDelta{Revision: 1, Generation: 1}, "resume_control", "committed", 1, 1, "openslack.workflow_runner_resume_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
+	OperationCheckpointCommit: operationFact(authoritycontract.KindCheckpointCommit, authoritycontract.KindEventReceipt, RunnerDelta{Revision: 1}, "checkpoint_control", "committed", 1, 0, "openslack.workflow_runner_checkpoint_authority_receipt.v1", AuthorityReceiptHashNone),
+	OperationEffectAuthorize:  operationFact(authoritycontract.KindEffectIntent, authoritycontract.KindEffectAuthorization, RunnerDelta{Revision: 1}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
+	OperationEffectComplete:   operationFact(authoritycontract.KindEffectOutcome, authoritycontract.KindEventReceipt, RunnerDelta{}, "effect_v2_sibling", "committed", 1, 0, "openslack.workflow_runner_effect_completion_receipt.v1", AuthorityReceiptHashNone),
+	OperationBudgetReserve:    operationFact(authoritycontract.KindBudgetReserveRequest, authoritycontract.KindBudgetAuthorization, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashCanonicalDurable),
+	OperationBudgetSettle:     operationFact(authoritycontract.KindBudgetUsageReport, authoritycontract.KindEventReceipt, RunnerDelta{Revision: 1}, "budget_account", "prepared", 0, 0, "", AuthorityReceiptHashNone),
+	OperationResumeAdvance:    operationFact(authoritycontract.KindLeaseAccept, authoritycontract.KindResumeOffer, RunnerDelta{Revision: 1, Generation: 1}, "resume_control", "committed", 1, 1, "openslack.workflow_runner_resume_authority_receipt.v1", AuthorityReceiptHashBindingDomain),
 }
 
-func operationFact(kind authoritycontract.Kind, delta RunnerDelta, plane, state string, revisionDelta, generationDelta int64, receiptSchema string, hashAlgorithm AuthorityReceiptHashAlgorithm) OperationFact {
+func operationFact(kind, completionKind authoritycontract.Kind, delta RunnerDelta, plane, state string, revisionDelta, generationDelta int64, receiptSchema string, hashAlgorithm AuthorityReceiptHashAlgorithm) OperationFact {
 	var schema *string
 	if receiptSchema != "" {
 		value := receiptSchema
 		schema = &value
 	}
 	return OperationFact{
-		TargetKind: kind, RunnerDelta: delta, SourcePlane: plane, SourceEvidenceState: state,
+		TargetKind: kind, CompletionControlKind: completionKind, RunnerDelta: delta, SourcePlane: plane, SourceEvidenceState: state,
 		SourceRevisionDelta: revisionDelta, SourceGenerationDelta: generationDelta, SourceReceiptSchema: schema,
 		AuthorityReceiptHash: hashAlgorithm,
 	}
@@ -70,6 +71,20 @@ func Operations() []Operation { return append([]Operation(nil), orderedOperation
 func ExpectedKind(operation Operation) (authoritycontract.Kind, error) {
 	fact, err := factFor(operation)
 	return fact.TargetKind, err
+}
+
+func CompletionControlKind(operation Operation) (authoritycontract.Kind, error) {
+	fact, err := factFor(operation)
+	return fact.CompletionControlKind, err
+}
+
+func OperationForKind(kind authoritycontract.Kind) (Operation, bool) {
+	for _, operation := range orderedOperations {
+		if operationFacts[operation].TargetKind == kind {
+			return operation, true
+		}
+	}
+	return "", false
 }
 
 func RunnerHeadDelta(operation Operation) (RunnerDelta, error) {

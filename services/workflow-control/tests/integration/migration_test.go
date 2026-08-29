@@ -67,6 +67,9 @@ ORDER BY table_name`)
 		"workflow_control_transition_events",
 		"workflow_control_transition_receipts",
 		"workflow_runner_attempts",
+		"workflow_runner_authority_bindings",
+		"workflow_runner_authority_control_acks",
+		"workflow_runner_authority_reconciliations",
 		"workflow_runner_cancel_controls",
 		"workflow_runner_control_messages",
 		"workflow_runner_effect_boundaries",
@@ -80,6 +83,7 @@ ORDER BY table_name`)
 		"workflow_runner_v2_cancel_bindings",
 		"workflow_runner_v2_decision_bindings",
 		"workflow_runner_v2_event_inbox",
+		"workflow_runner_v2_runtime_admissions",
 		"workflow_runner_worker_events",
 	}
 	if len(tables) != len(want) {
@@ -125,13 +129,17 @@ WHERE trigger_schema = current_schema()
 		      'workflow_runner_v2_attempt_bindings',
 		      'workflow_runner_v2_decision_bindings',
 		      'workflow_runner_v2_cancel_bindings'
+		      ,'workflow_runner_authority_bindings'
+		      ,'workflow_runner_authority_control_acks'
+		      ,'workflow_runner_authority_reconciliations'
+		      ,'workflow_runner_v2_runtime_admissions'
 	  )
   AND action_timing = 'BEFORE'
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 54 {
-		t.Fatalf("immutable trigger coverage = %d, want 54 event rows", triggerEvents)
+	if triggerEvents != 62 {
+		t.Fatalf("immutable trigger coverage = %d, want 62 event rows", triggerEvents)
 	}
 }
 
@@ -728,10 +736,14 @@ func workflowRunnerV2DownMigration(t *testing.T) string {
 	if !ok {
 		t.Fatal("resolve migration test source path")
 	}
-	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations", "000007_integrate_workflow_runner_v2.down.sql"))
-	body, err := os.ReadFile(path)
+	migrationRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+	f2b, err := os.ReadFile(filepath.Join(migrationRoot, "000008_deliver_workflow_runner_authority_bindings.down.sql"))
+	if err != nil {
+		t.Fatalf("read GS9-F2b down migration: %v", err)
+	}
+	f1, err := os.ReadFile(filepath.Join(migrationRoot, "000007_integrate_workflow_runner_v2.down.sql"))
 	if err != nil {
 		t.Fatalf("read GS9-F1 down migration: %v", err)
 	}
-	return string(body)
+	return string(f2b) + "\n" + string(f1)
 }

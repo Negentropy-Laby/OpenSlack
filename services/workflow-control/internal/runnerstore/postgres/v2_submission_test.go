@@ -98,8 +98,11 @@ func TestClaimQueryUsesTypedProtocolDispatchColumns(t *testing.T) {
 	}
 	for _, column := range []string{
 		"required_protocol_version = ANY($3::TEXT[])",
+		"$4::BOOLEAN",
 		"authority_backend='ts-local'",
 		"workflow_authority='typescript'",
+		"authority_backend='go'",
+		"workflow_authority='workflow-control'",
 	} {
 		if !strings.Contains(claimJobSQL, column) {
 			t.Fatalf("claim query is missing typed v2 dispatch binding %q", column)

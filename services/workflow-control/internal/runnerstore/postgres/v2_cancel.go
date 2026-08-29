@@ -73,6 +73,15 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, control.CancelID, message.Even
 		backend, authority, routingEpoch, build, runRevision, resumeGeneration, v1Hash[:], v2Digest, []byte(prepared.Body)); err != nil {
 		return runnerstore.V2CancelControl{}, mapWriteFailure("insert durable v2 cancel binding", err)
 	}
+	if repository.v2RuntimeDelivery {
+		var pendingDecision bool
+		if err := tx.QueryRow(ctx, pendingV2AuthorityDecisionSQL, control.AttemptID).Scan(&pendingDecision); err != nil {
+			return runnerstore.V2CancelControl{}, databaseFailure("read v2 cancel decision predecessor", err)
+		}
+		if pendingDecision {
+			return runnerstore.V2CancelControl{}, runnerstore.Failure(runnerstore.ErrorSequenceConflict, "v2 cancel cannot replace an immutable authority decision", nil)
+		}
+	}
 	if err := repository.commit(ctx, tx); err != nil {
 		return runnerstore.V2CancelControl{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "v2 cancel binding commit outcome is unknown", err)
 	}

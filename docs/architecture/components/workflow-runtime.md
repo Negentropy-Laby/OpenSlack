@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-20
+updated: 2026-08-22
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -1125,10 +1125,32 @@ is the sole normative source for phase ordering, operation facts, source locks, 
 and the complete authority ceiling. Runtime code and supporting documents must consume or link to
 that record rather than maintain parallel matrices or negative-claim lists.
 
-No F2a runtime emits or consumes these frames. The GS9-F1 profile and source manifest remain active,
-TypeScript remains the production Workflow authority, and Go `runnerbindingcontract` remains a pure
-validator. GS9-F2b owns every capability in the manifest's `notDelivered` inventory and must
-qualify it independently before any boundary item can change.
+F2a itself adds no runtime that emits or consumes these frames. At that boundary the GS9-F1 profile
+and source manifest remained active, TypeScript remained the production Workflow authority, and Go
+`runnerbindingcontract` remained a pure validator. GS9-F2b owns every capability in the manifest's
+`notDelivered` inventory and must qualify it independently before any boundary item can change.
+
+### GS9-F2b runtime composition
+
+The F2b-only worker composition constructs the owner-local authority-binding journal, loopback
+companion client, closed six-operation source resolver, and the checkpoint, effect, budget, and
+resume execution ports before accepting work. The host injects those bindings only for the
+explicit v2 runtime-delivery profile; bundle environment cannot supply or override them. RunStore
+state, rather than descriptor generation alone, distinguishes an initial run from the first resume.
+
+Each runtime port first freezes and stages the exact future runner event. Checkpoint, effect, and
+resume lanes then commit or point-read the existing C checkpoint control, D TypeScript effect
+authority, or RunStore resume control before binding that evidence in the resolution. The budget
+lane instead binds its exact prepared E1 request in the resolution, waits for the resolution ACK,
+and only then commits or point-reads the isolated E2 budget ledger. Only the acknowledged
+resolution plus any required post-resolution E2 result permits the exact event to cross stdout.
+Execution cannot pass the event receipt or a required decision until each exact control frame is
+durably acknowledged. Restart with an unclosed local binding fails closed until the preserved Go
+coordinator evidence is reconciled.
+
+F2b does not change the public CLI/TUI submission path or choose new-record ownership. Production
+routing, canary, single-writer cutover, read-only TS recovery, and TS writer deletion remain GS9-G,
+GS9-H, and GS9-I respectively.
 
 ### Operator Module
 

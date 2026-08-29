@@ -32,14 +32,15 @@ type V2RecordEventInput struct {
 }
 
 type V2RecordedEvent struct {
-	Receipt       authoritycontract.Message
-	ReceiptBytes  []byte
-	Decision      *authoritycontract.Message
-	DecisionBytes []byte
-	Status        ReceiptStatus
-	JobState      JobState
-	AttemptState  AttemptState
-	Duplicate     bool
+	Receipt            authoritycontract.Message
+	ReceiptBytes       []byte
+	Decision           *authoritycontract.Message
+	DecisionBytes      []byte
+	Status             ReceiptStatus
+	JobState           JobState
+	AttemptState       AttemptState
+	Duplicate          bool
+	AuthorityBindingID *string
 }
 
 type V2CancelControl struct {
@@ -47,6 +48,13 @@ type V2CancelControl struct {
 	Message    authoritycontract.Message
 	ExactBytes []byte
 }
+
+type V2ControlDeliveryDisposition string
+
+const (
+	V2ControlDeliveryAccepted               V2ControlDeliveryDisposition = "accepted"
+	V2ControlDeliveryReconciliationRequired V2ControlDeliveryDisposition = "reconciliation_required"
+)
 
 type V2SessionStore interface {
 	Store
@@ -57,6 +65,7 @@ type V2SessionStore interface {
 	MarkV2ControlDeliveryStarted(context.Context, string, string, string, time.Time) error
 	MarkV2ControlDelivered(context.Context, string, string, string, time.Time) error
 	MarkV2ControlDeliveryReconciliation(context.Context, string, string, string, time.Time) error
+	WaitV2ControlAcknowledged(context.Context, string, string) (V2ControlDeliveryDisposition, error)
 }
 
 type V2AuthorityRequest struct {
@@ -76,6 +85,7 @@ type V2AuthorityOutcome struct {
 	AcceptedResumeGeneration int64
 	Decision                 *authoritycontract.Message
 	DecisionBytes            []byte
+	RuntimeBinding           *V2AuthorityBindingView
 }
 
 type V2CheckpointAuthority interface {
