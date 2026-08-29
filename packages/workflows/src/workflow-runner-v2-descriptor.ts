@@ -121,16 +121,15 @@ function record(value: unknown, fields: readonly string[], path: string): JsonRe
     typeof value !== 'object' ||
     Array.isArray(value) ||
     nodeTypes.isProxy(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
+    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
   ) {
-    return fail('WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID', path, `${path} must be a plain object.`);
+    return fail('WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID', path, `${path} must be an inert object.`);
   }
-  const result = value as JsonRecord;
-  const actual = Object.keys(result).sort();
-  const expected = [...fields].sort();
+  const keys = Reflect.ownKeys(value);
   if (
-    actual.length !== expected.length ||
-    actual.some((entry, index) => entry !== expected[index])
+    keys.length !== fields.length ||
+    fields.some((field) => !Object.hasOwn(value, field)) ||
+    keys.some((key) => typeof key !== 'string' || !fields.includes(key))
   ) {
     return fail(
       'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
@@ -138,7 +137,22 @@ function record(value: unknown, fields: readonly string[], path: string): JsonRe
       `${path} has missing or unknown fields.`,
     );
   }
-  return result;
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (
+      typeof key !== 'string' ||
+      !descriptor ||
+      !descriptor.enumerable ||
+      !Object.hasOwn(descriptor, 'value')
+    ) {
+      return fail(
+        'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
+        `${path}/${String(key)}`,
+        `${path} must contain only enumerable data fields.`,
+      );
+    }
+  }
+  return value as JsonRecord;
 }
 
 function own(value: JsonRecord, key: string): unknown {
@@ -313,6 +327,10 @@ export function hashWorkflowRunnerV2Manifest(value: WorkflowMeta): string {
 
 export function hashWorkflowRunnerV2Input(value: Readonly<Record<string, unknown>>): string {
   return hashWorkflowRunnerV2Domain('workflow-input', canonicalWorkflowEffectJson(value));
+}
+
+export function hashWorkflowRunnerV2Result(value: unknown): string {
+  return hashWorkflowRunnerV2Domain('workflow-result', canonicalWorkflowEffectJson(value));
 }
 
 export function canonicalWorkflowRunnerV2DescriptorJson(

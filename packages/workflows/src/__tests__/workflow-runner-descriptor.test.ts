@@ -24,8 +24,13 @@ import {
   WorkflowRunnerDescriptorStoreError,
   type WorkflowRunnerDescriptorPathSecurity,
 } from '../workflow-runner-descriptor-store.js';
+import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
+import {
+  createWorkflowRunnerV2ExecutionDescriptor,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+  type WorkflowRunnerV2ExecutionDescriptor,
+} from '../workflow-runner-v2-descriptor.js';
 import type { WorkflowMeta } from '../types.js';
-import type { WorkflowRunnerV2ExecutionDescriptor } from '../workflow-runner-v2-descriptor.js';
 
 const roots: string[] = [];
 const now = '2026-08-04T01:00:00.000Z';
@@ -125,6 +130,47 @@ function descriptor() {
   });
 }
 
+function v2Descriptor() {
+  return createWorkflowRunnerV2ExecutionDescriptor({
+    descriptorRef: 'descriptor.v2.test.1',
+    workspaceId: 'workspace.test',
+    workflowRunId: 'run.v2.test.1',
+    correlationId: 'correlation.v2.test.1',
+    workflowId: 'sealed-test',
+    workflowVersion: '1.0.0',
+    workflowSource: 'openslack-project',
+    workflowSourceBytes: Buffer.from('export const meta = {};', 'utf8'),
+    manifest,
+    input: { issue: 42 },
+    confirmationPolicy: {
+      mode: 'unattended-explicit',
+      actorId: 'test-actor',
+      runId: 'run.v2.test.1',
+      allowUnattended: true,
+      onUnexpectedEffect: 'fail',
+    },
+    requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
+    authorityRoute: {
+      backend: 'go',
+      authority: 'workflow-control',
+      routingEpoch: 1,
+      authorityBuildHash: 'a'.repeat(64),
+    },
+    runRevision: 1,
+    resumeGeneration: 0,
+    budgetPolicy: {
+      accountId: 'budget.v2.test',
+      policyHash: 'b'.repeat(64),
+      rateNanoUsdPerToken: '12.5',
+      tokenLimit: '1000',
+      costLimitNanoUsd: '12500',
+      callLimit: '2',
+    },
+    createdAt: now,
+    expiresAt: later,
+  });
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -169,6 +215,24 @@ describe('GS8-B sealed execution descriptor', () => {
     await expect(store.create(conflicting)).rejects.toMatchObject({
       code: 'WORKFLOW_RUNNER_DESCRIPTOR_STORE_CONFLICT',
     });
+  });
+
+  it('round-trips a v2 descriptor through the strict null-prototype JSON parser', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openslack-runner-v2-descriptor-'));
+    roots.push(root);
+    await chmod(root, 0o700);
+    const store = new WorkflowRunnerDescriptorStore<WorkflowRunnerV2ExecutionDescriptor>(
+      root,
+      testSecurity,
+      WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+    );
+    const value = v2Descriptor();
+
+    await store.create(value);
+
+    await expect(store.read(value.descriptorRef, '2026-08-04T01:30:00.000Z')).resolves.toEqual(
+      value,
+    );
   });
 
   it('fails closed when a descriptor file loses owner-only permissions', async () => {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func validEnvironment(t *testing.T) []string {
@@ -31,7 +32,7 @@ func TestLoadEnvironmentRequiresExplicitEnablementAndClosedPrivateConfig(t *test
 	if err != nil {
 		t.Fatalf("LoadEnvironment: %v", err)
 	}
-	if config.HTTPBind != "127.0.0.1:8081" || config.NetworkMode != NetworkLoopback || config.MaxProcesses != 4 {
+	if config.HTTPBind != "127.0.0.1:8081" || config.NetworkMode != NetworkLoopback || config.MaxProcesses != 4 || config.LeaseDuration != time.Minute {
 		t.Fatalf("unexpected defaults: %+v", config)
 	}
 	for _, mutation := range []struct {
@@ -58,6 +59,21 @@ func TestLoadEnvironmentRequiresExplicitEnablementAndClosedPrivateConfig(t *test
 				t.Fatal("expected closed configuration rejection")
 			}
 		})
+	}
+}
+
+func TestLeaseDurationIsExplicitlyBounded(t *testing.T) {
+	base := validEnvironment(t)
+	configured := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS=900000")
+	config, err := LoadEnvironment(configured)
+	if err != nil || config.LeaseDuration != 15*time.Minute {
+		t.Fatalf("bounded lease duration rejected: %+v %v", config, err)
+	}
+	for _, value := range []string{"invalid", "9999", "86400001"} {
+		candidate := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS="+value)
+		if _, err := LoadEnvironment(candidate); err == nil {
+			t.Fatalf("invalid lease duration accepted: %q", value)
+		}
 	}
 }
 

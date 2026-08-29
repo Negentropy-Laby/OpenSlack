@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunStore } from '../run-store.js';
 import { hashWorkflowRunnerResult } from '../workflow-runner-descriptor.js';
+import { hashWorkflowRunnerV2Result } from '../workflow-runner-v2-descriptor.js';
 import {
   executeWorkflowThroughRunner,
   type WorkflowRunnerPausedResult,
@@ -205,7 +206,7 @@ describe('Workflow Runner public execution client', () => {
           leaseExpiresAt: '2026-08-13T00:01:00.000Z',
           terminalStatus: 'completed',
           terminalReason: null,
-          resultHash: hashWorkflowRunnerResult(output),
+          resultHash: hashWorkflowRunnerV2Result(output),
           openEffectCount: 0,
           reconciliationId: null,
           reconciliationCode: null,

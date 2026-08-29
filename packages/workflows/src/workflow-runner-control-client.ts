@@ -559,7 +559,10 @@ export function validateWorkflowRunnerJobView(value: unknown): WorkflowRunnerJob
     updatedAt: timestamp(own(record, 'updatedAt'), 'job.updatedAt'),
   });
   if (
-    (result.state === 'terminal') !== (result.terminalStatus !== null) ||
+    (result.state === 'terminal' || result.state === 'reconciliation_required') !==
+      (result.terminalStatus !== null) ||
+    (result.state === 'reconciliation_required') !==
+      (result.terminalStatus === 'reconciliation_required') ||
     (result.terminalStatus === 'completed') !== (result.resultHash !== null) ||
     (result.state === 'reconciliation_required') !== (result.reconciliationId !== null)
   ) {

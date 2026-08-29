@@ -37,6 +37,11 @@ Operational handling is fail closed:
   boundary was open;
 - bundle or descriptor hash drift: reject startup or the lease; do not overwrite the artifact.
 
+The lease is an immutable hard deadline. Heartbeats do not renew it. The default is 60 seconds;
+set `WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS` at runner startup for longer workloads, bounded
+between the 10-second offer timeout and the frozen 24-hour protocol maximum. Changing it affects
+only leases claimed after that runner process starts.
+
 An unresolved v2 authority event is deliberately not clearable through cancellation in F1. Preserve
 the job, inbox, receipt, and reconciliation evidence, stop automatic retries, and escalate it to the
 GS9-F2 recovery procedure; do not delete rows or synthesize cancellation clearance. GS9-F2 must add
