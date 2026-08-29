@@ -456,13 +456,19 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 		"buildSha": service.buildSHA, "schemaVersion": service.schemaVersion,
 		"mode": "runner-control-explicit", "workflowAuthority": "typescript",
 	}
+	if service.v2NewRecordCanary {
+		version["workflowAuthority"] = "immutable-route-receipt"
+	}
 	if service.v2Enabled {
 		version["v2QualificationAdmission"] = true
-		version["routingActivated"] = false
+		version["routingActivated"] = service.v2NewRecordCanary
 	}
 	if service.v2RuntimeDelivery {
 		version["v2RuntimeDeliveryQualification"] = true
-		version["productionRoutingActivated"] = false
+		version["productionRoutingActivated"] = service.v2NewRecordCanary
+	}
+	if service.v2NewRecordCanary {
+		version["newRecordCanary"] = true
 	}
 	writeCanonical(w, http.StatusOK, version)
 }

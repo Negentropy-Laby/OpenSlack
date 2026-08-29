@@ -61,7 +61,16 @@ func (service *Service) handleMutation(w http.ResponseWriter, request *http.Requ
 		}
 		return
 	}
-	prepared, err := authoritystore.PrepareRequest(body, service.callerID, service.workspaceID, strconv.FormatInt(service.routingEpoch, 10), service.buildSHA)
+	routingEpoch, ok := requestRoutingEpoch(request)
+	if !ok {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "authority routing epoch is invalid")
+		return
+	}
+	if operation == authoritystore.OperationAccept && service.canaryMode && (!service.acceptNewRecords || routingEpoch != service.routingEpoch) {
+		writeFailure(w, http.StatusConflict, "WORKFLOW_CONTROL_AUTHORITY_ACCEPT_DISABLED", "new Go authority records are disabled for this epoch")
+		return
+	}
+	prepared, err := authoritystore.PrepareRequest(body, service.callerID, service.workspaceID, strconv.FormatInt(routingEpoch, 10), service.buildSHA)
 	if err != nil {
 		service.writeStoreError(w, err)
 		return
@@ -119,8 +128,9 @@ func (service *Service) handleReadRun(w http.ResponseWriter, request *http.Reque
 		service.writeStoreError(w, err)
 		return
 	}
-	record, ok := validRunHead(head, service.workspaceID, runID, service.routingEpoch, service.buildSHA)
-	if !ok {
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	record, ok := validRunHead(head, service.workspaceID, runID, routingEpoch, service.buildSHA)
+	if !epochOK || !ok {
 		service.logger.Error("workflow_control_authority_invalid_store_head")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "authority repository returned an invalid run head")
 		return
@@ -152,7 +162,8 @@ func (service *Service) handleReadReceipt(w http.ResponseWriter, request *http.R
 		service.writeStoreError(w, err)
 		return
 	}
-	if !validReadReceipt(receipt, service.workspaceID, key, service.routingEpoch, service.buildSHA) {
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	if !epochOK || !validReadReceipt(receipt, service.workspaceID, key, routingEpoch, service.buildSHA) {
 		service.logger.Error("workflow_control_authority_invalid_stored_receipt")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "stored authority receipt is invalid")
 		return
@@ -183,8 +194,9 @@ func (service *Service) handleReadOutbox(w http.ResponseWriter, request *http.Re
 		service.writeStoreError(w, err)
 		return
 	}
-	payload, ok := validOutbox(outbox, service.workspaceID, runID, revision, service.routingEpoch, service.buildSHA)
-	if !ok {
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	payload, ok := validOutbox(outbox, service.workspaceID, runID, revision, routingEpoch, service.buildSHA)
+	if !epochOK || !ok {
 		service.logger.Error("workflow_control_authority_invalid_store_outbox")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "authority repository returned an invalid pending outbox record")
 		return
@@ -208,7 +220,7 @@ func (service *Service) handleReady(w http.ResponseWriter, request *http.Request
 	if !requireReadEnvelope(w, request) {
 		return
 	}
-	if !service.qualificationMode {
+	if !service.authorityEnabled {
 		writeCanonical(w, http.StatusOK, canonicaljson.Object{"status": "ready"})
 		return
 	}
@@ -228,9 +240,9 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{
 		"schema":          "openslack.workflow_control_authority_service_version.v1",
 		"contractVersion": "v2", "buildSha": service.buildSHA,
-		"mode":              map[bool]string{false: "disabled", true: "local-qualification-v1"}[service.qualificationMode],
-		"qualificationMode": service.qualificationMode, "authority": "typescript",
-		"routingActivated": false, "acceptNewRecords": false,
+		"mode": authorityMode(service), "qualificationMode": service.qualificationMode,
+		"authority":        map[bool]string{false: "typescript", true: "workflow-control"}[service.canaryMode],
+		"routingActivated": service.canaryMode, "acceptNewRecords": service.canaryMode && service.acceptNewRecords,
 	})
 }
 
@@ -239,7 +251,7 @@ func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Reque
 		return
 	}
 	statistics := authoritystore.Statistics{}
-	if service.qualificationMode {
+	if service.authorityEnabled {
 		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
 		defer cancel()
 		var err error
@@ -488,6 +500,25 @@ func requireEOF(decoder *json.Decoder) error {
 
 func canonicalTimestamp(value time.Time) string {
 	return value.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
+}
+
+func requestRoutingEpoch(request *http.Request) (int64, bool) {
+	value, ok := oneHeader(request, HeaderRoutingEpoch)
+	if !ok {
+		return 0, false
+	}
+	epoch, err := strconv.ParseInt(value, 10, 64)
+	return epoch, err == nil && epoch >= 1 && epoch <= authoritycontract.MaxSafeInteger && strconv.FormatInt(epoch, 10) == value
+}
+
+func authorityMode(service *Service) string {
+	if service.qualificationMode {
+		return "local-qualification-v1"
+	}
+	if service.canaryMode {
+		return "new-record-canary-v1"
+	}
+	return "disabled"
 }
 
 func pointerStringEqual(left, right *string) bool {

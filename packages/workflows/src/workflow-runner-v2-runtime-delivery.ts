@@ -73,7 +73,11 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
       throw new Error('Runtime-delivery resume probe differs from the sealed descriptor.');
     }
     await this.#runtime.assertRunReady(lease.workflowRunId);
-    const store = this.#runStoreFactory(join(this.#workspaceRoot, '.openslack.local', 'workflows'));
+    const store = this.#runStoreFactory(
+      descriptor.authorityRoute.backend === 'go'
+        ? join(this.#workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections')
+        : join(this.#workspaceRoot, '.openslack.local', 'workflows'),
+    );
     const exists = await store.runExists(lease.workflowRunId);
     const status = exists ? await store.loadStatus(lease.workflowRunId) : null;
     const resume =

@@ -407,24 +407,40 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
         'Prepared v2 job binding is invalid.',
       );
     }
-    let response: Response;
-    try {
-      response = await this.#fetch(new URL('/v2/runner/jobs', this.#config.origin), {
-        method: 'POST',
-        redirect: 'error',
-        signal,
-        body: prepared.exactBody,
-        headers: {
-          Authorization: `Bearer ${this.#config.bearerToken}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': prepared.idempotencyKey,
-          'X-OpenSlack-Request-Fingerprint': prepared.requestFingerprint,
-          'X-OpenSlack-Workspace-ID': this.#config.workspaceId,
-        },
-      });
-    } catch (error) {
+    let response: Response | undefined;
+    let transportError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await this.#fetch(new URL('/v2/runner/jobs', this.#config.origin), {
+          method: 'POST',
+          redirect: 'error',
+          signal,
+          body: prepared.exactBody,
+          headers: {
+            Authorization: `Bearer ${this.#config.bearerToken}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': prepared.idempotencyKey,
+            'X-OpenSlack-Request-Fingerprint': prepared.requestFingerprint,
+            'X-OpenSlack-Workspace-ID': this.#config.workspaceId,
+          },
+        });
+      } catch (error) {
+        transportError = error;
+        if (attempt === 0 && signal?.aborted !== true) continue;
+        return fail('WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED', 'V2 job submit failed.', {
+          cause: error,
+        });
+      }
+      if (response.status >= 500 && response.status <= 599 && attempt === 0) {
+        await cancelWorkflowRunnerResponseBody(response);
+        response = undefined;
+        continue;
+      }
+      break;
+    }
+    if (!response) {
       return fail('WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED', 'V2 job submit failed.', {
-        cause: error,
+        cause: transportError,
       });
     }
     if (response.redirected || ![200, 201, 202].includes(response.status)) {

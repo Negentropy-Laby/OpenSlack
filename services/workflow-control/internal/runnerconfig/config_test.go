@@ -138,6 +138,34 @@ func TestV2RuntimeDeliveryConfigurationIsSealedAndDefaultOff(t *testing.T) {
 	if _, err := LoadEnvironment(internal); err == nil {
 		t.Fatal("runtime delivery was enabled outside loopback network mode")
 	}
+
+	authorityToken := strings.Repeat("a", 40)
+	authorityDigest := sha256.Sum256([]byte(authorityToken))
+	authorityValues := []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ENABLED=1",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ORIGIN=http://127.0.0.1:8082",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_TOKEN=" + authorityToken,
+		fmt.Sprintf("WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_SHA256=%x", authorityDigest[:]),
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_CALLER_ID=workflow-runner-v2",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BUILD_SHA=" + strings.Repeat("d", 64),
+	}
+	canaryValues := append(append([]string{}, runtimeValues...), authorityValues...)
+	config, err = LoadEnvironment(append(append([]string{}, base...), canaryValues...))
+	if err != nil || !config.V2RunAuthorityEnabled || config.V2RunAuthorityRuntime() == nil {
+		t.Fatalf("sealed run authority rejected: %+v %v", config, err)
+	}
+	if _, err := LoadEnvironment(append(append([]string{}, base...), authorityValues...)); err == nil {
+		t.Fatal("run authority was enabled without v2 runtime delivery")
+	}
+	badAuthorityHash := append(append([]string{}, base...), canaryValues...)
+	for index := range badAuthorityHash {
+		if strings.HasPrefix(badAuthorityHash[index], "WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_SHA256=") {
+			badAuthorityHash[index] = "WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_SHA256=" + strings.Repeat("0", 64)
+		}
+	}
+	if _, err := LoadEnvironment(badAuthorityHash); err == nil {
+		t.Fatal("mismatched run authority bearer hash was accepted")
+	}
 }
 
 func firstEnvironment(environment []string, name string) string {

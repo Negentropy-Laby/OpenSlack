@@ -102,6 +102,11 @@ import {
 import { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
 import { createWorkflowRunnerV2RuntimeAdmissionClient } from './workflow-runner-v2-runtime-admission.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
+import { WorkflowRunnerV2GoProjectionRunStore } from './workflow-runner-v2-go-projection-store.js';
+import {
+  WorkflowControlAuthorityHttpClient,
+  type WorkflowControlAuthorityPort,
+} from './workflow-control-authority-client.js';
 import {
   createWorkflowRunnerBudgetAuthorityClient,
   type WorkflowRunnerBudgetAuthorityClient,
@@ -119,6 +124,8 @@ export const WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV =
   'OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED' as const;
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
   'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED' as const;
+export const WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV =
+  'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED' as const;
 
 export interface WorkflowRunnerWorkerConfig {
   readonly enabled: true;
@@ -142,8 +149,11 @@ export interface WorkflowRunnerWorkerConfig {
 
 export interface WorkflowRunnerV2QualificationWorkerConfig {
   readonly enabled: true;
-  readonly qualificationOnly: true;
-  readonly runtimeBoundaryMode: 'provider-attempt-only' | 'authority-binding-f2b';
+  readonly qualificationOnly: boolean;
+  readonly runtimeBoundaryMode:
+    | 'provider-attempt-only'
+    | 'authority-binding-f2b'
+    | 'new-record-canary-g';
   readonly workspaceId: string;
   readonly workspaceRoot: string;
   readonly descriptorRoot: string;
@@ -155,6 +165,12 @@ export interface WorkflowRunnerV2QualificationWorkerConfig {
     readonly budgetOrigin: string;
     readonly budgetBearerToken: string;
     readonly budgetCallerId: string;
+  };
+  readonly runAuthority?: {
+    readonly origin: string;
+    readonly bearerToken: string;
+    readonly callerId: string;
+    readonly expectedBuildHash: string;
   };
 }
 
@@ -544,10 +560,62 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       budgetCallerId,
     });
   }
+  const runAuthorityKeys = [
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA',
+  ] as const;
+  const runAuthorityFlag = environment[WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV];
+  if (runAuthorityFlag !== undefined && runAuthorityFlag !== '0' && runAuthorityFlag !== '1') {
+    throw new WorkflowRunnerWorkerConfigError('V2 run authority enablement is invalid.');
+  }
+  const runAuthorityEnabled = runAuthorityFlag === '1';
+  if (!runAuthorityEnabled && runAuthorityKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled v2 run authority configuration must be empty.',
+    );
+  }
+  if (runAuthorityEnabled && !runtimeDeliveryEnabled) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'V2 run authority requires the complete runtime-delivery profile.',
+    );
+  }
+  let runAuthority: WorkflowRunnerV2QualificationWorkerConfig['runAuthority'];
+  if (runAuthorityEnabled) {
+    const bearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN ?? '';
+    const bearerHash = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256 ?? '';
+    const callerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID ?? '';
+    const expectedBuildHash =
+      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA ?? '';
+    if (
+      bearerToken.length < 32 ||
+      !HASH.test(bearerHash) ||
+      createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash ||
+      !SAFE_ID.test(callerId) ||
+      !HASH.test(expectedBuildHash)
+    ) {
+      throw new WorkflowRunnerWorkerConfigError('V2 run authority identity is invalid.');
+    }
+    runAuthority = Object.freeze({
+      origin: loopbackOrigin(
+        environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN,
+        'V2 run authority origin',
+      ),
+      bearerToken,
+      callerId,
+      expectedBuildHash,
+    });
+  }
   return Object.freeze({
     enabled: true,
-    qualificationOnly: true,
-    runtimeBoundaryMode: runtimeDeliveryEnabled ? 'authority-binding-f2b' : 'provider-attempt-only',
+    qualificationOnly: !runAuthorityEnabled,
+    runtimeBoundaryMode: runAuthorityEnabled
+      ? 'new-record-canary-g'
+      : runtimeDeliveryEnabled
+        ? 'authority-binding-f2b'
+        : 'provider-attempt-only',
     workspaceId,
     workspaceRoot,
     descriptorRoot: absolutePath(
@@ -556,6 +624,7 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
     ),
     runnerBuildHash,
     ...(runtimeDelivery ? { runtimeDelivery } : {}),
+    ...(runAuthority ? { runAuthority } : {}),
   });
 }
 
@@ -1673,7 +1742,7 @@ function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
   });
 }
 
-class WorkflowRunnerV2CheckpointRunStore extends RunStore {
+class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRunStore {
   readonly #context: WorkflowRunnerV2ExecutionContext;
   readonly #descriptor: WorkflowRunnerV2ExecutionDescriptor;
 
@@ -1681,8 +1750,15 @@ class WorkflowRunnerV2CheckpointRunStore extends RunStore {
     baseDir: string,
     context: WorkflowRunnerV2ExecutionContext,
     descriptor: WorkflowRunnerV2ExecutionDescriptor,
+    runAuthority?: WorkflowControlAuthorityPort,
+    qualificationOnly = true,
   ) {
-    super({ baseDir });
+    super({
+      baseDir,
+      descriptor,
+      ...(runAuthority ? { authority: runAuthority } : {}),
+      qualificationOnly,
+    });
     this.#context = context;
     this.#descriptor = descriptor;
   }
@@ -1786,10 +1862,37 @@ export async function executeWorkflowRunnerV2QualificationJob(
   workspaceRoot: string,
   runtimeDeliveryEnabled: boolean,
   budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
+  runAuthority?: WorkflowControlAuthorityPort,
+  qualificationOnly = true,
 ): Promise<RunResult> {
-  const baseDir = join(workspaceRoot, '.openslack.local', 'workflows');
+  const selectedGo = descriptor.authorityRoute.backend === 'go';
+  if (!qualificationOnly && !selectedGo) {
+    throw new Error('The new-record canary worker accepts only Go-owned v2 descriptors.');
+  }
+  if (qualificationOnly && runAuthority) {
+    throw new Error('Qualification-only v2 execution cannot receive the production run authority.');
+  }
+  const goOwned = !qualificationOnly;
+  if (goOwned && !runtimeDeliveryEnabled) {
+    throw new Error('Go-owned v2 execution requires the complete runtime-delivery profile.');
+  }
+  if (goOwned && !runAuthority) {
+    throw new Error('Go-owned v2 execution requires the Workflow Control run authority.');
+  }
+  if (!goOwned && runAuthority) {
+    throw new Error('TypeScript-owned v2 execution cannot receive a Go run authority.');
+  }
+  const baseDir = goOwned
+    ? join(workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections')
+    : join(workspaceRoot, '.openslack.local', 'workflows');
   const store = runtimeDeliveryEnabled
-    ? new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor)
+    ? new WorkflowRunnerV2CheckpointRunStore(
+        baseDir,
+        context,
+        descriptor,
+        runAuthority,
+        qualificationOnly,
+      )
     : new RunStore({ baseDir });
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
@@ -1892,6 +1995,7 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
 
 export interface WorkflowRunnerV2QualificationWorkerDependencies {
   readonly authoritySourceFactories?: WorkflowRunnerV2AuthoritySourceFactories;
+  readonly runAuthority?: WorkflowControlAuthorityPort;
 }
 
 export async function runWorkflowRunnerV2QualificationWorker(
@@ -1930,6 +2034,22 @@ export async function runWorkflowRunnerV2QualificationWorker(
           }),
         })
       : undefined;
+  const runAuthority =
+    dependencies.runAuthority ??
+    (config.runAuthority
+      ? new WorkflowControlAuthorityHttpClient({
+          origin: config.runAuthority.origin,
+          workspaceId: config.workspaceId,
+          callerId: config.runAuthority.callerId,
+          bearerToken: config.runAuthority.bearerToken,
+          expectedBuildHash: config.runAuthority.expectedBuildHash,
+        })
+      : undefined);
+  if (dependencies.runAuthority && !config.runAuthority) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Injected v2 run authority requires an explicitly enabled run-authority profile.',
+    );
+  }
   let closed = false;
   const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
   const close = async (exitCode: number) => {
@@ -1961,6 +2081,8 @@ export async function runWorkflowRunnerV2QualificationWorker(
         config.workspaceRoot,
         runtimeDelivery !== undefined,
         budgetAuthority,
+        runAuthority,
+        config.qualificationOnly,
       ),
     ...(runtimeDelivery ? { runtimeDelivery } : {}),
   });

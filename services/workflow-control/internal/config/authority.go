@@ -15,14 +15,20 @@ import (
 const (
 	AuthorityModeDisabled           = "disabled"
 	AuthorityModeLocalQualification = "local-qualification-v1"
+	AuthorityModeNewRecordCanary    = "new-record-canary-v1"
 	defaultAuthorityHTTPBind        = "127.0.0.1:8082"
 	zeroBuildSHA                    = "0000000000000000000000000000000000000000000000000000000000000000"
 	maxSafeAuthorityEpoch           = int64(1<<53 - 1)
+	MaxAuthorityDrainEpochs         = 16
 )
 
 type AuthorityConfig struct {
 	Mode              string
+	AuthorityEnabled  bool
 	QualificationMode bool
+	CanaryMode        bool
+	AcceptNewRecords  bool
+	DrainEpochs       []int64
 	DatabaseURL       string
 	HTTPBind          string
 	ServiceBuildSHA   string
@@ -37,8 +43,9 @@ func LoadAuthority() (AuthorityConfig, error) {
 	return LoadAuthorityEnvironment(os.Environ())
 }
 
-// LoadAuthorityEnvironment keeps the production default deliberately inert.
-// Only the one frozen local qualification mode accepts authority requests.
+// LoadAuthorityEnvironment keeps the default deliberately inert. Authority
+// requests require either the frozen local qualification mode or the explicit
+// new-record canary mode; canary acceptance is a separate default-off switch.
 func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	values, err := parseAuthorityEnvironment(environment)
 	if err != nil {
@@ -48,8 +55,8 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	if mode == "" {
 		mode = AuthorityModeDisabled
 	}
-	if mode != AuthorityModeDisabled && mode != AuthorityModeLocalQualification {
-		return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_MODE must be disabled or local-qualification-v1")
+	if mode != AuthorityModeDisabled && mode != AuthorityModeLocalQualification && mode != AuthorityModeNewRecordCanary {
+		return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_MODE must be disabled, local-qualification-v1, or new-record-canary-v1")
 	}
 	bind := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND"])
 	if bind == "" {
@@ -60,10 +67,16 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 		return AuthorityConfig{}, fmt.Errorf("authority HTTP bind: %w", err)
 	}
 	config := AuthorityConfig{
-		Mode: mode, QualificationMode: mode == AuthorityModeLocalQualification,
-		HTTPBind: bind, ServiceBuildSHA: zeroBuildSHA, ShutdownDeadline: 30 * time.Second,
+		Mode: mode, AuthorityEnabled: mode != AuthorityModeDisabled,
+		QualificationMode: mode == AuthorityModeLocalQualification,
+		CanaryMode:        mode == AuthorityModeNewRecordCanary,
+		HTTPBind:          bind, ServiceBuildSHA: zeroBuildSHA, ShutdownDeadline: 30 * time.Second,
 	}
-	if !config.QualificationMode {
+	if !config.AuthorityEnabled {
+		if strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS"]) != "" ||
+			strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS"]) != "" {
+			return AuthorityConfig{}, fmt.Errorf("authority record policy requires an enabled authority mode")
+		}
 		return config, nil
 	}
 
@@ -92,6 +105,39 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	config.WorkspaceID = workspaceID
 	config.CallerID = callerID
 	config.RoutingEpoch = routingEpoch
+	acceptText := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS"])
+	drainText := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS"])
+	if config.QualificationMode {
+		if acceptText != "" || drainText != "" {
+			return AuthorityConfig{}, fmt.Errorf("qualification mode does not accept production record policy")
+		}
+		return config, nil
+	}
+	if acceptText != "true" && acceptText != "false" {
+		return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS must be true or false")
+	}
+	config.AcceptNewRecords = acceptText == "true"
+	if drainText != "" {
+		parts := strings.Split(drainText, ",")
+		if len(parts) > MaxAuthorityDrainEpochs {
+			return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS exceeds its bound")
+		}
+		seen := map[int64]struct{}{routingEpoch: {}}
+		for _, part := range parts {
+			if part == "" || strings.TrimSpace(part) != part {
+				return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS must be canonical")
+			}
+			epoch, parseErr := strconv.ParseInt(part, 10, 64)
+			if parseErr != nil || epoch < 1 || epoch > maxSafeAuthorityEpoch || strconv.FormatInt(epoch, 10) != part {
+				return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS must contain positive safe integers")
+			}
+			if _, duplicate := seen[epoch]; duplicate {
+				return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS must be unique and exclude the active epoch")
+			}
+			seen[epoch] = struct{}{}
+			config.DrainEpochs = append(config.DrainEpochs, epoch)
+		}
+	}
 	return config, nil
 }
 
@@ -107,6 +153,8 @@ func parseAuthorityEnvironment(environment []string) (map[string]string, error) 
 		"WORKFLOW_CONTROL_AUTHORITY_WORKSPACE_ID":        {},
 		"WORKFLOW_CONTROL_AUTHORITY_CALLER_ID":           {},
 		"WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH":       {},
+		"WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS":  {},
+		"WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS":        {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {

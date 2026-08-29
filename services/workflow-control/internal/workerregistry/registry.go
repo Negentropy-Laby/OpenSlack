@@ -71,6 +71,7 @@ type Runtime struct {
 	EffectShadowCallerID        string
 	EffectShadowJournalRoot     string
 	V2RuntimeDelivery           *runnerconfig.V2RuntimeDeliveryRuntime
+	V2RunAuthority              *runnerconfig.V2RunAuthorityRuntime
 }
 
 type Registry struct {
@@ -232,6 +233,12 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN":                  {},
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN":            {},
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID":               {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED":          {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN":           {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN":     {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256":    {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID":        {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA":        {},
 	}
 	for _, entry := range base {
 		name, _, found := strings.Cut(entry, "=")
@@ -286,6 +293,26 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID="+delivery.BudgetCallerID,
 		)
 	}
+	if authority := runtimeConfig.V2RunAuthority; authority != nil {
+		if runtimeConfig.V2RuntimeDelivery == nil || len(authority.BearerToken) < 32 || len(authority.BearerToken) > 4096 || authority.BearerToken != strings.TrimSpace(authority.BearerToken) || strings.ContainsAny(authority.BearerToken, "\r\n\x00") || !hashPattern.MatchString(authority.BearerSHA256) || !hashPattern.MatchString(authority.ExpectedBuild) || !safeIDPattern.MatchString(authority.CallerID) {
+			return nil, fmt.Errorf("v2 run authority runtime injection is invalid")
+		}
+		digest := sha256.Sum256([]byte(authority.BearerToken))
+		if hex.EncodeToString(digest[:]) != authority.BearerSHA256 {
+			return nil, fmt.Errorf("v2 run authority bearer hash does not match its token")
+		}
+		if _, err := localshadowconfig.ExactLoopbackOrigin(authority.Origin); err != nil {
+			return nil, fmt.Errorf("v2 run authority origin is invalid")
+		}
+		result = append(result,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED=1",
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN="+authority.Origin,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN="+authority.BearerToken,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256="+authority.BearerSHA256,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID="+authority.CallerID,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA="+authority.ExpectedBuild,
+		)
+	}
 	return result, nil
 }
 
@@ -299,7 +326,7 @@ func selectProtocolEnvironment(environment []string, protocolVersion string) []s
 				continue
 			}
 			if protocolVersion != authoritycontract.ProtocolVersion &&
-				(name == "WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED" || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_")) {
+				(name == "WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED" || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_")) {
 				continue
 			}
 			result = append(result, entry)

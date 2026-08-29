@@ -1,6 +1,7 @@
-// authority-server is the separate GS9-B Workflow Control authority
-// qualification entry point. Without the exact local qualification mode it
-// starts health-only and never opens PostgreSQL or registers authority routes.
+// authority-server is the separate Workflow Control authority entry point.
+// It starts health-only unless an exact qualification or GS9-G new-record
+// canary mode is configured; accepting new canary records remains separately
+// default-off.
 package main
 
 import (
@@ -30,12 +31,14 @@ func main() {
 	defer stop()
 
 	options := authorityapp.Options{
-		QualificationMode: configuration.QualificationMode, BuildSHA: configuration.ServiceBuildSHA,
+		AuthorityEnabled: configuration.AuthorityEnabled, QualificationMode: configuration.QualificationMode,
+		CanaryMode: configuration.CanaryMode, AcceptNewRecords: configuration.AcceptNewRecords,
+		DrainEpochs: configuration.DrainEpochs, BuildSHA: configuration.ServiceBuildSHA,
 		BearerTokenSHA256: configuration.BearerTokenSHA256, WorkspaceID: configuration.WorkspaceID,
 		CallerID: configuration.CallerID, RoutingEpoch: configuration.RoutingEpoch, Logger: logger,
 	}
 	var pool *pgxpool.Pool
-	if configuration.QualificationMode {
+	if configuration.AuthorityEnabled {
 		startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		pool, err = pgxpool.New(startup, configuration.DatabaseURL)
@@ -59,7 +62,8 @@ func main() {
 	logger.Info("workflow_control_authority_starting",
 		"http_bind", configuration.HTTPBind, "mode", configuration.Mode,
 		"qualification_mode", configuration.QualificationMode, "build_sha", configuration.ServiceBuildSHA,
-		"authority", "typescript", "routing_activated", false, "accept_new_records", false,
+		"authority", map[bool]string{false: "typescript", true: "workflow-control"}[configuration.CanaryMode],
+		"routing_activated", configuration.CanaryMode, "accept_new_records", configuration.CanaryMode && configuration.AcceptNewRecords,
 	)
 	if err := service.Run(ctx, configuration.HTTPBind, configuration.ShutdownDeadline); err != nil {
 		logger.Error("workflow_control_authority_stopped_with_error", "code", "AUTHORITY_SERVER_FAILED")

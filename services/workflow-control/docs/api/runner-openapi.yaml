@@ -1,26 +1,25 @@
 openapi: 3.1.0
 info:
   title: OpenSlack Workflow Runner Control API
-  version: 1.0.0
+  version: 1.1.0-gs9g
   description: >-
-    Private default-off runner lifecycle qualification service. GS9-F2b adds a
-    separately enabled loopback-only authority-binding companion for exact
-    checkpoint, effect, budget, and resume delivery. TypeScript remains the
-    production Workflow authority and production v2 submission/routing remains
-    disabled. Go owns only the explicitly qualified runner lifecycle and
-    durable companion records described here.
+    Private default-off runner lifecycle service. GS9-F2b provides the
+    loopback-only authority-binding companion for exact checkpoint, effect,
+    budget, and resume delivery. GS9-G permits the same exact v2 route only for
+    immutable, explicitly allowlisted new-record canary receipts after durable
+    Workflow Control accept. Legacy and rollback TS routes remain on v1.
 servers:
   - url: http://127.0.0.1:8081
 security: []
 x-openslack-default-off: true
 x-openslack-workspace-mode: single
-x-openslack-workflow-authority: typescript
+x-openslack-workflow-authority: immutable-route-receipt
 x-openslack-go-authority:
-  [job, attempt, lease, fence, cancel, receipt, runtime_admission, authority_binding]
-x-openslack-authority-eligible: false
+  [run, job, attempt, lease, fence, cancel, receipt, runtime_admission, authority_binding]
+x-openslack-authority-eligible: new-record-canary
 x-openslack-v2-runtime-delivery-default-off: true
-x-openslack-production-v2-submission: false
-x-openslack-production-v2-routing: false
+x-openslack-production-v2-submission: explicit-new-record-canary
+x-openslack-production-v2-routing: explicit-new-record-canary
 x-openslack-network-modes: [loopback, internal]
 x-openslack-max-request-bytes: 1048576
 x-openslack-job-request-max-bytes: 65536
@@ -75,11 +74,11 @@ paths:
     post:
       operationId: submitWorkflowRunnerV2QualificationJob
       description: >-
-        Default-off GS9-F qualification admission. The exact body permanently
-        binds protocol v2, required capabilities, authority route, run revision,
-        and resume generation. This route does not activate production routing.
+        Default-off GS9-F qualification or GS9-G explicit new-record canary
+        admission. The exact body permanently binds protocol v2, required
+        capabilities, authority route, run revision, and resume generation.
       x-openslack-canonical-json: required
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-no-protocol-downgrade: true
       x-openslack-replay-response: exact-original
       security:
@@ -95,7 +94,7 @@ paths:
             schema: { $ref: '#/components/schemas/V2JobSpec' }
       responses:
         '201':
-          description: V2 qualification job accepted.
+          description: V2 qualification or new-record canary job accepted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/V2JobReceipt' }
@@ -108,7 +107,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/V2JobReceipt' }
         '202':
-          description: V2 qualification admission requires reconciliation.
+          description: V2 admission requires reconciliation.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/V2JobReceipt' }
@@ -124,10 +123,11 @@ paths:
     post:
       operationId: stageWorkflowRunnerAuthorityBinding
       description: >-
-        Qualification-only companion sequence 1. Durably reserve the exact
-        future runner event before its source authority is committed.
+        Qualification or new-record canary companion sequence 1. Durably
+        reserve the exact future runner event before its source authority is
+        committed.
       x-openslack-canonical-json-lf: required
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-runtime-delivery-enable-required: true
       x-openslack-loopback-only: true
       x-openslack-replay-response: exact-original
@@ -159,12 +159,12 @@ paths:
     post:
       operationId: sealWorkflowRunnerV2RuntimeAdmission
       description: >-
-        Qualification-only durable admission between the sealed worker's
-        RunStore disposition point-read and its lease_accept event. It is the
-        explicit proof that distinguishes an initial generation-zero run from
-        the first resume without changing frozen runner-v2 or F2a bytes.
+        Qualification or new-record canary durable admission between the
+        sealed worker's recovery-projection disposition point-read and its
+        lease_accept event. It distinguishes an initial generation-zero run
+        from the first resume without changing frozen runner-v2 or F2a bytes.
       x-openslack-canonical-json-lf: required
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-runtime-delivery-enable-required: true
       x-openslack-loopback-only: true
       x-openslack-replay-response: exact-original
@@ -205,10 +205,10 @@ paths:
     post:
       operationId: resolveWorkflowRunnerAuthorityBinding
       description: >-
-        Qualification-only companion sequence 2. Bind the exact source
-        authority evidence to the previously staged event.
+        Qualification or new-record canary companion sequence 2. Bind the exact
+        source authority evidence to the previously staged event.
       x-openslack-canonical-json-lf: required
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-runtime-delivery-enable-required: true
       x-openslack-loopback-only: true
       x-openslack-replay-response: exact-original
@@ -245,7 +245,7 @@ paths:
         optional decision, or outstanding-binding cancellation. Sequence 4
         cannot overtake the exact accepted sequence-3 ACK.
       x-openslack-canonical-json-lf: required
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-runtime-delivery-enable-required: true
       x-openslack-loopback-only: true
       x-openslack-replay-response: exact-original
@@ -280,7 +280,7 @@ paths:
       description: >-
         Point-read the exact durable companion receipt after a lost POST
         response. A missing receipt never authorizes replay under another key.
-      x-openslack-qualification-only: true
+      x-openslack-availability: qualification-or-new-record-canary
       x-openslack-runtime-delivery-enable-required: true
       x-openslack-loopback-only: true
       security:
@@ -7889,11 +7889,12 @@ components:
           minimum: 2
           maximum: 8
         mode: { const: runner-control-explicit }
-        workflowAuthority: { const: typescript }
+        workflowAuthority: { enum: [typescript, immutable-route-receipt] }
         v2QualificationAdmission: { type: boolean }
-        routingActivated: { const: false }
+        routingActivated: { type: boolean }
         v2RuntimeDeliveryQualification: { type: boolean }
-        productionRoutingActivated: { const: false }
+        productionRoutingActivated: { type: boolean }
+        newRecordCanary: { type: boolean }
     Error:
       type: object
       additionalProperties: false

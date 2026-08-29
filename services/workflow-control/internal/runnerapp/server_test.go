@@ -19,6 +19,22 @@ type fakeV2Store struct {
 	submit func(context.Context, runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error)
 }
 
+func TestV2NewRecordCanaryVersionReportsActivatedRouting(t *testing.T) {
+	service := &Service{
+		buildSHA: strings.Repeat("a", 64), schemaVersion: 8,
+		v2Enabled: true, v2RuntimeDelivery: true, v2NewRecordCanary: true,
+	}
+	request := httptest.NewRequest(http.MethodGet, RouteVersion, nil)
+	response := httptest.NewRecorder()
+	service.handleVersion(response, request)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"routingActivated":true`) ||
+		!strings.Contains(response.Body.String(), `"productionRoutingActivated":true`) ||
+		!strings.Contains(response.Body.String(), `"newRecordCanary":true`) {
+		t.Fatalf("canary version did not report activated routing: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func (store fakeV2Store) SubmitV2(ctx context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
 	return store.submit(ctx, input)
 }
@@ -79,6 +95,15 @@ func TestV2QualificationAdmissionReplaysAcceptedReceiptWithoutActivatingGoRoute(
 	}
 	if service.accepted.Load() != 1 || service.duplicates.Load() != 1 {
 		t.Fatalf("v2 admission metrics drifted: accepted=%d duplicate=%d", service.accepted.Load(), service.duplicates.Load())
+	}
+	if _, canaryErr := New(Options{
+		Store: base, V2Store: fakeV2Store{submit: func(context.Context, runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+			return runnerstore.V2JobReceipt{}, nil
+		}}, V2Qualification: true, V2NewRecordCanary: true, SchemaVersion: 8,
+		BuildSHA: strings.Repeat("a", 64), WorkspaceID: spec.WorkspaceID,
+		BearerTokenSHA256: fmt.Sprintf("%x", digest[:]),
+	}); canaryErr == nil {
+		t.Fatal("new-record canary was accepted without the complete runtime-delivery profile")
 	}
 	goSpec := spec
 	goSpec.AuthorityRoute.Backend, goSpec.AuthorityRoute.Authority = "go", "workflow-control"

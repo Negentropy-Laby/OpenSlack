@@ -1,6 +1,7 @@
-// Package runnerapp exposes the private, authenticated GS8-B runner admission
-// surface. It owns runner job lifecycle admission only; TypeScript remains the
-// Workflow RunStore, checkpoint, approval, budget, and effect authority.
+// Package runnerapp exposes the private, authenticated runner admission
+// surface. It owns runner lifecycle authority and, for an explicit GS9-G
+// new-record route, runs the v2 authority-binding lifecycle after durable Go
+// Workflow Control acceptance. Legacy TypeScript routes remain on runner v1.
 package runnerapp
 
 import (
@@ -57,6 +58,7 @@ type Options struct {
 	AdmissionStore    runnerstore.V2RuntimeAdmissionStore
 	V2Qualification   bool
 	V2RuntimeDelivery bool
+	V2NewRecordCanary bool
 	SchemaVersion     int64
 	BuildSHA          string
 	WorkspaceID       string
@@ -71,6 +73,7 @@ type Service struct {
 	admissionStore    runnerstore.V2RuntimeAdmissionStore
 	v2Enabled         bool
 	v2RuntimeDelivery bool
+	v2NewRecordCanary bool
 	schemaVersion     int64
 	buildSHA          string
 	workspaceID       string
@@ -107,6 +110,7 @@ func New(options Options) (*Service, error) {
 		store: options.Store, buildSHA: options.BuildSHA,
 		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore, v2Enabled: options.V2Qualification,
 		v2RuntimeDelivery: options.V2RuntimeDelivery,
+		v2NewRecordCanary: options.V2NewRecordCanary,
 		schemaVersion:     options.SchemaVersion,
 		workspaceID:       options.WorkspaceID, logger: options.Logger,
 	}
@@ -115,6 +119,9 @@ func New(options Options) (*Service, error) {
 	}
 	if service.v2RuntimeDelivery && !service.v2Enabled {
 		return nil, fmt.Errorf("runner v2 runtime delivery requires v2 qualification")
+	}
+	if service.v2NewRecordCanary && !service.v2RuntimeDelivery {
+		return nil, fmt.Errorf("runner v2 new-record canary requires runtime delivery")
 	}
 	if service.v2RuntimeDelivery && (service.bindingStore == nil || service.admissionStore == nil) {
 		return nil, fmt.Errorf("runner authority-binding and runtime-admission Stores are required for runtime delivery")

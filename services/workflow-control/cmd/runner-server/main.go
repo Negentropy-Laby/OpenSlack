@@ -1,5 +1,6 @@
-// runner-server is the separate, explicitly enabled GS8-B runner lifecycle
-// control entry point. The default credential-free cmd/server never starts it.
+// runner-server is the separate, explicitly enabled runner lifecycle control
+// entry point. It can host the default-off GS9-G v2 new-record canary; the
+// default credential-free cmd/server never starts it.
 package main
 
 import (
@@ -101,6 +102,7 @@ func main() {
 		EffectShadowCallerID:        config.EffectShadowCallerID,
 		EffectShadowJournalRoot:     config.EffectShadowJournalRoot,
 		V2RuntimeDelivery:           config.V2RuntimeDeliveryRuntime(),
+		V2RunAuthority:              config.V2RunAuthorityRuntime(),
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")
@@ -160,7 +162,7 @@ func main() {
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
 		V2Store: store, BindingStore: store, AdmissionStore: store, V2Qualification: config.V2QualificationEnabled,
-		V2RuntimeDelivery: config.V2RuntimeDeliveryEnabled, SchemaVersion: schemaVersion,
+		V2RuntimeDelivery: config.V2RuntimeDeliveryEnabled, V2NewRecordCanary: config.V2RunAuthorityEnabled, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
 	})
 	if err != nil {
@@ -171,8 +173,9 @@ func main() {
 		"http_bind", config.HTTPBind, "network_mode", config.NetworkMode,
 		"workspace_id", config.WorkspaceID, "build_sha", config.ServiceBuildSHA,
 		"worker_bundle_id", registry.BundleID(), "worker_build_hash", registry.RunnerBuildHash(),
-		"v2_qualification", config.V2QualificationEnabled, "routing_activated", false,
+		"v2_qualification", config.V2QualificationEnabled, "routing_activated", config.V2RunAuthorityEnabled,
 		"v2_runtime_delivery_qualification", config.V2RuntimeDeliveryEnabled,
+		"v2_new_record_canary", config.V2RunAuthorityEnabled,
 	)
 	if err := run(ctx, service, scheduler, config); err != nil {
 		logger.Error("workflow_runner_control_stopped_with_error", "code", "RUNNER_CONTROL_FAILED")

@@ -46,12 +46,12 @@ func TestAuthorityOpenAPIContract(t *testing.T) {
 		t.Fatalf("authority route inventory drifted: %v", routes)
 	}
 	if document.Extensions["x-openslack-default-off"] != true ||
-		document.Extensions["x-openslack-mode"] != "local-qualification-v1" ||
-		document.Extensions["x-openslack-workflow-authority"] != "typescript" ||
-		document.Extensions["x-openslack-routing-activated"] != false ||
-		document.Extensions["x-openslack-accept-new-records"] != false ||
+		fmt.Sprint(document.Extensions["x-openslack-modes"]) != "[disabled local-qualification-v1 new-record-canary-v1]" ||
+		fmt.Sprint(document.Extensions["x-openslack-workflow-authority"]) != "[typescript workflow-control]" ||
+		document.Extensions["x-openslack-routing-policy"] != "explicit-active-and-bounded-drain-epochs" ||
+		document.Extensions["x-openslack-accept-new-records"] != "explicit-boolean-default-false" ||
 		fmt.Sprint(document.Extensions["x-openslack-network-modes"]) != "[loopback]" {
-		t.Fatalf("negative production authority declaration drifted: %+v", document.Extensions)
+		t.Fatalf("default-off canary authority declaration drifted: %+v", document.Extensions)
 	}
 	for _, route := range []string{"/health/live", "/health/ready", "/health/version"} {
 		operation := document.Paths.Value(route).Get

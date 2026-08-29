@@ -17,6 +17,16 @@ import type {
   WorkflowRunnerJobView,
 } from '../workflow-runner-control-client.js';
 import type { RunResult, WorkflowMeta } from '../types.js';
+import {
+  workflowControlAuthorityInitialRecord,
+  type WorkflowControlAuthorityPort,
+  type WorkflowControlAuthorityRunRecord,
+} from '../workflow-control-authority-client.js';
+import { WorkflowRunRouter, type WorkflowRunRouteReceipt } from '../workflow-run-routing.js';
+import type {
+  PreparedWorkflowRunnerV2JobSpec,
+  WorkflowRunnerV2ControlPort,
+} from '../workflow-runner-v2-control-client.js';
 
 const roots: string[] = [];
 const NOW = '2026-08-13T00:00:00.000Z';
@@ -143,6 +153,164 @@ async function fixture(status: 'completed' | 'paused_waiting_approval' | 'failed
 }
 
 describe('Workflow Runner public execution client', () => {
+  it('freezes, durably accepts, and submits an explicit Go route without v1 RunStore fallback', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-go-route-'));
+    roots.push(workspaceRoot);
+    const descriptorRoot = join(workspaceRoot, '.runner-descriptors');
+    await mkdir(descriptorRoot, { mode: 0o700 });
+    hardenWindowsDirectory(descriptorRoot);
+    const config: WorkflowRunnerControlConfig = {
+      origin: 'http://127.0.0.1:18183',
+      workspaceId: 'workspace.test',
+      bearerToken: 't'.repeat(32),
+      descriptorRoot,
+    };
+    const submit = vi.fn<WorkflowRunnerControlPort['submit']>();
+    let preparedV2: PreparedWorkflowRunnerV2JobSpec | undefined;
+    const output: RunResult = { status: 'completed', value: 'go-owned' };
+    let record: WorkflowControlAuthorityRunRecord | undefined;
+    const runId = 'run.public.go-canary';
+    const client: WorkflowRunnerControlPort = {
+      descriptorRoot,
+      submit,
+      async waitForTerminal(jobId) {
+        const projection = new RunStore({
+          baseDir: join(workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections'),
+        });
+        await projection.initRun(runId, {
+          runId,
+          workflowName: manifest.name,
+          mode: 'execute',
+          manifestHash: preparedV2!.spec.manifestHash,
+          args: {},
+          startedAt: NOW,
+        });
+        await projection.saveOutput(runId, output);
+        await projection.transitionStatus(runId, 'completed');
+        record = { ...record!, state: 'completed', revision: 3 };
+        return {
+          schema: 'openslack.workflow_runner_job_view.v1',
+          workspaceId: config.workspaceId,
+          jobId,
+          workflowRunId: runId,
+          correlationId: preparedV2!.spec.correlationId,
+          state: 'terminal',
+          revision: 4,
+          fencingToken: 1,
+          attemptId: 'attempt-go-1',
+          leaseId: 'lease-go-1',
+          attemptState: 'terminal',
+          leaseExpiresAt: '2026-08-13T00:01:00.000Z',
+          terminalStatus: 'completed',
+          terminalReason: null,
+          resultHash: hashWorkflowRunnerResult(output),
+          openEffectCount: 0,
+          reconciliationId: null,
+          reconciliationCode: null,
+          executionStarted: true,
+          createdAt: NOW,
+          updatedAt: '2026-08-13T00:00:01.000Z',
+        };
+      },
+    };
+    const v2Submit = vi.fn<WorkflowRunnerV2ControlPort['submit']>(async (prepared) => {
+      preparedV2 = prepared;
+      return {
+        schema: 'openslack.workflow_runner_job_receipt.v2',
+        status: 'accepted',
+        workspaceId: prepared.spec.workspaceId,
+        jobId: prepared.spec.jobId,
+        workflowRunId: prepared.spec.workflowRunId,
+        state: 'queued',
+        revision: 1,
+        jobSpecHash: prepared.jobSpecHash,
+        idempotencyKey: prepared.idempotencyKey,
+        requestFingerprint: prepared.requestFingerprint,
+        committedAt: NOW,
+        reconciliationId: null,
+      };
+    });
+    const v2Client: WorkflowRunnerV2ControlPort = { descriptorRoot, submit: v2Submit };
+    let frozen: WorkflowRunRouteReceipt | undefined;
+    const authority: WorkflowControlAuthorityPort = {
+      accept: vi.fn(async (route) => {
+        frozen = route;
+        record = workflowControlAuthorityInitialRecord(route);
+        return {} as never;
+      }),
+      transition: vi.fn(),
+      read: vi.fn(async () => ({
+        ...record!,
+        schema: 'openslack.workflow_control_authority_read.v2' as const,
+        recordHash: HASH,
+        record: record!,
+        updatedAt: NOW,
+      })),
+    };
+
+    await expect(
+      executeWorkflowThroughRunner({
+        workspaceRoot,
+        workflowRunId: runId,
+        workflowSource: 'openslack-project',
+        workflowSourceBytes: Buffer.from('export async function run() {}', 'utf8'),
+        manifest,
+        confirmationPolicy: {
+          mode: 'unattended-explicit',
+          actorId: 'operator',
+          runId,
+          allowUnattended: true,
+        },
+        config,
+        client,
+        now: () => new Date(NOW),
+        routing: {
+          router: new WorkflowRunRouter({
+            schema: 'openslack.workflow_run_routing_policy.v1',
+            workspaceId: config.workspaceId,
+            backend: 'go',
+            authority: 'workflow-control',
+            routingEpoch: 9,
+            authorityBuildHash: HASH,
+            qualificationEnvironmentId: 'hosted-canary.test',
+            workflowAllowlist: [manifest.name],
+            runAllowlist: [],
+            expiresAt: '2026-08-14T00:00:00.000Z',
+          }),
+          journal: {
+            async commit(route) {
+              return route as WorkflowRunRouteReceipt;
+            },
+          },
+          authority,
+          v2Client,
+          v2BudgetPolicy: {
+            accountId: 'budget.go-public',
+            policyHash: '2'.repeat(64),
+            rateNanoUsdPerToken: '1',
+            tokenLimit: '1000',
+            costLimitNanoUsd: '1000000000',
+            callLimit: '10',
+          },
+        },
+      }),
+    ).resolves.toEqual(output);
+
+    expect(frozen).toMatchObject({
+      runId,
+      route: { backend: 'go', authority: 'workflow-control', routingEpoch: 9 },
+    });
+    expect(authority.accept).toHaveBeenCalledTimes(1);
+    expect(authority.read).toHaveBeenCalledTimes(2);
+    expect(submit).not.toHaveBeenCalled();
+    expect(v2Submit).toHaveBeenCalledTimes(1);
+    await expect(
+      new RunStore({
+        baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+      }).runExists(runId),
+    ).resolves.toBe(false);
+  });
+
   it('seals a hash-only JobSpec and returns only the matching durable RunStore result', async () => {
     const value = await fixture('completed');
     const result = await executeWorkflowThroughRunner({

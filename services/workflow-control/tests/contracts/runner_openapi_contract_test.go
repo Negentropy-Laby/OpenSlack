@@ -49,15 +49,15 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 	}
 	if document.Extensions["x-openslack-default-off"] != true ||
 		document.Extensions["x-openslack-workspace-mode"] != "single" ||
-		document.Extensions["x-openslack-workflow-authority"] != "typescript" ||
-		document.Extensions["x-openslack-authority-eligible"] != false ||
+		document.Extensions["x-openslack-workflow-authority"] != "immutable-route-receipt" ||
+		document.Extensions["x-openslack-authority-eligible"] != "new-record-canary" ||
 		document.Extensions["x-openslack-v2-runtime-delivery-default-off"] != true ||
-		document.Extensions["x-openslack-production-v2-submission"] != false ||
-		document.Extensions["x-openslack-production-v2-routing"] != false ||
+		document.Extensions["x-openslack-production-v2-submission"] != "explicit-new-record-canary" ||
+		document.Extensions["x-openslack-production-v2-routing"] != "explicit-new-record-canary" ||
 		document.Extensions["x-openslack-max-request-bytes"] != float64(1_048_576) ||
 		document.Extensions["x-openslack-job-request-max-bytes"] != float64(65_536) ||
 		document.Extensions["x-openslack-authority-binding-request-max-bytes"] != float64(1_048_576) ||
-		fmt.Sprint(document.Extensions["x-openslack-go-authority"]) != "[job attempt lease fence cancel receipt runtime_admission authority_binding]" {
+		fmt.Sprint(document.Extensions["x-openslack-go-authority"]) != "[run job attempt lease fence cancel receipt runtime_admission authority_binding]" {
 		t.Fatalf("runner authority boundary drifted: %+v", document.Extensions)
 	}
 	security := document.Components.SecuritySchemes["bearerAuth"]
@@ -94,7 +94,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 func TestRunnerOpenAPIRuntimeAdmissionSealsDurableDisposition(t *testing.T) {
 	document := loadRunnerOpenAPI(t)
 	operation := document.Paths.Value("/v2/runner/runtime-admissions:seal").Post
-	if operation == nil || operation.Extensions["x-openslack-qualification-only"] != true ||
+	if operation == nil || operation.Extensions["x-openslack-availability"] != "qualification-or-new-record-canary" ||
 		operation.Extensions["x-openslack-runtime-delivery-enable-required"] != true ||
 		operation.Extensions["x-openslack-loopback-only"] != true ||
 		operation.Extensions["x-openslack-canonical-json-lf"] != "required" ||
@@ -132,7 +132,7 @@ func TestRunnerOpenAPIRuntimeAdmissionSealsDurableDisposition(t *testing.T) {
 func TestRunnerOpenAPIV2QualificationAdmissionAndReceiptAreClosed(t *testing.T) {
 	document := loadRunnerOpenAPI(t)
 	operation := document.Paths.Value("/v2/runner/jobs").Post
-	if operation == nil || operation.Extensions["x-openslack-qualification-only"] != true ||
+	if operation == nil || operation.Extensions["x-openslack-availability"] != "qualification-or-new-record-canary" ||
 		operation.Extensions["x-openslack-no-protocol-downgrade"] != true ||
 		operation.Extensions["x-openslack-replay-response"] != "exact-original" ||
 		operation.Responses.Value("201") == nil || operation.Responses.Value("200") == nil || operation.Responses.Value("202") == nil {
@@ -227,7 +227,7 @@ func TestRunnerOpenAPIAuthorityBindingCompanionIsExactDefaultOffQualificationOnl
 		document.Paths.Value("/v2/runner/authority-bindings/{bindingId}:ack-control").Post,
 		document.Paths.Value("/v2/runner/authority-bindings/receipts/{idempotencyKey}").Get,
 	} {
-		if operation == nil || operation.Extensions["x-openslack-qualification-only"] != true ||
+		if operation == nil || operation.Extensions["x-openslack-availability"] != "qualification-or-new-record-canary" ||
 			operation.Extensions["x-openslack-runtime-delivery-enable-required"] != true ||
 			operation.Extensions["x-openslack-loopback-only"] != true {
 			t.Fatalf("authority-binding route widened beyond explicit qualification: %+v", operation)
@@ -253,7 +253,8 @@ func TestRunnerOpenAPIAuthorityBindingCompanionIsExactDefaultOffQualificationOnl
 	version := document.Components.Schemas["Version"].Value
 	if version.Properties["schemaVersion"].Value.Max == nil || *version.Properties["schemaVersion"].Value.Max != 8 ||
 		version.Properties["v2RuntimeDeliveryQualification"] == nil ||
-		version.Properties["productionRoutingActivated"].Value.Const != false {
+		version.Properties["productionRoutingActivated"] == nil ||
+		version.Properties["newRecordCanary"] == nil {
 		t.Fatalf("schema-8 runtime-delivery version surface drifted: %+v", version.Properties)
 	}
 }

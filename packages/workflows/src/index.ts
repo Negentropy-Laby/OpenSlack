@@ -872,6 +872,48 @@ export type {
   WorkflowRunnerJobView,
 } from './workflow-runner-control-client.js';
 export {
+  hashWorkflowRunRoutingPolicy,
+  validateWorkflowRunRouteReceipt,
+  validateWorkflowRunRoutingPolicy,
+  WORKFLOW_RUN_ROUTE_RECEIPT_SCHEMA,
+  WORKFLOW_RUN_ROUTING_LIMITS,
+  WORKFLOW_RUN_ROUTING_POLICY_SCHEMA,
+  WorkflowRunRouteJournal,
+  WorkflowRunRouter,
+  WorkflowRunRoutingError,
+} from './workflow-run-routing.js';
+export type {
+  SelectWorkflowRunRouteInput,
+  WorkflowRunRouteReceipt,
+  WorkflowRunRoutingPolicy,
+} from './workflow-run-routing.js';
+export {
+  loadWorkflowRunRoutingExecutionConfig,
+  WORKFLOW_RUN_ROUTING_MODE_ENV,
+  WORKFLOW_RUN_ROUTING_MODE_GO,
+  WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
+  WorkflowRunRoutingConfigError,
+} from './workflow-run-routing-config.js';
+export type { WorkflowRunRoutingExecutionConfig } from './workflow-run-routing-config.js';
+export {
+  prepareWorkflowControlAuthorityMutation,
+  workflowControlAuthorityInitialRecord,
+  WORKFLOW_CONTROL_AUTHORITY_ACCEPT_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_READ_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_RUN_RECORD_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_TRANSITION_SCHEMA,
+  WorkflowControlAuthorityClientError,
+  WorkflowControlAuthorityHttpClient,
+} from './workflow-control-authority-client.js';
+export type {
+  PreparedWorkflowControlAuthorityMutation,
+  WorkflowControlAuthorityExpectedHead,
+  WorkflowControlAuthorityMutation,
+  WorkflowControlAuthorityPort,
+  WorkflowControlAuthorityRunRead,
+  WorkflowControlAuthorityRunRecord,
+} from './workflow-control-authority-client.js';
+export {
   decodeWorkflowRunnerFrame,
   WorkflowRunnerFramingError,
   WorkflowRunnerJsonlDecoder,
