@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 )
 
 const (
@@ -103,6 +105,62 @@ func TestServicePinsBearerAndAllQualificationBindings(t *testing.T) {
 	wrongCaller := perform(t, service.Handler(), http.MethodPost, RouteAccept, body, headers)
 	if wrongCaller.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("caller drift status=%d body=%s", wrongCaller.Code, wrongCaller.Body.String())
+	}
+}
+
+func TestQualificationCompositionRejectsCanaryRecordPolicy(t *testing.T) {
+	digest := sha256.Sum256([]byte(testBearer))
+	_, err := New(Options{
+		Repository: &fakeRepository{}, Mode: config.AuthorityModeLocalQualification, AcceptNewRecords: true,
+		BuildSHA: testBuildSHA, BearerTokenSHA256: hex.EncodeToString(digest[:]),
+		WorkspaceID: testWorkspace, CallerID: testCaller, RoutingEpoch: testRoutingEpoch,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot retain new-record or drain policy") {
+		t.Fatalf("qualification composition retained canary policy: %v", err)
+	}
+}
+
+func TestCanaryDisablesNewAcceptWhileRetainingBoundedDrainEpoch(t *testing.T) {
+	mutations := 0
+	repository := &fakeRepository{mutate: func(_ context.Context, input authoritystore.MutateInput) (authoritystore.Receipt, error) {
+		mutations++
+		if input.Prepared.Envelope.Operation == authoritystore.OperationAccept {
+			if !input.RejectFreshAccept {
+				t.Fatal("disabled fresh accept did not reach the repository gate")
+			}
+			return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "new Go authority records are disabled for this epoch", nil)
+		}
+		if input.Prepared.Envelope.Operation != authoritystore.OperationTransition || input.Prepared.Envelope.Route.RoutingEpoch != 8 {
+			t.Fatalf("unexpected drain mutation: %#v", input.Prepared.Envelope)
+		}
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "test drain reached repository", nil)
+	}}
+	service := newCanaryService(t, repository, false, []int64{8})
+
+	accept := acceptBody(t)
+	disabled := perform(t, service.Handler(), http.MethodPost, RouteAccept, accept, qualificationHeaders(t, accept, true))
+	if disabled.Code != http.StatusConflict || !strings.Contains(disabled.Body.String(), `"code":"WORKFLOW_CONTROL_AUTHORITY_CONFLICT"`) || mutations != 1 {
+		t.Fatalf("disabled canary accept drifted: status=%d body=%s mutations=%d", disabled.Code, disabled.Body.String(), mutations)
+	}
+
+	drainBody := transitionBody(t, 8)
+	drainPath := "/v1/workflow-control/runs/" + testRunID + ":transition"
+	drain := perform(t, service.Handler(), http.MethodPost, drainPath, drainBody, authorityHeaders(t, drainBody, drainPath, 8))
+	if drain.Code != http.StatusConflict || mutations != 2 {
+		t.Fatalf("bounded drain epoch did not reach the authority store: status=%d body=%s mutations=%d", drain.Code, drain.Body.String(), mutations)
+	}
+
+	version := perform(t, service.Handler(), http.MethodGet, RouteVersion, nil, nil)
+	if version.Code != http.StatusOK || !strings.Contains(version.Body.String(), `"mode":"new-record-canary-v1"`) ||
+		!strings.Contains(version.Body.String(), `"authority":"workflow-control"`) ||
+		!strings.Contains(version.Body.String(), `"routingActivated":true`) ||
+		!strings.Contains(version.Body.String(), `"acceptNewRecords":false`) {
+		t.Fatalf("canary version drifted: status=%d body=%s", version.Code, version.Body.String())
+	}
+	binding := perform(t, service.Handler(), http.MethodGet, RouteBinding, nil, qualificationReadHeaders())
+	if binding.Code != http.StatusOK ||
+		binding.Body.String() != `{"acceptNewRecords":false,"activeRoutingEpoch":9,"buildSha":"`+testBuildSHA+`","callerId":"`+testCaller+`","drainRoutingEpochs":[8],"mode":"new-record-canary-v1","schema":"openslack.workflow_control_authority_binding.v1","workspaceId":"`+testWorkspace+`"}`+"\n" {
+		t.Fatalf("canary binding drifted: status=%d body=%s", binding.Code, binding.Body.String())
 	}
 }
 
@@ -282,7 +340,22 @@ func newQualificationService(t *testing.T, repository authoritystore.Repository)
 	t.Helper()
 	digest := sha256.Sum256([]byte(testBearer))
 	service, err := New(Options{
-		Repository: repository, QualificationMode: true, BuildSHA: testBuildSHA,
+		Repository: repository, Mode: config.AuthorityModeLocalQualification, BuildSHA: testBuildSHA,
+		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: testWorkspace,
+		CallerID: testCaller, RoutingEpoch: testRoutingEpoch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func newCanaryService(t *testing.T, repository authoritystore.Repository, accept bool, drains []int64) *Service {
+	t.Helper()
+	digest := sha256.Sum256([]byte(testBearer))
+	service, err := New(Options{
+		Repository: repository, Mode: config.AuthorityModeNewRecordCanary,
+		AcceptNewRecords: accept, DrainEpochs: drains, BuildSHA: testBuildSHA,
 		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: testWorkspace,
 		CallerID: testCaller, RoutingEpoch: testRoutingEpoch,
 	})
@@ -313,6 +386,28 @@ func acceptBody(t *testing.T) []byte {
 	return append(body, '\n')
 }
 
+func transitionBody(t *testing.T, epoch int64) []byte {
+	t.Helper()
+	created := authoritycontract.RunCreated
+	route := authoritystore.Route{Backend: authoritystore.Backend, Authority: authoritystore.Authority, RoutingEpoch: epoch, AuthorityBuildHash: testBuildSHA}
+	body, err := canonicaljson.Encode(authoritystore.RequestEnvelope{
+		Schema: authoritystore.TransitionSchema, Operation: authoritystore.OperationTransition,
+		WorkspaceID: testWorkspace, RunID: testRunID,
+		Expected: authoritystore.ExpectedBinding{Revision: 1, State: &created, ResumeGeneration: 0}, Route: route,
+		Record: authoritystore.RunRecord{
+			Schema: authoritystore.RunRecordSchema, WorkspaceID: testWorkspace, RunID: testRunID,
+			WorkflowID: "workflow.demo", WorkflowVersion: "v1", WorkflowSourceHash: testBuildSHA,
+			ManifestHash: testBuildSHA, InputHash: testBuildSHA, Route: route,
+			State: authoritycontract.RunRunning, Revision: 2,
+		},
+		CorrelationID: "correlation-gs9g-drain",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(body, '\n')
+}
+
 func qualificationHeaders(t *testing.T, body []byte, bearer bool) map[string]string {
 	t.Helper()
 	prepared, err := authoritystore.PrepareRequest(body, testCaller, testWorkspace, "9", testBuildSHA)
@@ -329,6 +424,25 @@ func qualificationHeaders(t *testing.T, body []byte, bearer bool) map[string]str
 		headers["Authorization"] = "Bearer " + testBearer
 	}
 	return headers
+}
+
+func authorityHeaders(t *testing.T, body []byte, path string, epoch int64) map[string]string {
+	t.Helper()
+	prepared, err := authoritystore.PrepareRequest(body, testCaller, testWorkspace, stringEpoch(epoch), testBuildSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]string{
+		"Authorization": "Bearer " + testBearer, "Content-Type": "application/json",
+		"Idempotency-Key": authoritystore.ExpectedIdempotencyKey(body),
+		HeaderFingerprint: authoritystore.RequestFingerprint(http.MethodPost, path, prepared),
+		HeaderCallerID:    testCaller, HeaderWorkspaceID: testWorkspace,
+		HeaderRoutingEpoch: stringEpoch(epoch), HeaderExpectedBuildSHA: testBuildSHA,
+	}
+}
+
+func stringEpoch(epoch int64) string {
+	return strconv.FormatInt(epoch, 10)
 }
 
 func qualificationReadHeaders() map[string]string {

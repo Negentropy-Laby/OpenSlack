@@ -35,6 +35,12 @@ func TestGS9BAuthorityAcceptAndByteIdenticalReplay(t *testing.T) {
 		!replay.Replay || first.ReceiptID != replay.ReceiptID || !bytes.Equal(first.ExactBytes, replay.ExactBytes) {
 		t.Fatalf("receipt replay changed immutable result: first=%#v replay=%#v", first, replay)
 	}
+	disabledReplay := input
+	disabledReplay.RejectFreshAccept = true
+	replayAfterDisable, err := repository.Mutate(context.Background(), disabledReplay)
+	if err != nil || !replayAfterDisable.Replay || !bytes.Equal(first.ExactBytes, replayAfterDisable.ExactBytes) {
+		t.Fatalf("disabled fresh acceptance did not preserve exact replay: receipt=%#v err=%v", replayAfterDisable, err)
+	}
 	head, err := repository.Read(context.Background(), input.Prepared.Envelope.WorkspaceID, input.Prepared.Envelope.RunID)
 	if err != nil || head.Revision != 1 || head.State != authoritycontract.RunCreated {
 		t.Fatalf("head=%#v err=%v", head, err)

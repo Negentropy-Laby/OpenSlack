@@ -68,6 +68,14 @@ vi.mock('@openslack/workflows', async () => {
     executePreview: vi.fn(),
     executeDryRun: vi.fn(),
     executeWorkflowThroughRunner: vi.fn(),
+    loadWorkflowRunnerControlConfig: vi.fn(() => ({
+      origin: 'http://127.0.0.1:18181',
+      workspaceId: 'workspace.test',
+      bearerToken: 't'.repeat(32),
+      descriptorRoot: '/test/root/.openslack.local/workflow-runner/descriptors',
+    })),
+    loadWorkflowRunRoutingConfig: vi.fn(() => ({ mode: 'disabled', ignoredSettings: [] })),
+    createWorkflowRunRoutingExecutionContext: vi.fn(() => ({ mode: 'disabled' })),
     readWorkflowRunnerSourceBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
     executeResume: vi.fn(),
     buildApprovalManifest: vi.fn(() => ({

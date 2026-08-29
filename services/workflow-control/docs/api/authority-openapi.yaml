@@ -1,29 +1,47 @@
 openapi: 3.1.0
 info:
-  title: OpenSlack Workflow Control Authority Qualification API
-  version: 2.0.0-gs9b
+  title: OpenSlack Workflow Control Authority API
+  version: 2.1.0-gs9g
   description: >-
-    Private, loopback-only GS9-B qualification surface for the isolated Go run
-    authority spine. The process is health-only by default. Enabling local
-    qualification does not activate production routing, accept new production
-    records, or change the declared TypeScript workflow authority.
+    Private, loopback-only Workflow Control authority surface. The process is
+    health-only by default. Local qualification retains the pre-cutover
+    TypeScript authority declaration. The separate new-record-canary-v1 mode
+    enables one exact active epoch plus bounded read/transition drain epochs;
+    new Go acceptance still requires an explicit acceptNewRecords=true binding.
 servers:
   - url: http://127.0.0.1:8082
 security: []
 x-openslack-default-off: true
-x-openslack-mode: local-qualification-v1
+x-openslack-modes: [disabled, local-qualification-v1, new-record-canary-v1]
 x-openslack-network-modes: [loopback]
-x-openslack-workflow-authority: typescript
-x-openslack-routing-activated: false
-x-openslack-accept-new-records: false
-x-openslack-go-authority: [qualification-run-spine, transition-receipt, transactional-outbox]
-x-openslack-excluded-authority: [checkpoint, approval, budget, runner-v2, effect, canary-routing]
+x-openslack-workflow-authority: [typescript, workflow-control]
+x-openslack-routing-policy: explicit-active-and-bounded-drain-epochs
+x-openslack-accept-new-records: explicit-boolean-default-false
+x-openslack-go-authority: [run-spine, transition-receipt, transactional-outbox]
+x-openslack-excluded-authority: [approval, provider, effect-execution]
 x-openslack-max-request-bytes: 524288
 paths:
+  /v1/workflow-control/binding:
+    get:
+      operationId: inspectWorkflowControlAuthorityBinding
+      description: Return the authenticated new-record authority binding before any durable write.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Exact active authority binding.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/AuthorityBinding' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/workflow-control/runs:accept:
     post:
-      operationId: acceptQualificationWorkflowRun
-      description: Atomically accept revision one of one explicitly Go-routed qualification run.
+      operationId: acceptWorkflowRun
+      description: Atomically accept revision one of an explicitly Go-routed run on the active accepting epoch.
       x-openslack-canonical-json: exact-plus-lf
       x-openslack-replay-response: exact-original
       security: [{ bearerAuth: [] }]
@@ -52,7 +70,7 @@ paths:
         '503': { $ref: '#/components/responses/Unavailable' }
   /v1/workflow-control/runs/{runId}:transition:
     post:
-      operationId: transitionQualificationWorkflowRun
+      operationId: transitionWorkflowRun
       description: Apply one exact expected-head CAS transition and emit receipt, event, and outbox atomically.
       x-openslack-canonical-json: exact-plus-lf
       x-openslack-replay-response: exact-original
@@ -296,6 +314,33 @@ components:
         authority: { type: string, const: workflow-control }
         routingEpoch: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
         authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+    AuthorityBinding:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          callerId,
+          mode,
+          activeRoutingEpoch,
+          drainRoutingEpochs,
+          buildSha,
+          acceptNewRecords,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_binding.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        callerId: { $ref: '#/components/schemas/Identifier' }
+        mode: { type: string, const: new-record-canary-v1 }
+        activeRoutingEpoch: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        drainRoutingEpochs:
+          type: array
+          uniqueItems: true
+          items: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        acceptNewRecords: { type: boolean }
     Expected:
       type: object
       additionalProperties: false
@@ -456,7 +501,17 @@ components:
       additionalProperties: false
       unevaluatedProperties: false
       required:
-        [schema, eventId, receiptId, workspaceId, runId, expected, record, recordHash, correlationId]
+        [
+          schema,
+          eventId,
+          receiptId,
+          workspaceId,
+          runId,
+          expected,
+          record,
+          recordHash,
+          correlationId,
+        ]
       properties:
         schema: { type: string, const: openslack.workflow_control_authority_outbox.v2 }
         eventId: { $ref: '#/components/schemas/Identifier' }
@@ -520,11 +575,11 @@ components:
         schema: { type: string, const: openslack.workflow_control_authority_service_version.v1 }
         contractVersion: { type: string, const: v2 }
         buildSha: { $ref: '#/components/schemas/Hash' }
-        mode: { type: string, enum: [disabled, local-qualification-v1] }
+        mode: { type: string, enum: [disabled, local-qualification-v1, new-record-canary-v1] }
         qualificationMode: { type: boolean }
-        authority: { type: string, const: typescript }
-        routingActivated: { type: boolean, const: false }
-        acceptNewRecords: { type: boolean, const: false }
+        authority: { type: string, enum: [typescript, workflow-control] }
+        routingActivated: { type: boolean }
+        acceptNewRecords: { type: boolean }
     Health:
       type: object
       additionalProperties: false

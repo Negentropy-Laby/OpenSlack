@@ -21,6 +21,8 @@ import {
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
+import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 import {
   WORKFLOW_CHECKPOINT_SHADOW_ENVELOPE_SCHEMA,
   WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
@@ -102,6 +104,11 @@ import {
 import { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
 import { createWorkflowRunnerV2RuntimeAdmissionClient } from './workflow-runner-v2-runtime-admission.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
+import { WorkflowRunnerV2GoProjectionRunStore } from './workflow-runner-v2-go-projection-store.js';
+import {
+  WorkflowControlAuthorityHttpClient,
+  type WorkflowControlAuthorityPort,
+} from './workflow-control-authority-client.js';
 import {
   createWorkflowRunnerBudgetAuthorityClient,
   type WorkflowRunnerBudgetAuthorityClient,
@@ -119,6 +126,8 @@ export const WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV =
   'OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED' as const;
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
   'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED' as const;
+export const WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV =
+  'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED' as const;
 
 export interface WorkflowRunnerWorkerConfig {
   readonly enabled: true;
@@ -140,15 +149,23 @@ export interface WorkflowRunnerWorkerConfig {
   };
 }
 
-export interface WorkflowRunnerV2QualificationWorkerConfig {
+interface WorkflowRunnerV2WorkerConfigBase {
   readonly enabled: true;
-  readonly qualificationOnly: true;
-  readonly runtimeBoundaryMode: 'provider-attempt-only' | 'authority-binding-f2b';
   readonly workspaceId: string;
   readonly workspaceRoot: string;
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
-  readonly runtimeDelivery?: {
+}
+
+export interface WorkflowRunnerV2QualificationWorkerConfig extends WorkflowRunnerV2WorkerConfigBase {
+  readonly mode: 'qualification';
+  readonly runtimeDelivery?: never;
+  readonly runAuthority?: never;
+}
+
+export interface WorkflowRunnerV2GoAuthorityWorkerConfig extends WorkflowRunnerV2WorkerConfigBase {
+  readonly mode: 'go-authority';
+  readonly runtimeDelivery: {
     readonly companionOrigin: string;
     readonly companionBearerToken: string;
     readonly journalRoot: string;
@@ -156,7 +173,17 @@ export interface WorkflowRunnerV2QualificationWorkerConfig {
     readonly budgetBearerToken: string;
     readonly budgetCallerId: string;
   };
+  readonly runAuthority: {
+    readonly origin: string;
+    readonly bearerToken: string;
+    readonly callerId: string;
+    readonly expectedBuildHash: string;
+  };
 }
+
+export type WorkflowRunnerV2WorkerConfig =
+  | WorkflowRunnerV2QualificationWorkerConfig
+  | WorkflowRunnerV2GoAuthorityWorkerConfig;
 
 export class WorkflowRunnerWorkerConfigError extends Error {
   constructor(message: string) {
@@ -432,7 +459,7 @@ export function loadWorkflowRunnerWorkerConfig(
 
 export function loadWorkflowRunnerV2QualificationWorkerConfig(
   environment: NodeJS.ProcessEnv = process.env,
-): WorkflowRunnerV2QualificationWorkerConfig {
+): WorkflowRunnerV2WorkerConfig {
   if (environment[WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV] !== '1') {
     throw new WorkflowRunnerWorkerConfigError(
       'Workflow runner v2 qualification is default-off; explicit enablement is required.',
@@ -499,7 +526,7 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       'Disabled v2 runtime-delivery configuration must be empty.',
     );
   }
-  let runtimeDelivery: WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery'];
+  let runtimeDelivery: WorkflowRunnerV2GoAuthorityWorkerConfig['runtimeDelivery'] | undefined;
   if (runtimeDeliveryEnabled) {
     const companionBearerToken =
       environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN ?? '';
@@ -508,11 +535,11 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
     const budgetBearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN ?? '';
     const budgetCallerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID ?? '';
     if (
-      companionBearerToken.length < 32 ||
+      !isWorkflowControlBearerToken(companionBearerToken) ||
       !HASH.test(expectedBearerHash) ||
       createHash('sha256').update(companionBearerToken, 'utf8').digest('hex') !==
         expectedBearerHash ||
-      budgetBearerToken.length < 32 ||
+      !isWorkflowControlBearerToken(budgetBearerToken) ||
       !SAFE_ID.test(budgetCallerId)
     ) {
       throw new WorkflowRunnerWorkerConfigError(
@@ -544,10 +571,56 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       budgetCallerId,
     });
   }
-  return Object.freeze({
-    enabled: true,
-    qualificationOnly: true,
-    runtimeBoundaryMode: runtimeDeliveryEnabled ? 'authority-binding-f2b' : 'provider-attempt-only',
+  const runAuthorityKeys = [
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID',
+    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA',
+  ] as const;
+  const runAuthorityFlag = environment[WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV];
+  if (runAuthorityFlag !== undefined && runAuthorityFlag !== '0' && runAuthorityFlag !== '1') {
+    throw new WorkflowRunnerWorkerConfigError('V2 run authority enablement is invalid.');
+  }
+  const runAuthorityEnabled = runAuthorityFlag === '1';
+  if (!runAuthorityEnabled && runAuthorityKeys.some((key) => environment[key] !== undefined)) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Disabled v2 run authority configuration must be empty.',
+    );
+  }
+  if (runAuthorityEnabled && !runtimeDeliveryEnabled) {
+    throw new WorkflowRunnerWorkerConfigError(
+      'V2 run authority requires the complete runtime-delivery profile.',
+    );
+  }
+  let runAuthority: WorkflowRunnerV2GoAuthorityWorkerConfig['runAuthority'] | undefined;
+  if (runAuthorityEnabled) {
+    const bearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN ?? '';
+    const bearerHash = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256 ?? '';
+    const callerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID ?? '';
+    const expectedBuildHash =
+      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA ?? '';
+    if (
+      !isWorkflowControlBearerToken(bearerToken) ||
+      !HASH.test(bearerHash) ||
+      createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash ||
+      !SAFE_ID.test(callerId) ||
+      !HASH.test(expectedBuildHash)
+    ) {
+      throw new WorkflowRunnerWorkerConfigError('V2 run authority identity is invalid.');
+    }
+    runAuthority = Object.freeze({
+      origin: loopbackOrigin(
+        environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN,
+        'V2 run authority origin',
+      ),
+      bearerToken,
+      callerId,
+      expectedBuildHash,
+    });
+  }
+  const common = Object.freeze({
+    enabled: true as const,
     workspaceId,
     workspaceRoot,
     descriptorRoot: absolutePath(
@@ -555,7 +628,20 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       'V2 qualification descriptor root',
     ),
     runnerBuildHash,
-    ...(runtimeDelivery ? { runtimeDelivery } : {}),
+  });
+  if (!runAuthorityEnabled) {
+    if (runtimeDelivery !== undefined) {
+      throw new WorkflowRunnerWorkerConfigError(
+        'V2 runtime delivery requires the complete Go-authority profile.',
+      );
+    }
+    return Object.freeze({ ...common, mode: 'qualification' as const });
+  }
+  return Object.freeze({
+    ...common,
+    mode: 'go-authority' as const,
+    runtimeDelivery: runtimeDelivery!,
+    runAuthority: runAuthority!,
   });
 }
 
@@ -1592,11 +1678,7 @@ function resumeEvidence(
 }
 
 function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
-  config: WorkflowRunnerV2QualificationWorkerConfig & {
-    readonly runtimeDelivery: NonNullable<
-      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
-    >;
-  },
+  config: WorkflowRunnerV2GoAuthorityWorkerConfig,
 ): WorkflowRunnerV2AuthoritySourceFactories {
   return Object.freeze({
     async checkpoint() {
@@ -1673,7 +1755,7 @@ function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
   });
 }
 
-class WorkflowRunnerV2CheckpointRunStore extends RunStore {
+class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRunStore {
   readonly #context: WorkflowRunnerV2ExecutionContext;
   readonly #descriptor: WorkflowRunnerV2ExecutionDescriptor;
 
@@ -1681,8 +1763,16 @@ class WorkflowRunnerV2CheckpointRunStore extends RunStore {
     baseDir: string,
     context: WorkflowRunnerV2ExecutionContext,
     descriptor: WorkflowRunnerV2ExecutionDescriptor,
+    runAuthority?: WorkflowControlAuthorityPort,
+    mode: 'qualification' | 'go-authority' = 'qualification',
   ) {
-    super({ baseDir });
+    super({
+      baseDir,
+      descriptor,
+      ...(mode === 'go-authority'
+        ? { mode: 'authority' as const, authority: runAuthority! }
+        : { mode: 'qualification' as const }),
+    });
     this.#context = context;
     this.#descriptor = descriptor;
   }
@@ -1786,10 +1876,32 @@ export async function executeWorkflowRunnerV2QualificationJob(
   workspaceRoot: string,
   runtimeDeliveryEnabled: boolean,
   budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
+  runAuthority?: WorkflowControlAuthorityPort,
+  mode: 'qualification' | 'go-authority' = 'qualification',
 ): Promise<RunResult> {
-  const baseDir = join(workspaceRoot, '.openslack.local', 'workflows');
+  const selectedGo = descriptor.authorityRoute.backend === 'go';
+  if (mode === 'go-authority' && !selectedGo) {
+    throw new Error('The new-record canary worker accepts only Go-owned v2 descriptors.');
+  }
+  if (mode === 'qualification' && selectedGo) {
+    throw new Error('Qualification-only v2 execution rejects Go-owned descriptors.');
+  }
+  if (mode === 'qualification' && runAuthority) {
+    throw new Error('Qualification-only v2 execution cannot receive the production run authority.');
+  }
+  const goOwned = mode === 'go-authority';
+  if (goOwned && !runtimeDeliveryEnabled) {
+    throw new Error('Go-owned v2 execution requires the complete runtime-delivery profile.');
+  }
+  if (goOwned && !runAuthority) {
+    throw new Error('Go-owned v2 execution requires the Workflow Control run authority.');
+  }
+  if (!goOwned && runAuthority) {
+    throw new Error('TypeScript-owned v2 execution cannot receive a Go run authority.');
+  }
+  const baseDir = resolveWorkflowRunProjectionRoot(workspaceRoot, goOwned ? 'go' : 'ts-local');
   const store = runtimeDeliveryEnabled
-    ? new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor)
+    ? new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor, runAuthority, mode)
     : new RunStore({ baseDir });
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
@@ -1859,11 +1971,8 @@ export async function executeWorkflowRunnerV2QualificationJob(
 }
 
 export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
-  config: WorkflowRunnerV2QualificationWorkerConfig & {
-    readonly runtimeDelivery: NonNullable<
-      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
-    >;
-  },
+  config: WorkflowRunnerV2GoAuthorityWorkerConfig,
+  authority: WorkflowControlAuthorityPort,
   sourceFactories: WorkflowRunnerV2AuthoritySourceFactories = createWorkflowRunnerV2DefaultAuthoritySourceFactories(
     config,
   ),
@@ -1879,7 +1988,24 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
   const delivery = new WorkflowRunnerV2RuntimeDelivery({
     runtime,
     sources: new WorkflowRunnerV2AuthoritySources(sourceFactories),
-    workspaceRoot: config.workspaceRoot,
+    projection: {
+      async classify(descriptor) {
+        const store = new WorkflowRunnerV2GoProjectionRunStore({
+          baseDir: resolveWorkflowRunProjectionRoot(config.workspaceRoot, 'go'),
+          descriptor,
+          mode: 'authority',
+          authority,
+        });
+        const exists = await store.runExists(descriptor.workflowRunId);
+        const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
+        const disposition = classifyWorkflowRunnerRunState(
+          descriptor.workflowRunId,
+          exists,
+          status?.status ?? null,
+        );
+        return disposition === 'initialize' ? 'initial' : 'resume';
+      },
+    },
     admissions: createWorkflowRunnerV2RuntimeAdmissionClient({
       origin: config.runtimeDelivery.companionOrigin,
       workspaceId: config.workspaceId,
@@ -1892,10 +2018,11 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
 
 export interface WorkflowRunnerV2QualificationWorkerDependencies {
   readonly authoritySourceFactories?: WorkflowRunnerV2AuthoritySourceFactories;
+  readonly runAuthority?: WorkflowControlAuthorityPort;
 }
 
 export async function runWorkflowRunnerV2QualificationWorker(
-  config: WorkflowRunnerV2QualificationWorkerConfig = loadWorkflowRunnerV2QualificationWorkerConfig(),
+  config: WorkflowRunnerV2WorkerConfig = loadWorkflowRunnerV2QualificationWorkerConfig(),
   dependencies: WorkflowRunnerV2QualificationWorkerDependencies = {},
 ): Promise<void> {
   installProtocolOnlyStreams();
@@ -1905,21 +2032,34 @@ export async function runWorkflowRunnerV2QualificationWorker(
     WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
   );
   await descriptorStore.initialize();
-  const runtimeDeliveryConfig = config as WorkflowRunnerV2QualificationWorkerConfig & {
-    readonly runtimeDelivery: NonNullable<
-      WorkflowRunnerV2QualificationWorkerConfig['runtimeDelivery']
-    >;
-  };
-  const runtimeDelivery = config.runtimeDelivery
-    ? dependencies.authoritySourceFactories
-      ? await createWorkflowRunnerV2QualificationRuntimeDelivery(
-          runtimeDeliveryConfig,
-          dependencies.authoritySourceFactories,
-        )
-      : await createWorkflowRunnerV2QualificationRuntimeDelivery(runtimeDeliveryConfig)
-    : undefined;
+  const runAuthority =
+    dependencies.runAuthority ??
+    (config.mode === 'go-authority'
+      ? new WorkflowControlAuthorityHttpClient({
+          origin: config.runAuthority.origin,
+          workspaceId: config.workspaceId,
+          callerId: config.runAuthority.callerId,
+          bearerToken: config.runAuthority.bearerToken,
+          expectedBuildHash: config.runAuthority.expectedBuildHash,
+        })
+      : undefined);
+  if (dependencies.runAuthority && config.mode !== 'go-authority') {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Injected v2 run authority requires an explicitly enabled run-authority profile.',
+    );
+  }
+  const runtimeDelivery =
+    config.mode === 'go-authority'
+      ? dependencies.authoritySourceFactories
+        ? await createWorkflowRunnerV2QualificationRuntimeDelivery(
+            config,
+            runAuthority!,
+            dependencies.authoritySourceFactories,
+          )
+        : await createWorkflowRunnerV2QualificationRuntimeDelivery(config, runAuthority!)
+      : undefined;
   const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary | undefined =
-    config.runtimeDelivery
+    config.mode === 'go-authority'
       ? Object.freeze({
           callerId: config.runtimeDelivery.budgetCallerId,
           client: createWorkflowRunnerBudgetAuthorityClient({
@@ -1961,6 +2101,8 @@ export async function runWorkflowRunnerV2QualificationWorker(
         config.workspaceRoot,
         runtimeDelivery !== undefined,
         budgetAuthority,
+        runAuthority,
+        config.mode,
       ),
     ...(runtimeDelivery ? { runtimeDelivery } : {}),
   });

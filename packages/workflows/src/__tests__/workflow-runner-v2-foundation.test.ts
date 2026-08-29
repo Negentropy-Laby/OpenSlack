@@ -225,6 +225,53 @@ describe('GS9-F1 Workflow runner v2 foundation', () => {
     expect(seenWorkspaces).toEqual([prepared.spec.workspaceId, prepared.spec.workspaceId]);
   });
 
+  it('recovers one lost submit response only by replaying the exact idempotent v2 request', async () => {
+    const prepared = prepareWorkflowRunnerV2JobSpec(jobSpec());
+    const receipt = {
+      schema: WORKFLOW_RUNNER_V2_JOB_RECEIPT_SCHEMA,
+      status: 'accepted',
+      workspaceId: prepared.spec.workspaceId,
+      jobId: prepared.spec.jobId,
+      workflowRunId: prepared.spec.workflowRunId,
+      state: 'queued',
+      revision: 1,
+      jobSpecHash: prepared.jobSpecHash,
+      idempotencyKey: prepared.idempotencyKey,
+      requestFingerprint: prepared.requestFingerprint,
+      committedAt: NOW,
+      reconciliationId: null,
+    } as const;
+    const exact = `${canonicalWorkflowEffectJson(receipt)}\n`;
+    const bodies: string[] = [];
+    const keys: string[] = [];
+    let attempt = 0;
+    const client = new WorkflowRunnerV2ControlClient(
+      {
+        origin: 'http://127.0.0.1:8080',
+        workspaceId: prepared.spec.workspaceId,
+        bearerToken: 'test-only-bearer-value-000000000000',
+        descriptorRoot: process.cwd(),
+      },
+      (async (_request, init) => {
+        bodies.push(String(init?.body));
+        keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '');
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('response lost after durable commit');
+        return new Response(exact, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Replayed': 'true',
+          },
+        });
+      }) as typeof fetch,
+    );
+
+    await expect(client.submit(prepared)).resolves.toEqual(receipt);
+    expect(bodies).toEqual([prepared.exactBody, prepared.exactBody]);
+    expect(keys).toEqual([prepared.idempotencyKey, prepared.idempotencyKey]);
+  });
+
   it('preserves reconciliation-required semantics on an exact replay', async () => {
     const prepared = prepareWorkflowRunnerV2JobSpec(jobSpec());
     const reconciliationReceipt = {
@@ -402,6 +449,40 @@ describe('GS9-F1 Workflow runner v2 foundation', () => {
       await expect(client.submit(prepared)).rejects.toBeInstanceOf(Error);
       expect(cancellations).toBe(1);
     }
+  });
+
+  it('classifies persistent service failure as an unknown transport outcome and cancels both bodies', async () => {
+    const prepared = prepareWorkflowRunnerV2JobSpec(jobSpec());
+    let cancellations = 0;
+    let attempts = 0;
+    const client = new WorkflowRunnerV2ControlClient(
+      {
+        origin: 'http://127.0.0.1:8080',
+        workspaceId: prepared.spec.workspaceId,
+        bearerToken: 'test-only-bearer-value-000000000000',
+        descriptorRoot: process.cwd(),
+      },
+      (async () => {
+        attempts += 1;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(Buffer.from('{"code":"temporarily_unavailable"}\n'));
+            },
+            cancel() {
+              cancellations += 1;
+            },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } },
+        );
+      }) as typeof fetch,
+    );
+
+    await expect(client.submit(prepared)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED',
+    });
+    expect(attempts).toBe(2);
+    expect(cancellations).toBe(2);
   });
 
   it('accepts only exact canonical v2 authority JSONL frames', () => {

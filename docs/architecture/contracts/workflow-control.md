@@ -690,3 +690,32 @@ outcome. Cancellation may take a decision position only when its sequence remain
 ordering is reconciliation-required. This is a qualification coordinator only: TypeScript remains
 production Workflow state-machine and source authority, and GS9-G remains the first batch allowed
 to route new production records to Go.
+
+### GS9-G new-record routing and recovery
+
+The ordinary TypeScript execution path remains the default and does not publish a durable route
+receipt. An explicit process-immutable Go canary or higher-epoch TypeScript rollback first derives the
+final backend, constructs exactly one matching descriptor, and then commits the descriptor-bound route
+receipt. The policy stores only `backend`; `authority` is derived exhaustively as `workflow-control`
+for Go and `typescript` for TypeScript while the existing receipt wire shape remains unchanged.
+
+Every retry, resume, status read, and terminal replay point-reads the run's active or closed receipt.
+Its correlation, selection time, policy hash, hashes, route epoch, and build remain immutable. A Go
+receipt without its exact authenticated authority/runner composition is a configuration failure, not a
+TypeScript fallback. Disabling `accept-new-records` or removing the current routing mode affects future
+records only; active and drain epochs continue to read and transition records already accepted there.
+
+Before a fresh Go receipt or authority accept is written, the composition compares authenticated CLI,
+runner, and Workflow Control bindings for workspace, caller, modes, epochs, builds, origins, and token
+digests. Tokens never enter the receipt or public status. Exact receipt replay is checked under the
+repository lock before fresh-accept policy, so disabling acceptance cannot break idempotent recovery.
+Stored bytes are validated before an epoch mismatch is classified as conflict; route drift is never
+misreported as store corruption.
+
+The owner-only journal has `active`, sharded `closed`, `quarantine`, `policies`, and `locks` partitions.
+The 4,096 bound applies only to simultaneously active explicit routes. Terminal evidence may close a
+receipt atomically; unknown or damaged requested evidence stays reconciliation-required. The repair
+command is audit-first and never deletes an unproved active receipt. Go recovery projections are
+authority-derived caches: safe nonterminal heads may be reconstructed or advanced by the dedicated
+transition policy, while terminal/output ambiguity propagates a typed reconciliation error. Projection
+repair never reruns a workflow effect.

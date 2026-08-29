@@ -71,10 +71,25 @@ export interface WorkflowRunnerV2JobReceipt {
 
 export interface WorkflowRunnerV2ControlPort {
   readonly descriptorRoot: string;
+  inspectBinding(signal?: AbortSignal): Promise<WorkflowRunnerControlBinding>;
   submit(
     prepared: PreparedWorkflowRunnerV2JobSpec,
     signal?: AbortSignal,
   ): Promise<WorkflowRunnerV2JobReceipt>;
+}
+
+export interface WorkflowRunnerControlBinding {
+  readonly schema: 'openslack.workflow_runner_control_binding.v1';
+  readonly workspaceId: string;
+  readonly buildSha: string;
+  readonly runnerTokenSha256: string;
+  readonly v2Enabled: boolean;
+  readonly runtimeDeliveryEnabled: boolean;
+  readonly newRecordCanary: boolean;
+  readonly authorityOrigin: string;
+  readonly authorityCallerId: string;
+  readonly authorityBuildSha: string;
+  readonly authorityTokenSha256: string;
 }
 
 export class WorkflowRunnerV2ControlError extends Error {
@@ -391,6 +406,95 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
     return this.#config.descriptorRoot;
   }
 
+  async inspectBinding(signal?: AbortSignal): Promise<WorkflowRunnerControlBinding> {
+    let response: Response;
+    try {
+      response = await this.#fetch(new URL('/v1/workflow-runner/binding', this.#config.origin), {
+        method: 'GET',
+        redirect: 'error',
+        signal,
+        headers: {
+          Authorization: `Bearer ${this.#config.bearerToken}`,
+          'X-OpenSlack-Workspace-ID': this.#config.workspaceId,
+        },
+      });
+    } catch (error) {
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED',
+        'Runner binding inspection failed.',
+        { cause: error },
+      );
+    }
+    if (response.redirected || response.status !== 200) {
+      await cancelWorkflowRunnerResponseBody(response);
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_REJECTED',
+        `Runner binding inspection rejected (${response.status}).`,
+      );
+    }
+    const bytes = await readBoundedResponse(response);
+    let value: unknown;
+    try {
+      value = parseWorkflowEffectJson(bytes);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
+        'Runner binding response is invalid JSON.',
+        { cause: error },
+      );
+    }
+    let item: JsonRecord;
+    try {
+      item = record(
+        value,
+        [
+          'schema',
+          'workspaceId',
+          'buildSha',
+          'runnerTokenSha256',
+          'v2Enabled',
+          'runtimeDeliveryEnabled',
+          'newRecordCanary',
+          'authorityOrigin',
+          'authorityCallerId',
+          'authorityBuildSha',
+          'authorityTokenSha256',
+        ],
+        'Runner binding response',
+      );
+    } catch (error) {
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
+        'Runner binding response is invalid.',
+        { cause: error },
+      );
+    }
+    if (
+      item.schema !== 'openslack.workflow_runner_control_binding.v1' ||
+      item.workspaceId !== this.#config.workspaceId ||
+      typeof item.v2Enabled !== 'boolean' ||
+      typeof item.runtimeDeliveryEnabled !== 'boolean' ||
+      typeof item.newRecordCanary !== 'boolean' ||
+      typeof item.authorityOrigin !== 'string' ||
+      typeof item.authorityCallerId !== 'string' ||
+      typeof item.buildSha !== 'string' ||
+      !HASH.test(item.buildSha) ||
+      typeof item.runnerTokenSha256 !== 'string' ||
+      !HASH.test(item.runnerTokenSha256) ||
+      typeof item.authorityBuildSha !== 'string' ||
+      !HASH.test(item.authorityBuildSha) ||
+      typeof item.authorityTokenSha256 !== 'string' ||
+      !HASH.test(item.authorityTokenSha256) ||
+      `${canonicalWorkflowEffectJson(item)}\n` !== bytes.toString('utf8')
+    ) {
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_RESPONSE_INVALID',
+        'Runner binding response is invalid.',
+      );
+    }
+    return Object.freeze(item) as unknown as WorkflowRunnerControlBinding;
+  }
+
   async submit(
     preparedValue: PreparedWorkflowRunnerV2JobSpec,
     signal?: AbortSignal,
@@ -407,25 +511,49 @@ export class WorkflowRunnerV2ControlClient implements WorkflowRunnerV2ControlPor
         'Prepared v2 job binding is invalid.',
       );
     }
-    let response: Response;
-    try {
-      response = await this.#fetch(new URL('/v2/runner/jobs', this.#config.origin), {
-        method: 'POST',
-        redirect: 'error',
-        signal,
-        body: prepared.exactBody,
-        headers: {
-          Authorization: `Bearer ${this.#config.bearerToken}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': prepared.idempotencyKey,
-          'X-OpenSlack-Request-Fingerprint': prepared.requestFingerprint,
-          'X-OpenSlack-Workspace-ID': this.#config.workspaceId,
-        },
-      });
-    } catch (error) {
+    let response: Response | undefined;
+    let transportError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await this.#fetch(new URL('/v2/runner/jobs', this.#config.origin), {
+          method: 'POST',
+          redirect: 'error',
+          signal,
+          body: prepared.exactBody,
+          headers: {
+            Authorization: `Bearer ${this.#config.bearerToken}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': prepared.idempotencyKey,
+            'X-OpenSlack-Request-Fingerprint': prepared.requestFingerprint,
+            'X-OpenSlack-Workspace-ID': this.#config.workspaceId,
+          },
+        });
+      } catch (error) {
+        transportError = error;
+        if (attempt === 0 && signal?.aborted !== true) continue;
+        return fail('WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED', 'V2 job submit failed.', {
+          cause: error,
+        });
+      }
+      if (response.status >= 500 && response.status <= 599 && attempt === 0) {
+        await cancelWorkflowRunnerResponseBody(response);
+        response = undefined;
+        continue;
+      }
+      break;
+    }
+    if (!response) {
       return fail('WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED', 'V2 job submit failed.', {
-        cause: error,
+        cause: transportError,
       });
+    }
+    if (response.status >= 500 && response.status <= 599) {
+      const status = response.status;
+      await cancelWorkflowRunnerResponseBody(response);
+      return fail(
+        'WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED',
+        `V2 job submit outcome is unknown after service failure (${status}).`,
+      );
     }
     if (response.redirected || ![200, 201, 202].includes(response.status)) {
       await cancelWorkflowRunnerResponseBody(response);

@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
@@ -71,6 +72,7 @@ type Runtime struct {
 	EffectShadowCallerID        string
 	EffectShadowJournalRoot     string
 	V2RuntimeDelivery           *runnerconfig.V2RuntimeDeliveryRuntime
+	V2RunAuthority              *runnerconfig.V2RunAuthorityRuntime
 }
 
 type Registry struct {
@@ -232,6 +234,12 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN":                  {},
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN":            {},
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID":               {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED":          {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN":           {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN":     {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256":    {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID":        {},
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA":        {},
 	}
 	for _, entry := range base {
 		name, _, found := strings.Cut(entry, "=")
@@ -250,7 +258,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH="+buildHash,
 	)
 	if runtimeConfig.CheckpointShadowEnabled {
-		if len(runtimeConfig.CheckpointShadowBearerToken) < 32 || len(runtimeConfig.CheckpointShadowBearerToken) > 4096 || runtimeConfig.CheckpointShadowBearerToken != strings.TrimSpace(runtimeConfig.CheckpointShadowBearerToken) || strings.ContainsAny(runtimeConfig.CheckpointShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.CheckpointShadowJournalRoot, Endpoint: runtimeConfig.CheckpointShadowEndpoint, Routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}}) != nil {
+		if !authoritybinding.ValidBearerToken(runtimeConfig.CheckpointShadowBearerToken) || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.CheckpointShadowJournalRoot, Endpoint: runtimeConfig.CheckpointShadowEndpoint, Routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}}) != nil {
 			return nil, fmt.Errorf("checkpoint shadow runtime injection is invalid")
 		}
 		result = append(result,
@@ -263,7 +271,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 	}
 	if runtimeConfig.EffectShadowEnabled {
 		protectedRoot := filepath.Join(workspaceRoot, ".openslack.local", "workflows")
-		if len(runtimeConfig.EffectShadowBearerToken) < 32 || len(runtimeConfig.EffectShadowBearerToken) > 4096 || runtimeConfig.EffectShadowBearerToken != strings.TrimSpace(runtimeConfig.EffectShadowBearerToken) || strings.ContainsAny(runtimeConfig.EffectShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.EffectShadowJournalRoot, Endpoint: runtimeConfig.EffectShadowEndpoint, Routes: []string{"/v1/shadow/workflow-control/effect-events"}, ProtectedRoots: []string{filepath.Join(protectedRoot, "effect-approvals"), filepath.Join(protectedRoot, "effect-authority")}}) != nil {
+		if !authoritybinding.ValidBearerToken(runtimeConfig.EffectShadowBearerToken) || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.EffectShadowJournalRoot, Endpoint: runtimeConfig.EffectShadowEndpoint, Routes: []string{"/v1/shadow/workflow-control/effect-events"}, ProtectedRoots: []string{filepath.Join(protectedRoot, "effect-approvals"), filepath.Join(protectedRoot, "effect-authority")}}) != nil {
 			return nil, fmt.Errorf("effect shadow runtime injection is invalid")
 		}
 		result = append(result,
@@ -286,6 +294,26 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 			"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID="+delivery.BudgetCallerID,
 		)
 	}
+	if authority := runtimeConfig.V2RunAuthority; authority != nil {
+		if runtimeConfig.V2RuntimeDelivery == nil || !authoritybinding.ValidBearerToken(authority.BearerToken) || !hashPattern.MatchString(authority.BearerSHA256) || !hashPattern.MatchString(authority.ExpectedBuild) || !safeIDPattern.MatchString(authority.CallerID) {
+			return nil, fmt.Errorf("v2 run authority runtime injection is invalid")
+		}
+		digest := sha256.Sum256([]byte(authority.BearerToken))
+		if hex.EncodeToString(digest[:]) != authority.BearerSHA256 {
+			return nil, fmt.Errorf("v2 run authority bearer hash does not match its token")
+		}
+		if _, err := localshadowconfig.ExactLoopbackOrigin(authority.Origin); err != nil {
+			return nil, fmt.Errorf("v2 run authority origin is invalid")
+		}
+		result = append(result,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED=1",
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN="+authority.Origin,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN="+authority.BearerToken,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256="+authority.BearerSHA256,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID="+authority.CallerID,
+			"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA="+authority.ExpectedBuild,
+		)
+	}
 	return result, nil
 }
 
@@ -299,7 +327,7 @@ func selectProtocolEnvironment(environment []string, protocolVersion string) []s
 				continue
 			}
 			if protocolVersion != authoritycontract.ProtocolVersion &&
-				(name == "WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED" || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_")) {
+				(name == "WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED" || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_") || strings.HasPrefix(name, "OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_")) {
 				continue
 			}
 			result = append(result, entry)

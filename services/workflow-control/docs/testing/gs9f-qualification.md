@@ -122,3 +122,19 @@ authenticated external / release / live NOT_CLAIMED
 PostgreSQL 18, built-image, hosted exact-head CI, review-thread resolution, and independent human
 approval remain distinct evidence. A local older PostgreSQL run or a credential-free source test
 must not be reported as those gates.
+
+## GS9-G new-record canary gate
+
+GS9-G adds a separate default-off `new-record-canary-v1` authority mode. Qualification must prove
+the authenticated runner/authority binding preflight before any route receipt or accept side effect,
+exact receipt replay after acceptance is disabled, active and drain epoch conflict classification,
+and response-loss point-read. The worker must reject a Go descriptor in qualification-only mode and
+reject a TypeScript descriptor in Go-authority mode.
+
+The route journal counts only active explicit routes toward its 4,096 bound. Qualification covers
+flat-v1 migration, atomic publish, terminal close, closed replay, quarantine isolation, damaged-target
+reconciliation, identity drift, and audit-first repair. Recovery tests must prove that a missing local
+projection is rebuilt only for safe created/running authority heads, that paused/resuming state remains
+operator-visible in the same route-aware namespace, and that terminal/output ambiguity never re-runs
+workflow or effect code. Real PostgreSQL restart, Windows ACL/reparse behavior, and the built image are
+hosted exact-head gates; local TypeScript authority remains the default path.

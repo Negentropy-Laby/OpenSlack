@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +62,12 @@ func (service *Service) handleMutation(w http.ResponseWriter, request *http.Requ
 		}
 		return
 	}
-	prepared, err := authoritystore.PrepareRequest(body, service.callerID, service.workspaceID, strconv.FormatInt(service.routingEpoch, 10), service.buildSHA)
+	routingEpoch, ok := requestRoutingEpoch(request)
+	if !ok {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "authority routing epoch is invalid")
+		return
+	}
+	prepared, err := authoritystore.PrepareRequest(body, service.callerID, service.workspaceID, strconv.FormatInt(routingEpoch, 10), service.buildSHA)
 	if err != nil {
 		service.writeStoreError(w, err)
 		return
@@ -79,6 +85,7 @@ func (service *Service) handleMutation(w http.ResponseWriter, request *http.Requ
 	}
 	receipt, err := service.repository.Mutate(ctx, authoritystore.MutateInput{
 		Prepared: prepared, IdempotencyKey: key, RequestFingerprint: fingerprint, ServiceBuildHash: service.buildSHA,
+		RejectFreshAccept: operation == authoritystore.OperationAccept && service.mode.Canary() && (!service.acceptNewRecords || routingEpoch != service.routingEpoch),
 	})
 	if err != nil {
 		service.writeStoreError(w, err)
@@ -119,10 +126,19 @@ func (service *Service) handleReadRun(w http.ResponseWriter, request *http.Reque
 		service.writeStoreError(w, err)
 		return
 	}
-	record, ok := validRunHead(head, service.workspaceID, runID, service.routingEpoch, service.buildSHA)
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	record, ok := validRunHead(head, service.workspaceID, runID, head.Route.RoutingEpoch, service.buildSHA)
+	if !epochOK {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "authority routing epoch is invalid")
+		return
+	}
 	if !ok {
 		service.logger.Error("workflow_control_authority_invalid_store_head")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "authority repository returned an invalid run head")
+		return
+	}
+	if routingEpoch != head.Route.RoutingEpoch {
+		writeFailure(w, http.StatusConflict, "WORKFLOW_CONTROL_AUTHORITY_CONFLICT", "authority routing epoch differs from the stored run")
 		return
 	}
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{
@@ -152,9 +168,18 @@ func (service *Service) handleReadReceipt(w http.ResponseWriter, request *http.R
 		service.writeStoreError(w, err)
 		return
 	}
-	if !validReadReceipt(receipt, service.workspaceID, key, service.routingEpoch, service.buildSHA) {
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	if !epochOK {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "authority routing epoch is invalid")
+		return
+	}
+	if !validReadReceipt(receipt, service.workspaceID, key, receipt.Value.Route.RoutingEpoch, service.buildSHA) {
 		service.logger.Error("workflow_control_authority_invalid_stored_receipt")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "stored authority receipt is invalid")
+		return
+	}
+	if routingEpoch != receipt.Value.Route.RoutingEpoch {
+		writeFailure(w, http.StatusConflict, "WORKFLOW_CONTROL_AUTHORITY_CONFLICT", "authority routing epoch differs from the stored receipt")
 		return
 	}
 	writeExactJSON(w, http.StatusOK, receipt.ExactBytes)
@@ -183,10 +208,26 @@ func (service *Service) handleReadOutbox(w http.ResponseWriter, request *http.Re
 		service.writeStoreError(w, err)
 		return
 	}
-	payload, ok := validOutbox(outbox, service.workspaceID, runID, revision, service.routingEpoch, service.buildSHA)
+	routingEpoch, epochOK := requestRoutingEpoch(request)
+	var storedPayload authoritystore.OutboxPayload
+	if err := decodeExactCanonical(outbox.PayloadBytes, &storedPayload); err != nil {
+		service.logger.Error("workflow_control_authority_invalid_store_outbox")
+		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "authority repository returned an invalid pending outbox record")
+		return
+	}
+	storedEpoch := storedPayload.Record.Route.RoutingEpoch
+	payload, ok := validOutbox(outbox, storedPayload, service.workspaceID, runID, revision, storedEpoch, service.buildSHA)
+	if !epochOK {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "authority routing epoch is invalid")
+		return
+	}
 	if !ok {
 		service.logger.Error("workflow_control_authority_invalid_store_outbox")
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_CONTROL_AUTHORITY_INTERNAL", "authority repository returned an invalid pending outbox record")
+		return
+	}
+	if routingEpoch != storedEpoch {
+		writeFailure(w, http.StatusConflict, "WORKFLOW_CONTROL_AUTHORITY_CONFLICT", "authority routing epoch differs from the stored outbox")
 		return
 	}
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{
@@ -204,11 +245,30 @@ func (service *Service) handleLive(w http.ResponseWriter, request *http.Request)
 	}
 }
 
+func (service *Service) handleBinding(w http.ResponseWriter, request *http.Request) {
+	if !requireReadEnvelope(w, request) {
+		return
+	}
+	if !service.mode.Canary() {
+		writeFailure(w, http.StatusConflict, "WORKFLOW_CONTROL_AUTHORITY_BINDING_INVALID", "new-record authority binding is not active")
+		return
+	}
+	drains := append([]int64(nil), service.drainEpochs...)
+	slices.Sort(drains)
+	writeCanonical(w, http.StatusOK, canonicaljson.Object{
+		"schema":      "openslack.workflow_control_authority_binding.v1",
+		"workspaceId": service.workspaceID, "callerId": service.callerID,
+		"mode": string(service.mode), "activeRoutingEpoch": service.routingEpoch,
+		"drainRoutingEpochs": drains, "buildSha": service.buildSHA,
+		"acceptNewRecords": service.acceptNewRecords,
+	})
+}
+
 func (service *Service) handleReady(w http.ResponseWriter, request *http.Request) {
 	if !requireReadEnvelope(w, request) {
 		return
 	}
-	if !service.qualificationMode {
+	if !service.mode.Enabled() {
 		writeCanonical(w, http.StatusOK, canonicaljson.Object{"status": "ready"})
 		return
 	}
@@ -228,9 +288,9 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 	writeCanonical(w, http.StatusOK, canonicaljson.Object{
 		"schema":          "openslack.workflow_control_authority_service_version.v1",
 		"contractVersion": "v2", "buildSha": service.buildSHA,
-		"mode":              map[bool]string{false: "disabled", true: "local-qualification-v1"}[service.qualificationMode],
-		"qualificationMode": service.qualificationMode, "authority": "typescript",
-		"routingActivated": false, "acceptNewRecords": false,
+		"mode": string(service.mode), "qualificationMode": service.mode.Qualification(),
+		"authority":        map[bool]string{false: "typescript", true: "workflow-control"}[service.mode.Canary()],
+		"routingActivated": service.mode.Canary(), "acceptNewRecords": service.mode.Canary() && service.acceptNewRecords,
 	})
 }
 
@@ -239,7 +299,7 @@ func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Reque
 		return
 	}
 	statistics := authoritystore.Statistics{}
-	if service.qualificationMode {
+	if service.mode.Enabled() {
 		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
 		defer cancel()
 		var err error
@@ -308,6 +368,7 @@ func validRunHead(head authoritystore.RunHead, workspaceID, runID string, routin
 	digest := sha256.Sum256(head.RecordBytes)
 	valid := head.Schema == authoritystore.ReadSchema && head.WorkspaceID == workspaceID && head.RunID == runID && head.RecordHash == hex.EncodeToString(digest[:]) &&
 		head.Route.Backend == authoritystore.Backend && head.Route.Authority == authoritystore.Authority &&
+		head.Route.RoutingEpoch >= 1 && head.Route.RoutingEpoch <= authoritycontract.MaxSafeInteger &&
 		head.Route.RoutingEpoch == routingEpoch && head.Route.AuthorityBuildHash == buildSHA &&
 		record.Schema == authoritystore.RunRecordSchema && record.WorkspaceID == head.WorkspaceID && record.RunID == head.RunID && record.WorkflowID == head.WorkflowID &&
 		record.WorkflowVersion == head.WorkflowVersion && record.WorkflowSourceHash == head.WorkflowSourceHash &&
@@ -318,11 +379,7 @@ func validRunHead(head authoritystore.RunHead, workspaceID, runID string, routin
 	return record, valid
 }
 
-func validOutbox(outbox authoritystore.OutboxRecord, workspaceID, runID string, revision, routingEpoch int64, buildSHA string) (any, bool) {
-	var payload authoritystore.OutboxPayload
-	if err := decodeExactCanonical(outbox.PayloadBytes, &payload); err != nil {
-		return nil, false
-	}
+func validOutbox(outbox authoritystore.OutboxRecord, payload authoritystore.OutboxPayload, workspaceID, runID string, revision, routingEpoch int64, buildSHA string) (any, bool) {
 	recordBytes, err := canonicaljson.Encode(payload.Record)
 	if err != nil {
 		return nil, false
@@ -488,6 +545,15 @@ func requireEOF(decoder *json.Decoder) error {
 
 func canonicalTimestamp(value time.Time) string {
 	return value.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
+}
+
+func requestRoutingEpoch(request *http.Request) (int64, bool) {
+	value, ok := oneHeader(request, HeaderRoutingEpoch)
+	if !ok {
+		return 0, false
+	}
+	epoch, err := strconv.ParseInt(value, 10, 64)
+	return epoch, err == nil && epoch >= 1 && epoch <= authoritycontract.MaxSafeInteger && strconv.FormatInt(epoch, 10) == value
 }
 
 func pointerStringEqual(left, right *string) bool {

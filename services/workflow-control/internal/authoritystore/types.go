@@ -102,6 +102,7 @@ type MutateInput struct {
 	IdempotencyKey     string
 	RequestFingerprint string
 	ServiceBuildHash   string
+	RejectFreshAccept  bool
 }
 
 // Receipt carries both the parsed frozen v2 receipt and the exact immutable

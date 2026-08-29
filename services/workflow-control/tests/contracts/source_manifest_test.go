@@ -50,7 +50,7 @@ type sourceManifest struct {
 	} `json:"scope"`
 }
 
-func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
+func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 	repositoryRoot, serviceRoot := roots(t)
 	path := filepath.Join(serviceRoot, "integration", "source-manifest.v2.json")
 	file, err := os.Open(path)
@@ -71,8 +71,8 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/workflow-control" ||
 		manifest.Service.TargetPath != "services/workflow-control" ||
-		manifest.Service.MigrationPhase != "GS9-F2b" ||
-		manifest.Service.Authority != "GO_QUALIFICATION_COORDINATOR_TYPESCRIPT_PRODUCTION_AUTHORITY" ||
+		manifest.Service.MigrationPhase != "GS9-G" ||
+		manifest.Service.Authority != "IMMUTABLE_ROUTE_RECEIPT_SELECTS_TYPESCRIPT_OR_GO_NEW_RECORD_AUTHORITY" ||
 		strings.Join(manifest.Scope.Authorizes, "\n") != strings.Join([]string{
 			"WORKFLOW_CONTROL_SHADOW_OBSERVATION",
 			"WORKFLOW_RUNNER_ATTEMPT_LEASE_FENCING",
@@ -111,11 +111,21 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 			"WORKFLOW_RUNNER_V2_RESUME_ADAPTER",
 			"WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_QUALIFICATION",
 			"WORKFLOW_BUDGET_QUALIFICATION_RUNTIME_CLIENT",
+			"WORKFLOW_RUN_IMMUTABLE_ROUTE_RECEIPT",
+			"WORKFLOW_RUN_ROUTING_PROCESS_IMMUTABILITY",
+			"WORKFLOW_RUN_ROUTING_BOUNDED_ALLOWLIST",
+			"WORKFLOW_CONTROL_AUTHORITY_NEW_RECORD_CANARY",
+			"WORKFLOW_CONTROL_AUTHORITY_BOUNDED_DRAIN_EPOCH",
+			"WORKFLOW_RUNNER_V2_NEW_RECORD_CANARY_SUBMISSION",
+			"WORKFLOW_RUNNER_V2_GO_RECOVERY_PROJECTION",
+			"WORKFLOW_RUNNER_V2_EXACT_IDEMPOTENT_SUBMIT_RECOVERY",
+			"WORKFLOW_RUN_ROUTING_HIGHER_EPOCH_TS_ROLLBACK",
+			"WORKFLOW_RUNNER_V2_SINGLE_WRITER_NEGATIVE_GUARD",
 		}, "\n") {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 35 || len(manifest.ContractInputs) != 15 {
+		len(manifest.SourceInputs) != 62 || len(manifest.ContractInputs) != 15 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -221,11 +231,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryConfigSource": {
 			Path:   "services/workflow-control/internal/runnerconfig/config.go",
-			SHA256: "7eb674241d7a2e83d1b5fb8e87037c7ae479fc16e65f225e3fa0eb0c9954cd15",
+			SHA256: "796d3c7f2334d27277c0a8b96347eb618566250c0fa83cc4780ac850f649e2fa",
 		},
 		"runnerV2RuntimeDeliveryWorkerRegistrySource": {
 			Path:   "services/workflow-control/internal/workerregistry/registry.go",
-			SHA256: "cd9a4c146ee541c60af352767636e03d0fc5602131d43c097d68b67c6fa11ee1",
+			SHA256: "120cbb904dc40a6abdee7f5e92e880efc15d546b0c4cf3bb9c9238fc5bc0cd09",
 		},
 		"runnerV2RuntimeDeliveryClaimSource": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/claim.go",
@@ -249,15 +259,123 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryHTTPHandlersSource": {
 			Path:   "services/workflow-control/internal/runnerapp/handlers.go",
-			SHA256: "ab4d0596297261a86c28b2536ad580c94d7e1fad61f665d6f116d6519423e19d",
+			SHA256: "05736b0aa862039ced53ff46c939215f1535d38f9c18c35485b53348db0aa833",
 		},
 		"runnerV2RuntimeDeliveryHTTPServerSource": {
 			Path:   "services/workflow-control/internal/runnerapp/server.go",
-			SHA256: "c27e700fd59c67a162720b763699160b0bdf17e0652336d644a6319d7a151402",
+			SHA256: "53ea9cf909a8377785259eb0728f696dd974f46e5c430fe462cc5884edb0d5cf",
 		},
 		"runnerV2RuntimeDeliveryCompositionRootSource": {
 			Path:   "services/workflow-control/cmd/runner-server/main.go",
-			SHA256: "1d9b9dc6c24d17b9403f302a8172515880c84badd0e200e75d583aa19f6d1fdc",
+			SHA256: "01a31f8274d6dae24a0b4ba4b72c4fdc25c0c80dc48eedec4819bdac5ce5b285",
+		},
+		"workflowRunRoutingPublicSurface": {
+			Path:   "packages/workflows/src/index.ts",
+			SHA256: "3ff78f37502aeb818d764989a235563fe6418b05e600ae103b2958577584a139",
+		},
+		"workflowRunRoutingSource": {
+			Path:   "packages/workflows/src/workflow-run-routing.ts",
+			SHA256: "63a0ef6ebcee112d990a9451fa781a098569eee8857ac245429472a09c77e673",
+		},
+		"workflowRunRoutingConfigSource": {
+			Path:   "packages/workflows/src/workflow-run-routing-config.ts",
+			SHA256: "217ae2077c1ab8716499624d09df67d5a9f01ebd9c8e1a5ec44f53c62112ed98",
+		},
+		"workflowControlRoutingIdentitySource": {
+			Path:   "packages/workflows/src/workflow-control-routing-identity.ts",
+			SHA256: "7a57d7343915424b7dc39d6735a3c13f063f7abe280d5a2030a1b17ac855784d",
+		},
+		"workflowRunProjectionSource": {
+			Path:   "packages/workflows/src/workflow-run-projection.ts",
+			SHA256: "37a38f8e1342dc3135b4731e683f146daf59c6766a13a810c9e82514b9fe54e2",
+		},
+		"workflowControlAuthorityBindingValidationSource": {
+			Path:   "services/workflow-control/internal/authoritybinding/validation.go",
+			SHA256: "4a6b057dd26f58454a6e091d499ca91618cd14f5f7e1230356940c6270dc76fd",
+		},
+		"workflowControlAuthorityBindingValidationTest": {
+			Path:   "services/workflow-control/internal/authoritybinding/validation_test.go",
+			SHA256: "db69444811e9895fcdb89540989786cd1939615aeb9baea14b25c26232d7b973",
+		},
+		"workflowControlAuthorityBindingValidationVectors": {
+			Path:   "services/workflow-control/internal/authoritybinding/testdata/routing_identity_vectors.json",
+			SHA256: "f3655891c4b90904b5b26076cd65e8ff578fa656faed5979957afcc80c34eef2",
+		},
+		"workflowControlAuthorityClientSource": {
+			Path:   "packages/workflows/src/workflow-control-authority-client.ts",
+			SHA256: "66282ebf397cf69fc9fe589a07837c862067d7ffb5dd48b8b57c765ea1820975",
+		},
+		"workflowRunnerExecutionClientSource": {
+			Path:   "packages/workflows/src/workflow-runner-execution-client.ts",
+			SHA256: "66cde0aa05f3ba228e4c76a6e3c32d3a5fcbcce5530a9e8e5482de40f97dc5b1",
+		},
+		"workflowRunnerV2ControlClientSource": {
+			Path:   "packages/workflows/src/workflow-runner-v2-control-client.ts",
+			SHA256: "10408737e5cc0c9451eeba8e3e7e6fb02120639765110340c66c36f26cfc8566",
+		},
+		"workflowRunnerV2GoProjectionSource": {
+			Path:   "packages/workflows/src/workflow-runner-v2-go-projection-store.ts",
+			SHA256: "8409eed1f73a49d8f603ec380c2b39250f5bd46ee3828e81db969ddf891da163",
+		},
+		"workflowRunnerV2RuntimeDeliverySource": {
+			Path:   "packages/workflows/src/workflow-runner-v2-runtime-delivery.ts",
+			SHA256: "9d211f653580d4b3dec06591b9cd1d116f2c76834a7f55f57c5cf8c8af123584",
+		},
+		"workflowRunnerWorkerSource": {
+			Path:   "packages/workflows/src/workflow-runner-worker.ts",
+			SHA256: "5392162f0944847ebb54635cdc2beebac0a8db3c120c99e09676fc4f14b22a7a",
+		},
+		"workflowRunRoutingTest": {
+			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
+			SHA256: "0e210a6de460138981cbb47700a103dae23325d424344db23950958ad2d10ab2",
+		},
+		"workflowRunnerExecutionClientTest": {
+			Path:   "packages/workflows/src/__tests__/workflow-runner-execution-client.test.ts",
+			SHA256: "2f8ad25759060e099a687cf0697149376283554bf8465eb30b64f1385cb8a362",
+		},
+		"workflowRunnerV2FoundationTest": {
+			Path:   "packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts",
+			SHA256: "5165b6927d7da6f05c55a528dbd3c7497557d1e412c496f77c65c10dd2d6d434",
+		},
+		"workflowRunnerWorkerTest": {
+			Path:   "packages/workflows/src/__tests__/workflow-runner-worker.test.ts",
+			SHA256: "6ade806474bee9081f56748ee5cd5d9932dbc727ae3c111941473a7207876356",
+		},
+		"workflowControlAuthorityConfigSource": {
+			Path:   "services/workflow-control/internal/config/authority.go",
+			SHA256: "6d40c0cc25228b4cccbe5f13ef987260b6ad7f9e6e6ffdaaceb4ecc5d010250a",
+		},
+		"workflowControlAuthorityConfigTest": {
+			Path:   "services/workflow-control/internal/config/authority_test.go",
+			SHA256: "c17ee5ebc0e157979d7fc20e4d6a45fe7806a975f59b35e36ff4ba99878bee95",
+		},
+		"workflowControlAuthorityHTTPServerSource": {
+			Path:   "services/workflow-control/internal/authorityapp/server.go",
+			SHA256: "2d96f52cf859aedb506498b50a5c8b17b336306c861e733e950410922f7b2a28",
+		},
+		"workflowControlAuthorityHTTPHandlersSource": {
+			Path:   "services/workflow-control/internal/authorityapp/handlers.go",
+			SHA256: "c6b3dabcd6f710b4696735699b54b469cdd433c538a58f36a2f268cc4c8afca7",
+		},
+		"workflowControlAuthorityHTTPServerTest": {
+			Path:   "services/workflow-control/internal/authorityapp/server_test.go",
+			SHA256: "c88aea51348e77e315a4f12cd2b34938002375afd42b5db19cd40e13545144a8",
+		},
+		"workflowControlAuthorityCompositionRootSource": {
+			Path:   "services/workflow-control/cmd/authority-server/main.go",
+			SHA256: "53fcfb540b1a6b2c8d4aaa94aa39c686b64e1ccffed58c28de1b870ddf49d840",
+		},
+		"workflowRunnerV2RuntimeDeliveryConfigTest": {
+			Path:   "services/workflow-control/internal/runnerconfig/config_test.go",
+			SHA256: "66b30605755b8911e6d055a697ab2586034ed8ef06a4a49c3ec5128811fba583",
+		},
+		"workflowRunnerV2WorkerRegistryTest": {
+			Path:   "services/workflow-control/internal/workerregistry/registry_test.go",
+			SHA256: "aa300a14051160b14921cabcb7bc7215ca0ca4c6fcfab5e6668c802fc7b5c56a",
+		},
+		"workflowRunnerV2HTTPServerTest": {
+			Path:   "services/workflow-control/internal/runnerapp/server_test.go",
+			SHA256: "ad28e5bf8c96724ac2c3660799bdb1a0fb3a29cc1272ffc813e74283b4885c7d",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {
@@ -306,11 +424,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 		},
 		"runnerOpenapi": {
 			Path:   "services/workflow-control/docs/api/runner-openapi.yaml",
-			SHA256: "572306442a13331fd51b63a8eb1e16d4695119c2ef162e695b4538ef111ab211",
+			SHA256: "906cf8bae1355e9adb3261bb872b826a019e8fe54acaf8fd29d0e04a67413b62",
 		},
 		"authorityOpenapi": {
 			Path:   "services/workflow-control/docs/api/authority-openapi.yaml",
-			SHA256: "8c1bf057b0ea0e3c005e70e1ed440f585429f66eacbaa923574e0728e0430935",
+			SHA256: "6699c816b03a92915237ecab8870850e44dfae896df8bd43d40ce2dc62fa828c",
 		},
 		"checkpointShadowOpenapi": {
 			Path:   "services/workflow-control/docs/api/checkpoint-shadow-openapi.yaml",
@@ -329,15 +447,14 @@ func TestSourceManifestBindsOnlyUnreleasedGS9F2bInputs(t *testing.T) {
 		t.Fatalf("source manifest contract inputs drifted: %#v", manifest.ContractInputs)
 	}
 	wantNonClaims := []string{
-		"CHECKPOINT_RESUME_AUTHORITY", "CLI_ROUTE_CUTOVER", "LIVE_VERIFIED", "PRODUCTION",
+		"AUTHENTICATED_EXTERNAL_QUALIFICATION", "CHECKPOINT_RESUME_AUTHORITY", "FULL_GO_CUTOVER",
+		"GS9_H_TYPESCRIPT_READ_ONLY_RECOVERY", "LEGACY_TYPESCRIPT_DRAIN_COMPLETE", "LIVE_VERIFIED", "PRODUCTION",
 		"QODER_VERIFIED", "REGISTRY_INCLUSION", "RELEASE", "REMOTE_CONNECTOR",
 		"SIGNED_PROVENANCE", "USER_VISIBLE_READ_AUTHORITY", "WORKFLOW_BUDGET_PRODUCTION_AUTHORITY",
 		"WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE",
 		"WORKFLOW_CONTROL_AUTHORITY_CUTOVER", "WORKFLOW_CONTROL_STATE_MACHINE_AUTHORITY",
 		"WORKFLOW_EFFECT_APPROVAL_AUTHORITY",
-		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_ROUTING_CANARY_CUTOVER",
-		"WORKFLOW_RUNNER_V2_PRODUCTION_ROUTING", "WORKFLOW_RUNNER_V2_PRODUCTION_SUBMISSION",
-		"WORKFLOW_RUNSTORE_AUTHORITY",
+		"WORKFLOW_EFFECT_EXECUTION_AUTHORITY", "WORKFLOW_ROUTING_ALLOWLIST_EXPANSION", "WORKFLOW_RUNSTORE_AUTHORITY",
 	}
 	actualNonClaims := append([]string(nil), manifest.Scope.NonClaims...)
 	sort.Strings(actualNonClaims)

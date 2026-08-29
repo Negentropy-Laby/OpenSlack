@@ -21,6 +21,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	authoritypostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 )
 
@@ -190,7 +191,7 @@ func qualificationService(t *testing.T, repository authoritystore.Repository) *a
 	t.Helper()
 	digest := sha256.Sum256([]byte(qualificationBearer))
 	service, err := authorityapp.New(authorityapp.Options{
-		Repository: repository, QualificationMode: true, BuildSHA: qualificationBuildSHA,
+		Repository: repository, Mode: config.AuthorityModeLocalQualification, BuildSHA: qualificationBuildSHA,
 		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: qualificationWorkspace,
 		CallerID: qualificationCaller, RoutingEpoch: qualificationEpoch,
 	})

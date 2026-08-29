@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
 )
@@ -62,6 +63,12 @@ type Config struct {
 	V2BudgetOrigin               string
 	V2BudgetBearerToken          string
 	V2BudgetCallerID             string
+	V2RunAuthorityEnabled        bool
+	V2RunAuthorityOrigin         string
+	V2RunAuthorityBearerToken    string
+	V2RunAuthorityBearerSHA256   string
+	V2RunAuthorityCallerID       string
+	V2RunAuthorityBuildSHA       string
 
 	ShutdownDeadline  time.Duration
 	MaxProcesses      int
@@ -88,6 +95,14 @@ type V2RuntimeDeliveryRuntime struct {
 	BudgetCallerID string
 }
 
+type V2RunAuthorityRuntime struct {
+	Origin        string
+	BearerToken   string
+	BearerSHA256  string
+	CallerID      string
+	ExpectedBuild string
+}
+
 func (config Config) V2RuntimeDeliveryRuntime() *V2RuntimeDeliveryRuntime {
 	if !config.V2RuntimeDeliveryEnabled {
 		return nil
@@ -97,6 +112,17 @@ func (config Config) V2RuntimeDeliveryRuntime() *V2RuntimeDeliveryRuntime {
 		BearerSHA256: config.BearerTokenSHA256, JournalRoot: config.V2RuntimeDeliveryJournalRoot,
 		BudgetOrigin: config.V2BudgetOrigin, BudgetToken: config.V2BudgetBearerToken,
 		BudgetCallerID: config.V2BudgetCallerID,
+	}
+}
+
+func (config Config) V2RunAuthorityRuntime() *V2RunAuthorityRuntime {
+	if !config.V2RunAuthorityEnabled {
+		return nil
+	}
+	return &V2RunAuthorityRuntime{
+		Origin: config.V2RunAuthorityOrigin, BearerToken: config.V2RunAuthorityBearerToken,
+		BearerSHA256: config.V2RunAuthorityBearerSHA256, CallerID: config.V2RunAuthorityCallerID,
+		ExpectedBuild: config.V2RunAuthorityBuildSHA,
 	}
 }
 
@@ -181,6 +207,17 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	v2RunAuthority := values["WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ENABLED"]
+	if v2RunAuthority != "" && v2RunAuthority != EnabledValue {
+		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ENABLED must be unset or exactly 1")
+	}
+	if v2RunAuthority == EnabledValue && v2RuntimeDelivery != EnabledValue {
+		return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ENABLED requires v2 runtime delivery")
+	}
+	runAuthorityOrigin, runAuthorityToken, runAuthorityTokenHash, runAuthorityCaller, runAuthorityBuild, err := v2RunAuthorityConfig(values, v2RunAuthority == EnabledValue)
+	if err != nil {
+		return Config{}, err
+	}
 	maxProcesses := 4
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES"]); raw != "" {
 		maxProcesses, err = strconv.Atoi(raw)
@@ -206,8 +243,12 @@ func LoadEnvironment(environment []string) (Config, error) {
 		V2RuntimeDeliveryBearerToken: runtimeToken,
 		V2RuntimeDeliveryJournalRoot: runtimeJournal,
 		V2BudgetOrigin:               budgetOrigin, V2BudgetBearerToken: budgetToken,
-		V2BudgetCallerID: budgetCaller,
-		ShutdownDeadline: 30 * time.Second, MaxProcesses: maxProcesses,
+		V2BudgetCallerID:      budgetCaller,
+		V2RunAuthorityEnabled: v2RunAuthority == EnabledValue,
+		V2RunAuthorityOrigin:  runAuthorityOrigin, V2RunAuthorityBearerToken: runAuthorityToken,
+		V2RunAuthorityBearerSHA256: runAuthorityTokenHash, V2RunAuthorityCallerID: runAuthorityCaller,
+		V2RunAuthorityBuildSHA: runAuthorityBuild,
+		ShutdownDeadline:       30 * time.Second, MaxProcesses: maxProcesses,
 		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
@@ -248,6 +289,12 @@ func parse(environment []string) (map[string]string, error) {
 		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_ORIGIN":                 {},
 		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_BEARER_TOKEN":           {},
 		"WORKFLOW_RUNNER_CONTROL_V2_BUDGET_CALLER_ID":              {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ENABLED":         {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ORIGIN":          {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_TOKEN":    {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_SHA256":   {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_CALLER_ID":       {},
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BUILD_SHA":       {},
 	}
 	values := make(map[string]string)
 	for _, entry := range environment {
@@ -266,6 +313,43 @@ func parse(environment []string) (map[string]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func v2RunAuthorityConfig(values map[string]string, enabled bool) (string, string, string, string, string, error) {
+	names := []string{
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_ORIGIN",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_TOKEN",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BEARER_SHA256",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_CALLER_ID",
+		"WORKFLOW_RUNNER_CONTROL_V2_RUN_AUTHORITY_BUILD_SHA",
+	}
+	if !enabled {
+		for _, name := range names {
+			if values[name] != "" {
+				return "", "", "", "", "", fmt.Errorf("disabled v2 run-authority configuration must be empty")
+			}
+		}
+		return "", "", "", "", "", nil
+	}
+	origin, err := exactLoopbackOrigin(values[names[0]], names[0])
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	token := values[names[1]]
+	if err := validateRawToken(token, names[1]); err != nil {
+		return "", "", "", "", "", err
+	}
+	tokenDigest := sha256.Sum256([]byte(token))
+	tokenHash := strings.TrimSpace(values[names[2]])
+	if !hashPattern.MatchString(tokenHash) || hex.EncodeToString(tokenDigest[:]) != tokenHash {
+		return "", "", "", "", "", fmt.Errorf("%s does not bind the exact bearer token", names[2])
+	}
+	caller := strings.TrimSpace(values[names[3]])
+	build := strings.TrimSpace(values[names[4]])
+	if !safeID.MatchString(caller) || !hashPattern.MatchString(build) {
+		return "", "", "", "", "", fmt.Errorf("v2 run-authority caller or build binding is invalid")
+	}
+	return origin, token, tokenHash, caller, build, nil
 }
 
 func v2RuntimeDeliveryConfig(values map[string]string, workspaceRoot, expectedTokenHash string, enabled bool) (string, string, string, string, string, string, error) {
@@ -330,7 +414,7 @@ func exactLoopbackOrigin(value, name string) (string, error) {
 }
 
 func validateRawToken(value, name string) error {
-	if len(value) < 32 || len(value) > 4096 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n\x00") {
+	if !authoritybinding.ValidBearerToken(value) {
 		return fmt.Errorf("%s is invalid", name)
 	}
 	return nil
@@ -380,7 +464,7 @@ func localShadowConfig(values map[string]string, workspaceRoot string, options l
 	}
 	endpoint := strings.TrimSpace(values[options.endpoint])
 	token := values[options.token]
-	if token != strings.TrimSpace(token) || len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, "\r\n\x00") {
+	if !authoritybinding.ValidBearerToken(token) {
 		return false, "", "", "", "", fmt.Errorf("%s bearer token is invalid", options.label)
 	}
 	caller := strings.TrimSpace(values[options.caller])

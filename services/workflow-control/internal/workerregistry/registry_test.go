@@ -70,6 +70,12 @@ func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN",
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN",
 		"OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID",
+		"OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA",
 	}
 	for _, name := range reserved {
 		root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{name + "=evil"} })
@@ -86,6 +92,13 @@ func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
 		JournalRoot:  filepath.Join(root, ".openslack.local", "workflow-runner-v2-runtime-delivery"),
 		BudgetOrigin: "http://127.0.0.1:8085", BudgetToken: strings.Repeat("b", 40),
 		BudgetCallerID: "runner-control",
+	}
+	authorityToken := strings.Repeat("a", 40)
+	authorityDigest := sha256.Sum256([]byte(authorityToken))
+	runtimeConfig.V2RunAuthority = &runnerconfig.V2RunAuthorityRuntime{
+		Origin: "http://127.0.0.1:8082", BearerToken: authorityToken,
+		BearerSHA256: fmt.Sprintf("%x", authorityDigest[:]), CallerID: "workflow-runner-v2",
+		ExpectedBuild: strings.Repeat("d", 64),
 	}
 	registry, err := Load(root, hash, runtimeConfig)
 	if err != nil {

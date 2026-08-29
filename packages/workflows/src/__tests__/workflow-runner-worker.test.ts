@@ -284,12 +284,6 @@ describe('GS8-B workflow runner worker', () => {
             ...base.confirmationPolicy,
             runId: workflowRunId,
           },
-          authorityRoute: {
-            backend: 'go',
-            authority: 'workflow-control',
-            routingEpoch: 1,
-            authorityBuildHash: 'a'.repeat(64),
-          },
           createdAt: new Date(current - 60_000).toISOString(),
           expiresAt: new Date(current + 60 * 60_000).toISOString(),
         };
@@ -497,8 +491,7 @@ describe('GS8-B workflow runner worker', () => {
     expect(() => loadWorkflowRunnerV2QualificationWorkerConfig({})).toThrowError(/default-off/u);
     expect(loadWorkflowRunnerV2QualificationWorkerConfig(base)).toMatchObject({
       enabled: true,
-      qualificationOnly: true,
-      runtimeBoundaryMode: 'provider-attempt-only',
+      mode: 'qualification',
       workspaceId: 'workspace.v2',
       workspaceRoot,
     });
@@ -516,37 +509,103 @@ describe('GS8-B workflow runner worker', () => {
     ).toThrowError(/cannot configure checkpoint or effect authority boundaries/u);
 
     const companionToken = 'c'.repeat(48);
-    expect(
+    const runtimeEnvironment = {
+      WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED: '1',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN: companionToken,
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256: createHash('sha256')
+        .update(companionToken, 'utf8')
+        .digest('hex'),
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT: join(
+        workspaceRoot,
+        '.openslack.local',
+        'workflow-runner-v2-authority-bindings',
+      ),
+      OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN: 'http://127.0.0.1:8089',
+      OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN: 'b'.repeat(48),
+      OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID: 'workflow-runner-v2',
+    } satisfies NodeJS.ProcessEnv;
+    expect(() =>
       loadWorkflowRunnerV2QualificationWorkerConfig({
         ...base,
-        WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED: '1',
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN: companionToken,
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256: createHash('sha256')
-          .update(companionToken, 'utf8')
-          .digest('hex'),
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT: join(
-          workspaceRoot,
-          '.openslack.local',
-          'workflow-runner-v2-authority-bindings',
-        ),
-        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN: 'http://127.0.0.1:8089',
-        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN: 'b'.repeat(48),
-        OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID: 'workflow-runner-v2',
+        ...runtimeEnvironment,
       }),
-    ).toMatchObject({
-      runtimeBoundaryMode: 'authority-binding-f2b',
-      runtimeDelivery: {
-        companionOrigin: 'http://127.0.0.1:8088',
-        budgetOrigin: 'http://127.0.0.1:8089',
-      },
-    });
+    ).toThrowError(/requires the complete Go-authority profile/u);
     expect(() =>
       loadWorkflowRunnerV2QualificationWorkerConfig({
         ...base,
         OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
       }),
     ).toThrowError(/must be empty/u);
+
+    const runAuthorityToken = 'r'.repeat(48);
+    expect(
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        ...runtimeEnvironment,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '1',
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN: 'http://127.0.0.1:8082',
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN: runAuthorityToken,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256: createHash('sha256')
+          .update(runAuthorityToken, 'utf8')
+          .digest('hex'),
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID: 'workflow-runner-v2',
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA: 'd'.repeat(64),
+      }),
+    ).toMatchObject({
+      mode: 'go-authority',
+      runAuthority: {
+        origin: 'http://127.0.0.1:8082',
+        callerId: 'workflow-runner-v2',
+        expectedBuildHash: 'd'.repeat(64),
+      },
+    });
+    expect(() =>
+      loadWorkflowRunnerV2QualificationWorkerConfig({
+        ...base,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '1',
+      }),
+    ).toThrowError(/requires the complete runtime-delivery profile/u);
+  });
+
+  it('keeps the production canary single-writer boundary distinct from F2 qualification', async () => {
+    const tsDescriptor = v2Descriptor(0);
+    const goDescriptor: WorkflowRunnerV2ExecutionDescriptor = {
+      ...tsDescriptor,
+      authorityRoute: {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 17,
+        authorityBuildHash: 'd'.repeat(64),
+      },
+    };
+    const workflow = { meta: manifest } as WorkflowModule;
+    const context = {} as WorkflowRunnerV2ExecutionContext;
+
+    await expect(
+      executeWorkflowRunnerV2QualificationJob(
+        workflow,
+        tsDescriptor,
+        context,
+        resolve('.'),
+        true,
+        undefined,
+        undefined,
+        'go-authority',
+      ),
+    ).rejects.toThrowError(/accepts only Go-owned/u);
+    await expect(
+      executeWorkflowRunnerV2QualificationJob(
+        workflow,
+        goDescriptor,
+        context,
+        resolve('.'),
+        true,
+        undefined,
+        undefined,
+        'go-authority',
+      ),
+    ).rejects.toThrowError(/requires the Workflow Control run authority/u);
   });
 
   it('rejects v2 resume delivery before source preparation in the F1 worker', async () => {
