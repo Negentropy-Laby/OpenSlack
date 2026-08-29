@@ -41,6 +41,7 @@ export interface AbyRuntimeDoctorReport {
   command?: string;
   args: string[];
   timeoutMs?: number;
+  handshakeTimeoutMs?: number;
   env: AgentRuntimeEnvAudit;
   checks: AgentRuntimeDoctorCheck[];
   remediations: string[];
@@ -287,6 +288,7 @@ export function diagnoseAbyRuntime(
     command,
     args,
     timeoutMs: loaded.timeoutMs,
+    handshakeTimeoutMs: loaded.handshakeTimeoutMs,
     env: {
       allowedKeys: envAudit.allowedKeys,
       rejectedKeys: envAudit.rejectedKeys,

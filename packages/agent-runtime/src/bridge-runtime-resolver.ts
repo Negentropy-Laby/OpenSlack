@@ -8,6 +8,7 @@ export interface AbyBridgeRuntimeConfig {
   root?: string;
   command?: string;
   timeoutMs?: number;
+  handshakeTimeoutMs?: number;
   env?: Record<string, string>;
 }
 
@@ -62,6 +63,7 @@ export function createBridgeRuntimeResolver(
         // Absolute paths keep the process launch compatible with worktree CWD.
         args: [runEntrypoint, agentRunBridge],
         timeoutMs: runtimeConfig.timeoutMs,
+        handshakeTimeoutMs: runtimeConfig.handshakeTimeoutMs,
         env: buildSafeBridgeEnv(runtimeConfig.env),
         abyRoot,
       };
@@ -128,6 +130,7 @@ function readAbyConfig(config: unknown): AbyBridgeRuntimeConfig {
     root: readString(source.root) ?? readString(source.abyRoot),
     command: readString(source.command),
     timeoutMs: readPositiveInteger(source.timeoutMs),
+    handshakeTimeoutMs: readBoundedPositiveInteger(source.handshakeTimeoutMs, 1000, 60_000),
     env,
   };
 }
@@ -138,6 +141,20 @@ function readString(value: unknown): string | undefined {
 
 function readPositiveInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function readBoundedPositiveInteger(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new BridgeRuntimeConfigError(
+      `Aby bridge handshakeTimeoutMs must be an integer between ${minimum} and ${maximum}.`,
+    );
+  }
+  return value;
 }
 
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {

@@ -111,6 +111,7 @@ describe('BridgeRuntimeResolver', () => {
           root: abyRoot,
           command: 'bun',
           timeoutMs: 5000,
+          handshakeTimeoutMs: 30_000,
           env: {
             USER_TYPE: 'aby',
             AGENT_RUN_BRIDGE_RUNNER: 'fake',
@@ -132,8 +133,26 @@ describe('BridgeRuntimeResolver', () => {
     });
 
     expect(resolved?.timeoutMs).toBe(5000);
+    expect(resolved?.handshakeTimeoutMs).toBe(30_000);
     expect(resolved?.env?.AGENT_RUN_BRIDGE_RUNNER).toBe('fake');
     expect(resolved?.env?.USER_TYPE).toBeUndefined();
     expect(resolved?.env?.OPENSLACK_PRIVATE_KEY).toBeUndefined();
+  });
+
+  it('rejects out-of-range Aby bridge handshake timeouts', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const configDir = join(root, '.openslack.local');
+    mkdirSync(configDir, { recursive: true });
+
+    for (const handshakeTimeoutMs of [999, 60_001]) {
+      writeFileSync(
+        join(configDir, 'agent-runtime.json'),
+        JSON.stringify({ aby: { root: abyRoot, handshakeTimeoutMs } }),
+        'utf-8',
+      );
+      expect(() => loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toThrow(
+        BridgeRuntimeConfigError,
+      );
+    }
   });
 });
