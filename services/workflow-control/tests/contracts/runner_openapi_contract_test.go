@@ -37,6 +37,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		"/health/live", "/health/ready", "/health/version", "/metrics",
 		"/v1/runner/jobs", "/v1/runner/jobs/{jobId}",
 		"/v1/runner/jobs/{jobId}/cancellations",
+		"/v1/workflow-runner/binding",
 		"/v2/runner/authority-bindings/receipts/{idempotencyKey}",
 		"/v2/runner/authority-bindings/{bindingId}:ack-control",
 		"/v2/runner/authority-bindings/{bindingId}:resolve",
@@ -65,6 +66,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		t.Fatalf("runner bearer security is missing: %+v", security)
 	}
 	for _, operation := range []*openapi3.Operation{
+		document.Paths.Value("/v1/workflow-runner/binding").Get,
 		document.Paths.Value("/v1/runner/jobs").Post,
 		document.Paths.Value("/v2/runner/jobs").Post,
 		document.Paths.Value("/v1/runner/jobs/{jobId}").Get,

@@ -451,6 +451,40 @@ describe('GS9-F1 Workflow runner v2 foundation', () => {
     }
   });
 
+  it('classifies persistent service failure as an unknown transport outcome and cancels both bodies', async () => {
+    const prepared = prepareWorkflowRunnerV2JobSpec(jobSpec());
+    let cancellations = 0;
+    let attempts = 0;
+    const client = new WorkflowRunnerV2ControlClient(
+      {
+        origin: 'http://127.0.0.1:8080',
+        workspaceId: prepared.spec.workspaceId,
+        bearerToken: 'test-only-bearer-value-000000000000',
+        descriptorRoot: process.cwd(),
+      },
+      (async () => {
+        attempts += 1;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(Buffer.from('{"code":"temporarily_unavailable"}\n'));
+            },
+            cancel() {
+              cancellations += 1;
+            },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } },
+        );
+      }) as typeof fetch,
+    );
+
+    await expect(client.submit(prepared)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_CONTROL_TRANSPORT_FAILED',
+    });
+    expect(attempts).toBe(2);
+    expect(cancellations).toBe(2);
+  });
+
   it('accepts only exact canonical v2 authority JSONL frames', () => {
     const message = validateWorkflowControlAuthorityMessage({
       schema: WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,

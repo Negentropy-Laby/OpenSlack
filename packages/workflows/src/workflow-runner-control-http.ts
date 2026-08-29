@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 
@@ -19,9 +20,7 @@ export function isWorkflowRunnerTransportConfigShape(
     typeof config.workspaceId === 'string' &&
     SAFE_ID.test(config.workspaceId) &&
     typeof config.bearerToken === 'string' &&
-    config.bearerToken.length >= 32 &&
-    config.bearerToken.length <= 4096 &&
-    !/[\u0000-\u0020\u007f]/u.test(config.bearerToken) &&
+    isWorkflowControlBearerToken(config.bearerToken) &&
     typeof config.descriptorRoot === 'string' &&
     isAbsolute(config.descriptorRoot) &&
     resolve(config.descriptorRoot) === config.descriptorRoot

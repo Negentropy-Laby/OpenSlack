@@ -1,11 +1,8 @@
-import { join } from 'node:path';
 import {
   parseWorkflowControlAuthorityMessageBytes,
   type WorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityPreparedMessage,
 } from './workflow-control-authority-contract.js';
-import { RunStore } from './run-store.js';
-import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import type { WorkflowRunnerV2ExecutionDescriptor } from './workflow-runner-v2-descriptor.js';
 import type { WorkflowRunnerV2RuntimeDeliveryPort } from './workflow-runner-v2-session.js';
 import type { WorkflowRunnerV2RuntimeAdmissionPort } from './workflow-runner-v2-runtime-admission.js';
@@ -22,6 +19,10 @@ export interface WorkflowRunnerV2AuthoritySourceResolver {
   ): Promise<WorkflowRunnerAuthoritySourceAdapter>;
 }
 
+export interface WorkflowRunnerV2ProjectionPort {
+  classify(descriptor: WorkflowRunnerV2ExecutionDescriptor): Promise<'initial' | 'resume'>;
+}
+
 /**
  * Production composition between the frozen v2 session and the F2b companion
  * runtime. It derives every lease field from the already validated exact target
@@ -30,22 +31,19 @@ export interface WorkflowRunnerV2AuthoritySourceResolver {
 export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeDeliveryPort {
   readonly #runtime: WorkflowRunnerAuthorityBindingRuntime;
   readonly #sources: WorkflowRunnerV2AuthoritySourceResolver;
-  readonly #workspaceRoot: string;
-  readonly #runStoreFactory: (baseDir: string) => RunStore;
+  readonly #projection: WorkflowRunnerV2ProjectionPort;
   readonly #admissions: WorkflowRunnerV2RuntimeAdmissionPort;
 
   constructor(options: {
     readonly runtime: WorkflowRunnerAuthorityBindingRuntime;
     readonly sources: WorkflowRunnerV2AuthoritySourceResolver;
-    readonly workspaceRoot: string;
+    readonly projection: WorkflowRunnerV2ProjectionPort;
     readonly admissions: WorkflowRunnerV2RuntimeAdmissionPort;
-    readonly runStoreFactory?: (baseDir: string) => RunStore;
   }) {
     this.#runtime = options.runtime;
     this.#sources = options.sources;
-    this.#workspaceRoot = options.workspaceRoot;
+    this.#projection = options.projection;
     this.#admissions = options.admissions;
-    this.#runStoreFactory = options.runStoreFactory ?? ((baseDir) => new RunStore({ baseDir }));
   }
 
   async initialize(): Promise<void> {
@@ -73,16 +71,7 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
       throw new Error('Runtime-delivery resume probe differs from the sealed descriptor.');
     }
     await this.#runtime.assertRunReady(lease.workflowRunId);
-    const store = this.#runStoreFactory(
-      descriptor.authorityRoute.backend === 'go'
-        ? join(this.#workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections')
-        : join(this.#workspaceRoot, '.openslack.local', 'workflows'),
-    );
-    const exists = await store.runExists(lease.workflowRunId);
-    const status = exists ? await store.loadStatus(lease.workflowRunId) : null;
-    const resume =
-      classifyWorkflowRunnerRunState(lease.workflowRunId, exists, status?.status ?? null) ===
-      'resume';
+    const resume = (await this.#projection.classify(descriptor)) === 'resume';
     await this.#admissions.seal({
       schema: 'openslack.workflow_runner_v2_runtime_admission.v1',
       workspaceId: lease.workspaceId,

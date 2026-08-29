@@ -554,6 +554,22 @@ new-record route receipts and canary evidence before Go owns any production reco
 only after old TypeScript-owned active runs are drained or explicitly reconciled. GS9-I remains an
 independent deletion PR after authenticated external and long-running recovery evidence.
 
+GS9-G keeps the default TypeScript path outside the durable route journal. A receipt is created only
+for an explicit Go canary or explicit higher-epoch TypeScript rollback; a previously routed run is
+point-read from the active or closed journal and always resumes through its original backend,
+correlation ID, policy, and selection time. Removing the routing mode or disabling Go new-record
+acceptance changes only future selection. It never makes an existing Go-owned run eligible for a
+TypeScript fallback.
+
+The owner-only route journal separates active, closed, quarantined, policy, and lock state. Its 4,096
+entry ceiling counts concurrent active explicitly routed runs, not lifetime history. Terminal receipts
+move atomically to sharded closed history, while damaged requested receipts require reconciliation and
+unrelated damaged ordinary files are quarantined without blocking healthy routed runs. Operators audit
+or apply evidence-backed closure with `openslack collaboration workflow routes repair [--apply]`.
+Recovery projections are caches only: authority-first reconstruction is allowed for provable
+created/running heads, and terminal or effect-output ambiguity enters reconciliation without executing
+the workflow or an effect a second time.
+
 ### GS10–GS13 — Platform Runtime
 
 1. Repository Observer owns webhook and poll intake, normalization, dedupe,

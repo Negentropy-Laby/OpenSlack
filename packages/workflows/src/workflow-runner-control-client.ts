@@ -7,6 +7,7 @@ import {
   isWorkflowRunnerTransportConfigShape,
   readWorkflowRunnerResponseBytes,
 } from './workflow-runner-control-http.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 
 export const WORKFLOW_RUNNER_JOB_SPEC_SCHEMA = 'openslack.workflow_runner_job_spec.v1' as const;
 export const WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA =
@@ -28,6 +29,7 @@ export interface WorkflowRunnerControlConfig {
   readonly workspaceId: string;
   readonly bearerToken: string;
   readonly descriptorRoot: string;
+  readonly expectedBuildHash?: string;
 }
 
 export interface WorkflowRunnerJobSpec {
@@ -285,14 +287,11 @@ export function loadWorkflowRunnerControlConfig(
   const workspaceId = environment.OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID!;
   const bearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN!;
   const descriptorRoot = environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT!;
+  const expectedBuildHash = environment.OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA;
   if (!SAFE_ID.test(workspaceId)) {
     return fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', 'Runner control workspace is invalid.');
   }
-  if (
-    bearerToken.length < 32 ||
-    bearerToken.length > 4096 ||
-    /[\u0000-\u0020\u007f]/u.test(bearerToken)
-  ) {
+  if (!isWorkflowControlBearerToken(bearerToken)) {
     return fail('WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID', 'Runner control token is invalid.');
   }
   if (!isAbsolute(descriptorRoot) || resolve(descriptorRoot) !== descriptorRoot) {
@@ -301,11 +300,18 @@ export function loadWorkflowRunnerControlConfig(
       'Runner descriptor root must be a normalized absolute path.',
     );
   }
+  if (expectedBuildHash !== undefined && !HASH.test(expectedBuildHash)) {
+    return fail(
+      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
+      'Runner control expected build hash is invalid.',
+    );
+  }
   return Object.freeze({
     origin: validateOrigin(environment.OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN!),
     workspaceId,
     bearerToken,
     descriptorRoot,
+    ...(expectedBuildHash === undefined ? {} : { expectedBuildHash }),
   });
 }
 

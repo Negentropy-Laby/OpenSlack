@@ -36,6 +36,7 @@ func TestAuthorityOpenAPIContract(t *testing.T) {
 	sort.Strings(routes)
 	expected := []string{
 		"/health/live", "/health/ready", "/health/version", "/metrics",
+		"/v1/workflow-control/binding",
 		"/v1/workflow-control/receipts/{idempotencyKey}",
 		"/v1/workflow-control/runs/{runId}",
 		"/v1/workflow-control/runs/{runId}/outbox/{revision}:pending",
@@ -60,6 +61,7 @@ func TestAuthorityOpenAPIContract(t *testing.T) {
 		}
 	}
 	protected := []*openapi3.Operation{
+		document.Paths.Value("/v1/workflow-control/binding").Get,
 		document.Paths.Value("/v1/workflow-control/runs:accept").Post,
 		document.Paths.Value("/v1/workflow-control/runs/{runId}:transition").Post,
 		document.Paths.Value("/v1/workflow-control/runs/{runId}").Get,

@@ -3,6 +3,7 @@ package runnerapp
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -471,6 +472,23 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 		version["newRecordCanary"] = true
 	}
 	writeCanonical(w, http.StatusOK, version)
+}
+
+func (service *Service) handleBinding(w http.ResponseWriter, request *http.Request) {
+	if !requireNoQuery(w, request) {
+		return
+	}
+	writeCanonical(w, http.StatusOK, canonicaljson.Object{
+		"schema":      "openslack.workflow_runner_control_binding.v1",
+		"workspaceId": service.workspaceID, "buildSha": service.buildSHA,
+		"runnerTokenSha256": hex.EncodeToString(service.tokenHash[:]),
+		"v2Enabled":         service.v2Enabled, "runtimeDeliveryEnabled": service.v2RuntimeDelivery,
+		"newRecordCanary":      service.v2NewRecordCanary,
+		"authorityOrigin":      service.runAuthorityOrigin,
+		"authorityCallerId":    service.runAuthorityCallerID,
+		"authorityBuildSha":    service.runAuthorityBuildSHA,
+		"authorityTokenSha256": service.runAuthorityTokenSHA256,
+	})
 }
 
 func (service *Service) handleMetrics(w http.ResponseWriter, request *http.Request) {

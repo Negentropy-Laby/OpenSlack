@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,6 +29,11 @@ import {
   WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
 } from '../workflow-run-routing-config.js';
 import type { WorkflowRunnerControlConfig } from '../workflow-runner-control-client.js';
+import type { WorkflowControlShadowJournalSecurityDependencies } from '../workflow-control-shadow.js';
+import {
+  isWorkflowControlBearerToken,
+  parseWorkflowControlRoutingEpoch,
+} from '../workflow-control-routing-identity.js';
 
 const roots: string[] = [];
 const NOW = '2026-08-29T00:00:00.000Z';
@@ -40,6 +45,27 @@ const INPUT = 'd'.repeat(64);
 const WORKSPACE = 'workspace.test';
 const CALLER = 'typescript.workflow-router';
 const TOKEN = 't'.repeat(32);
+const UNIT_JOURNAL_SECURITY: WorkflowControlShadowJournalSecurityDependencies = Object.freeze({
+  platform: 'win32',
+  currentWindowsSid: () => 'S-1-5-21-1000',
+  readWindowsPathSecurity: () =>
+    JSON.stringify({
+      owner: 'S-1-5-21-1000',
+      protected: true,
+      reparse: false,
+      rules: [
+        { sid: 'S-1-5-21-1000', type: 'Allow' },
+        { sid: 'S-1-5-18', type: 'Allow' },
+      ],
+    }),
+  hardenPath: () => undefined,
+});
+
+async function routeWorkspace(prefix: string): Promise<string> {
+  const base = process.platform === 'win32' ? 'C:\\Temp' : tmpdir();
+  await mkdir(base, { recursive: true });
+  return mkdtemp(join(base, prefix));
+}
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -51,7 +77,6 @@ function policy(overrides: Partial<WorkflowRunRoutingPolicy> = {}): WorkflowRunR
     schema: 'openslack.workflow_run_routing_policy.v1',
     workspaceId: WORKSPACE,
     backend: 'go',
-    authority: 'workflow-control',
     routingEpoch: 17,
     authorityBuildHash: BUILD,
     qualificationEnvironmentId: 'external-canary.test',
@@ -77,6 +102,13 @@ function select(
     correlationId: 'correlation.canary.1',
     selectedAt: NOW,
   });
+}
+
+function routeName(runId: string): string {
+  return `${createHash('sha256')
+    .update('openslack.workflow-run-route.journal.v1\0', 'utf8')
+    .update(runId, 'utf8')
+    .digest('hex')}.json`;
 }
 
 function acceptedReceipt(route: WorkflowRunRouteReceipt) {
@@ -165,9 +197,9 @@ describe('Workflow run new-record routing', () => {
   });
 
   it('commits one owner-only immutable receipt and rejects a second route for the run', async () => {
-    const workspace = await mkdtemp(join(tmpdir(), 'openslack-workflow-route-'));
+    const workspace = await routeWorkspace('openslack-workflow-route-');
     roots.push(workspace);
-    const journal = new WorkflowRunRouteJournal(join(workspace, 'routes'));
+    const journal = new WorkflowRunRouteJournal(join(workspace, 'routes'), UNIT_JOURNAL_SECURITY);
     const route = select();
 
     await expect(journal.commit(route)).resolves.toEqual(route);
@@ -178,10 +210,28 @@ describe('Workflow run new-record routing', () => {
     ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT' });
   });
 
-  it('allows only one policy per epoch and only higher epochs for new records', async () => {
-    const workspace = await mkdtemp(join(tmpdir(), 'openslack-workflow-route-epoch-'));
+  it('migrates a valid flat v1 receipt into the active partition without changing bytes', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-legacy-');
     roots.push(workspace);
-    const journal = new WorkflowRunRouteJournal(join(workspace, 'routes'));
+    const routeRoot = join(workspace, 'routes');
+    const route = select(undefined, 'run.canary.legacy');
+    const name = routeName(route.runId);
+    const exact = `${canonicalWorkflowControlAuthorityJson(route)}\n`;
+    await mkdir(routeRoot, { recursive: true });
+    await writeFile(join(routeRoot, name), exact, 'utf8');
+
+    const journal = new WorkflowRunRouteJournal(routeRoot, UNIT_JOURNAL_SECURITY);
+    await expect(journal.locate(route.runId)).resolves.toEqual({
+      receipt: route,
+      state: 'active',
+    });
+    await expect(readFile(join(routeRoot, 'active', name), 'utf8')).resolves.toBe(exact);
+  });
+
+  it('allows only one policy per epoch and only higher epochs for new records', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-epoch-');
+    roots.push(workspace);
+    const journal = new WorkflowRunRouteJournal(join(workspace, 'routes'), UNIT_JOURNAL_SECURITY);
     const activeRouter = new WorkflowRunRouter(policy());
     const first = select(activeRouter, 'run.canary.epoch.17.first');
     const second = select(activeRouter, 'run.canary.epoch.17.second');
@@ -205,7 +255,6 @@ describe('Workflow run new-record routing', () => {
       new WorkflowRunRouter(
         policy({
           backend: 'ts-local',
-          authority: 'typescript',
           routingEpoch: 18,
           workflowAllowlist: [],
         }),
@@ -219,9 +268,86 @@ describe('Workflow run new-record routing', () => {
     ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT' });
     await expect(journal.load(first.runId)).resolves.toEqual(first);
   });
+
+  it('retains the highest routing epoch after terminal receipts move to closed history', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-close-');
+    roots.push(workspace);
+    const root = join(workspace, 'routes');
+    const first = select(new WorkflowRunRouter(policy({ routingEpoch: 18 })), 'run.closed.18');
+    const journal = new WorkflowRunRouteJournal(root, UNIT_JOURNAL_SECURITY);
+    await journal.commit(first);
+    await expect(journal.close(first.runId)).resolves.toEqual(first);
+    await expect(journal.locate(first.runId)).resolves.toMatchObject({ state: 'closed' });
+    const restarted = new WorkflowRunRouteJournal(root, UNIT_JOURNAL_SECURITY);
+    await expect(
+      restarted.commit(
+        select(new WorkflowRunRouter(policy({ routingEpoch: 17 })), 'run.lower.after.close'),
+      ),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT' });
+  });
+
+  it('quarantines a damaged target without blocking unrelated routed runs', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-quarantine-');
+    roots.push(workspace);
+    const root = join(workspace, 'routes');
+    const damaged = select(undefined, 'run.damaged');
+    const journal = new WorkflowRunRouteJournal(root, UNIT_JOURNAL_SECURITY);
+    await journal.commit(damaged);
+    await writeFile(join(root, 'active', routeName(damaged.runId)), '{"truncated":true', 'utf8');
+
+    const restarted = new WorkflowRunRouteJournal(root, UNIT_JOURNAL_SECURITY);
+    await expect(restarted.load(damaged.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+    const healthy = select(undefined, 'run.healthy.after.quarantine');
+    await expect(restarted.commit(healthy)).resolves.toEqual(healthy);
+    await expect(restarted.inspect()).resolves.toMatchObject({
+      active: 1,
+      quarantined: 1,
+    });
+  });
+
+  it('repairs only active receipts backed by terminal evidence', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-repair-');
+    roots.push(workspace);
+    const journal = new WorkflowRunRouteJournal(join(workspace, 'routes'), UNIT_JOURNAL_SECURITY);
+    const terminal = select(undefined, 'run.repair.terminal');
+    const active = select(undefined, 'run.repair.active');
+    await journal.commit(terminal);
+    await journal.commit(active);
+    await expect(
+      journal.repair({ canClose: (receipt) => receipt.runId === terminal.runId }),
+    ).resolves.toMatchObject({ active: 2, closeable: [terminal.runId], applied: false });
+    await expect(
+      journal.repair({ apply: true, canClose: (receipt) => receipt.runId === terminal.runId }),
+    ).resolves.toMatchObject({ active: 1, closed: 1, applied: true });
+  });
 });
 
 describe('Process routing configuration', () => {
+  it('shares bearer-token and routing-epoch vectors with the Go authority', async () => {
+    const vectors = JSON.parse(
+      await readFile(
+        join(
+          process.cwd(),
+          'services/workflow-control/internal/authoritybinding/testdata/routing_identity_vectors.json',
+        ),
+        'utf8',
+      ),
+    ) as {
+      tokens: { value: string; valid: boolean }[];
+      epochs: { value: string; valid: boolean }[];
+    };
+    for (const vector of vectors.tokens) {
+      expect(isWorkflowControlBearerToken(vector.value)).toBe(vector.valid);
+    }
+    for (const vector of vectors.epochs) {
+      const parse = () => parseWorkflowControlRoutingEpoch(vector.value);
+      if (vector.valid) expect(parse).not.toThrowError();
+      else expect(parse).toThrowError();
+    }
+  });
+
   function runner(workspaceId: string): WorkflowRunnerControlConfig {
     return {
       origin: 'http://127.0.0.1:18081',
@@ -231,15 +357,19 @@ describe('Process routing configuration', () => {
     };
   }
 
-  it('is default-off, closed, and immutable after the first exact Go profile', () => {
+  it('is default-off, reports ignored residual settings, and parses one exact Go profile', () => {
+    expect(loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.off'), {})).toEqual({
+      mode: 'disabled',
+      ignoredSettings: [],
+    });
     expect(
-      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.off'), {}),
-    ).toBeUndefined();
-    expect(() =>
       loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.partial'), {
         OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '17',
       }),
-    ).toThrowError(/disabled or partially configured/u);
+    ).toEqual({
+      mode: 'disabled',
+      ignoredSettings: ['OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH'],
+    });
 
     const token = 'g'.repeat(48);
     const environment = {
@@ -271,12 +401,15 @@ describe('Process routing configuration', () => {
       router: { policy: { backend: 'go', routingEpoch: 17 } },
       v2BudgetPolicy: { accountId: 'budget.canary' },
     });
-    expect(() =>
+    expect(
       loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.go'), {
         ...environment,
         OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
       }),
-    ).toThrowError(/changed after process initialization/u);
+    ).toMatchObject({
+      mode: WORKFLOW_RUN_ROUTING_MODE_GO,
+      router: { policy: { routingEpoch: 18 } },
+    });
   });
 
   it('loads a higher-epoch TS rollback without retaining Go credentials', () => {
@@ -289,9 +422,9 @@ describe('Process routing configuration', () => {
       OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
       OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
     });
-    expect(config?.router.policy).toMatchObject({
+    if (config.mode === 'disabled') throw new Error('Expected explicit rollback config.');
+    expect(config.router.policy).toMatchObject({
       backend: 'ts-local',
-      authority: 'typescript',
       routingEpoch: 18,
     });
     expect(config).not.toHaveProperty('authority');
@@ -381,6 +514,42 @@ describe('Workflow Control authority accept client', () => {
     });
     expect(send).toHaveBeenCalledTimes(2);
   });
+
+  it('distinguishes an absent run from malformed authority read responses', async () => {
+    const route = select();
+    const send = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response('null\n', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('{"schema":"openslack.workflow_control_authority_read.v2"}\n', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    const client = new WorkflowControlAuthorityHttpClient({
+      origin: 'http://127.0.0.1:18082',
+      workspaceId: WORKSPACE,
+      callerId: CALLER,
+      bearerToken: TOKEN,
+      expectedBuildHash: BUILD,
+      fetch: send,
+    });
+
+    await expect(client.readIfExists(route.runId, route.route)).resolves.toBeNull();
+    await expect(client.read(route.runId, route.route)).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+    });
+    await expect(client.read(route.runId, route.route)).rejects.toMatchObject({
+      code: 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+    });
+    expect(send).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('Go-owned worker recovery projection', () => {
@@ -440,6 +609,18 @@ describe('Go-owned worker recovery projection', () => {
       'go-recovery-projections',
     );
     const authority: WorkflowControlAuthorityPort = {
+      async inspectBinding() {
+        return {
+          schema: 'openslack.workflow_control_authority_binding.v1',
+          workspaceId: WORKSPACE,
+          callerId: CALLER,
+          mode: 'new-record-canary-v1',
+          activeRoutingEpoch: 17,
+          drainRoutingEpochs: [],
+          buildSha: BUILD,
+          acceptNewRecords: true,
+        };
+      },
       accept: vi.fn(),
       async read() {
         return {
@@ -449,6 +630,9 @@ describe('Go-owned worker recovery projection', () => {
           record,
           updatedAt: NOW,
         };
+      },
+      async readIfExists() {
+        return this.read(route.runId, route.route);
       },
       async transition(next, expected) {
         expect(expected).toMatchObject({ revision: record.revision, state: record.state });
@@ -466,6 +650,7 @@ describe('Go-owned worker recovery projection', () => {
     const projection = new WorkflowRunnerV2GoProjectionRunStore({
       baseDir: projectionBase,
       descriptor,
+      mode: 'authority',
       authority,
     });
 

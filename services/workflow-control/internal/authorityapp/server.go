@@ -24,6 +24,7 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 	RouteRun               = "/v1/workflow-control/runs/{runId}"
 	RouteReceipt           = "/v1/workflow-control/receipts/{idempotencyKey}"
 	RouteOutbox            = "/v1/workflow-control/runs/{runId}/outbox/{revisionAction}"
+	RouteBinding           = "/v1/workflow-control/binding"
 	RouteLive              = "/health/live"
 	RouteReady             = "/health/ready"
 	RouteVersion           = "/health/version"
@@ -56,9 +58,7 @@ var (
 
 type Options struct {
 	Repository        authoritystore.Repository
-	AuthorityEnabled  bool
-	QualificationMode bool
-	CanaryMode        bool
+	Mode              config.AuthorityMode
 	AcceptNewRecords  bool
 	DrainEpochs       []int64
 	BuildSHA          string
@@ -70,19 +70,18 @@ type Options struct {
 }
 
 type Service struct {
-	repository        authoritystore.Repository
-	authorityEnabled  bool
-	qualificationMode bool
-	canaryMode        bool
-	acceptNewRecords  bool
-	allowedEpochs     map[int64]struct{}
-	buildSHA          string
-	workspaceID       string
-	callerID          string
-	routingEpoch      int64
-	tokenHash         [sha256.Size]byte
-	logger            *slog.Logger
-	handler           http.Handler
+	repository       authoritystore.Repository
+	mode             config.AuthorityMode
+	acceptNewRecords bool
+	allowedEpochs    map[int64]struct{}
+	drainEpochs      []int64
+	buildSHA         string
+	workspaceID      string
+	callerID         string
+	routingEpoch     int64
+	tokenHash        [sha256.Size]byte
+	logger           *slog.Logger
+	handler          http.Handler
 
 	requests       atomic.Int64
 	unauthorized   atomic.Int64
@@ -100,23 +99,20 @@ func New(options Options) (*Service, error) {
 		options.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	service := &Service{
-		repository: options.Repository, authorityEnabled: options.AuthorityEnabled || options.QualificationMode,
-		qualificationMode: options.QualificationMode, canaryMode: options.CanaryMode,
+		repository: options.Repository, mode: options.Mode,
 		acceptNewRecords: options.AcceptNewRecords,
 		buildSHA:         options.BuildSHA, workspaceID: options.WorkspaceID, callerID: options.CallerID,
 		routingEpoch: options.RoutingEpoch, logger: options.Logger, allowedEpochs: map[int64]struct{}{},
+		drainEpochs: append([]int64(nil), options.DrainEpochs...),
 	}
-	if service.authorityEnabled {
+	if service.mode.Enabled() {
 		if options.Repository == nil || !identityPattern.MatchString(options.WorkspaceID) ||
 			!identityPattern.MatchString(options.CallerID) || options.RoutingEpoch < 1 ||
 			options.RoutingEpoch > authoritycontract.MaxSafeInteger ||
 			!hashPattern.MatchString(options.BearerTokenSHA256) {
 			return nil, fmt.Errorf("enabled authority mode requires the exact repository, workspace, caller, epoch, and bearer binding")
 		}
-		if options.QualificationMode == options.CanaryMode {
-			return nil, fmt.Errorf("enabled authority mode must be exactly qualification or canary")
-		}
-		if options.QualificationMode && (options.AcceptNewRecords || len(options.DrainEpochs) != 0) {
+		if options.Mode.Qualification() && (options.AcceptNewRecords || len(options.DrainEpochs) != 0) {
 			return nil, fmt.Errorf("qualification mode cannot retain new-record or drain policy")
 		}
 		service.allowedEpochs[options.RoutingEpoch] = struct{}{}
@@ -137,7 +133,7 @@ func New(options Options) (*Service, error) {
 			return nil, fmt.Errorf("authority bearer token hash is invalid")
 		}
 		copy(service.tokenHash[:], raw)
-	} else if options.Repository != nil || options.BearerTokenSHA256 != "" || options.WorkspaceID != "" || options.CallerID != "" || options.RoutingEpoch != 0 || options.AcceptNewRecords || len(options.DrainEpochs) != 0 || options.CanaryMode {
+	} else if options.Repository != nil || options.BearerTokenSHA256 != "" || options.WorkspaceID != "" || options.CallerID != "" || options.RoutingEpoch != 0 || options.AcceptNewRecords || len(options.DrainEpochs) != 0 {
 		return nil, fmt.Errorf("disabled authority service must not retain authority bindings")
 	}
 	service.handler = service.routes()
@@ -148,13 +144,14 @@ func (service *Service) Handler() http.Handler { return service.handler }
 
 func (service *Service) routes() http.Handler {
 	mux := http.NewServeMux()
-	if service.authorityEnabled {
+	if service.mode.Enabled() {
 		protected := func(handler http.HandlerFunc) http.Handler { return service.requireIdentity(handler) }
 		mux.Handle("POST "+RouteAccept, protected(service.handleAccept))
 		mux.Handle("POST "+RouteRunAction, protected(service.handleTransition))
 		mux.Handle("GET "+RouteRun, protected(service.handleReadRun))
 		mux.Handle("GET "+RouteReceipt, protected(service.handleReadReceipt))
 		mux.Handle("GET "+RouteOutbox, protected(service.handleReadOutbox))
+		mux.Handle("GET "+RouteBinding, protected(service.handleBinding))
 		mux.Handle("GET "+RouteMetrics, protected(service.handleMetrics))
 	} else {
 		mux.HandleFunc("GET "+RouteMetrics, service.handleMetrics)

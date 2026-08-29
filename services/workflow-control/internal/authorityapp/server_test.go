@@ -20,6 +20,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
 )
 
 const (
@@ -110,7 +111,7 @@ func TestServicePinsBearerAndAllQualificationBindings(t *testing.T) {
 func TestQualificationCompositionRejectsCanaryRecordPolicy(t *testing.T) {
 	digest := sha256.Sum256([]byte(testBearer))
 	_, err := New(Options{
-		Repository: &fakeRepository{}, QualificationMode: true, AcceptNewRecords: true,
+		Repository: &fakeRepository{}, Mode: config.AuthorityModeLocalQualification, AcceptNewRecords: true,
 		BuildSHA: testBuildSHA, BearerTokenSHA256: hex.EncodeToString(digest[:]),
 		WorkspaceID: testWorkspace, CallerID: testCaller, RoutingEpoch: testRoutingEpoch,
 	})
@@ -123,6 +124,12 @@ func TestCanaryDisablesNewAcceptWhileRetainingBoundedDrainEpoch(t *testing.T) {
 	mutations := 0
 	repository := &fakeRepository{mutate: func(_ context.Context, input authoritystore.MutateInput) (authoritystore.Receipt, error) {
 		mutations++
+		if input.Prepared.Envelope.Operation == authoritystore.OperationAccept {
+			if !input.RejectFreshAccept {
+				t.Fatal("disabled fresh accept did not reach the repository gate")
+			}
+			return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "new Go authority records are disabled for this epoch", nil)
+		}
 		if input.Prepared.Envelope.Operation != authoritystore.OperationTransition || input.Prepared.Envelope.Route.RoutingEpoch != 8 {
 			t.Fatalf("unexpected drain mutation: %#v", input.Prepared.Envelope)
 		}
@@ -132,14 +139,14 @@ func TestCanaryDisablesNewAcceptWhileRetainingBoundedDrainEpoch(t *testing.T) {
 
 	accept := acceptBody(t)
 	disabled := perform(t, service.Handler(), http.MethodPost, RouteAccept, accept, qualificationHeaders(t, accept, true))
-	if disabled.Code != http.StatusConflict || !strings.Contains(disabled.Body.String(), `"code":"WORKFLOW_CONTROL_AUTHORITY_ACCEPT_DISABLED"`) || mutations != 0 {
+	if disabled.Code != http.StatusConflict || !strings.Contains(disabled.Body.String(), `"code":"WORKFLOW_CONTROL_AUTHORITY_CONFLICT"`) || mutations != 1 {
 		t.Fatalf("disabled canary accept drifted: status=%d body=%s mutations=%d", disabled.Code, disabled.Body.String(), mutations)
 	}
 
 	drainBody := transitionBody(t, 8)
 	drainPath := "/v1/workflow-control/runs/" + testRunID + ":transition"
 	drain := perform(t, service.Handler(), http.MethodPost, drainPath, drainBody, authorityHeaders(t, drainBody, drainPath, 8))
-	if drain.Code != http.StatusConflict || mutations != 1 {
+	if drain.Code != http.StatusConflict || mutations != 2 {
 		t.Fatalf("bounded drain epoch did not reach the authority store: status=%d body=%s mutations=%d", drain.Code, drain.Body.String(), mutations)
 	}
 
@@ -149,6 +156,11 @@ func TestCanaryDisablesNewAcceptWhileRetainingBoundedDrainEpoch(t *testing.T) {
 		!strings.Contains(version.Body.String(), `"routingActivated":true`) ||
 		!strings.Contains(version.Body.String(), `"acceptNewRecords":false`) {
 		t.Fatalf("canary version drifted: status=%d body=%s", version.Code, version.Body.String())
+	}
+	binding := perform(t, service.Handler(), http.MethodGet, RouteBinding, nil, qualificationReadHeaders())
+	if binding.Code != http.StatusOK ||
+		binding.Body.String() != `{"acceptNewRecords":false,"activeRoutingEpoch":9,"buildSha":"`+testBuildSHA+`","callerId":"`+testCaller+`","drainRoutingEpochs":[8],"mode":"new-record-canary-v1","schema":"openslack.workflow_control_authority_binding.v1","workspaceId":"`+testWorkspace+`"}`+"\n" {
+		t.Fatalf("canary binding drifted: status=%d body=%s", binding.Code, binding.Body.String())
 	}
 }
 
@@ -328,7 +340,7 @@ func newQualificationService(t *testing.T, repository authoritystore.Repository)
 	t.Helper()
 	digest := sha256.Sum256([]byte(testBearer))
 	service, err := New(Options{
-		Repository: repository, QualificationMode: true, BuildSHA: testBuildSHA,
+		Repository: repository, Mode: config.AuthorityModeLocalQualification, BuildSHA: testBuildSHA,
 		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: testWorkspace,
 		CallerID: testCaller, RoutingEpoch: testRoutingEpoch,
 	})
@@ -342,7 +354,7 @@ func newCanaryService(t *testing.T, repository authoritystore.Repository, accept
 	t.Helper()
 	digest := sha256.Sum256([]byte(testBearer))
 	service, err := New(Options{
-		Repository: repository, AuthorityEnabled: true, CanaryMode: true,
+		Repository: repository, Mode: config.AuthorityModeNewRecordCanary,
 		AcceptNewRecords: accept, DrainEpochs: drains, BuildSHA: testBuildSHA,
 		BearerTokenSHA256: hex.EncodeToString(digest[:]), WorkspaceID: testWorkspace,
 		CallerID: testCaller, RoutingEpoch: testRoutingEpoch,

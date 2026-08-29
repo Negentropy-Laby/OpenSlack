@@ -39,6 +39,19 @@ x-openslack-forbidden-authority-fields:
     resume,
   ]
 paths:
+  /v1/workflow-runner/binding:
+    get:
+      operationId: inspectWorkflowRunnerControlBinding
+      description: Return the authenticated runner and Workflow Control binding before route acceptance.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+      responses:
+        '200':
+          description: Exact runner and run-authority binding.
+          content: { application/json: { schema: { $ref: '#/components/schemas/RunnerBinding' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/runner/jobs:
     post:
       operationId: submitWorkflowRunnerJob
@@ -551,6 +564,36 @@ components:
       description: PostgreSQL or commit-outcome recovery is unavailable.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    RunnerBinding:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          buildSha,
+          runnerTokenSha256,
+          v2Enabled,
+          runtimeDeliveryEnabled,
+          newRecordCanary,
+          authorityOrigin,
+          authorityCallerId,
+          authorityBuildSha,
+          authorityTokenSha256,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_runner_control_binding.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        runnerTokenSha256: { $ref: '#/components/schemas/Hash' }
+        v2Enabled: { type: boolean }
+        runtimeDeliveryEnabled: { type: boolean }
+        newRecordCanary: { type: boolean }
+        authorityOrigin: { type: string }
+        authorityCallerId: { $ref: '#/components/schemas/Identifier' }
+        authorityBuildSha: { $ref: '#/components/schemas/Hash' }
+        authorityTokenSha256: { $ref: '#/components/schemas/Hash' }
     Identifier:
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$'

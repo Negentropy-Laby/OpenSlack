@@ -1,0 +1,17 @@
+{
+  "schema": "openslack.workflow_control_routing_identity_vectors.v1",
+  "tokens": [
+    { "value": "a1234567890123456789012345678901", "valid": true },
+    { "value": "short", "valid": false },
+    { "value": "a123456789012345678901234567890 ", "valid": false },
+    { "value": "a123456789012345678901234567890\n", "valid": false },
+    { "value": "é1234567890123456789012345678901", "valid": false }
+  ],
+  "epochs": [
+    { "value": "1", "valid": true },
+    { "value": "9007199254740991", "valid": true },
+    { "value": "0", "valid": false },
+    { "value": "01", "valid": false },
+    { "value": "9007199254740992", "valid": false }
+  ]
+}

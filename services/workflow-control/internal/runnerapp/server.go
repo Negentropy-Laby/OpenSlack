@@ -35,6 +35,7 @@ const (
 	RouteLive                  = "/health/live"
 	RouteReady                 = "/health/ready"
 	RouteVersion               = "/health/version"
+	RouteBinding               = "/v1/workflow-runner/binding"
 	RouteMetrics               = "/metrics"
 	HeaderWorkspaceID          = "X-OpenSlack-Workspace-ID"
 	HeaderRequestFingerprint   = "X-OpenSlack-Request-Fingerprint"
@@ -52,34 +53,42 @@ var (
 )
 
 type Options struct {
-	Store             runnerstore.Store
-	V2Store           runnerstore.V2JobStore
-	BindingStore      runnerstore.V2AuthorityBindingStore
-	AdmissionStore    runnerstore.V2RuntimeAdmissionStore
-	V2Qualification   bool
-	V2RuntimeDelivery bool
-	V2NewRecordCanary bool
-	SchemaVersion     int64
-	BuildSHA          string
-	WorkspaceID       string
-	BearerTokenSHA256 string
-	Logger            *slog.Logger
+	Store                   runnerstore.Store
+	V2Store                 runnerstore.V2JobStore
+	BindingStore            runnerstore.V2AuthorityBindingStore
+	AdmissionStore          runnerstore.V2RuntimeAdmissionStore
+	V2Qualification         bool
+	V2RuntimeDelivery       bool
+	V2NewRecordCanary       bool
+	SchemaVersion           int64
+	BuildSHA                string
+	WorkspaceID             string
+	BearerTokenSHA256       string
+	RunAuthorityOrigin      string
+	RunAuthorityCallerID    string
+	RunAuthorityBuildSHA    string
+	RunAuthorityTokenSHA256 string
+	Logger                  *slog.Logger
 }
 
 type Service struct {
-	store             runnerstore.Store
-	v2Store           runnerstore.V2JobStore
-	bindingStore      runnerstore.V2AuthorityBindingStore
-	admissionStore    runnerstore.V2RuntimeAdmissionStore
-	v2Enabled         bool
-	v2RuntimeDelivery bool
-	v2NewRecordCanary bool
-	schemaVersion     int64
-	buildSHA          string
-	workspaceID       string
-	tokenHash         [sha256.Size]byte
-	logger            *slog.Logger
-	handler           http.Handler
+	store                   runnerstore.Store
+	v2Store                 runnerstore.V2JobStore
+	bindingStore            runnerstore.V2AuthorityBindingStore
+	admissionStore          runnerstore.V2RuntimeAdmissionStore
+	v2Enabled               bool
+	v2RuntimeDelivery       bool
+	v2NewRecordCanary       bool
+	schemaVersion           int64
+	buildSHA                string
+	workspaceID             string
+	tokenHash               [sha256.Size]byte
+	runAuthorityOrigin      string
+	runAuthorityCallerID    string
+	runAuthorityBuildSHA    string
+	runAuthorityTokenSHA256 string
+	logger                  *slog.Logger
+	handler                 http.Handler
 
 	requests      atomic.Int64
 	unauthorized  atomic.Int64
@@ -113,6 +122,8 @@ func New(options Options) (*Service, error) {
 		v2NewRecordCanary: options.V2NewRecordCanary,
 		schemaVersion:     options.SchemaVersion,
 		workspaceID:       options.WorkspaceID, logger: options.Logger,
+		runAuthorityOrigin: options.RunAuthorityOrigin, runAuthorityCallerID: options.RunAuthorityCallerID,
+		runAuthorityBuildSHA: options.RunAuthorityBuildSHA, runAuthorityTokenSHA256: options.RunAuthorityTokenSHA256,
 	}
 	if service.v2Enabled && service.v2Store == nil {
 		return nil, fmt.Errorf("runner v2 qualification Store is required when enabled")
@@ -122,6 +133,16 @@ func New(options Options) (*Service, error) {
 	}
 	if service.v2NewRecordCanary && !service.v2RuntimeDelivery {
 		return nil, fmt.Errorf("runner v2 new-record canary requires runtime delivery")
+	}
+	if !service.v2NewRecordCanary &&
+		(options.RunAuthorityOrigin != "" || options.RunAuthorityCallerID != "" ||
+			options.RunAuthorityBuildSHA != "" || options.RunAuthorityTokenSHA256 != "") {
+		return nil, fmt.Errorf("runner run-authority binding requires new-record canary mode")
+	}
+	if service.v2NewRecordCanary &&
+		(options.RunAuthorityOrigin == "" || !safeID.MatchString(options.RunAuthorityCallerID) ||
+			!hashPattern.MatchString(options.RunAuthorityBuildSHA) || !hashPattern.MatchString(options.RunAuthorityTokenSHA256)) {
+		return nil, fmt.Errorf("runner v2 new-record canary requires its complete run-authority binding")
 	}
 	if service.v2RuntimeDelivery && (service.bindingStore == nil || service.admissionStore == nil) {
 		return nil, fmt.Errorf("runner authority-binding and runtime-admission Stores are required for runtime delivery")
@@ -147,6 +168,9 @@ func (service *Service) routes() http.Handler {
 		mux.Handle("POST "+RouteAuthorityBindingStage, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingStage)))
 		mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
 		mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
+	}
+	if service.v2NewRecordCanary {
+		mux.Handle("GET "+RouteBinding, service.requireIdentity(http.HandlerFunc(service.handleBinding)))
 	}
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))

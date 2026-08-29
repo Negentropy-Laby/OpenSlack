@@ -113,6 +113,9 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 	if err := validateExactBindings(input); err != nil {
 		return authoritystore.Receipt{}, err
 	}
+	if request.Operation == authoritystore.OperationAccept && input.RejectFreshAccept {
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "new Go authority records are disabled for this epoch", nil)
+	}
 
 	var reconciliationOpen bool
 	if err := tx.QueryRow(ctx, openReconciliationSQL, request.WorkspaceID, request.RunID).Scan(&reconciliationOpen); err != nil {

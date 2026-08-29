@@ -4,6 +4,7 @@ import {
   canonicalWorkflowControlAuthorityJson,
   validateWorkflowControlAuthorityReceipt,
   validateWorkflowControlAuthorityRoute,
+  WORKFLOW_CONTROL_AUTHORITY_RUN_STATES,
   type WorkflowControlAuthorityReceipt,
   type WorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRunState,
@@ -15,6 +16,7 @@ import {
 } from './workflow-runner-control-http.js';
 import { parseWorkflowEffectJson } from './workflow-effect-json.js';
 import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 
 export const WORKFLOW_CONTROL_AUTHORITY_ACCEPT_SCHEMA =
   'openslack.workflow_control_authority_accept.v2' as const;
@@ -29,6 +31,38 @@ const AUTHORITY_KEY_PREFIX = 'openslack.workflow-control-authority.v2.';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const HASH = /^[0-9a-f]{64}$/u;
+const RUN_RECORD_FIELDS = Object.freeze([
+  'schema',
+  'workspaceId',
+  'runId',
+  'workflowId',
+  'workflowVersion',
+  'workflowSourceHash',
+  'manifestHash',
+  'inputHash',
+  'route',
+  'state',
+  'revision',
+  'currentPhaseId',
+  'currentPhaseIndex',
+  'resumeGeneration',
+] as const);
+const RUN_READ_FIELDS = Object.freeze([
+  ...RUN_RECORD_FIELDS,
+  'recordHash',
+  'record',
+  'updatedAt',
+] as const);
+const BINDING_FIELDS = Object.freeze([
+  'schema',
+  'workspaceId',
+  'callerId',
+  'mode',
+  'activeRoutingEpoch',
+  'drainRoutingEpochs',
+  'buildSha',
+  'acceptNewRecords',
+] as const);
 
 export interface WorkflowControlAuthorityExpectedHead {
   readonly revision: number;
@@ -99,6 +133,10 @@ export interface WorkflowControlAuthorityRunRead {
 }
 
 export interface WorkflowControlAuthorityPort {
+  inspectBinding(
+    routingEpoch: number,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityBinding>;
   accept(
     route: WorkflowRunRouteReceipt,
     signal?: AbortSignal,
@@ -114,6 +152,22 @@ export interface WorkflowControlAuthorityPort {
     route: WorkflowControlAuthorityRoute,
     signal?: AbortSignal,
   ): Promise<WorkflowControlAuthorityRunRead>;
+  readIfExists(
+    runId: string,
+    route: WorkflowControlAuthorityRoute,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityRunRead | null>;
+}
+
+export interface WorkflowControlAuthorityBinding {
+  readonly schema: 'openslack.workflow_control_authority_binding.v1';
+  readonly workspaceId: string;
+  readonly callerId: string;
+  readonly mode: 'new-record-canary-v1';
+  readonly activeRoutingEpoch: number;
+  readonly drainRoutingEpochs: readonly number[];
+  readonly buildSha: string;
+  readonly acceptNewRecords: boolean;
 }
 
 export class WorkflowControlAuthorityClientError extends Error {
@@ -143,6 +197,20 @@ function fail(
 
 function hash(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function hasExactKeys(value: Record<string, unknown>, fields: readonly string[]): boolean {
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === fields.length &&
+    [...fields].sort().every((field, index) => keys[index] === field)
+  );
+}
+
+function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
 }
 
 function validateId(value: unknown, label: string): string {
@@ -190,6 +258,18 @@ function validateExpected(value: WorkflowControlAuthorityExpectedHead) {
 }
 
 function validateRecord(value: WorkflowControlAuthorityRunRecord) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return fail(
+      'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+      'Workflow authority run record is invalid.',
+    );
+  }
+  if (!hasExactKeys(value as unknown as Record<string, unknown>, RUN_RECORD_FIELDS)) {
+    return fail(
+      'WORKFLOW_CONTROL_AUTHORITY_CLIENT_INPUT_INVALID',
+      'Run record fields are invalid.',
+    );
+  }
   let route: WorkflowControlAuthorityRoute;
   try {
     route = validateWorkflowControlAuthorityRoute(value.route, '$/record/route');
@@ -202,6 +282,7 @@ function validateRecord(value: WorkflowControlAuthorityRunRecord) {
     value.schema !== WORKFLOW_CONTROL_AUTHORITY_RUN_RECORD_SCHEMA ||
     value.route.backend !== 'go' ||
     value.route.authority !== 'workflow-control' ||
+    !WORKFLOW_CONTROL_AUTHORITY_RUN_STATES.includes(value.state) ||
     (value.currentPhaseId === null) !== (value.currentPhaseIndex === null)
   ) {
     return fail(
@@ -423,12 +504,7 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     this.#workspaceId = validateId(config.workspaceId, 'workspaceId');
     this.#callerId = validateId(config.callerId, 'callerId');
     this.#expectedBuildHash = validateHash(config.expectedBuildHash, 'expectedBuildHash');
-    if (
-      typeof config.bearerToken !== 'string' ||
-      config.bearerToken.length < 32 ||
-      config.bearerToken.length > 4096 ||
-      /\s/u.test(config.bearerToken)
-    ) {
+    if (!isWorkflowControlBearerToken(config.bearerToken)) {
       fail(
         'WORKFLOW_CONTROL_AUTHORITY_CLIENT_CONFIG_INVALID',
         'Workflow authority bearer token is invalid.',
@@ -468,6 +544,83 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     return this.#mutate(prepared, signal);
   }
 
+  async inspectBinding(
+    routingEpoch: number,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityBinding> {
+    const selectedEpoch = safeInteger(routingEpoch, 1, 'routingEpoch');
+    const response = await this.#send('/v1/workflow-control/binding', {
+      method: 'GET',
+      signal,
+      headers: {
+        Authorization: `Bearer ${this.#bearerToken}`,
+        'X-OpenSlack-Workflow-Control-Caller-ID': this.#callerId,
+        'X-OpenSlack-Workflow-Control-Workspace-ID': this.#workspaceId,
+        'X-OpenSlack-Workflow-Control-Routing-Epoch': String(selectedEpoch),
+        'X-OpenSlack-Workflow-Control-Expected-Build-SHA': this.#expectedBuildHash,
+      },
+    });
+    if (response.redirected || response.status !== 200) {
+      await cancelWorkflowRunnerResponseBody(response);
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_REJECTED',
+        `Workflow authority binding inspection rejected (${response.status}).`,
+      );
+    }
+    const bytes = await readResponse(response, signal);
+    let value: unknown;
+    try {
+      value = parseWorkflowEffectJson(bytes);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority binding response is invalid JSON.',
+        { cause: error },
+      );
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority binding response is invalid.',
+      );
+    }
+    const root = value as Record<string, unknown>;
+    const drains = root.drainRoutingEpochs;
+    if (
+      !hasExactKeys(root, BINDING_FIELDS) ||
+      root.schema !== 'openslack.workflow_control_authority_binding.v1' ||
+      root.workspaceId !== this.#workspaceId ||
+      root.callerId !== this.#callerId ||
+      root.mode !== 'new-record-canary-v1' ||
+      !Number.isSafeInteger(root.activeRoutingEpoch) ||
+      (root.activeRoutingEpoch as number) < 1 ||
+      !Array.isArray(drains) ||
+      drains.some((epoch) => !Number.isSafeInteger(epoch) || (epoch as number) < 1) ||
+      drains.some(
+        (epoch, index) => index > 0 && (drains[index - 1] as number) >= (epoch as number),
+      ) ||
+      drains.includes(root.activeRoutingEpoch) ||
+      root.buildSha !== this.#expectedBuildHash ||
+      typeof root.acceptNewRecords !== 'boolean' ||
+      `${canonicalWorkflowControlAuthorityJson(root)}\n` !== bytes.toString('utf8')
+    ) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority binding response is invalid.',
+      );
+    }
+    return Object.freeze({
+      schema: 'openslack.workflow_control_authority_binding.v1',
+      workspaceId: root.workspaceId as string,
+      callerId: root.callerId as string,
+      mode: 'new-record-canary-v1',
+      activeRoutingEpoch: root.activeRoutingEpoch as number,
+      drainRoutingEpochs: Object.freeze([...(drains as number[])]),
+      buildSha: root.buildSha as string,
+      acceptNewRecords: root.acceptNewRecords as boolean,
+    });
+  }
+
   async transition(
     record: WorkflowControlAuthorityRunRecord,
     expected: WorkflowControlAuthorityExpectedHead,
@@ -501,6 +654,24 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     route: WorkflowControlAuthorityRoute,
     signal?: AbortSignal,
   ): Promise<WorkflowControlAuthorityRunRead> {
+    const result = await this.#read(runId, route, false, signal);
+    return result!;
+  }
+
+  async readIfExists(
+    runId: string,
+    route: WorkflowControlAuthorityRoute,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityRunRead | null> {
+    return this.#read(runId, route, true, signal);
+  }
+
+  async #read(
+    runId: string,
+    route: WorkflowControlAuthorityRoute,
+    allowMissing: boolean,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityRunRead | null> {
     const id = validateId(runId, 'runId');
     const selected = validateWorkflowControlAuthorityRoute(route, '$/route');
     if (
@@ -518,6 +689,10 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
       signal,
       headers: this.#headers(selected),
     });
+    if (!response.redirected && response.status === 404 && allowMissing) {
+      await cancelWorkflowRunnerResponseBody(response);
+      return null;
+    }
     if (response.redirected || response.status !== 200) {
       await cancelWorkflowRunnerResponseBody(response);
       return fail(
@@ -536,13 +711,45 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
         { cause: error },
       );
     }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority read root is invalid.',
+      );
+    }
     const root = value as Record<string, unknown>;
-    const record = validateRecord(root.record as WorkflowControlAuthorityRunRecord);
+    if (!hasExactKeys(root, RUN_READ_FIELDS)) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority read fields are invalid.',
+      );
+    }
+    let record: WorkflowControlAuthorityRunRecord;
+    try {
+      record = validateRecord(root.record as WorkflowControlAuthorityRunRecord);
+    } catch (error) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        'Workflow authority read record is invalid.',
+        { cause: error },
+      );
+    }
     if (
       root.schema !== WORKFLOW_CONTROL_AUTHORITY_READ_SCHEMA ||
       root.workspaceId !== this.#workspaceId ||
       root.runId !== id ||
+      root.workflowId !== record.workflowId ||
+      root.workflowVersion !== record.workflowVersion ||
+      root.workflowSourceHash !== record.workflowSourceHash ||
+      root.manifestHash !== record.manifestHash ||
+      root.inputHash !== record.inputHash ||
+      root.state !== record.state ||
+      root.revision !== record.revision ||
+      root.currentPhaseId !== record.currentPhaseId ||
+      root.currentPhaseIndex !== record.currentPhaseIndex ||
+      root.resumeGeneration !== record.resumeGeneration ||
       root.recordHash !== hash(`${canonicalWorkflowControlAuthorityJson(record)}\n`) ||
+      !isCanonicalTimestamp(root.updatedAt) ||
       canonicalWorkflowControlAuthorityJson(root.route) !==
         canonicalWorkflowControlAuthorityJson(selected) ||
       `${canonicalWorkflowControlAuthorityJson(root)}\n` !== bytes.toString('utf8')
@@ -601,7 +808,7 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
       this.#workspaceId,
       this.#expectedBuildHash,
     );
-    if (response.status === 202 || receipt.status === 'reconciliation_required') {
+    if (response.status === 202) {
       return fail(
         'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RECONCILIATION_REQUIRED',
         'Workflow authority mutation requires reconciliation.',

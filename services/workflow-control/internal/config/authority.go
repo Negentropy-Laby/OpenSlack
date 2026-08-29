@@ -5,28 +5,32 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
 )
 
 const (
-	AuthorityModeDisabled           = "disabled"
-	AuthorityModeLocalQualification = "local-qualification-v1"
-	AuthorityModeNewRecordCanary    = "new-record-canary-v1"
-	defaultAuthorityHTTPBind        = "127.0.0.1:8082"
-	zeroBuildSHA                    = "0000000000000000000000000000000000000000000000000000000000000000"
-	maxSafeAuthorityEpoch           = int64(1<<53 - 1)
-	MaxAuthorityDrainEpochs         = 16
+	AuthorityModeDisabled           AuthorityMode = "disabled"
+	AuthorityModeLocalQualification AuthorityMode = "local-qualification-v1"
+	AuthorityModeNewRecordCanary    AuthorityMode = "new-record-canary-v1"
+	defaultAuthorityHTTPBind                      = "127.0.0.1:8082"
+	zeroBuildSHA                                  = "0000000000000000000000000000000000000000000000000000000000000000"
+	MaxAuthorityDrainEpochs                       = 16
 )
 
+type AuthorityMode string
+
+func (mode AuthorityMode) Enabled() bool {
+	return mode == AuthorityModeLocalQualification || mode == AuthorityModeNewRecordCanary
+}
+func (mode AuthorityMode) Qualification() bool { return mode == AuthorityModeLocalQualification }
+func (mode AuthorityMode) Canary() bool        { return mode == AuthorityModeNewRecordCanary }
+
 type AuthorityConfig struct {
-	Mode              string
-	AuthorityEnabled  bool
-	QualificationMode bool
-	CanaryMode        bool
+	Mode              AuthorityMode
 	AcceptNewRecords  bool
 	DrainEpochs       []int64
 	DatabaseURL       string
@@ -51,7 +55,7 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	if err != nil {
 		return AuthorityConfig{}, err
 	}
-	mode := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_MODE"])
+	mode := AuthorityMode(strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_MODE"]))
 	if mode == "" {
 		mode = AuthorityModeDisabled
 	}
@@ -67,12 +71,10 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 		return AuthorityConfig{}, fmt.Errorf("authority HTTP bind: %w", err)
 	}
 	config := AuthorityConfig{
-		Mode: mode, AuthorityEnabled: mode != AuthorityModeDisabled,
-		QualificationMode: mode == AuthorityModeLocalQualification,
-		CanaryMode:        mode == AuthorityModeNewRecordCanary,
-		HTTPBind:          bind, ServiceBuildSHA: zeroBuildSHA, ShutdownDeadline: 30 * time.Second,
+		Mode:     mode,
+		HTTPBind: bind, ServiceBuildSHA: zeroBuildSHA, ShutdownDeadline: 30 * time.Second,
 	}
-	if !config.AuthorityEnabled {
+	if !config.Mode.Enabled() {
 		if strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS"]) != "" ||
 			strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS"]) != "" {
 			return AuthorityConfig{}, fmt.Errorf("authority record policy requires an enabled authority mode")
@@ -95,8 +97,8 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	if !authorityIdentityPattern.MatchString(workspaceID) || !authorityIdentityPattern.MatchString(callerID) {
 		return AuthorityConfig{}, fmt.Errorf("authority workspace and caller identities are required")
 	}
-	routingEpoch, epochErr := strconv.ParseInt(strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH"]), 10, 64)
-	if epochErr != nil || routingEpoch < 1 || routingEpoch > maxSafeAuthorityEpoch {
+	routingEpoch, epochOK := authoritybinding.ParseRoutingEpoch(strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH"]))
+	if !epochOK {
 		return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH must be a positive integer")
 	}
 	config.DatabaseURL = databaseURL
@@ -107,7 +109,7 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 	config.RoutingEpoch = routingEpoch
 	acceptText := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_ACCEPT_NEW_RECORDS"])
 	drainText := strings.TrimSpace(values["WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS"])
-	if config.QualificationMode {
+	if config.Mode.Qualification() {
 		if acceptText != "" || drainText != "" {
 			return AuthorityConfig{}, fmt.Errorf("qualification mode does not accept production record policy")
 		}
@@ -127,8 +129,8 @@ func LoadAuthorityEnvironment(environment []string) (AuthorityConfig, error) {
 			if part == "" || strings.TrimSpace(part) != part {
 				return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS must be canonical")
 			}
-			epoch, parseErr := strconv.ParseInt(part, 10, 64)
-			if parseErr != nil || epoch < 1 || epoch > maxSafeAuthorityEpoch || strconv.FormatInt(epoch, 10) != part {
+			epoch, epochOK := authoritybinding.ParseRoutingEpoch(part)
+			if !epochOK {
 				return AuthorityConfig{}, fmt.Errorf("WORKFLOW_CONTROL_AUTHORITY_DRAIN_EPOCHS must contain positive safe integers")
 			}
 			if _, duplicate := seen[epoch]; duplicate {

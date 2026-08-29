@@ -1152,6 +1152,22 @@ F2b does not change the public CLI/TUI submission path or choose new-record owne
 routing, canary, single-writer cutover, read-only TS recovery, and TS writer deletion remain GS9-G,
 GS9-H, and GS9-I respectively.
 
+GS9-G composes routing once at each CLI/TUI process boundary and injects that immutable context into
+execution; package execution no longer reads `process.env`. With no explicit mode, residual routing
+settings are diagnostic-only and ordinary TypeScript runs do not write the route journal. Explicit Go
+selection performs authenticated three-party binding preflight before any journal or authority side
+effect, then seals one v2 descriptor. Explicit TypeScript rollback seals one v1 descriptor. Existing
+active or closed receipts always select their recorded backend and identity even after the process mode
+changes.
+
+Go-owned run status, resume, execution, and runtime-delivery all resolve the same recovery-projection
+root. The projection store point-reads the authority head, rebuilds only provable created/running state,
+and propagates authority transition failures instead of allowing the generic best-effort TypeScript
+transition helper to swallow them. Remote terminal state with missing or inconsistent output is
+reconciliation-required and cannot enter fresh execution. Operators can inspect and close only
+provably terminal route receipts with `openslack collaboration workflow routes repair [--apply]`;
+paused and incomplete receipts remain active.
+
 ### Operator Module
 
 The Operator module provides the CLI commands that interface with the runtime:

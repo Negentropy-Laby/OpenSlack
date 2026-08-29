@@ -63,11 +63,15 @@ import {
   executePreview,
   executeDryRun,
   executeWorkflowThroughRunner,
+  createWorkflowRunRoutingExecutionContext,
+  loadWorkflowRunRoutingConfig,
+  loadWorkflowRunnerControlConfig,
+  createWorkflowRunProjectionStore,
+  WorkflowRunRouteJournal,
   readWorkflowRunnerSourceBytes,
   repairWorkflowEffectAuthoritySecurity,
   WorkflowBudgetPausedError,
   WorkflowPausedError,
-  RunStore,
   decodeRunMetaArguments,
   checkResumable,
   prepareResume,
@@ -101,6 +105,7 @@ import {
 } from '@openslack/workflows';
 import { recommendWorkflowForQuery } from '@openslack/operator';
 import type {
+  RunStore,
   RunStatus,
   WorkflowRunControlAction,
   WorkflowRunControlTarget,
@@ -128,6 +133,29 @@ type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
   snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
 };
+
+function workflowRunnerComposition(workspaceRoot: string) {
+  const config = loadWorkflowRunnerControlConfig();
+  return Object.freeze({
+    config,
+    routing: createWorkflowRunRoutingExecutionContext({
+      runner: config,
+      workspaceRoot,
+      config: loadWorkflowRunRoutingConfig(config),
+    }),
+  });
+}
+
+async function workflowProjectionForRun(workspaceRoot: string, runId: string) {
+  const journal = new WorkflowRunRouteJournal(
+    join(workspaceRoot, '.openslack.local', 'workflows', 'routes'),
+  );
+  const route = await journal.locate(runId);
+  return createWorkflowRunProjectionStore(
+    workspaceRoot,
+    route?.receipt.route.backend ?? 'ts-local',
+  );
+}
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -1981,6 +2009,7 @@ export function collaborationCommands(): Command {
           const runId = `run.${randomUUID()}`;
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
+            ...workflowRunnerComposition(root),
             workflowRunId: runId,
             workflowSource: found.source,
             workflowSourceBytes: await readWorkflowRunnerSourceBytes({
@@ -2057,9 +2086,9 @@ export function collaborationCommands(): Command {
     .action(async (runId: string, options: { yes?: boolean; agentId?: string }) => {
       ensureWorkflowEnabled('resume');
       const root = findRepoRoot();
-      const store = new RunStore({
-        baseDir: join(root, '.openslack.local', 'workflows'),
-      });
+      const composition = workflowRunnerComposition(root);
+      const route = await composition.routing.journal.load(runId);
+      const store = createWorkflowRunProjectionStore(root, route?.route.backend ?? 'ts-local');
 
       // Load run metadata
       const meta = await store.loadMeta(runId);
@@ -2142,6 +2171,7 @@ export function collaborationCommands(): Command {
         if (!admitted) throw new Error('Workflow runner resume was not admitted.');
         const result = await executeWorkflowThroughRunner({
           workspaceRoot: root,
+          ...composition,
           workflowRunId: runId,
           workflowSource: found.source,
           workflowSourceBytes: await readWorkflowRunnerSourceBytes({
@@ -2196,6 +2226,42 @@ export function collaborationCommands(): Command {
       if (report.status === 'reconciliation_required') process.exitCode = 1;
     });
   workflow.addCommand(approvals);
+
+  const routes = new Command('routes').description(
+    'Inspect and repair explicit workflow route receipts',
+  );
+  routes
+    .command('repair')
+    .description('Audit route capacity, quarantine, and provably terminal active receipts')
+    .option('--apply', 'Move only provably terminal active receipts into closed history')
+    .action(async (options: { apply?: boolean }) => {
+      const root = findRepoRoot();
+      const journal = new WorkflowRunRouteJournal(
+        join(root, '.openslack.local', 'workflows', 'routes'),
+      );
+      let authority: import('@openslack/workflows').WorkflowControlAuthorityPort | undefined;
+      try {
+        authority = workflowRunnerComposition(root).routing.authority;
+      } catch {
+        // Local and dry-run repair must remain available without runner transport credentials.
+      }
+      const report = await journal.repair({
+        apply: options.apply === true,
+        async canClose(receipt) {
+          const store = createWorkflowRunProjectionStore(root, receipt.route.backend);
+          const status = await store.loadStatus(receipt.runId);
+          if (status && ['completed', 'failed', 'cancelled'].includes(status.status)) return true;
+          if (receipt.route.backend === 'go' && authority) {
+            const head = await authority.readIfExists(receipt.runId, receipt.route);
+            return head !== null && ['completed', 'failed', 'cancelled'].includes(head.state);
+          }
+          return false;
+        },
+      });
+      console.log(JSON.stringify(report, null, 2));
+      if (report.unsafe > 0) process.exitCode = 1;
+    });
+  workflow.addCommand(routes);
 
   workflow
     .command('trust <name>')
@@ -2306,9 +2372,7 @@ export function collaborationCommands(): Command {
         }
 
         const root = findRepoRoot();
-        const store = new RunStore({
-          baseDir: join(root, '.openslack.local', 'workflows'),
-        });
+        const store = await workflowProjectionForRun(root, runId);
 
         // Load run data
         const runStatus = await store.getRunStatus(runId);
@@ -2453,8 +2517,7 @@ export function collaborationCommands(): Command {
         options: { issue?: string; createIssue: boolean; agentId?: string },
       ) => {
         const root = findRepoRoot();
-        const { RunStore } = await import('@openslack/workflows');
-        const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
+        const store = await workflowProjectionForRun(root, runId);
 
         const meta = await store.loadMeta(runId);
         if (!meta) {
@@ -2994,6 +3057,7 @@ export function collaborationCommands(): Command {
           const runId = `run.${randomUUID()}`;
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
+            ...workflowRunnerComposition(root),
             workflowRunId: runId,
             workflowSource: found.source,
             workflowSourceBytes: await readWorkflowRunnerSourceBytes({

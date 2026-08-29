@@ -31,14 +31,13 @@ func main() {
 	defer stop()
 
 	options := authorityapp.Options{
-		AuthorityEnabled: configuration.AuthorityEnabled, QualificationMode: configuration.QualificationMode,
-		CanaryMode: configuration.CanaryMode, AcceptNewRecords: configuration.AcceptNewRecords,
+		Mode: configuration.Mode, AcceptNewRecords: configuration.AcceptNewRecords,
 		DrainEpochs: configuration.DrainEpochs, BuildSHA: configuration.ServiceBuildSHA,
 		BearerTokenSHA256: configuration.BearerTokenSHA256, WorkspaceID: configuration.WorkspaceID,
 		CallerID: configuration.CallerID, RoutingEpoch: configuration.RoutingEpoch, Logger: logger,
 	}
 	var pool *pgxpool.Pool
-	if configuration.AuthorityEnabled {
+	if configuration.Mode.Enabled() {
 		startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		pool, err = pgxpool.New(startup, configuration.DatabaseURL)
@@ -61,9 +60,9 @@ func main() {
 	}
 	logger.Info("workflow_control_authority_starting",
 		"http_bind", configuration.HTTPBind, "mode", configuration.Mode,
-		"qualification_mode", configuration.QualificationMode, "build_sha", configuration.ServiceBuildSHA,
-		"authority", map[bool]string{false: "typescript", true: "workflow-control"}[configuration.CanaryMode],
-		"routing_activated", configuration.CanaryMode, "accept_new_records", configuration.CanaryMode && configuration.AcceptNewRecords,
+		"qualification_mode", configuration.Mode.Qualification(), "build_sha", configuration.ServiceBuildSHA,
+		"authority", map[bool]string{false: "typescript", true: "workflow-control"}[configuration.Mode.Canary()],
+		"routing_activated", configuration.Mode.Canary(), "accept_new_records", configuration.Mode.Canary() && configuration.AcceptNewRecords,
 	)
 	if err := service.Run(ctx, configuration.HTTPBind, configuration.ShutdownDeadline); err != nil {
 		logger.Error("workflow_control_authority_stopped_with_error", "code", "AUTHORITY_SERVER_FAILED")

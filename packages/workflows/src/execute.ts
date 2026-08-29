@@ -41,6 +41,7 @@ import {
   WorkflowEffectApprovalPendingError,
   type WorkflowEffectAuthorizationPort,
 } from './internal/workflow-effect-authorization-contract.js';
+import { WorkflowRunnerGoProjectionError } from './workflow-runner-v2-go-projection-store.js';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -242,7 +243,8 @@ async function safeTransition(
     const current = await store.loadStatus(runId);
     if (!current || current.status === status) return;
     await store.transitionStatus(runId, status);
-  } catch {
+  } catch (error) {
+    if (error instanceof WorkflowRunnerGoProjectionError) throw error;
     // Failure handling must not mask the workflow error/result.
   }
 }

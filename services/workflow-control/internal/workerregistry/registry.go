@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
@@ -257,7 +258,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		"OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH="+buildHash,
 	)
 	if runtimeConfig.CheckpointShadowEnabled {
-		if len(runtimeConfig.CheckpointShadowBearerToken) < 32 || len(runtimeConfig.CheckpointShadowBearerToken) > 4096 || runtimeConfig.CheckpointShadowBearerToken != strings.TrimSpace(runtimeConfig.CheckpointShadowBearerToken) || strings.ContainsAny(runtimeConfig.CheckpointShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.CheckpointShadowJournalRoot, Endpoint: runtimeConfig.CheckpointShadowEndpoint, Routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}}) != nil {
+		if !authoritybinding.ValidBearerToken(runtimeConfig.CheckpointShadowBearerToken) || !safeIDPattern.MatchString(runtimeConfig.CheckpointShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.CheckpointShadowJournalRoot, Endpoint: runtimeConfig.CheckpointShadowEndpoint, Routes: []string{"/", "/v1/shadow/workflow-control/checkpoints"}}) != nil {
 			return nil, fmt.Errorf("checkpoint shadow runtime injection is invalid")
 		}
 		result = append(result,
@@ -270,7 +271,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 	}
 	if runtimeConfig.EffectShadowEnabled {
 		protectedRoot := filepath.Join(workspaceRoot, ".openslack.local", "workflows")
-		if len(runtimeConfig.EffectShadowBearerToken) < 32 || len(runtimeConfig.EffectShadowBearerToken) > 4096 || runtimeConfig.EffectShadowBearerToken != strings.TrimSpace(runtimeConfig.EffectShadowBearerToken) || strings.ContainsAny(runtimeConfig.EffectShadowBearerToken, "\r\n\x00") || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.EffectShadowJournalRoot, Endpoint: runtimeConfig.EffectShadowEndpoint, Routes: []string{"/v1/shadow/workflow-control/effect-events"}, ProtectedRoots: []string{filepath.Join(protectedRoot, "effect-approvals"), filepath.Join(protectedRoot, "effect-authority")}}) != nil {
+		if !authoritybinding.ValidBearerToken(runtimeConfig.EffectShadowBearerToken) || !safeIDPattern.MatchString(runtimeConfig.EffectShadowCallerID) || localshadowconfig.Validate(localshadowconfig.Options{WorkspaceRoot: workspaceRoot, JournalRoot: runtimeConfig.EffectShadowJournalRoot, Endpoint: runtimeConfig.EffectShadowEndpoint, Routes: []string{"/v1/shadow/workflow-control/effect-events"}, ProtectedRoots: []string{filepath.Join(protectedRoot, "effect-approvals"), filepath.Join(protectedRoot, "effect-authority")}}) != nil {
 			return nil, fmt.Errorf("effect shadow runtime injection is invalid")
 		}
 		result = append(result,
@@ -294,7 +295,7 @@ func sealedEnvironment(base []string, runtimeConfig Runtime, workspaceRoot, buil
 		)
 	}
 	if authority := runtimeConfig.V2RunAuthority; authority != nil {
-		if runtimeConfig.V2RuntimeDelivery == nil || len(authority.BearerToken) < 32 || len(authority.BearerToken) > 4096 || authority.BearerToken != strings.TrimSpace(authority.BearerToken) || strings.ContainsAny(authority.BearerToken, "\r\n\x00") || !hashPattern.MatchString(authority.BearerSHA256) || !hashPattern.MatchString(authority.ExpectedBuild) || !safeIDPattern.MatchString(authority.CallerID) {
+		if runtimeConfig.V2RuntimeDelivery == nil || !authoritybinding.ValidBearerToken(authority.BearerToken) || !hashPattern.MatchString(authority.BearerSHA256) || !hashPattern.MatchString(authority.ExpectedBuild) || !safeIDPattern.MatchString(authority.CallerID) {
 			return nil, fmt.Errorf("v2 run authority runtime injection is invalid")
 		}
 		digest := sha256.Sum256([]byte(authority.BearerToken))

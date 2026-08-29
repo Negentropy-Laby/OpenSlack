@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { lstat, readdir, rename } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 
 import {
   acquireOwnerJournalLock,
   assertOwnerDirectory,
+  assertOwnerFile,
+  atomicWrite,
   ensureOwnerDirectory,
   productionJournalSecurity,
   readOwnerFile,
   syncDirectory,
-  writeExclusive,
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
@@ -34,7 +35,6 @@ export interface WorkflowRunRoutingPolicy {
   readonly schema: typeof WORKFLOW_RUN_ROUTING_POLICY_SCHEMA;
   readonly workspaceId: string;
   readonly backend: 'ts-local' | 'go';
-  readonly authority: 'typescript' | 'workflow-control';
   readonly routingEpoch: number;
   readonly authorityBuildHash: string;
   readonly qualificationEnvironmentId: string;
@@ -81,7 +81,8 @@ export class WorkflowRunRoutingError extends Error {
       | 'WORKFLOW_RUN_ROUTE_RECEIPT_INVALID'
       | 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT'
       | 'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE'
-      | 'WORKFLOW_RUN_ROUTE_JOURNAL_FULL',
+      | 'WORKFLOW_RUN_ROUTE_JOURNAL_FULL'
+      | 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
     message: string,
     options?: ErrorOptions,
   ) {
@@ -202,7 +203,6 @@ export function validateWorkflowRunRoutingPolicy(value: unknown): WorkflowRunRou
       'schema',
       'workspaceId',
       'backend',
-      'authority',
       'routingEpoch',
       'authorityBuildHash',
       'qualificationEnvironmentId',
@@ -216,14 +216,8 @@ export function validateWorkflowRunRoutingPolicy(value: unknown): WorkflowRunRou
     return fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', 'Routing policy schema is invalid.');
   }
   const backend = root.backend;
-  const authority = root.authority;
-  if (
-    (backend !== 'ts-local' && backend !== 'go') ||
-    (authority !== 'typescript' && authority !== 'workflow-control') ||
-    (backend === 'ts-local' && authority !== 'typescript') ||
-    (backend === 'go' && authority !== 'workflow-control')
-  ) {
-    return fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', 'Routing backend and authority disagree.');
+  if (backend !== 'ts-local' && backend !== 'go') {
+    return fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', 'Routing backend is invalid.');
   }
   const workflowAllowlist = allowlist(
     root.workflowAllowlist,
@@ -245,7 +239,6 @@ export function validateWorkflowRunRoutingPolicy(value: unknown): WorkflowRunRou
     schema: WORKFLOW_RUN_ROUTING_POLICY_SCHEMA,
     workspaceId: id(root.workspaceId, 'workspaceId'),
     backend,
-    authority,
     routingEpoch: safeEpoch(root.routingEpoch),
     authorityBuildHash: hash(root.authorityBuildHash, 'authorityBuildHash'),
     qualificationEnvironmentId: id(root.qualificationEnvironmentId, 'qualificationEnvironmentId'),
@@ -387,7 +380,7 @@ export class WorkflowRunRouter {
       inputHash: input.inputHash,
       route: {
         backend: this.#policy.backend,
-        authority: this.#policy.authority,
+        authority: this.#policy.backend === 'go' ? 'workflow-control' : 'typescript',
         routingEpoch: this.#policy.routingEpoch,
         authorityBuildHash: this.#policy.authorityBuildHash,
       },
@@ -408,11 +401,30 @@ function routeFileName(runId: string): string {
     .digest('hex')}.json`;
 }
 
+interface WorkflowRunRouteJournalInventory {
+  identity: string;
+  active: Map<string, number>;
+  activeBytes: number;
+  maximumEpoch: number;
+  activePolicyHash?: string;
+}
+
+interface WorkflowRunRouteJournalPolicyState {
+  readonly maximumEpoch: number;
+  readonly policyHash?: string;
+}
+
 export class WorkflowRunRouteJournal {
   #root: string;
+  #active = '';
+  #closed = '';
+  #quarantine = '';
+  #policies = '';
   #locks = '';
   readonly #security: WorkflowControlShadowJournalSecurityDependencies;
   #initialized = false;
+  #inventory: WorkflowRunRouteJournalInventory | undefined;
+  readonly #quarantinedRouteNames = new Set<string>();
 
   constructor(
     root: string,
@@ -427,26 +439,18 @@ export class WorkflowRunRouteJournal {
 
   async initialize(): Promise<void> {
     this.#root = await ensureOwnerDirectory(this.#root, this.#security);
-    const entries = await readdir(this.#root, { withFileTypes: true });
-    if (
-      entries.filter((entry) => ROUTE_FILE.test(entry.name)).length >
-        WORKFLOW_RUN_ROUTING_LIMITS.maxJournalEntries ||
-      entries.some(
-        (entry) =>
-          entry.isSymbolicLink() ||
-          (entry.name === '.locks'
-            ? !entry.isDirectory()
-            : !entry.isFile() || !ROUTE_FILE.test(entry.name)),
-      )
-    ) {
-      fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal contains unsafe entries.');
-    }
-    this.#locks = await ensureOwnerDirectory(
-      join(this.#root, '.locks'),
-      this.#security,
-      this.#root,
+    [this.#active, this.#closed, this.#quarantine, this.#policies, this.#locks] = await Promise.all(
+      [
+        ensureOwnerDirectory(join(this.#root, 'active'), this.#security, this.#root),
+        ensureOwnerDirectory(join(this.#root, 'closed'), this.#security, this.#root),
+        ensureOwnerDirectory(join(this.#root, 'quarantine'), this.#security, this.#root),
+        ensureOwnerDirectory(join(this.#root, 'policies'), this.#security, this.#root),
+        ensureOwnerDirectory(join(this.#root, 'locks'), this.#security, this.#root),
+      ],
     );
+    await this.#normalizeRootEntries();
     this.#initialized = true;
+    await this.#loadInventory(true);
   }
 
   async commit(value: unknown): Promise<WorkflowRunRouteReceipt> {
@@ -465,46 +469,44 @@ export class WorkflowRunRouteJournal {
           'Run already owns a different immutable route receipt.',
         );
       }
-      const entries = (await readdir(this.#root)).filter((entry) => ROUTE_FILE.test(entry));
-      if (entries.length >= WORKFLOW_RUN_ROUTING_LIMITS.maxJournalEntries) {
+      const inventory = await this.#loadInventory();
+      if (inventory.active.size >= WORKFLOW_RUN_ROUTING_LIMITS.maxJournalEntries) {
         fail('WORKFLOW_RUN_ROUTE_JOURNAL_FULL', 'Route journal has reached its entry limit.');
       }
-      let maximumEpoch = 0;
-      let activePolicyHash: string | undefined;
-      for (const entry of entries) {
-        const prior = await this.#readPath(join(this.#root, entry));
-        if (prior.route.routingEpoch > maximumEpoch) {
-          maximumEpoch = prior.route.routingEpoch;
-          activePolicyHash = prior.policyHash;
-        } else if (
-          prior.route.routingEpoch === maximumEpoch &&
-          activePolicyHash !== prior.policyHash
-        ) {
-          fail(
-            'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE',
-            'Route journal contains conflicting policies for its highest epoch.',
-          );
-        }
-      }
-      if (receipt.route.routingEpoch < maximumEpoch) {
+      if (receipt.route.routingEpoch < inventory.maximumEpoch) {
         fail(
           'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT',
           'A new run cannot lower the durable routing epoch.',
         );
       }
       if (
-        receipt.route.routingEpoch === maximumEpoch &&
-        activePolicyHash !== undefined &&
-        receipt.policyHash !== activePolicyHash
+        receipt.route.routingEpoch === inventory.maximumEpoch &&
+        inventory.activePolicyHash !== undefined &&
+        receipt.policyHash !== inventory.activePolicyHash
       ) {
         fail(
           'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT',
           'One routing epoch cannot publish more than one policy.',
         );
       }
-      const path = join(this.#root, routeFileName(receipt.runId));
-      await writeExclusive(path, `${canonicalWorkflowEffectJson(receipt)}\n`, this.#security);
-      await syncDirectory(this.#root);
+      const name = routeFileName(receipt.runId);
+      if (this.#quarantinedRouteNames.has(name)) {
+        fail(
+          'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          'Run route receipt is quarantined and requires operator reconciliation.',
+        );
+      }
+      const path = join(this.#active, name);
+      const body = `${canonicalWorkflowEffectJson(receipt)}\n`;
+      await atomicWrite(path, body, this.#security);
+      inventory.active.set(name, Buffer.byteLength(body, 'utf8'));
+      inventory.activeBytes += Buffer.byteLength(body, 'utf8');
+      if (receipt.route.routingEpoch > inventory.maximumEpoch) {
+        inventory.maximumEpoch = receipt.route.routingEpoch;
+        inventory.activePolicyHash = receipt.policyHash;
+      }
+      await this.#writePolicyState(inventory);
+      inventory.identity = await this.#inventoryIdentity();
       return receipt;
     } finally {
       await release?.();
@@ -512,24 +514,140 @@ export class WorkflowRunRouteJournal {
   }
 
   async load(runId: string): Promise<WorkflowRunRouteReceipt | null> {
+    return (await this.locate(runId))?.receipt ?? null;
+  }
+
+  async locate(runId: string): Promise<WorkflowRunRouteJournalEntry | null> {
+    if (!(await this.#rootExists())) return null;
     await this.#ready();
-    const path = join(this.#root, routeFileName(runId));
+    const name = routeFileName(runId);
+    if (this.#quarantinedRouteNames.has(name)) {
+      return fail(
+        'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+        'Requested run route receipt is quarantined and requires operator reconciliation.',
+      );
+    }
+    const activePath = join(this.#active, name);
+    const closedPath = this.#closedPath(name);
     try {
-      const receipt = await this.#readPath(path);
+      const [active, closed] = await Promise.all([
+        this.#readOptional(activePath),
+        this.#readOptional(closedPath),
+      ]);
+      if (active && closed) {
+        return fail(
+          'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          'Run route receipt exists in both active and closed journals.',
+        );
+      }
+      const receipt = active ?? closed;
+      if (!receipt) return null;
       if (receipt.runId !== runId) {
         return fail('WORKFLOW_RUN_ROUTE_RECEIPT_INVALID', 'Route receipt bytes do not bind run.');
       }
+      return Object.freeze({ receipt, state: active ? 'active' : 'closed' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      if (error instanceof WorkflowRunRoutingError) throw error;
+      return fail(
+        'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+        'Requested run route receipt cannot be proved safe.',
+        { cause: error },
+      );
+    }
+  }
+
+  async close(runId: string): Promise<WorkflowRunRouteReceipt | null> {
+    await this.#ready();
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await acquireOwnerJournalLock(this.#locks, 'routing-policy', this.#security);
+      const receipt = await this.load(runId);
+      if (!receipt) return null;
+      const name = routeFileName(runId);
+      const activePath = join(this.#active, name);
+      const closedPath = this.#closedPath(name);
+      if (await this.#pathExists(closedPath)) return receipt;
+      await ensureOwnerDirectory(
+        join(this.#closed, name.slice(0, 2)),
+        this.#security,
+        this.#closed,
+      );
+      await rename(activePath, closedPath);
+      await Promise.all([
+        syncDirectory(this.#active),
+        syncDirectory(join(this.#closed, name.slice(0, 2))),
+      ]);
+      const inventory = await this.#loadInventory();
+      const size = inventory.active.get(name);
+      if (size !== undefined) {
+        inventory.active.delete(name);
+        inventory.activeBytes -= size;
+      }
+      await this.#writePolicyState(inventory);
+      inventory.identity = await this.#inventoryIdentity();
       return receipt;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
+    } finally {
+      await release?.();
     }
+  }
+
+  async inspect(): Promise<WorkflowRunRouteJournalInspection> {
+    if (!(await this.#rootExists())) {
+      return Object.freeze({ active: 0, closed: 0, quarantined: 0, capacity: 0, unsafe: 0 });
+    }
+    await this.#ready();
+    let closed = 0;
+    for (const shard of await readdir(this.#closed, { withFileTypes: true })) {
+      if (!shard.isDirectory() || shard.isSymbolicLink() || !/^[0-9a-f]{2}$/u.test(shard.name)) {
+        continue;
+      }
+      closed += (await readdir(join(this.#closed, shard.name))).filter((name) =>
+        ROUTE_FILE.test(name),
+      ).length;
+    }
+    const inventory = await this.#loadInventory();
+    const quarantined = (await readdir(this.#quarantine)).length;
+    return Object.freeze({
+      active: inventory.active.size,
+      closed,
+      quarantined,
+      capacity: WORKFLOW_RUN_ROUTING_LIMITS.maxJournalEntries - inventory.active.size,
+      unsafe: 0,
+    });
+  }
+
+  async repair(
+    options: WorkflowRunRouteJournalRepairOptions = {},
+  ): Promise<WorkflowRunRouteJournalRepairResult> {
+    await this.#ready();
+    const closeable: string[] = [];
+    for (const name of (await readdir(this.#active)).filter((entry) => ROUTE_FILE.test(entry))) {
+      const receipt = await this.#readPath(join(this.#active, name)).catch(() => null);
+      if (receipt && (await options.canClose?.(receipt)) === true) closeable.push(receipt.runId);
+    }
+    if (options.apply) {
+      for (const runId of closeable) await this.close(runId);
+    }
+    const inspection = await this.inspect();
+    return Object.freeze({
+      ...inspection,
+      closeable: Object.freeze(closeable),
+      applied: options.apply === true,
+    });
   }
 
   async #ready(): Promise<void> {
     if (!this.#initialized) await this.initialize();
     else {
       await assertOwnerDirectory(this.#root, this.#security);
+      await assertOwnerDirectory(this.#active, this.#security, this.#root);
+      await assertOwnerDirectory(this.#closed, this.#security, this.#root);
+      await assertOwnerDirectory(this.#quarantine, this.#security, this.#root);
+      await assertOwnerDirectory(this.#policies, this.#security, this.#root);
       await assertOwnerDirectory(this.#locks, this.#security, this.#root);
     }
   }
@@ -550,4 +668,273 @@ export class WorkflowRunRouteJournal {
     }
     return receipt;
   }
+
+  async #readOptional(path: string): Promise<WorkflowRunRouteReceipt | null> {
+    try {
+      return await this.#readPath(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  #closedPath(name: string): string {
+    return join(this.#closed, name.slice(0, 2), name);
+  }
+
+  async #rootExists(): Promise<boolean> {
+    try {
+      const stat = await lstat(this.#root);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal root is unsafe.');
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
+  async #pathExists(path: string): Promise<boolean> {
+    try {
+      await assertOwnerFile(path, this.#security);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
+  async #normalizeRootEntries(): Promise<void> {
+    const known = new Set(['active', 'closed', 'quarantine', 'policies', 'locks']);
+    for (const entry of await readdir(this.#root, { withFileTypes: true })) {
+      if (known.has(entry.name)) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) {
+          fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal contains unsafe directories.');
+        }
+        continue;
+      }
+      if (entry.isSymbolicLink() || !entry.isFile()) {
+        fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal contains an unsafe object.');
+      }
+      const source = join(this.#root, entry.name);
+      await assertOwnerFile(source, this.#security);
+      if (ROUTE_FILE.test(entry.name)) {
+        try {
+          const receipt = await this.#readPath(source);
+          if (routeFileName(receipt.runId) !== entry.name) {
+            throw new TypeError('Legacy route file name does not bind its receipt.');
+          }
+          const activeTarget = join(this.#active, entry.name);
+          if (
+            (await this.#pathExists(activeTarget)) ||
+            (await this.#pathExists(this.#closedPath(entry.name)))
+          ) {
+            fail(
+              'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+              'Legacy route receipt conflicts with the partitioned journal.',
+            );
+          }
+          await rename(source, activeTarget);
+          continue;
+        } catch (error) {
+          if (
+            error instanceof WorkflowRunRoutingError &&
+            (error.code === 'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE' ||
+              error.code === 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED')
+          ) {
+            throw error;
+          }
+          const stat = await assertOwnerFile(source, this.#security);
+          const target = join(
+            this.#quarantine,
+            `${entry.name}.${createHash('sha256')
+              .update(`${entry.name}\0${stat.dev}\0${stat.ino}\0${stat.size}`)
+              .digest('hex')}.entry`,
+          );
+          await rename(source, target);
+          this.#quarantinedRouteNames.add(entry.name);
+          continue;
+        }
+      }
+      const target = join(
+        this.#quarantine,
+        `unknown.${createHash('sha256').update(`${entry.name}\0${Date.now()}`).digest('hex')}.entry`,
+      );
+      await rename(source, target);
+    }
+    for (const name of await readdir(this.#quarantine)) {
+      const match = /^(?<route>[0-9a-f]{64}\.json)\.[0-9a-f]{64}\.entry$/u.exec(name);
+      if (match?.groups?.route) this.#quarantinedRouteNames.add(match.groups.route);
+    }
+    await Promise.all([
+      syncDirectory(this.#root),
+      syncDirectory(this.#active),
+      syncDirectory(this.#quarantine),
+    ]);
+  }
+
+  async #loadInventory(force = false): Promise<WorkflowRunRouteJournalInventory> {
+    const identity = await this.#inventoryIdentity();
+    if (!force && this.#inventory?.identity === identity) return this.#inventory;
+    const active = new Map<string, number>();
+    let activeBytes = 0;
+    const policyState = await this.#readPolicyState();
+    let maximumEpoch = policyState.maximumEpoch;
+    let activePolicyHash = policyState.policyHash;
+    for (const entry of await readdir(this.#active, { withFileTypes: true })) {
+      const path = join(this.#active, entry.name);
+      if (entry.isSymbolicLink() || !entry.isFile()) {
+        fail(
+          'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE',
+          'Active route journal contains an unsafe object.',
+        );
+      }
+      if (!ROUTE_FILE.test(entry.name)) {
+        await this.#quarantinePath(path, entry.name);
+        continue;
+      }
+      try {
+        const receipt = await this.#readPath(path);
+        if (routeFileName(receipt.runId) !== entry.name)
+          throw new TypeError('Route file name mismatch.');
+        const size = Number((await assertOwnerFile(path, this.#security)).size);
+        active.set(entry.name, size);
+        activeBytes += size;
+        if (receipt.route.routingEpoch > maximumEpoch) {
+          maximumEpoch = receipt.route.routingEpoch;
+          activePolicyHash = receipt.policyHash;
+        } else if (
+          receipt.route.routingEpoch === maximumEpoch &&
+          activePolicyHash !== receipt.policyHash
+        ) {
+          fail(
+            'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE',
+            'Highest routing epoch has conflicting policies.',
+          );
+        }
+      } catch (error) {
+        if (
+          error instanceof WorkflowRunRoutingError &&
+          error.code === 'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE'
+        )
+          throw error;
+        await this.#quarantinePath(path, entry.name);
+      }
+    }
+    if (active.size > WORKFLOW_RUN_ROUTING_LIMITS.maxJournalEntries) {
+      fail('WORKFLOW_RUN_ROUTE_JOURNAL_FULL', 'Active route journal exceeds its entry limit.');
+    }
+    this.#inventory = { identity, active, activeBytes, maximumEpoch, activePolicyHash };
+    if (maximumEpoch !== policyState.maximumEpoch || activePolicyHash !== policyState.policyHash) {
+      await this.#writePolicyState(this.#inventory);
+    }
+    this.#inventory.identity = await this.#inventoryIdentity();
+    return this.#inventory;
+  }
+
+  async #quarantinePath(path: string, name: string): Promise<void> {
+    const stat = await assertOwnerFile(path, this.#security);
+    const safeName = ROUTE_FILE.test(name) ? name : 'unknown';
+    const target = join(
+      this.#quarantine,
+      `${safeName}.${createHash('sha256').update(`${name}\0${stat.dev}\0${stat.ino}\0${stat.size}`).digest('hex')}.entry`,
+    );
+    await rename(path, target);
+    if (ROUTE_FILE.test(name)) this.#quarantinedRouteNames.add(name);
+    await Promise.all([syncDirectory(this.#active), syncDirectory(this.#quarantine)]);
+  }
+
+  async #inventoryIdentity(): Promise<string> {
+    const stat = await lstat(this.#active);
+    let policyIdentity = 'missing';
+    try {
+      const policy = await lstat(join(this.#policies, 'state.json'));
+      policyIdentity = [policy.dev, policy.ino, policy.size, policy.mtimeMs, policy.ctimeMs].join(
+        ':',
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs, policyIdentity].join(':');
+  }
+
+  async #writePolicyState(inventory: WorkflowRunRouteJournalInventory): Promise<void> {
+    await atomicWrite(
+      join(this.#policies, 'state.json'),
+      `${canonicalWorkflowEffectJson({
+        schema: 'openslack.workflow_run_route_journal_state.v1',
+        maximumEpoch: inventory.maximumEpoch,
+        policyHash: inventory.activePolicyHash ?? null,
+        active: inventory.active.size,
+        activeBytes: inventory.activeBytes,
+      })}\n`,
+      this.#security,
+    );
+  }
+
+  async #readPolicyState(): Promise<WorkflowRunRouteJournalPolicyState> {
+    const path = join(this.#policies, 'state.json');
+    let exact: string;
+    try {
+      exact = await readOwnerFile(path, this.#security, 4096);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze({ maximumEpoch: 0 });
+      }
+      throw error;
+    }
+    if (!exact.endsWith('\n') || exact.includes('\r')) {
+      fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal policy state is malformed.');
+    }
+    const value = parseWorkflowEffectJson(Buffer.from(exact.slice(0, -1), 'utf8'));
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal policy state is invalid.');
+    }
+    const state = value as Record<string, unknown>;
+    const keys = Object.keys(state).sort();
+    if (
+      keys.join('\0') !==
+        ['active', 'activeBytes', 'maximumEpoch', 'policyHash', 'schema'].sort().join('\0') ||
+      state.schema !== 'openslack.workflow_run_route_journal_state.v1' ||
+      !Number.isSafeInteger(state.maximumEpoch) ||
+      (state.maximumEpoch as number) < 0 ||
+      (state.policyHash !== null &&
+        (typeof state.policyHash !== 'string' || !HASH.test(state.policyHash))) ||
+      !Number.isSafeInteger(state.active) ||
+      (state.active as number) < 0 ||
+      !Number.isSafeInteger(state.activeBytes) ||
+      (state.activeBytes as number) < 0 ||
+      `${canonicalWorkflowEffectJson(state)}\n` !== exact
+    ) {
+      fail('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'Route journal policy state is invalid.');
+    }
+    return Object.freeze({
+      maximumEpoch: state.maximumEpoch as number,
+      ...(state.policyHash === null ? {} : { policyHash: state.policyHash as string }),
+    });
+  }
+}
+
+export interface WorkflowRunRouteJournalInspection {
+  readonly active: number;
+  readonly closed: number;
+  readonly quarantined: number;
+  readonly capacity: number;
+  readonly unsafe: number;
+}
+
+export interface WorkflowRunRouteJournalEntry {
+  readonly receipt: WorkflowRunRouteReceipt;
+  readonly state: 'active' | 'closed';
+}
+
+export interface WorkflowRunRouteJournalRepairOptions {
+  readonly apply?: boolean;
+  readonly canClose?: (receipt: WorkflowRunRouteReceipt) => boolean | Promise<boolean>;
+}
+
+export interface WorkflowRunRouteJournalRepairResult extends WorkflowRunRouteJournalInspection {
+  readonly closeable: readonly string[];
+  readonly applied: boolean;
 }

@@ -20,9 +20,13 @@ type fakeV2Store struct {
 }
 
 func TestV2NewRecordCanaryVersionReportsActivatedRouting(t *testing.T) {
+	runnerToken := sha256.Sum256([]byte(testToken))
 	service := &Service{
 		buildSHA: strings.Repeat("a", 64), schemaVersion: 8,
 		v2Enabled: true, v2RuntimeDelivery: true, v2NewRecordCanary: true,
+		workspaceID: "workspace.test", tokenHash: runnerToken,
+		runAuthorityOrigin: "http://127.0.0.1:8082", runAuthorityCallerID: "workflow-runner-v2",
+		runAuthorityBuildSHA: strings.Repeat("b", 64), runAuthorityTokenSHA256: strings.Repeat("c", 64),
 	}
 	request := httptest.NewRequest(http.MethodGet, RouteVersion, nil)
 	response := httptest.NewRecorder()
@@ -32,6 +36,17 @@ func TestV2NewRecordCanaryVersionReportsActivatedRouting(t *testing.T) {
 		!strings.Contains(response.Body.String(), `"productionRoutingActivated":true`) ||
 		!strings.Contains(response.Body.String(), `"newRecordCanary":true`) {
 		t.Fatalf("canary version did not report activated routing: %d %s", response.Code, response.Body.String())
+	}
+	binding := httptest.NewRecorder()
+	service.handleBinding(binding, httptest.NewRequest(http.MethodGet, RouteBinding, nil))
+	if binding.Code != http.StatusOK ||
+		!strings.Contains(binding.Body.String(), `"schema":"openslack.workflow_runner_control_binding.v1"`) ||
+		!strings.Contains(binding.Body.String(), `"runnerTokenSha256":"`+fmt.Sprintf("%x", runnerToken[:])+`"`) ||
+		!strings.Contains(binding.Body.String(), `"authorityBuildSha":"`+strings.Repeat("b", 64)+`"`) {
+		t.Fatalf("canary binding drifted: %d %s", binding.Code, binding.Body.String())
+	}
+	if _, err := New(Options{RunAuthorityOrigin: "http://127.0.0.1:8082"}); err == nil {
+		t.Fatal("disabled runner retained a run-authority binding")
 	}
 }
 

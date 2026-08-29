@@ -243,3 +243,11 @@ chooses another key or locally replays a provider/effect.
 This profile remains default-off and qualification-only. The default image entry point, production
 v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, release, and live
 claims remain unchanged and outside GS9-F2b.
+
+GS9-G adds an independently default-off new-record canary. Its authenticated binding endpoints expose
+only non-secret workspace, caller, mode, epoch, build, capability, acceptance, and token-digest
+bindings. Exact receipt replay remains available after new-record acceptance is disabled. Existing
+Go-routed runs continue through their recorded active or drain epoch and never fall back to the
+ordinary TypeScript writer. The TypeScript route journal is active-only bounded, retains sharded
+closed replay evidence, quarantines damaged ordinary entries, and requires reconciliation for the
+requested damaged run. This is canary qualification, not production activation or writer retirement.

@@ -284,12 +284,6 @@ describe('GS8-B workflow runner worker', () => {
             ...base.confirmationPolicy,
             runId: workflowRunId,
           },
-          authorityRoute: {
-            backend: 'go',
-            authority: 'workflow-control',
-            routingEpoch: 1,
-            authorityBuildHash: 'a'.repeat(64),
-          },
           createdAt: new Date(current - 60_000).toISOString(),
           expiresAt: new Date(current + 60 * 60_000).toISOString(),
         };
@@ -497,8 +491,7 @@ describe('GS8-B workflow runner worker', () => {
     expect(() => loadWorkflowRunnerV2QualificationWorkerConfig({})).toThrowError(/default-off/u);
     expect(loadWorkflowRunnerV2QualificationWorkerConfig(base)).toMatchObject({
       enabled: true,
-      qualificationOnly: true,
-      runtimeBoundaryMode: 'provider-attempt-only',
+      mode: 'qualification',
       workspaceId: 'workspace.v2',
       workspaceRoot,
     });
@@ -532,18 +525,12 @@ describe('GS8-B workflow runner worker', () => {
       OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN: 'b'.repeat(48),
       OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID: 'workflow-runner-v2',
     } satisfies NodeJS.ProcessEnv;
-    expect(
+    expect(() =>
       loadWorkflowRunnerV2QualificationWorkerConfig({
         ...base,
         ...runtimeEnvironment,
       }),
-    ).toMatchObject({
-      runtimeBoundaryMode: 'authority-binding-f2b',
-      runtimeDelivery: {
-        companionOrigin: 'http://127.0.0.1:8088',
-        budgetOrigin: 'http://127.0.0.1:8089',
-      },
-    });
+    ).toThrowError(/requires the complete Go-authority profile/u);
     expect(() =>
       loadWorkflowRunnerV2QualificationWorkerConfig({
         ...base,
@@ -566,8 +553,7 @@ describe('GS8-B workflow runner worker', () => {
         OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA: 'd'.repeat(64),
       }),
     ).toMatchObject({
-      qualificationOnly: false,
-      runtimeBoundaryMode: 'new-record-canary-g',
+      mode: 'go-authority',
       runAuthority: {
         origin: 'http://127.0.0.1:8082',
         callerId: 'workflow-runner-v2',
@@ -605,7 +591,7 @@ describe('GS8-B workflow runner worker', () => {
         true,
         undefined,
         undefined,
-        false,
+        'go-authority',
       ),
     ).rejects.toThrowError(/accepts only Go-owned/u);
     await expect(
@@ -617,7 +603,7 @@ describe('GS8-B workflow runner worker', () => {
         true,
         undefined,
         undefined,
-        false,
+        'go-authority',
       ),
     ).rejects.toThrowError(/requires the Workflow Control run authority/u);
   });

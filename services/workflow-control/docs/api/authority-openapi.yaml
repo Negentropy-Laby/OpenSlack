@@ -21,6 +21,23 @@ x-openslack-go-authority: [run-spine, transition-receipt, transactional-outbox]
 x-openslack-excluded-authority: [approval, provider, effect-execution]
 x-openslack-max-request-bytes: 524288
 paths:
+  /v1/workflow-control/binding:
+    get:
+      operationId: inspectWorkflowControlAuthorityBinding
+      description: Return the authenticated new-record authority binding before any durable write.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+      responses:
+        '200':
+          description: Exact active authority binding.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/AuthorityBinding' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/workflow-control/runs:accept:
     post:
       operationId: acceptWorkflowRun
@@ -297,6 +314,33 @@ components:
         authority: { type: string, const: workflow-control }
         routingEpoch: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
         authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+    AuthorityBinding:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          callerId,
+          mode,
+          activeRoutingEpoch,
+          drainRoutingEpochs,
+          buildSha,
+          acceptNewRecords,
+        ]
+      properties:
+        schema: { type: string, const: openslack.workflow_control_authority_binding.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        callerId: { $ref: '#/components/schemas/Identifier' }
+        mode: { type: string, const: new-record-canary-v1 }
+        activeRoutingEpoch: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        drainRoutingEpochs:
+          type: array
+          uniqueItems: true
+          items: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+        buildSha: { $ref: '#/components/schemas/Hash' }
+        acceptNewRecords: { type: boolean }
     Expected:
       type: object
       additionalProperties: false

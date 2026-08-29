@@ -9,7 +9,7 @@ func TestAuthorityConfigDefaultsToHealthOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.QualificationMode || config.Mode != AuthorityModeDisabled || config.HTTPBind != "127.0.0.1:8082" || config.ServiceBuildSHA != zeroBuildSHA {
+	if config.Mode.Qualification() || config.Mode != AuthorityModeDisabled || config.HTTPBind != "127.0.0.1:8082" || config.ServiceBuildSHA != zeroBuildSHA {
 		t.Fatalf("unexpected default authority config: %#v", config)
 	}
 }
@@ -28,7 +28,7 @@ func TestAuthorityConfigRequiresClosedQualificationBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.QualificationMode || config.RoutingEpoch != 9 || config.WorkspaceID != "workspace-1" || config.CallerID != "mcp-gateway-1" {
+	if !config.Mode.Qualification() || config.RoutingEpoch != 9 || config.WorkspaceID != "workspace-1" || config.CallerID != "mcp-gateway-1" {
 		t.Fatalf("qualification bindings were not preserved: %#v", config)
 	}
 	for _, omitted := range []string{
@@ -65,7 +65,7 @@ func TestAuthorityConfigBindsCanaryAcceptanceAndDrainEpochs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.AuthorityEnabled || !config.CanaryMode || config.QualificationMode || config.AcceptNewRecords ||
+	if !config.Mode.Enabled() || !config.Mode.Canary() || config.Mode.Qualification() || config.AcceptNewRecords ||
 		config.RoutingEpoch != 11 || len(config.DrainEpochs) != 2 || config.DrainEpochs[0] != 9 || config.DrainEpochs[1] != 10 {
 		t.Fatalf("canary bindings were not preserved: %#v", config)
 	}

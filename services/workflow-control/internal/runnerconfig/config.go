@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
 )
@@ -413,7 +414,7 @@ func exactLoopbackOrigin(value, name string) (string, error) {
 }
 
 func validateRawToken(value, name string) error {
-	if len(value) < 32 || len(value) > 4096 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n\x00") {
+	if !authoritybinding.ValidBearerToken(value) {
 		return fmt.Errorf("%s is invalid", name)
 	}
 	return nil
@@ -463,7 +464,7 @@ func localShadowConfig(values map[string]string, workspaceRoot string, options l
 	}
 	endpoint := strings.TrimSpace(values[options.endpoint])
 	token := values[options.token]
-	if token != strings.TrimSpace(token) || len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, "\r\n\x00") {
+	if !authoritybinding.ValidBearerToken(token) {
 		return false, "", "", "", "", fmt.Errorf("%s bearer token is invalid", options.label)
 	}
 	caller := strings.TrimSpace(values[options.caller])

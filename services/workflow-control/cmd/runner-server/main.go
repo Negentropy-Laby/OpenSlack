@@ -164,6 +164,10 @@ func main() {
 		V2Store: store, BindingStore: store, AdmissionStore: store, V2Qualification: config.V2QualificationEnabled,
 		V2RuntimeDelivery: config.V2RuntimeDeliveryEnabled, V2NewRecordCanary: config.V2RunAuthorityEnabled, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
+		RunAuthorityOrigin:      config.V2RunAuthorityOrigin,
+		RunAuthorityCallerID:    config.V2RunAuthorityCallerID,
+		RunAuthorityBuildSHA:    config.V2RunAuthorityBuildSHA,
+		RunAuthorityTokenSHA256: config.V2RunAuthorityBearerSHA256,
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_http_invalid", "code", "COMPOSITION_INVALID")

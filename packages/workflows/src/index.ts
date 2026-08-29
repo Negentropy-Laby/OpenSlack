@@ -885,16 +885,36 @@ export {
 export type {
   SelectWorkflowRunRouteInput,
   WorkflowRunRouteReceipt,
+  WorkflowRunRouteJournalEntry,
   WorkflowRunRoutingPolicy,
+  WorkflowRunRouteJournalInspection,
+  WorkflowRunRouteJournalRepairOptions,
+  WorkflowRunRouteJournalRepairResult,
 } from './workflow-run-routing.js';
 export {
+  createWorkflowRunRoutingExecutionContext,
+  loadWorkflowRunRoutingConfig,
   loadWorkflowRunRoutingExecutionConfig,
   WORKFLOW_RUN_ROUTING_MODE_ENV,
   WORKFLOW_RUN_ROUTING_MODE_GO,
   WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
   WorkflowRunRoutingConfigError,
 } from './workflow-run-routing-config.js';
-export type { WorkflowRunRoutingExecutionConfig } from './workflow-run-routing-config.js';
+export type {
+  WorkflowRunRoutingConfig,
+  WorkflowRunRoutingDisabledConfig,
+  WorkflowRunRoutingExecutionContext,
+} from './workflow-run-routing-config.js';
+export {
+  createWorkflowRunProjectionStore,
+  resolveWorkflowRunProjectionRoot,
+} from './workflow-run-projection.js';
+export type { WorkflowRunProjectionBackend } from './workflow-run-projection.js';
+export {
+  isWorkflowControlBearerToken,
+  parseWorkflowControlRoutingEpoch,
+  WORKFLOW_CONTROL_MAX_SAFE_INTEGER,
+} from './workflow-control-routing-identity.js';
 export {
   prepareWorkflowControlAuthorityMutation,
   workflowControlAuthorityInitialRecord,
@@ -908,6 +928,7 @@ export {
 export type {
   PreparedWorkflowControlAuthorityMutation,
   WorkflowControlAuthorityExpectedHead,
+  WorkflowControlAuthorityBinding,
   WorkflowControlAuthorityMutation,
   WorkflowControlAuthorityPort,
   WorkflowControlAuthorityRunRead,
@@ -1153,10 +1174,12 @@ export {
 export type {
   PreparedWorkflowRunnerV2JobSpec,
   WorkflowRunnerV2ControlPort,
+  WorkflowRunnerControlBinding,
   WorkflowRunnerV2JobReceipt,
   WorkflowRunnerV2JobSpec,
   WorkflowRunnerV2RequiredCapability,
 } from './workflow-runner-v2-control-client.js';
+export { WorkflowRunnerGoProjectionError } from './workflow-runner-v2-go-projection-store.js';
 export {
   decodeWorkflowRunnerV2Frame,
   WorkflowRunnerV2FramingError,

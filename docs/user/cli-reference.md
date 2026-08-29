@@ -1190,6 +1190,8 @@ does not fall back to direct in-process execution.
 | `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Bind the resume admission to the named actor                                           |
 | `openslack collaboration workflow approvals repair-security`                           | Audit legacy Windows effect-authority ACLs without modifying them                      |
 | `openslack collaboration workflow approvals repair-security --apply`                   | Rebuild exact owner-plus-SYSTEM ACLs after complete canonical lineage validation       |
+| `openslack collaboration workflow routes repair`                                       | Audit explicit route capacity, quarantine, and provably terminal active receipts       |
+| `openslack collaboration workflow routes repair --apply`                               | Move only evidence-backed terminal route receipts into closed replay history           |
 | `openslack collaboration workflow start --prompt "..."`                                | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
 | `openslack collaboration workflow start --pattern <pattern>`                           | Start from a known orchestration pattern without executing                             |
 | `openslack collaboration workflow start --saved <name>`                                | Show preview, dry-run, and run commands for a saved workflow                           |
