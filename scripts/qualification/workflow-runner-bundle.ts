@@ -119,6 +119,9 @@ async function stageBundle(bundleRoot: string, nodeExecutable: string): Promise<
   await copyFile(nodeExecutable, executablePath);
   await security.harden(entrypointPath, false);
   await security.harden(executablePath, false);
+  if (process.platform !== 'win32') {
+    await chmod(executablePath, 0o700);
+  }
 
   const executableBytes = await readFile(executablePath);
   const manifest = {
@@ -151,6 +154,13 @@ async function stageBundle(bundleRoot: string, nodeExecutable: string): Promise<
   ] as const) {
     const current = await lstat(path, { bigint: true });
     await security.assertOwnerOnly(path, directory, current);
+    if (
+      process.platform !== 'win32' &&
+      path === executablePath &&
+      (Number(current.mode) & 0o700) !== 0o700
+    ) {
+      throw new Error('Staged Node executable must be owner-executable.');
+    }
   }
 }
 

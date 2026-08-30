@@ -160,10 +160,11 @@ describe('GS8-B source and authority invariants', () => {
   });
 
   it('enforces source closure only in GS8 prepare and delegates the bundle recipe', async () => {
-    const [worker, legacyLoader, packageJson] = await Promise.all([
+    const [worker, legacyLoader, packageJson, bundleTool] = await Promise.all([
       source('packages/workflows/src/workflow-runner-worker.ts'),
       source('packages/workflows/src/loader.ts'),
       source('packages/workflows/package.json'),
+      source('scripts/qualification/workflow-runner-bundle.ts'),
     ]);
     const prepare = worker.indexOf('async prepare(');
     const policy = worker.indexOf('assertWorkflowRunnerSourceIsSelfContained(source.bytes)');
@@ -179,6 +180,9 @@ describe('GS8-B source and authority invariants', () => {
     expect(packageDocument.scripts?.['build:runner-worker']).toBe(
       'bun ../../scripts/qualification/workflow-runner-bundle.ts build',
     );
+    expect(bundleTool).toContain("const STAGED_ENTRYPOINT = 'workflow-runner-worker.cjs'");
+    expect(bundleTool).toContain('await chmod(executablePath, 0o700)');
+    expect(bundleTool).toContain('Staged Node executable must be owner-executable.');
   });
 
   it('builds and starts the path-free CJS artifact under a type-module ancestor', () => {
