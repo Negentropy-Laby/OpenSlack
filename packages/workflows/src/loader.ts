@@ -7,6 +7,7 @@ import { parseManifest, validateManifest } from './manifest.js';
 import { getEmbeddedBuiltin, listEmbeddedBuiltins } from './embedded-builtins.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule, WorkflowSource } from './types.js';
 import { hashWorkflowSource, resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { canonicalJson } from './internal/canonical-json.js';
 
 /**
  * Ordered discovery paths for workflow files.
@@ -208,6 +209,24 @@ export async function loadWorkflow(
   if (format === 'invalid') {
     throw new Error(
       `Workflow ${filePath} has invalid format: must export "meta" and at least one of "preview" or "run"`,
+    );
+  }
+
+  let runtimeMeta: WorkflowMeta;
+  try {
+    runtimeMeta = parseManifest(mod.meta);
+  } catch (error) {
+    throw new Error(`Workflow ${filePath} exports an invalid runtime manifest.`, { cause: error });
+  }
+  const runtimeErrors = validateManifest(runtimeMeta);
+  if (runtimeErrors.length > 0) {
+    throw new Error(
+      `Invalid runtime workflow manifest in ${filePath}:\n${runtimeErrors.join('\n')}`,
+    );
+  }
+  if (canonicalJson(runtimeMeta) !== canonicalJson(meta)) {
+    throw new Error(
+      `Workflow ${filePath} runtime manifest does not match its statically analyzed manifest.`,
     );
   }
 

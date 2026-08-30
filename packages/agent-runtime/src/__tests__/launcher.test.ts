@@ -13,6 +13,8 @@ import {
   buildProviderUsageReceipt,
   LocalExecutionAdapter,
   getProviderUsageEvidence,
+  AgentExecutionFailedError,
+  AgentResultSchemaError,
   RuntimeNotConfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
@@ -199,43 +201,106 @@ describe('createOpenSlackAgentLauncher', () => {
   });
 
   it('fails closed with a typed safe result when provider execution fails', async () => {
-    const store = createRunStore(root);
     const canary = 'provider-execution-secret-canary';
+    const failures = [
+      {
+        error: new Error(`upstream failed with ${canary}`),
+        code: 'EXECUTION_FAILED',
+        summary: 'Agent execution failed. Inspect runtime diagnostics for details.',
+      },
+      {
+        error: new AgentResultSchemaError([`${canary}: forged provider diagnostic`]),
+        code: 'PROVIDER_INVALID_RESPONSE',
+        summary: 'Agent execution provider returned an invalid response.',
+      },
+    ] as const;
+
+    for (const [index, providerFailure] of failures.entries()) {
+      const caseRoot = join(root, `provider-failure-${index}`);
+      const store = createRunStore(caseRoot);
+      const launcher = createOpenSlackAgentLauncher({
+        runStore: store,
+        rootDir: caseRoot,
+        adapter: {
+          adapterId: 'failing-provider',
+          async execute() {
+            throw providerFailure.error;
+          },
+        },
+      });
+
+      const failure = await launcher('execute safely', {
+        label: 'failing-agent',
+        phase: 'execute',
+      }).catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({
+        code: providerFailure.code,
+        runId: expect.stringMatching(/^RUN-/),
+        message: providerFailure.summary,
+      });
+      const run = store.listRuns()[0];
+      expect(run).toMatchObject({
+        status: 'failed',
+        failureCode: providerFailure.code,
+        errorSummary: providerFailure.summary,
+      });
+      const transcript = readTranscript(run.runId, caseRoot);
+      const evidence = JSON.stringify({ failure, run, transcript });
+      expect(evidence).not.toContain(canary);
+      expect(transcript.some((event) => event.type === 'complete')).toBe(false);
+    }
+  });
+
+  it('preserves bounded operator-safe schema diagnostics without provider payload data', async () => {
+    const store = createRunStore(root);
+    const required = [
+      'runId',
+      ...Array.from({ length: 80 }, (_, index) => `requiredQualificationField${index}`),
+    ];
+    const schema = {
+      type: 'object',
+      properties: Object.fromEntries(required.map((key) => [key, { type: 'string' }])),
+      required,
+      additionalProperties: false,
+    };
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
       adapter: {
-        adapterId: 'failing-provider',
-        async execute() {
-          throw new Error(`upstream failed with ${canary}`);
+        adapterId: 'invalid-schema-provider',
+        async execute<T>() {
+          return {
+            data: { 'sk-sensitive-provider-field': 'raw-provider-secret-value' } as T,
+          };
         },
       },
     });
 
-    let failure: unknown;
-    try {
-      await launcher('execute safely', {
-        label: 'failing-agent',
-        phase: 'execute',
-      });
-    } catch (error) {
-      failure = error;
-    }
+    const failure = await launcher('return qualification evidence', {
+      label: 'schema-diagnostic',
+      phase: 'validate',
+      schema,
+    }).catch((error: unknown) => error);
 
+    expect(failure).toBeInstanceOf(AgentExecutionFailedError);
     expect(failure).toMatchObject({
-      code: 'EXECUTION_FAILED',
-      runId: expect.stringMatching(/^RUN-/),
-      message: 'Agent execution failed. Inspect runtime diagnostics for details.',
+      code: 'PROVIDER_INVALID_RESPONSE',
+      cause: expect.any(AgentResultSchemaError),
     });
+    const summary = (failure as AgentExecutionFailedError).message;
+    expect(summary).toContain('root.runId: required property missing');
+    expect(summary).toContain('violations; truncated]');
+    expect(Buffer.byteLength(summary, 'utf8')).toBeLessThanOrEqual(1024);
+    expect(summary).not.toContain('sk-sensitive-provider-field');
+    expect(summary).not.toContain('raw-provider-secret-value');
+
     const run = store.listRuns()[0];
-    expect(run).toMatchObject({
-      status: 'failed',
-      failureCode: 'EXECUTION_FAILED',
-      errorSummary: 'Agent execution failed. Inspect runtime diagnostics for details.',
-    });
-    const evidence = JSON.stringify({ failure, run, transcript: readTranscript(run.runId, root) });
-    expect(evidence).not.toContain(canary);
-    expect(readTranscript(run.runId, root).some((event) => event.type === 'complete')).toBe(false);
+    expect(run.errorSummary).toBe(summary);
+    const evidence = JSON.stringify({ run, transcript: readTranscript(run.runId, root) });
+    expect(evidence).toContain('root.runId: required property missing');
+    expect(evidence).not.toContain('sk-sensitive-provider-field');
+    expect(evidence).not.toContain('raw-provider-secret-value');
   });
 
   it('preserves charged usage receipts across the safe launcher failure wrapper', async () => {

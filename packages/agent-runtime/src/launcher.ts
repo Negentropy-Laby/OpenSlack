@@ -35,7 +35,12 @@ import {
   OpenAICompatibleExecutionAdapter,
   resolveRuntimeCredential,
 } from './openai-compatible-runtime.js';
-import { assertAgentResultSchema } from './schema-validation.js';
+import {
+  AgentResultSchemaError,
+  assertAgentResultSchema,
+  formatAgentResultSchemaFailureSummary,
+  isInternalAgentResultSchemaError,
+} from './schema-validation.js';
 import {
   attachProviderUsageEvidence,
   inspectAttachedProviderUsageEvidence,
@@ -385,7 +390,17 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         throw err;
       }
       const failureCode = getAgentRunFailureCode(err);
-      const executionError = new AgentExecutionFailedError(failureCode, runId);
+      const schemaError =
+        safeInstanceOf(err, AgentResultSchemaError) && isInternalAgentResultSchemaError(err)
+          ? err
+          : undefined;
+      const executionError = new AgentExecutionFailedError(failureCode, runId, {
+        cause: schemaError,
+        operatorSafeSummary:
+          schemaError === undefined
+            ? undefined
+            : formatAgentResultSchemaFailureSummary(schemaError.violations),
+      });
       attachProviderUsageEvidence(executionError, usageEvidence);
       attachTokenUsage(executionError, chargedUsage);
       recorder.fail(runId, executionError, failureCode);

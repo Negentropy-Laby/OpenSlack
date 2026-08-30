@@ -142,7 +142,7 @@ describe('validateAgainstSchema', () => {
   it('returns violation for type mismatch', () => {
     const violations = validateAgainstSchema('not-an-object', { type: 'object' });
     expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]).toContain('expected type');
+    expect(violations[0]).toContain('expected object');
   });
 
   it('returns violation for missing required property', () => {
@@ -311,6 +311,49 @@ describe('executeAgentCall', () => {
         config,
       ),
     ).rejects.toThrow(SchemaValidationError);
+  });
+
+  it('applies the complete result schema identically to cached and fresh results', async () => {
+    const schema: AgentOptions['schema'] = {
+      type: 'object',
+      properties: { ok: { type: 'boolean', enum: [true] } },
+      required: ['ok'],
+      additionalProperties: false,
+    };
+    const staleResult = { ok: true, legacyField: 'must-not-survive' };
+    const captureSchemaFailure = async (promise: Promise<unknown>) => {
+      try {
+        await promise;
+      } catch (error) {
+        if (error instanceof SchemaValidationError) {
+          return error;
+        }
+        throw error;
+      }
+      throw new Error('expected result schema validation to fail');
+    };
+
+    const { config: cachedConfig } = makeConfig({
+      cache: {
+        async load() {
+          return { data: staleResult };
+        },
+        async save() {},
+      },
+    });
+    const cachedError = await captureSchemaFailure(
+      executeAgentCall('prompt', { label: 'schema-parity', phase: 'Scan', schema }, cachedConfig),
+    );
+
+    const { config: freshConfig } = makeConfig({
+      launcher: async () => ({ data: staleResult }),
+    });
+    const freshError = await captureSchemaFailure(
+      executeAgentCall('prompt', { label: 'schema-parity', phase: 'Scan', schema }, freshConfig),
+    );
+
+    expect(cachedError.violations).toEqual(freshError.violations);
+    expect(cachedError.violations).toEqual(['root: additional property is not allowed']);
   });
 
   it('runs provider preflight before returning a cached result', async () => {

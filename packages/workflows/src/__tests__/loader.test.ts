@@ -1,13 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { assertAgentResultSchema } from '@openslack/agent-runtime';
 import {
   DISCOVERY_PATHS,
   detectFormat,
   analyzeStaticMeta,
+  loadWorkflow,
   findWorkflow as findWorkflowWithUserHome,
   discoverYamlTemplates,
   discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
@@ -17,6 +17,15 @@ const discoverJsWorkflows = (cwd: string) =>
   discoverJsWorkflowsWithUserHome(cwd, { userHomeDir: null });
 const findWorkflow = (name: string, cwd: string) =>
   findWorkflowWithUserHome(name, cwd, { userHomeDir: null });
+const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
+const PROJECT_WORKFLOWS_DIR = join(REPO_ROOT, '.openslack', 'workflows');
+const ABY_CANARY_PATH = join(PROJECT_WORKFLOWS_DIR, 'gs9g-authenticated-aby-canary.mjs');
+
+interface AbyCanaryWorkflow {
+  meta: { name: string; isolationPolicy?: Record<string, 'none' | 'worktree'> };
+  format: string;
+  run(ctx: { phase(name: string): void; agent: ReturnType<typeof vi.fn> }): Promise<unknown>;
+}
 
 describe('DISCOVERY_PATHS', () => {
   it('includes .openslack/workflows', () => {
@@ -35,29 +44,90 @@ describe('DISCOVERY_PATHS', () => {
 });
 
 describe('GS9-G authenticated Aby canary', () => {
+  let workflow: AbyCanaryWorkflow;
+
+  beforeAll(async () => {
+    workflow = (await loadWorkflow(ABY_CANARY_PATH)) as unknown as AbyCanaryWorkflow;
+  });
+
+  it('is accepted by the production static workflow loader', async () => {
+    expect(workflow).toMatchObject({
+      meta: {
+        name: 'gs9g-authenticated-aby-canary',
+        isolationPolicy: { anthropic_architect_aby: 'none' },
+      },
+      format: 'openslack-native',
+    });
+  });
+
   it('uses a structured provider signal without rejecting harmless response text', async () => {
-    const workflow = (await import(
-      `${pathToFileURL(resolve(process.cwd(), '.openslack/workflows/gs9g-authenticated-aby-canary.mjs')).href}?test=${Date.now()}`
-    )) as {
-      run(ctx: { phase(name: string): void; agent: ReturnType<typeof vi.fn> }): Promise<unknown>;
-    };
     const providerFailure = new Error('provider unavailable');
+    const validResult = {
+      ok: true,
+      response: 'Unauthorized is a harmless word here.',
+      runId: 'RUN-CANARY',
+      agentId: 'anthropic_architect_aby',
+      bridge: 'aby-runAgent',
+    };
     const agent = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, response: 'Unauthorized is a harmless word here.' })
-      .mockResolvedValueOnce({ ok: false, response: 'Not authenticated.' })
-      .mockResolvedValueOnce({ ok: true, response: '   ' })
+      .mockResolvedValueOnce(validResult)
+      .mockResolvedValueOnce({ ...validResult, response: '   ' })
+      .mockResolvedValueOnce({ ...validResult, runId: '   ' })
       .mockRejectedValueOnce(providerFailure);
     const ctx = { phase: vi.fn(), agent };
 
-    await expect(workflow.run(ctx)).resolves.toMatchObject({ status: 'complete' });
+    await expect(workflow.run(ctx)).resolves.toEqual({ status: 'complete', result: validResult });
     await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
     await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
     await expect(workflow.run(ctx)).rejects.toBe(providerFailure);
-    expect(agent.mock.calls[0]?.[1]).toMatchObject({
+    const agentOptions = agent.mock.calls[0]?.[1];
+    if (agentOptions === undefined) throw new Error('Canary did not call the configured agent.');
+    expect(agentOptions).toMatchObject({
       agentType: 'anthropic_architect_aby',
-      schema: { required: ['ok', 'response'], additionalProperties: false },
+      schema: {
+        required: ['ok', 'response', 'runId', 'agentId', 'bridge'],
+        additionalProperties: false,
+        properties: {
+          ok: { enum: [true] },
+          agentId: { enum: ['anthropic_architect_aby'] },
+          bridge: { enum: ['aby-runAgent'] },
+        },
+      },
     });
+    expect(Object.keys(workflow.meta.isolationPolicy ?? {})).toEqual([agentOptions.agentType]);
+
+    const schema = agentOptions.schema;
+    if (schema === undefined) throw new Error('Canary did not provide its result schema.');
+    expect(() => assertAgentResultSchema(validResult, schema)).not.toThrow();
+    for (const invalid of [
+      { ...validResult, ok: false },
+      { ...validResult, agentId: 'wrong-agent' },
+      { ...validResult, bridge: 'wrong-bridge' },
+      { ...validResult, extra: 'not-allowed' },
+    ]) {
+      expect(() => assertAgentResultSchema(invalid, schema)).toThrow();
+    }
+  });
+});
+
+describe('checked-in workflow contract', () => {
+  it('loads every project workflow through the production loader', async () => {
+    const workflowFiles = readdirSync(PROJECT_WORKFLOWS_DIR)
+      .filter((entry) => /\.(?:js|mjs|ts)$/u.test(entry))
+      .sort();
+    expect(workflowFiles.length).toBeGreaterThan(0);
+
+    const loaded = await Promise.all(
+      workflowFiles.map(async (entry) => ({
+        entry,
+        workflow: await loadWorkflow(join(PROJECT_WORKFLOWS_DIR, entry)),
+      })),
+    );
+    expect(loaded.map(({ entry }) => entry)).toEqual(workflowFiles);
+    expect(
+      loaded.every(({ workflow: loadedWorkflow }) => loadedWorkflow.format !== 'invalid'),
+    ).toBe(true);
   });
 });
 
@@ -320,6 +390,31 @@ describe('loadWorkflow integration', () => {
     expect(detectFormat(compatModule)).toBe('anthropic-compatible');
 
     expect(detectFormat({ run: async () => ({}) })).toBe('invalid');
+  });
+
+  it('rejects runtime manifest drift from the statically analyzed manifest', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'openslack-loader-meta-drift-'));
+    const workflowPath = join(tmpDir, 'drift.mjs');
+    writeFileSync(
+      workflowPath,
+      `export const meta = {
+  name: 'drift',
+  description: 'Manifest drift fixture',
+  phases: [{ title: 'Run', detail: 'Run' }],
+  budgetPolicy: { maxAgents: 1, maxConcurrency: 1, tokenBudget: 10, onExceeded: 'fail' }
+};
+meta.budgetPolicy.tokenBudget = 20;
+export async function run() { return { status: 'complete' }; }
+`,
+    );
+
+    try {
+      await expect(loadWorkflow(workflowPath)).rejects.toThrow(
+        /runtime manifest does not match its statically analyzed manifest/u,
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

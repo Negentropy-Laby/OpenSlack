@@ -12,6 +12,8 @@ import {
   type WorkflowModule,
 } from '@openslack/workflows';
 
+const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
+
 const DEMO_ROLE_IDS = [
   'business-discovery-agent',
   'data-inventory-agent',
@@ -32,14 +34,14 @@ const DEMO_ARTIFACT_FILES = [
 ] as const;
 
 function loadProjectWorkflow(): Promise<WorkflowModule> {
-  return loadWorkflow(resolve(process.cwd(), '.openslack/workflows/ai-org-transformation.ts'));
+  return loadWorkflow(resolve(REPO_ROOT, '.openslack/workflows/ai-org-transformation.ts'));
 }
 
 function loadAgentFixture(agentType: string): unknown {
   return JSON.parse(
     readFileSync(
       resolve(
-        process.cwd(),
+        REPO_ROOT,
         'examples/ai-organization-demo/fixtures/agent-results',
         `${agentType}.json`,
       ),
@@ -71,7 +73,7 @@ function expectClosedAndBoundedSchema(schema: JSONSchemaDefinition): void {
 describe('ai-org-transformation workflow', () => {
   it('is discoverable and statically validates its six ordered phases', async () => {
     const source = readFileSync(
-      resolve(process.cwd(), '.openslack/workflows/ai-org-transformation.ts'),
+      resolve(REPO_ROOT, '.openslack/workflows/ai-org-transformation.ts'),
       'utf8',
     );
     const workflow = await loadProjectWorkflow();
@@ -121,7 +123,7 @@ describe('ai-org-transformation workflow', () => {
     const result = await workflow.run!(runtime, {});
     const workflowResultSchema = JSON.parse(
       readFileSync(
-        resolve(process.cwd(), 'examples/ai-organization-demo/schemas/workflow-result.schema.json'),
+        resolve(REPO_ROOT, 'examples/ai-organization-demo/schemas/workflow-result.schema.json'),
         'utf8',
       ),
     );
@@ -194,7 +196,7 @@ describe('ai-org-transformation workflow', () => {
     });
     const workflowResultSchema = JSON.parse(
       readFileSync(
-        resolve(process.cwd(), 'examples/ai-organization-demo/schemas/workflow-result.schema.json'),
+        resolve(REPO_ROOT, 'examples/ai-organization-demo/schemas/workflow-result.schema.json'),
         'utf8',
       ),
     );
@@ -276,7 +278,9 @@ describe('ai-org-transformation workflow', () => {
         onConfirm: async () => false,
       });
 
-      await expect(workflow.run!(runtime, {})).rejects.toThrow(/unexpected fields|exceeds 8000/);
+      await expect(workflow.run!(runtime, {})).rejects.toThrow(
+        /additional property is not allowed|exceeds 8000/,
+      );
     }
   });
 

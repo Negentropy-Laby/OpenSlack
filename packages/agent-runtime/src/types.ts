@@ -179,14 +179,20 @@ export class RuntimeMisconfiguredError extends Error {
 
 export class AgentExecutionFailedError extends Error {
   readonly runId: string;
+  readonly operatorSafeSummary?: string;
 
   constructor(
     readonly code: AgentRunFailureCode,
     runId: string,
+    options: { cause?: unknown; operatorSafeSummary?: string } = {},
   ) {
-    super(getAgentRunFailureSummary(undefined, code));
+    super(
+      options.operatorSafeSummary ?? getAgentRunFailureSummary(undefined, code),
+      options.cause === undefined ? undefined : { cause: options.cause },
+    );
     this.name = 'AgentExecutionFailedError';
     this.runId = runId;
+    this.operatorSafeSummary = options.operatorSafeSummary;
   }
 }
 
@@ -293,6 +299,13 @@ export function getAgentRunFailureSummary(
   error: unknown,
   failureCode: AgentRunFailureCode = getAgentRunFailureCode(error),
 ): string {
+  if (
+    isInstanceOfSafe(error, AgentExecutionFailedError) &&
+    error.code === failureCode &&
+    error.operatorSafeSummary !== undefined
+  ) {
+    return error.operatorSafeSummary;
+  }
   switch (failureCode) {
     case 'RUNTIME_NOT_CONFIGURED':
       return 'Agent runtime is not configured. Configure an execution provider before retrying.';
