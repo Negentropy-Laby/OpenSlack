@@ -7,9 +7,10 @@ Repository qualification has four independent layers:
 2. Go store, scheduler, process supervisor, HTTP and OpenAPI tests, including stale fencing,
    response loss and durable reconciliation.
 3. Real PostgreSQL tests and a two-process seed/verify harness with a PostgreSQL restart.
-4. A hosted cross-language harness that bundles the worker into one self-contained
-   CommonJS `workflow-runner-worker.js`, seals it beside a copied Node executable and exact
-   manifest without relying on ambient package module mode, proves completion/cancellation
+4. A hosted cross-language harness that produces byte-identical bundles from two checkout roots,
+   stages the self-contained `workflow-runner-worker.cjs` beside a copied Node executable and exact
+   manifest, and starts it below a `type: module` ancestor. The `.cjs` suffix fixes parsing at the
+   file itself. The harness also proves completion/cancellation
    receipts, persists an unproven-termination reconciliation through the real PostgreSQL store,
    and injects an unknown effect-outcome commit.
 
@@ -20,7 +21,9 @@ tests 100 times under the pinned Go/PostgreSQL qualification environment. Repeti
 backstop for timing instability; deterministic fixture construction remains the correctness gate.
 
 The default image smoke additionally proves `mode=shadow-only` and a `404` runner route. Native
-Windows CI exercises the Job Object process tree and descriptor ACL/reparse boundary. The reviewed
+Windows CI builds and starts the same real `.cjs` artifact before exercising the Job Object process
+tree and descriptor ACL/reparse boundary. Sealed v1/v2 qualification rejects builtin submissions
+before path resolution; ordinary TypeScript builtin discovery is outside this sealed boundary. The reviewed
 Go verifier repeats PostgreSQL runner-store, restart, Prometheus, distribution and default-off
 image gates.
 

@@ -64,7 +64,8 @@ WORKFLOW_CONTROL_HEALTH_URL=http://127.0.0.1:8081/health/ready
 ```
 
 The external bundle root is a closed directory containing exactly the reviewed manifest, a copied
-`runner-node` executable, and the self-contained `workflow-runner-worker.js` entrypoint. The
+`runner-node` executable, and the self-contained `workflow-runner-worker.cjs` entrypoint. The `.cjs`
+suffix fixes CommonJS parsing at the file itself, regardless of an ancestor package's module mode. The
 manifest's `runnerBuildHash` is the SHA-256 of that entrypoint and is recomputed at startup; extra
 files, subdirectories, links, reparse points, or any byte drift fail closed. The health URL override
 is required when the container entry point is changed to `/runner-server`, because the image's
@@ -79,6 +80,11 @@ The runner API is private, bearer-authenticated, single-workspace, canonical JSO
 in `docs/api/runner-openapi.yaml`. It is an admission and inspection surface; workflow source,
 arguments, prompts, credentials, arbitrary paths, arbitrary URLs, approval decisions, and budget
 decisions are not accepted.
+
+Stage the reviewed three-file bundle with
+`bun scripts/qualification/workflow-runner-bundle.ts stage --bundle-root <absolute-root> --node-executable <absolute-node>`.
+The sealed v1 and v2 workers reject `workflowSource: builtin` before any catalog path lookup; builtin
+discovery remains available only to ordinary TypeScript composition paths.
 
 The lease duration is a hard, immutable execution bound; heartbeats prove liveness but do not
 extend it. The configuration is extension-only: operators running work that may exceed the

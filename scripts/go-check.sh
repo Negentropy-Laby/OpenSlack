@@ -2658,13 +2658,13 @@ run_workflow_runner_v2_runtime_delivery_image_default_off() {
   mkdir -m 0755 "${workspace_root}/descriptors"
   chmod 0755 "${bundle_root}" "${workspace_root}"
   printf '#!/bin/sh\nexit 0\n' >"${bundle_root}/runner-executable"
-  printf '// sealed default-off worker is never launched\n' >"${bundle_root}/workflow-runner-worker.js"
+  printf '// sealed default-off worker is never launched\n' >"${bundle_root}/workflow-runner-worker.cjs"
   printf '%s\n' \
-    '{"schema":"openslack.workflow_runner_bundle.v1","bundleId":"openslack.gs9f2.image.default-off","runnerBuildHash":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad","executable":{"relativePath":"runner-executable","sha256":"306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"},"entrypoint":{"relativePath":"workflow-runner-worker.js","sha256":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad"},"entrypointMode":"first-argument","fixedArguments":[],"fixedEnvironment":["NODE_ENV=test"],"workingDirectory":"."}' \
+    '{"schema":"openslack.workflow_runner_bundle.v1","bundleId":"openslack.gs9f2.image.default-off","runnerBuildHash":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad","executable":{"relativePath":"runner-executable","sha256":"306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"},"entrypoint":{"relativePath":"workflow-runner-worker.cjs","sha256":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad"},"entrypointMode":"first-argument","fixedArguments":[],"fixedEnvironment":["NODE_ENV=test"],"workingDirectory":"."}' \
     >"${bundle_root}/workflow-runner-bundle.v1.json"
   chmod 0555 "${bundle_root}/runner-executable"
   chmod 0444 \
-    "${bundle_root}/workflow-runner-worker.js" \
+    "${bundle_root}/workflow-runner-worker.cjs" \
     "${bundle_root}/workflow-runner-bundle.v1.json"
   bundle_mount="$(docker_path "${bundle_root}")"
   workspace_mount="$(docker_path "${workspace_root}")"

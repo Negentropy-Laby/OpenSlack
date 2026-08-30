@@ -162,6 +162,8 @@ const triggerPaths = [
   'packages/agent-runtime/src/__tests__/launcher.test.ts',
   'packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts',
   'packages/agent-runtime/src/__tests__/provider-usage-evidence.test.ts',
+  'packages/credentials/src/backends.ts',
+  'packages/credentials/src/__tests__/credentials.test.ts',
   'packages/organization-graph/**',
   'packages/operator/contracts/governed-plan/**',
   'packages/operator/contracts/governed-plan-authority/**',
@@ -187,6 +189,8 @@ const triggerPaths = [
   'packages/workflows/src/agent-shim.ts',
   'packages/workflows/src/execute.ts',
   'packages/workflows/src/loader.ts',
+  'packages/workflows/src/internal/workflow-file-loader.ts',
+  'packages/workflows/package.json',
   'packages/workflows/src/runtime.ts',
   'packages/workflows/src/run-store.ts',
   'packages/workflows/src/workflow-runs.ts',
@@ -226,6 +230,7 @@ const triggerPaths = [
   'scripts/workflow-contract-families.generated.sh',
   'scripts/workflow-contract-families/**',
   'scripts/qualification/workflow-control-postgres-gate.sh',
+  'scripts/qualification/workflow-runner-bundle.ts',
   'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
@@ -1032,13 +1037,10 @@ describe('notification delivery service workflow', () => {
     });
     for (const evidence of [
       'bun run build',
-      'bun run --cwd packages/workflows build:runner-worker',
-      'packages/workflows/dist/workflow-runner-worker-bundle.cjs',
-      '"$bundle_root/workflow-runner-worker.js"',
-      'runner-node',
-      'workflow-runner-bundle.v1.json',
-      '\\"runnerBuildHash\\":\\"${entrypoint_hash}\\"',
-      '\\"entrypointMode\\":\\"first-argument\\"',
+      'scripts/qualification/workflow-runner-bundle.ts verify-reproducible',
+      'scripts/qualification/workflow-runner-bundle.ts stage',
+      '--bundle-root "$bundle_root"',
+      '--node-executable "$(command -v node)"',
       'WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256',
       'go test ./internal/runnerstore/postgres -count=1',
       'WORKFLOW_RUNNER_GS8B_QUALIFICATION=1',
@@ -1084,6 +1086,11 @@ describe('notification delivery service workflow', () => {
       setupBunAction,
     ]);
     expect(windowsActions.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
+    const windowsBuild = windowsJob.steps.find(
+      (step) => step.name === 'Install and build the sealed TypeScript runner',
+    )?.run;
+    expect(windowsBuild).toContain('scripts/qualification/workflow-runner-bundle.ts verify-local');
+    expect(windowsBuild).toContain('--node-executable $nodeExecutable');
     const windowsTests = windowsJob.steps.find(
       (step) => step.name === 'Qualify native Windows runner and GS9-F2b TypeScript boundaries',
     )?.run;

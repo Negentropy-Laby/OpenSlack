@@ -642,10 +642,10 @@ func assertQualificationBundle(t *testing.T, root string) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		t.Fatalf("qualification bundle manifest has trailing data: %v", err)
 	}
-	if manifest.Schema != workerregistry.ManifestSchema || filepath.ToSlash(manifest.Entrypoint.RelativePath) != "workflow-runner-worker.js" || manifest.EntrypointMode != "first-argument" {
+	if manifest.Schema != workerregistry.ManifestSchema || filepath.ToSlash(manifest.Entrypoint.RelativePath) != "workflow-runner-worker.cjs" || manifest.EntrypointMode != "first-argument" {
 		t.Fatalf("qualification must execute the built TypeScript worker entrypoint: schema=%q entrypoint=%q", manifest.Schema, manifest.Entrypoint.RelativePath)
 	}
-	entrypoint, err := os.ReadFile(filepath.Join(root, "workflow-runner-worker.js"))
+	entrypoint, err := os.ReadFile(filepath.Join(root, "workflow-runner-worker.cjs"))
 	if err != nil {
 		t.Fatalf("read self-contained qualification worker: %v", err)
 	}
