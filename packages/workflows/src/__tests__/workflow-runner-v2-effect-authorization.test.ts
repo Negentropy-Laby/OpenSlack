@@ -10,7 +10,6 @@ import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-st
 import type { WorkflowRunnerAuthorityBindingStage } from '../workflow-runner-authority-binding-contract.js';
 import type { WorkflowRunnerAuthoritySourceAdapter } from '../workflow-runner-authority-binding-runtime.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from '../workflow-runner-v2-effect-authorization.js';
-import { createWorkflowRunnerV2ExecutionDescriptor } from '../workflow-runner-v2-descriptor.js';
 import type { WorkflowRunnerV2ExecutionContext } from '../workflow-runner-v2-session.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import {
@@ -18,6 +17,7 @@ import {
   WorkflowEffectAuthorizationBusyError,
   WorkflowEffectReconciliationRequiredError,
 } from '../internal/workflow-effect-authorization-contract.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 
 const roots: string[] = [];
 
@@ -48,7 +48,7 @@ async function fixture(suffix: string) {
     phases: [{ title: 'Run', detail: 'Run once.' }],
     risk: 'low' as const,
   };
-  const descriptor = createWorkflowRunnerV2ExecutionDescriptor({
+  const descriptor = workflowRunnerV2DescriptorFixture({
     descriptorRef: `descriptor.v2.effect.${suffix}`,
     workspaceId: 'workspace.effect.test',
     workflowRunId,

@@ -139,19 +139,38 @@ describe('BridgeRuntimeResolver', () => {
     expect(resolved?.env?.OPENSLACK_PRIVATE_KEY).toBeUndefined();
   });
 
-  it('rejects out-of-range Aby bridge handshake timeouts', () => {
+  it('treats null timeouts as defaults and rejects explicit out-of-range values', () => {
     const abyRoot = createFakeAbyRoot(root);
     const configDir = join(root, '.openslack.local');
     mkdirSync(configDir, { recursive: true });
 
-    for (const handshakeTimeoutMs of [999, 60_001]) {
+    writeFileSync(
+      join(configDir, 'agent-runtime.json'),
+      JSON.stringify({ aby: { root: abyRoot, timeoutMs: null, handshakeTimeoutMs: null } }),
+      'utf-8',
+    );
+    expect(loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toMatchObject({
+      timeoutMs: undefined,
+      handshakeTimeoutMs: undefined,
+    });
+
+    for (const [field, value] of [
+      ['timeoutMs', 99],
+      ['timeoutMs', 86_400_001],
+      ['handshakeTimeoutMs', 999],
+      ['handshakeTimeoutMs', 60_001],
+    ] as const) {
       writeFileSync(
         join(configDir, 'agent-runtime.json'),
-        JSON.stringify({ aby: { root: abyRoot, handshakeTimeoutMs } }),
+        JSON.stringify({ aby: { root: abyRoot, [field]: value } }),
         'utf-8',
       );
-      expect(() => loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toThrow(
-        BridgeRuntimeConfigError,
+      expect(() => loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toThrowError(
+        expect.objectContaining({
+          name: 'BridgeRuntimeConfigError',
+          code: 'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
+          field,
+        }),
       );
     }
   });

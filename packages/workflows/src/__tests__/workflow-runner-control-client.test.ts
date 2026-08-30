@@ -164,6 +164,13 @@ describe('WorkflowRunnerControlClient', () => {
     expect(() => validateWorkflowRunnerJobView({ ...view, resultHash: null })).toThrow(
       /inconsistent/u,
     );
+    expect(() =>
+      validateWorkflowRunnerJobView({
+        ...view,
+        terminalStatus: 'failed',
+        terminalReason: 'workflow_failed',
+      }),
+    ).toThrow(/inconsistent/u);
   });
 
   it('accepts the reconciliation terminal shape emitted by the Go authority', () => {

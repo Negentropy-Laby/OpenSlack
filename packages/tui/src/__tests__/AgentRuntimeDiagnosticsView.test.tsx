@@ -17,6 +17,7 @@ function vm(status: 'PASS' | 'FAIL'): AgentRuntimeDiagnosticsViewModel {
       '/aby/src/sidecar/entrypoints/agentRunBridge.ts',
     ],
     timeoutMs: '120000ms',
+    handshakeTimeoutMs: '10000ms',
     safeEnvAllowed: ['AGENT_RUN_BRIDGE_RUNNER'],
     safeEnvRejected: status === 'PASS' ? [] : ['OPENSLACK_PRIVATE_KEY'],
     checks: [

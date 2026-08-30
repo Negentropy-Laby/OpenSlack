@@ -27,6 +27,7 @@ export interface AgentRuntimeDiagnosticsViewModel {
   command: string;
   args: string[];
   timeoutMs: string;
+  handshakeTimeoutMs: string;
   safeEnvAllowed: string[];
   safeEnvRejected: string[];
   checks: AgentRuntimeDiagnosticsCheckViewModel[];
@@ -48,6 +49,8 @@ export function mapAbyRuntimeDoctorToViewModel(
     command: report.command ?? 'not configured',
     args: report.args,
     timeoutMs: report.timeoutMs !== undefined ? `${report.timeoutMs}ms` : 'not recorded',
+    handshakeTimeoutMs:
+      report.handshakeTimeoutMs !== undefined ? `${report.handshakeTimeoutMs}ms` : 'not recorded',
     safeEnvAllowed: report.env.allowedKeys,
     safeEnvRejected: report.env.rejectedKeys,
     checks: report.checks,

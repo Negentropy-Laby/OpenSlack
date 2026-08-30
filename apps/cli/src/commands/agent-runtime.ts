@@ -109,7 +109,8 @@ export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependenci
     .option('--dry-run', 'Preview the config without writing it')
     .option('--write', 'Write .openslack.local/agent-runtime.json')
     .option('--command <command>', 'Bridge command to launch', 'bun')
-    .option('--timeout-ms <ms>', 'Bridge timeout in milliseconds', '120000')
+    .option('--timeout-ms <ms>', 'Bridge timeout in milliseconds')
+    .option('--handshake-timeout-ms <ms>', 'Bridge handshake timeout in milliseconds')
     .action(async (options) => {
       const rootDir = findRepoRoot();
       const write = Boolean(options.write);
@@ -124,7 +125,8 @@ export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependenci
         rootDir,
         root: String(options.root),
         command: String(options.command ?? 'bun'),
-        timeoutMs: Number.parseInt(String(options.timeoutMs ?? '120000'), 10),
+        timeoutMs: parseOptionalInteger(options.timeoutMs),
+        handshakeTimeoutMs: parseOptionalInteger(options.handshakeTimeoutMs),
         env: process.env,
         write,
       });
@@ -302,6 +304,9 @@ export function renderAbyRuntimeDoctorReport(report: AbyRuntimeDoctorReport): st
   lines.push(`Command: ${report.command ?? '(not configured)'}`);
   lines.push(`Args: ${report.args.length > 0 ? report.args.join(' ') : '(not available)'}`);
   if (report.timeoutMs !== undefined) lines.push(`Timeout: ${report.timeoutMs}ms`);
+  if (report.handshakeTimeoutMs !== undefined) {
+    lines.push(`Handshake timeout: ${report.handshakeTimeoutMs}ms`);
+  }
   lines.push(`Safe env allowed: ${report.env.allowedKeys.join(', ') || '(none)'}`);
   lines.push(`Safe env rejected: ${report.env.rejectedKeys.join(', ') || '(none)'}`);
   lines.push('');
@@ -335,6 +340,7 @@ export function renderAbyRuntimeDoctorJson(report: AbyRuntimeDoctorReport): stri
       command: report.command,
       args: report.args,
       timeoutMs: report.timeoutMs,
+      handshakeTimeoutMs: report.handshakeTimeoutMs,
       safeEnv: {
         allowedKeys: report.env.allowedKeys,
         rejectedKeys: report.env.rejectedKeys,
@@ -487,6 +493,10 @@ function readCsv(value: unknown): string[] | undefined {
 function parseInteger(value: unknown): number {
   const text = String(value).trim();
   return /^(?:0|[1-9]\d*)$/.test(text) ? Number(text) : Number.NaN;
+}
+
+function parseOptionalInteger(value: unknown): number | undefined {
+  return value === undefined ? undefined : parseInteger(value);
 }
 
 export function renderOpenAICompatibleRuntimeDoctorReport(

@@ -69,10 +69,16 @@ func TestLeaseDurationIsExplicitlyBounded(t *testing.T) {
 	if err != nil || config.LeaseDuration != 15*time.Minute {
 		t.Fatalf("bounded lease duration rejected: %+v %v", config, err)
 	}
-	for _, value := range []string{"invalid", "9999", "86400001"} {
+	for _, value := range []string{"invalid", "59999", "86400001"} {
 		candidate := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS="+value)
 		if _, err := LoadEnvironment(candidate); err == nil {
 			t.Fatalf("invalid lease duration accepted: %q", value)
+		}
+	}
+	for _, value := range []string{"60000", "86400000"} {
+		candidate := append(append([]string{}, base...), "WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS="+value)
+		if _, err := LoadEnvironment(candidate); err != nil {
+			t.Fatalf("valid lease duration rejected: %q: %v", value, err)
 		}
 	}
 }

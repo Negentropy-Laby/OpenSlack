@@ -57,6 +57,29 @@ describe('diagnoseAbyRuntime', () => {
     expect(report.remediation).toContain('OPENSLACK_ABY_ROOT');
   });
 
+  it('distinguishes malformed JSON from invalid timeout fields', () => {
+    const configDir = join(root, '.openslack.local');
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, 'agent-runtime.json');
+    writeFileSync(configPath, '{invalid', 'utf-8');
+    const malformed = diagnoseAbyRuntime({ rootDir: root, env: {} });
+    expect(malformed.checks[0]).toMatchObject({ name: 'config', status: 'FAIL' });
+    expect(malformed.remediations).toEqual([
+      'Fix .openslack.local/agent-runtime.json so it is valid JSON.',
+    ]);
+
+    writeFileSync(
+      configPath,
+      JSON.stringify({ aby: { root: createFakeAbyRoot(root), handshakeTimeoutMs: 999 } }),
+      'utf-8',
+    );
+    const invalidField = diagnoseAbyRuntime({ rootDir: root, env: {} });
+    expect(invalidField.checks[0]?.detail).toContain('handshakeTimeoutMs');
+    expect(invalidField.remediations).toEqual([
+      'Fix the invalid Aby runtime field handshakeTimeoutMs.',
+    ]);
+  });
+
   it('passes when OPENSLACK_ABY_ROOT points at a bridge-capable checkout', () => {
     const abyRoot = createFakeAbyRoot(root);
     const report = diagnoseAbyRuntime({

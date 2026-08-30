@@ -1,3 +1,6 @@
+const ABY_PROVIDER = 'aby';
+const ABY_AGENT_ID = 'anthropic_architect_aby';
+
 export const meta = {
   name: 'gs9g-authenticated-aby-canary',
   version: '1.0.0',
@@ -31,25 +34,25 @@ export const meta = {
     onExceeded: 'fail',
   },
   isolationPolicy: {
-    anthropic_architect_aby: 'none',
+    [ABY_AGENT_ID]: 'none',
   },
-}
+};
 
 export async function preview(ctx) {
-  ctx.phase('Authenticate')
+  ctx.phase('Authenticate');
   return {
     preview: true,
-    provider: 'aby',
-    agentId: 'anthropic_architect_aby',
-  }
+    provider: ABY_PROVIDER,
+    agentId: ABY_AGENT_ID,
+  };
 }
 
 export async function run(ctx) {
-  ctx.phase('Authenticate')
+  ctx.phase('Authenticate');
   const result = await ctx.agent(
-    'Return one concise sentence confirming this authenticated read-only Workflow canary completed.',
+    'Return JSON with ok=true and one concise response confirming this authenticated read-only Workflow canary completed.',
     {
-      agentType: 'anthropic_architect_aby',
+      agentType: ABY_AGENT_ID,
       label: 'authenticate:aby-provider',
       phase: 'Authenticate',
       isolation: 'none',
@@ -57,26 +60,23 @@ export async function run(ctx) {
       schema: {
         type: 'object',
         properties: {
+          ok: { type: 'boolean' },
           response: { type: 'string' },
         },
-        required: ['response'],
+        required: ['ok', 'response'],
+        additionalProperties: false,
       },
     },
-  )
-  const response = typeof result?.response === 'string' ? result.response.trim() : ''
-  if (
-    response.length === 0 ||
-    /(?:API Error:|Failed to authenticate|Missing API key|Authentication (?:failed|error)|\bUnauthorized\b|\bForbidden\b)/iu.test(
-      response,
-    )
-  ) {
-    throw new Error('Authenticated Aby canary did not return a valid provider response.')
+  );
+  const response = typeof result?.response === 'string' ? result.response.trim() : '';
+  if (result?.ok !== true || response.length === 0) {
+    throw new Error('Authenticated Aby canary did not return a valid provider response.');
   }
 
   return {
     status: 'complete',
-    provider: 'aby',
-    agentId: 'anthropic_architect_aby',
+    provider: ABY_PROVIDER,
+    agentId: ABY_AGENT_ID,
     result,
-  }
+  };
 }

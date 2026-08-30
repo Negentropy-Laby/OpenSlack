@@ -21,7 +21,7 @@ import {
 } from '../workflow-run-routing.js';
 import { RunStore } from '../run-store.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
-import { createWorkflowRunnerV2ExecutionDescriptor } from '../workflow-runner-v2-descriptor.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
 import {
   loadWorkflowRunRoutingExecutionConfig,
@@ -557,7 +557,7 @@ describe('Go-owned worker recovery projection', () => {
     const workspace = await mkdtemp(join(tmpdir(), 'openslack-workflow-go-projection-'));
     roots.push(workspace);
     const route = select();
-    const descriptor = createWorkflowRunnerV2ExecutionDescriptor({
+    const descriptor = workflowRunnerV2DescriptorFixture({
       descriptorRef: 'descriptor.go-projection.1',
       workspaceId: route.workspaceId,
       workflowRunId: route.runId,

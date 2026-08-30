@@ -18,6 +18,7 @@ function report(overrides: Partial<AbyRuntimeDoctorReport> = {}): AbyRuntimeDoct
     command: 'bun',
     args: [],
     timeoutMs: 120000,
+    handshakeTimeoutMs: 10000,
     env: { allowedKeys: [], rejectedKeys: [] },
     checks: [{ name: 'config-source', status: 'FAIL', detail: 'No Aby root configured' }],
     remediations: ['Set OPENSLACK_ABY_ROOT.'],
@@ -50,6 +51,7 @@ describe('agent runtime diagnostics view model', () => {
 
     expect(out).toContain('Agent Runtime / aby');
     expect(out).toContain('Safe env allowed: AGENT_RUN_SAFE_MODE');
+    expect(out).toContain('Handshake timeout: 10000ms');
     expect(out).toContain('Safe env rejected: OPENSLACK_PRIVATE_KEY');
     expect(out).not.toContain('should-not-leak');
   });

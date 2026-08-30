@@ -26,10 +26,11 @@ import {
 } from '../workflow-runner-descriptor-store.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import {
-  createWorkflowRunnerV2ExecutionDescriptor,
+  validateWorkflowRunnerV2ExecutionDescriptor,
   WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
   type WorkflowRunnerV2ExecutionDescriptor,
 } from '../workflow-runner-v2-descriptor.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 import type { WorkflowMeta } from '../types.js';
 
 const roots: string[] = [];
@@ -131,7 +132,7 @@ function descriptor() {
 }
 
 function v2Descriptor() {
-  return createWorkflowRunnerV2ExecutionDescriptor({
+  return workflowRunnerV2DescriptorFixture({
     descriptorRef: 'descriptor.v2.test.1',
     workspaceId: 'workspace.test',
     workflowRunId: 'run.v2.test.1',
@@ -233,6 +234,23 @@ describe('GS8-B sealed execution descriptor', () => {
     await expect(store.read(value.descriptorRef, '2026-08-04T01:30:00.000Z')).resolves.toEqual(
       value,
     );
+
+    const nullPrototype = Object.assign(Object.create(null) as Record<string, unknown>, value);
+    expect(validateWorkflowRunnerV2ExecutionDescriptor(nullPrototype)).toEqual(value);
+    expect(() => validateWorkflowRunnerV2ExecutionDescriptor(new Proxy({ ...value }, {}))).toThrow(
+      /inert object/u,
+    );
+    const accessor = { ...value } as Record<string, unknown>;
+    Object.defineProperty(accessor, 'workspaceId', {
+      enumerable: true,
+      get: () => 'workspace.test',
+    });
+    expect(() => validateWorkflowRunnerV2ExecutionDescriptor(accessor)).toThrow(
+      /enumerable data fields/u,
+    );
+    expect(() =>
+      validateWorkflowRunnerV2ExecutionDescriptor({ ...value, [Symbol('unexpected')]: true }),
+    ).toThrow(/missing or unknown fields/u);
   });
 
   it('fails closed when a descriptor file loses owner-only permissions', async () => {

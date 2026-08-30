@@ -5,6 +5,7 @@ import type { CredentialStore } from '@openslack/credentials';
 import type { BridgeRuntimeResolverOptions } from './bridge-runtime-resolver.js';
 import { loadAbyBridgeRuntimeConfig } from './bridge-runtime-resolver.js';
 import { auditBridgeEnv } from './bridge-env.js';
+import { ABY_BRIDGE_RUNTIME_LIMITS, BridgeRuntimeConfigError } from './runtime-config-file.js';
 import {
   loadOpenAICompatibleRuntimeConfig,
   resolveRuntimeCredential,
@@ -175,6 +176,11 @@ export function diagnoseAbyRuntime(
     loaded = loadAbyBridgeRuntimeConfig(options);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const parseFailure =
+      err instanceof BridgeRuntimeConfigError && err.code === 'BRIDGE_RUNTIME_CONFIG_PARSE_FAILED';
+    const remediation = parseFailure
+      ? 'Fix .openslack.local/agent-runtime.json so it is valid JSON.'
+      : `Fix the invalid Aby runtime field${err instanceof BridgeRuntimeConfigError && err.field ? ` ${err.field}` : ''}.`;
     return {
       provider: 'aby',
       status: 'FAIL',
@@ -184,8 +190,8 @@ export function diagnoseAbyRuntime(
       args: [],
       env: { allowedKeys: [], rejectedKeys: [] },
       checks: [{ name: 'config', status: 'FAIL', detail: message }],
-      remediations: ['Fix .openslack.local/agent-runtime.json so it is valid JSON.'],
-      remediation: 'Fix .openslack.local/agent-runtime.json so it is valid JSON.',
+      remediations: [remediation],
+      remediation,
     };
   }
 
@@ -287,8 +293,9 @@ export function diagnoseAbyRuntime(
     resolvedRoot,
     command,
     args,
-    timeoutMs: loaded.timeoutMs,
-    handshakeTimeoutMs: loaded.handshakeTimeoutMs,
+    timeoutMs: loaded.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default,
+    handshakeTimeoutMs:
+      loaded.handshakeTimeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.handshakeTimeoutMs.default,
     env: {
       allowedKeys: envAudit.allowedKeys,
       rejectedKeys: envAudit.rejectedKeys,

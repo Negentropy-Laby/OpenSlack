@@ -12,7 +12,10 @@ import { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
 import { auditBridgeEnv } from './bridge-env.js';
 import {
   AGENT_RUNTIME_CONFIG_SCHEMA,
+  ABY_BRIDGE_RUNTIME_LIMITS,
+  BridgeRuntimeConfigError,
   readRuntimeConfigForMerge,
+  readOptionalRuntimeDuration,
   writeRuntimeConfigAtomic,
 } from './runtime-config-file.js';
 
@@ -24,6 +27,7 @@ export interface SetupAbyRuntimeOptions {
   root: string;
   command?: string;
   timeoutMs?: number;
+  handshakeTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   bridgeEnv?: Record<string, string>;
   configPath?: string;
@@ -37,6 +41,7 @@ export interface AbyRuntimeSetupConfigPreview {
     root: string;
     command: string;
     timeoutMs: number;
+    handshakeTimeoutMs: number;
     env?: {
       allowedKeys: string[];
       rejectedKeys: string[];
@@ -54,6 +59,7 @@ export interface AbyRuntimeSetupReport {
   configPath: string;
   command: string;
   timeoutMs: number;
+  handshakeTimeoutMs: number;
   wroteConfig: boolean;
   env: {
     allowedKeys: string[];
@@ -70,13 +76,50 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
   const root = options.root.trim();
   const resolvedRoot = root ? (isAbsolute(root) ? resolve(root) : resolve(rootDir, root)) : rootDir;
   const command = options.command ?? 'bun';
-  const timeoutMs = options.timeoutMs ?? 120_000;
   const configPath = options.configPath ?? join(rootDir, '.openslack.local', 'agent-runtime.json');
+  let existing: Record<string, unknown> = { schema: AGENT_RUNTIME_CONFIG_SCHEMA };
+  let existingConfigError: Error | undefined;
+  try {
+    existing = readRuntimeConfigForMerge(configPath);
+  } catch (error) {
+    existingConfigError = error instanceof Error ? error : new Error('unsafe runtime config');
+  }
+  const existingAby = readRecord(existing.aby) ?? {};
+  let durationError: BridgeRuntimeConfigError | undefined;
+  let timeoutMs: number = ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default;
+  let handshakeTimeoutMs: number = ABY_BRIDGE_RUNTIME_LIMITS.handshakeTimeoutMs.default;
+  try {
+    timeoutMs =
+      readOptionalRuntimeDuration(options.timeoutMs ?? existingAby.timeoutMs, 'timeoutMs') ??
+      ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default;
+    handshakeTimeoutMs =
+      readOptionalRuntimeDuration(
+        options.handshakeTimeoutMs ?? existingAby.handshakeTimeoutMs,
+        'handshakeTimeoutMs',
+      ) ?? ABY_BRIDGE_RUNTIME_LIMITS.handshakeTimeoutMs.default;
+  } catch (error) {
+    durationError =
+      error instanceof BridgeRuntimeConfigError
+        ? error
+        : new BridgeRuntimeConfigError(
+            'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
+            'Aby bridge timeout configuration is invalid.',
+          );
+  }
   const envAudit = auditBridgeEnv(options.bridgeEnv);
   const runEntrypoint = join(resolvedRoot, 'src', 'sidecar', 'entrypoints', 'runEntrypoint.ts');
   const agentRunBridge = join(resolvedRoot, 'src', 'sidecar', 'entrypoints', 'agentRunBridge.ts');
 
   const checks: AgentRuntimeDoctorCheck[] = [
+    {
+      name: 'config',
+      status: existingConfigError || durationError ? 'FAIL' : 'PASS',
+      detail:
+        durationError?.message ??
+        (existingConfigError
+          ? 'Existing runtime config could not be safely read.'
+          : 'Runtime config and timeout fields are valid.'),
+    },
     {
       name: 'aby-root',
       status: root && existsSync(resolvedRoot) ? 'PASS' : 'FAIL',
@@ -115,16 +158,22 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
     ? 'FAIL'
     : 'PASS';
   const mode: AbyRuntimeSetupMode = options.write ? 'write' : 'dry-run';
-  const configPreview = buildConfigPreview(root, command, timeoutMs, envAudit);
+  const configPreview = buildConfigPreview(root, command, timeoutMs, handshakeTimeoutMs, envAudit);
   let wroteConfig = false;
   let doctor: AbyRuntimeDoctorReport | undefined;
 
   if (options.write && status === 'PASS') {
     try {
-      const existing = readRuntimeConfigForMerge(configPath);
       writeRuntimeConfigAtomic(configPath, {
         ...existing,
-        ...buildWritableConfig(root, command, timeoutMs, envAudit.safeEnv),
+        ...buildWritableConfig(
+          existingAby,
+          root,
+          command,
+          timeoutMs,
+          handshakeTimeoutMs,
+          envAudit.safeEnv,
+        ),
       });
       wroteConfig = true;
       doctor = (options.diagnose ?? diagnoseAbyRuntime)({
@@ -173,6 +222,7 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
     configPath,
     command,
     timeoutMs,
+    handshakeTimeoutMs,
     wroteConfig,
     env: {
       allowedKeys: envAudit.allowedKeys,
@@ -199,10 +249,11 @@ function buildConfigPreview(
   root: string,
   command: string,
   timeoutMs: number,
+  handshakeTimeoutMs: number,
   envAudit: ReturnType<typeof auditBridgeEnv>,
 ): AbyRuntimeSetupConfigPreview {
   const preview: AbyRuntimeSetupConfigPreview = {
-    aby: { root, command, timeoutMs },
+    aby: { root, command, timeoutMs, handshakeTimeoutMs },
   };
   if (envAudit.allowedKeys.length > 0 || envAudit.rejectedKeys.length > 0) {
     preview.aby.env = {
@@ -214,14 +265,28 @@ function buildConfigPreview(
 }
 
 function buildWritableConfig(
+  existingAby: Record<string, unknown>,
   root: string,
   command: string,
   timeoutMs: number,
+  handshakeTimeoutMs: number,
   safeEnv: Record<string, string>,
 ): Record<string, unknown> {
-  const aby: Record<string, unknown> = { root, command, timeoutMs };
+  const aby: Record<string, unknown> = {
+    ...existingAby,
+    root,
+    command,
+    timeoutMs,
+    handshakeTimeoutMs,
+  };
   if (Object.keys(safeEnv).length > 0) aby.env = safeEnv;
   return { schema: AGENT_RUNTIME_CONFIG_SCHEMA, aby };
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function remediationForSetup(checks: AgentRuntimeDoctorCheck[], wroteConfig: boolean): string[] {
@@ -248,6 +313,8 @@ function remediationForSetup(checks: AgentRuntimeDoctorCheck[], wroteConfig: boo
         return 'Remove unsafe env keys; only AGENT_RUN_BRIDGE_RUNNER and AGENT_RUN_SAFE_* are allowed.';
       case 'doctor':
         return 'Fix the failed doctor checks and rerun openslack agent-runtime setup aby --write.';
+      case 'config':
+        return 'Fix the existing runtime config or the requested timeout values and rerun setup.';
       default:
         return 'Fix the failed setup check and rerun agent-runtime setup.';
     }

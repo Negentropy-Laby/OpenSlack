@@ -11,10 +11,7 @@ import {
   WORKFLOW_RUNNER_CAPABILITIES,
   WORKFLOW_RUNNER_PROTOCOL_VERSION,
 } from '../workflow-runner-contract.js';
-import {
-  createWorkflowRunnerV2ExecutionDescriptor,
-  hashWorkflowRunnerV2Descriptor,
-} from '../workflow-runner-v2-descriptor.js';
+import { hashWorkflowRunnerV2Descriptor } from '../workflow-runner-v2-descriptor.js';
 import {
   WorkflowRunnerV2Session,
   workflowRunnerV2BudgetDecisionMatchesRequest,
@@ -22,6 +19,7 @@ import {
   type WorkflowRunnerV2RuntimeDeliveryPort,
 } from '../workflow-runner-v2-session.js';
 import type { RunResult } from '../types.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 
 const NOW = '2026-08-15T02:00:00.000Z';
 const LATER = '2026-08-15T02:05:00.000Z';
@@ -40,7 +38,7 @@ function descriptor(
     authorityBuildHash: HASH_A,
   },
 ) {
-  return createWorkflowRunnerV2ExecutionDescriptor({
+  return workflowRunnerV2DescriptorFixture({
     descriptorRef: `descriptor.v2.${resumeGeneration}`,
     workspaceId: 'workspace.v2',
     workflowRunId: `run.v2.${resumeGeneration}`,

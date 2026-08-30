@@ -96,6 +96,11 @@ export default function AgentRuntimeDiagnosticsView({
         React.createElement(
           ThemedText,
           { colorTheme: 'muted' },
+          `Handshake timeout: ${model.handshakeTimeoutMs}`,
+        ),
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'muted' },
           `Config path: ${compact(model.configPath)}`,
         ),
       ),

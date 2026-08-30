@@ -12,6 +12,48 @@ import { dirname } from 'node:path';
 
 export const AGENT_RUNTIME_CONFIG_SCHEMA = 'openslack.agent_runtime.v1';
 
+export const ABY_BRIDGE_RUNTIME_LIMITS = Object.freeze({
+  timeoutMs: Object.freeze({ default: 120_000, minimum: 100, maximum: 86_400_000 }),
+  handshakeTimeoutMs: Object.freeze({ default: 10_000, minimum: 1_000, maximum: 60_000 }),
+} as const);
+
+export type BridgeRuntimeConfigErrorCode =
+  | 'BRIDGE_RUNTIME_CONFIG_PARSE_FAILED'
+  | 'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID';
+
+export class BridgeRuntimeConfigError extends Error {
+  constructor(
+    readonly code: BridgeRuntimeConfigErrorCode,
+    message: string,
+    readonly field?: 'timeoutMs' | 'handshakeTimeoutMs',
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'BridgeRuntimeConfigError';
+  }
+}
+
+export function readOptionalRuntimeDuration(
+  value: unknown,
+  field: 'timeoutMs' | 'handshakeTimeoutMs',
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const limit = ABY_BRIDGE_RUNTIME_LIMITS[field];
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < limit.minimum ||
+    value > limit.maximum
+  ) {
+    throw new BridgeRuntimeConfigError(
+      'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
+      `Aby bridge ${field} must be an integer between ${limit.minimum} and ${limit.maximum}.`,
+      field,
+    );
+  }
+  return value;
+}
+
 export function readRuntimeConfigForMerge(path: string): Record<string, unknown> {
   if (!existsSync(path)) return { schema: AGENT_RUNTIME_CONFIG_SCHEMA };
   const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;

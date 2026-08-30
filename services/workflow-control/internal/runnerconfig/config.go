@@ -18,6 +18,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
 
 const (
@@ -25,7 +26,10 @@ const (
 	NetworkLoopback = "loopback"
 	NetworkInternal = "internal"
 
-	defaultHTTPBind = "127.0.0.1:8081"
+	defaultHTTPBind              = "127.0.0.1:8081"
+	defaultLeaseOfferTimeout     = 10 * time.Second
+	DefaultLeaseDuration         = 60 * time.Second
+	MinConfigurableLeaseDuration = DefaultLeaseDuration
 )
 
 var (
@@ -225,12 +229,12 @@ func LoadEnvironment(environment []string) (Config, error) {
 			return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES must be between 1 and 64")
 		}
 	}
-	leaseOfferTimeout := 10 * time.Second
-	leaseDuration := 60 * time.Second
+	leaseOfferTimeout := defaultLeaseOfferTimeout
+	leaseDuration := DefaultLeaseDuration
 	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS"]); raw != "" {
 		milliseconds, parseErr := strconv.ParseInt(raw, 10, 64)
-		minimum := leaseOfferTimeout.Milliseconds()
-		maximum := (24 * time.Hour).Milliseconds()
+		minimum := MinConfigurableLeaseDuration.Milliseconds()
+		maximum := runnerstore.MaxLeaseDuration.Milliseconds()
 		if parseErr != nil || milliseconds < minimum || milliseconds > maximum {
 			return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS must be between %d and %d", minimum, maximum)
 		}
