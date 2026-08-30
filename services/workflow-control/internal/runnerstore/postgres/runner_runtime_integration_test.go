@@ -697,7 +697,7 @@ func TestExpiredLeaseStillAcceptsCancelAcknowledgementAndCancellingTerminal(t *t
 	}
 	finishedAt := canonicalNow()
 	terminal := leasedEventInputAt(t, lease, runnerprotocol.KindTerminal, 3, "expired-cancel-terminal", finishedAt, map[string]any{
-		"status": "cancelled", "finishedAt": finishedAt, "resultHash": nil, "terminalReason": "lease_expired",
+		"status": "cancelled", "finishedAt": finishedAt, "resultHash": nil, "terminalReason": "cancelled_by_control",
 	})
 	if _, err := repository.RecordEvent(ctx, terminal); err != nil {
 		t.Fatalf("expired cancelling lease rejected terminal: %v", err)
@@ -706,7 +706,7 @@ func TestExpiredLeaseStillAcceptsCancelAcknowledgementAndCancellingTerminal(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State != runnerstore.JobTerminal || view.TerminalStatus == nil || *view.TerminalStatus != runnerprotocol.TerminalCancelled || view.TerminalReason == nil || *view.TerminalReason != "lease_expired" {
+	if view.State != runnerstore.JobTerminal || view.TerminalStatus == nil || *view.TerminalStatus != runnerprotocol.TerminalCancelled || view.TerminalReason == nil || *view.TerminalReason != "cancelled_by_control" {
 		t.Fatalf("expired cancellation did not settle terminal evidence: %+v", view)
 	}
 }
