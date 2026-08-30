@@ -38,9 +38,8 @@ import {
   buildMcpServerDescriptors,
 } from './bridge-mcp-scope.js';
 import { buildBridgeProcessEnv } from './bridge-env.js';
+import { ABY_BRIDGE_RUNTIME_LIMITS } from './runtime-config-file.js';
 
-const DEFAULT_BRIDGE_TIMEOUT_MS = 120_000;
-const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
 const MAX_ENVELOPE_SIZE_BYTES = 1024 * 1024; // 1MB
 
 /**
@@ -258,7 +257,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       prompt,
       permissionProfile: bridgePermissionProfile,
       worktreePath,
-      timeout: this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
+      timeout: this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default,
       metadata: {
         model: resolvedConfig.model,
         correlationId: context.correlationId ?? runId,
@@ -311,7 +310,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // a terminal envelope (complete or error) arrives. This handles
       // real bridge runtimes that emit progress/tool events before
       // producing a final result.
-      const totalTimeoutMs = this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS;
+      const totalTimeoutMs = this.options.timeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.timeoutMs.default;
       let finalResult: { data: T; tokenUsage?: number } | null = null;
       const reconciliationEvents: Array<{ kind: string; payload: unknown }> = [];
 
@@ -579,7 +578,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     await this.sendEnvelope(sessionId, handshakeEnvelope);
 
     const response = await this.waitForResponse(
-      this.options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
+      this.options.handshakeTimeoutMs ?? ABY_BRIDGE_RUNTIME_LIMITS.handshakeTimeoutMs.default,
     );
 
     if (response.kind !== 'handshake_response') {

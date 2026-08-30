@@ -23,10 +23,8 @@ import {
   type WorkflowBudgetAccount,
   type WorkflowBudgetReserveRequest,
 } from '../workflow-budget-authority-contract.js';
-import {
-  createWorkflowRunnerV2ExecutionDescriptor,
-  type WorkflowRunnerV2ExecutionDescriptor,
-} from '../workflow-runner-v2-descriptor.js';
+import { type WorkflowRunnerV2ExecutionDescriptor } from '../workflow-runner-v2-descriptor.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import type { WorkflowRunnerV2ExecutionContext } from '../workflow-runner-v2-session.js';
 import type { WorkflowRunnerAuthoritySourceAdapter } from '../workflow-runner-authority-binding-runtime.js';
@@ -97,7 +95,7 @@ function descriptor(workflowSourceBytes: Uint8Array = sourceBytes, workflowRunId
 }
 
 function v2Descriptor(resumeGeneration: number): WorkflowRunnerV2ExecutionDescriptor {
-  return createWorkflowRunnerV2ExecutionDescriptor({
+  return workflowRunnerV2DescriptorFixture({
     descriptorRef: `descriptor.worker.v2.${resumeGeneration}`,
     workspaceId: 'workspace.test',
     workflowRunId: `run.worker.v2.${resumeGeneration}`,

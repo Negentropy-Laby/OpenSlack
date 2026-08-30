@@ -1145,6 +1145,7 @@ export function renderPlainAgentRuntimeDiagnostics(
   lines.push(wrap(`Command: ${vm.command}`, width));
   lines.push(wrap(`Args: ${vm.args.length > 0 ? vm.args.join(' ') : 'not recorded'}`, width));
   lines.push(wrap(`Timeout: ${vm.timeoutMs}`, width));
+  lines.push(wrap(`Handshake timeout: ${vm.handshakeTimeoutMs}`, width));
   lines.push('');
   lines.push(wrap(`Safe env allowed: ${vm.safeEnvAllowed.join(', ') || 'none'}`, width));
   lines.push(wrap(`Safe env rejected: ${vm.safeEnvRejected.join(', ') || 'none'}`, width));

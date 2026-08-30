@@ -15,6 +15,7 @@ import {
   createWorkflowRunnerV2ExecutionDescriptor,
   hashWorkflowRunnerV2Input,
   hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Result,
   hashWorkflowRunnerV2Source,
   WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
 } from './workflow-runner-v2-descriptor.js';
@@ -524,7 +525,7 @@ export async function executeWorkflowThroughRunner(
     if (
       output === null ||
       typeof output !== 'object' ||
-      hashWorkflowRunnerResult(output) !== terminal.resultHash
+      hashWorkflowRunnerV2Result(output) !== terminal.resultHash
     ) {
       throw new WorkflowRunnerControlError(
         'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',

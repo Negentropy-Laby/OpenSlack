@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import {
   DISCOVERY_PATHS,
@@ -29,6 +31,33 @@ describe('DISCOVERY_PATHS', () => {
     const idx1 = DISCOVERY_PATHS.indexOf('.openslack/workflows');
     const idx2 = DISCOVERY_PATHS.indexOf('.claude/workflows');
     expect(idx1).toBeLessThan(idx2);
+  });
+});
+
+describe('GS9-G authenticated Aby canary', () => {
+  it('uses a structured provider signal without rejecting harmless response text', async () => {
+    const workflow = (await import(
+      `${pathToFileURL(resolve(process.cwd(), '.openslack/workflows/gs9g-authenticated-aby-canary.mjs')).href}?test=${Date.now()}`
+    )) as {
+      run(ctx: { phase(name: string): void; agent: ReturnType<typeof vi.fn> }): Promise<unknown>;
+    };
+    const providerFailure = new Error('provider unavailable');
+    const agent = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, response: 'Unauthorized is a harmless word here.' })
+      .mockResolvedValueOnce({ ok: false, response: 'Not authenticated.' })
+      .mockResolvedValueOnce({ ok: true, response: '   ' })
+      .mockRejectedValueOnce(providerFailure);
+    const ctx = { phase: vi.fn(), agent };
+
+    await expect(workflow.run(ctx)).resolves.toMatchObject({ status: 'complete' });
+    await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
+    await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
+    await expect(workflow.run(ctx)).rejects.toBe(providerFailure);
+    expect(agent.mock.calls[0]?.[1]).toMatchObject({
+      agentType: 'anthropic_architect_aby',
+      schema: { required: ['ok', 'response'], additionalProperties: false },
+    });
   });
 });
 

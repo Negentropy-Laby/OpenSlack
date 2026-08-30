@@ -3,11 +3,15 @@ import { isAbsolute, join, resolve } from 'node:path';
 import type { BridgeFactoryOptions } from './bridge-factory.js';
 import type { ResolvedAgentConfig } from './types.js';
 import { buildSafeBridgeEnv } from './bridge-env.js';
+import { BridgeRuntimeConfigError, readOptionalRuntimeDuration } from './runtime-config-file.js';
+
+export { BridgeRuntimeConfigError } from './runtime-config-file.js';
 
 export interface AbyBridgeRuntimeConfig {
   root?: string;
   command?: string;
   timeoutMs?: number;
+  handshakeTimeoutMs?: number;
   env?: Record<string, string>;
 }
 
@@ -21,13 +25,6 @@ export interface BridgeRuntimeResolver {
   resolve(config: ResolvedAgentConfig): Omit<BridgeFactoryOptions, 'bridgeMode'> | null;
 }
 
-export class BridgeRuntimeConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'BridgeRuntimeConfigError';
-  }
-}
-
 export function createBridgeRuntimeResolver(
   options: BridgeRuntimeResolverOptions = {},
 ): BridgeRuntimeResolver {
@@ -38,6 +35,7 @@ export function createBridgeRuntimeResolver(
       const runtimeConfig = loadAbyBridgeRuntimeConfig(options);
       if (!runtimeConfig.root) {
         throw new BridgeRuntimeConfigError(
+          'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
           'Aby bridge runtime requested but no Aby root is configured. Set OPENSLACK_ABY_ROOT or .openslack.local/agent-runtime.json.',
         );
       }
@@ -48,11 +46,13 @@ export function createBridgeRuntimeResolver(
 
       if (!existsSync(runEntrypoint)) {
         throw new BridgeRuntimeConfigError(
+          'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
           `Aby bridge runtime is missing runEntrypoint.ts at ${runEntrypoint}`,
         );
       }
       if (!existsSync(agentRunBridge)) {
         throw new BridgeRuntimeConfigError(
+          'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
           `Aby bridge runtime is missing agentRunBridge.ts at ${agentRunBridge}`,
         );
       }
@@ -62,6 +62,7 @@ export function createBridgeRuntimeResolver(
         // Absolute paths keep the process launch compatible with worktree CWD.
         args: [runEntrypoint, agentRunBridge],
         timeoutMs: runtimeConfig.timeoutMs,
+        handshakeTimeoutMs: runtimeConfig.handshakeTimeoutMs,
         env: buildSafeBridgeEnv(runtimeConfig.env),
         abyRoot,
       };
@@ -102,7 +103,10 @@ function readAgentRuntimeConfig(options: BridgeRuntimeResolverOptions): unknown 
     return JSON.parse(readFileSync(configPath, 'utf-8')) as unknown;
   } catch (err) {
     throw new BridgeRuntimeConfigError(
+      'BRIDGE_RUNTIME_CONFIG_PARSE_FAILED',
       `Failed to parse agent runtime config at ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+      undefined,
+      { cause: err },
     );
   }
 }
@@ -127,17 +131,17 @@ function readAbyConfig(config: unknown): AbyBridgeRuntimeConfig {
   return {
     root: readString(source.root) ?? readString(source.abyRoot),
     command: readString(source.command),
-    timeoutMs: readPositiveInteger(source.timeoutMs),
+    timeoutMs: readOptionalRuntimeDuration(source.timeoutMs, 'timeoutMs'),
+    handshakeTimeoutMs: readOptionalRuntimeDuration(
+      source.handshakeTimeoutMs,
+      'handshakeTimeoutMs',
+    ),
     env,
   };
 }
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function readPositiveInteger(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {

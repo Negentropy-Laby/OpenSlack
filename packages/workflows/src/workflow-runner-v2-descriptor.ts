@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { types as nodeTypes } from 'node:util';
 import type { ConfirmationPolicy, WorkflowMeta, WorkflowSource } from './types.js';
+import { closedDataRecord, ownDataField } from './internal/contract-validation.js';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
 import type { WorkflowRunnerDescriptorCodec } from './workflow-runner-descriptor-store.js';
 import {
@@ -116,33 +116,36 @@ function fail(code: WorkflowRunnerV2DescriptorError['code'], path: string, messa
 }
 
 function record(value: unknown, fields: readonly string[], path: string): JsonRecord {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    nodeTypes.isProxy(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
-  ) {
-    return fail('WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID', path, `${path} must be a plain object.`);
-  }
-  const result = value as JsonRecord;
-  const actual = Object.keys(result).sort();
-  const expected = [...fields].sort();
-  if (
-    actual.length !== expected.length ||
-    actual.some((entry, index) => entry !== expected[index])
-  ) {
-    return fail(
-      'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
-      path,
-      `${path} has missing or unknown fields.`,
-    );
-  }
-  return result;
+  return closedDataRecord(value, fields, path, {
+    inert: (failurePath) =>
+      fail(
+        'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
+        failurePath,
+        `${failurePath} must be an inert object.`,
+      ),
+    missing: (failurePath) =>
+      fail(
+        'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
+        failurePath,
+        `${failurePath} has missing or unknown fields.`,
+      ),
+    unknown: (failurePath) =>
+      fail(
+        'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
+        failurePath,
+        `${failurePath} has missing or unknown fields.`,
+      ),
+    dataField: (failurePath, key) =>
+      fail(
+        'WORKFLOW_RUNNER_V2_DESCRIPTOR_INVALID',
+        `${failurePath}/${String(key)}`,
+        `${failurePath} must contain only enumerable data fields.`,
+      ),
+  });
 }
 
 function own(value: JsonRecord, key: string): unknown {
-  return Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined;
+  return ownDataField(value, key);
 }
 
 function id(value: unknown, path: string): string {
@@ -313,6 +316,10 @@ export function hashWorkflowRunnerV2Manifest(value: WorkflowMeta): string {
 
 export function hashWorkflowRunnerV2Input(value: Readonly<Record<string, unknown>>): string {
   return hashWorkflowRunnerV2Domain('workflow-input', canonicalWorkflowEffectJson(value));
+}
+
+export function hashWorkflowRunnerV2Result(value: unknown): string {
+  return hashWorkflowRunnerV2Domain('workflow-result', canonicalWorkflowEffectJson(value));
 }
 
 export function canonicalWorkflowRunnerV2DescriptorJson(

@@ -22,6 +22,8 @@ export interface BridgeFactoryOptions {
   env?: Record<string, string>;
   /** Timeout in milliseconds. */
   timeoutMs?: number;
+  /** Process-bridge handshake timeout in milliseconds. */
+  handshakeTimeoutMs?: number;
   /** List of available MCP server names. */
   availableMcpServers?: string[];
   /** Fake adapter options for CI/testing. */
@@ -78,6 +80,7 @@ export function createBridgeAdapter(options: BridgeFactoryOptions = {}): AgentEx
         args: options.args,
         env: options.env,
         timeoutMs: options.timeoutMs,
+        handshakeTimeoutMs: options.handshakeTimeoutMs,
         availableMcpServers: options.availableMcpServers,
         abyRoot: options.abyRoot,
       });
@@ -140,6 +143,7 @@ export class BridgeFactory {
       args: options?.args,
       env: options?.env,
       timeoutMs: options?.timeoutMs,
+      handshakeTimeoutMs: options?.handshakeTimeoutMs,
       availableMcpServers: options?.availableMcpServers,
       abyRoot: options?.abyRoot,
     });

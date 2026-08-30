@@ -111,6 +111,7 @@ describe('BridgeRuntimeResolver', () => {
           root: abyRoot,
           command: 'bun',
           timeoutMs: 5000,
+          handshakeTimeoutMs: 30_000,
           env: {
             USER_TYPE: 'aby',
             AGENT_RUN_BRIDGE_RUNNER: 'fake',
@@ -132,8 +133,45 @@ describe('BridgeRuntimeResolver', () => {
     });
 
     expect(resolved?.timeoutMs).toBe(5000);
+    expect(resolved?.handshakeTimeoutMs).toBe(30_000);
     expect(resolved?.env?.AGENT_RUN_BRIDGE_RUNNER).toBe('fake');
     expect(resolved?.env?.USER_TYPE).toBeUndefined();
     expect(resolved?.env?.OPENSLACK_PRIVATE_KEY).toBeUndefined();
+  });
+
+  it('treats null timeouts as defaults and rejects explicit out-of-range values', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const configDir = join(root, '.openslack.local');
+    mkdirSync(configDir, { recursive: true });
+
+    writeFileSync(
+      join(configDir, 'agent-runtime.json'),
+      JSON.stringify({ aby: { root: abyRoot, timeoutMs: null, handshakeTimeoutMs: null } }),
+      'utf-8',
+    );
+    expect(loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toMatchObject({
+      timeoutMs: undefined,
+      handshakeTimeoutMs: undefined,
+    });
+
+    for (const [field, value] of [
+      ['timeoutMs', 99],
+      ['timeoutMs', 86_400_001],
+      ['handshakeTimeoutMs', 999],
+      ['handshakeTimeoutMs', 60_001],
+    ] as const) {
+      writeFileSync(
+        join(configDir, 'agent-runtime.json'),
+        JSON.stringify({ aby: { root: abyRoot, [field]: value } }),
+        'utf-8',
+      );
+      expect(() => loadAbyBridgeRuntimeConfig({ rootDir: root, env: {} })).toThrowError(
+        expect.objectContaining({
+          name: 'BridgeRuntimeConfigError',
+          code: 'BRIDGE_RUNTIME_CONFIG_FIELD_INVALID',
+          field,
+        }),
+      );
+    }
   });
 });

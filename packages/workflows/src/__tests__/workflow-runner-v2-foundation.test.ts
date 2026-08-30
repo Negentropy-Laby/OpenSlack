@@ -19,7 +19,6 @@ import {
   WorkflowRunnerV2ControlClient,
 } from '../workflow-runner-v2-control-client.js';
 import {
-  createWorkflowRunnerV2ExecutionDescriptor,
   hashWorkflowRunnerV2Descriptor,
   validateWorkflowRunnerV2ExecutionDescriptor,
 } from '../workflow-runner-v2-descriptor.js';
@@ -29,6 +28,7 @@ import {
   WorkflowRunnerV2JsonlDecoder,
 } from '../workflow-runner-v2-framing.js';
 import { canonicalWorkflowEffectJson } from '../workflow-effect-json.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -37,7 +37,7 @@ const NOW = '2026-08-15T02:00:00.000Z';
 function descriptor(
   input: Readonly<Record<string, unknown>> = { qualification: 'foundation-only' },
 ) {
-  return createWorkflowRunnerV2ExecutionDescriptor({
+  return workflowRunnerV2DescriptorFixture({
     descriptorRef: 'descriptor.v2.foundation',
     workspaceId: 'workspace.v2',
     workflowRunId: 'run.v2.foundation',

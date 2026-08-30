@@ -18,6 +18,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritybinding"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/localshadowconfig"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/netbind"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
 
 const (
@@ -25,7 +26,10 @@ const (
 	NetworkLoopback = "loopback"
 	NetworkInternal = "internal"
 
-	defaultHTTPBind = "127.0.0.1:8081"
+	defaultHTTPBind              = "127.0.0.1:8081"
+	defaultLeaseOfferTimeout     = 10 * time.Second
+	DefaultLeaseDuration         = 60 * time.Second
+	MinConfigurableLeaseDuration = DefaultLeaseDuration
 )
 
 var (
@@ -225,6 +229,17 @@ func LoadEnvironment(environment []string) (Config, error) {
 			return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES must be between 1 and 64")
 		}
 	}
+	leaseOfferTimeout := defaultLeaseOfferTimeout
+	leaseDuration := DefaultLeaseDuration
+	if raw := strings.TrimSpace(values["WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS"]); raw != "" {
+		milliseconds, parseErr := strconv.ParseInt(raw, 10, 64)
+		minimum := MinConfigurableLeaseDuration.Milliseconds()
+		maximum := runnerstore.MaxLeaseDuration.Milliseconds()
+		if parseErr != nil || milliseconds < minimum || milliseconds > maximum {
+			return Config{}, fmt.Errorf("WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS must be between %d and %d", minimum, maximum)
+		}
+		leaseDuration = time.Duration(milliseconds) * time.Millisecond
+	}
 	return Config{
 		DatabaseURL: databaseURL, HTTPBind: bind, NetworkMode: mode,
 		ServiceBuildSHA: build, BearerTokenSHA256: tokenHash,
@@ -249,7 +264,7 @@ func LoadEnvironment(environment []string) (Config, error) {
 		V2RunAuthorityBearerSHA256: runAuthorityTokenHash, V2RunAuthorityCallerID: runAuthorityCaller,
 		V2RunAuthorityBuildSHA: runAuthorityBuild,
 		ShutdownDeadline:       30 * time.Second, MaxProcesses: maxProcesses,
-		LeaseOfferTimeout: 10 * time.Second, LeaseDuration: 60 * time.Second,
+		LeaseOfferTimeout: leaseOfferTimeout, LeaseDuration: leaseDuration,
 		HeartbeatInterval: 5 * time.Second, CancelWindow: 30 * time.Second,
 		CancelGrace: 10 * time.Second, TerminalExitGrace: 5 * time.Second,
 		PollInterval: 250 * time.Millisecond, RecoveryInterval: 5 * time.Second,
@@ -271,6 +286,7 @@ func parse(environment []string) (map[string]string, error) {
 		"WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT":                   {},
 		"WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT":                  {},
 		"WORKFLOW_RUNNER_CONTROL_MAX_PROCESSES":                    {},
+		"WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS":                {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENABLED":        {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_ENDPOINT":       {},
 		"WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_BEARER_TOKEN":   {},

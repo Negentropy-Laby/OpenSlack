@@ -231,7 +231,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryConfigSource": {
 			Path:   "services/workflow-control/internal/runnerconfig/config.go",
-			SHA256: "796d3c7f2334d27277c0a8b96347eb618566250c0fa83cc4780ac850f649e2fa",
+			SHA256: "27fafa75f3eaeb74a22501e381a1f9825923c9d43d2baca5db5048e29ae0e40a",
 		},
 		"runnerV2RuntimeDeliveryWorkerRegistrySource": {
 			Path:   "services/workflow-control/internal/workerregistry/registry.go",
@@ -271,7 +271,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "3ff78f37502aeb818d764989a235563fe6418b05e600ae103b2958577584a139",
+			SHA256: "348492dab944580510e182510dcc7a82ec362567f998b6db3cec19f626662d22",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
@@ -307,7 +307,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"workflowRunnerExecutionClientSource": {
 			Path:   "packages/workflows/src/workflow-runner-execution-client.ts",
-			SHA256: "66cde0aa05f3ba228e4c76a6e3c32d3a5fcbcce5530a9e8e5482de40f97dc5b1",
+			SHA256: "6e3b43daf11d0f08980cf1f9e3ed39f1410c593d365b0be34a238670e7ccf2c2",
 		},
 		"workflowRunnerV2ControlClientSource": {
 			Path:   "packages/workflows/src/workflow-runner-v2-control-client.ts",
@@ -327,19 +327,19 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"workflowRunRoutingTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
-			SHA256: "0e210a6de460138981cbb47700a103dae23325d424344db23950958ad2d10ab2",
+			SHA256: "b46699f6fb4d91d3b2c1d194a4929b1d7bda452ce4b66c938066d7a9b6496783",
 		},
 		"workflowRunnerExecutionClientTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-execution-client.test.ts",
-			SHA256: "2f8ad25759060e099a687cf0697149376283554bf8465eb30b64f1385cb8a362",
+			SHA256: "404e80801270da7e02f67ecc100bec774a231ee7387f9bb5e9a97439fcafff30",
 		},
 		"workflowRunnerV2FoundationTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts",
-			SHA256: "5165b6927d7da6f05c55a528dbd3c7497557d1e412c496f77c65c10dd2d6d434",
+			SHA256: "f48c0b4626aeb4bca03b40e40221c2697c6ad4b23dffac763a921db5814373d7",
 		},
 		"workflowRunnerWorkerTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-worker.test.ts",
-			SHA256: "6ade806474bee9081f56748ee5cd5d9932dbc727ae3c111941473a7207876356",
+			SHA256: "1a05976d3a000307db4866b713d639202546ad3b6c244ea7e118d561e10c1dc7",
 		},
 		"workflowControlAuthorityConfigSource": {
 			Path:   "services/workflow-control/internal/config/authority.go",
@@ -367,7 +367,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"workflowRunnerV2RuntimeDeliveryConfigTest": {
 			Path:   "services/workflow-control/internal/runnerconfig/config_test.go",
-			SHA256: "66b30605755b8911e6d055a697ab2586034ed8ef06a4a49c3ec5128811fba583",
+			SHA256: "70453b70c220ea0c996f018af55d730b52cd7a6d3ae061df71bae3585c2dac07",
 		},
 		"workflowRunnerV2WorkerRegistryTest": {
 			Path:   "services/workflow-control/internal/workerregistry/registry_test.go",

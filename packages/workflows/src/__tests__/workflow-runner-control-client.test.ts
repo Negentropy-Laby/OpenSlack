@@ -164,6 +164,44 @@ describe('WorkflowRunnerControlClient', () => {
     expect(() => validateWorkflowRunnerJobView({ ...view, resultHash: null })).toThrow(
       /inconsistent/u,
     );
+    expect(() =>
+      validateWorkflowRunnerJobView({
+        ...view,
+        terminalStatus: 'failed',
+        terminalReason: 'workflow_failed',
+      }),
+    ).toThrow(/inconsistent/u);
+  });
+
+  it('accepts the reconciliation terminal shape emitted by the Go authority', () => {
+    const view = validateWorkflowRunnerJobView({
+      schema: 'openslack.workflow_runner_job_view.v1',
+      workspaceId: WORKSPACE,
+      jobId: 'job-1',
+      workflowRunId: 'run-1',
+      correlationId: 'correlation-1',
+      state: 'reconciliation_required',
+      revision: 4,
+      fencingToken: 1,
+      attemptId: 'attempt-1',
+      leaseId: null,
+      attemptState: 'crashed',
+      leaseExpiresAt: null,
+      terminalStatus: 'reconciliation_required',
+      terminalReason: 'commit_outcome_unknown',
+      resultHash: null,
+      openEffectCount: 0,
+      reconciliationId: 'reconciliation-1',
+      reconciliationCode: 'WORKFLOW_RUNNER_RECONCILIATION_REQUIRED',
+      executionStarted: false,
+      createdAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: '2026-08-13T00:00:02.000Z',
+    });
+
+    expect(view.terminalStatus).toBe('reconciliation_required');
+    expect(() => validateWorkflowRunnerJobView({ ...view, terminalStatus: null })).toThrow(
+      /inconsistent/u,
+    );
   });
 
   it('does not expose the bearer token when transport fails', async () => {

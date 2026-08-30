@@ -59,6 +59,7 @@ WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT=<absolute sealed bundle root>
 WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=<64 lowercase hex>
 WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=<absolute workspace root>
 WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT=<absolute owner-only descriptor root>
+WORKFLOW_RUNNER_CONTROL_LEASE_DURATION_MS=<optional 60000..86400000; default 60000>
 WORKFLOW_CONTROL_HEALTH_URL=http://127.0.0.1:8081/health/ready
 ```
 
@@ -78,6 +79,11 @@ The runner API is private, bearer-authenticated, single-workspace, canonical JSO
 in `docs/api/runner-openapi.yaml`. It is an admission and inspection surface; workflow source,
 arguments, prompts, credentials, arbitrary paths, arbitrary URLs, approval decisions, and budget
 decisions are not accepted.
+
+The lease duration is a hard, immutable execution bound; heartbeats prove liveness but do not
+extend it. The configuration is extension-only: operators running work that may exceed the
+qualified 60-second default can select up to the frozen 24-hour protocol limit. Lease expiry still
+uses the existing bounded cancellation and terminal-recording path.
 
 ## Explicit GS9-B authority qualification mode
 

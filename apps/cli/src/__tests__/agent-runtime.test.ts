@@ -21,6 +21,8 @@ const passReport = {
   root: '/aby',
   resolvedRoot: '/aby',
   command: 'bun',
+  timeoutMs: 120000,
+  handshakeTimeoutMs: 10000,
   args: [
     '/aby/src/sidecar/entrypoints/runEntrypoint.ts',
     '/aby/src/sidecar/entrypoints/agentRunBridge.ts',
@@ -49,9 +51,12 @@ describe('agent-runtime command', () => {
       configPath: '/repo/.openslack.local/agent-runtime.json',
       command: 'bun',
       timeoutMs: 120000,
+      handshakeTimeoutMs: 10000,
       wroteConfig: true,
       env: { allowedKeys: [], rejectedKeys: [] },
-      configPreview: { aby: { root: '/aby', command: 'bun', timeoutMs: 120000 } },
+      configPreview: {
+        aby: { root: '/aby', command: 'bun', timeoutMs: 120000, handshakeTimeoutMs: 10000 },
+      },
       checks: [{ name: 'aby-root', status: 'PASS', detail: '/aby' }],
       remediations: ['Configuration written.'],
     });
@@ -216,6 +221,7 @@ describe('agent-runtime command', () => {
     );
     expect(logs.join('\n')).toContain('Agent Runtime Doctor');
     expect(logs.join('\n')).toContain('Status: PASS');
+    expect(logs.join('\n')).toContain('Handshake timeout: 10000ms');
   });
 
   it('runs provider-neutral doctor for openai-compatible without rendering credentials', async () => {
@@ -256,6 +262,8 @@ describe('agent-runtime command', () => {
     const parsed = JSON.parse(logs.join('\n'));
     expect(parsed.provider).toBe('aby');
     expect(parsed.readiness).toBe('ready');
+    expect(parsed.timeoutMs).toBe(120000);
+    expect(parsed.handshakeTimeoutMs).toBe(10000);
     expect(parsed.safeEnv.allowedKeys).toEqual(['AGENT_RUN_BRIDGE_RUNNER']);
     expect(parsed.remediations).toEqual(['Aby bridge runtime is configured and ready.']);
     expect(JSON.stringify(parsed)).not.toContain('secret');
@@ -272,12 +280,29 @@ describe('agent-runtime command', () => {
       setupAbyRuntime: (options) => mockSetupAbyRuntime(options),
     });
     await cmd.parseAsync(
-      ['node', 'openslack agent-runtime', 'setup', 'aby', '--root', '/aby', '--write'],
+      [
+        'node',
+        'openslack agent-runtime',
+        'setup',
+        'aby',
+        '--root',
+        '/aby',
+        '--timeout-ms',
+        '5000',
+        '--handshake-timeout-ms',
+        '30000',
+        '--write',
+      ],
       { from: 'node' },
     );
 
     expect(mockSetupAbyRuntime).toHaveBeenCalledWith(
-      expect.objectContaining({ root: '/aby', write: true }),
+      expect.objectContaining({
+        root: '/aby',
+        timeoutMs: 5000,
+        handshakeTimeoutMs: 30000,
+        write: true,
+      }),
     );
     expect(logs.join('\n')).toContain('Agent Runtime Setup');
     expect(logs.join('\n')).toContain('Config written: yes');

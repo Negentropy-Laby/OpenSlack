@@ -69,6 +69,8 @@ describe('setupAbyRuntime', () => {
         resolvedRoot: abyRoot,
         command: 'bun',
         args: [],
+        timeoutMs: 120000,
+        handshakeTimeoutMs: 10000,
         env: { allowedKeys: [], rejectedKeys: [] },
         checks: [],
         remediations: ['ok'],
@@ -82,7 +84,12 @@ describe('setupAbyRuntime', () => {
     expect(report.wroteConfig).toBe(true);
     expect(JSON.parse(readFileSync(configPath, 'utf-8'))).toEqual({
       schema: 'openslack.agent_runtime.v1',
-      aby: { root: abyRoot, command: 'bun', timeoutMs: 120000 },
+      aby: {
+        root: abyRoot,
+        command: 'bun',
+        timeoutMs: 120000,
+        handshakeTimeoutMs: 10000,
+      },
     });
   });
 
@@ -102,6 +109,7 @@ describe('setupAbyRuntime', () => {
       JSON.stringify({
         schema: 'openslack.agent_runtime.v1',
         providers: { 'openai-compatible': openAIConfig },
+        aby: { timeoutMs: 5_000, handshakeTimeoutMs: 30_000, note: 'preserved' },
       }),
       'utf-8',
     );
@@ -120,6 +128,8 @@ describe('setupAbyRuntime', () => {
         resolvedRoot: abyRoot,
         command: 'bun',
         args: [],
+        timeoutMs: 5_000,
+        handshakeTimeoutMs: 30_000,
         env: { allowedKeys: [], rejectedKeys: [] },
         checks: [],
         remediations: [],
@@ -129,7 +139,13 @@ describe('setupAbyRuntime', () => {
     expect(report.status).toBe('PASS');
     const saved = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
     expect(saved.providers).toEqual({ 'openai-compatible': openAIConfig });
-    expect(saved.aby).toEqual({ root: abyRoot, command: 'bun', timeoutMs: 120000 });
+    expect(saved.aby).toEqual({
+      root: abyRoot,
+      command: 'bun',
+      timeoutMs: 5_000,
+      handshakeTimeoutMs: 30_000,
+      note: 'preserved',
+    });
   });
 
   it('fails closed when an entrypoint or command is missing', () => {

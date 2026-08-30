@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { RunResult, WorkflowModule } from './types.js';
-import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   prepareWorkflowControlAuthorityMessage,
   validateWorkflowControlAuthorityMessage,
@@ -17,7 +16,7 @@ import {
 } from './workflow-runner-contract.js';
 import {
   assertWorkflowRunnerV2AdmissionBinding,
-  hashWorkflowRunnerV2Domain,
+  hashWorkflowRunnerV2Result,
   type WorkflowRunnerV2ExecutionDescriptor,
 } from './workflow-runner-v2-descriptor.js';
 import {
@@ -708,10 +707,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       return;
     }
     await this.#emitTerminal('completed', {
-      resultHash: hashWorkflowRunnerV2Domain(
-        'workflow-result',
-        canonicalWorkflowEffectJson(result),
-      ),
+      resultHash: hashWorkflowRunnerV2Result(result),
     });
     void lease;
   }

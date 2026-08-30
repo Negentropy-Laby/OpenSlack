@@ -240,6 +240,8 @@ export {
   isAbyRuntime,
   loadAbyBridgeRuntimeConfig,
 } from './bridge-runtime-resolver.js';
+export { ABY_BRIDGE_RUNTIME_LIMITS, readOptionalRuntimeDuration } from './runtime-config-file.js';
+export type { BridgeRuntimeConfigErrorCode } from './runtime-config-file.js';
 
 export type {
   AgentRuntimeDoctorCheck,

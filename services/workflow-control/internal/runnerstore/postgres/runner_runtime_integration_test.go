@@ -671,6 +671,46 @@ func TestLateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal(t *testing.T
 	}
 }
 
+func TestExpiredLeaseStillAcceptsCancelAcknowledgementAndCancellingTerminal(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := t.Context()
+	repository := New(pool)
+	lease := submitAndClaim(t, repository, "expired-cancel-terminal")
+	if _, err := repository.RecordEvent(ctx, leaseAcceptInput(t, lease, "accept-expired-cancel-terminal")); err != nil {
+		t.Fatal(err)
+	}
+	expireLeaseAtDatabase(t, pool, lease.LeaseID)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	cancelInput := runnerstore.CancelInput{
+		WorkspaceID: lease.WorkspaceID, JobID: lease.JobID, CorrelationID: lease.CorrelationID,
+		ExpectedAttemptID: lease.AttemptID, ExpectedLeaseID: lease.LeaseID, ExpectedFence: lease.FencingToken,
+		Reason: "lease_expired", Now: now, ExpiresAt: now.Add(time.Minute),
+	}
+	cancelInput.IdempotencyKey, cancelInput.RequestFingerprint, _ = runnerstore.CancelBindings(cancelInput)
+	control, err := repository.RequestCancel(ctx, cancelInput)
+	if err != nil {
+		t.Fatalf("expired lease rejected cancellation: %v", err)
+	}
+	if _, err := repository.RecordEvent(ctx, cancelAckInput(t, lease, 2, "expired-cancel-ack", control.CancelID, "cancelling")); err != nil {
+		t.Fatalf("expired lease rejected cancel acknowledgement: %v", err)
+	}
+	finishedAt := canonicalNow()
+	terminal := leasedEventInputAt(t, lease, runnerprotocol.KindTerminal, 3, "expired-cancel-terminal", finishedAt, map[string]any{
+		"status": "cancelled", "finishedAt": finishedAt, "resultHash": nil, "terminalReason": "cancelled_by_control",
+	})
+	if _, err := repository.RecordEvent(ctx, terminal); err != nil {
+		t.Fatalf("expired cancelling lease rejected terminal: %v", err)
+	}
+	view, err := repository.ReadJob(ctx, lease.WorkspaceID, lease.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State != runnerstore.JobTerminal || view.TerminalStatus == nil || *view.TerminalStatus != runnerprotocol.TerminalCancelled || view.TerminalReason == nil || *view.TerminalReason != "cancelled_by_control" {
+		t.Fatalf("expired cancellation did not settle terminal evidence: %+v", view)
+	}
+}
+
 func TestTerminalEventRequiresReceiptGatedRunningAttempt(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	ctx := t.Context()

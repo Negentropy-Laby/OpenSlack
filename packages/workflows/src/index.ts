@@ -1150,6 +1150,7 @@ export {
   hashWorkflowRunnerV2Domain,
   hashWorkflowRunnerV2Input,
   hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Result,
   hashWorkflowRunnerV2Source,
   validateWorkflowRunnerV2ExecutionDescriptor,
   WORKFLOW_RUNNER_V2_DESCRIPTOR_LIMITS,

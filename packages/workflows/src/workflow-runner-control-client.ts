@@ -8,6 +8,7 @@ import {
   readWorkflowRunnerResponseBytes,
 } from './workflow-runner-control-http.js';
 import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
+import { WORKFLOW_RUNNER_TERMINAL_STATES } from './workflow-runner-contract.js';
 
 export const WORKFLOW_RUNNER_JOB_SPEC_SCHEMA = 'openslack.workflow_runner_job_spec.v1' as const;
 export const WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA =
@@ -21,6 +22,25 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MIN_WHOLE_TIMEOUT_MS = 1_000;
 const MAX_WHOLE_TIMEOUT_MS = 24 * 60 * 60_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const WORKFLOW_RUNNER_JOB_STATES = Object.freeze([
+  'queued',
+  'offered',
+  'running',
+  'cancelling',
+  'terminal',
+  'reconciliation_required',
+] as const);
+const WORKFLOW_RUNNER_ATTEMPT_STATES = Object.freeze([
+  'offered',
+  'accepted',
+  'running',
+  'cancelling',
+  'terminal',
+  'rejected',
+  'expired',
+  'crashed',
+  'reconciliation_required',
+] as const);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -78,36 +98,14 @@ export interface WorkflowRunnerJobView {
   readonly jobId: string;
   readonly workflowRunId: string;
   readonly correlationId: string;
-  readonly state:
-    | 'queued'
-    | 'offered'
-    | 'running'
-    | 'cancelling'
-    | 'terminal'
-    | 'reconciliation_required';
+  readonly state: (typeof WORKFLOW_RUNNER_JOB_STATES)[number];
   readonly revision: number;
   readonly fencingToken: number;
   readonly attemptId: string | null;
   readonly leaseId: string | null;
-  readonly attemptState:
-    | 'offered'
-    | 'accepted'
-    | 'running'
-    | 'cancelling'
-    | 'terminal'
-    | 'rejected'
-    | 'expired'
-    | 'crashed'
-    | 'reconciliation_required'
-    | null;
+  readonly attemptState: (typeof WORKFLOW_RUNNER_ATTEMPT_STATES)[number] | null;
   readonly leaseExpiresAt: string | null;
-  readonly terminalStatus:
-    | 'completed'
-    | 'failed'
-    | 'cancelled'
-    | 'timed_out'
-    | 'reconciliation_required'
-    | null;
+  readonly terminalStatus: (typeof WORKFLOW_RUNNER_TERMINAL_STATES)[number] | null;
   readonly terminalReason: string | null;
   readonly resultHash: string | null;
   readonly openEffectCount: number;
@@ -511,41 +509,19 @@ export function validateWorkflowRunnerJobView(value: unknown): WorkflowRunnerJob
     jobId: safeId(own(record, 'jobId'), 'job.jobId'),
     workflowRunId: safeId(own(record, 'workflowRunId'), 'job.workflowRunId'),
     correlationId: safeId(own(record, 'correlationId'), 'job.correlationId'),
-    state: enumValue(
-      own(record, 'state'),
-      ['queued', 'offered', 'running', 'cancelling', 'terminal', 'reconciliation_required'],
-      'job.state',
-    ),
+    state: enumValue(own(record, 'state'), WORKFLOW_RUNNER_JOB_STATES, 'job.state'),
     revision: integer(own(record, 'revision'), 'job.revision', 1),
     fencingToken: integer(own(record, 'fencingToken'), 'job.fencingToken'),
     attemptId: nullable(own(record, 'attemptId'), (item) => safeId(item, 'job.attemptId')),
     leaseId: nullable(own(record, 'leaseId'), (item) => safeId(item, 'job.leaseId')),
     attemptState: nullable(own(record, 'attemptState'), (item) =>
-      enumValue(
-        item,
-        [
-          'offered',
-          'accepted',
-          'running',
-          'cancelling',
-          'terminal',
-          'rejected',
-          'expired',
-          'crashed',
-          'reconciliation_required',
-        ],
-        'job.attemptState',
-      ),
+      enumValue(item, WORKFLOW_RUNNER_ATTEMPT_STATES, 'job.attemptState'),
     ),
     leaseExpiresAt: nullable(own(record, 'leaseExpiresAt'), (item) =>
       timestamp(item, 'job.leaseExpiresAt'),
     ),
     terminalStatus: nullable(own(record, 'terminalStatus'), (item) =>
-      enumValue(
-        item,
-        ['completed', 'failed', 'cancelled', 'timed_out', 'reconciliation_required'],
-        'job.terminalStatus',
-      ),
+      enumValue(item, WORKFLOW_RUNNER_TERMINAL_STATES, 'job.terminalStatus'),
     ),
     terminalReason: stringOrNull('terminalReason'),
     resultHash: nullable(own(record, 'resultHash'), (item) => hash(item, 'job.resultHash')),
@@ -558,10 +534,14 @@ export function validateWorkflowRunnerJobView(value: unknown): WorkflowRunnerJob
     createdAt: timestamp(own(record, 'createdAt'), 'job.createdAt'),
     updatedAt: timestamp(own(record, 'updatedAt'), 'job.updatedAt'),
   });
+  const reconciliation = result.state === 'reconciliation_required';
+  const terminalEvidence = result.state === 'terminal' || reconciliation;
+  const completed = result.terminalStatus === 'completed';
   if (
-    (result.state === 'terminal') !== (result.terminalStatus !== null) ||
-    (result.terminalStatus === 'completed') !== (result.resultHash !== null) ||
-    (result.state === 'reconciliation_required') !== (result.reconciliationId !== null)
+    terminalEvidence !== (result.terminalStatus !== null) ||
+    reconciliation !== (result.terminalStatus === 'reconciliation_required') ||
+    completed !== (result.resultHash !== null) ||
+    reconciliation !== (result.reconciliationId !== null)
   ) {
     return fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', 'Runner job view is inconsistent.');
   }
