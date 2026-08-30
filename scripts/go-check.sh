@@ -2650,7 +2650,7 @@ run_workflow_runner_v2_runtime_delivery_image_default_off() {
   local resource_owner="$5"
   local runner_container="${resource_prefix}-runner-v2-runtime-delivery-default-off"
   local runner_network_alias="runner-v2-runtime-delivery-default-off"
-  local bundle_root workspace_root bundle_mount workspace_mount
+  local bundle_root workspace_root bundle_mount workspace_mount bundle_manifest_sha
 
   bundle_root="$(mktemp -d -t openslack-gs9f2-image-bundle.XXXXXX)"
   workspace_root="$(mktemp -d -t openslack-gs9f2-image-workspace.XXXXXX)"
@@ -2666,6 +2666,9 @@ run_workflow_runner_v2_runtime_delivery_image_default_off() {
   chmod 0444 \
     "${bundle_root}/workflow-runner-worker.cjs" \
     "${bundle_root}/workflow-runner-bundle.v1.json"
+  bundle_manifest_sha="$(sha256sum "${bundle_root}/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
+  [[ "${bundle_manifest_sha}" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "Workflow Control GS9-F2b default-off bundle manifest hash is invalid"
   bundle_mount="$(docker_path "${bundle_root}")"
   workspace_mount="$(docker_path "${workspace_root}")"
 
@@ -2686,7 +2689,7 @@ run_workflow_runner_v2_runtime_delivery_image_default_off() {
     --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID=workspace.gs9f2.image.default-off \
     --env WORKFLOW_RUNNER_CONTROL_INSTANCE_ID=runner.gs9f2.image.default-off \
     --env WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT=/runner-bundle \
-    --env WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=968c388f6b84277910c055f163c6db470ae48cfaa3153f52598c4bbef4afab6a \
+    --env "WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=${bundle_manifest_sha}" \
     --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=/runner-workspace \
     --env WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT=/runner-workspace/descriptors \
     --env WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1 \
