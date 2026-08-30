@@ -1,5 +1,6 @@
 const ABY_PROVIDER = 'aby';
 const ABY_AGENT_ID = 'anthropic_architect_aby';
+const ABY_BRIDGE_ID = 'aby-runAgent';
 
 export const meta = {
   name: 'gs9g-authenticated-aby-canary',
@@ -60,33 +61,25 @@ export async function run(ctx) {
       schema: {
         type: 'object',
         properties: {
-          ok: { type: 'boolean' },
+          ok: { type: 'boolean', enum: [true] },
           response: { type: 'string' },
           runId: { type: 'string' },
-          agentId: { type: 'string' },
-          bridge: { type: 'string' },
+          agentId: { type: 'string', enum: [ABY_AGENT_ID] },
+          bridge: { type: 'string', enum: [ABY_BRIDGE_ID] },
         },
         required: ['ok', 'response', 'runId', 'agentId', 'bridge'],
         additionalProperties: false,
       },
     },
   );
-  const response = typeof result?.response === 'string' ? result.response.trim() : '';
-  const runId = typeof result?.runId === 'string' ? result.runId.trim() : '';
-  if (
-    result?.ok !== true ||
-    response.length === 0 ||
-    runId.length === 0 ||
-    result?.agentId !== ABY_AGENT_ID ||
-    result?.bridge !== 'aby-runAgent'
-  ) {
+  const response = result.response.trim();
+  const runId = result.runId.trim();
+  if (response.length === 0 || runId.length === 0) {
     throw new Error('Authenticated Aby canary did not return a valid provider response.');
   }
 
   return {
     status: 'complete',
-    provider: ABY_PROVIDER,
-    agentId: ABY_AGENT_ID,
     result,
   };
 }

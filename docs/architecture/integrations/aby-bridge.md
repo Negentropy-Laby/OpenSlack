@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-08-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -92,6 +92,26 @@ envelope so they can be validated, size-capped, and redacted consistently.
 | toolStats  | object   | no       | `{ totalCalls, uniqueTools, lastTool }`                 |
 | events     | object[] | no       | Transcript events for reconciliation                    |
 | exitStatus | object   | no       | `{ exitCode, signal, timedOut, truncated, durationMs }` |
+
+#### Authenticated GS9-G Canary Result Profile
+
+The GS9-G authenticated canary narrows `data` to one exact five-field result.
+It does not change the generic bridge response schema above:
+
+| Field      | Required value                                                  |
+| ---------- | --------------------------------------------------------------- |
+| `ok`       | The literal boolean `true`                                      |
+| `response` | A non-empty string produced by the authenticated Aby agent      |
+| `runId`    | A non-empty echo of the OpenSlack request run ID                |
+| `agentId`  | The registered agent identity echoed from the OpenSlack request |
+| `bridge`   | The exact discriminator `aby-runAgent`                          |
+
+No additional result fields are accepted. OpenSlack validates this profile on
+fresh execution, cache replay, and launcher delivery before the result can be
+used. The counterpart producer shape was independently verified against merged
+Aby PR #52. That repository evidence freezes the interoperability contract; the
+OpenSlack test suite uses an exact local fixture and never requires the external
+repository or service to be online.
 
 ### Permission Boundary Matrix
 

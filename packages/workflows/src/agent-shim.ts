@@ -6,6 +6,7 @@ import {
   getAgentRunFailureSummary,
   requestAgentRunCancellation,
   redactSensitiveText,
+  validateAgentResultSchema,
 } from '@openslack/agent-runtime';
 import type {
   AgentOptions,
@@ -69,6 +70,9 @@ export interface AgentConversationEvent {
  * When provided, the agent shim emits lifecycle events during execution.
  */
 export type AgentEventEmitter = (event: AgentConversationEvent) => void;
+
+/** @deprecated Import validateAgentResultSchema from @openslack/agent-runtime. */
+const validateAgainstSchema = validateAgentResultSchema;
 
 /**
  * Agent launcher function type. The real implementation would call an
@@ -303,53 +307,6 @@ async function hasApprovedBudgetOverride(
 }
 
 /**
- * Lightweight JSON schema subset validator.
- * Returns an array of violation messages (empty = valid).
- */
-function validateAgainstSchema(
-  data: unknown,
-  schema: NonNullable<AgentOptions['schema']>,
-  path: string = 'root',
-): string[] {
-  const violations: string[] = [];
-
-  if (schema.type !== undefined) {
-    const expected = Array.isArray(schema.type) ? schema.type : [schema.type];
-    const actualType = data === null ? 'null' : Array.isArray(data) ? 'array' : typeof data;
-
-    if (!expected.includes(actualType)) {
-      violations.push(`${path}: expected type ${expected.join('|')}, got ${actualType}`);
-    }
-  }
-
-  if (schema.enum !== undefined && !schema.enum.includes(data)) {
-    violations.push(`${path}: value must be one of ${JSON.stringify(schema.enum)}`);
-  }
-
-  if (schema.properties && typeof data === 'object' && data !== null && !Array.isArray(data)) {
-    const obj = data as Record<string, unknown>;
-    for (const [key, propSchema] of Object.entries(schema.properties)) {
-      if (key in obj) {
-        violations.push(...validateAgainstSchema(obj[key], propSchema, `${path}.${key}`));
-      } else if (schema.required?.includes(key)) {
-        violations.push(`${path}.${key}: required property missing`);
-      }
-    }
-  }
-
-  if (schema.items && Array.isArray(data)) {
-    for (const [i, item] of data.entries()) {
-      const itemSchema = Array.isArray(schema.items) ? schema.items[i] : schema.items;
-      if (itemSchema) {
-        violations.push(...validateAgainstSchema(item, itemSchema, `${path}[${i}]`));
-      }
-    }
-  }
-
-  return violations;
-}
-
-/**
  * Execute an agent call with permission checks, budget enforcement,
  * caching, and schema validation.
  */
@@ -430,7 +387,7 @@ export async function executeAgentCall<T>(
   const cached = await config.cache.load(config.runId, config.cacheKey);
   if (cached !== null) {
     if (options.schema) {
-      const violations = validateAgainstSchema(cached.data, options.schema);
+      const violations = validateAgentResultSchema(cached.data, options.schema);
       if (violations.length > 0) {
         config.log(`Cached schema validation failed for ${options.label}`);
         throw new SchemaValidationError(options.label, violations);
@@ -565,7 +522,7 @@ export async function executeAgentCall<T>(
 
   // 6. Schema validation
   if (options.schema) {
-    const violations = validateAgainstSchema(result.data, options.schema);
+    const violations = validateAgentResultSchema(result.data, options.schema);
     if (violations.length > 0) {
       config.log(`Schema validation failed for ${options.label}`);
       const error = new SchemaValidationError(options.label, violations);
