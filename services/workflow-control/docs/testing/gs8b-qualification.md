@@ -8,9 +8,10 @@ Repository qualification has four independent layers:
    response loss and durable reconciliation.
 3. Real PostgreSQL tests and a two-process seed/verify harness with a PostgreSQL restart.
 4. A hosted cross-language harness that bundles the worker into one self-contained
-   `workflow-runner-worker.js`, seals it beside a copied Node executable and exact manifest,
-   proves completion/cancellation receipts, persists an unproven-termination reconciliation
-   through the real PostgreSQL store, and injects an unknown effect-outcome commit.
+   CommonJS `workflow-runner-worker.js`, seals it beside a copied Node executable and exact
+   manifest without relying on ambient package module mode, proves completion/cancellation
+   receipts, persists an unproven-termination reconciliation through the real PostgreSQL store,
+   and injects an unknown effect-outcome commit.
 
 Runner protocol fixtures with action-time bindings construct the envelope and payload from one
 canonical timestamp and validate the complete record input before exercising store transitions.

@@ -1033,7 +1033,7 @@ describe('notification delivery service workflow', () => {
     for (const evidence of [
       'bun run build',
       'bun run --cwd packages/workflows build:runner-worker',
-      'packages/workflows/dist/workflow-runner-worker-bundle.mjs',
+      'packages/workflows/dist/workflow-runner-worker-bundle.cjs',
       '"$bundle_root/workflow-runner-worker.js"',
       'runner-node',
       'workflow-runner-bundle.v1.json',

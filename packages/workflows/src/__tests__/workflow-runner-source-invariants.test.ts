@@ -156,7 +156,7 @@ describe('GS8-B source and authority invariants', () => {
       scripts?: Record<string, string>;
     };
     expect(packageDocument.scripts?.['build:runner-worker']).toBe(
-      'bun build ./src/workflow-runner-worker-bin.ts --target=node --format=esm --bundle --outfile=./dist/workflow-runner-worker-bundle.mjs',
+      'bun build ./src/workflow-runner-worker-bin.ts --target=node --format=cjs --bundle --outfile=./dist/workflow-runner-worker-bundle.cjs',
     );
   });
 });

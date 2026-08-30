@@ -19,7 +19,7 @@
     "openslack-workflow-runner": "./dist/workflow-runner-worker-bin.js"
   },
   "scripts": {
-    "build:runner-worker": "bun build ./src/workflow-runner-worker-bin.ts --target=node --format=esm --bundle --outfile=./dist/workflow-runner-worker-bundle.mjs",
+    "build:runner-worker": "bun build ./src/workflow-runner-worker-bin.ts --target=node --format=cjs --bundle --outfile=./dist/workflow-runner-worker-bundle.cjs",
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"

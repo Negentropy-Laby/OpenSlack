@@ -395,7 +395,7 @@ jobs:
           mkdir -m 0700 "$bundle_root"
           bun run --cwd packages/workflows build:runner-worker
           install -m 0600 \
-            packages/workflows/dist/workflow-runner-worker-bundle.mjs \
+            packages/workflows/dist/workflow-runner-worker-bundle.cjs \
             "$bundle_root/workflow-runner-worker.js"
           cp "$(command -v node)" "$bundle_root/runner-node"
           chmod 0700 "$bundle_root/runner-node"
