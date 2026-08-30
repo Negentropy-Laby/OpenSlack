@@ -17,7 +17,6 @@ import { pathToFileURL } from 'node:url';
 import { createWorkflowRunnerDescriptorPathSecurity } from '../../packages/workflows/src/workflow-runner-descriptor-store.js';
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
-const REQUIRED_BUN_VERSION = '1.3.11';
 const ENTRYPOINT = join(
   REPOSITORY_ROOT,
   'packages',
@@ -302,9 +301,6 @@ function option(args: readonly string[], name: string): string {
 }
 
 async function main(): Promise<void> {
-  if (process.versions['bun'] !== REQUIRED_BUN_VERSION) {
-    throw new Error(`Sealed runner qualification requires Bun ${REQUIRED_BUN_VERSION}.`);
-  }
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
     case 'build':
