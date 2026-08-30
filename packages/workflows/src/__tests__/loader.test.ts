@@ -8,6 +8,7 @@ import {
   DISCOVERY_PATHS,
   detectFormat,
   analyzeStaticMeta,
+  loadWorkflow,
   findWorkflow as findWorkflowWithUserHome,
   discoverYamlTemplates,
   discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
@@ -35,6 +36,21 @@ describe('DISCOVERY_PATHS', () => {
 });
 
 describe('GS9-G authenticated Aby canary', () => {
+  it('is accepted by the production static workflow loader', async () => {
+    const workflowPath = resolve(
+      process.cwd(),
+      '.openslack/workflows/gs9g-authenticated-aby-canary.mjs',
+    );
+
+    await expect(loadWorkflow(workflowPath)).resolves.toMatchObject({
+      meta: {
+        name: 'gs9g-authenticated-aby-canary',
+        isolationPolicy: { anthropic_architect_aby: 'none' },
+      },
+      format: 'openslack-native',
+    });
+  });
+
   it('uses a structured provider signal without rejecting harmless response text', async () => {
     const workflow = (await import(
       `${pathToFileURL(resolve(process.cwd(), '.openslack/workflows/gs9g-authenticated-aby-canary.mjs')).href}?test=${Date.now()}`
@@ -42,21 +58,37 @@ describe('GS9-G authenticated Aby canary', () => {
       run(ctx: { phase(name: string): void; agent: ReturnType<typeof vi.fn> }): Promise<unknown>;
     };
     const providerFailure = new Error('provider unavailable');
+    const validResult = {
+      ok: true,
+      response: 'Unauthorized is a harmless word here.',
+      runId: 'RUN-CANARY',
+      agentId: 'anthropic_architect_aby',
+      bridge: 'aby-runAgent',
+    };
     const agent = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, response: 'Unauthorized is a harmless word here.' })
-      .mockResolvedValueOnce({ ok: false, response: 'Not authenticated.' })
-      .mockResolvedValueOnce({ ok: true, response: '   ' })
+      .mockResolvedValueOnce(validResult)
+      .mockResolvedValueOnce({ ...validResult, ok: false })
+      .mockResolvedValueOnce({ ...validResult, response: '   ' })
+      .mockResolvedValueOnce({ ...validResult, runId: '   ' })
+      .mockResolvedValueOnce({ ...validResult, agentId: 'wrong-agent' })
+      .mockResolvedValueOnce({ ...validResult, bridge: 'wrong-bridge' })
       .mockRejectedValueOnce(providerFailure);
     const ctx = { phase: vi.fn(), agent };
 
     await expect(workflow.run(ctx)).resolves.toMatchObject({ status: 'complete' });
     await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
     await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
+    await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
+    await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
+    await expect(workflow.run(ctx)).rejects.toThrow(/valid provider response/u);
     await expect(workflow.run(ctx)).rejects.toBe(providerFailure);
     expect(agent.mock.calls[0]?.[1]).toMatchObject({
       agentType: 'anthropic_architect_aby',
-      schema: { required: ['ok', 'response'], additionalProperties: false },
+      schema: {
+        required: ['ok', 'response', 'runId', 'agentId', 'bridge'],
+        additionalProperties: false,
+      },
     });
   });
 });

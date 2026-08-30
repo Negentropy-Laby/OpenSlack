@@ -34,7 +34,7 @@ export const meta = {
     onExceeded: 'fail',
   },
   isolationPolicy: {
-    [ABY_AGENT_ID]: 'none',
+    anthropic_architect_aby: 'none',
   },
 };
 
@@ -62,14 +62,24 @@ export async function run(ctx) {
         properties: {
           ok: { type: 'boolean' },
           response: { type: 'string' },
+          runId: { type: 'string' },
+          agentId: { type: 'string' },
+          bridge: { type: 'string' },
         },
-        required: ['ok', 'response'],
+        required: ['ok', 'response', 'runId', 'agentId', 'bridge'],
         additionalProperties: false,
       },
     },
   );
   const response = typeof result?.response === 'string' ? result.response.trim() : '';
-  if (result?.ok !== true || response.length === 0) {
+  const runId = typeof result?.runId === 'string' ? result.runId.trim() : '';
+  if (
+    result?.ok !== true ||
+    response.length === 0 ||
+    runId.length === 0 ||
+    result?.agentId !== ABY_AGENT_ID ||
+    result?.bridge !== 'aby-runAgent'
+  ) {
     throw new Error('Authenticated Aby canary did not return a valid provider response.');
   }
 
