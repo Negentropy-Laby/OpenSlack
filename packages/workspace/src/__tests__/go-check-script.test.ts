@@ -107,6 +107,15 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(goCheckSource).toContain('Workflow Control runner test selector matched no tests:');
     expect(goCheckSource).toContain('type=volume,source=${MOD_CACHE_VOLUME}');
     expect(goCheckSource).toContain('type=volume,source=${BUILD_CACHE_VOLUME}');
+    expect(goCheckSource).toContain(
+      'bundle_manifest_sha="$(sha256sum "${bundle_root}/workflow-runner-bundle.v1.json"',
+    );
+    expect(goCheckSource).toContain(
+      '--env "WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=${bundle_manifest_sha}"',
+    );
+    expect(goCheckSource).not.toContain(
+      '--env WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=968c388f6b84277910c055f163c6db470ae48cfaa3153f52598c4bbef4afab6a',
+    );
     expect(goCheckSource).not.toContain('go work sync');
     expect(goCheckSource).not.toContain('.gomodcache');
     expect(goCheckSource).not.toContain('.gocache');

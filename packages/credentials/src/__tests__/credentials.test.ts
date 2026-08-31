@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -232,5 +232,9 @@ describe('credential references and store', () => {
       available: true,
       writable: true,
     });
+    const backendSource = readFileSync(join(import.meta.dirname, '..', 'backends.ts'), 'utf8');
+    expect(backendSource).toContain(
+      "typeof require === 'function' ? require : createRequire(import.meta.url)",
+    );
   });
 });

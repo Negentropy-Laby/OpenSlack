@@ -6,7 +6,11 @@ TypeScript package, and create a bundle manifest matching
 `openslack.workflow_runner_bundle.v1`. Record the manifest SHA-256 outside the bundle and pass it
 through the required runner environment documented in the service README. The bundle directory
 must contain only `workflow-runner-bundle.v1.json`, `runner-node`, and the self-contained
-`workflow-runner-worker.js`; build or stage it atomically and never modify it in place. When the
+`workflow-runner-worker.cjs`; its suffix fixes the file's CommonJS parse mode even below a
+`type: module` ancestor. Create it with
+`bun scripts/qualification/workflow-runner-bundle.ts stage --bundle-root <absolute-root> --node-executable <absolute-node>`,
+then publish the directory atomically and never modify it in place. The sealed v1/v2 worker rejects
+`workflowSource: builtin` before any filesystem lookup; route reviewed file workflows instead. When the
 container entry point is `/runner-server`, set
 `WORKFLOW_CONTROL_HEALTH_URL=http://127.0.0.1:8081/health/ready` so the image health check follows
 the runner listener.

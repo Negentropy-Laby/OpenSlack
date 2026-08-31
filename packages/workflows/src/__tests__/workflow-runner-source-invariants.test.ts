@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +6,18 @@ import { validateWorkflowRunnerExecutionDescriptor } from '../workflow-runner-de
 
 async function source(path: string): Promise<string> {
   return readFile(resolve(process.cwd(), path), 'utf8');
+}
+
+function commandPath(command: 'bun' | 'node'): string {
+  const resolved = execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [command], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20_000,
+  })
+    .split(/\r?\n/u)
+    .find((entry) => entry.trim().length > 0);
+  if (resolved === undefined) throw new Error(`${command} executable is unavailable.`);
+  return resolved.trim();
 }
 
 describe('GS8-B source and authority invariants', () => {
@@ -63,10 +76,11 @@ describe('GS8-B source and authority invariants', () => {
     }
   });
 
-  it('locates dynamic import only behind the accepted-receipt session gate', async () => {
-    const [session, worker] = await Promise.all([
+  it('locates workflow module import only behind the accepted-receipt session gate', async () => {
+    const [session, worker, fileLoader] = await Promise.all([
       source('packages/workflows/src/workflow-runner-session.ts'),
       source('packages/workflows/src/workflow-runner-worker.ts'),
+      source('packages/workflows/src/internal/workflow-file-loader.ts'),
     ]);
     const accept = session.indexOf("await this.#emitReceiptable('lease_accept'");
     const execute = session.indexOf('void this.#executeLease()');
@@ -74,9 +88,16 @@ describe('GS8-B source and authority invariants', () => {
     expect(accept).toBeGreaterThan(-1);
     expect(execute).toBeGreaterThan(accept);
     expect(load).toBeGreaterThan(execute);
-    expect(worker.indexOf("await import('./loader.js')")).toBeGreaterThan(
+    expect(worker).toContain(
+      "import { loadWorkflowFile } from './internal/workflow-file-loader.js'",
+    );
+    expect(worker.indexOf('loadWorkflowFile(prepared.path')).toBeGreaterThan(
       worker.indexOf('async load('),
     );
+    expect(fileLoader).toContain('await import(moduleUrl.href)');
+    expect(fileLoader).not.toContain('import.meta.dirname');
+    expect(fileLoader).not.toContain('builtins');
+    expect(fileLoader).not.toContain('templates');
     expect(worker.indexOf("await import('./execute.js')")).toBeGreaterThan(
       worker.indexOf('execute: async'),
     );
@@ -138,11 +159,12 @@ describe('GS8-B source and authority invariants', () => {
     );
   });
 
-  it('enforces source closure only in GS8 prepare and exposes a single-file bundle command', async () => {
-    const [worker, legacyLoader, packageJson] = await Promise.all([
+  it('enforces source closure only in GS8 prepare and delegates the bundle recipe', async () => {
+    const [worker, legacyLoader, packageJson, bundleTool] = await Promise.all([
       source('packages/workflows/src/workflow-runner-worker.ts'),
       source('packages/workflows/src/loader.ts'),
       source('packages/workflows/package.json'),
+      source('scripts/qualification/workflow-runner-bundle.ts'),
     ]);
     const prepare = worker.indexOf('async prepare(');
     const policy = worker.indexOf('assertWorkflowRunnerSourceIsSelfContained(source.bytes)');
@@ -156,7 +178,31 @@ describe('GS8-B source and authority invariants', () => {
       scripts?: Record<string, string>;
     };
     expect(packageDocument.scripts?.['build:runner-worker']).toBe(
-      'bun build ./src/workflow-runner-worker-bin.ts --target=node --format=esm --bundle --outfile=./dist/workflow-runner-worker-bundle.mjs',
+      'bun ../../scripts/qualification/workflow-runner-bundle.ts build',
     );
+    expect(bundleTool).toContain("const STAGED_ENTRYPOINT = 'workflow-runner-worker.cjs'");
+    expect(bundleTool).toContain('await chmod(executablePath, 0o700)');
+    expect(bundleTool).toContain('Staged Node executable must be owner-executable.');
   });
+
+  it('builds and starts the path-free CJS artifact under a type-module ancestor', () => {
+    const nodeExecutable = commandPath('node');
+    const output = execFileSync(
+      commandPath('bun'),
+      [
+        resolve(process.cwd(), 'scripts/qualification/workflow-runner-bundle.ts'),
+        'verify-local',
+        '--node-executable',
+        nodeExecutable,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 120_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    expect(output).toMatch(/workflow-runner-bundle sha256=[0-9a-f]{64} bytes=[1-9][0-9]*/u);
+  }, 130_000);
 });

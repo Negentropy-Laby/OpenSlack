@@ -304,7 +304,9 @@ function isLegacyWindowsPassword(encoded: Buffer, password: string): boolean {
 
 function loadNativeEntryFactory(): NativeKeychainBackendOptions['entryFactory'] {
   try {
-    const sourceRequire = createRequire(import.meta.url);
+    // Bun replaces the CommonJS branch with the runtime require and removes the
+    // source checkout URL. Ordinary ESM builds retain createRequire(import.meta.url).
+    const sourceRequire = typeof require === 'function' ? require : createRequire(import.meta.url);
     const keyring = sourceRequire('@napi-rs/keyring') as { Entry: typeof KeyringEntry };
     nativeLoadDetail = 'source package';
     return (service, account) => new keyring.Entry(service, account);

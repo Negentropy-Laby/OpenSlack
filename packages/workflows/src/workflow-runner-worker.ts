@@ -49,6 +49,7 @@ import {
 import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
 import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
 import { validateWorkflowLocalShadowConfig } from './internal/workflow-local-shadow-config.js';
+import { loadWorkflowFile } from './internal/workflow-file-loader.js';
 import type {
   ProviderAttemptPort,
   ProviderAttemptReservation,
@@ -651,18 +652,16 @@ function within(root: string, candidate: string): boolean {
 }
 
 async function sourceRoot(
-  descriptor: Pick<WorkflowRunnerExecutionDescriptor, 'workflowSource'>,
+  workflowSource: Exclude<WorkflowRunnerExecutionDescriptor['workflowSource'], 'builtin'>,
   workspaceRoot: string,
 ): Promise<string> {
-  switch (descriptor.workflowSource) {
+  switch (workflowSource) {
     case 'openslack-project':
       return join(workspaceRoot, '.openslack', 'workflows');
     case 'claude-project':
       return join(workspaceRoot, '.claude', 'workflows');
     case 'claude-user':
       return join(homedir(), '.claude', 'workflows');
-    case 'builtin':
-      return join(import.meta.dirname, 'builtins');
   }
 }
 
@@ -704,7 +703,10 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
   return Object.freeze({
     async prepare(descriptor: TDescriptor): Promise<PreparedWorkflowSource> {
       policy.beforePrepare?.(descriptor);
-      const root = await sourceRoot(descriptor, workspaceRoot);
+      if (descriptor.workflowSource === 'builtin') {
+        throw new Error('Sealed workflow runners do not support builtin workflow sources.');
+      }
+      const root = await sourceRoot(descriptor.workflowSource, workspaceRoot);
       await assertNoWindowsReparseComponents(root);
       const rootBefore = await lstat(root, { bigint: true });
       if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
@@ -753,13 +755,7 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       if (policy.hashSource(source.bytes) !== descriptor.workflowSourceHash) {
         throw new Error(policy.messages.sourceHash);
       }
-      // Project and user catalogs accept only one hash-bound source object.
-      // Builtins are reviewed code inside the sealed runner distribution: the
-      // exact catalog source hash binds the requested entry while the runner
-      // build hash binds its transitive product-code dependencies.
-      if (descriptor.workflowSource !== 'builtin') {
-        assertWorkflowRunnerSourceIsSelfContained(source.bytes);
-      }
+      assertWorkflowRunnerSourceIsSelfContained(source.bytes);
       return Object.freeze({
         path: canonical,
         bytes: source.bytes,
@@ -777,8 +773,7 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       ) {
         throw new Error(policy.messages.changedSource);
       }
-      const { loadWorkflow } = await import('./loader.js');
-      const workflow = await loadWorkflow(prepared.path, {
+      const workflow = await loadWorkflowFile(prepared.path, {
         moduleCacheKey: descriptor.workflowSourceHash,
       });
       // Node cannot atomically import through the already verified file handle
