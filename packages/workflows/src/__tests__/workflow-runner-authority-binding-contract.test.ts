@@ -569,6 +569,33 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     }
   });
 
+  it('accepts an atomically prepared decision delivered after the prior receipt ACK', () => {
+    const exchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
+    const artifact = controlArtifact(golden.positive.controlDelivery.budgetAuthorization.reserved);
+    const prior = namedPriorDelivery(artifact.priorEventDeliveryRef) as {
+      readonly message: Json;
+      readonly receipt: Json;
+    };
+    const message = structuredClone(artifact.message) as Json;
+    message.sentAt = prior.message.sentAt;
+    expect(String(message.sentAt) < String(prior.receipt.committedAt)).toBe(true);
+    const receipt = structuredClone(artifact.receipt.value) as Json;
+    receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message as never).messageDigest;
+
+    expect(
+      validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+        receipt,
+        message,
+        exchange.stage.value,
+        exchange.resolution.value,
+        exchange.resolutionReceipt.value,
+        exchange.stageReceipt.value,
+        prior,
+        artifact.budgetSourceResult,
+      ),
+    ).toEqual(receipt);
+  });
+
   it('acks all five exact control kinds after the event-receipt ACK and preserves reconciliation', () => {
     const deliveries = golden.positive.controlDelivery;
     for (const operation of WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS) {

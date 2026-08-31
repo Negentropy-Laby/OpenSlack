@@ -15515,7 +15515,7 @@
       }
     },
     {
-      "id": "control-decision-prior-time-inversion",
+      "id": "control-decision-resolution-time-inversion",
       "operation": "validate_control_delivery",
       "input": {
         "receipt": {
@@ -15534,7 +15534,7 @@
           "controlEventId": "control-effect_authorization-31",
           "controlKind": "effect_authorization",
           "controlSequence": 132,
-          "messageDigest": "6f5b2d93632f81186841442be8d8be63ae3d89411342b8289c487be4d528a37b",
+          "messageDigest": "9e064201eb8aee8b5a189c32ecc30c41edae953c267aacbfa7aa4eb2343a6ad7",
           "runnerAttemptId": "attempt.effect",
           "leaseId": "lease.effect",
           "fencingToken": 9,
@@ -15560,7 +15560,7 @@
           "resumeGeneration": 0,
           "eventId": "control-effect_authorization-31",
           "correlationId": "correlation.effect",
-          "sentAt": "2026-08-20T00:07:00.500Z",
+          "sentAt": "2026-08-20T00:06:02.000Z",
           "payload": {
             "effectId": "effect.1",
             "effectHash": "2222222222222222222222222222222222222222222222222222222222222222",

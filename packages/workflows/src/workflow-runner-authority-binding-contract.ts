@@ -3020,7 +3020,7 @@ function validateControlDeliveryForValidatedContext(
       priorReceipt.committedAt === null ||
       priorMessage.sequence === null ||
       control.sequence !== priorMessage.sequence + 1 ||
-      control.sentAt < priorReceipt.committedAt ||
+      control.sentAt < priorMessage.sentAt ||
       receipt.companionSequence !== priorReceipt.companionSequence + 1
     ) {
       fail(

@@ -425,6 +425,38 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 		})
 	}
+	t.Run("atomicallyPreparedDecision", func(t *testing.T) {
+		control := goldenControlArtifact(t, golden, golden.Positive.ControlDelivery.BudgetAuthorization["reserved"])
+		messageSource, messageOK := asRecord(control.Message)
+		receiptSource, receiptOK := asRecord(control.Receipt.Value)
+		prior := goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef)
+		priorRecord, priorOK := asRecord(prior)
+		priorMessage, priorMessageOK := asRecord(priorRecord["message"])
+		if !messageOK || !receiptOK || !priorOK || !priorMessageOK {
+			t.Fatal("atomic decision fixture must contain closed records")
+		}
+		message := Record{}
+		for key, value := range messageSource {
+			message[key] = value
+		}
+		message["sentAt"] = priorMessage["sentAt"]
+		_, prepared, err := prepareAuthorityMessageValue(message)
+		if err != nil {
+			t.Fatalf("prepare atomically constructed decision: %v", err)
+		}
+		receipt := Record{}
+		for key, value := range receiptSource {
+			receipt[key] = value
+		}
+		receipt["messageDigest"] = prepared.MessageDigest
+		if _, err := validateControlGolden(
+			receipt, message, budgetExchange.Stage.Value, budgetExchange.Resolution.Value,
+			budgetExchange.ResolutionReceipt.Value, budgetExchange.StageReceipt.Value,
+			prior, control.BudgetSourceResult,
+		); err != nil {
+			t.Fatalf("atomically prepared decision was rejected after prior ACK: %v", err)
+		}
+	})
 	t.Run("budgetDatabaseReconciliation/eventReceiptOnly", func(t *testing.T) {
 		t.Parallel()
 		control := golden.Positive.ControlDelivery.BudgetDatabaseReconciliation

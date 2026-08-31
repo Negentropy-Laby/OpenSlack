@@ -2336,7 +2336,7 @@ async function goldenVectors() {
     controlKindMessages.effect_authorization,
     'time inversion message',
   );
-  timeInversionMessage.sentAt = '2026-08-20T00:07:00.500Z';
+  timeInversionMessage.sentAt = '2026-08-20T00:06:02.000Z';
   const timeInversionDelivery = cloneJson(
     controlKinds.effect_authorization.receipt,
     'time inversion delivery',
@@ -3244,7 +3244,7 @@ async function goldenVectors() {
           ),
       ),
       negative(
-        'control-decision-prior-time-inversion',
+        'control-decision-resolution-time-inversion',
         'validate_control_delivery',
         {
           receipt: timeInversionDelivery,

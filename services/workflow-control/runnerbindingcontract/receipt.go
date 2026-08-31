@@ -486,10 +486,10 @@ func assertPriorEventDelivery(
 	if err != nil {
 		return embeddedAuthorityFailure(err, "$/priorEventDelivery/message")
 	}
-	priorCommittedAt, priorCommitted := priorReceipt["committedAt"].(string)
+	_, priorCommitted := priorReceipt["committedAt"].(string)
 	if priorMessage.Kind != authoritycontract.KindEventReceipt || priorReceipt["controlKind"] != string(authoritycontract.KindEventReceipt) ||
 		priorReceipt["disposition"] != "accepted" || !priorCommitted || priorMessage.Sequence == nil || message.Sequence == nil ||
-		*message.Sequence != *priorMessage.Sequence+1 || message.SentAt < priorCommittedAt ||
+		*message.Sequence != *priorMessage.Sequence+1 || message.SentAt < priorMessage.SentAt ||
 		receipt["companionSequence"].(int64) != priorReceipt["companionSequence"].(int64)+1 {
 		return failure(
 			ErrorSequenceConflict,

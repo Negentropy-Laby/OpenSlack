@@ -416,7 +416,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9GInputs(t *testing.T) {
 		},
 		"workflowRunnerAuthorityBindingContractManifest": {
 			Path:   "packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json",
-			SHA256: "3abaa009a76f400540d7dc2c720d8b659dbd02a4fe4785be8dfc96680bdd8762",
+			SHA256: "3cda901de0ce2dc71b03e84709fb4dd3c947b1cf66687152423ddbd6cf0ed4df",
 		},
 		"openapi": {
 			Path:   "services/workflow-control/docs/api/openapi.yaml",
