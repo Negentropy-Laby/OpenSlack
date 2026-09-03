@@ -425,6 +425,58 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 		})
 	}
+	t.Run("decisionChronologyWindow", func(t *testing.T) {
+		cases := []struct {
+			name, reference, sentAt string
+			exchange                operationGoldenExchange
+		}{
+			{name: "budgetBoundary", reference: golden.Positive.ControlDelivery.BudgetAuthorization["reserved"], exchange: budgetExchange},
+			{name: "effectInterior", reference: golden.Positive.ControlDelivery.ByKind[string(authoritycontract.KindEffectAuthorization)], sentAt: "2026-08-20T00:07:00.500Z", exchange: golden.Positive.Operations[string(OperationEffectAuthorize)]},
+		}
+		for _, testCase := range cases {
+			t.Run(testCase.name, func(t *testing.T) {
+				control := goldenControlArtifact(t, golden, testCase.reference)
+				messageSource, messageOK := asRecord(control.Message)
+				receiptSource, receiptOK := asRecord(control.Receipt.Value)
+				var prior any
+				if control.PriorEventDeliveryRef == nil {
+					prior = goldenPriorEventDelivery(t, golden, control.Operation)
+				} else {
+					prior = goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef)
+				}
+				priorRecord, priorOK := asRecord(prior)
+				priorMessage, priorMessageOK := asRecord(priorRecord["message"])
+				priorReceipt, priorReceiptOK := asRecord(priorRecord["receipt"])
+				if !messageOK || !receiptOK || !priorOK || !priorMessageOK || !priorReceiptOK {
+					t.Fatal("decision chronology fixture must contain closed records")
+				}
+				message := cloneRecord(messageSource)
+				sentAt := testCase.sentAt
+				if sentAt == "" {
+					sentAt, _ = priorMessage["sentAt"].(string)
+				}
+				priorSentAt, _ := priorMessage["sentAt"].(string)
+				priorCommittedAt, _ := priorReceipt["committedAt"].(string)
+				message["sentAt"] = sentAt
+				if sentAt < priorSentAt || sentAt >= priorCommittedAt || testCase.sentAt != "" && sentAt <= priorSentAt {
+					t.Fatalf("decision timestamp is outside the relaxed window: prior=%s decision=%s ACK=%s", priorSentAt, sentAt, priorCommittedAt)
+				}
+				_, prepared, err := prepareAuthorityMessageValue(message)
+				if err != nil {
+					t.Fatalf("prepare decision in chronology window: %v", err)
+				}
+				receipt := cloneRecord(receiptSource)
+				receipt["messageDigest"] = prepared.MessageDigest
+				if _, err := validateControlGolden(
+					receipt, message, testCase.exchange.Stage.Value, testCase.exchange.Resolution.Value,
+					testCase.exchange.ResolutionReceipt.Value, testCase.exchange.StageReceipt.Value,
+					prior, control.BudgetSourceResult,
+				); err != nil {
+					t.Fatalf("decision in event-receipt message epoch was rejected: %v", err)
+				}
+			})
+		}
+	})
 	t.Run("budgetDatabaseReconciliation/eventReceiptOnly", func(t *testing.T) {
 		t.Parallel()
 		control := golden.Positive.ControlDelivery.BudgetDatabaseReconciliation

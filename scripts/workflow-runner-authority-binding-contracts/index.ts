@@ -2332,17 +2332,33 @@ async function goldenVectors() {
   sequenceGapDelivery.controlSequence = sequenceGapMessage.sequence;
   sequenceGapDelivery.messageDigest =
     prepareWorkflowControlAuthorityMessage(sequenceGapMessage).messageDigest;
-  const timeInversionMessage = cloneJson(
+  const priorTimeInversionMessage = cloneJson(
     controlKindMessages.effect_authorization,
-    'time inversion message',
+    'prior time inversion message',
   );
-  timeInversionMessage.sentAt = '2026-08-20T00:07:00.500Z';
-  const timeInversionDelivery = cloneJson(
+  priorTimeInversionMessage.sentAt = '2026-08-20T00:06:59.999Z';
+  const priorTimeInversionDelivery = cloneJson(
     controlKinds.effect_authorization.receipt,
-    'time inversion delivery',
+    'prior time inversion delivery',
   );
-  timeInversionDelivery.messageDigest =
-    prepareWorkflowControlAuthorityMessage(timeInversionMessage).messageDigest;
+  priorTimeInversionDelivery.messageDigest =
+    prepareWorkflowControlAuthorityMessage(priorTimeInversionMessage).messageDigest;
+  const resolutionAckTimeInversionMessage = cloneJson(
+    controlKindMessages.event_receipt,
+    'resolution ACK time inversion message',
+  );
+  resolutionAckTimeInversionMessage.sentAt = '2026-08-20T00:01:02.500Z';
+  asJson(
+    resolutionAckTimeInversionMessage.payload,
+    'resolution ACK time inversion payload',
+  ).committedAt = resolutionAckTimeInversionMessage.sentAt;
+  const resolutionAckTimeInversionDelivery = cloneJson(
+    controlKinds.event_receipt.receipt,
+    'resolution ACK time inversion delivery',
+  );
+  resolutionAckTimeInversionDelivery.messageDigest = prepareWorkflowControlAuthorityMessage(
+    resolutionAckTimeInversionMessage,
+  ).messageDigest;
   const budgetRateInvalid = cloneJson(exchanges.budget_reserve.resolution, 'budget rate invalid');
   asJson(budgetRateInvalid.evidence, 'budget evidence').rateNanoUsdPerToken = 'not-a-rate';
   const budgetSettleReceiptHashDrift = settlementStageDrift(
@@ -3244,11 +3260,34 @@ async function goldenVectors() {
           ),
       ),
       negative(
+        'control-event-receipt-resolution-ack-time-inversion',
+        'validate_control_delivery',
+        {
+          receipt: resolutionAckTimeInversionDelivery,
+          message: resolutionAckTimeInversionMessage,
+          stage: checkpoint.stage,
+          resolution: checkpoint.resolution,
+          resolutionReceipt: checkpoint.resolutionReceipt,
+          stageReceipt: checkpoint.stageReceipt,
+          priorEventDelivery: null,
+        },
+        () =>
+          validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+            resolutionAckTimeInversionDelivery,
+            resolutionAckTimeInversionMessage,
+            checkpoint.stage,
+            checkpoint.resolution,
+            checkpoint.resolutionReceipt,
+            checkpoint.stageReceipt,
+            null,
+          ),
+      ),
+      negative(
         'control-decision-prior-time-inversion',
         'validate_control_delivery',
         {
-          receipt: timeInversionDelivery,
-          message: timeInversionMessage,
+          receipt: priorTimeInversionDelivery,
+          message: priorTimeInversionMessage,
           stage: exchanges.effect_authorize.stage,
           resolution: exchanges.effect_authorize.resolution,
           resolutionReceipt: exchanges.effect_authorize.resolutionReceipt,
@@ -3260,8 +3299,8 @@ async function goldenVectors() {
         },
         () =>
           validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
-            timeInversionDelivery,
-            timeInversionMessage,
+            priorTimeInversionDelivery,
+            priorTimeInversionMessage,
             exchanges.effect_authorize.stage,
             exchanges.effect_authorize.resolution,
             exchanges.effect_authorize.resolutionReceipt,

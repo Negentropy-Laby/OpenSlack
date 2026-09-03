@@ -732,6 +732,11 @@ func (repository *Repository) finalizeV2Event(ctx context.Context, input runners
 	if err != nil {
 		return runnerstore.V2RecordedEvent{}, err
 	}
+	if authority != nil && authority.RuntimeBinding != nil {
+		if err := validateRuntimeBindingFinalizeClock(now, *authority.RuntimeBinding); err != nil {
+			return runnerstore.V2RecordedEvent{}, err
+		}
+	}
 	translated := translateV2Event(message)
 	next, err := applyV2Event(ctx, tx, current, translated, message.Kind, now)
 	if err != nil {
@@ -887,6 +892,25 @@ WHERE binding_id=$1 AND state='resolved'`, authority.RuntimeBinding.BindingID,
 	}
 	return runnerstore.V2RecordedEvent{Receipt: receipt, ReceiptBytes: []byte(receiptPrepared.Body), Decision: decision,
 		DecisionBytes: decisionBytes, Status: runnerstore.ReceiptAccepted, JobState: next.jobState, AttemptState: next.attemptState}, nil
+}
+
+func validateRuntimeBindingFinalizeClock(now time.Time, binding runnerstore.V2AuthorityBindingView) error {
+	receipt, err := runnerbindingcontract.ParseReceiptBytes(binding.ExactResolutionReceipt)
+	if err != nil {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution receipt is invalid", err)
+	}
+	committedAtText, committed := receipt["committedAt"].(string)
+	if !committed {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution receipt has no commit clock", nil)
+	}
+	committedAt, err := runnerstore.ParseTimestamp(committedAtText)
+	if err != nil {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "runtime binding resolution receipt commit clock is invalid", err)
+	}
+	if now.Before(committedAt) {
+		return runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "authority-binding resolution receipt is ahead of the database finalization clock", nil)
+	}
+	return nil
 }
 
 func validateV2CurrentBinding(ctx context.Context, tx pgx.Tx, current activeAttempt, message authoritycontract.Message) error {
