@@ -237,7 +237,10 @@ func (service *Service) handleReadAccount(w http.ResponseWriter, request *http.R
 		writeFailure(w, http.StatusInternalServerError, string(budgetstore.ErrorIntegrity), "stored budget account integrity check failed")
 		return
 	}
-	writeExactJSON(w, http.StatusOK, account.ExactBytes)
+	// Durable account records are stored without transport framing. The HTTP
+	// point-read contract uses exact canonical JSON followed by one LF, matching
+	// the mutation and receipt response surfaces.
+	writeExactJSON(w, http.StatusOK, append(append([]byte(nil), account.ExactBytes...), '\n'))
 }
 
 func (service *Service) handleReadReservation(w http.ResponseWriter, request *http.Request) {

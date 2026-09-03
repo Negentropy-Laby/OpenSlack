@@ -43,11 +43,12 @@ import {
 } from './schema-validation.js';
 import {
   attachProviderUsageEvidence,
+  buildProviderUsageReceipt,
   inspectAttachedProviderUsageEvidence,
   inspectProviderUsageEvidence,
   type ProviderUsageReceipt,
 } from './provider-usage-evidence.js';
-import type { ProviderAttemptPort } from './provider-attempt-port.js';
+import type { ProviderAttemptPort, ProviderAttemptReservation } from './provider-attempt-port.js';
 import { createProviderAttemptBoundary } from './internal/provider-attempt-boundary.js';
 
 export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
@@ -82,6 +83,13 @@ export interface LauncherOptions {
   bridgeRuntimeResolver?: BridgeRuntimeResolver;
   /** OpenAI-compatible runtime host dependencies and non-secret config location. */
   openAICompatible?: OpenAICompatibleRuntimeHostOptions;
+  /**
+   * Optional qualification-host budget capability. In-process providers receive
+   * a host-minted boundary; the Aby process transport is wrapped at the launcher
+   * boundary so reserve precedes the bridge request and settlement follows its
+   * reported aggregate usage.
+   */
+  providerAttemptPort?: ProviderAttemptPort;
 }
 
 export interface AgentLaunchOptions {
@@ -111,6 +119,8 @@ export interface AgentLaunchOptions {
  */
 export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   const { runStore, model, rootDir, availableMcpServers = [], bridgeMode } = options;
+  const providerAttemptPort =
+    options.providerAttemptPort ?? options.openAICompatible?.providerAttemptPort;
   const bridgeRuntimeResolver =
     options.bridgeRuntimeResolver ?? createBridgeRuntimeResolver({ rootDir });
 
@@ -124,6 +134,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       availableMcpServers,
       rootDir,
       options.openAICompatible,
+      providerAttemptPort,
     );
 
   const recorder = createRunRecorder(runStore, rootDir);
@@ -280,7 +291,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         recorder,
         runId,
       });
-      const adapterResult = await runAdapter.execute<T>({
+      const executionContext = {
         prompt,
         runId,
         agentId: resolvedConfig.agentId,
@@ -294,15 +305,30 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         toolGuard,
         toolExecutor,
         signal: abortController.signal,
-      });
-      const adapterEvidenceInspection = inspectProviderUsageEvidence(adapterResult.usageEvidence);
-      if (adapterEvidenceInspection.status === 'valid') {
-        adapterUsageEvidence = adapterEvidenceInspection.receipts;
-      } else if (adapterEvidenceInspection.status === 'invalid') {
-        recorder.progress(runId, {
-          step: 'provider_usage_evidence_invalid',
-          source: 'adapter_result',
-        });
+      };
+      const wrapsAbyProviderAttempt = isAbyBridgeRun && providerAttemptPort !== undefined;
+      const adapterResult = wrapsAbyProviderAttempt
+        ? await executeAbyBridgeWithProviderAttempt<T>({
+            adapter: runAdapter,
+            context: executionContext,
+            port: providerAttemptPort,
+            providerId: providerResolution.providerId,
+            modelId: resolvedConfig.model ?? 'default',
+            onUsageEvidence(receipt) {
+              adapterUsageEvidence = Object.freeze([receipt]);
+            },
+          })
+        : await runAdapter.execute<T>(executionContext);
+      if (!wrapsAbyProviderAttempt) {
+        const adapterEvidenceInspection = inspectProviderUsageEvidence(adapterResult.usageEvidence);
+        if (adapterEvidenceInspection.status === 'valid') {
+          adapterUsageEvidence = adapterEvidenceInspection.receipts;
+        } else if (adapterEvidenceInspection.status === 'invalid') {
+          recorder.progress(runId, {
+            step: 'provider_usage_evidence_invalid',
+            source: 'adapter_result',
+          });
+        }
       }
 
       if (abortController.signal.aborted) {
@@ -523,11 +549,157 @@ function normalizeBudget(
   return budget ? { tokens: budget.tokens, costUsd: budget.costUsd ?? 0 } : undefined;
 }
 
+async function executeAbyBridgeWithProviderAttempt<T>(options: {
+  adapter: AgentExecutionAdapter;
+  context: Parameters<AgentExecutionAdapter['execute']>[0];
+  port: ProviderAttemptPort;
+  providerId: string;
+  modelId: string;
+  onUsageEvidence(receipt: ProviderUsageReceipt): void;
+}): Promise<Awaited<ReturnType<AgentExecutionAdapter['execute']>> & { data: T }> {
+  const requestedTokens = options.context.runState.tokensRemaining;
+  if (!Number.isSafeInteger(requestedTokens) || requestedTokens === null || requestedTokens < 1) {
+    throw new RuntimeMisconfiguredError(
+      'Aby provider attempt authority requires a positive launch-time token budget.',
+    );
+  }
+
+  const providerAttempt = '1';
+  let reservation: ProviderAttemptReservation;
+  try {
+    reservation = await options.port.reserve({
+      providerId: options.providerId,
+      modelId: options.modelId,
+      providerRunId: options.context.runId,
+      providerAttempt,
+      requestedTokens: String(requestedTokens),
+    });
+  } catch (error) {
+    options.context.recorder.progress(options.context.runId, {
+      step: 'provider_attempt_reserve_failed',
+      errorCode: readProviderAttemptErrorCode(error),
+    });
+    throw error;
+  }
+  const requestBytes = JSON.stringify({
+    schema: 'openslack.aby_bridge_provider_attempt.v1',
+    providerId: options.providerId,
+    modelId: options.modelId,
+    runId: options.context.runId,
+    attempt: providerAttempt,
+    prompt: options.context.prompt,
+  });
+  let settlementAttempted = false;
+
+  try {
+    assertProviderAttemptReservation(reservation, requestedTokens);
+    const result = await options.adapter.execute<T>(options.context);
+    const reported = Number.isSafeInteger(result.tokenUsage) && result.tokenUsage! >= 0;
+    const receipt = buildProviderUsageReceipt({
+      providerId: options.providerId,
+      modelId: options.modelId,
+      runId: options.context.runId,
+      attempt: 1,
+      status: reported ? 'reported' : 'unreported',
+      usage: reported ? { totalTokens: result.tokenUsage! } : null,
+      outcome: 'provider_response_accepted',
+      requestBytes,
+      outcomeBytes: JSON.stringify({ data: result.data, tokenUsage: result.tokenUsage ?? null }),
+    });
+    options.onUsageEvidence(receipt);
+    settlementAttempted = true;
+    try {
+      await options.port.settle(reservation, receipt);
+    } catch (error) {
+      options.context.recorder.progress(options.context.runId, {
+        step: 'provider_attempt_settle_failed',
+        errorCode: readProviderAttemptErrorCode(error),
+      });
+      attachProviderUsageEvidence(error, [receipt]);
+      throw error;
+    }
+    return result;
+  } catch (error) {
+    if (!settlementAttempted) {
+      const receipt = buildProviderUsageReceipt({
+        providerId: options.providerId,
+        modelId: options.modelId,
+        runId: options.context.runId,
+        attempt: 1,
+        status: 'unreported',
+        usage: null,
+        outcome: 'provider_attempt_failed',
+        requestBytes,
+        outcomeBytes: providerFailureOutcome(error),
+      });
+      options.onUsageEvidence(receipt);
+      settlementAttempted = true;
+      try {
+        await options.port.settle(reservation, receipt);
+      } catch (settlementError) {
+        options.context.recorder.progress(options.context.runId, {
+          step: 'provider_attempt_settle_failed',
+          errorCode: readProviderAttemptErrorCode(settlementError),
+        });
+        attachProviderUsageEvidence(settlementError, [receipt]);
+        throw settlementError;
+      }
+      attachProviderUsageEvidence(error, [receipt]);
+    }
+    throw error;
+  }
+}
+
+function assertProviderAttemptReservation(
+  reservation: ProviderAttemptReservation,
+  requestedTokens: number,
+): void {
+  const safeId = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+  if (
+    !safeId.test(reservation.reservationId) ||
+    !safeId.test(reservation.callId) ||
+    !/^(?:0|[1-9][0-9]*)$/u.test(reservation.authorizedTokens)
+  ) {
+    throw new RuntimeMisconfiguredError(
+      'Provider attempt reservation returned an invalid authorization.',
+    );
+  }
+  const authorizedTokens = Number(reservation.authorizedTokens);
+  if (
+    !Number.isSafeInteger(authorizedTokens) ||
+    authorizedTokens < 1 ||
+    authorizedTokens !== requestedTokens
+  ) {
+    throw new RuntimeMisconfiguredError(
+      'Provider attempt reservation must match the requested token bound.',
+    );
+  }
+}
+
+function providerFailureOutcome(error: unknown): string {
+  if (safeInstanceOf(error, Error)) {
+    return JSON.stringify({ kind: error.name || 'Error' });
+  }
+  return JSON.stringify({ kind: 'unknown' });
+}
+
+function readProviderAttemptErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object') return 'UNKNOWN';
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+    const code = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/u.test(code) ? code : 'UNKNOWN';
+  } catch {
+    return 'UNKNOWN';
+  }
+}
+
 function createDefaultProviderRegistry(
   bridgeRuntimeResolver: BridgeRuntimeResolver,
   availableMcpServers: string[],
   rootDir?: string,
   openAICompatible?: OpenAICompatibleRuntimeHostOptions,
+  providerAttemptPort?: ProviderAttemptPort,
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
   registry.register({
@@ -587,11 +759,9 @@ function createDefaultProviderRegistry(
             openAICompatible?.credentialStore,
           ),
           fetchImpl: openAICompatible?.fetchImpl,
-          ...(openAICompatible?.providerAttemptPort
+          ...(providerAttemptPort
             ? {
-                providerAttemptBoundary: createProviderAttemptBoundary(
-                  openAICompatible.providerAttemptPort,
-                ),
+                providerAttemptBoundary: createProviderAttemptBoundary(providerAttemptPort),
               }
             : {}),
         }),

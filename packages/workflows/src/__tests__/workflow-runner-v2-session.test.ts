@@ -243,6 +243,7 @@ function harness(
     readonly now?: () => string;
     readonly runtimeDelivery?: WorkflowRunnerV2RuntimeDeliveryPort;
     readonly activity?: string[];
+    readonly reportFatal?: (error: Error) => void | Promise<void>;
   } = {},
 ) {
   const sealed = descriptor(resumeGeneration, authorityRoute);
@@ -288,6 +289,7 @@ function harness(
       return await new Promise<never>(() => undefined);
     },
     runtimeDelivery: options.runtimeDelivery,
+    reportFatal: options.reportFatal,
     now: options.now ?? (() => NOW),
   });
   return {
@@ -803,6 +805,7 @@ describe('WorkflowRunnerV2Session', () => {
   });
 
   it('does not emit terminal after an authority commit outcome becomes unknown', async () => {
+    const fatalReports: Error[] = [];
     const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
       async isResume() {
         return false;
@@ -826,6 +829,10 @@ describe('WorkflowRunnerV2Session', () => {
       },
       {
         runtimeDelivery,
+        async reportFatal(error) {
+          fatalReports.push(error);
+          throw new Error('diagnostic sink unavailable');
+        },
         execute: async (context) => {
           await context.checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.unknown'));
           return { status: 'completed' };
@@ -842,6 +849,13 @@ describe('WorkflowRunnerV2Session', () => {
     await turn();
     expect(value.closed).toEqual([2]);
     expect(value.session.state).toBe('reconciliation_required');
+    expect(fatalReports).toHaveLength(1);
+    expect(fatalReports[0]).toMatchObject({
+      code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+      cause: {
+        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
+      },
+    });
     expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
   });
 

@@ -100,6 +100,40 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 			t.Fatalf("ACK deadline = %s, want lease hard bound %s", store.observedDeadline, lease.LeaseExpiresAt)
 		}
 	})
+
+	t.Run("worker exit interrupts an outstanding control ACK wait", func(t *testing.T) {
+		store, process, lease, recorded := authorityControlFixture("", false, 11)
+		store.blockAcknowledgement = true
+		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
+		lease.WholeDeadline = now.Add(5 * time.Minute)
+		close(process.done)
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		_, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false)
+		if err == nil || !strings.Contains(err.Error(), "exited before acknowledging event_receipt control") {
+			t.Fatalf("worker exit did not interrupt ACK wait: %v", err)
+		}
+		if got := strings.Join(store.reconciled, ","); got != string(authoritycontract.KindEventReceipt) {
+			t.Fatalf("worker exit was not latched for reconciliation: %s", got)
+		}
+	})
+
+	t.Run("durable ACK wins when process exit and acknowledgement complete together", func(t *testing.T) {
+		store, process, lease, recorded := authorityControlFixture("", false, 11)
+		store.acknowledgeAfterCancellation = true
+		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
+		lease.WholeDeadline = now.Add(5 * time.Minute)
+		close(process.done)
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		_, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false)
+		if err != nil {
+			t.Fatalf("durable ACK lost to process exit: %v", err)
+		}
+		if len(store.reconciled) != 0 {
+			t.Fatalf("durably acknowledged control was marked for reconciliation: %v", store.reconciled)
+		}
+	})
 }
 
 type v2ControlOrderStore struct {
@@ -113,6 +147,9 @@ type v2ControlOrderStore struct {
 	reconciled                    []string
 	failAcknowledgement           string
 	reconciliationAcknowledgement string
+	blockAcknowledgement          bool
+	acknowledgeAfterCancellation  bool
+	acknowledgementCalls          int
 	expectedDeadline              time.Time
 	observedDeadline              time.Time
 	authorityACK                  map[string]bool
@@ -145,6 +182,21 @@ func (store *v2ControlOrderStore) MarkV2ControlDeliveryReconciliation(_ context.
 }
 
 func (store *v2ControlOrderStore) WaitV2ControlAcknowledged(ctx context.Context, _ string, eventID string) (runnerstore.V2ControlDeliveryDisposition, error) {
+	store.mu.Lock()
+	store.acknowledgementCalls++
+	acknowledgementCall := store.acknowledgementCalls
+	store.mu.Unlock()
+	if store.acknowledgeAfterCancellation {
+		<-ctx.Done()
+		return runnerstore.V2ControlDeliveryAccepted, nil
+	}
+	if store.blockAcknowledgement {
+		if acknowledgementCall > 1 {
+			return "", errors.New("durable acknowledgement is absent")
+		}
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if deadline, ok := ctx.Deadline(); ok {

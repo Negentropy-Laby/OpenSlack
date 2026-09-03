@@ -259,6 +259,55 @@ describe('GS8-B workflow runner worker', () => {
     expect(observedGeneration).toBe(1);
   });
 
+  it('allows the first durable reserve to create a fresh budget account from the sealed seed', async () => {
+    const base = v2Descriptor(0);
+    const sealed = {
+      ...base,
+      authorityRoute: {
+        backend: 'go' as const,
+        authority: 'workflow-control' as const,
+        routingEpoch: 1,
+        authorityBuildHash: 'a'.repeat(64),
+      },
+    };
+    const stop = new Error('fresh reserve reached');
+    let reserveReached = false;
+    const context = {
+      resumeGeneration: 0,
+      async reserveBudget() {
+        reserveReached = true;
+        throw stop;
+      },
+    } as unknown as WorkflowRunnerV2ExecutionContext;
+    const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary = {
+      callerId: 'workflow-runner-v2',
+      client: {
+        async readAccount() {
+          return null;
+        },
+        async mutate() {
+          throw new Error('mutation is owned by the source adapter after staging');
+        },
+        async pointRead() {
+          return null;
+        },
+      },
+      now: () => '2026-08-22T00:00:00.000Z',
+    };
+
+    const port = createWorkflowRunnerV2ProviderAttemptPort(sealed, context, budgetAuthority);
+    await expect(
+      port.reserve({
+        providerId: 'aby',
+        modelId: 'default',
+        providerRunId: 'provider-run.fresh',
+        providerAttempt: '1',
+        requestedTokens: '100',
+      }),
+    ).rejects.toBe(stop);
+    expect(reserveReached).toBe(true);
+  });
+
   it(
     'executes the bundled v2 effect path and preserves durable replay across outcome response loss',
     async () => {

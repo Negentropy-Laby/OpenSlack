@@ -1277,14 +1277,14 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
       descriptor.workflowRunId,
       descriptor.authorityRoute,
     );
+    if (!account) return undefined;
     if (
-      !account ||
       account.accountId !== descriptor.budgetPolicy.accountId ||
       account.policyHash !== descriptor.budgetPolicy.policyHash
     ) {
       throw new WorkflowRunnerV2BudgetBoundaryError(
         'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-        'Budget authority account head is missing or differs from the sealed descriptor.',
+        'Budget authority account head differs from the sealed descriptor.',
       );
     }
     return account;
@@ -1926,16 +1926,17 @@ export async function executeWorkflowRunnerV2QualificationJob(
     agentLauncher: await (async () => {
       const { createOpenSlackAgentLauncher, createRunStore } =
         await import('@openslack/agent-runtime');
+      const providerAttemptPort = createWorkflowRunnerV2ProviderAttemptPort(
+        descriptor,
+        context,
+        budgetAuthority,
+      );
       return createOpenSlackAgentLauncher({
         runStore: createRunStore(workspaceRoot),
         rootDir: workspaceRoot,
+        providerAttemptPort,
         openAICompatible: {
           rootDir: workspaceRoot,
-          providerAttemptPort: createWorkflowRunnerV2ProviderAttemptPort(
-            descriptor,
-            context,
-            budgetAuthority,
-          ),
         },
       });
     })(),
@@ -2086,6 +2087,9 @@ export async function runWorkflowRunnerV2QualificationWorker(
     ),
     send: (exactBytes) => {
       writeSync(1, exactBytes, undefined, 'utf8');
+    },
+    reportFatal: (error) => {
+      writeSync(2, boundedDiagnostic(error), undefined, 'utf8');
     },
     close,
     execute: (workflow, descriptor, context) =>

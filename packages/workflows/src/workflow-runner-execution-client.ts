@@ -7,7 +7,12 @@ import {
   createWorkflowRunnerExecutionDescriptor,
   hashWorkflowRunnerResult,
 } from './workflow-runner-descriptor.js';
-import type { WorkflowControlAuthorityPort } from './workflow-control-authority-client.js';
+import {
+  workflowControlAuthorityInitialRecord,
+  type WorkflowControlAuthorityPort,
+  type WorkflowControlAuthorityRunRead,
+  type WorkflowControlAuthorityRunRecord,
+} from './workflow-control-authority-client.js';
 import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import type { WorkflowRunRoutingExecutionContext } from './workflow-run-routing-config.js';
 import type { WorkflowRunRouteJournalEntry } from './workflow-run-routing.js';
@@ -167,6 +172,131 @@ function assertGoAuthorityHead(
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
       'Workflow Control authority head does not bind the immutable route receipt.',
+    );
+  }
+}
+
+function isExactInitialGoAuthorityHead(
+  route: WorkflowRunRouteReceipt,
+  head: WorkflowControlAuthorityRunRead,
+  state: 'created' | 'running',
+  revision: 1 | 2,
+): boolean {
+  try {
+    assertGoAuthorityHead(route, head);
+  } catch {
+    return false;
+  }
+  const initial = workflowControlAuthorityInitialRecord(route);
+  const expected: WorkflowControlAuthorityRunRecord = { ...initial, state, revision };
+  const record = head.record;
+  return (
+    head.state === state &&
+    head.revision === revision &&
+    head.currentPhaseId === null &&
+    head.currentPhaseIndex === null &&
+    head.resumeGeneration === 0 &&
+    record.schema === expected.schema &&
+    record.workspaceId === expected.workspaceId &&
+    record.runId === expected.runId &&
+    record.workflowId === expected.workflowId &&
+    record.workflowVersion === expected.workflowVersion &&
+    record.workflowSourceHash === expected.workflowSourceHash &&
+    record.manifestHash === expected.manifestHash &&
+    record.inputHash === expected.inputHash &&
+    record.route.backend === expected.route.backend &&
+    record.route.authority === expected.route.authority &&
+    record.route.routingEpoch === expected.route.routingEpoch &&
+    record.route.authorityBuildHash === expected.route.authorityBuildHash &&
+    record.state === expected.state &&
+    record.revision === expected.revision &&
+    record.currentPhaseId === null &&
+    record.currentPhaseIndex === null &&
+    record.resumeGeneration === 0
+  );
+}
+
+function initialAuthorityReconciliation(
+  message: string,
+  mutationError: unknown,
+  readError?: unknown,
+): WorkflowRunnerControlError {
+  return new WorkflowRunnerControlError(
+    'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+    message,
+    {
+      cause:
+        readError === undefined
+          ? mutationError
+          : new AggregateError(
+              [mutationError, readError],
+              'Authority mutation and reconciliation read both failed.',
+            ),
+    },
+  );
+}
+
+async function establishInitialGoAuthority(input: {
+  readonly authority: WorkflowControlAuthorityPort;
+  readonly route: WorkflowRunRouteReceipt;
+  readonly signal?: AbortSignal;
+}): Promise<void> {
+  const { authority, route } = input;
+  let recoveredHead: WorkflowControlAuthorityRunRead | null = null;
+  try {
+    await authority.accept(route, input.signal);
+  } catch (acceptError) {
+    try {
+      recoveredHead = await authority.readIfExists(route.runId, route.route, input.signal);
+    } catch (readError) {
+      throw initialAuthorityReconciliation(
+        'The initial Go authority accept outcome could not be reconciled.',
+        acceptError,
+        readError,
+      );
+    }
+    if (
+      recoveredHead === null ||
+      (!isExactInitialGoAuthorityHead(route, recoveredHead, 'created', 1) &&
+        !isExactInitialGoAuthorityHead(route, recoveredHead, 'running', 2))
+    ) {
+      throw initialAuthorityReconciliation(
+        'The initial Go authority accept outcome does not match the requested run.',
+        acceptError,
+      );
+    }
+    if (isExactInitialGoAuthorityHead(route, recoveredHead, 'running', 2)) return;
+  }
+
+  const createdRecord = workflowControlAuthorityInitialRecord(route);
+  try {
+    await authority.transition(
+      { ...createdRecord, state: 'running', revision: 2 },
+      {
+        revision: createdRecord.revision,
+        state: createdRecord.state,
+        currentPhaseId: createdRecord.currentPhaseId,
+        currentPhaseIndex: createdRecord.currentPhaseIndex,
+        resumeGeneration: createdRecord.resumeGeneration,
+      },
+      route.correlationId,
+      input.signal,
+    );
+  } catch (transitionError) {
+    let head: WorkflowControlAuthorityRunRead | null;
+    try {
+      head = await authority.readIfExists(route.runId, route.route, input.signal);
+    } catch (readError) {
+      throw initialAuthorityReconciliation(
+        'The initial Go authority running transition could not be reconciled.',
+        transitionError,
+        readError,
+      );
+    }
+    if (head !== null && isExactInitialGoAuthorityHead(route, head, 'running', 2)) return;
+    throw initialAuthorityReconciliation(
+      'The initial Go authority running transition was not durably committed.',
+      transitionError,
     );
   }
 }
@@ -434,7 +564,7 @@ export async function executeWorkflowThroughRunner(
       confirmationPolicy: input.confirmationPolicy,
       requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
       authorityRoute: route.route,
-      runRevision: 1,
+      runRevision: 2,
       resumeGeneration: 0,
       budgetPolicy,
       createdAt: created.toISOString(),
@@ -456,7 +586,11 @@ export async function executeWorkflowThroughRunner(
       WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
     );
     const sealed = await descriptorStore.create(v2Descriptor);
-    await authority.accept(route, input.signal);
+    await establishInitialGoAuthority({
+      authority,
+      route,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
     const prepared = prepareWorkflowRunnerV2JobSpec({
       schema: WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
       workspaceId: config.workspaceId,

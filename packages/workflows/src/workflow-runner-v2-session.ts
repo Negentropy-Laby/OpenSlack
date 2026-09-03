@@ -176,6 +176,7 @@ export interface WorkflowRunnerV2SessionOptions<TPrepared, TWorkflow = WorkflowM
   readonly sourceLoader: WorkflowRunnerV2SourceLoader<TPrepared, TWorkflow>;
   readonly send: (exactBytes: string) => void | Promise<void>;
   readonly close: (exitCode: number) => void | Promise<void>;
+  readonly reportFatal?: (error: Error) => void | Promise<void>;
   readonly execute: (
     workflow: TWorkflow,
     descriptor: WorkflowRunnerV2ExecutionDescriptor,
@@ -862,6 +863,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       if (authorityOperation) {
         await this.#enterAuthorityReconciliation(
           `F2b ${authorityOperation} companion/source outcome is not safely deliverable.`,
+          error,
         );
       }
       throw error;
@@ -923,6 +925,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       if (authorityContext) {
         await this.#enterAuthorityReconciliation(
           'F2b exact event transport outcome is unknown after durable resolution.',
+          error,
         );
       }
       throw error;
@@ -1156,12 +1159,14 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     await this.#options.close(2);
   }
 
-  async #enterAuthorityReconciliation(message: string): Promise<void> {
-    this.#state = 'reconciliation_required';
-    this.#abortController?.abort(
-      new WorkflowRunnerV2SessionError('WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED', message),
+  async #enterAuthorityReconciliation(message: string, cause?: unknown): Promise<void> {
+    const failure = new WorkflowRunnerV2SessionError(
+      'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+      message,
+      cause === undefined ? undefined : { cause },
     );
-    await this.#options.close(2);
+    this.#abortController?.abort(failure);
+    await this.#fatal(failure);
   }
 
   async #applyQueuedCancel(): Promise<void> {
@@ -1354,6 +1359,11 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#outstanding?.rejectDecision?.(failure);
     this.#outstanding = undefined;
     this.#state = 'reconciliation_required';
+    try {
+      await this.#options.reportFatal?.(failure);
+    } catch {
+      // A diagnostic sink is best-effort and must never prevent fail-closed exit.
+    }
     await this.#options.close(2);
   }
 }

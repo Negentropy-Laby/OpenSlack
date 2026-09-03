@@ -31,7 +31,7 @@ export const meta = {
   budgetPolicy: {
     maxAgents: 1,
     maxConcurrency: 1,
-    tokenBudget: 4096,
+    tokenBudget: 8192,
     onExceeded: 'fail',
   },
   isolationPolicy: {
@@ -57,7 +57,7 @@ export async function run(ctx) {
       label: 'authenticate:aby-provider',
       phase: 'Authenticate',
       isolation: 'none',
-      budget: { tokens: 2048, costUsd: 1 },
+      budget: { tokens: 8192, costUsd: 1 },
       schema: {
         type: 'object',
         properties: {
