@@ -135,6 +135,67 @@ SET current_run_revision=current_run_revision+$2,current_resume_generation=curre
 		}
 	})
 
+	t.Run("database clock regression leaves authority binding retryable", func(t *testing.T) {
+		ctx := context.Background()
+		binding := exerciseGS9F2BindingLifecycleUntil(t, repository, runnerbindingcontract.OperationCheckpointCommit,
+			"f2-finalize-clock-regression", nil, "resolved", "")
+		resolutionReceipt, err := runnerbindingcontract.ParseReceiptBytes(binding.ExactResolutionReceipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolutionReceipt["committedAt"] = runnerstore.CanonicalTimestamp(time.Now().UTC().Add(24 * time.Hour))
+		futureReceipt, err := runnerbindingcontract.PrepareReceipt(resolutionReceipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var controlsBefore int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_runner_control_messages WHERE attempt_id=$1`, binding.AttemptID).Scan(&controlsBefore); err != nil {
+			t.Fatal(err)
+		}
+		connection, err := pool.Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := connection.Exec(ctx, `SET session_replication_role='replica'`); err != nil {
+			connection.Release()
+			t.Fatal(err)
+		}
+		_, updateErr := connection.Exec(ctx, `UPDATE workflow_runner_authority_bindings
+SET exact_resolution_receipt_bytes=$2 WHERE binding_id=$1 AND state='resolved'`, binding.BindingID, []byte(futureReceipt.Body))
+		_, restoreErr := connection.Exec(ctx, `SET session_replication_role='origin'`)
+		connection.Release()
+		if updateErr != nil {
+			t.Fatal(updateErr)
+		}
+		if restoreErr != nil {
+			t.Fatal(restoreErr)
+		}
+		message, err := authoritycontract.DecodeMessageJSON(binding.ExactTargetBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repository.RecordV2Event(ctx, runnerstore.V2RecordEventInput{
+			Message: message, ExactBytes: binding.ExactTargetBytes,
+			ControlBuildHash: *message.AuthorityBuildHash, Now: time.Now().UTC(),
+		}); !runnerstore.IsCode(err, runnerstore.ErrorAuthorityBinding) {
+			t.Fatalf("database clock regression was not rejected before runner commit: %v", err)
+		}
+		var state string
+		var inboxCount, controlsAfter int
+		if err := pool.QueryRow(ctx, `SELECT state FROM workflow_runner_authority_bindings WHERE binding_id=$1`, binding.BindingID).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, binding.TargetEventID).Scan(&inboxCount); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM workflow_runner_control_messages WHERE attempt_id=$1`, binding.AttemptID).Scan(&controlsAfter); err != nil {
+			t.Fatal(err)
+		}
+		if state != "resolved" || inboxCount != 0 || controlsAfter != controlsBefore {
+			t.Fatalf("clock regression persisted a partial runner commit: state=%s inbox=%d controls=%d want-controls=%d", state, inboxCount, controlsAfter, controlsBefore)
+		}
+	})
+
 	assertGS9F2BudgetDecisionUsesSourceRevision(t)
 
 	t.Run("ACK predecessor closes instant and restart resend races", func(t *testing.T) {

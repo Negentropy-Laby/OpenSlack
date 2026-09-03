@@ -400,7 +400,8 @@ func validateControlDeliveryForValidatedContext(
 		*message.Authority != route["authority"] || *message.RoutingEpoch != route["routingEpoch"] ||
 		*message.AuthorityBuildHash != route["authorityBuildHash"] || *message.RunRevision != expectedRevision ||
 		*message.ResumeGeneration != expectedGeneration || *message.Sequence <= target["sequence"].(int64) ||
-		message.SentAt < resolutionCommittedAt || !receiptCommitted || receiptCommittedAt < message.SentAt ||
+		(message.Kind == authoritycontract.KindEventReceipt && message.SentAt < resolutionCommittedAt) ||
+		!receiptCommitted || receiptCommittedAt < message.SentAt ||
 		receipt["companionSequence"] != expectedCompanionSequence {
 		return nil, failure(ErrorIdentityMismatch, "$", "Control acknowledgement is cross-spliced with another exact control message.")
 	}
@@ -486,9 +487,8 @@ func assertPriorEventDelivery(
 	if err != nil {
 		return embeddedAuthorityFailure(err, "$/priorEventDelivery/message")
 	}
-	_, priorCommitted := priorReceipt["committedAt"].(string)
 	if priorMessage.Kind != authoritycontract.KindEventReceipt || priorReceipt["controlKind"] != string(authoritycontract.KindEventReceipt) ||
-		priorReceipt["disposition"] != "accepted" || !priorCommitted || priorMessage.Sequence == nil || message.Sequence == nil ||
+		priorReceipt["disposition"] != "accepted" || priorMessage.Sequence == nil || message.Sequence == nil ||
 		*message.Sequence != *priorMessage.Sequence+1 || message.SentAt < priorMessage.SentAt ||
 		receipt["companionSequence"].(int64) != priorReceipt["companionSequence"].(int64)+1 {
 		return failure(

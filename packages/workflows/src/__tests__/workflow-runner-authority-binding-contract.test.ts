@@ -569,31 +569,63 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     }
   });
 
-  it('accepts an atomically prepared decision delivered after the prior receipt ACK', () => {
-    const exchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
-    const artifact = controlArtifact(golden.positive.controlDelivery.budgetAuthorization.reserved);
-    const prior = namedPriorDelivery(artifact.priorEventDeliveryRef) as {
-      readonly message: Json;
-      readonly receipt: Json;
-    };
-    const message = structuredClone(artifact.message) as Json;
-    message.sentAt = prior.message.sentAt;
-    expect(String(message.sentAt) < String(prior.receipt.committedAt)).toBe(true);
-    const receipt = structuredClone(artifact.receipt.value) as Json;
-    receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message as never).messageDigest;
+  it('accepts boundary and interior decisions from the event-receipt message epoch', () => {
+    const cases = [
+      {
+        label: 'budget boundary',
+        exchange: golden.positive.semanticVariants.budgetReserveGoAuthority,
+        artifact: controlArtifact(golden.positive.controlDelivery.budgetAuthorization.reserved),
+        sentAt: null,
+      },
+      {
+        label: 'effect interior',
+        exchange: golden.positive.operations.effect_authorize,
+        artifact: controlArtifact(golden.positive.controlDelivery.byKind.effect_authorization),
+        sentAt: '2026-08-20T00:07:00.500Z',
+      },
+    ] as const;
 
-    expect(
-      validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
-        receipt,
-        message,
-        exchange.stage.value,
-        exchange.resolution.value,
-        exchange.resolutionReceipt.value,
-        exchange.stageReceipt.value,
-        prior,
-        artifact.budgetSourceResult,
-      ),
-    ).toEqual(receipt);
+    for (const item of cases) {
+      const priorValue =
+        item.artifact.priorEventDeliveryRef === null
+          ? {
+              message: golden.positive.controlDelivery.messages.accepted[item.artifact.operation],
+              receipt: exact(
+                golden.positive.controlDelivery.accepted[item.artifact.operation],
+                'receipt',
+              ),
+            }
+          : namedPriorDelivery(item.artifact.priorEventDeliveryRef);
+      const prior = asJson(priorValue, `${item.label} prior delivery`);
+      const priorMessage = asJson(prior.message, `${item.label} prior message`);
+      const priorReceipt = asJson(prior.receipt, `${item.label} prior receipt`);
+      const message = structuredClone(
+        asJson(item.artifact.message, `${item.label} decision message`),
+      );
+      message.sentAt = item.sentAt ?? priorMessage.sentAt;
+      expect(String(message.sentAt) >= String(priorMessage.sentAt)).toBe(true);
+      expect(String(message.sentAt) < String(priorReceipt.committedAt)).toBe(true);
+      if (item.sentAt !== null) {
+        expect(String(message.sentAt) > String(priorMessage.sentAt)).toBe(true);
+      }
+      const receipt = structuredClone(
+        asJson(item.artifact.receipt.value, `${item.label} decision receipt`),
+      );
+      receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message).messageDigest;
+
+      expect(
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+          receipt,
+          message,
+          item.exchange.stage.value,
+          item.exchange.resolution.value,
+          item.exchange.resolutionReceipt.value,
+          item.exchange.stageReceipt.value,
+          prior,
+          item.artifact.budgetSourceResult,
+        ),
+      ).toEqual(receipt);
+    }
   });
 
   it('acks all five exact control kinds after the event-receipt ACK and preserves reconciliation', () => {

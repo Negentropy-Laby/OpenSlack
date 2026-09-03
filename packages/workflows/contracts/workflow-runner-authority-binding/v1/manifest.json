@@ -240,7 +240,8 @@
     "control-cancel-missing-prior-event-ack",
     "control-decision-alien-prior-event-ack",
     "control-decision-sequence-gap",
-    "control-decision-resolution-time-inversion",
+    "control-event-receipt-resolution-ack-time-inversion",
+    "control-decision-prior-time-inversion",
     "budget-rate-invalid",
     "budget-settle-receipt-hash-drift",
     "budget-settle-token-drift",
@@ -348,8 +349,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 1695050,
-      "sha256": "cf46c677b7914858fdc93f68315a83021eb768400c1e7c263c337b8edc69da47"
+      "byteLength": 1708338,
+      "sha256": "35159237370ed235a0511722d1e4e0e9ef34ce8a6327cbd90e7eb5f1a362f920"
     }
   }
 }

@@ -2821,7 +2821,9 @@ function validateControlDeliveryForValidatedContext(
     control.resumeGeneration !== expectedHead.generation ||
     control.sequence === null ||
     control.sequence <= stage.target.sequence ||
-    (resolutionReceipt.committedAt !== null && control.sentAt < resolutionReceipt.committedAt) ||
+    (control.kind === 'event_receipt' &&
+      resolutionReceipt.committedAt !== null &&
+      control.sentAt < resolutionReceipt.committedAt) ||
     receipt.committedAt! < control.sentAt ||
     receipt.companionSequence !== (control.kind === 'event_receipt' ? 3 : 4)
   ) {
@@ -3017,7 +3019,6 @@ function validateControlDeliveryForValidatedContext(
       priorMessage.kind !== 'event_receipt' ||
       priorReceipt.controlKind !== 'event_receipt' ||
       priorReceipt.disposition !== 'accepted' ||
-      priorReceipt.committedAt === null ||
       priorMessage.sequence === null ||
       control.sequence !== priorMessage.sequence + 1 ||
       control.sentAt < priorMessage.sentAt ||
