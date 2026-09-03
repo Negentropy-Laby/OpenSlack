@@ -1094,6 +1094,10 @@ describe('notification delivery service workflow', () => {
     const windowsTests = windowsJob.steps.find(
       (step) => step.name === 'Qualify native Windows runner and GS9-F2b TypeScript boundaries',
     )?.run;
+    expect(windowsTests?.match(/bunx vitest run/gu)).toHaveLength(2);
+    expect(windowsTests).toMatch(
+      /openai-compatible-runtime\.test\.ts\n\s*bunx vitest run `\n\s*packages\/workflows\/src\/__tests__\/workflow-effect-shadow\.test\.ts/u,
+    );
     for (const file of [
       'workflow-runner-descriptor.test.ts',
       'workflow-runner-worker.test.ts',
@@ -1355,6 +1359,7 @@ describe('notification delivery service workflow', () => {
 
   it('runs the docs verifier beside status consistency in reusable validation', () => {
     const steps = reusableWorkflow.jobs.validate.steps;
+    const setupGo = steps.find((step) => step.uses === setupGoAction);
     const regenerateIndex = steps.findIndex((step) => step.name === 'Regenerate status doc');
     const diffIndex = steps.findIndex(
       (step) => step.name === 'Check for uncommitted status changes',
@@ -1370,6 +1375,11 @@ describe('notification delivery service workflow', () => {
     expect(statusIndex).toBe(diffIndex + 1);
     expect(docsIndex).toBe(statusIndex + 1);
     expect(workspaceIndex).toBe(docsIndex + 1);
+    expect(setupGo?.with).toEqual({
+      'go-version': '1.26.5',
+      cache: true,
+      'cache-dependency-path': 'services/*/go.sum',
+    });
     expect(steps[docsIndex]).toEqual({
       name: 'Notification delivery documentation consistency',
       run: 'bun run docs:notification-verify',
