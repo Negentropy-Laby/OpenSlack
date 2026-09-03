@@ -575,6 +575,20 @@ func TestDispatchFailuresBackOffAndBecomeDeadReconciliation(t *testing.T) {
 			if view.State != runnerstore.JobQueued {
 				t.Fatalf("failure %d state=%s want queued", failure, view.State)
 			}
+			var dispatchFailures int64
+			var dispatchState string
+			var dispatchNotBefore, updatedAt time.Time
+			if err := pool.QueryRow(ctx, `SELECT dispatch_failures,dispatch_state,dispatch_not_before,updated_at FROM workflow_runner_jobs WHERE workspace_id=$1 AND job_id=$2`, lease.WorkspaceID, lease.JobID).Scan(&dispatchFailures, &dispatchState, &dispatchNotBefore, &updatedAt); err != nil {
+				t.Fatal(err)
+			}
+			if dispatchFailures != failure || dispatchState != "backoff" || dispatchNotBefore.Sub(updatedAt) != dispatchBackoff(failure) {
+				t.Fatalf("failure %d durable backoff state=%s failures=%d delay=%s", failure, dispatchState, dispatchFailures, dispatchNotBefore.Sub(updatedAt))
+			}
+			// Keep the scheduler assertion independent of host load: the first
+			// production backoff is only 250ms and may elapse while ReadJob returns.
+			if _, err := pool.Exec(ctx, `UPDATE workflow_runner_jobs SET dispatch_not_before=clock_timestamp()+interval '1 minute' WHERE workspace_id=$1 AND job_id=$2`, lease.WorkspaceID, lease.JobID); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := repository.ClaimNext(ctx, claimInput(input.Prepared.Spec.WorkspaceID)); !runnerstore.IsCode(err, runnerstore.ErrorNoWork) {
 				t.Fatalf("failure %d ignored durable backoff: %v", failure, err)
 			}
