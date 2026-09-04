@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetapp"
@@ -68,6 +70,14 @@ func main() {
 	callerID := required("OPENSLACK_TEST_BUDGET_CALLER_ID")
 	runID := required("OPENSLACK_TEST_BUDGET_RUN_ID")
 	bearerToken := required("OPENSLACK_TEST_BUDGET_BEARER_TOKEN")
+	requestCount := int64(1)
+	if configured := os.Getenv("OPENSLACK_TEST_BUDGET_REQUEST_COUNT"); configured != "" {
+		parsed, parseErr := strconv.ParseInt(configured, 10, 64)
+		if parseErr != nil || parsed < 1 {
+			panic("OPENSLACK_TEST_BUDGET_REQUEST_COUNT must be a positive integer")
+		}
+		requestCount = parsed
+	}
 	routingEpoch, err := strconv.ParseInt(required("OPENSLACK_TEST_BUDGET_ROUTING_EPOCH"), 10, 64)
 	if err != nil {
 		panic(err)
@@ -114,10 +124,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	done := make(chan struct{}, 1)
+	done := make(chan struct{})
+	var shutdown sync.Once
+	var remaining atomic.Int64
+	remaining.Store(requestCount)
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		service.Handler().ServeHTTP(writer, request)
-		done <- struct{}{}
+		if remaining.Add(-1) <= 0 {
+			shutdown.Do(func() { close(done) })
+		}
 	})
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() {

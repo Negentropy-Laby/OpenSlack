@@ -101,6 +101,21 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
+	t.Run("process-exit ACK retry uses grace unless a nonzero hard bound is earlier", func(t *testing.T) {
+		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		if got, want := v2ControlRetryDeadline(now, time.Time{}), now.Add(time.Second); !got.Equal(want) {
+			t.Fatalf("zero hard deadline retry = %s, want grace %s", got, want)
+		}
+		shortBound := now.Add(250 * time.Millisecond)
+		if got := v2ControlRetryDeadline(now, shortBound); !got.Equal(shortBound) {
+			t.Fatalf("short hard deadline retry = %s, want %s", got, shortBound)
+		}
+		longBound := now.Add(2 * time.Second)
+		if got, want := v2ControlRetryDeadline(now, longBound), now.Add(time.Second); !got.Equal(want) {
+			t.Fatalf("long hard deadline retry = %s, want grace %s", got, want)
+		}
+	})
+
 	t.Run("worker exit interrupts an outstanding control ACK wait", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		store.blockAcknowledgement = true

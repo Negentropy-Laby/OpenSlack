@@ -5,6 +5,7 @@ import {
   RuntimeMisconfiguredError,
   RuntimeNotConfiguredError,
   AgentExecutionFailedError,
+  ProviderInvalidResponseError,
   getAgentRunFailureCode,
   getAgentRunFailureSummary,
 } from './types.js';
@@ -421,7 +422,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           ? err
           : undefined;
       const executionError = new AgentExecutionFailedError(failureCode, runId, {
-        cause: schemaError,
+        cause: err,
         operatorSafeSummary:
           schemaError === undefined
             ? undefined
@@ -543,6 +544,22 @@ function attachTokenUsage(error: unknown, tokenUsage: number): void {
   }
 }
 
+function combineProviderAttemptFailures(
+  providerError: unknown,
+  settlementError: unknown,
+): AggregateError {
+  const combined = new AggregateError(
+    [providerError, settlementError],
+    'Provider attempt and durable settlement both failed.',
+  );
+  Object.defineProperty(combined, 'code', {
+    value: getAgentRunFailureCode(providerError),
+    enumerable: false,
+    configurable: true,
+  });
+  return combined;
+}
+
 function normalizeBudget(
   budget: { tokens: number; costUsd?: number } | undefined,
 ): AgentRunRequest['budget'] {
@@ -558,7 +575,11 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
   onUsageEvidence(receipt: ProviderUsageReceipt): void;
 }): Promise<Awaited<ReturnType<AgentExecutionAdapter['execute']>> & { data: T }> {
   const requestedTokens = options.context.runState.tokensRemaining;
-  if (!Number.isSafeInteger(requestedTokens) || requestedTokens === null || requestedTokens < 1) {
+  if (
+    typeof requestedTokens !== 'number' ||
+    !Number.isSafeInteger(requestedTokens) ||
+    requestedTokens < 1
+  ) {
     throw new RuntimeMisconfiguredError(
       'Aby provider attempt authority requires a positive launch-time token budget.',
     );
@@ -594,14 +615,19 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
   try {
     assertProviderAttemptReservation(reservation, requestedTokens);
     const result = await options.adapter.execute<T>(options.context);
-    const reported = Number.isSafeInteger(result.tokenUsage) && result.tokenUsage! >= 0;
+    const tokenUsage = result.tokenUsage;
+    if (typeof tokenUsage !== 'number' || !Number.isSafeInteger(tokenUsage) || tokenUsage < 0) {
+      throw new ProviderInvalidResponseError(
+        'Aby provider response omitted valid non-negative integer token usage.',
+      );
+    }
     const receipt = buildProviderUsageReceipt({
       providerId: options.providerId,
       modelId: options.modelId,
       runId: options.context.runId,
       attempt: 1,
-      status: reported ? 'reported' : 'unreported',
-      usage: reported ? { totalTokens: result.tokenUsage! } : null,
+      status: 'reported',
+      usage: { totalTokens: tokenUsage },
       outcome: 'provider_response_accepted',
       requestBytes,
       outcomeBytes: JSON.stringify({ data: result.data, tokenUsage: result.tokenUsage ?? null }),
@@ -615,6 +641,9 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
         step: 'provider_attempt_settle_failed',
         errorCode: readProviderAttemptErrorCode(error),
       });
+      if (!result.tokenUsageRecorded) {
+        options.context.recorder.chargeUsage(options.context.runId, tokenUsage);
+      }
       attachProviderUsageEvidence(error, [receipt]);
       throw error;
     }
@@ -641,8 +670,9 @@ async function executeAbyBridgeWithProviderAttempt<T>(options: {
           step: 'provider_attempt_settle_failed',
           errorCode: readProviderAttemptErrorCode(settlementError),
         });
-        attachProviderUsageEvidence(settlementError, [receipt]);
-        throw settlementError;
+        const combined = combineProviderAttemptFailures(error, settlementError);
+        attachProviderUsageEvidence(combined, [receipt]);
+        throw combined;
       }
       attachProviderUsageEvidence(error, [receipt]);
     }

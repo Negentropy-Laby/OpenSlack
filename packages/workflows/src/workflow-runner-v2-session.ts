@@ -888,6 +888,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
       resolveReceipt = resolve;
       rejectReceipt = reject;
     });
+    // A synchronous transport failure can reject the receipt before this
+    // method reaches its await. Observe it immediately so the session owns the
+    // fatal path instead of leaking an unhandled process rejection.
+    void receipt.catch(() => undefined);
     let resolveDecision: ((message: WorkflowControlAuthorityMessage) => void) | undefined;
     let rejectDecision: ((error: Error) => void) | undefined;
     const decision = expectedDecision

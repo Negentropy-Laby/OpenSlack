@@ -1616,7 +1616,39 @@ it('reads the actual Go budget account handler single-LF response through the Ty
   });
   const bearerToken = 'b'.repeat(32);
   const workflowControlRoot = resolve(import.meta.dirname, '../../../../services/workflow-control');
-  const child = spawn('go', ['run', './internal/budgetapp/testdata/account-framing-server'], {
+  const binaryRoot = await mkdtemp(join(tmpdir(), 'openslack-budget-framing-binary-'));
+  roots.push(binaryRoot);
+  const binaryPath = join(
+    binaryRoot,
+    process.platform === 'win32' ? 'account-framing-server.exe' : 'account-framing-server',
+  );
+  const build = spawn(
+    'go',
+    ['build', '-o', binaryPath, './internal/budgetapp/testdata/account-framing-server'],
+    {
+      cwd: workflowControlRoot,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+    },
+  );
+  let buildStderr = '';
+  build.stderr.setEncoding('utf8');
+  build.stderr.on('data', (chunk: string) => {
+    buildStderr += chunk;
+  });
+  await new Promise<void>((resolveBuild, rejectBuild) => {
+    build.once('error', rejectBuild);
+    build.once('exit', (code, signal) => {
+      if (code === 0 && signal === null) {
+        resolveBuild();
+        return;
+      }
+      rejectBuild(
+        new Error(`Go account framing fixture build failed (${code ?? signal}): ${buildStderr}`),
+      );
+    });
+  });
+  const child = spawn(binaryPath, [], {
     cwd: workflowControlRoot,
     env: {
       ...process.env,
@@ -1626,11 +1658,13 @@ it('reads the actual Go budget account handler single-LF response through the Ty
       OPENSLACK_TEST_BUDGET_RUN_ID: fixture.stageTemplate.runId,
       OPENSLACK_TEST_BUDGET_BEARER_TOKEN: bearerToken,
       OPENSLACK_TEST_BUDGET_ROUTING_EPOCH: String(fixture.stageTemplate.route.routingEpoch),
+      OPENSLACK_TEST_BUDGET_REQUEST_COUNT: '2',
       OPENSLACK_TEST_BUDGET_ACCOUNT_BASE64: Buffer.from(durableAccountBytes, 'utf8').toString(
         'base64',
       ),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   });
   let stderr = '';
   child.stderr.setEncoding('utf8');
@@ -1675,11 +1709,14 @@ it('reads the actual Go budget account handler single-LF response through the Ty
     await expect(
       client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
     ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
+    await expect(
+      client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
+    ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
     await expect(exit).resolves.toBe(0);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill();
   }
-}, 30_000);
+});
 
 it.each([
   ['provider outcome unknown', 'providerOutcomeUnknown'],

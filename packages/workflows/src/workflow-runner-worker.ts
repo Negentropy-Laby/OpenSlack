@@ -109,6 +109,7 @@ import { WorkflowRunnerV2GoProjectionRunStore } from './workflow-runner-v2-go-pr
 import {
   WorkflowControlAuthorityHttpClient,
   type WorkflowControlAuthorityPort,
+  type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
 import {
   createWorkflowRunnerBudgetAuthorityClient,
@@ -1213,6 +1214,52 @@ export interface WorkflowRunnerV2BudgetAuthorityBoundary {
   readonly now?: () => string;
 }
 
+function assertWorkflowRunnerBudgetRunHead(
+  descriptor: WorkflowRunnerV2ExecutionDescriptor,
+  context: WorkflowRunnerV2ExecutionContext,
+  head: WorkflowControlAuthorityRunRead,
+): void {
+  const expectedRecord = {
+    schema: 'openslack.workflow_control_authority_run_record.v2' as const,
+    workspaceId: descriptor.workspaceId,
+    runId: descriptor.workflowRunId,
+    workflowId: descriptor.workflowId,
+    workflowVersion: descriptor.workflowVersion,
+    workflowSourceHash: descriptor.workflowSourceHash,
+    manifestHash: descriptor.manifestHash,
+    inputHash: descriptor.inputHash,
+    route: descriptor.authorityRoute,
+    state: head.state,
+    revision: head.revision,
+    currentPhaseId: head.currentPhaseId,
+    currentPhaseIndex: head.currentPhaseIndex,
+    resumeGeneration: head.resumeGeneration,
+  };
+  if (
+    head.schema !== 'openslack.workflow_control_authority_read.v2' ||
+    head.workspaceId !== descriptor.workspaceId ||
+    head.runId !== descriptor.workflowRunId ||
+    head.workflowId !== descriptor.workflowId ||
+    head.workflowVersion !== descriptor.workflowVersion ||
+    head.workflowSourceHash !== descriptor.workflowSourceHash ||
+    head.manifestHash !== descriptor.manifestHash ||
+    head.inputHash !== descriptor.inputHash ||
+    canonicalWorkflowControlAuthorityJson(head.route) !==
+      canonicalWorkflowControlAuthorityJson(descriptor.authorityRoute) ||
+    head.state !== 'running' ||
+    !Number.isSafeInteger(head.revision) ||
+    head.revision < 1 ||
+    head.resumeGeneration !== context.resumeGeneration ||
+    canonicalWorkflowControlAuthorityJson(head.record) !==
+      canonicalWorkflowControlAuthorityJson(expectedRecord)
+  ) {
+    throw new WorkflowRunnerV2BudgetBoundaryError(
+      'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+      'Workflow Control run head cannot seed the durable budget account.',
+    );
+  }
+}
+
 function foldWorkflowRunnerProviderUsage(
   usage: ProviderUsageReceipt,
   requestedTokens: string,
@@ -1248,6 +1295,7 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
   descriptor: WorkflowRunnerV2ExecutionDescriptor,
   context: WorkflowRunnerV2ExecutionContext,
   budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
+  runAuthority?: WorkflowControlAuthorityPort,
 ): ProviderAttemptPort {
   const reservations = new Map<
     string,
@@ -1259,6 +1307,15 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
     }
   >();
   const now = budgetAuthority?.now ?? (() => new Date().toISOString());
+  let budgetLane: Promise<void> = Promise.resolve();
+  const inBudgetLane = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = budgetLane.then(operation);
+    budgetLane = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
   const resumeGeneration = context.resumeGeneration;
   if (
     !Number.isSafeInteger(resumeGeneration) ||
@@ -1288,6 +1345,22 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
       );
     }
     return account;
+  };
+
+  const readExpectedRunRevision = async (
+    account: Awaited<ReturnType<typeof readBudgetHead>>,
+  ): Promise<number> => {
+    if (account) return account.runRevision;
+    if (!budgetAuthority) return descriptor.runRevision;
+    if (!runAuthority) {
+      throw new WorkflowRunnerV2BudgetBoundaryError(
+        'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+        'A missing durable budget account requires the Workflow Control run authority.',
+      );
+    }
+    const head = await runAuthority.read(descriptor.workflowRunId, descriptor.authorityRoute);
+    assertWorkflowRunnerBudgetRunHead(descriptor, context, head);
+    return head.revision;
   };
 
   const authorityBase = Object.freeze({
@@ -1332,201 +1405,206 @@ export function createWorkflowRunnerV2ProviderAttemptPort(
 
   return Object.freeze({
     async reserve(input: ProviderAttemptReserveInput) {
-      const account = await readBudgetHead();
-      const identity = createHash('sha256')
-        .update(
-          [descriptor.workflowRunId, input.providerRunId, input.providerAttempt].join('\0'),
-          'utf8',
-        )
-        .digest('hex')
-        .slice(0, 32);
-      const reservationId = `reservation-${identity}`;
-      const callId = `call-${identity}`;
-      const preparedRequest = prepareWorkflowRunnerV2BudgetReserveSource({
-        descriptor,
-        provider: input,
-        reservationId,
-        callId,
-        expectedAccountRevision: account?.accountRevision ?? 0,
-        expectedRunRevision: account?.runRevision ?? descriptor.runRevision,
-        requestedAt: now(),
-        callerId: budgetAuthority?.callerId ?? 'workflow-runner-v2-f1',
-      });
-      const reserveRequest = parseWorkflowBudgetAuthorityBytes(
-        Buffer.from(preparedRequest.body, 'utf8'),
-      ) as WorkflowBudgetReserveRequest;
-      let durableDecision: WorkflowBudgetReserveDecision | undefined;
-      const reservationResult = await context.reserveBudget(
-        {
+      return inBudgetLane(async () => {
+        const account = await readBudgetHead();
+        const expectedRunRevision = await readExpectedRunRevision(account);
+        const identity = createHash('sha256')
+          .update(
+            [descriptor.workflowRunId, input.providerRunId, input.providerAttempt].join('\0'),
+            'utf8',
+          )
+          .digest('hex')
+          .slice(0, 32);
+        const reservationId = `reservation-${identity}`;
+        const callId = `call-${identity}`;
+        const preparedRequest = prepareWorkflowRunnerV2BudgetReserveSource({
+          descriptor,
+          provider: input,
           reservationId,
           callId,
-          policyHash: reserveRequest.policyHash,
-          requestedTokens: reserveRequest.requested.tokens,
-          requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
-          requestedCalls: reserveRequest.requested.calls,
-        },
-        sourceFor('budget_reserve', preparedRequest, (value) => {
-          durableDecision = value;
-        }),
-      );
-      const decision = reservationResult.decision;
-      durableDecision = reservationResult.budgetSourceResult?.decision ?? durableDecision;
-      if (budgetAuthority && !durableDecision) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-          'Budget reserve completed without its exact durable E2 decision.',
+          expectedAccountRevision: account?.accountRevision ?? 0,
+          expectedRunRevision,
+          requestedAt: now(),
+          callerId: budgetAuthority?.callerId ?? 'workflow-runner-v2-f1',
+        });
+        const reserveRequest = parseWorkflowBudgetAuthorityBytes(
+          Buffer.from(preparedRequest.body, 'utf8'),
+        ) as WorkflowBudgetReserveRequest;
+        let durableDecision: WorkflowBudgetReserveDecision | undefined;
+        const reservationResult = await context.reserveBudget(
+          {
+            reservationId,
+            callId,
+            policyHash: reserveRequest.policyHash,
+            requestedTokens: reserveRequest.requested.tokens,
+            requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
+            requestedCalls: reserveRequest.requested.calls,
+          },
+          sourceFor('budget_reserve', preparedRequest, (value) => {
+            durableDecision = value;
+          }),
         );
-      }
-      const decisionPayload = decision.payload;
-      if (
-        !workflowRunnerV2BudgetDecisionMatchesRequest(decision, {
+        const decision = reservationResult.decision;
+        durableDecision = reservationResult.budgetSourceResult?.decision ?? durableDecision;
+        if (budgetAuthority && !durableDecision) {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+            'Budget reserve completed without its exact durable E2 decision.',
+          );
+        }
+        const decisionPayload = decision.payload;
+        if (
+          !workflowRunnerV2BudgetDecisionMatchesRequest(decision, {
+            reservationId,
+            requestedTokens: reserveRequest.requested.tokens,
+            requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
+            requestedCalls: reserveRequest.requested.calls,
+          })
+        ) {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
+            'Budget authorization does not bind the requested provider attempt.',
+          );
+        }
+        if (decisionPayload.status === 'reconciliation_required') {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+            'Budget reserve outcome requires reconciliation.',
+          );
+        }
+        if (decisionPayload.status !== 'reserved') {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_REJECTED',
+            'Budget authority rejected the provider attempt.',
+          );
+        }
+        const reservation = Object.freeze({
           reservationId,
-          requestedTokens: reserveRequest.requested.tokens,
-          requestedCostNanoUsd: reserveRequest.requested.nanoUsd,
-          requestedCalls: reserveRequest.requested.calls,
-        })
-      ) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
-          'Budget authorization does not bind the requested provider attempt.',
-        );
-      }
-      if (decisionPayload.status === 'reconciliation_required') {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-          'Budget reserve outcome requires reconciliation.',
-        );
-      }
-      if (decisionPayload.status !== 'reserved') {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_REJECTED',
-          'Budget authority rejected the provider attempt.',
-        );
-      }
-      const reservation = Object.freeze({
-        reservationId,
-        callId,
-        authorizedTokens: reserveRequest.requested.tokens,
+          callId,
+          authorizedTokens: reserveRequest.requested.tokens,
+        });
+        reservations.set(reservationId, {
+          reservation,
+          providerAttempt: input.providerAttempt,
+          requestedTokens: input.requestedTokens,
+          ...(durableDecision === undefined ? {} : { reserveDecision: durableDecision }),
+        });
+        return reservation;
       });
-      reservations.set(reservationId, {
-        reservation,
-        providerAttempt: input.providerAttempt,
-        requestedTokens: input.requestedTokens,
-        ...(durableDecision === undefined ? {} : { reserveDecision: durableDecision }),
-      });
-      return reservation;
     },
     async settle(reservation: ProviderAttemptReservation, usage: ProviderUsageReceipt) {
-      const opened = reservations.get(reservation.reservationId);
-      if (
-        !opened ||
-        opened.reservation !== reservation ||
-        reservation.callId !== opened.reservation.callId ||
-        usage.attempt !== opened.providerAttempt
-      ) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
-          'Provider usage does not bind an open budget reservation.',
-        );
-      }
-      if (!budgetAuthority || !opened.reserveDecision) {
-        // The F1 provider-only profile retains its reduced event seam and never
-        // claims an E2 authority mutation.
+      return inBudgetLane(async () => {
+        const opened = reservations.get(reservation.reservationId);
+        if (
+          !opened ||
+          opened.reservation !== reservation ||
+          reservation.callId !== opened.reservation.callId ||
+          usage.attempt !== opened.providerAttempt
+        ) {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_AUTHORIZATION_MISMATCH',
+            'Provider usage does not bind an open budget reservation.',
+          );
+        }
+        if (!budgetAuthority || !opened.reserveDecision) {
+          // The F1 provider-only profile retains its reduced event seam and never
+          // claims an E2 authority mutation.
+          const folded = foldWorkflowRunnerProviderUsage(
+            usage,
+            opened.requestedTokens,
+            descriptor.budgetPolicy.rateNanoUsdPerToken,
+          );
+          await context.reportBudgetUsage({
+            reservationId: reservation.reservationId,
+            callId: reservation.callId,
+            ...folded.payload,
+          });
+          if (!folded.settled) {
+            throw new WorkflowRunnerV2BudgetBoundaryError(
+              'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+              'Provider usage is missing, unreported, or exceeded its reservation.',
+            );
+          }
+          reservations.delete(reservation.reservationId);
+          return;
+        }
+
+        const account = await readBudgetHead();
+        if (!account) {
+          throw new WorkflowRunnerV2BudgetBoundaryError(
+            'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
+            'Budget settlement cannot read its durable account head.',
+          );
+        }
         const folded = foldWorkflowRunnerProviderUsage(
           usage,
           opened.requestedTokens,
           descriptor.budgetPolicy.rateNanoUsdPerToken,
         );
-        await context.reportBudgetUsage({
+        const reserveDecisionHash = hashWorkflowBudgetAuthorityValue(
+          'reserve-decision',
+          opened.reserveDecision,
+        );
+        const settlementRequest: WorkflowBudgetSettlementRequest = {
+          schema: WORKFLOW_BUDGET_SETTLEMENT_REQUEST_SCHEMA,
+          ...authorityBase,
+          workspaceId: descriptor.workspaceId,
+          runId: descriptor.workflowRunId,
+          accountId: descriptor.budgetPolicy.accountId,
           reservationId: reservation.reservationId,
           callId: reservation.callId,
-          ...folded.payload,
-        });
-        reservations.delete(reservation.reservationId);
+          providerAttempt: opened.providerAttempt,
+          expectedProviderHash: opened.reserveDecision.request.expectedProviderHash,
+          expectedModelHash: opened.reserveDecision.request.expectedModelHash,
+          expectedProviderRunHash: opened.reserveDecision.request.expectedProviderRunHash,
+          correlationId: descriptor.correlationId,
+          policyHash: descriptor.budgetPolicy.policyHash,
+          route: descriptor.authorityRoute,
+          expectedAccountRevision: account.accountRevision,
+          expectedRunRevision: account.runRevision,
+          reserveDecisionHash,
+          usageEvidenceStatus: 'trusted',
+          usageReceiptHash: usage.receiptHash,
+          providerUsage: {
+            schema: WORKFLOW_BUDGET_PROVIDER_USAGE_SCHEMA,
+            providerHash: usage.providerHash,
+            modelHash: usage.modelHash,
+            runHash: usage.runHash,
+            attempt: usage.attempt,
+            calls: usage.calls,
+            status: usage.status,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.totalTokens,
+            outcome: usage.outcome,
+            requestHash: usage.requestHash,
+            outcomeHash: usage.outcomeHash,
+            receiptHash: usage.receiptHash,
+          },
+          rateNanoUsdPerToken: descriptor.budgetPolicy.rateNanoUsdPerToken,
+          requestedAt: now(),
+        };
+        const preparedRequest = prepareWorkflowBudgetAuthorityRequest(
+          'settle',
+          settlementRequest,
+          budgetAuthority.callerId,
+        );
+        await context.reportBudgetUsage(
+          {
+            reservationId: reservation.reservationId,
+            callId: reservation.callId,
+            ...folded.payload,
+          },
+          sourceFor('budget_settle', preparedRequest),
+        );
         if (!folded.settled) {
           throw new WorkflowRunnerV2BudgetBoundaryError(
             'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
             'Provider usage is missing, unreported, or exceeded its reservation.',
           );
         }
-        return;
-      }
-
-      const account = await readBudgetHead();
-      if (!account) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-          'Budget settlement cannot read its durable account head.',
-        );
-      }
-      const folded = foldWorkflowRunnerProviderUsage(
-        usage,
-        opened.requestedTokens,
-        descriptor.budgetPolicy.rateNanoUsdPerToken,
-      );
-      const reserveDecisionHash = hashWorkflowBudgetAuthorityValue(
-        'reserve-decision',
-        opened.reserveDecision,
-      );
-      const settlementRequest: WorkflowBudgetSettlementRequest = {
-        schema: WORKFLOW_BUDGET_SETTLEMENT_REQUEST_SCHEMA,
-        ...authorityBase,
-        workspaceId: descriptor.workspaceId,
-        runId: descriptor.workflowRunId,
-        accountId: descriptor.budgetPolicy.accountId,
-        reservationId: reservation.reservationId,
-        callId: reservation.callId,
-        providerAttempt: opened.providerAttempt,
-        expectedProviderHash: opened.reserveDecision.request.expectedProviderHash,
-        expectedModelHash: opened.reserveDecision.request.expectedModelHash,
-        expectedProviderRunHash: opened.reserveDecision.request.expectedProviderRunHash,
-        correlationId: descriptor.correlationId,
-        policyHash: descriptor.budgetPolicy.policyHash,
-        route: descriptor.authorityRoute,
-        expectedAccountRevision: account.accountRevision,
-        expectedRunRevision: account.runRevision,
-        reserveDecisionHash,
-        usageEvidenceStatus: 'trusted',
-        usageReceiptHash: usage.receiptHash,
-        providerUsage: {
-          schema: WORKFLOW_BUDGET_PROVIDER_USAGE_SCHEMA,
-          providerHash: usage.providerHash,
-          modelHash: usage.modelHash,
-          runHash: usage.runHash,
-          attempt: usage.attempt,
-          calls: usage.calls,
-          status: usage.status,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          totalTokens: usage.totalTokens,
-          outcome: usage.outcome,
-          requestHash: usage.requestHash,
-          outcomeHash: usage.outcomeHash,
-          receiptHash: usage.receiptHash,
-        },
-        rateNanoUsdPerToken: descriptor.budgetPolicy.rateNanoUsdPerToken,
-        requestedAt: now(),
-      };
-      const preparedRequest = prepareWorkflowBudgetAuthorityRequest(
-        'settle',
-        settlementRequest,
-        budgetAuthority.callerId,
-      );
-      await context.reportBudgetUsage(
-        {
-          reservationId: reservation.reservationId,
-          callId: reservation.callId,
-          ...folded.payload,
-        },
-        sourceFor('budget_settle', preparedRequest),
-      );
-      reservations.delete(reservation.reservationId);
-      if (!folded.settled) {
-        throw new WorkflowRunnerV2BudgetBoundaryError(
-          'WORKFLOW_RUNNER_V2_BUDGET_RECONCILIATION_REQUIRED',
-          'Provider usage is missing, unreported, or exceeded its reservation.',
-        );
-      }
+        reservations.delete(reservation.reservationId);
+      });
     },
   });
 }
@@ -1930,6 +2008,7 @@ export async function executeWorkflowRunnerV2QualificationJob(
         descriptor,
         context,
         budgetAuthority,
+        runAuthority,
       );
       return createOpenSlackAgentLauncher({
         runStore: createRunStore(workspaceRoot),

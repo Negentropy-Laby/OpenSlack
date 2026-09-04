@@ -366,10 +366,7 @@ func (session *V2Session) send(ctx context.Context, process WorkerProcess, attem
 			break
 		}
 
-		retryDeadline := session.config.Now().Add(time.Second)
-		if hardDeadline.IsZero() || hardDeadline.Before(retryDeadline) {
-			retryDeadline = hardDeadline
-		}
+		retryDeadline := v2ControlRetryDeadline(session.config.Now(), hardDeadline)
 		retryContext, retryCancel := context.WithDeadline(context.Background(), retryDeadline)
 		finalDisposition, finalErr := session.config.Store.WaitV2ControlAcknowledged(retryContext, attemptID, message.EventID)
 		retryCancel()
@@ -392,6 +389,14 @@ func (session *V2Session) send(ctx context.Context, process WorkerProcess, attem
 		return "", errors.Join(err, markErr)
 	}
 	return disposition, nil
+}
+
+func v2ControlRetryDeadline(now, hardDeadline time.Time) time.Time {
+	retryDeadline := now.Add(time.Second)
+	if !hardDeadline.IsZero() && hardDeadline.Before(retryDeadline) {
+		return hardDeadline
+	}
+	return retryDeadline
 }
 
 func awaitV2Frame(ctx context.Context, frames <-chan protocolDecodedFrame[authoritycontract.Message], timeout time.Duration) (protocolDecodedFrame[authoritycontract.Message], error) {

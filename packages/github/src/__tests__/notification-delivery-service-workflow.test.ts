@@ -1096,7 +1096,7 @@ describe('notification delivery service workflow', () => {
     )?.run;
     expect(windowsTests?.match(/bunx vitest run/gu)).toHaveLength(2);
     expect(windowsTests).toMatch(
-      /openai-compatible-runtime\.test\.ts\n\s*bunx vitest run `\n\s*packages\/workflows\/src\/__tests__\/workflow-effect-shadow\.test\.ts/u,
+      /openai-compatible-runtime\.test\.ts\n\s*if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}\n\s*bunx vitest run `\n\s*packages\/workflows\/src\/__tests__\/workflow-effect-shadow\.test\.ts/u,
     );
     for (const file of [
       'workflow-runner-descriptor.test.ts',
