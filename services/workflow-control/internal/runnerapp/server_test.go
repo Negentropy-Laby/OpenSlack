@@ -112,7 +112,6 @@ func TestV2TypeScriptQualificationAdmissionIsRetiredWithoutStoreMutation(t *test
 	if calls != 0 || service.accepted.Load() != 0 || service.duplicates.Load() != 0 {
 		t.Fatalf("retired v2 TypeScript admission mutated state: calls=%d accepted=%d duplicate=%d", calls, service.accepted.Load(), service.duplicates.Load())
 	}
-	return
 }
 
 const testToken = "0123456789abcdef0123456789abcdef"

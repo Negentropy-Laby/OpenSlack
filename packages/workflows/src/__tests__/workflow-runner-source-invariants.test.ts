@@ -32,7 +32,13 @@ describe('GS8-B source and authority invariants', () => {
       execution,
       runnerServer,
       runnerHandlers,
+      workflowRuns,
+      qualification,
+      workflowControlContract,
       demo,
+      routing,
+      routingConfig,
+      inspection,
     ] = await Promise.all([
       source('packages/workflows/src/index.ts'),
       source('apps/cli/src/commands/collaboration.ts'),
@@ -42,7 +48,13 @@ describe('GS8-B source and authority invariants', () => {
       source('packages/workflows/src/workflow-runner-execution-client.ts'),
       source('services/workflow-control/internal/runnerapp/server.go'),
       source('services/workflow-control/internal/runnerapp/handlers.go'),
+      source('packages/workflows/src/workflow-runs.ts'),
+      source('services/workflow-control/cmd/runner-server/qualification_test.go'),
+      source('docs/architecture/contracts/workflow-control.md'),
       source('scripts/demo-ai-org-rehearse.ts'),
+      source('packages/workflows/src/workflow-run-routing.ts'),
+      source('packages/workflows/src/workflow-run-routing-config.ts'),
+      source('packages/workflows/src/workflow-run-readonly-inspection.ts'),
     ]);
     expect(index).not.toMatch(/\bexecuteRun\b/u);
     expect(index).not.toMatch(/\bexecuteResume\b/u);
@@ -53,7 +65,7 @@ describe('GS8-B source and authority invariants', () => {
     expect(collaboration).not.toMatch(/\bcontrolWorkflowRun\b/u);
     expect(collaboration).not.toContain('new RunStore');
     expect(collaboration).toContain('journal.locateReadOnly(runId)');
-    expect(collaboration).toContain('view is rebuilt from its durable authority head');
+    expect(collaboration).toContain('for the closed authority view');
     expect(collaboration).not.toContain('journal.load(runId)');
     expect(collaboration).not.toContain('journal.locate(runId)');
     expect(tuiExecutors).not.toContain('executeResume');
@@ -69,8 +81,20 @@ describe('GS8-B source and authority invariants', () => {
     expect(runnerServer).toContain('http.HandlerFunc(service.handleRetiredV1Submit)');
     expect(runnerServer).not.toContain('http.HandlerFunc(service.handleSubmit)');
     expect(runnerHandlers).toContain('WORKFLOW_RUNNER_TS_MUTATION_RETIRED');
+    expect(execution).toContain('WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED');
+    expect(workflowControlContract).toContain('`WORKFLOW_RUNNER_TS_MUTATION_RETIRED`');
+    expect(workflowControlContract).toContain('`WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED`');
+    expect(workflowRuns).not.toMatch(/\bcontrolWorkflowRun\b/u);
+    expect(execution).not.toContain('prepareWorkflowRunnerJobSpec');
+    expect(execution).not.toContain('WORKFLOW_RUNNER_JOB_SPEC_SCHEMA');
+    expect(qualification).not.toContain('runLegacyGS8BQualification');
     expect(demo).toContain('executeWorkflowThroughRunner');
     expect(demo).not.toMatch(/\bexecuteRun\(/u);
+    expect(routing).toContain('export function createWorkflowRunRouteJournal');
+    for (const consumer of [collaboration, routingConfig, inspection]) {
+      expect(consumer).toContain('createWorkflowRunRouteJournal');
+      expect(consumer).not.toContain("'.openslack.local', 'workflows', 'routes'");
+    }
     for (const cli of [collaboration, tuiExecutors]) {
       expect(cli).not.toContain('workflow-runner-worker');
       expect(cli).not.toContain('OPENSLACK_WORKFLOW_RUNNER_ENABLED');

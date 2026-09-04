@@ -51,7 +51,6 @@ const TASK_KEY_TO_GROUP: Record<string, TaskGroupCategory> = {
   'see-attention': 'review-work',
   'review-prs': 'review-work',
   'view-conversations': 'review-work',
-  'approve-workflows': 'govern',
   'approve-pending': 'govern',
   'maintain-profile': 'maintain',
 };

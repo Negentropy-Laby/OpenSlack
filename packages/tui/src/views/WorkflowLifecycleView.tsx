@@ -5,7 +5,7 @@ import useInput from '../ink/hooks/use-input.js';
 import Pane from '../design-system/Pane.js';
 import ThemedText from '../design-system/ThemedText.js';
 import Divider from '../design-system/Divider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
+import StatusIcon, { type StatusCategory } from '../design-system/StatusIcon.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import ConfirmationDialog from '../design-system/ConfirmationDialog.js';
 import ActionStatus from '../design-system/ActionStatus.js';
@@ -93,6 +93,22 @@ function dependencyModeColorTheme(mode: string | undefined): 'pass' | 'info' | '
   if (mode === 'mixed') return 'warning';
   if (mode === 'fallback') return 'info';
   return 'muted';
+}
+
+export function currentRunPresentation(status: string): {
+  readonly iconCategory: StatusCategory;
+  readonly colorTheme: 'success' | 'error' | 'warning' | 'muted' | 'info';
+} {
+  if (status === 'completed') return { iconCategory: 'pass', colorTheme: 'success' };
+  if (status === 'failed') return { iconCategory: 'fail', colorTheme: 'error' };
+  if (status === 'cancelled') return { iconCategory: 'warn', colorTheme: 'muted' };
+  if (status === 'paused' || status === 'paused_waiting_approval') {
+    return { iconCategory: 'blocked', colorTheme: 'warning' };
+  }
+  if (status === 'running' || status === 'resuming') {
+    return { iconCategory: 'info', colorTheme: 'info' };
+  }
+  return { iconCategory: 'info', colorTheme: 'muted' };
 }
 
 export default function WorkflowLifecycleView({
@@ -791,9 +807,13 @@ export default function WorkflowLifecycleView({
             Box,
             { flexDirection: 'row', marginLeft: 2 },
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'Status: '),
+            React.createElement(StatusIcon, {
+              category: currentRunPresentation(model.currentRun.status).iconCategory,
+            }),
+            React.createElement(Text, null, ' '),
             React.createElement(
               ThemedText,
-              { colorTheme: model.currentRun.status === 'running' ? 'warning' : 'success' },
+              { colorTheme: currentRunPresentation(model.currentRun.status).colorTheme },
               model.currentRun.status,
             ),
             React.createElement(Text, null, '  '),

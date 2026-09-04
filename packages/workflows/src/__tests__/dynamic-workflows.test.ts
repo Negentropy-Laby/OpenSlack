@@ -24,7 +24,6 @@ import {
   WorkflowBudgetPausedError,
   writeWorkflowPolicy,
 } from '../index.js';
-import { controlWorkflowRun } from '../workflow-runs.js';
 import { executeAgentCall } from '../agent-shim.js';
 import { AgentRunRestartRequestedError } from '@openslack/agent-runtime';
 
@@ -252,114 +251,24 @@ describe('dynamic workflow drafts and policy', () => {
     expect(renderWorkflowRunProgress(progress!)).toContain('scan-api');
   });
 
-  it('applies valid workflow run control transitions', async () => {
-    const statusPath = writeWorkflowRunStatus(root, 'run-control', 'running');
-
-    const result = await controlWorkflowRun('run-control', 'pause', { rootDir: root });
-
-    expect(result.status).toBe('applied');
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as {
-      status: string;
-      controlEvents?: Array<{ action: string }>;
-    };
-    expect(status.status).toBe('paused');
-    expect(status.controlEvents?.at(-1)?.action).toBe('pause');
-  });
-
-  it('rejects invalid workflow run control transitions without mutating status', async () => {
-    const statusPath = writeWorkflowRunStatus(root, 'run-paused', 'paused');
-
-    const result = await controlWorkflowRun('run-paused', 'pause', { rootDir: root });
-
-    expect(result.status).toBe('rejected');
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as {
-      status: string;
-      controlEvents?: unknown[];
-    };
-    expect(status.status).toBe('paused');
-    expect(status.controlEvents).toBeUndefined();
-  });
-
-  it('allows saveScript evidence without changing terminal run status', async () => {
-    const statusPath = writeWorkflowRunStatus(root, 'run-complete', 'completed');
-
-    const result = await controlWorkflowRun('run-complete', 'saveScript', { rootDir: root });
-
-    expect(result.status).toBe('applied');
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as {
-      status: string;
-      controlEvents?: Array<{ action: string }>;
-    };
-    expect(status.status).toBe('completed');
-    expect(status.controlEvents?.at(-1)?.action).toBe('saveScript');
-  });
-
-  it('records pending stopAgent when no live handle exists', async () => {
-    const statusPath = writeWorkflowRunStatus(root, 'run-stop-agent', 'running');
-
-    const result = await controlWorkflowRun('run-stop-agent', 'stopAgent', {
-      rootDir: root,
-      target: {
-        runId: 'run-stop-agent',
-        phase: 'Scan',
-        agentRunId: 'RUN-20260101-NOHANDLE',
-        agentId: 'scan-api',
-      },
-    });
-
-    expect(result.status).toBe('recorded');
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as {
-      pendingAgentControls?: Array<{ action: string; target?: { agentRunId?: string } }>;
-    };
-    expect(status.pendingAgentControls?.[0].action).toBe('stopAgent');
-    expect(status.pendingAgentControls?.[0].target?.agentRunId).toBe('RUN-20260101-NOHANDLE');
-  });
-
-  it('rejects restartAgent when replay input is missing', async () => {
-    writeWorkflowRunStatus(root, 'run-restart-missing', 'running');
-
-    const result = await controlWorkflowRun('run-restart-missing', 'restartAgent', {
-      rootDir: root,
-      target: {
-        runId: 'run-restart-missing',
-        phase: 'Scan',
-        agentRunId: 'RUN-20260101-NOREPLAY',
-        agentId: 'scan-api',
-      },
-    });
-
-    expect(result.status).toBe('rejected');
-    expect(result.message).toContain('replay input missing');
-  });
-
-  it('rejects restartAgent for completed terminal workflow runs', async () => {
-    writeWorkflowRunStatus(root, 'run-restart-terminal', 'completed');
-
-    const result = await controlWorkflowRun('run-restart-terminal', 'restartAgent', {
-      rootDir: root,
-      target: {
-        runId: 'run-restart-terminal',
-        phase: 'Scan',
-        agentRunId: 'RUN-20260101-DONE',
-        agentId: 'scan-api',
-      },
-    });
-
-    expect(result.status).toBe('rejected');
-    expect(result.message).toContain('completed');
-  });
-
   it('blocks a matching future agent launch after pending stopAgent', async () => {
-    writeWorkflowRunStatus(root, 'run-block-agent', 'running');
-    await controlWorkflowRun('run-block-agent', 'stopAgent', {
-      rootDir: root,
-      target: {
-        runId: 'run-block-agent',
-        phase: 'Scan',
-        agentRunId: 'RUN-20260101-BLOCKED',
-        agentId: 'scan-api',
+    const statusPath = writeWorkflowRunStatus(root, 'run-block-agent', 'running');
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as Record<string, unknown>;
+    status.pendingAgentControls = [
+      {
+        action: 'stopAgent',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        target: {
+          runId: 'run-block-agent',
+          phase: 'Scan',
+          agentRunId: 'RUN-20260101-BLOCKED',
+          agentId: 'scan-api',
+        },
+        status: 'recorded',
+        message: 'Pending stop recorded for test.',
       },
-    });
+    ];
+    writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
     await expect(
       executeAgentCall(

@@ -869,6 +869,7 @@ export type {
   WorkflowRunnerJobView,
 } from './workflow-runner-control-client.js';
 export {
+  createWorkflowRunRouteJournal,
   hashWorkflowRunRoutingPolicy,
   validateWorkflowRunRouteReceipt,
   validateWorkflowRunRoutingPolicy,
@@ -913,6 +914,7 @@ export {
 } from './workflow-run-readonly-inspection.js';
 export type {
   InspectWorkflowRunReadOnlyOptions,
+  WorkflowRunReadOnlyLocalEvidence,
   WorkflowRunReadOnlyInspection,
 } from './workflow-run-readonly-inspection.js';
 export {
@@ -921,6 +923,7 @@ export {
   WORKFLOW_CONTROL_MAX_SAFE_INTEGER,
 } from './workflow-control-routing-identity.js';
 export {
+  isWorkflowControlAuthorityHeadBoundToRoute,
   prepareWorkflowControlAuthorityMutation,
   workflowControlAuthorityInitialRecord,
   WORKFLOW_CONTROL_AUTHORITY_ACCEPT_SCHEMA,

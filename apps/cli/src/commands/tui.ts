@@ -2,6 +2,44 @@ import { Command } from 'commander';
 import type { OperatorApplicationContext } from '../boot/context.js';
 import { getBuildInfo } from '../release/build-info.js';
 
+interface WorkflowLifecycleRunCandidate {
+  readonly runId: string;
+  readonly workflowName: string;
+  readonly status: string;
+  readonly startedAt: string;
+  readonly updatedAt: string;
+}
+
+const WORKFLOW_LIFECYCLE_STATUS_PRIORITY = [
+  'running',
+  'resuming',
+  'paused_waiting_approval',
+  'paused',
+  'confirmed',
+  'previewed',
+  'created',
+  'completed',
+  'failed',
+  'cancelled',
+] as const;
+
+export function selectWorkflowLifecycleCurrentRun<T extends WorkflowLifecycleRunCandidate>(
+  runs: readonly T[],
+  workflowName: string,
+): T | undefined {
+  const rank = new Map<string, number>(
+    WORKFLOW_LIFECYCLE_STATUS_PRIORITY.map((status, index) => [status, index]),
+  );
+  return runs
+    .filter((run) => run.workflowName === workflowName)
+    .sort((left, right) => {
+      const priority =
+        (rank.get(left.status) ?? Number.MAX_SAFE_INTEGER) -
+        (rank.get(right.status) ?? Number.MAX_SAFE_INTEGER);
+      return priority !== 0 ? priority : right.updatedAt.localeCompare(left.updatedAt);
+    })[0];
+}
+
 export function tuiCommands(operatorContext?: OperatorApplicationContext): Command {
   return new Command('tui')
     .description('Launch the interactive TUI workbench')
@@ -189,7 +227,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
               const found = await findWorkflow(wf.name, root);
               if (!found) continue;
               const mod = await loadWorkflow(found.path);
-              const match = workflowRuns.find((run) => run.workflowName === wf.name);
+              const match = selectWorkflowLifecycleCurrentRun(workflowRuns, wf.name);
               const currentRun = match
                 ? { runId: match.runId, status: match.status, startedAt: match.startedAt }
                 : undefined;

@@ -4,16 +4,11 @@ import { join } from 'node:path';
 import type { ConfirmationPolicy, RunResult, WorkflowMeta, WorkflowSource } from './types.js';
 import { createWorkflowRunProjectionStore } from './workflow-run-projection.js';
 import {
-  createWorkflowRunnerExecutionDescriptor,
-  hashWorkflowRunnerResult,
-} from './workflow-runner-descriptor.js';
-import {
+  isWorkflowControlAuthorityHeadBoundToRoute,
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
   type WorkflowControlAuthorityRunRead,
-  type WorkflowControlAuthorityRunRecord,
 } from './workflow-control-authority-client.js';
-import { canonicalWorkflowControlAuthorityJson } from './workflow-control-authority-contract.js';
 import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import type { WorkflowRunRoutingExecutionContext } from './workflow-run-routing-config.js';
 import type { WorkflowRunRouteJournalEntry } from './workflow-run-routing.js';
@@ -33,10 +28,8 @@ import { WORKFLOW_RUNNER_CAPABILITIES } from './workflow-runner-contract.js';
 import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
 import {
   loadWorkflowRunnerControlConfig,
-  prepareWorkflowRunnerJobSpec,
   WorkflowRunnerControlClient,
   WorkflowRunnerControlError,
-  WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
   type WorkflowRunnerControlConfig,
   type WorkflowRunnerControlPort,
   type WorkflowRunnerJobView,
@@ -153,23 +146,7 @@ function assertGoAuthorityHead(
   route: WorkflowRunRouteReceipt,
   head: Awaited<ReturnType<WorkflowControlAuthorityPort['read']>>,
 ): void {
-  if (
-    head.workspaceId !== route.workspaceId ||
-    head.runId !== route.runId ||
-    head.workflowId !== route.workflowId ||
-    head.workflowVersion !== route.workflowVersion ||
-    head.workflowSourceHash !== route.workflowSourceHash ||
-    head.manifestHash !== route.manifestHash ||
-    head.inputHash !== route.inputHash ||
-    head.route.backend !== route.route.backend ||
-    head.route.authority !== route.route.authority ||
-    head.route.routingEpoch !== route.route.routingEpoch ||
-    head.route.authorityBuildHash !== route.route.authorityBuildHash ||
-    head.record.workspaceId !== head.workspaceId ||
-    head.record.runId !== head.runId ||
-    head.record.revision !== head.revision ||
-    head.record.state !== head.state
-  ) {
+  if (!isWorkflowControlAuthorityHeadBoundToRoute(route, head)) {
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
       'Workflow Control authority head does not bind the immutable route receipt.',
@@ -181,24 +158,7 @@ function isExactGoAuthorityHead(
   route: WorkflowRunRouteReceipt,
   head: WorkflowControlAuthorityRunRead,
 ): boolean {
-  try {
-    assertGoAuthorityHead(route, head);
-  } catch {
-    return false;
-  }
-  const initial = workflowControlAuthorityInitialRecord(route);
-  const expected: WorkflowControlAuthorityRunRecord = {
-    ...initial,
-    state: head.state,
-    revision: head.revision,
-    currentPhaseId: head.currentPhaseId,
-    currentPhaseIndex: head.currentPhaseIndex,
-    resumeGeneration: head.resumeGeneration,
-  };
-  return (
-    canonicalWorkflowControlAuthorityJson(head.record) ===
-    canonicalWorkflowControlAuthorityJson(expected)
-  );
+  return isWorkflowControlAuthorityHeadBoundToRoute(route, head);
 }
 
 function isCreatedGoAuthorityHead(
@@ -543,13 +503,7 @@ export async function executeWorkflowThroughRunner(
   const goAuthority = routing?.authority;
   const goBudgetPolicy = routing?.v2BudgetPolicy;
   const goV2Client = routing?.v2Client;
-  if (!selectedGo && (goAuthority || goBudgetPolicy || goV2Client)) {
-    throw new WorkflowRunnerControlError(
-      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
-      'A TypeScript route cannot retain Go authority or v2 submission dependencies.',
-    );
-  }
-  if (selectedGo && (!goAuthority || !goBudgetPolicy || !goV2Client)) {
+  if (!goAuthority || !goBudgetPolicy || !goV2Client) {
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
       'A selected Go route requires the Workflow Control authority and exact v2 budget policy.',
@@ -562,177 +516,61 @@ export async function executeWorkflowThroughRunner(
     );
   }
   const args = input.args ?? {};
-  const budget = input.budget ?? { tokens: 100_000, costUsd: 1 };
-  if (selectedGo) {
-    const authority = goAuthority!;
-    const budgetPolicy = goBudgetPolicy!;
-    const v2Client = goV2Client!;
-    if (routing?.mode === 'explicit') {
-      const routeBinding = existingRoute?.route ?? {
-        backend: 'go' as const,
-        authority: 'workflow-control' as const,
-        routingEpoch: routing.router!.policy.routingEpoch,
-        authorityBuildHash: routing.router!.policy.authorityBuildHash,
-      };
-      await preflightGoRouting({
-        routing,
-        workspaceId: config.workspaceId,
-        route: routeBinding,
-        fresh: existingRoute === null,
-        ...(input.signal ? { signal: input.signal } : {}),
-      });
-    }
-    const route = await resolveRunRoute({
-      execution: input,
+  const authority = goAuthority!;
+  const budgetPolicy = goBudgetPolicy!;
+  const v2Client = goV2Client!;
+  if (routing?.mode === 'explicit') {
+    const routeBinding = existingRoute?.route ?? {
+      backend: 'go' as const,
+      authority: 'workflow-control' as const,
+      routingEpoch: routing.router!.policy.routingEpoch,
+      authorityBuildHash: routing.router!.policy.authorityBuildHash,
+    };
+    await preflightGoRouting({
       routing,
-      existing: existingRoute,
       workspaceId: config.workspaceId,
-      workflowRunId,
-      correlationId,
-      identity: {
-        workflowId: input.manifest.name,
-        workflowVersion: input.manifest.version ?? '0.0.0',
-        workflowSourceHash: hashWorkflowRunnerV2Source(input.workflowSourceBytes),
-        manifestHash: hashWorkflowRunnerV2Manifest(input.manifest),
-        inputHash: hashWorkflowRunnerV2Input(args),
-      },
-      selectedAt,
-    });
-    if (!route || route.route.backend !== 'go') {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
-        'A Go-owned run requires its immutable Go route receipt.',
-      );
-    }
-    if (existingEntry?.state === 'closed') {
-      return replayClosedProjection({
-        workspaceRoot: input.workspaceRoot,
-        entry: existingEntry,
-        authority,
-        ...(input.signal ? { signal: input.signal } : {}),
-      });
-    }
-    const authorityHead = await establishInitialGoAuthority({
-      authority,
-      route,
+      route: routeBinding,
       fresh: existingRoute === null,
       ...(input.signal ? { signal: input.signal } : {}),
     });
-    const v2Descriptor = createWorkflowRunnerV2ExecutionDescriptor({
-      descriptorRef,
-      workspaceId: config.workspaceId,
-      workflowRunId,
-      correlationId,
+  }
+  const route = await resolveRunRoute({
+    execution: input,
+    routing,
+    existing: existingRoute,
+    workspaceId: config.workspaceId,
+    workflowRunId,
+    correlationId,
+    identity: {
       workflowId: input.manifest.name,
       workflowVersion: input.manifest.version ?? '0.0.0',
-      workflowSource: input.workflowSource,
-      workflowSourceBytes: input.workflowSourceBytes,
-      manifest: input.manifest,
-      input: args,
-      confirmationPolicy: input.confirmationPolicy,
-      requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
-      authorityRoute: route.route,
-      runRevision: authorityHead.runRevision,
-      resumeGeneration: authorityHead.resumeGeneration,
-      budgetPolicy,
-      createdAt: created.toISOString(),
-      expiresAt: new Date(created.getTime() + descriptorLifetimeMs).toISOString(),
-    });
-    if (
-      v2Descriptor.workflowSourceHash !== route.workflowSourceHash ||
-      v2Descriptor.manifestHash !== route.manifestHash ||
-      v2Descriptor.inputHash !== route.inputHash
-    ) {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
-        'V2 descriptor content does not match the immutable route receipt.',
-      );
-    }
-    const descriptorStore = new WorkflowRunnerDescriptorStore(
-      config.descriptorRoot,
-      undefined,
-      WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+      workflowSourceHash: hashWorkflowRunnerV2Source(input.workflowSourceBytes),
+      manifestHash: hashWorkflowRunnerV2Manifest(input.manifest),
+      inputHash: hashWorkflowRunnerV2Input(args),
+    },
+    selectedAt,
+  });
+  if (!route || route.route.backend !== 'go') {
+    throw new WorkflowRunnerControlError(
+      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
+      'A Go-owned run requires its immutable Go route receipt.',
     );
-    const sealed = await descriptorStore.create(v2Descriptor);
-    const prepared = prepareWorkflowRunnerV2JobSpec({
-      schema: WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
-      workspaceId: config.workspaceId,
-      jobId,
-      workflowRunId,
-      correlationId,
-      executionDescriptorRef: v2Descriptor.descriptorRef,
-      executionDescriptorHash: sealed.descriptorHash,
-      workflowId: v2Descriptor.workflowId,
-      workflowVersion: v2Descriptor.workflowVersion,
-      workflowSourceHash: v2Descriptor.workflowSourceHash,
-      manifestHash: v2Descriptor.manifestHash,
-      inputHash: v2Descriptor.inputHash,
-      wholeTimeoutMs,
-      submittedAt: created.toISOString(),
-      requiredProtocolVersion: v2Descriptor.requiredProtocolVersion,
-      requiredCapabilities: v2Descriptor.requiredCapabilities,
-      authorityRoute: v2Descriptor.authorityRoute,
-      runRevision: v2Descriptor.runRevision,
-      resumeGeneration: v2Descriptor.resumeGeneration,
-    });
-    await v2Client.submit(prepared, input.signal);
-    const terminal = await client.waitForTerminal(jobId, {
-      timeoutMs: wholeTimeoutMs,
-      signal: input.signal,
-    });
-    assertTerminalIdentity({
-      terminal,
-      workspaceId: config.workspaceId,
-      jobId,
-      workflowRunId,
-      correlationId,
-    });
-    const head = await authority.read(workflowRunId, route.route, input.signal);
-    assertGoAuthorityHead(route, head);
-    const projection = createWorkflowRunProjectionStore(input.workspaceRoot, 'go');
-    const status = await projection.loadStatus(workflowRunId);
-    if (status?.status === 'paused' || status?.status === 'paused_waiting_approval') {
-      if (head.state !== status.status) {
-        throw new WorkflowRunnerControlError(
-          'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
-          'Go authority and recovery projection disagree on the paused terminal.',
-        );
-      }
-      if (terminal.state === 'terminal' && terminal.terminalStatus === 'failed') {
-        return Object.freeze({ status: status.status, runId: workflowRunId });
-      }
-      return terminalError(terminal);
-    }
-    if (terminal.terminalStatus !== 'completed' || terminal.resultHash === null) {
-      if (head.state === 'created' || head.state === 'running' || head.state === 'resuming') {
-        throw new WorkflowRunnerControlError(
-          'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
-          'Runner terminated before the Go authority reached a matching terminal state.',
-        );
-      }
-      return terminalError(terminal);
-    }
-    if (head.state !== 'completed' || status?.status !== 'completed') {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
-        'Runner completed without a matching Go authority terminal state.',
-      );
-    }
-    const output = await projection.loadOutput(workflowRunId);
-    if (
-      output === null ||
-      typeof output !== 'object' ||
-      hashWorkflowRunnerV2Result(output) !== terminal.resultHash
-    ) {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
-        'Runner result does not match the Go recovery projection output artifact.',
-      );
-    }
-    await routing?.journal.close(workflowRunId);
-    return output as RunResult;
   }
-  const descriptor = createWorkflowRunnerExecutionDescriptor({
+  if (existingEntry?.state === 'closed') {
+    return replayClosedProjection({
+      workspaceRoot: input.workspaceRoot,
+      entry: existingEntry,
+      authority,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+  }
+  const authorityHead = await establishInitialGoAuthority({
+    authority,
+    route,
+    fresh: existingRoute === null,
+    ...(input.signal ? { signal: input.signal } : {}),
+  });
+  const v2Descriptor = createWorkflowRunnerV2ExecutionDescriptor({
     descriptorRef,
     workspaceId: config.workspaceId,
     workflowRunId,
@@ -743,61 +581,53 @@ export async function executeWorkflowThroughRunner(
     workflowSourceBytes: input.workflowSourceBytes,
     manifest: input.manifest,
     input: args,
-    budget,
     confirmationPolicy: input.confirmationPolicy,
+    requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
+    authorityRoute: route.route,
+    runRevision: authorityHead.runRevision,
+    resumeGeneration: authorityHead.resumeGeneration,
+    budgetPolicy,
     createdAt: created.toISOString(),
     expiresAt: new Date(created.getTime() + descriptorLifetimeMs).toISOString(),
   });
-  const tsRoute = await resolveRunRoute({
-    execution: input,
-    routing,
-    existing: existingRoute,
-    workspaceId: config.workspaceId,
-    workflowRunId,
-    correlationId,
-    identity: {
-      workflowId: descriptor.workflowId,
-      workflowVersion: descriptor.workflowVersion,
-      workflowSourceHash: descriptor.workflowSourceHash,
-      manifestHash: descriptor.manifestHash,
-      inputHash: descriptor.inputHash,
-    },
-    selectedAt,
-  });
-  if (tsRoute?.route.backend === 'go') {
+  if (
+    v2Descriptor.workflowSourceHash !== route.workflowSourceHash ||
+    v2Descriptor.manifestHash !== route.manifestHash ||
+    v2Descriptor.inputHash !== route.inputHash
+  ) {
     throw new WorkflowRunnerControlError(
-      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
-      'An existing Go route cannot fall back to TypeScript execution.',
+      'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
+      'V2 descriptor content does not match the immutable route receipt.',
     );
   }
-  if (existingEntry?.state === 'closed') {
-    return replayClosedProjection({ workspaceRoot: input.workspaceRoot, entry: existingEntry });
-  }
-  const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
-  const sealed = await descriptorStore.create(descriptor);
-  const prepared = prepareWorkflowRunnerJobSpec({
-    schema: WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
+  const descriptorStore = new WorkflowRunnerDescriptorStore(
+    config.descriptorRoot,
+    undefined,
+    WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+  );
+  const sealed = await descriptorStore.create(v2Descriptor);
+  const prepared = prepareWorkflowRunnerV2JobSpec({
+    schema: WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
     workspaceId: config.workspaceId,
     jobId,
     workflowRunId,
     correlationId,
-    executionDescriptorRef: descriptor.descriptorRef,
+    executionDescriptorRef: v2Descriptor.descriptorRef,
     executionDescriptorHash: sealed.descriptorHash,
-    workflowId: descriptor.workflowId,
-    workflowVersion: descriptor.workflowVersion,
-    workflowSourceHash: descriptor.workflowSourceHash,
-    manifestHash: descriptor.manifestHash,
-    inputHash: descriptor.inputHash,
+    workflowId: v2Descriptor.workflowId,
+    workflowVersion: v2Descriptor.workflowVersion,
+    workflowSourceHash: v2Descriptor.workflowSourceHash,
+    manifestHash: v2Descriptor.manifestHash,
+    inputHash: v2Descriptor.inputHash,
     wholeTimeoutMs,
     submittedAt: created.toISOString(),
+    requiredProtocolVersion: v2Descriptor.requiredProtocolVersion,
+    requiredCapabilities: v2Descriptor.requiredCapabilities,
+    authorityRoute: v2Descriptor.authorityRoute,
+    runRevision: v2Descriptor.runRevision,
+    resumeGeneration: v2Descriptor.resumeGeneration,
   });
-  const receipt = await client.submit(prepared, input.signal);
-  if (receipt.status === 'reconciliation_required') {
-    throw new WorkflowRunnerControlError(
-      'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
-      'Workflow runner admission requires reconciliation.',
-    );
-  }
+  await v2Client.submit(prepared, input.signal);
   const terminal = await client.waitForTerminal(jobId, {
     timeoutMs: wholeTimeoutMs,
     signal: input.signal,
@@ -809,32 +639,46 @@ export async function executeWorkflowThroughRunner(
     workflowRunId,
     correlationId,
   });
-  const runStore = createWorkflowRunProjectionStore(input.workspaceRoot, 'ts-local');
-  const status = await runStore.loadStatus(workflowRunId);
+  const head = await authority.read(workflowRunId, route.route, input.signal);
+  assertGoAuthorityHead(route, head);
+  const projection = createWorkflowRunProjectionStore(input.workspaceRoot, 'go');
+  const status = await projection.loadStatus(workflowRunId);
   if (status?.status === 'paused' || status?.status === 'paused_waiting_approval') {
+    if (head.state !== status.status) {
+      throw new WorkflowRunnerControlError(
+        'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+        'Go authority and recovery projection disagree on the paused terminal.',
+      );
+    }
     if (terminal.state === 'terminal' && terminal.terminalStatus === 'failed') {
       return Object.freeze({ status: status.status, runId: workflowRunId });
     }
     return terminalError(terminal);
   }
   if (terminal.terminalStatus !== 'completed' || terminal.resultHash === null) {
+    if (head.state === 'created' || head.state === 'running' || head.state === 'resuming') {
+      throw new WorkflowRunnerControlError(
+        'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+        'Runner terminated before the Go authority reached a matching terminal state.',
+      );
+    }
     return terminalError(terminal);
   }
-  if (status?.status !== 'completed') {
+  if (head.state !== 'completed' || status?.status !== 'completed') {
     throw new WorkflowRunnerControlError(
-      'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
-      'Runner completed without a matching durable RunStore terminal state.',
+      'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+      'Runner completed without a matching Go authority terminal state.',
     );
   }
-  const output = await runStore.loadOutput(workflowRunId);
+  const output = await projection.loadOutput(workflowRunId);
   if (
     output === null ||
     typeof output !== 'object' ||
-    hashWorkflowRunnerResult(output) !== terminal.resultHash
+    hashWorkflowRunnerV2Result(output) !== terminal.resultHash
   ) {
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
-      'Runner result does not match the durable RunStore output.',
+      'Runner result does not match the Go recovery projection output artifact.',
     );
   }
   await routing?.journal.close(workflowRunId);

@@ -6,7 +6,7 @@ import { ThemeProvider } from '../design-system/ThemeProvider.js';
 import { NavigationProvider } from '../navigation/context.js';
 import WorkflowPreviewView from '../views/WorkflowPreviewView.js';
 import type { WorkflowPreviewViewModel } from '../view-models/workflow-preview.js';
-import WorkflowLifecycleView from '../views/WorkflowLifecycleView.js';
+import WorkflowLifecycleView, { currentRunPresentation } from '../views/WorkflowLifecycleView.js';
 import type {
   WorkflowLifecycleViewModel,
   LifecycleStage,
@@ -429,6 +429,18 @@ describe('WorkflowLifecycleView horizontal progress bar', () => {
     await new Promise((r) => setTimeout(r, 150));
     return chunks.join('');
   }
+
+  it.each([
+    ['running', 'info', 'info'],
+    ['resuming', 'info', 'info'],
+    ['paused', 'blocked', 'warning'],
+    ['paused_waiting_approval', 'blocked', 'warning'],
+    ['completed', 'pass', 'success'],
+    ['failed', 'fail', 'error'],
+    ['cancelled', 'warn', 'muted'],
+  ] as const)('maps current run %s to distinct status presentation', (status, icon, theme) => {
+    expect(currentRunPresentation(status)).toEqual({ iconCategory: icon, colorTheme: theme });
+  });
 
   it('renders all 5 canonical stage labels in horizontal progress bar', async () => {
     const output = await renderLifecycleView(makeLifecycleModel());

@@ -1,23 +1,33 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunStore, type RunStoreFs, type RunMeta } from '../run-store.js';
 import {
-  createWorkflowControlObservationPort,
+  createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
+  type WorkflowControlShadowJournalSecurityDependencies,
 } from '../workflow-control-shadow.js';
-import { controlWorkflowRun } from '../workflow-runs.js';
 import { createWorkflowEffectDecisionAuthority } from '../workflow-effect-approval.js';
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
 import { acceptedReceipt, shadowObservation } from './workflow-control-shadow-fixtures.js';
 
-vi.mock('@openslack/agent-runtime', () => ({
-  requestAgentRunCancellation: () => ({ status: 'not_found', message: 'not found' }),
-  requestAgentRunRestart: () => ({ status: 'not_found', message: 'not found' }),
-}));
-
 const roots: string[] = [];
+const UNIT_JOURNAL_SECURITY: WorkflowControlShadowJournalSecurityDependencies = Object.freeze({
+  platform: 'win32',
+  currentWindowsSid: () => 'S-1-5-21-1000',
+  readWindowsPathSecurity: () =>
+    JSON.stringify({
+      owner: 'S-1-5-21-1000',
+      protected: true,
+      reparse: false,
+      rules: [
+        { sid: 'S-1-5-21-1000', type: 'Allow' },
+        { sid: 'S-1-5-18', type: 'Allow' },
+      ],
+    }),
+  hardenPath: () => undefined,
+});
 
 vi.setConfig({ testTimeout: process.platform === 'win32' ? 45_000 : 5_000 });
 
@@ -57,22 +67,25 @@ function memFs(failPath?: string): RunStoreFs & { readonly files: Map<string, st
 
 async function observationPort(journalRoot: string, published: number[]) {
   let build = 0;
-  return createWorkflowControlObservationPort({
-    enabled: true,
-    workspaceId: 'workspace.test',
-    journalRoot,
-    publisher: createWorkflowControlShadowPublisherPort(async (envelope) => {
-      published.push(envelope.source.sourceSequence);
-      return acceptedReceipt(envelope.source.sourceSequence, envelope.observation);
-    }),
-    buildObservation: async (runId) => {
-      build += 1;
-      return shadowObservation({
-        runId,
-        updatedAt: `2026-08-03T00:00:${String(build).padStart(2, '0')}.000Z`,
-      });
+  return createWorkflowControlObservationPortForTest(
+    {
+      enabled: true,
+      workspaceId: 'workspace.test',
+      journalRoot,
+      publisher: createWorkflowControlShadowPublisherPort(async (envelope) => {
+        published.push(envelope.source.sourceSequence);
+        return acceptedReceipt(envelope.source.sourceSequence, envelope.observation);
+      }),
+      buildObservation: async (runId) => {
+        build += 1;
+        return shadowObservation({
+          runId,
+          updatedAt: `2026-08-03T00:00:${String(build).padStart(2, '0')}.000Z`,
+        });
+      },
     },
-  });
+    UNIT_JOURNAL_SECURITY,
+  );
 }
 
 function meta(): RunMeta {
@@ -143,39 +156,6 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     );
     await failedPort.flush();
     expect(failedPublished).toEqual([]);
-  });
-
-  it('observes the direct run-control write but not rejected controls', async () => {
-    const workspace = await root('workflow-shadow-control');
-    const runRoot = join(workspace, '.openslack.local', 'workflows', 'runs', 'run-shadow-test');
-    await mkdir(runRoot, { recursive: true });
-    await writeFile(
-      join(runRoot, 'status.json'),
-      JSON.stringify({
-        runId: 'run-shadow-test',
-        status: 'running',
-        updatedAt: '2026-08-03T00:00:00.000Z',
-        phases: [],
-        controlEvents: [],
-      }),
-    );
-    const published: number[] = [];
-    const port = await observationPort(join(workspace, 'journal'), published);
-    await expect(
-      controlWorkflowRun('run-shadow-test', 'pause', {
-        rootDir: workspace,
-        observationPort: port,
-      }),
-    ).resolves.toMatchObject({ status: 'applied' });
-    await port.flush();
-    await expect(
-      controlWorkflowRun('run-shadow-test', 'pause', {
-        rootDir: workspace,
-        observationPort: port,
-      }),
-    ).resolves.toMatchObject({ status: 'rejected' });
-    await port.flush();
-    expect(published).toEqual([1]);
   });
 
   it('observes effect approval commits and exact authority recovery only after durable state', async () => {

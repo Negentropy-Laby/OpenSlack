@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { GitHubClient } from '../packages/github/src/index.js';
+import type { executeWorkflowThroughRunner } from '../packages/workflows/src/index.js';
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..');
 const EXAMPLE_ROOT = join(REPOSITORY_ROOT, 'examples', 'ai-organization-demo');
@@ -102,6 +103,12 @@ export class RehearsalBlockedError extends Error {
     this.name = 'RehearsalBlockedError';
     this.code = code;
   }
+}
+
+export interface ConfiguredWorkflowExecutionDependencies {
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly createRunId?: () => string;
+  readonly execute?: typeof executeWorkflowThroughRunner;
 }
 
 export function parseRehearsalArgs(args: string[], cwd = process.cwd()): RehearsalOptions {
@@ -675,7 +682,9 @@ async function createTaskIssue(
   return { number: data.number, url: data.html_url, body: preview.body };
 }
 
-async function runConfiguredWorkflow(): Promise<{
+export async function runConfiguredWorkflow(
+  dependencies: ConfiguredWorkflowExecutionDependencies = {},
+): Promise<{
   runId: string;
   artifacts: Array<{ filename: string; content: string }>;
 }> {
@@ -689,15 +698,17 @@ async function runConfiguredWorkflow(): Promise<{
   } = await import('../packages/workflows/src/index.js');
   const workflow = await loadWorkflow(WORKFLOW_PATH);
   const scenario = loadScenario();
-  const runId = `run.${randomUUID()}`;
-  const runner = loadWorkflowRunnerControlConfig();
-  const result = await executeWorkflowThroughRunner({
+  const runId = dependencies.createRunId?.() ?? `run.${randomUUID()}`;
+  const environment = dependencies.environment ?? process.env;
+  const runner = loadWorkflowRunnerControlConfig(environment);
+  const execute = dependencies.execute ?? executeWorkflowThroughRunner;
+  const result = await execute({
     workspaceRoot: REPOSITORY_ROOT,
     config: runner,
     routing: createWorkflowRunRoutingExecutionContext({
       runner,
       workspaceRoot: REPOSITORY_ROOT,
-      config: loadWorkflowRunRoutingConfig(runner),
+      config: loadWorkflowRunRoutingConfig(runner, environment),
     }),
     workflowRunId: runId,
     workflowSource: 'openslack-project',

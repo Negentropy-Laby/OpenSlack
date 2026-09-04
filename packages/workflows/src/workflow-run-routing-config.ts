@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
 
 import {
   WorkflowControlAuthorityHttpClient,
   type WorkflowControlAuthorityPort,
 } from './workflow-control-authority-client.js';
 import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
-import { WorkflowRunRouteJournal, WorkflowRunRouter } from './workflow-run-routing.js';
+import {
+  createWorkflowRunRouteJournal,
+  WorkflowRunRouter,
+  type WorkflowRunRouteJournal,
+} from './workflow-run-routing.js';
 import {
   WorkflowRunnerV2ControlClient,
   type WorkflowRunnerV2ControlPort,
@@ -249,11 +252,7 @@ export function createWorkflowRunRoutingExecutionContext(input: {
   readonly v2Client?: WorkflowRunnerV2ControlPort;
   readonly journal?: WorkflowRunRouteJournal;
 }): WorkflowRunRoutingExecutionContext {
-  const journal =
-    input.journal ??
-    new WorkflowRunRouteJournal(
-      join(input.workspaceRoot, '.openslack.local', 'workflows', 'routes'),
-    );
+  const journal = input.journal ?? createWorkflowRunRouteJournal(input.workspaceRoot);
   if (input.config.mode === 'disabled') {
     return Object.freeze({
       mode: 'disabled',

@@ -249,6 +249,83 @@ describe('Workflow run new-record routing', () => {
     });
   });
 
+  it('reads only one partition and fails closed on quarantine, dual, damaged, or misbound receipts', async () => {
+    const createLayout = async (
+      runId: string,
+      location: 'active' | 'closed',
+      body?: string,
+      receipt = select(undefined, runId),
+    ) => {
+      const workspace = await routeWorkspace(`openslack-workflow-route-${location}-`);
+      roots.push(workspace);
+      const routeRoot = join(workspace, 'routes');
+      const name = routeName(runId);
+      const directory =
+        location === 'active'
+          ? join(routeRoot, 'active')
+          : join(routeRoot, 'closed', name.slice(0, 2));
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, name),
+        body ?? `${canonicalWorkflowControlAuthorityJson(receipt)}\n`,
+        'utf8',
+      );
+      return {
+        journal: new WorkflowRunRouteJournal(routeRoot, UNIT_JOURNAL_SECURITY),
+        receipt,
+        routeRoot,
+      };
+    };
+
+    for (const location of ['active', 'closed'] as const) {
+      const fixture = await createLayout(`run.canary.readonly.${location}`, location);
+      await expect(fixture.journal.locateReadOnly(fixture.receipt.runId)).resolves.toEqual({
+        receipt: fixture.receipt,
+        state: location,
+      });
+    }
+
+    const quarantined = await createLayout('run.canary.readonly.quarantine', 'active');
+    const quarantinedName = routeName(quarantined.receipt.runId);
+    await mkdir(join(quarantined.routeRoot, 'quarantine'), { recursive: true });
+    await writeFile(
+      join(quarantined.routeRoot, 'quarantine', `${quarantinedName}.unsafe`),
+      'unsafe\n',
+      'utf8',
+    );
+    await expect(
+      quarantined.journal.locateReadOnly(quarantined.receipt.runId),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED' });
+
+    const dual = await createLayout('run.canary.readonly.dual', 'active');
+    const dualName = routeName(dual.receipt.runId);
+    await mkdir(join(dual.routeRoot, 'closed', dualName.slice(0, 2)), { recursive: true });
+    await writeFile(
+      join(dual.routeRoot, 'closed', dualName.slice(0, 2), dualName),
+      `${canonicalWorkflowControlAuthorityJson(dual.receipt)}\n`,
+      'utf8',
+    );
+    await expect(dual.journal.locateReadOnly(dual.receipt.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+
+    const damaged = await createLayout('run.canary.readonly.damaged', 'active', '{\n');
+    await expect(damaged.journal.locateReadOnly(damaged.receipt.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+
+    const requestedRunId = 'run.canary.readonly.requested';
+    const misbound = await createLayout(
+      requestedRunId,
+      'active',
+      undefined,
+      select(undefined, 'run.canary.readonly.other'),
+    );
+    await expect(misbound.journal.locateReadOnly(requestedRunId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+  });
+
   it('allows only one policy per epoch and only higher epochs for new records', async () => {
     const workspace = await routeWorkspace('openslack-workflow-route-epoch-');
     roots.push(workspace);

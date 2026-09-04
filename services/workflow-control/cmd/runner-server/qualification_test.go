@@ -2,34 +2,24 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerapp"
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerscheduler"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	runnerpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
 const (
@@ -39,9 +29,7 @@ const (
 )
 
 var (
-	errGS8BTerminationUncertain = errors.New("GS8-B qualification: simulated unproven process termination")
-	errGS8BUnknownEffectOutcome = errors.New("GS8-B qualification: simulated true unknown effect outcome")
-	gs8bQualificationProcess    struct {
+	gs8bQualificationProcess struct {
 		sync.Once
 		identity string
 		err      error
@@ -115,211 +103,6 @@ export async function run() {
 	}
 	if jobs != 0 {
 		t.Fatalf("retired admission persisted %d legacy runner jobs", jobs)
-	}
-}
-
-// runLegacyGS8BQualification retains the closed pre-GS9-H lifecycle fixture
-// for bounded recovery archaeology. It is not composed into any active gate.
-func runLegacyGS8BQualification(t *testing.T) {
-	if os.Getenv("WORKFLOW_RUNNER_GS8B_QUALIFICATION") != "1" {
-		t.Skip("GS8-B historical PostgreSQL/TypeScript worker qualification is not enabled")
-	}
-	bundleRoot := strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS8B_BUNDLE_ROOT"))
-	bundleHash := strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256"))
-	if bundleRoot == "" || bundleHash == "" {
-		t.Fatal("GS8-B qualification was enabled without sealed worker bundle root and external manifest SHA-256")
-	}
-	if err := validateRuntimeOS(runtimeGOOS()); err != nil {
-		t.Skipf("GS8-B real process qualification is unsupported on this platform: %v", err)
-	}
-
-	pool := testsupport.OpenPostgres(t)
-	workspaceRoot := filepath.Clean(t.TempDir())
-	descriptorRoot := filepath.Join(workspaceRoot, ".runner-descriptors")
-	prepareDescriptorRoot(t, descriptorRoot)
-	assertQualificationBundle(t, bundleRoot)
-	registry, err := workerregistry.Load(bundleRoot, bundleHash, workerregistry.Runtime{
-		WorkspaceID: gs8bQualificationWorkspace, WorkspaceRoot: workspaceRoot,
-		DescriptorRoot: descriptorRoot,
-	})
-	if err != nil {
-		t.Fatalf("load externally anchored sealed worker bundle: %v", err)
-	}
-	supervisor, err := registry.NewSupervisor()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	repository := runnerpostgres.New(pool)
-	service := qualificationRunnerApp(t, repository)
-	stop := startQualificationScheduler(t, repository, supervisor, "runner.qualification.normal")
-	t.Cleanup(stop)
-
-	completed := createQualificationJob(t, workspaceRoot, descriptorRoot, "completed", `
-export async function run(runtime) {
-  runtime.phase("Run");
-  return { status: "completed", qualification: "local" };
-}
-`)
-	first := submitQualificationJob(t, service.Handler(), completed)
-	duplicate := submitQualificationJob(t, service.Handler(), completed)
-	if first.Code != http.StatusCreated || duplicate.Code != first.Code || duplicate.Body.String() != first.Body.String() {
-		t.Fatalf("exact submission replay drift: first=%d %q replay=%d %q", first.Code, first.Body.String(), duplicate.Code, duplicate.Body.String())
-	}
-	completedView := waitQualificationJob(t, repository, completed.Spec.JobID, func(view runnerstore.JobView) bool {
-		return view.State == runnerstore.JobTerminal
-	})
-	if completedView.TerminalStatus == nil || *completedView.TerminalStatus != "completed" || completedView.ResultHash == nil {
-		t.Fatalf("real TypeScript worker did not receipt-prove completion: %+v", completedView)
-	}
-	assertReceiptProvenProcess(t, pool, completed.Spec.JobID)
-
-	cancellable := createQualificationJob(t, workspaceRoot, descriptorRoot, "cancel", `
-export async function run(runtime) {
-  runtime.phase("Run");
-  for (;;) {
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    runtime.phase("Run");
-  }
-}
-`)
-	if response := submitQualificationJob(t, service.Handler(), cancellable); response.Code != http.StatusCreated {
-		t.Fatalf("submit cancellable job: %d %s", response.Code, response.Body.String())
-	}
-	running := waitQualificationJob(t, repository, cancellable.Spec.JobID, func(view runnerstore.JobView) bool {
-		return view.State == runnerstore.JobRunning && view.AttemptID != nil && view.LeaseID != nil
-	})
-	cancelResponse := cancelQualificationJob(t, service.Handler(), running)
-	if cancelResponse.Code != http.StatusAccepted || !strings.Contains(cancelResponse.Body.String(), `"status":"accepted"`) {
-		t.Fatalf("bound cancellation was not accepted: %d %s", cancelResponse.Code, cancelResponse.Body.String())
-	}
-	cancelled := waitQualificationJob(t, repository, cancellable.Spec.JobID, func(view runnerstore.JobView) bool {
-		return view.State == runnerstore.JobTerminal
-	})
-	if cancelled.TerminalStatus == nil || *cancelled.TerminalStatus != "cancelled" {
-		t.Fatalf("real worker cancellation was not receipt-proven: %+v", cancelled)
-	}
-	stop()
-
-	uncertain := createQualificationJob(t, workspaceRoot, descriptorRoot, "termination-uncertain", `
-export async function run(runtime) {
-  runtime.phase("Run");
-  return { status: "completed" };
-}
-`)
-	if response := submitQualificationJob(t, service.Handler(), uncertain); response.Code != http.StatusCreated {
-		t.Fatalf("submit termination-uncertain job: %d %s", response.Code, response.Body.String())
-	}
-	uncertainBootID, err := newBootInstanceID("runner.qualification.termination", bytes.NewReader(bytes.Repeat([]byte{3}, 16)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	uncertainLease, err := repository.ClaimNext(t.Context(), runnerstore.ClaimInput{
-		WorkspaceID: gs8bQualificationWorkspace, SupervisorInstanceID: uncertainBootID,
-		LeaseOfferTimeout: 5 * time.Second, LeaseDuration: 30 * time.Second,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	uncertainSession, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
-		Store: repository, Launcher: gs8bUncertainLauncher{},
-		ControlBuildHash: gs8bQualificationBuild, HeartbeatInterval: 250 * time.Millisecond,
-		LeaseOfferTimeout: 5 * time.Second, CancelWindow: 30 * time.Second,
-		CancelGrace: 10 * time.Millisecond, TerminalExitGrace: 10 * time.Millisecond,
-		PollInterval: time.Millisecond,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runErr := uncertainSession.Run(t.Context(), uncertainLease); !errors.Is(runErr, errGS8BTerminationUncertain) {
-		t.Fatalf("unproven termination did not surface the injected failure: %v", runErr)
-	}
-	uncertainView, err := repository.ReadJob(t.Context(), gs8bQualificationWorkspace, uncertain.Spec.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if uncertainView.State != runnerstore.JobReconciliationRequired || uncertainView.ReconciliationID == nil ||
-		uncertainView.TerminalStatus == nil || *uncertainView.TerminalStatus != "reconciliation_required" {
-		t.Fatalf("unproven termination did not settle the durable job for reconciliation: %+v", uncertainView)
-	}
-	var attemptState, leaseState, dispatchState, dispatchError, reconciliationID, reconciliationCode string
-	var dispatchFailures int64
-	if err := pool.QueryRow(t.Context(), `
-SELECT a.state,l.state,j.dispatch_state,j.dispatch_failures,j.last_dispatch_error,
-       r.reconciliation_id,r.code
-FROM workflow_runner_jobs j
-JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id
-JOIN workflow_runner_leases l ON l.attempt_id=a.attempt_id
-JOIN workflow_runner_reconciliations r ON r.reconciliation_id=j.reconciliation_id
-WHERE j.workspace_id=$1 AND j.job_id=$2`, gs8bQualificationWorkspace, uncertain.Spec.JobID).Scan(
-		&attemptState, &leaseState, &dispatchState, &dispatchFailures, &dispatchError,
-		&reconciliationID, &reconciliationCode,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if attemptState != string(runnerstore.AttemptReconciliationRequired) || leaseState != "cancelling" ||
-		dispatchState != "dead" || dispatchFailures != runnerstore.MaxDispatchFailures ||
-		dispatchError != string(runnerstore.AttemptTerminationUncertain) ||
-		reconciliationID != *uncertainView.ReconciliationID ||
-		reconciliationCode != "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED" {
-		t.Fatalf("unproven termination durable evidence drift: attempt=%q lease=%q dispatch=%q/%d/%q reconciliation=%q/%q view=%+v",
-			attemptState, leaseState, dispatchState, dispatchFailures, dispatchError,
-			reconciliationID, reconciliationCode, uncertainView)
-	}
-
-	ambiguous := createQualificationJob(t, workspaceRoot, descriptorRoot, "effect-ambiguity", `
-export async function run(runtime) {
-  runtime.phase("Run");
-  await runtime.openslack.task.sync(1);
-  return { status: "completed" };
-}
-`)
-	var outcomeCommitObserved atomic.Bool
-	var injected atomic.Bool
-	ambiguousRepository := runnerpostgres.NewWithCommitter(pool, func(ctx context.Context, tx pgx.Tx) error {
-		var hasEffectOutcome bool
-		err := tx.QueryRow(ctx, `
-SELECT EXISTS (
-  SELECT 1 FROM workflow_runner_worker_events
-  WHERE workspace_id=$1 AND job_id=$2 AND kind='effect_outcome'
-)`, gs8bQualificationWorkspace, ambiguous.Spec.JobID).Scan(&hasEffectOutcome)
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return err
-		}
-		if hasEffectOutcome {
-			outcomeCommitObserved.Store(true)
-		}
-		if hasEffectOutcome && injected.CompareAndSwap(false, true) {
-			_ = tx.Rollback(ctx)
-			return errGS8BUnknownEffectOutcome
-		}
-		return tx.Commit(ctx)
-	})
-	ambiguousService := qualificationRunnerApp(t, ambiguousRepository)
-	stopAmbiguous := startQualificationScheduler(t, ambiguousRepository, supervisor, "runner.qualification.ambiguous")
-	t.Cleanup(stopAmbiguous)
-	if response := submitQualificationJob(t, ambiguousService.Handler(), ambiguous); response.Code != http.StatusCreated {
-		t.Fatalf("submit effect ambiguity job: %d %s", response.Code, response.Body.String())
-	}
-	ambiguousView := waitQualificationJob(t, repository, ambiguous.Spec.JobID, func(view runnerstore.JobView) bool {
-		return view.State == runnerstore.JobReconciliationRequired
-	})
-	if !outcomeCommitObserved.Load() || !injected.Load() || ambiguousView.ReconciliationID == nil || ambiguousView.OpenEffectCount != 1 ||
-		ambiguousView.TerminalStatus == nil || *ambiguousView.TerminalStatus != "reconciliation_required" {
-		t.Fatalf("executed effect ambiguity did not fail closed: outcomeCommitObserved=%v injected=%v view=%+v", outcomeCommitObserved.Load(), injected.Load(), ambiguousView)
-	}
-	var intentCount, reconciledOutcomeCount int
-	if err := pool.QueryRow(t.Context(), `
-SELECT
-  count(*) FILTER (WHERE kind='effect_intent'),
-  count(*) FILTER (WHERE kind='effect_outcome')
-FROM workflow_runner_worker_events
-WHERE workspace_id=$1 AND job_id=$2`, gs8bQualificationWorkspace, ambiguous.Spec.JobID).Scan(&intentCount, &reconciledOutcomeCount); err != nil {
-		t.Fatal(err)
-	}
-	if intentCount != 1 || reconciledOutcomeCount != 1 {
-		t.Fatalf("effect ambiguity evidence cardinality intent=%d outcome=%d", intentCount, reconciledOutcomeCount)
 	}
 }
 
@@ -496,39 +279,6 @@ type qualificationPreparedJob struct {
 	Spec runnerstore.JobSpec
 }
 
-type gs8bUncertainLauncher struct{}
-
-func (gs8bUncertainLauncher) Start(context.Context) (runnerscheduler.WorkerProcess, error) {
-	return gs8bUncertainProcess{
-		stdin:  gs8bDiscardWriteCloser{Writer: io.Discard},
-		stdout: io.NopCloser(strings.NewReader("")),
-		done:   make(chan struct{}),
-	}, nil
-}
-
-type gs8bUncertainProcess struct {
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	done   chan struct{}
-}
-
-func (process gs8bUncertainProcess) Stdin() io.WriteCloser { return process.stdin }
-func (process gs8bUncertainProcess) Stdout() io.ReadCloser { return process.stdout }
-func (process gs8bUncertainProcess) Done() <-chan struct{} { return process.done }
-func (gs8bUncertainProcess) Wait(context.Context) (processsupervisor.Result, error) {
-	return processsupervisor.Result{}, errGS8BTerminationUncertain
-}
-func (gs8bUncertainProcess) Terminate(context.Context, time.Duration) error {
-	return errGS8BTerminationUncertain
-}
-func (gs8bUncertainProcess) ForceKill(context.Context) error {
-	return errGS8BTerminationUncertain
-}
-
-type gs8bDiscardWriteCloser struct{ io.Writer }
-
-func (gs8bDiscardWriteCloser) Close() error { return nil }
-
 func qualificationRunnerApp(t *testing.T, store runnerstore.Store) *runnerapp.Service {
 	t.Helper()
 	tokenHash := sha256.Sum256([]byte(gs8bQualificationToken))
@@ -540,50 +290,6 @@ func qualificationRunnerApp(t *testing.T, store runnerstore.Store) *runnerapp.Se
 		t.Fatal(err)
 	}
 	return service
-}
-
-func startQualificationScheduler(t *testing.T, store runnerscheduler.SessionStore, supervisor *processsupervisor.Supervisor, prefix string) func() {
-	t.Helper()
-	bootID, err := newBootInstanceID(prefix, bytes.NewReader(bytes.Repeat([]byte{byte(len(prefix))}, 16)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	session, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
-		Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: supervisor},
-		ControlBuildHash: gs8bQualificationBuild, HeartbeatInterval: 250 * time.Millisecond,
-		LeaseOfferTimeout: 5 * time.Second, CancelWindow: 30 * time.Second,
-		CancelGrace: 2 * time.Second, TerminalExitGrace: 2 * time.Second, PollInterval: 20 * time.Millisecond,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scheduler, err := runnerscheduler.New(runnerscheduler.Config{
-		Store: store, Session: session, WorkspaceID: gs8bQualificationWorkspace,
-		SupervisorInstanceID: bootID, MaxProcesses: 1,
-		LeaseOfferTimeout: 5 * time.Second, LeaseDuration: 30 * time.Second,
-		PollInterval: 20 * time.Millisecond, RecoveryInterval: 500 * time.Millisecond,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- scheduler.Run(ctx) }()
-	var stopped atomic.Bool
-	return func() {
-		if !stopped.CompareAndSwap(false, true) {
-			return
-		}
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("qualification scheduler stopped with error: %v", err)
-			}
-		case <-time.After(10 * time.Second):
-			t.Errorf("qualification scheduler did not stop")
-		}
-	}
 }
 
 func createQualificationJob(t *testing.T, workspaceRoot, descriptorRoot, suffix, runBody string) qualificationPreparedJob {
@@ -672,34 +378,6 @@ func prepareDescriptorRoot(t *testing.T, root string) {
 	}
 }
 
-func assertQualificationBundle(t *testing.T, root string) {
-	t.Helper()
-	body, err := os.ReadFile(filepath.Join(root, workerregistry.ManifestFilename))
-	if err != nil {
-		t.Fatalf("read qualification bundle manifest: %v", err)
-	}
-	var manifest workerregistry.Manifest
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&manifest); err != nil {
-		t.Fatalf("decode qualification bundle manifest: %v", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		t.Fatalf("qualification bundle manifest has trailing data: %v", err)
-	}
-	if manifest.Schema != workerregistry.ManifestSchema || filepath.ToSlash(manifest.Entrypoint.RelativePath) != "workflow-runner-worker.cjs" || manifest.EntrypointMode != "first-argument" {
-		t.Fatalf("qualification must execute the built TypeScript worker entrypoint: schema=%q entrypoint=%q", manifest.Schema, manifest.Entrypoint.RelativePath)
-	}
-	entrypoint, err := os.ReadFile(filepath.Join(root, "workflow-runner-worker.cjs"))
-	if err != nil {
-		t.Fatalf("read self-contained qualification worker: %v", err)
-	}
-	digest := sha256.Sum256(entrypoint)
-	if actual := hex.EncodeToString(digest[:]); manifest.RunnerBuildHash != actual || manifest.Entrypoint.SHA256 != actual {
-		t.Fatalf("qualification runnerBuildHash must equal self-contained entrypoint SHA-256: runner=%q artifact=%q actual=%q", manifest.RunnerBuildHash, manifest.Entrypoint.SHA256, actual)
-	}
-}
-
 func qualificationDomainHash(domain string, body []byte) string {
 	hasher := sha256.New()
 	_, _ = io.WriteString(hasher, "openslack.workflow-runner."+domain+".v1\x00")
@@ -718,80 +396,6 @@ func submitQualificationJob(t *testing.T, handler http.Handler, input qualificat
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
-}
-
-func cancelQualificationJob(t *testing.T, handler http.Handler, view runnerstore.JobView) *httptest.ResponseRecorder {
-	t.Helper()
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	input := runnerstore.CancelInput{
-		WorkspaceID: view.WorkspaceID, JobID: view.JobID, CorrelationID: view.CorrelationID,
-		ExpectedAttemptID: *view.AttemptID, ExpectedLeaseID: *view.LeaseID,
-		ExpectedFence: view.FencingToken, Reason: "operator", Now: now, ExpiresAt: now.Add(30 * time.Second),
-	}
-	key, fingerprint, err := runnerstore.CancelBindings(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := canonicaljson.Encode(canonicaljson.Object{
-		"schema": "openslack.workflow_runner_cancel_request.v1", "correlationId": input.CorrelationID,
-		"expectedAttemptId": input.ExpectedAttemptID, "expectedLeaseId": input.ExpectedLeaseID,
-		"expectedFence": input.ExpectedFence, "reason": input.Reason,
-		"requestedAt": runnerstore.CanonicalTimestamp(input.Now), "expiresAt": runnerstore.CanonicalTimestamp(input.ExpiresAt),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest(http.MethodPost, "/v1/runner/jobs/"+view.JobID+"/cancellations", bytes.NewReader(body))
-	request.Header.Set("Authorization", "Bearer "+gs8bQualificationToken)
-	request.Header.Set(runnerapp.HeaderWorkspaceID, gs8bQualificationWorkspace)
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Idempotency-Key", key)
-	request.Header.Set(runnerapp.HeaderRequestFingerprint, fingerprint)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	return response
-}
-
-func waitQualificationJob(t *testing.T, store runnerstore.Store, jobID string, predicate func(runnerstore.JobView) bool) runnerstore.JobView {
-	t.Helper()
-	deadline := time.Now().Add(45 * time.Second)
-	var last runnerstore.JobView
-	var lastErr error
-	for time.Now().Before(deadline) {
-		last, lastErr = store.ReadJob(t.Context(), gs8bQualificationWorkspace, jobID)
-		if lastErr == nil && predicate(last) {
-			return last
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatalf("runner job %s did not reach qualification state: view=%+v err=%v", jobID, last, lastErr)
-	return runnerstore.JobView{}
-}
-
-func assertReceiptProvenProcess(t *testing.T, pool qualificationPool, jobID string) {
-	t.Helper()
-	var sessions, events, receipts, terminals int
-	if err := pool.QueryRow(t.Context(), `
-SELECT
-  count(DISTINCT s.process_session_id),
-  count(DISTINCT e.event_id),
-  count(DISTINCT r.receipt_event_id),
-  count(DISTINCT e.event_id) FILTER (WHERE e.kind='terminal')
-FROM workflow_runner_jobs j
-JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id
-JOIN workflow_runner_process_sessions s ON s.attempt_id=a.attempt_id
-JOIN workflow_runner_worker_events e ON e.attempt_id=a.attempt_id
-JOIN workflow_runner_event_receipts r ON r.received_event_id=e.event_id
-WHERE j.workspace_id=$1 AND j.job_id=$2`, gs8bQualificationWorkspace, jobID).Scan(&sessions, &events, &receipts, &terminals); err != nil {
-		t.Fatal(err)
-	}
-	if sessions != 1 || events < 2 || receipts != events || terminals != 1 {
-		t.Fatalf("receipt-proven process evidence sessions=%d events=%d receipts=%d terminals=%d", sessions, events, receipts, terminals)
-	}
-}
-
-type qualificationPool interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 func qualificationRestartJob(t *testing.T, suffix string) runnerstore.SubmitInput {
@@ -837,8 +441,4 @@ func qualificationOriginRequest(t *testing.T, method, url string, body []byte) q
 		t.Fatal(err)
 	}
 	return qualificationOriginResponse{status: response.StatusCode, body: responseBody}
-}
-
-func runtimeGOOS() string {
-	return runtime.GOOS
 }

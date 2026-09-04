@@ -57,7 +57,8 @@ describe('HomeView render debug', () => {
     expect(output).toContain('Start or continue work');
     expect(output).toContain('Start a workflow');
     expect(output).toContain('Watch running workflows');
-    expect(output).toContain('Handle paused workflow approvals');
+    expect(output).not.toContain('Handle paused workflow approvals');
+    expect(output).toContain('Approve pending items');
     expect(output).toContain('Save/share run');
     expect(output).toContain('Publish workflow to GitHub Issues');
     expect(output).toContain('Review and merge PRs');

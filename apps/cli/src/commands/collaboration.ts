@@ -64,10 +64,13 @@ import {
   executeDryRun,
   executeWorkflowThroughRunner,
   createWorkflowRunRoutingExecutionContext,
+  createWorkflowRunRouteJournal,
   loadWorkflowRunRoutingConfig,
   loadWorkflowRunnerControlConfig,
   createWorkflowRunProjectionStore,
-  WorkflowRunRouteJournal,
+  WorkflowRunRoutingConfigError,
+  WorkflowRunRoutingError,
+  WorkflowRunnerControlError,
   readWorkflowRunnerSourceBytes,
   repairWorkflowEffectAuthoritySecurity,
   WorkflowBudgetPausedError,
@@ -104,7 +107,11 @@ import {
   resolveBuiltinTemplatesDir,
 } from '@openslack/workflows';
 import { recommendWorkflowForQuery } from '@openslack/operator';
-import type { RunStatus, WorkflowControlAuthorityPort } from '@openslack/workflows';
+import type {
+  RunStatus,
+  WorkflowControlAuthorityPort,
+  WorkflowRunRouteJournalEntry,
+} from '@openslack/workflows';
 import {
   publishWorkflowProposal,
   publishWorkflowReviewRequest,
@@ -141,14 +148,85 @@ function workflowRunnerComposition(workspaceRoot: string) {
   });
 }
 
+const WORKFLOW_RUNNER_CONFIGURATION_NAMES = [
+  'OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN',
+  'OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID',
+  'OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN',
+  'OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT',
+  'OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA',
+] as const;
+
+export function resolveWorkflowInspectionAuthority(
+  workspaceRoot: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): WorkflowControlAuthorityPort | undefined {
+  const configured =
+    WORKFLOW_RUNNER_CONFIGURATION_NAMES.some((name) => environment[name] !== undefined) ||
+    Object.keys(environment).some((name) => name.startsWith('OPENSLACK_WORKFLOW_RUN_ROUTING_'));
+  if (!configured) return undefined;
+  const config = loadWorkflowRunnerControlConfig(environment);
+  return createWorkflowRunRoutingExecutionContext({
+    runner: config,
+    workspaceRoot,
+    config: loadWorkflowRunRoutingConfig(config, environment),
+  }).authority;
+}
+
+function reportWorkflowConfigurationError(error: unknown): boolean {
+  if (
+    error instanceof WorkflowRunnerControlError ||
+    error instanceof WorkflowRunRoutingConfigError
+  ) {
+    console.error(`${error.code}: ${error.message}`);
+    process.exitCode = 1;
+    return true;
+  }
+  return false;
+}
+
+class WorkflowHistoricalExportError extends Error {
+  constructor(
+    readonly code:
+      | 'WORKFLOW_RUN_HISTORICAL_EXPORT_GO_OWNED'
+      | 'WORKFLOW_RUN_HISTORICAL_EXPORT_ROUTE_UNRESOLVED',
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'WorkflowHistoricalExportError';
+  }
+}
+
+function historicalExportGuidance(runId: string): string {
+  return `Use "openslack collaboration workflow runs inspect ${runId}" for the closed authority view.`;
+}
+
+function reportHistoricalExportError(error: unknown): boolean {
+  if (!(error instanceof WorkflowHistoricalExportError)) return false;
+  console.error(`${error.code}: ${error.message}`);
+  process.exitCode = 1;
+  return true;
+}
+
 async function workflowProjectionForRun(workspaceRoot: string, runId: string) {
-  const journal = new WorkflowRunRouteJournal(
-    join(workspaceRoot, '.openslack.local', 'workflows', 'routes'),
-  );
-  const route = await journal.locateReadOnly(runId);
-  if (route?.receipt.route.backend === 'go') {
-    throw new Error(
-      `Run ${runId} is Go-owned; use "openslack collaboration workflow runs inspect ${runId}" so the view is rebuilt from its durable authority head.`,
+  const journal = createWorkflowRunRouteJournal(workspaceRoot);
+  const inspection = await inspectWorkflowRunReadOnly(runId, {
+    rootDir: workspaceRoot,
+    journal,
+  });
+  if (inspection?.ownership === 'go-workflow-control') {
+    throw new WorkflowHistoricalExportError(
+      'WORKFLOW_RUN_HISTORICAL_EXPORT_GO_OWNED',
+      `Run ${runId} is Go-owned. ${historicalExportGuidance(runId)}`,
+    );
+  }
+  if (
+    inspection !== null &&
+    (inspection.ownership !== 'typescript-historical' || inspection.disposition !== 'evidence-only')
+  ) {
+    throw new WorkflowHistoricalExportError(
+      'WORKFLOW_RUN_HISTORICAL_EXPORT_ROUTE_UNRESOLVED',
+      `Run ${runId} route ownership is unresolved. ${historicalExportGuidance(runId)}`,
     );
   }
   return createWorkflowRunProjectionStore(workspaceRoot, 'ts-local');
@@ -1488,11 +1566,21 @@ export function collaborationCommands(): Command {
       const root = findRepoRoot();
       let authority: WorkflowControlAuthorityPort | undefined;
       try {
-        authority = workflowRunnerComposition(root).routing.authority;
-      } catch {
-        // Legacy evidence remains inspectable without runner/authority credentials.
+        authority = resolveWorkflowInspectionAuthority(root);
+      } catch (error) {
+        if (reportWorkflowConfigurationError(error)) return;
+        throw error;
       }
-      const inspection = await inspectWorkflowRunReadOnly(runId, { rootDir: root, authority });
+      let inspection: Awaited<ReturnType<typeof inspectWorkflowRunReadOnly>>;
+      try {
+        inspection = await inspectWorkflowRunReadOnly(runId, { rootDir: root, authority });
+      } catch {
+        console.error(
+          'WORKFLOW_RUN_READONLY_INSPECTION_FAILED: Inspection could not be completed.',
+        );
+        process.exitCode = 1;
+        return;
+      }
       if (!inspection) {
         console.error(`Workflow run not found: ${runId}`);
         process.exitCode = 1;
@@ -2045,7 +2133,20 @@ export function collaborationCommands(): Command {
       ensureWorkflowEnabled('resume');
       const root = findRepoRoot();
       const composition = workflowRunnerComposition(root);
-      const routeEntry = await composition.routing.journal.locateReadOnly(runId);
+      let routeEntry: WorkflowRunRouteJournalEntry | null;
+      try {
+        routeEntry = await composition.routing.journal.locateReadOnly(runId);
+      } catch (error) {
+        if (error instanceof WorkflowRunRoutingError) {
+          console.error(
+            `${error.code}: Run ${runId} route evidence must be reconciled before resume.`,
+          );
+          console.error(historicalExportGuidance(runId));
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
       const route = routeEntry?.receipt;
       if (!route || route.route.backend !== 'go') {
         console.error(
@@ -2200,9 +2301,7 @@ export function collaborationCommands(): Command {
     .option('--apply', 'Move only provably terminal active receipts into closed history')
     .action(async (options: { apply?: boolean }) => {
       const root = findRepoRoot();
-      const journal = new WorkflowRunRouteJournal(
-        join(root, '.openslack.local', 'workflows', 'routes'),
-      );
+      const journal = createWorkflowRunRouteJournal(root);
       let authority: WorkflowControlAuthorityPort | undefined;
       try {
         authority = workflowRunnerComposition(root).routing.authority;
@@ -2316,7 +2415,7 @@ export function collaborationCommands(): Command {
 
   // ── Inspect command ────────────────────────────────────────────────────────
 
-  cmd
+  workflow
     .command('inspect <runId>')
     .description('Export historical TypeScript workflow evidence as HTML, JSON, or Markdown')
     .option('--format <format>', 'Output format: html, json, or markdown', 'markdown')
@@ -2336,7 +2435,13 @@ export function collaborationCommands(): Command {
         }
 
         const root = findRepoRoot();
-        const store = await workflowProjectionForRun(root, runId);
+        let store: ReturnType<typeof createWorkflowRunProjectionStore>;
+        try {
+          store = await workflowProjectionForRun(root, runId);
+        } catch (error) {
+          if (reportHistoricalExportError(error)) return;
+          throw error;
+        }
 
         // Load run data
         const runStatus = await store.getRunStatus(runId);
@@ -2481,7 +2586,13 @@ export function collaborationCommands(): Command {
         options: { issue?: string; createIssue: boolean; agentId?: string },
       ) => {
         const root = findRepoRoot();
-        const store = await workflowProjectionForRun(root, runId);
+        let store: ReturnType<typeof createWorkflowRunProjectionStore>;
+        try {
+          store = await workflowProjectionForRun(root, runId);
+        } catch (error) {
+          if (reportHistoricalExportError(error)) return;
+          throw error;
+        }
 
         const meta = await store.loadMeta(runId);
         if (!meta) {

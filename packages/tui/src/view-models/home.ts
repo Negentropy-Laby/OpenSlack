@@ -272,14 +272,6 @@ export function mapHomeToViewModel(data?: {
       shortcut: 'w',
     },
     {
-      key: 'approve-workflows',
-      label: 'Handle paused workflow approvals',
-      route: 'approvals',
-      description: 'Approve or reject workflow effects and budget pauses',
-      shortcut: 'a',
-      attentionBadge: attentionBadgeCounts['approve-pending'],
-    },
-    {
       key: 'save-share-workflow',
       label: 'Save/share run',
       route: 'workflow-runs',

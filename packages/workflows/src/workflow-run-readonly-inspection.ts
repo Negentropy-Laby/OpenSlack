@@ -1,18 +1,26 @@
 import { resolve } from 'node:path';
 
 import type { RunStatus } from './types.js';
-import type {
-  WorkflowControlAuthorityPort,
-  WorkflowControlAuthorityRunRead,
+import {
+  isWorkflowControlAuthorityHeadBoundToRoute,
+  type WorkflowControlAuthorityPort,
+  type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
 import { createWorkflowRunProjectionStore } from './workflow-run-projection.js';
 import {
-  WorkflowRunRouteJournal,
+  createWorkflowRunRouteJournal,
+  WorkflowRunRoutingError,
+  type WorkflowRunRouteJournal,
   type WorkflowRunRouteJournalEntry,
 } from './workflow-run-routing.js';
 
 export const WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA =
   'openslack.workflow_run_readonly_inspection.v1' as const;
+
+export interface WorkflowRunReadOnlyLocalEvidence {
+  readonly typescriptHistorical: RunStatus | null;
+  readonly goRecovery: RunStatus | null;
+}
 
 export interface WorkflowRunReadOnlyInspection {
   readonly schema: typeof WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA;
@@ -20,7 +28,8 @@ export interface WorkflowRunReadOnlyInspection {
   readonly ownership:
     | 'typescript-historical'
     | 'go-workflow-control'
-    | 'unrouted-recovery-projection';
+    | 'unrouted-recovery-projection'
+    | 'unresolved-route';
   readonly disposition:
     | 'evidence-only'
     | 'authoritative-head'
@@ -28,7 +37,7 @@ export interface WorkflowRunReadOnlyInspection {
     | 'reconciliation-required';
   readonly route: WorkflowRunRouteJournalEntry | null;
   readonly authorityHead: WorkflowControlAuthorityRunRead | null;
-  readonly localEvidence: RunStatus | null;
+  readonly localEvidence: WorkflowRunReadOnlyLocalEvidence;
   readonly diagnostics: readonly string[];
 }
 
@@ -36,6 +45,45 @@ export interface InspectWorkflowRunReadOnlyOptions {
   readonly rootDir?: string;
   readonly journal?: Pick<WorkflowRunRouteJournal, 'locateReadOnly'>;
   readonly authority?: WorkflowControlAuthorityPort;
+}
+
+interface LocalRead {
+  readonly value: RunStatus | null;
+  readonly diagnostic?: string;
+}
+
+async function readLocalEvidence(
+  rootDir: string,
+  runId: string,
+): Promise<{
+  readonly evidence: WorkflowRunReadOnlyLocalEvidence;
+  readonly diagnostics: readonly string[];
+}> {
+  const read = async (backend: 'ts-local' | 'go'): Promise<LocalRead> => {
+    try {
+      return {
+        value: await createWorkflowRunProjectionStore(rootDir, backend).getRunStatus(runId),
+      };
+    } catch {
+      return {
+        value: null,
+        diagnostic:
+          backend === 'ts-local'
+            ? 'TYPESCRIPT_HISTORICAL_EVIDENCE_UNREADABLE'
+            : 'GO_RECOVERY_PROJECTION_UNREADABLE',
+      };
+    }
+  };
+  const [typescriptHistorical, goRecovery] = await Promise.all([read('ts-local'), read('go')]);
+  return {
+    evidence: {
+      typescriptHistorical: typescriptHistorical.value,
+      goRecovery: goRecovery.value,
+    },
+    diagnostics: [typescriptHistorical.diagnostic, goRecovery.diagnostic].filter(
+      (value): value is string => value !== undefined,
+    ),
+  };
 }
 
 /**
@@ -49,54 +97,108 @@ export async function inspectWorkflowRunReadOnly(
   options: InspectWorkflowRunReadOnlyOptions = {},
 ): Promise<WorkflowRunReadOnlyInspection | null> {
   const rootDir = resolve(options.rootDir ?? process.cwd());
-  const journal =
-    options.journal ??
-    new WorkflowRunRouteJournal(resolve(rootDir, '.openslack.local', 'workflows', 'routes'));
-  const route = await journal.locateReadOnly(runId);
+  const journal = options.journal ?? createWorkflowRunRouteJournal(rootDir);
+  let route: WorkflowRunRouteJournalEntry | null = null;
+  let routeDiagnostic: string | undefined;
+  try {
+    route = await journal.locateReadOnly(runId);
+  } catch (error) {
+    routeDiagnostic =
+      error instanceof WorkflowRunRoutingError
+        ? error.code
+        : 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED';
+  }
+  const local = await readLocalEvidence(rootDir, runId);
+  const localEvidence = local.evidence;
+
+  if (routeDiagnostic) {
+    return freezeInspection({
+      runId,
+      ownership: 'unresolved-route',
+      disposition: 'reconciliation-required',
+      route: null,
+      authorityHead: null,
+      localEvidence,
+      diagnostics: [routeDiagnostic, ...local.diagnostics],
+    });
+  }
+
   if (!route) {
-    const [legacy, orphanedGoProjection] = await Promise.all([
-      createWorkflowRunProjectionStore(rootDir, 'ts-local').getRunStatus(runId),
-      createWorkflowRunProjectionStore(rootDir, 'go').getRunStatus(runId),
-    ]);
-    if (legacy) {
+    if (local.diagnostics.length > 0) {
+      return freezeInspection({
+        runId,
+        ownership: 'unresolved-route',
+        disposition: 'reconciliation-required',
+        route: null,
+        authorityHead: null,
+        localEvidence,
+        diagnostics: local.diagnostics,
+      });
+    }
+    if (localEvidence.typescriptHistorical && localEvidence.goRecovery) {
+      return freezeInspection({
+        runId,
+        ownership: 'unresolved-route',
+        disposition: 'reconciliation-required',
+        route: null,
+        authorityHead: null,
+        localEvidence,
+        diagnostics: [
+          'UNROUTED_TYPESCRIPT_HISTORICAL_EVIDENCE',
+          'GO_RECOVERY_PROJECTION_WITHOUT_ROUTE_RECEIPT',
+          'AMBIGUOUS_UNROUTED_LOCAL_PROJECTIONS',
+        ],
+      });
+    }
+    if (localEvidence.typescriptHistorical) {
       return freezeInspection({
         runId,
         ownership: 'typescript-historical',
         disposition: 'evidence-only',
         route: null,
         authorityHead: null,
-        localEvidence: legacy,
+        localEvidence,
         diagnostics: ['UNROUTED_TYPESCRIPT_HISTORICAL_EVIDENCE'],
       });
     }
-    if (orphanedGoProjection) {
+    if (localEvidence.goRecovery) {
       return freezeInspection({
         runId,
         ownership: 'unrouted-recovery-projection',
         disposition: 'reconciliation-required',
         route: null,
         authorityHead: null,
-        localEvidence: orphanedGoProjection,
+        localEvidence,
         diagnostics: ['GO_RECOVERY_PROJECTION_WITHOUT_ROUTE_RECEIPT'],
       });
     }
     return null;
   }
 
-  const localEvidence = await createWorkflowRunProjectionStore(
-    rootDir,
-    route.receipt.route.backend,
-  ).getRunStatus(runId);
+  const diagnostics = [...local.diagnostics];
   if (route.receipt.route.backend === 'ts-local') {
+    if (localEvidence.goRecovery) {
+      diagnostics.push('GO_RECOVERY_PROJECTION_WITH_TYPESCRIPT_ROUTE');
+    }
+    const typescriptUnreadable = local.diagnostics.includes(
+      'TYPESCRIPT_HISTORICAL_EVIDENCE_UNREADABLE',
+    );
+    if (!localEvidence.typescriptHistorical && !typescriptUnreadable) {
+      diagnostics.push('TYPESCRIPT_EVIDENCE_MISSING');
+    }
     return freezeInspection({
       runId,
       ownership: 'typescript-historical',
-      disposition: 'evidence-only',
+      disposition: typescriptUnreadable ? 'reconciliation-required' : 'evidence-only',
       route,
       authorityHead: null,
       localEvidence,
-      diagnostics: localEvidence ? [] : ['TYPESCRIPT_EVIDENCE_MISSING'],
+      diagnostics,
     });
+  }
+
+  if (localEvidence.typescriptHistorical) {
+    diagnostics.push('TYPESCRIPT_HISTORICAL_EVIDENCE_WITH_GO_ROUTE');
   }
   if (!options.authority) {
     return freezeInspection({
@@ -106,7 +208,7 @@ export async function inspectWorkflowRunReadOnly(
       route,
       authorityHead: null,
       localEvidence,
-      diagnostics: ['GO_AUTHORITY_HEAD_REQUIRED'],
+      diagnostics: ['GO_AUTHORITY_HEAD_REQUIRED', ...diagnostics],
     });
   }
 
@@ -121,7 +223,7 @@ export async function inspectWorkflowRunReadOnly(
       route,
       authorityHead: null,
       localEvidence,
-      diagnostics: ['GO_AUTHORITY_HEAD_READ_FAILED'],
+      diagnostics: ['GO_AUTHORITY_HEAD_READ_FAILED', ...diagnostics],
     });
   }
   if (!head) {
@@ -132,30 +234,17 @@ export async function inspectWorkflowRunReadOnly(
       route,
       authorityHead: null,
       localEvidence,
-      diagnostics: ['GO_ROUTE_RECEIPT_WITHOUT_AUTHORITY_HEAD'],
+      diagnostics: ['GO_ROUTE_RECEIPT_WITHOUT_AUTHORITY_HEAD', ...diagnostics],
     });
   }
 
-  const diagnostics: string[] = [];
-  if (
-    head.runId !== route.receipt.runId ||
-    head.workspaceId !== route.receipt.workspaceId ||
-    head.workflowId !== route.receipt.workflowId ||
-    head.workflowVersion !== route.receipt.workflowVersion ||
-    head.workflowSourceHash !== route.receipt.workflowSourceHash ||
-    head.manifestHash !== route.receipt.manifestHash ||
-    head.inputHash !== route.receipt.inputHash ||
-    head.route.backend !== route.receipt.route.backend ||
-    head.route.authority !== route.receipt.route.authority ||
-    head.route.routingEpoch !== route.receipt.route.routingEpoch ||
-    head.route.authorityBuildHash !== route.receipt.route.authorityBuildHash
-  ) {
+  if (!isWorkflowControlAuthorityHeadBoundToRoute(route.receipt, head)) {
     diagnostics.push('GO_AUTHORITY_HEAD_ROUTE_RECEIPT_DRIFT');
   }
-  if (localEvidence && localEvidence.status !== head.state) {
+  if (localEvidence.goRecovery && localEvidence.goRecovery.status !== head.state) {
     diagnostics.push('GO_LOCAL_RECOVERY_PROJECTION_STATE_DRIFT');
   }
-  if (localEvidence && localEvidence.workflowName !== head.workflowId) {
+  if (localEvidence.goRecovery && localEvidence.goRecovery.workflowName !== head.workflowId) {
     diagnostics.push('GO_LOCAL_RECOVERY_PROJECTION_IDENTITY_DRIFT');
   }
   return freezeInspection({
@@ -171,14 +260,24 @@ export async function inspectWorkflowRunReadOnly(
   });
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function freezeInspection(
   value: Omit<WorkflowRunReadOnlyInspection, 'schema' | 'diagnostics'> & {
     readonly diagnostics: readonly string[];
   },
 ): WorkflowRunReadOnlyInspection {
-  return Object.freeze({
-    schema: WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA,
-    ...value,
-    diagnostics: Object.freeze([...value.diagnostics]),
-  });
+  return deepFreeze(
+    structuredClone({
+      schema: WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA,
+      ...value,
+      diagnostics: [...value.diagnostics],
+    }),
+  );
 }

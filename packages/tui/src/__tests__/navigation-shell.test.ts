@@ -61,7 +61,8 @@ describe('mapHomeToViewModel', () => {
     const taskLabels = model.tasks.map((t) => t.label);
     expect(taskLabels).toContain('Start a workflow');
     expect(taskLabels).toContain('Watch running workflows');
-    expect(taskLabels).toContain('Handle paused workflow approvals');
+    expect(taskLabels).not.toContain('Handle paused workflow approvals');
+    expect(taskLabels).toContain('Approve pending items');
     expect(taskLabels).toContain('Save/share run');
     expect(taskLabels).toContain('Publish workflow to GitHub Issues');
   });

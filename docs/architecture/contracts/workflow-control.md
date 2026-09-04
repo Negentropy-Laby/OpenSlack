@@ -726,6 +726,11 @@ route before any descriptor, route-journal mutation, authority accept, or runner
 recognized TypeScript rollback setting throws a stable configuration error. Authenticated runner v1
 submission and v2 TypeScript-route submission return
 `410 WORKFLOW_RUNNER_TS_MUTATION_RETIRED` without calling either store.
+The Go HTTP wire code deliberately uses the server namespace
+`WORKFLOW_RUNNER_TS_MUTATION_RETIRED`; TypeScript composition rejects before transport with the
+client namespace `WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED`. CLI and TUI adapters preserve the
+client code. These names describe the same retirement boundary but are not interchangeable wire
+values.
 
 The read-only inspection contract point-reads active or closed route evidence without journal
 initialization, migration, repair, or quarantine. Unrouted and routed TypeScript records are explicitly

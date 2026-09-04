@@ -21,6 +21,7 @@ import type {
   WorkflowRunnerJobView,
 } from '../workflow-runner-control-client.js';
 import type { RunResult, WorkflowMeta } from '../types.js';
+import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import {
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
@@ -39,6 +40,12 @@ import type {
 const roots: string[] = [];
 const NOW = '2026-08-13T00:00:00.000Z';
 const HASH = '1'.repeat(64);
+
+function authorityRecordHash(record: WorkflowControlAuthorityRunRecord): string {
+  return createHash('sha256')
+    .update(`${canonicalWorkflowControlAuthorityJson(record)}\n`, 'utf8')
+    .digest('hex');
+}
 const manifest: WorkflowMeta = {
   name: 'runner-public-test',
   version: '1.0.0',
@@ -80,7 +87,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fixture(status: 'completed' | 'paused_waiting_approval' | 'failed') {
+async function fixture(status: 'completed' | 'paused_waiting_approval') {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-public-'));
   roots.push(workspaceRoot);
   const workflowRunId = `run.public.${status}`;
@@ -363,14 +370,14 @@ describe('Workflow Runner public execution client', () => {
       read: vi.fn(async () => ({
         ...record!,
         schema: 'openslack.workflow_control_authority_read.v2' as const,
-        recordHash: HASH,
+        recordHash: authorityRecordHash(record!),
         record: record!,
         updatedAt: NOW,
       })),
       readIfExists: vi.fn(async () => ({
         ...record!,
         schema: 'openslack.workflow_control_authority_read.v2' as const,
-        recordHash: HASH,
+        recordHash: authorityRecordHash(record!),
         record: record!,
         updatedAt: NOW,
       })),
