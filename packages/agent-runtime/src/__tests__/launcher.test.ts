@@ -381,6 +381,511 @@ describe('createOpenSlackAgentLauncher', () => {
     );
   });
 
+  it('reserves and settles an Aby process attempt around its reported bridge usage', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const settled: Array<{ reservationId: string; totalTokens: string | null }> = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          ordering.push('reserve');
+          expect(input).toMatchObject({
+            providerId: 'aby',
+            modelId: 'default',
+            providerAttempt: '1',
+            requestedTokens: '128',
+          });
+          return {
+            reservationId: 'reservation.aby.1',
+            callId: 'call.aby.1',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle(reservation, usage) {
+          ordering.push('settle');
+          settled.push({
+            reservationId: reservation.reservationId,
+            totalTokens: usage.totalTokens,
+          });
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-test',
+        async execute<T>() {
+          ordering.push('execute');
+          return { data: { ok: true } as T, tokenUsage: 17 };
+        },
+      },
+    });
+
+    const result = await launcher<{ ok: boolean }>('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 128 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    });
+
+    expect(ordering).toEqual(['reserve', 'execute', 'settle']);
+    expect(settled).toEqual([{ reservationId: 'reservation.aby.1', totalTokens: '17' }]);
+    expect(result.usageEvidence).toEqual([
+      expect.objectContaining({
+        schema: 'openslack.provider_usage_receipt.v1',
+        status: 'reported',
+        outcome: 'provider_response_accepted',
+        attempt: '1',
+        totalTokens: '17',
+      }),
+    ]);
+    expect(store.getRun(result.runId)).toMatchObject({ status: 'completed', tokensUsed: 17 });
+  });
+
+  it('settles an Aby process failure as unreported before propagating it', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          ordering.push('reserve');
+          return {
+            reservationId: 'reservation.aby.failure',
+            callId: 'call.aby.failure',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle(_reservation, usage) {
+          ordering.push(`settle:${usage.status}:${usage.outcome}`);
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-failure-test',
+        async execute() {
+          ordering.push('execute');
+          throw new Error('bridge failed');
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(ordering).toEqual(['reserve', 'execute', 'settle:unreported:provider_attempt_failed']);
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect(getProviderUsageEvidence(failure)).toEqual([
+      expect.objectContaining({
+        status: 'unreported',
+        outcome: 'provider_attempt_failed',
+        totalTokens: null,
+      }),
+    ]);
+  });
+
+  it('does not execute or settle an Aby process attempt when reserve fails', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve() {
+          ordering.push('reserve');
+          throw new Error('reserve unavailable');
+        },
+        async settle() {
+          ordering.push('settle');
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-reserve-failure-test',
+        async execute<T>() {
+          ordering.push('execute');
+          return { data: { ok: true } as T };
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(ordering).toEqual(['reserve']);
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect(readTranscript(store.listRuns()[0]!.runId, root)).toContainEqual(
+      expect.objectContaining({
+        type: 'progress',
+        data: expect.objectContaining({ step: 'provider_attempt_reserve_failed' }),
+      }),
+    );
+  });
+
+  it('fails closed with wrapper evidence when Aby attempt settlement fails', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          ordering.push('reserve');
+          return {
+            reservationId: 'reservation.aby.settle-failure',
+            callId: 'call.aby.settle-failure',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle() {
+          ordering.push('settle');
+          throw new Error('settlement unavailable');
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-settle-failure-test',
+        async execute<T>() {
+          ordering.push('execute');
+          return { data: { ok: true } as T, tokenUsage: 11 };
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(ordering).toEqual(['reserve', 'execute', 'settle']);
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect(getProviderUsageEvidence(failure)).toEqual([
+      expect.objectContaining({
+        status: 'reported',
+        outcome: 'provider_response_accepted',
+        totalTokens: '11',
+      }),
+    ]);
+    expect((failure as { tokenUsage?: unknown }).tokenUsage).toBe(11);
+    expect(store.listRuns()[0]).toMatchObject({ status: 'failed', tokensUsed: 11 });
+  });
+
+  it('does not double-charge adapter-recorded usage when Aby settlement fails', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          return {
+            reservationId: 'reservation.aby.recorded-settle-failure',
+            callId: 'call.aby.recorded-settle-failure',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle() {
+          throw new Error('settlement unavailable');
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-recorded-settle-failure-test',
+        async execute<T>(context: AdapterExecutionContext) {
+          context.recorder.chargeUsage(context.runId, 9);
+          return { data: { ok: true } as T, tokenUsage: 9, tokenUsageRecorded: true };
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED', tokenUsage: 9 });
+    expect(store.listRuns()[0]).toMatchObject({ status: 'failed', tokensUsed: 9 });
+  });
+
+  it('retains both the provider and settlement causes when an Aby failure cannot settle', async () => {
+    const store = createRunStore(root);
+    const providerError = new Error('provider failed in memory only');
+    const settlementError = new Error('settlement failed in memory only');
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          return {
+            reservationId: 'reservation.aby.double-failure',
+            callId: 'call.aby.double-failure',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle() {
+          throw settlementError;
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-double-failure-test',
+        async execute() {
+          throw providerError;
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+    const cause = (failure as Error & { cause?: unknown }).cause;
+
+    expect(failure).toMatchObject({ code: 'EXECUTION_FAILED' });
+    expect(cause).toBeInstanceOf(AggregateError);
+    expect((cause as AggregateError).errors).toEqual([providerError, settlementError]);
+    expect(getProviderUsageEvidence(failure)).toEqual([
+      expect.objectContaining({ status: 'unreported', outcome: 'provider_attempt_failed' }),
+    ]);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['negative', -1],
+    ['fractional', 1.5],
+  ] as const)(
+    'rejects %s Aby token usage as an invalid provider response',
+    async (_case, usage) => {
+      const store = createRunStore(root);
+      const launcher = createOpenSlackAgentLauncher({
+        runStore: store,
+        rootDir: root,
+        bridgeMode: 'process',
+        providerAttemptPort: {
+          async reserve(input) {
+            return {
+              reservationId: `reservation.aby.invalid-usage.${_case}`,
+              callId: `call.aby.invalid-usage.${_case}`,
+              authorizedTokens: input.requestedTokens,
+            };
+          },
+          async settle() {},
+        },
+        adapter: {
+          adapterId: `aby-process-invalid-usage-${_case}`,
+          async execute<T>() {
+            return { data: { ok: true } as T, tokenUsage: usage };
+          },
+        },
+      });
+
+      const failure = await launcher('run through Aby', {
+        label: 'aby-agent',
+        phase: 'execute',
+        budget: { tokens: 64 },
+        resolvedAgentConfig: {
+          agentId: 'aby-agent',
+          source: 'test',
+          runtimeProvider: 'aby',
+        },
+      }).catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ code: 'PROVIDER_INVALID_RESPONSE' });
+      expect(getProviderUsageEvidence(failure)).toEqual([
+        expect.objectContaining({ status: 'unreported', outcome: 'provider_attempt_failed' }),
+      ]);
+      expect(store.listRuns()[0]).toMatchObject({ status: 'failed', tokensUsed: 0 });
+      expect(readTranscript(store.listRuns()[0]!.runId, root)).not.toContainEqual(
+        expect.objectContaining({ type: 'complete' }),
+      );
+    },
+  );
+
+  it('settles a malformed Aby reservation as unreported without executing the bridge', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          ordering.push('reserve');
+          return {
+            reservationId: 'invalid reservation id',
+            callId: 'call.aby.invalid',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle(_reservation, usage) {
+          ordering.push(`settle:${usage.status}`);
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-invalid-reservation-test',
+        async execute<T>() {
+          ordering.push('execute');
+          return { data: { ok: true } as T };
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(ordering).toEqual(['reserve', 'settle:unreported']);
+    expect(failure).toMatchObject({ code: 'RUNTIME_MISCONFIGURED' });
+    expect(getProviderUsageEvidence(failure)).toEqual([
+      expect.objectContaining({ status: 'unreported', outcome: 'provider_attempt_failed' }),
+    ]);
+  });
+
+  it('rejects partial Aby authorization and settles it before bridge execution', async () => {
+    const store = createRunStore(root);
+    const ordering: string[] = [];
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve() {
+          ordering.push('reserve');
+          return {
+            reservationId: 'reservation.aby.partial',
+            callId: 'call.aby.partial',
+            authorizedTokens: '63',
+          };
+        },
+        async settle(_reservation, usage) {
+          ordering.push(`settle:${usage.status}`);
+        },
+      },
+      adapter: {
+        adapterId: 'aby-process-partial-authorization-test',
+        async execute<T>() {
+          ordering.push('execute');
+          return { data: { ok: true } as T };
+        },
+      },
+    });
+
+    const failure = await launcher('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    }).catch((error: unknown) => error);
+
+    expect(ordering).toEqual(['reserve', 'settle:unreported']);
+    expect(failure).toMatchObject({ code: 'RUNTIME_MISCONFIGURED' });
+  });
+
+  it('keeps launcher-minted Aby usage evidence authoritative over adapter evidence', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeMode: 'process',
+      providerAttemptPort: {
+        async reserve(input) {
+          return {
+            reservationId: 'reservation.aby.authoritative',
+            callId: 'call.aby.authoritative',
+            authorizedTokens: input.requestedTokens,
+          };
+        },
+        async settle() {},
+      },
+      adapter: {
+        adapterId: 'aby-process-adapter-evidence-test',
+        async execute<T>(context: AdapterExecutionContext) {
+          return {
+            data: { ok: true } as T,
+            tokenUsage: 17,
+            usageEvidence: [
+              buildProviderUsageReceipt({
+                providerId: 'aby',
+                modelId: 'default',
+                runId: context.runId,
+                attempt: 99,
+                status: 'reported',
+                usage: { totalTokens: 3 },
+                outcome: 'provider_response_accepted',
+                requestBytes: 'adapter request',
+                outcomeBytes: 'adapter response',
+              }),
+            ],
+          };
+        },
+      },
+    });
+
+    const result = await launcher<{ ok: boolean }>('run through Aby', {
+      label: 'aby-agent',
+      phase: 'execute',
+      budget: { tokens: 64 },
+      resolvedAgentConfig: {
+        agentId: 'aby-agent',
+        source: 'test',
+        runtimeProvider: 'aby',
+      },
+    });
+
+    expect(result.usageEvidence).toEqual([
+      expect.objectContaining({ attempt: '1', totalTokens: '17' }),
+    ]);
+  });
+
   it('terminates runs without masking hostile thrown errors or malformed evidence', async () => {
     const hostileErrors = (() => {
       const frozen = new Error('frozen provider failure');

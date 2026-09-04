@@ -17,6 +17,7 @@ import {
 import { WorkflowPausedError } from '../runtime.js';
 import { RunStore } from '../run-store.js';
 import type { WorkflowMeta, WorkflowModule, WorkflowRuntime } from '../types.js';
+import { WorkflowRunnerGoProjectionError } from '../workflow-runner-v2-go-projection-store.js';
 
 const roots: string[] = [];
 const manifest: WorkflowMeta = {
@@ -87,6 +88,61 @@ afterEach(async () => {
 });
 
 describe('strict cumulative workflow resume', () => {
+  it.each(['execute', 'resume'] as const)(
+    'keeps an output-persisted %s run recoverable when its terminal authority transition fails',
+    async (mode) => {
+      const initialized =
+        mode === 'resume'
+          ? await setupRun({ runId: 'terminal-authority-resume', status: 'paused' })
+          : await (async () => {
+              const rootDir = await mkdtemp(
+                join(tmpdir(), 'openslack-terminal-authority-execute-'),
+              );
+              roots.push(rootDir);
+              return {
+                rootDir,
+                runId: 'terminal-authority-execute',
+                store: new RunStore({
+                  baseDir: join(rootDir, '.openslack.local', 'workflows'),
+                }),
+              };
+            })();
+      const transitionError = new WorkflowRunnerGoProjectionError(
+        'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
+        'completed authority response was lost',
+      );
+      const transitions: string[] = [];
+      const transition = initialized.store.transitionStatus.bind(initialized.store);
+      vi.spyOn(initialized.store, 'transitionStatus').mockImplementation(async (runId, status) => {
+        transitions.push(status);
+        if (status === 'completed') throw transitionError;
+        await transition(runId, status);
+      });
+      const workflow = makeWorkflow(async () => ({ status: 'completed', durable: true }));
+      const options = {
+        runId: initialized.runId,
+        manifest,
+        allowUnattended: true as const,
+        rootDir: initialized.rootDir,
+      };
+
+      await expect(
+        mode === 'resume'
+          ? executeResumeWithStore(workflow, options, initialized.store)
+          : executeRunWithStore(workflow, options, initialized.store),
+      ).rejects.toBe(transitionError);
+      expect(transitions).toContain('completed');
+      expect(transitions).not.toContain('failed');
+      await expect(initialized.store.loadOutput(initialized.runId)).resolves.toMatchObject({
+        runId: initialized.runId,
+        durable: true,
+      });
+      await expect(initialized.store.loadStatus(initialized.runId)).resolves.toMatchObject({
+        status: 'running',
+      });
+    },
+  );
+
   it.each([
     ['pause', WorkflowBudgetPausedError],
     ['fail', WorkflowBudgetExceededError],

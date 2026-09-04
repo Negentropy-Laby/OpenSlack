@@ -121,6 +121,11 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
   override async transitionStatus(runId: string, newStatus: RunStatus['status']): Promise<void> {
     if (!this.#authority) return super.transitionStatus(runId, newStatus);
     this.#assertRun(runId);
+    // Checkpoint, effect, and budget authorities may legitimately advance the
+    // same Workflow authority revision while the lifecycle state stays put.
+    // A lifecycle CAS must therefore use a fresh head, not the initialization
+    // read cached before those runtime bindings completed.
+    this.#head = undefined;
     const [remote, local] = await Promise.all([this.#read(runId), super.loadStatus(runId)]);
     if (!local)
       throw projectionFailure(
@@ -173,7 +178,16 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       state,
       revision: head.revision + 1,
     };
-    await this.#authority!.transition(record, expected, this.#descriptor.correlationId);
+    try {
+      await this.#authority!.transition(record, expected, this.#descriptor.correlationId);
+    } catch (error) {
+      this.#head = undefined;
+      throw projectionFailure(
+        'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
+        'Go authority lifecycle transition did not commit.',
+        error,
+      );
+    }
     this.#head = undefined;
   }
 
@@ -203,6 +217,11 @@ export class WorkflowRunnerGoProjectionError extends Error {
 function projectionFailure(
   code: WorkflowRunnerGoProjectionError['code'],
   message: string,
+  cause?: unknown,
 ): WorkflowRunnerGoProjectionError {
-  return new WorkflowRunnerGoProjectionError(code, message);
+  return new WorkflowRunnerGoProjectionError(
+    code,
+    message,
+    cause === undefined ? undefined : { cause },
+  );
 }

@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { chmod, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -1584,6 +1586,135 @@ it('validates the exact E2 reserve response and reconstructs its private ledger 
     await new Promise<void>((resolveClose, rejectClose) =>
       server.close((error) => (error ? rejectClose(error) : resolveClose())),
     );
+  }
+});
+
+it('reads the actual Go budget account handler single-LF response through the TypeScript client', async () => {
+  const fixture = goFixture('budget_reserve');
+  if (fixture.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1') {
+    throw new Error('budget evidence unavailable');
+  }
+  const sourceResult =
+    vectors.positive.controlDelivery.artifacts['kind:budget_authorization']!.budgetSourceResult!;
+  const buildHash = fixture.stageTemplate.route.authorityBuildHash;
+  const account = {
+    ...sourceResult.decision.afterAccount,
+    accountRevision: 2,
+    runRevision: 5,
+  };
+  const durableAccountBytes = canonicalWorkflowBudgetAuthorityJson({
+    schema: 'openslack.workflow_control_budget_durable_record.v1',
+    authority: 'workflow-control',
+    writer: 'workflow-control/budget-authority-server',
+    authorityMode: 'local-qualification-v1',
+    productionAuthority: false,
+    contractManifestSha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+    authorityBuildHash: buildHash,
+    recordKind: 'account',
+    operationalProjection: account,
+    operationalProjectionHash: hashWorkflowBudgetAuthorityValue('account', account),
+  });
+  const bearerToken = 'b'.repeat(32);
+  const workflowControlRoot = resolve(import.meta.dirname, '../../../../services/workflow-control');
+  const binaryRoot = await mkdtemp(join(tmpdir(), 'openslack-budget-framing-binary-'));
+  roots.push(binaryRoot);
+  const binaryPath = join(
+    binaryRoot,
+    process.platform === 'win32' ? 'account-framing-server.exe' : 'account-framing-server',
+  );
+  const build = spawn(
+    'go',
+    ['build', '-o', binaryPath, './internal/budgetapp/testdata/account-framing-server'],
+    {
+      cwd: workflowControlRoot,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+    },
+  );
+  let buildStderr = '';
+  build.stderr.setEncoding('utf8');
+  build.stderr.on('data', (chunk: string) => {
+    buildStderr += chunk;
+  });
+  await new Promise<void>((resolveBuild, rejectBuild) => {
+    build.once('error', rejectBuild);
+    build.once('exit', (code, signal) => {
+      if (code === 0 && signal === null) {
+        resolveBuild();
+        return;
+      }
+      rejectBuild(
+        new Error(`Go account framing fixture build failed (${code ?? signal}): ${buildStderr}`),
+      );
+    });
+  });
+  const child = spawn(binaryPath, [], {
+    cwd: workflowControlRoot,
+    env: {
+      ...process.env,
+      OPENSLACK_TEST_BUDGET_BUILD_SHA: buildHash,
+      OPENSLACK_TEST_BUDGET_WORKSPACE_ID: fixture.stageTemplate.workspaceId,
+      OPENSLACK_TEST_BUDGET_CALLER_ID: fixture.evidence.preparedRequest.callerId,
+      OPENSLACK_TEST_BUDGET_RUN_ID: fixture.stageTemplate.runId,
+      OPENSLACK_TEST_BUDGET_BEARER_TOKEN: bearerToken,
+      OPENSLACK_TEST_BUDGET_ROUTING_EPOCH: String(fixture.stageTemplate.route.routingEpoch),
+      OPENSLACK_TEST_BUDGET_REQUEST_COUNT: '2',
+      OPENSLACK_TEST_BUDGET_ACCOUNT_BASE64: Buffer.from(durableAccountBytes, 'utf8').toString(
+        'base64',
+      ),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+  const exit = new Promise<number>((resolveExit, rejectExit) => {
+    child.once('error', rejectExit);
+    child.once('exit', (code, signal) => {
+      if (signal) {
+        rejectExit(new Error(`Go account framing fixture exited via ${signal}: ${stderr}`));
+        return;
+      }
+      resolveExit(code ?? -1);
+    });
+  });
+  const lines = createInterface({ input: child.stdout });
+  const origin = await new Promise<string>((resolveOrigin, rejectOrigin) => {
+    const timeout = setTimeout(
+      () => rejectOrigin(new Error(`Go account framing fixture did not start: ${stderr}`)),
+      20_000,
+    );
+    lines.once('line', (line) => {
+      clearTimeout(timeout);
+      lines.close();
+      resolveOrigin(line);
+    });
+    void exit.then((code) => {
+      if (code !== 0) {
+        clearTimeout(timeout);
+        rejectOrigin(new Error(`Go account framing fixture exited ${code}: ${stderr}`));
+      }
+    }, rejectOrigin);
+  });
+  try {
+    const client = createWorkflowRunnerBudgetAuthorityClient({
+      origin,
+      workspaceId: fixture.stageTemplate.workspaceId,
+      bearerToken,
+      callerId: fixture.evidence.preparedRequest.callerId,
+    });
+    await expect(
+      client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
+    ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
+    await expect(
+      client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
+    ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
+    await expect(exit).resolves.toBe(0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
   }
 });
 

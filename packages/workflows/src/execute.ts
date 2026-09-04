@@ -582,6 +582,7 @@ export async function executeRunWithStore(
       : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
     : createRuntime(runtimeOptions);
 
+  let outputPersisted = false;
   try {
     throwIfExecutionAborted(options.signal, runId);
     // Handle claude-ambient workflows
@@ -604,6 +605,7 @@ export async function executeRunWithStore(
       assertRuntimeEffectTerminalState(runtime);
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
+      outputPersisted = true;
       await safeTransition(store, runId, 'completed');
       return output;
     }
@@ -619,9 +621,11 @@ export async function executeRunWithStore(
     assertRuntimeEffectTerminalState(runtime);
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
+    outputPersisted = true;
     await safeTransition(store, runId, 'completed');
     return output;
   } catch (err) {
+    if (outputPersisted) throw err;
     await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
       await pauseForUnexpectedEffect(store, runId, err);
@@ -873,6 +877,7 @@ export async function executeResumeWithStore(
       : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
     : createRuntime(runtimeOptions);
 
+  let outputPersisted = false;
   try {
     if (status.status === 'paused_waiting_approval') {
       await store.transitionStatus(runId, 'resuming');
@@ -901,6 +906,7 @@ export async function executeResumeWithStore(
       assertRuntimeEffectTerminalState(runtime);
       throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
       await store.saveOutput(runId, output);
+      outputPersisted = true;
       await safeTransition(store, runId, 'completed');
       return output;
     }
@@ -916,9 +922,11 @@ export async function executeResumeWithStore(
     assertRuntimeEffectTerminalState(runtime);
     throwIfExecutionAborted(options.signal, runId, 'terminal_commit');
     await store.saveOutput(runId, output);
+    outputPersisted = true;
     await safeTransition(store, runId, 'completed');
     return output;
   } catch (err) {
+    if (outputPersisted) throw err;
     await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
       await pauseForUnexpectedEffect(store, runId, err);

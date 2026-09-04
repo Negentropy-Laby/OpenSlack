@@ -276,6 +276,12 @@ func TestBudgetServiceReadEndpointsReturnExactDurableRecords(t *testing.T) {
 		if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
 			t.Fatalf("read %s failed: %d %s", path, response.Code, response.Body.String())
 		}
+		if strings.HasSuffix(path, "/account") {
+			want := append(durableBytes(t, durableRecord(t, budgetstore.RecordKindAccount, accountValue)), '\n')
+			if !bytes.Equal(response.Body.Bytes(), want) {
+				t.Fatalf("account read did not return exact canonical LF bytes")
+			}
+		}
 	}
 }
 

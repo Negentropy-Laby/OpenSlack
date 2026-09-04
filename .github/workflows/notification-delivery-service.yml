@@ -555,7 +555,9 @@ jobs:
             packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts `
             packages/workflows/src/__tests__/workflow-runner-authority-binding-contract.test.ts `
             packages/workflows/src/__tests__/workflow-runner-authority-binding-runtime.test.ts `
-            packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts `
+            packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bunx vitest run `
             packages/workflows/src/__tests__/workflow-effect-shadow.test.ts
       - name: Qualify native Windows Job Object process trees
         working-directory: services/workflow-control

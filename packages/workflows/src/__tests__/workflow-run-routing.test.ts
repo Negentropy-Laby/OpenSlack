@@ -602,6 +602,7 @@ describe('Go-owned worker recovery projection', () => {
       inputHash: descriptor.inputHash,
     });
     const transitions: string[] = [];
+    let transitionFailure: Error | undefined;
     const projectionBase = join(
       workspace,
       '.openslack.local',
@@ -637,6 +638,7 @@ describe('Go-owned worker recovery projection', () => {
       async transition(next, expected) {
         expect(expected).toMatchObject({ revision: record.revision, state: record.state });
         expect(next.revision).toBe(record.revision + 1);
+        if (transitionFailure) throw transitionFailure;
         if (record.state === 'created') {
           await expect(
             new RunStore({ baseDir: projectionBase }).runExists(route.runId),
@@ -664,10 +666,24 @@ describe('Go-owned worker recovery projection', () => {
       budget: { tokens: 100, costUsd: 1 },
     });
     await projection.saveOutput(route.runId, { status: 'completed', runId: route.runId });
+    // Runtime budget bindings advance the shared authority revision without
+    // changing the lifecycle state. Terminal projection must point-read that
+    // fresh head instead of reusing the initialization revision.
+    record = { ...record, revision: record.revision + 2 };
+    transitionFailure = new Error('authority transition unavailable');
+    await expect(projection.transitionStatus(route.runId, 'completed')).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
+      cause: transitionFailure,
+    });
+    expect(record.state).toBe('running');
+    await expect(projection.loadStatus(route.runId)).resolves.toMatchObject({ status: 'running' });
+
+    transitionFailure = undefined;
     await projection.transitionStatus(route.runId, 'completed');
 
     expect(transitions).toEqual(['created->running', 'running->completed']);
     expect(record.state).toBe('completed');
+    expect(record.revision).toBe(5);
     await expect(projection.loadOutput(route.runId)).resolves.toMatchObject({
       status: 'completed',
     });

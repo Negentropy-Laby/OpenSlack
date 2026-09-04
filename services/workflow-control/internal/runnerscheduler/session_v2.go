@@ -344,12 +344,59 @@ func (session *V2Session) send(ctx context.Context, process WorkerProcess, attem
 	}
 	ackContext, cancel := context.WithDeadline(ctx, hardDeadline)
 	defer cancel()
-	disposition, err := session.config.Store.WaitV2ControlAcknowledged(ackContext, attemptID, message.EventID)
+	type acknowledgementResult struct {
+		disposition runnerstore.V2ControlDeliveryDisposition
+		err         error
+	}
+	acknowledged := make(chan acknowledgementResult, 1)
+	go func() {
+		disposition, waitErr := session.config.Store.WaitV2ControlAcknowledged(ackContext, attemptID, message.EventID)
+		acknowledged <- acknowledgementResult{disposition: disposition, err: waitErr}
+	}()
+	var disposition runnerstore.V2ControlDeliveryDisposition
+	var err error
+	select {
+	case result := <-acknowledged:
+		disposition, err = result.disposition, result.err
+	case <-process.Done():
+		cancel()
+		first := <-acknowledged
+		if first.err == nil {
+			disposition = first.disposition
+			break
+		}
+
+		retryDeadline := v2ControlRetryDeadline(session.config.Now(), hardDeadline)
+		retryContext, retryCancel := context.WithDeadline(context.Background(), retryDeadline)
+		finalDisposition, finalErr := session.config.Store.WaitV2ControlAcknowledged(retryContext, attemptID, message.EventID)
+		retryCancel()
+		if finalErr == nil {
+			disposition = finalDisposition
+			break
+		}
+
+		result, waitErr := process.Wait(context.Background())
+		err = errors.Join(
+			fmt.Errorf("runner v2 process exited before acknowledging %s control", message.Kind),
+			first.err,
+			finalErr,
+			waitErr,
+			result.Err,
+		)
+	}
 	if err != nil {
 		markErr := session.config.Store.MarkV2ControlDeliveryReconciliation(context.Background(), attemptID, message.EventID, string(message.Kind), session.config.Now())
 		return "", errors.Join(err, markErr)
 	}
 	return disposition, nil
+}
+
+func v2ControlRetryDeadline(now, hardDeadline time.Time) time.Time {
+	retryDeadline := now.Add(time.Second)
+	if !hardDeadline.IsZero() && hardDeadline.Before(retryDeadline) {
+		return hardDeadline
+	}
+	return retryDeadline
 }
 
 func awaitV2Frame(ctx context.Context, frames <-chan protocolDecodedFrame[authoritycontract.Message], timeout time.Duration) (protocolDecodedFrame[authoritycontract.Message], error) {

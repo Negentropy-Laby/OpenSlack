@@ -7,7 +7,13 @@ import {
   createWorkflowRunnerExecutionDescriptor,
   hashWorkflowRunnerResult,
 } from './workflow-runner-descriptor.js';
-import type { WorkflowControlAuthorityPort } from './workflow-control-authority-client.js';
+import {
+  workflowControlAuthorityInitialRecord,
+  type WorkflowControlAuthorityPort,
+  type WorkflowControlAuthorityRunRead,
+  type WorkflowControlAuthorityRunRecord,
+} from './workflow-control-authority-client.js';
+import { canonicalWorkflowControlAuthorityJson } from './workflow-control-authority-contract.js';
 import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import type { WorkflowRunRoutingExecutionContext } from './workflow-run-routing-config.js';
 import type { WorkflowRunRouteJournalEntry } from './workflow-run-routing.js';
@@ -167,6 +173,184 @@ function assertGoAuthorityHead(
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID',
       'Workflow Control authority head does not bind the immutable route receipt.',
+    );
+  }
+}
+
+function isExactGoAuthorityHead(
+  route: WorkflowRunRouteReceipt,
+  head: WorkflowControlAuthorityRunRead,
+): boolean {
+  try {
+    assertGoAuthorityHead(route, head);
+  } catch {
+    return false;
+  }
+  const initial = workflowControlAuthorityInitialRecord(route);
+  const expected: WorkflowControlAuthorityRunRecord = {
+    ...initial,
+    state: head.state,
+    revision: head.revision,
+    currentPhaseId: head.currentPhaseId,
+    currentPhaseIndex: head.currentPhaseIndex,
+    resumeGeneration: head.resumeGeneration,
+  };
+  return (
+    canonicalWorkflowControlAuthorityJson(head.record) ===
+    canonicalWorkflowControlAuthorityJson(expected)
+  );
+}
+
+function isCreatedGoAuthorityHead(
+  route: WorkflowRunRouteReceipt,
+  head: WorkflowControlAuthorityRunRead,
+): boolean {
+  return (
+    isExactGoAuthorityHead(route, head) &&
+    head.state === 'created' &&
+    head.revision === 1 &&
+    head.currentPhaseId === null &&
+    head.currentPhaseIndex === null &&
+    head.resumeGeneration === 0
+  );
+}
+
+function isResumableGoAuthorityHead(
+  route: WorkflowRunRouteReceipt,
+  head: WorkflowControlAuthorityRunRead,
+): boolean {
+  return (
+    isExactGoAuthorityHead(route, head) &&
+    head.revision >= 2 &&
+    (head.state === 'running' ||
+      head.state === 'paused' ||
+      head.state === 'paused_waiting_approval' ||
+      head.state === 'resuming')
+  );
+}
+
+function initialAuthorityReconciliation(
+  message: string,
+  mutationError: unknown,
+  readError?: unknown,
+): WorkflowRunnerControlError {
+  return new WorkflowRunnerControlError(
+    'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
+    message,
+    {
+      cause:
+        readError === undefined
+          ? mutationError
+          : new AggregateError(
+              [mutationError, readError],
+              'Authority mutation and reconciliation read both failed.',
+            ),
+    },
+  );
+}
+
+async function establishInitialGoAuthority(input: {
+  readonly authority: WorkflowControlAuthorityPort;
+  readonly route: WorkflowRunRouteReceipt;
+  readonly fresh: boolean;
+  readonly signal?: AbortSignal;
+}): Promise<{ readonly runRevision: number; readonly resumeGeneration: number }> {
+  const { authority, route } = input;
+  let recoveredHead: WorkflowControlAuthorityRunRead | null = null;
+
+  if (!input.fresh) {
+    try {
+      recoveredHead = await authority.readIfExists(route.runId, route.route, input.signal);
+    } catch (readError) {
+      throw initialAuthorityReconciliation(
+        'The existing Go authority head could not be read for resume.',
+        readError,
+      );
+    }
+    if (recoveredHead === null || !isExactGoAuthorityHead(route, recoveredHead)) {
+      throw initialAuthorityReconciliation(
+        'The existing Go authority head does not match the routed run.',
+        new Error('Existing routed run authority is missing or drifted.'),
+      );
+    }
+    if (isResumableGoAuthorityHead(route, recoveredHead)) {
+      return {
+        runRevision: recoveredHead.revision,
+        resumeGeneration: recoveredHead.resumeGeneration,
+      };
+    }
+    if (!isCreatedGoAuthorityHead(route, recoveredHead)) {
+      throw initialAuthorityReconciliation(
+        'The existing Go authority head is not resumable.',
+        new Error(`Existing routed run is ${recoveredHead.state}.`),
+      );
+    }
+  } else {
+    try {
+      await authority.accept(route, input.signal);
+    } catch (acceptError) {
+      try {
+        recoveredHead = await authority.readIfExists(route.runId, route.route, input.signal);
+      } catch (readError) {
+        throw initialAuthorityReconciliation(
+          'The initial Go authority accept outcome could not be reconciled.',
+          acceptError,
+          readError,
+        );
+      }
+      if (recoveredHead === null || !isExactGoAuthorityHead(route, recoveredHead)) {
+        throw initialAuthorityReconciliation(
+          'The initial Go authority accept outcome does not match the requested run.',
+          acceptError,
+        );
+      }
+      if (isResumableGoAuthorityHead(route, recoveredHead)) {
+        return {
+          runRevision: recoveredHead.revision,
+          resumeGeneration: recoveredHead.resumeGeneration,
+        };
+      }
+      if (!isCreatedGoAuthorityHead(route, recoveredHead)) {
+        throw initialAuthorityReconciliation(
+          'The initial Go authority accept outcome is not a resumable run.',
+          acceptError,
+        );
+      }
+    }
+  }
+
+  const createdRecord = workflowControlAuthorityInitialRecord(route);
+  try {
+    await authority.transition(
+      { ...createdRecord, state: 'running', revision: 2 },
+      {
+        revision: createdRecord.revision,
+        state: createdRecord.state,
+        currentPhaseId: createdRecord.currentPhaseId,
+        currentPhaseIndex: createdRecord.currentPhaseIndex,
+        resumeGeneration: createdRecord.resumeGeneration,
+      },
+      route.correlationId,
+      input.signal,
+    );
+    return { runRevision: 2, resumeGeneration: 0 };
+  } catch (transitionError) {
+    let head: WorkflowControlAuthorityRunRead | null;
+    try {
+      head = await authority.readIfExists(route.runId, route.route, input.signal);
+    } catch (readError) {
+      throw initialAuthorityReconciliation(
+        'The initial Go authority running transition could not be reconciled.',
+        transitionError,
+        readError,
+      );
+    }
+    if (head !== null && isResumableGoAuthorityHead(route, head)) {
+      return { runRevision: head.revision, resumeGeneration: head.resumeGeneration };
+    }
+    throw initialAuthorityReconciliation(
+      'The initial Go authority running transition was not durably committed.',
+      transitionError,
     );
   }
 }
@@ -420,6 +604,12 @@ export async function executeWorkflowThroughRunner(
         ...(input.signal ? { signal: input.signal } : {}),
       });
     }
+    const authorityHead = await establishInitialGoAuthority({
+      authority,
+      route,
+      fresh: existingRoute === null,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
     const v2Descriptor = createWorkflowRunnerV2ExecutionDescriptor({
       descriptorRef,
       workspaceId: config.workspaceId,
@@ -434,8 +624,8 @@ export async function executeWorkflowThroughRunner(
       confirmationPolicy: input.confirmationPolicy,
       requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
       authorityRoute: route.route,
-      runRevision: 1,
-      resumeGeneration: 0,
+      runRevision: authorityHead.runRevision,
+      resumeGeneration: authorityHead.resumeGeneration,
       budgetPolicy,
       createdAt: created.toISOString(),
       expiresAt: new Date(created.getTime() + descriptorLifetimeMs).toISOString(),
@@ -456,7 +646,6 @@ export async function executeWorkflowThroughRunner(
       WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
     );
     const sealed = await descriptorStore.create(v2Descriptor);
-    await authority.accept(route, input.signal);
     const prepared = prepareWorkflowRunnerV2JobSpec({
       schema: WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
       workspaceId: config.workspaceId,
