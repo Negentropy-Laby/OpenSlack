@@ -137,4 +137,13 @@ reconciliation, identity drift, and audit-first repair. Recovery tests must prov
 projection is rebuilt only for safe created/running authority heads, that paused/resuming state remains
 operator-visible in the same route-aware namespace, and that terminal/output ambiguity never re-runs
 workflow or effect code. Real PostgreSQL restart, Windows ACL/reparse behavior, and the built image are
-hosted exact-head gates; local TypeScript authority remains the default path.
+hosted exact-head gates.
+
+## GS9-H TypeScript read-only recovery gate
+
+GS9-H requires the public package, CLI, TUI, rehearsal scripts, and authenticated runner HTTP surface
+to reject TypeScript create/resume/control composition before a descriptor, route, or store mutation.
+The former rollback configuration must fail closed. A non-initializing receipt lookup must leave flat,
+damaged, and partitioned journal evidence untouched. Go inspection may report authority state only from
+an authenticated durable head that agrees with the immutable receipt; local recovery projections are
+drift evidence only. Legacy worker/parser code remains for drain/recovery and is deleted only in GS9-I.

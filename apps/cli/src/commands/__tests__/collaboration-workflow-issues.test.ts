@@ -61,7 +61,6 @@ vi.mock('@openslack/workflows', () => ({
   renderWorkflowPolicy: vi.fn(),
   listWorkflowRuns: vi.fn().mockResolvedValue([]),
   showWorkflowRun: vi.fn(),
-  controlWorkflowRun: vi.fn(),
   renderWorkflowRuns: vi.fn(),
   renderWorkflowRun: vi.fn(),
   saveWorkflow: vi.fn(),

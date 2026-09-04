@@ -228,6 +228,27 @@ describe('Workflow run new-record routing', () => {
     await expect(readFile(join(routeRoot, 'active', name), 'utf8')).resolves.toBe(exact);
   });
 
+  it('does not migrate or initialize a journal during read-only route lookup', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-readonly-');
+    roots.push(workspace);
+    const routeRoot = join(workspace, 'routes');
+    const route = select(undefined, 'run.canary.readonly');
+    const name = routeName(route.runId);
+    const exact = `${canonicalWorkflowControlAuthorityJson(route)}\n`;
+    await mkdir(routeRoot, { recursive: true });
+    await writeFile(join(routeRoot, name), exact, 'utf8');
+
+    const journal = new WorkflowRunRouteJournal(routeRoot, UNIT_JOURNAL_SECURITY);
+    await expect(journal.locateReadOnly(route.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+      message: 'Legacy flat route receipt requires explicit operator repair before use.',
+    });
+    await expect(readFile(join(routeRoot, name), 'utf8')).resolves.toBe(exact);
+    await expect(readFile(join(routeRoot, 'active', name), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('allows only one policy per epoch and only higher epochs for new records', async () => {
     const workspace = await routeWorkspace('openslack-workflow-route-epoch-');
     roots.push(workspace);
@@ -412,23 +433,18 @@ describe('Process routing configuration', () => {
     });
   });
 
-  it('loads a higher-epoch TS rollback without retaining Go credentials', () => {
-    const config = loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.rollback'), {
-      OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: BUILD,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'external-rollback.test',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: '',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
-    });
-    if (config.mode === 'disabled') throw new Error('Expected explicit rollback config.');
-    expect(config.router.policy).toMatchObject({
-      backend: 'ts-local',
-      routingEpoch: 18,
-    });
-    expect(config).not.toHaveProperty('authority');
-    expect(config).not.toHaveProperty('v2BudgetPolicy');
+  it('rejects the retired higher-epoch TypeScript rollback switch', () => {
+    expect(() =>
+      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.rollback'), {
+        OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
+        OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: BUILD,
+        OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'external-rollback.test',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: '',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
+      }),
+    ).toThrow(/TypeScript new-record rollback is retired/u);
   });
 });
 

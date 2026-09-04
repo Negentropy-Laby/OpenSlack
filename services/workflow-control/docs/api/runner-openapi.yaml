@@ -1,13 +1,14 @@
 openapi: 3.1.0
 info:
   title: OpenSlack Workflow Runner Control API
-  version: 1.1.0-gs9g
+  version: 1.2.0-gs9h
   description: >-
     Private default-off runner lifecycle service. GS9-F2b provides the
     loopback-only authority-binding companion for exact checkpoint, effect,
     budget, and resume delivery. GS9-G permits the same exact v2 route only for
     immutable, explicitly allowlisted new-record canary receipts after durable
-    Workflow Control accept. Legacy and rollback TS routes remain on v1.
+    Workflow Control accept. GS9-H retires TypeScript new admission; legacy
+    receipts and jobs remain available only for authenticated read/recovery.
 servers:
   - url: http://127.0.0.1:8081
 security: []
@@ -20,6 +21,7 @@ x-openslack-authority-eligible: new-record-canary
 x-openslack-v2-runtime-delivery-default-off: true
 x-openslack-production-v2-submission: explicit-new-record-canary
 x-openslack-production-v2-routing: explicit-new-record-canary
+x-openslack-typescript-mutation: retired
 x-openslack-network-modes: [loopback, internal]
 x-openslack-max-request-bytes: 1048576
 x-openslack-job-request-max-bytes: 65536
@@ -55,43 +57,30 @@ paths:
   /v1/runner/jobs:
     post:
       operationId: submitWorkflowRunnerJob
+      deprecated: true
       description: >-
-        Admit one exact canonical, hash-only job specification. The idempotency
-        key and request fingerprint must bind the canonical request exactly.
-      x-openslack-canonical-json: required
-      x-openslack-go-authority: [job, receipt]
+        Retired GS9-H TypeScript job admission. Authentication and workspace
+        binding are still required, but every authenticated request fails
+        closed without reading a body or touching the legacy store.
+      x-openslack-availability: retired
+      x-openslack-no-store-mutation: true
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/WorkspaceHeader'
-        - $ref: '#/components/parameters/JobIdempotencyKey'
-        - $ref: '#/components/parameters/RequestFingerprint'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/JobSpec' }
       responses:
-        '201': { $ref: '#/components/responses/JobAccepted' }
-        '200': { $ref: '#/components/responses/JobDuplicate' }
-        '202': { $ref: '#/components/responses/JobReconciliation' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '408': { $ref: '#/components/responses/Timeout' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '413': { $ref: '#/components/responses/TooLarge' }
-        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
-        '500': { $ref: '#/components/responses/Internal' }
-        '503': { $ref: '#/components/responses/Unavailable' }
+        '410': { $ref: '#/components/responses/TypeScriptMutationRetired' }
   /v2/runner/jobs:
     post:
       operationId: submitWorkflowRunnerV2QualificationJob
       description: >-
-        Default-off GS9-F qualification or GS9-G explicit new-record canary
+        GS9-G explicit Go new-record canary or existing Go-owned drain/recovery
         admission. The exact body permanently binds protocol v2, required
         capabilities, authority route, run revision, and resume generation.
       x-openslack-canonical-json: required
-      x-openslack-availability: qualification-or-new-record-canary
+      x-openslack-availability: go-new-record-or-existing-route
+      x-openslack-typescript-route: retired-410
       x-openslack-no-protocol-downgrade: true
       x-openslack-replay-response: exact-original
       security:
@@ -125,6 +114,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/V2JobReceipt' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { $ref: '#/components/responses/TypeScriptMutationRetired' }
         '408': { $ref: '#/components/responses/Timeout' }
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/TooLarge' }
@@ -536,6 +526,9 @@ components:
           schema: { $ref: '#/components/schemas/AuthorityBindingReceipt' }
     Unauthorized:
       description: Bearer or single-workspace identity is invalid.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TypeScriptMutationRetired:
+      description: TypeScript workflow mutation is retired; no store operation was attempted.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Timeout:
       description: Bounded request deadline exceeded.

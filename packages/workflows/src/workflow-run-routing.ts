@@ -517,6 +517,62 @@ export class WorkflowRunRouteJournal {
     return (await this.locate(runId))?.receipt ?? null;
   }
 
+  /**
+   * Resolve one immutable receipt without initializing, migrating, repairing,
+   * quarantining, or otherwise changing the journal. GS9-H inspection and
+   * retired TypeScript execution checks must use this path.
+   */
+  async locateReadOnly(runId: string): Promise<WorkflowRunRouteJournalEntry | null> {
+    if (!(await this.#rootExists())) return null;
+    await assertOwnerDirectory(this.#root, this.#security);
+    const name = routeFileName(runId);
+    try {
+      const quarantine = await readdir(join(this.#root, 'quarantine')).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return [];
+          throw error;
+        },
+      );
+      if (quarantine.some((entry) => entry === name || entry.startsWith(`${name}.`))) {
+        return fail(
+          'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          'Requested run route receipt is quarantined and requires operator reconciliation.',
+        );
+      }
+      const [legacy, active, closed] = await Promise.all([
+        this.#readOptional(join(this.#root, name)),
+        this.#readOptional(join(this.#root, 'active', name)),
+        this.#readOptional(join(this.#root, 'closed', name.slice(0, 2), name)),
+      ]);
+      if (legacy) {
+        return fail(
+          'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          'Legacy flat route receipt requires explicit operator repair before use.',
+        );
+      }
+      if (active && closed) {
+        return fail(
+          'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          'Run route receipt exists in both active and closed journals.',
+        );
+      }
+      const receipt = active ?? closed;
+      if (!receipt) return null;
+      if (receipt.runId !== runId) {
+        return fail('WORKFLOW_RUN_ROUTE_RECEIPT_INVALID', 'Route receipt bytes do not bind run.');
+      }
+      return Object.freeze({ receipt, state: active ? 'active' : 'closed' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      if (error instanceof WorkflowRunRoutingError) throw error;
+      return fail(
+        'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+        'Requested run route receipt cannot be proved safe without mutation.',
+        { cause: error },
+      );
+    }
+  }
+
   async locate(runId: string): Promise<WorkflowRunRouteJournalEntry | null> {
     if (!(await this.#rootExists())) return null;
     await this.#ready();

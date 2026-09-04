@@ -72,5 +72,6 @@ This service implements those rules but does not restate a second copy here.
 Startup recovery validates the binding and ACK in one joined read, then bulk-CASes unfinished
 bindings to reconciliation. Its examined/reconciled summary is consumed by the scheduler instead
 of being discarded. Active owner-local journal evidence is indexed separately from closed replay
-evidence; external identity drift forces a full validation before the cache is reused. Production
-submission and routing remain disabled; GS9-G owns any new-record canary or writer cutover.
+evidence; external identity drift forces a full validation before the cache is reused. GS9-G later
+enabled explicit Go new-record routing. GS9-H retires TypeScript new admission while keeping this
+implementation available only for authenticated legacy drain/recovery; GS9-I owns physical deletion.

@@ -117,7 +117,7 @@ async function resolveRunRoute(input: {
 }): Promise<WorkflowRunRouteReceipt | null> {
   const existing =
     input.existing === undefined
-      ? await input.routing?.journal.load(input.workflowRunId)
+      ? ((await input.routing?.journal.locateReadOnly(input.workflowRunId))?.receipt ?? null)
       : input.existing;
   if (existing) {
     if (
@@ -480,9 +480,9 @@ function terminalError(view: WorkflowRunnerJobView): never {
 
 /**
  * Freeze one immutable run route and submit through its bound runner protocol.
- * TypeScript and rollback routes use v1; an explicitly allowlisted Go
- * new-record route durably accepts the run before using v2. Direct
- * executeRun/executeResume remain fail-closed without worker authorities.
+ * GS9-H permits only explicitly allowlisted Go new-record routes and existing
+ * Go drain/recovery routes. TypeScript ownership remains readable as historical
+ * evidence, but this execution surface can no longer create or resume it.
  */
 export async function executeWorkflowThroughRunner(
   input: ExecuteWorkflowThroughRunnerInput,
@@ -522,13 +522,21 @@ export async function executeWorkflowThroughRunner(
     );
   }
   const routing = input.routing;
-  const existingEntry = await routing?.journal.locate(workflowRunId);
+  const existingEntry = await routing?.journal.locateReadOnly(workflowRunId);
   const existingRoute = existingEntry?.receipt ?? (routing ? null : undefined);
   const selectedGo =
     existingRoute?.route.backend === 'go' ||
     (existingRoute === null &&
       routing?.mode === 'explicit' &&
       routing.router?.policy.backend === 'go');
+  if (!selectedGo) {
+    throw new WorkflowRunnerControlError(
+      'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED',
+      existingRoute?.route.backend === 'ts-local'
+        ? 'TypeScript-owned workflow runs are read-only and require operator recovery.'
+        : 'New workflow execution requires an explicit Go authority route.',
+    );
+  }
   const correlationId =
     existingRoute?.correlationId ?? input.correlationId ?? safeGeneratedId('correlation');
   const selectedAt = existingRoute?.selectedAt ?? created.toISOString();

@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  controlWorkflowRun,
   estimateWorkflowAgentCost,
   exportWorkflowSkill,
   generateWorkflowDraft,
@@ -25,6 +24,7 @@ import {
   WorkflowBudgetPausedError,
   writeWorkflowPolicy,
 } from '../index.js';
+import { controlWorkflowRun } from '../workflow-runs.js';
 import { executeAgentCall } from '../agent-shim.js';
 import { AgentRunRestartRequestedError } from '@openslack/agent-runtime';
 

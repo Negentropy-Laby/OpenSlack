@@ -1,7 +1,9 @@
 // Package runnerapp exposes the private, authenticated runner admission
 // surface. It owns runner lifecycle authority and, for an explicit GS9-G
 // new-record route, runs the v2 authority-binding lifecycle after durable Go
-// Workflow Control acceptance. Legacy TypeScript routes remain on runner v1.
+// Workflow Control acceptance. GS9-H retires runner v1 new admission while
+// preserving authenticated reads, cancellations, and the legacy implementation
+// for closed recovery and historical contract evidence.
 package runnerapp
 
 import (
@@ -159,7 +161,7 @@ func (service *Service) Handler() http.Handler { return service.handler }
 
 func (service *Service) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST "+RouteJobs, service.requireIdentity(http.HandlerFunc(service.handleSubmit)))
+	mux.Handle("POST "+RouteJobs, service.requireIdentity(http.HandlerFunc(service.handleRetiredV1Submit)))
 	if service.v2Enabled {
 		mux.Handle("POST "+RouteV2Jobs, service.requireIdentity(http.HandlerFunc(service.handleV2Submit)))
 	}

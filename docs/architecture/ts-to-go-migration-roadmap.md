@@ -549,17 +549,21 @@ reconciliation on crash, response loss, drift, or ambiguous cancellation orderin
 resume from generation zero requires a durable resume disposition and cannot be inferred from the
 wire head alone. The default image and public submission/routing remain unchanged.
 
-This does not collapse the remaining migration batches. GS9-G must separately establish immutable
-new-record route receipts and canary evidence before Go owns any production record. GS9-H follows
-only after old TypeScript-owned active runs are drained or explicitly reconciled. GS9-I remains an
-independent deletion PR after authenticated external and long-running recovery evidence.
+This does not collapse the remaining migration batches. GS9-G established immutable new-record route
+receipts and authenticated Go canary/recovery evidence. After legacy TypeScript active-run drain and
+Go restart/recovery qualification, GS9-H retires ordinary TypeScript mutation composition. GS9-I
+remains an independent implementation-deletion PR after H's read-only boundary is merged and reviewed.
 
-GS9-G keeps the default TypeScript path outside the durable route journal. A receipt is created only
-for an explicit Go canary or explicit higher-epoch TypeScript rollback; a previously routed run is
-point-read from the active or closed journal and always resumes through its original backend,
-correlation ID, policy, and selection time. Removing the routing mode or disabling Go new-record
-acceptance changes only future selection. It never makes an existing Go-owned run eligible for a
-TypeScript fallback.
+GS9-H accepts only an explicit Go route for new execution. Missing routing mode is inspection-only,
+the former higher-epoch TypeScript rollback value fails closed, and both runner v1 admission and a
+v2 TypeScript authority route return the stable retired-mutation response without touching a store.
+Existing TypeScript records remain historical evidence: package-root execute/resume/control exports,
+CLI run controls, TUI run controls/approval mutation, and direct rehearsal composition are removed.
+The legacy worker/parser implementations remain only for bounded drain and recovery until GS9-I.
+
+Safe rollback now publishes a higher Go authority epoch with `acceptNewRecords=false`, stops new
+admission, and continues drain/recovery for already routed Go records. Re-enabling a TypeScript writer
+requires a new governed reactivation batch; no environment switch can silently restore it.
 
 The owner-only route journal separates active, closed, quarantined, policy, and lock state. Its 4,096
 entry ceiling counts concurrent active explicitly routed runs, not lifetime history. Terminal receipts
@@ -568,7 +572,9 @@ unrelated damaged ordinary files are quarantined without blocking healthy routed
 or apply evidence-backed closure with `openslack collaboration workflow routes repair [--apply]`.
 Recovery projections are caches only: authority-first reconstruction is allowed for provable
 created/running heads, and terminal or effect-output ambiguity enters reconciliation without executing
-the workflow or an effect a second time.
+the workflow or an effect a second time. `openslack collaboration workflow runs inspect <runId>` uses
+a non-initializing route lookup; a Go-owned view is authoritative only when its durable receipt and
+Workflow Control head agree, while local files are reported solely as drift evidence.
 
 ### GS10–GS13 — Platform Runtime
 

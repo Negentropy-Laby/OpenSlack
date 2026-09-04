@@ -802,32 +802,10 @@ describe('executeApproval workflow-effect with runId', () => {
     vi.clearAllMocks();
   });
 
-  it('records a legacy run gate without authorizing or resuming the effect', async () => {
-    const { RunStore, executeResume } = await import('@openslack/workflows');
-    const mockStore = {
-      loadPendingApprovals: vi.fn(() => [
-        {
-          id: 'appr-1',
-          operation: 'openslack.task.createIssue',
-          detail: 'Create issue',
-          timestamp: '2026-01-01T00:00:00Z',
-          status: 'pending',
-        },
-      ]),
-      resolvePendingApproval: vi.fn(),
-      transitionStatus: vi.fn(),
-      loadMeta: vi.fn(() => ({
-        runId: 'run-001',
-        workflowName: 'test-wf',
-        mode: 'execute',
-        manifestHash: 'abc',
-        args: {},
-        startedAt: '2026-01-01T00:00:00Z',
-      })),
-    };
-    vi.mocked(RunStore).mockImplementation(
-      () => mockStore as unknown as InstanceType<typeof RunStore>,
-    );
+  it.each([
+    ['approve', true],
+    ['reject', false],
+  ])('retires the legacy TypeScript %s mutation path', async (_label, approved) => {
     const result = await executeApproval(
       {
         id: 'run-001',
@@ -836,66 +814,18 @@ describe('executeApproval workflow-effect with runId', () => {
         runId: 'run-001',
         workflowName: 'test-wf',
       },
-      true,
+      approved,
       ROOT,
       'tui-user',
     );
 
-    expect(result.success).toBe(true);
-    expect(result.message).toContain('exact v2 human decision');
-    expect(result.data).toMatchObject({ effectDecisionAuthority: false });
-    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'approved');
-    expect(executeResume).not.toHaveBeenCalled();
-    expect(collaboration.recordDecision).toHaveBeenCalledWith(
-      expect.objectContaining({
-        decision: 'approved',
-        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
-      }),
-    );
-  });
-
-  it('rejects and cancels paused workflow', async () => {
-    const { RunStore } = await import('@openslack/workflows');
-    const mockStore = {
-      loadPendingApprovals: vi.fn(() => [
-        {
-          id: 'appr-1',
-          operation: 'openslack.task.createIssue',
-          detail: 'Create issue',
-          timestamp: '2026-01-01T00:00:00Z',
-          status: 'pending',
-        },
-      ]),
-      resolvePendingApproval: vi.fn(),
-      transitionStatus: vi.fn(),
-    };
-    vi.mocked(RunStore).mockImplementation(
-      () => mockStore as unknown as InstanceType<typeof RunStore>,
-    );
-
-    const result = await executeApproval(
-      {
-        id: 'run-001',
-        category: 'workflow-effect',
-        title: 'Paused workflow',
-        runId: 'run-001',
-        workflowName: 'test-wf',
-      },
-      false,
-      ROOT,
-      'tui-user',
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain('cancelled');
-    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'rejected');
-    expect(mockStore.transitionStatus).toHaveBeenCalledWith('run-001', 'cancelled');
-    expect(collaboration.recordDecision).toHaveBeenCalledWith(
-      expect.objectContaining({
-        decision: 'cancelled',
-        tags: expect.arrayContaining(['workflow-run-gate', 'legacy', 'tui', 'run-run-001']),
-      }),
-    );
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('TypeScript workflow mutation is retired');
+    expect(result.data).toMatchObject({
+      runId: 'run-001',
+      code: 'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED',
+    });
+    expect(collaboration.recordDecision).not.toHaveBeenCalled();
   });
 });
 

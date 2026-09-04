@@ -19,6 +19,7 @@ import {
 
 export const WORKFLOW_RUN_ROUTING_MODE_ENV = 'OPENSLACK_WORKFLOW_RUN_ROUTING_MODE' as const;
 export const WORKFLOW_RUN_ROUTING_MODE_GO = 'go-new-record-canary-v1' as const;
+/** @deprecated GS9-H retired TypeScript new-record rollback. Retained for closed diagnostics only. */
 export const WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK = 'ts-new-record-rollback-v1' as const;
 
 const PREFIX = 'OPENSLACK_WORKFLOW_RUN_ROUTING_';
@@ -48,7 +49,7 @@ const GO_ONLY = [
 const KNOWN = new Set<string>([WORKFLOW_RUN_ROUTING_MODE_ENV, ...COMMON, ...GO_ONLY]);
 
 export interface WorkflowRunRoutingConfig {
-  readonly mode: typeof WORKFLOW_RUN_ROUTING_MODE_GO | typeof WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK;
+  readonly mode: typeof WORKFLOW_RUN_ROUTING_MODE_GO;
   readonly router: WorkflowRunRouter;
   readonly authorityOptions?: ConstructorParameters<typeof WorkflowControlAuthorityHttpClient>[0];
   readonly v2BudgetPolicy?: WorkflowRunnerV2BudgetPolicyBinding;
@@ -65,7 +66,7 @@ export interface WorkflowRunRoutingExecutionContext {
   readonly router?: WorkflowRunRouter;
   readonly journal: Pick<
     WorkflowRunRouteJournal,
-    'load' | 'locate' | 'commit' | 'close' | 'inspect' | 'repair'
+    'load' | 'locate' | 'locateReadOnly' | 'commit' | 'close' | 'inspect' | 'repair'
   >;
   readonly authority?: WorkflowControlAuthorityPort;
   readonly v2Client?: WorkflowRunnerV2ControlPort;
@@ -151,8 +152,9 @@ function fingerprint(value: Readonly<Record<string, string>>): string {
 }
 
 /**
- * Loads one process-immutable, default-off new-record routing profile. A
- * higher-epoch TS rollback is explicit and carries no Go credentials.
+ * Loads one process-immutable Go new-record routing profile. GS9-H keeps
+ * missing configuration read-only and rejects the retired TypeScript rollback
+ * mode; safe rollback now stops new admission while existing Go routes drain.
  */
 export function loadWorkflowRunRoutingConfig(
   runner: WorkflowRunnerControlConfig,
@@ -165,7 +167,12 @@ export function loadWorkflowRunRoutingConfig(
       .sort();
     return Object.freeze({ mode: 'disabled', ignoredSettings: Object.freeze(ignoredSettings) });
   }
-  if (mode !== WORKFLOW_RUN_ROUTING_MODE_GO && mode !== WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK) {
+  if (mode === WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK) {
+    return fail(
+      'TypeScript new-record rollback is retired; stop new admission and drain existing Go routes.',
+    );
+  }
+  if (mode !== WORKFLOW_RUN_ROUTING_MODE_GO) {
     return fail('Workflow run routing mode is unsupported.');
   }
   const exact = exactEnvironment(environment, mode);
@@ -179,11 +186,10 @@ export function loadWorkflowRunRoutingConfig(
   }
   const build = exact[`${PREFIX}AUTHORITY_BUILD_SHA`]!;
   if (!HASH.test(build)) return fail('Workflow run routing authority build is invalid.');
-  const go = mode === WORKFLOW_RUN_ROUTING_MODE_GO;
   const router = new WorkflowRunRouter({
     schema: 'openslack.workflow_run_routing_policy.v1',
     workspaceId: runner.workspaceId,
-    backend: go ? 'go' : 'ts-local',
+    backend: 'go',
     routingEpoch,
     authorityBuildHash: build,
     qualificationEnvironmentId: exact[`${PREFIX}QUALIFICATION_ENVIRONMENT_ID`]!,
@@ -194,53 +200,45 @@ export function loadWorkflowRunRoutingConfig(
     runAllowlist: allowlist(exact[`${PREFIX}RUN_ALLOWLIST`]!, `${PREFIX}RUN_ALLOWLIST`),
     expiresAt: exact[`${PREFIX}EXPIRES_AT`]!,
   });
-  let config: WorkflowRunRoutingConfig = Object.freeze({
+  const bearerToken = exact[`${PREFIX}AUTHORITY_BEARER_TOKEN`]!;
+  const bearerHash = exact[`${PREFIX}AUTHORITY_BEARER_SHA256`]!;
+  if (
+    !isWorkflowControlBearerToken(bearerToken) ||
+    !HASH.test(bearerHash) ||
+    createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash
+  ) {
+    return fail('Workflow run routing authority bearer binding is invalid.');
+  }
+  const budgetPolicy = Object.freeze({
+    accountId: exact[`${PREFIX}BUDGET_ACCOUNT_ID`]!,
+    policyHash: exact[`${PREFIX}BUDGET_POLICY_SHA`]!,
+    rateNanoUsdPerToken: exact[`${PREFIX}BUDGET_RATE_NANO_USD_PER_TOKEN`]!,
+    tokenLimit: exact[`${PREFIX}BUDGET_TOKEN_LIMIT`]!,
+    costLimitNanoUsd: exact[`${PREFIX}BUDGET_COST_LIMIT_NANO_USD`]!,
+    callLimit: exact[`${PREFIX}BUDGET_CALL_LIMIT`]!,
+  });
+  if (
+    !HASH.test(budgetPolicy.policyHash) ||
+    !DECIMAL.test(budgetPolicy.rateNanoUsdPerToken) ||
+    !POSITIVE_INTEGER.test(budgetPolicy.tokenLimit) ||
+    !POSITIVE_INTEGER.test(budgetPolicy.costLimitNanoUsd) ||
+    !POSITIVE_INTEGER.test(budgetPolicy.callLimit)
+  ) {
+    return fail('Workflow run routing v2 budget policy is invalid.');
+  }
+  return Object.freeze({
     mode,
     router,
+    authorityOptions: Object.freeze({
+      origin: exact[`${PREFIX}AUTHORITY_ORIGIN`]!,
+      workspaceId: runner.workspaceId,
+      callerId: exact[`${PREFIX}AUTHORITY_CALLER_ID`]!,
+      bearerToken,
+      expectedBuildHash: build,
+    }),
+    v2BudgetPolicy: budgetPolicy,
     fingerprint: configFingerprint,
   });
-  if (go) {
-    const bearerToken = exact[`${PREFIX}AUTHORITY_BEARER_TOKEN`]!;
-    const bearerHash = exact[`${PREFIX}AUTHORITY_BEARER_SHA256`]!;
-    if (
-      !isWorkflowControlBearerToken(bearerToken) ||
-      !HASH.test(bearerHash) ||
-      createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash
-    ) {
-      return fail('Workflow run routing authority bearer binding is invalid.');
-    }
-    const budgetPolicy = Object.freeze({
-      accountId: exact[`${PREFIX}BUDGET_ACCOUNT_ID`]!,
-      policyHash: exact[`${PREFIX}BUDGET_POLICY_SHA`]!,
-      rateNanoUsdPerToken: exact[`${PREFIX}BUDGET_RATE_NANO_USD_PER_TOKEN`]!,
-      tokenLimit: exact[`${PREFIX}BUDGET_TOKEN_LIMIT`]!,
-      costLimitNanoUsd: exact[`${PREFIX}BUDGET_COST_LIMIT_NANO_USD`]!,
-      callLimit: exact[`${PREFIX}BUDGET_CALL_LIMIT`]!,
-    });
-    if (
-      !HASH.test(budgetPolicy.policyHash) ||
-      !DECIMAL.test(budgetPolicy.rateNanoUsdPerToken) ||
-      !POSITIVE_INTEGER.test(budgetPolicy.tokenLimit) ||
-      !POSITIVE_INTEGER.test(budgetPolicy.costLimitNanoUsd) ||
-      !POSITIVE_INTEGER.test(budgetPolicy.callLimit)
-    ) {
-      return fail('Workflow run routing v2 budget policy is invalid.');
-    }
-    config = Object.freeze({
-      mode,
-      router,
-      authorityOptions: Object.freeze({
-        origin: exact[`${PREFIX}AUTHORITY_ORIGIN`]!,
-        workspaceId: runner.workspaceId,
-        callerId: exact[`${PREFIX}AUTHORITY_CALLER_ID`]!,
-        bearerToken,
-        expectedBuildHash: build,
-      }),
-      v2BudgetPolicy: budgetPolicy,
-      fingerprint: configFingerprint,
-    });
-  }
-  return config;
 }
 
 export function createWorkflowRunRoutingExecutionContext(input: {
@@ -268,8 +266,7 @@ export function createWorkflowRunRoutingExecutionContext(input: {
       ),
     });
   }
-  const go = input.config.mode === WORKFLOW_RUN_ROUTING_MODE_GO;
-  if (go && !input.runner.expectedBuildHash) {
+  if (!input.runner.expectedBuildHash) {
     fail('Go workflow routing requires an expected runner build hash.');
   }
   const authority =
@@ -277,8 +274,7 @@ export function createWorkflowRunRoutingExecutionContext(input: {
     (input.config.authorityOptions
       ? new WorkflowControlAuthorityHttpClient(input.config.authorityOptions)
       : undefined);
-  const v2Client =
-    input.v2Client ?? (go ? new WorkflowRunnerV2ControlClient(input.runner) : undefined);
+  const v2Client = input.v2Client ?? new WorkflowRunnerV2ControlClient(input.runner);
   return Object.freeze({
     mode: 'explicit',
     router: input.config.router,
@@ -288,7 +284,7 @@ export function createWorkflowRunRoutingExecutionContext(input: {
     v2BudgetPolicy: input.config.v2BudgetPolicy,
     fingerprint: input.config.fingerprint,
     diagnostics: Object.freeze([]),
-    ...(go && input.config.authorityOptions
+    ...(input.config.authorityOptions
       ? {
           binding: Object.freeze({
             runnerOrigin: input.runner.origin,

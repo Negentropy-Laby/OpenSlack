@@ -256,10 +256,16 @@ This profile remains default-off and qualification-only. The default image entry
 v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, release, and live
 claims remain unchanged and outside GS9-F2b.
 
-GS9-G adds an independently default-off new-record canary. Its authenticated binding endpoints expose
+GS9-G added an independently default-off new-record canary. Its authenticated binding endpoints expose
 only non-secret workspace, caller, mode, epoch, build, capability, acceptance, and token-digest
 bindings. Exact receipt replay remains available after new-record acceptance is disabled. Existing
 Go-routed runs continue through their recorded active or drain epoch and never fall back to the
 ordinary TypeScript writer. The TypeScript route journal is active-only bounded, retains sharded
 closed replay evidence, quarantines damaged ordinary entries, and requires reconciliation for the
-requested damaged run. This is canary qualification, not production activation or writer retirement.
+requested damaged run.
+
+GS9-H retires TypeScript new admission. Authenticated `POST /v1/runner/jobs` and any v2 request carrying
+a TypeScript authority route return `410 WORKFLOW_RUNNER_TS_MUTATION_RETIRED` before store mutation.
+Go new records and existing Go drain/recovery continue on v2. Legacy v1 reads/cancellation and the
+underlying parser/worker implementation remain only for closed recovery until GS9-I. Safe rollback is
+a higher Go epoch with new-record acceptance disabled, never a switch back to the TypeScript writer.

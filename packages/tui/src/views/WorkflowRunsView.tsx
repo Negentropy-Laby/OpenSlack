@@ -16,12 +16,7 @@ import type {
   WorkflowRunProgressViewModel,
 } from '../view-models/workflow-runs.js';
 import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js';
-import type {
-  TuiActionHandlers,
-  WorkflowRunControlAction,
-  WorkflowRunControlTarget,
-  WorkflowSaveTarget,
-} from './render-shell.js';
+import type { TuiActionHandlers, WorkflowSaveTarget } from './render-shell.js';
 
 type ViewMode = 'runs' | 'phases' | 'agent';
 
@@ -59,12 +54,6 @@ function duration(ms: number | undefined): string {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
   return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
-}
-
-function actionLabel(action: WorkflowRunControlAction): string {
-  if (action === 'stopRun') return 'stop';
-  if (action === 'saveScript') return 'save';
-  return action;
 }
 
 function budgetLine(run: WorkflowRunProgressItem): string {
@@ -110,49 +99,26 @@ export default function WorkflowRunsView({
     else pop();
   }, [mode, onBack, pop]);
 
-  const applyAction = useCallback(
-    async (action: WorkflowRunControlAction) => {
-      if (!selectedRun) return;
-      const target: WorkflowRunControlTarget | undefined = selectedAgent
-        ? {
-            runId: selectedRun.runId,
-            phase: selectedAgent.phase,
-            agentRunId: selectedAgent.agentRunId,
-            agentId: selectedAgent.label,
-          }
-        : undefined;
-      if (action === 'saveScript') {
-        if (!saveTargetOption.target) {
-          setMessage(
-            `CLI only. Use: openslack collaboration workflow export-skill ${selectedRun.workflowName} --out skills/${selectedRun.workflowName}`,
-          );
-          return;
-        }
-        if (actionHandlers?.saveWorkflowRunScript) {
-          const result = await actionHandlers.saveWorkflowRunScript(
-            selectedRun.runId,
-            saveTargetOption.target,
-          );
-          setMessage(result.message);
-          return;
-        }
-        setMessage(
-          `Use: openslack collaboration workflow save-run ${selectedRun.runId} --to ${saveTargetOption.target}`,
-        );
-        return;
-      }
-      if (actionHandlers?.controlWorkflowRun) {
-        const result = await actionHandlers.controlWorkflowRun(selectedRun.runId, action, target);
-        setMessage(result.message);
-        return;
-      }
-      const agentArg = target?.agentRunId ? ` --agent-run-id ${target.agentRunId}` : '';
+  const saveRun = useCallback(async () => {
+    if (!selectedRun) return;
+    if (!saveTargetOption.target) {
       setMessage(
-        `Use: openslack collaboration workflow runs control ${selectedRun.runId} --action ${action}${agentArg}`,
+        `CLI only. Use: openslack collaboration workflow export-skill ${selectedRun.workflowName} --out skills/${selectedRun.workflowName}`,
       );
-    },
-    [actionHandlers, saveTargetOption, selectedAgent, selectedRun],
-  );
+      return;
+    }
+    if (actionHandlers?.saveWorkflowRunScript) {
+      const result = await actionHandlers.saveWorkflowRunScript(
+        selectedRun.runId,
+        saveTargetOption.target,
+      );
+      setMessage(result.message);
+      return;
+    }
+    setMessage(
+      `Use: openslack collaboration workflow save-run ${selectedRun.runId} --to ${saveTargetOption.target}`,
+    );
+  }, [actionHandlers, saveTargetOption, selectedRun]);
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -171,12 +137,7 @@ export default function WorkflowRunsView({
       if (key.upArrow || input === 'k') setAgentIndex(agentIndex - 1);
       if (key.downArrow || input === 'j') setAgentIndex(agentIndex + 1);
     }
-    if (input === 'p') void applyAction('pause');
-    if (input === 'r') void applyAction('resume');
-    if (input === 'x') void applyAction('stopRun');
-    if (input === 'a') void applyAction('stopAgent');
-    if (input === 'R') void applyAction('restartAgent');
-    if (input === 's') void applyAction('saveScript');
+    if (input === 's') void saveRun();
     if (input === 'S') setSaveTargetIndex(saveTargetIndex + 1);
     if (selectedRun) {
       const saveOptionIndex = SAVE_TARGET_OPTIONS.findIndex((option) => option.key === input);
@@ -258,28 +219,8 @@ export default function WorkflowRunsView({
         { gap: 2 },
         React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'open' }),
         React.createElement(KeyboardShortcutHint, {
-          keys: ['p'],
-          description: actionLabel('pause'),
-        }),
-        React.createElement(KeyboardShortcutHint, {
-          keys: ['r'],
-          description: actionLabel('resume'),
-        }),
-        React.createElement(KeyboardShortcutHint, {
-          keys: ['x'],
-          description: actionLabel('stopRun'),
-        }),
-        React.createElement(KeyboardShortcutHint, {
-          keys: ['a'],
-          description: actionLabel('stopAgent'),
-        }),
-        React.createElement(KeyboardShortcutHint, {
-          keys: ['R'],
-          description: actionLabel('restartAgent'),
-        }),
-        React.createElement(KeyboardShortcutHint, {
           keys: ['s'],
-          description: actionLabel('saveScript'),
+          description: 'save',
         }),
         React.createElement(KeyboardShortcutHint, { keys: ['S'], description: 'save target' }),
         React.createElement(KeyboardShortcutHint, { keys: ['q'], description: 'back' }),
