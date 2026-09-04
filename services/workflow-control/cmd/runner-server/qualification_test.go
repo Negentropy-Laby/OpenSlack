@@ -72,12 +72,57 @@ func TestGS8BQualificationProcessIdentityIsStableWithinOneProcess(t *testing.T) 
 	}
 }
 
-// TestGS8BQualification is deliberately environment-gated. When enabled it
-// uses a real PostgreSQL schema, the externally anchored sealed worker bundle,
-// and real TypeScript child processes. Its strongest claim is LOCAL_PASS.
+// TestGS8BQualification is deliberately environment-gated. After GS9-H it
+// proves that the authenticated legacy admission surface is retired without a
+// PostgreSQL mutation. Durable recovery remains qualified independently below.
 func TestGS8BQualification(t *testing.T) {
 	if os.Getenv("WORKFLOW_RUNNER_GS8B_QUALIFICATION") != "1" {
-		t.Skip("GS8-B real PostgreSQL/TypeScript worker qualification is not enabled")
+		t.Skip("GS8-B retired-admission PostgreSQL qualification is not enabled")
+	}
+
+	pool := testsupport.OpenPostgres(t)
+	workspaceRoot := filepath.Clean(t.TempDir())
+	descriptorRoot := filepath.Join(workspaceRoot, ".runner-descriptors")
+	prepareDescriptorRoot(t, descriptorRoot)
+	repository := runnerpostgres.New(pool)
+	service := qualificationRunnerApp(t, repository)
+	job := createQualificationJob(t, workspaceRoot, descriptorRoot, "retired-admission", `
+export async function run() {
+  throw new Error("retired TypeScript worker must never start");
+}
+`)
+
+	unauthorizedRequest := httptest.NewRequest(
+		http.MethodPost,
+		runnerapp.RouteJobs,
+		bytes.NewReader(job.Prepared.ExactBody),
+	)
+	unauthorizedResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(unauthorizedResponse, unauthorizedRequest)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("retired admission bypassed identity: %d %s", unauthorizedResponse.Code, unauthorizedResponse.Body.String())
+	}
+
+	first := submitQualificationJob(t, service.Handler(), job)
+	replay := submitQualificationJob(t, service.Handler(), job)
+	if first.Code != http.StatusGone || replay.Code != first.Code || replay.Body.String() != first.Body.String() ||
+		!strings.Contains(first.Body.String(), "WORKFLOW_RUNNER_TS_MUTATION_RETIRED") {
+		t.Fatalf("retired admission response drift: first=%d %q replay=%d %q", first.Code, first.Body.String(), replay.Code, replay.Body.String())
+	}
+	var jobs int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM workflow_runner_jobs WHERE workspace_id=$1`, gs8bQualificationWorkspace).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 0 {
+		t.Fatalf("retired admission persisted %d legacy runner jobs", jobs)
+	}
+}
+
+// runLegacyGS8BQualification retains the closed pre-GS9-H lifecycle fixture
+// for bounded recovery archaeology. It is not composed into any active gate.
+func runLegacyGS8BQualification(t *testing.T) {
+	if os.Getenv("WORKFLOW_RUNNER_GS8B_QUALIFICATION") != "1" {
+		t.Skip("GS8-B historical PostgreSQL/TypeScript worker qualification is not enabled")
 	}
 	bundleRoot := strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS8B_BUNDLE_ROOT"))
 	bundleHash := strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256"))

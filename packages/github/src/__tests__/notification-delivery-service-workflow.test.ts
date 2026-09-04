@@ -405,7 +405,7 @@ describe('notification delivery service workflow', () => {
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const gs6CrossLanguageIndex = stepIndex('Qualify GS6 official-SDK single-writer cutover');
     const gs7bCrossLanguageIndex = stepIndex('Qualify GS7-B TypeScript-to-Go shadow observation');
-    const gs8bRunnerIndex = stepIndex('Qualify GS8-B real TypeScript runner lifecycle');
+    const gs8bRunnerIndex = stepIndex('Qualify GS8-B retired admission and recovery');
     const gs9bAuthorityIndex = stepIndex('Qualify GS9-B Workflow Control authority');
     const gs9cCheckpointIndex = stepIndex('Qualify GS9-C Workflow checkpoint shadow');
     const gs9dEffectIndex = stepIndex('Qualify GS9-D Workflow effect shadow');
@@ -602,7 +602,7 @@ describe('notification delivery service workflow', () => {
       run: gs7bCrossLanguageRun(),
     });
     expect(job.steps[gs8bRunnerIndex]).toMatchObject({
-      name: 'Qualify GS8-B real TypeScript runner lifecycle',
+      name: 'Qualify GS8-B retired admission and recovery',
       'working-directory': 'services/workflow-control',
     });
     expect(job.steps[gs9bAuthorityIndex]).toEqual({
@@ -684,7 +684,7 @@ describe('notification delivery service workflow', () => {
       'Pull pinned Go verification images',
       'Qualify GS6 official-SDK single-writer cutover',
       'Qualify GS7-B TypeScript-to-Go shadow observation',
-      'Qualify GS8-B real TypeScript runner lifecycle',
+      'Qualify GS8-B retired admission and recovery',
       'Qualify GS9-B Workflow Control authority',
       'Qualify GS9-C Workflow checkpoint shadow',
       'Qualify GS9-D Workflow effect shadow',
@@ -698,7 +698,7 @@ describe('notification delivery service workflow', () => {
     expect(new Set(expectedStepNames).size).toBe(expectedStepNames.length);
 
     const gs8bRunnerRun = job.steps.find(
-      (step) => step.name === 'Qualify GS8-B real TypeScript runner lifecycle',
+      (step) => step.name === 'Qualify GS8-B retired admission and recovery',
     )?.run;
     expect(gs8bRunnerRun).toEqual(expect.any(String));
     const expectedRuns: Record<string, string> = {
@@ -780,7 +780,7 @@ describe('notification delivery service workflow', () => {
       ),
       'Qualify GS6 official-SDK single-writer cutover': gs6CrossLanguageRun(),
       'Qualify GS7-B TypeScript-to-Go shadow observation': gs7bCrossLanguageRun(),
-      'Qualify GS8-B real TypeScript runner lifecycle': gs8bRunnerRun as string,
+      'Qualify GS8-B retired admission and recovery': gs8bRunnerRun as string,
       'Qualify GS9-B Workflow Control authority': gs9bAuthorityRun(),
       'Qualify GS9-C Workflow checkpoint shadow': gs9cCheckpointRun(),
       'Qualify GS9-D Workflow effect shadow': gs9dEffectRun(),
@@ -1027,21 +1027,15 @@ describe('notification delivery service workflow', () => {
     expect(step?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
   });
 
-  it('qualifies the GS8-B sealed runner, durable restart, and default-off image boundary', () => {
+  it('qualifies GS8-B retired admission, durable recovery, and the default-off image boundary', () => {
     const linuxStep = workflow.jobs.validate.steps.find(
-      (candidate) => candidate.name === 'Qualify GS8-B real TypeScript runner lifecycle',
+      (candidate) => candidate.name === 'Qualify GS8-B retired admission and recovery',
     );
     expect(linuxStep).toMatchObject({
-      name: 'Qualify GS8-B real TypeScript runner lifecycle',
+      name: 'Qualify GS8-B retired admission and recovery',
       'working-directory': 'services/workflow-control',
     });
     for (const evidence of [
-      'bun run build',
-      'scripts/qualification/workflow-runner-bundle.ts verify-reproducible',
-      'scripts/qualification/workflow-runner-bundle.ts stage',
-      '--bundle-root "$bundle_root"',
-      '--node-executable "$(command -v node)"',
-      'WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256',
       'go test ./internal/runnerstore/postgres -count=1',
       'WORKFLOW_RUNNER_GS8B_QUALIFICATION=1',
       "-run '^TestGS8BQualification$'",
@@ -1056,6 +1050,9 @@ describe('notification delivery service workflow', () => {
     expect(
       linuxStep?.run?.match(/published="\$\(docker port "\$postgres_container" 5432\/tcp\)"/gu),
     ).toHaveLength(2);
+    expect(linuxStep?.run).not.toContain('bun run build');
+    expect(linuxStep?.run).not.toContain('workflow-runner-bundle.ts');
+    expect(linuxStep?.run).not.toContain('WORKFLOW_RUNNER_GS8B_BUNDLE');
     expect(linuxStep?.run).not.toContain('cp -R packages/workflows/dist');
     expect(linuxStep?.run).not.toMatch(/\|\|\s*true[^\n]*go test/iu);
 
@@ -1171,7 +1168,7 @@ describe('notification delivery service workflow', () => {
     );
 
     const names = workflow.jobs.validate.steps.map((candidate) => candidate.name);
-    expect(names.indexOf('Qualify GS8-B real TypeScript runner lifecycle')).toBeLessThan(
+    expect(names.indexOf('Qualify GS8-B retired admission and recovery')).toBeLessThan(
       names.indexOf('Qualify GS9-B Workflow Control authority'),
     );
     expect(names.indexOf('Qualify GS9-B Workflow Control authority')).toBeLessThan(

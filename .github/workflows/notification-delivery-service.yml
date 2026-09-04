@@ -394,23 +394,10 @@ jobs:
           test "$postgres_port" -ge 1
           export DATABASE_URL="postgres://openslack:openslack@127.0.0.1:${postgres_port}/openslack?sslmode=disable"
           OPENSLACK_GS7B_CROSS_LANGUAGE=1 go test ./cmd/server -run '^TestGS7BCrossLanguageShadowObservation$' -count=1
-      - name: Qualify GS8-B real TypeScript runner lifecycle
+      - name: Qualify GS8-B retired admission and recovery
         working-directory: services/workflow-control
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
-          bun run build
-          bundle_root="$RUNNER_TEMP/openslack-gs8b-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          test ! -e "$bundle_root"
-          bun scripts/qualification/workflow-runner-bundle.ts verify-reproducible \
-            --node-executable "$(command -v node)"
-          bun scripts/qualification/workflow-runner-bundle.ts stage \
-            --bundle-root "$bundle_root" \
-            --node-executable "$(command -v node)"
-          export WORKFLOW_RUNNER_GS8B_BUNDLE_ROOT="$bundle_root"
-          bundle_manifest_hash="$(sha256sum "$bundle_root/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
-          export WORKFLOW_RUNNER_GS8B_BUNDLE_MANIFEST_SHA256="$bundle_manifest_hash"
-          cd services/workflow-control
           postgres_container="openslack-gs8b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() {
             docker rm --force "$postgres_container" >/dev/null 2>&1 || true
