@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: OpenSlack Workflow Runner Control API
-  version: 1.2.0-gs9h
+  version: 1.3.0-gs9i
   description: >-
     Private default-off runner lifecycle service. GS9-F2b provides the
     loopback-only authority-binding companion for exact checkpoint, effect,
@@ -9,6 +9,8 @@ info:
     immutable, explicitly allowlisted new-record canary receipts after durable
     Workflow Control accept. GS9-H retires TypeScript new admission; legacy
     receipts and jobs remain available only for authenticated read/recovery.
+    GS9-I removes the qualification-only runner mode and reports only the Go
+    authority state that remains reachable.
 servers:
   - url: http://127.0.0.1:8081
 security: []
@@ -8272,7 +8274,17 @@ components:
       type: object
       additionalProperties: false
       unevaluatedProperties: false
-      required: [schema, buildSha, schemaVersion, mode, workflowAuthority]
+      required:
+        [
+          schema,
+          buildSha,
+          schemaVersion,
+          mode,
+          workflowAuthority,
+          routingActivated,
+          productionRoutingActivated,
+          newRecordCanary,
+        ]
       properties:
         schema: { const: openslack.workflow_runner_control_service_version.v1 }
         buildSha: { $ref: '#/components/schemas/Hash' }
@@ -8280,11 +8292,9 @@ components:
           type: integer
           minimum: 2
           maximum: 8
-        mode: { const: runner-control-explicit }
-        workflowAuthority: { enum: [typescript, immutable-route-receipt] }
-        v2QualificationAdmission: { type: boolean }
+        mode: { const: runner-control-go-authority }
+        workflowAuthority: { const: workflow-control }
         routingActivated: { type: boolean }
-        v2RuntimeDeliveryQualification: { type: boolean }
         productionRoutingActivated: { type: boolean }
         newRecordCanary: { type: boolean }
     Error:

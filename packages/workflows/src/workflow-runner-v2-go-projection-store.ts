@@ -1,5 +1,6 @@
 import type { RunStatus } from './types.js';
 import { isRunStatusTransitionAllowed, RunStore, type RunMeta } from './run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from './internal/workflow-run-store-recovery-access.js';
 import type {
   WorkflowControlAuthorityExpectedHead,
   WorkflowControlAuthorityPort,
@@ -15,31 +16,21 @@ import type { WorkflowRunnerV2ExecutionDescriptor } from './workflow-runner-v2-d
  */
 export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
   readonly #descriptor: WorkflowRunnerV2ExecutionDescriptor;
-  readonly #authority?: WorkflowControlAuthorityPort;
+  readonly #authority: WorkflowControlAuthorityPort;
   #head: Promise<WorkflowControlAuthorityRunRead> | undefined;
 
-  constructor(
-    options: {
-      readonly baseDir: string;
-      readonly descriptor: WorkflowRunnerV2ExecutionDescriptor;
-    } & (
-      | { readonly mode: 'qualification'; readonly authority?: never }
-      | { readonly mode: 'authority'; readonly authority: WorkflowControlAuthorityPort }
-    ),
-  ) {
-    super({ baseDir: options.baseDir });
+  constructor(options: {
+    readonly baseDir: string;
+    readonly descriptor: WorkflowRunnerV2ExecutionDescriptor;
+    readonly authority: WorkflowControlAuthorityPort;
+  }) {
+    super({ baseDir: options.baseDir, access: createWorkflowRunStoreRecoveryAccess() });
     this.#descriptor = options.descriptor;
     this.#authority = options.authority;
-    if ((options.mode === 'authority') !== (this.#authority !== undefined)) {
-      throw new TypeError(
-        'Go recovery projection mode and Workflow Control authority must be paired.',
-      );
-    }
   }
 
   override async runExists(runId: string): Promise<boolean> {
     const local = await super.runExists(runId);
-    if (!this.#authority) return local;
     const remote = await this.#read(runId);
     // A committed created -> running transition may survive a worker crash
     // before its local recovery projection is created. Let initRun rebuild
@@ -81,7 +72,6 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
   }
 
   override async initRun(runId: string, meta: RunMeta): Promise<void> {
-    if (!this.#authority) return super.initRun(runId, meta);
     this.#assertRun(runId);
     const remote = await this.#read(runId);
     if (
@@ -119,7 +109,6 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
   }
 
   override async transitionStatus(runId: string, newStatus: RunStatus['status']): Promise<void> {
-    if (!this.#authority) return super.transitionStatus(runId, newStatus);
     this.#assertRun(runId);
     // Checkpoint, effect, and budget authorities may legitimately advance the
     // same Workflow authority revision while the lifecycle state stays put.
@@ -148,8 +137,9 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
 
   async #read(runId: string): Promise<WorkflowControlAuthorityRunRead> {
     this.#assertRun(runId);
-    this.#head ??= this.#authority!.readIfExists(runId, this.#descriptor.authorityRoute).then(
-      (head) => {
+    this.#head ??= this.#authority
+      .readIfExists(runId, this.#descriptor.authorityRoute)
+      .then((head) => {
         if (!head) {
           throw projectionFailure(
             'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
@@ -157,8 +147,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
           );
         }
         return head;
-      },
-    );
+      });
     return this.#head;
   }
 
@@ -179,7 +168,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       revision: head.revision + 1,
     };
     try {
-      await this.#authority!.transition(record, expected, this.#descriptor.correlationId);
+      await this.#authority.transition(record, expected, this.#descriptor.correlationId);
     } catch (error) {
       this.#head = undefined;
       throw projectionFailure(

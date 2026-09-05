@@ -6,7 +6,7 @@ import {
   type WorkflowControlAuthorityPort,
   type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
-import { createWorkflowRunProjectionStore } from './workflow-run-projection.js';
+import { openWorkflowRunReadOnly } from './workflow-run-projection.js';
 import {
   createWorkflowRunRouteJournal,
   WorkflowRunRoutingError,
@@ -62,7 +62,7 @@ async function readLocalEvidence(
   const read = async (backend: 'ts-local' | 'go'): Promise<LocalRead> => {
     try {
       return {
-        value: await createWorkflowRunProjectionStore(rootDir, backend).getRunStatus(runId),
+        value: await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId),
       };
     } catch {
       return {

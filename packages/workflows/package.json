@@ -11,8 +11,8 @@
       "import": "./dist/index.js"
     },
     "./workflow-runner-worker": {
-      "types": "./dist/workflow-runner-worker.d.ts",
-      "import": "./dist/workflow-runner-worker.js"
+      "types": "./dist/workflow-runner-worker-public.d.ts",
+      "import": "./dist/workflow-runner-worker-public.js"
     }
   },
   "bin": {

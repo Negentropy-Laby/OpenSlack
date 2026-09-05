@@ -31,7 +31,7 @@ const hoisted = vi.hoisted(() => {
     loadRoutingConfig: vi.fn(),
     createRoutingContext: vi.fn(),
     createRouteJournal: vi.fn(),
-    createProjectionStore: vi.fn(),
+    openRunReadOnly: vi.fn(),
     inspectReadOnly: vi.fn(),
     readWorkflowPolicy: vi.fn(),
     RunnerControlError,
@@ -66,20 +66,13 @@ vi.mock('@openslack/workflows', () => ({
   createWorkflowRunRouteJournal: (...args: unknown[]) => hoisted.createRouteJournal(...args),
   createWorkflowRunRoutingExecutionContext: (...args: unknown[]) =>
     hoisted.createRoutingContext(...args),
-  createWorkflowRunProjectionStore: (...args: unknown[]) => hoisted.createProjectionStore(...args),
+  openWorkflowRunReadOnly: (...args: unknown[]) => hoisted.openRunReadOnly(...args),
   loadWorkflowRunnerControlConfig: (...args: unknown[]) => hoisted.loadRunnerConfig(...args),
   loadWorkflowRunRoutingConfig: (...args: unknown[]) => hoisted.loadRoutingConfig(...args),
   inspectWorkflowRunReadOnly: (...args: unknown[]) => hoisted.inspectReadOnly(...args),
   WorkflowRunnerControlError: hoisted.RunnerControlError,
   WorkflowRunRoutingConfigError: hoisted.RoutingConfigError,
   WorkflowRunRoutingError: hoisted.RoutingError,
-  executeRun: vi.fn(),
-  executeResume: vi.fn(),
-  RunStore: vi.fn().mockImplementation(() => ({
-    loadMeta: vi.fn().mockResolvedValue(null),
-    getRunStatus: vi.fn().mockResolvedValue(null),
-    listRunsByStatus: vi.fn().mockResolvedValue([]),
-  })),
   checkResumable: vi.fn(),
   prepareResume: vi.fn(),
   renderRunHtml: vi.fn(),
@@ -135,7 +128,7 @@ describe('collaboration workflow issue commands', () => {
       authority: undefined,
       journal: { locateReadOnly: vi.fn().mockResolvedValue(null) },
     });
-    hoisted.createProjectionStore.mockReturnValue({
+    hoisted.openRunReadOnly.mockReturnValue({
       getRunStatus: vi.fn().mockResolvedValue(null),
     });
     hoisted.readWorkflowPolicy.mockReturnValue({
@@ -254,10 +247,10 @@ describe('collaboration workflow issue commands', () => {
     expect(hoisted.inspectReadOnly).not.toHaveBeenCalled();
   });
 
-  it('surfaces the retired rollback mode as a routing configuration failure', async () => {
+  it('keeps the removed rollback value fail-closed as unsupported', async () => {
     vi.stubEnv('OPENSLACK_WORKFLOW_RUN_ROUTING_MODE', 'ts-new-record-rollback-v1');
     hoisted.loadRoutingConfig.mockImplementation(() => {
-      throw new hoisted.RoutingConfigError('TypeScript new-record rollback is retired.');
+      throw new hoisted.RoutingConfigError('Workflow run routing mode is unsupported.');
     });
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -273,7 +266,7 @@ describe('collaboration workflow issue commands', () => {
 
     expect(process.exitCode).toBe(1);
     expect(error).toHaveBeenCalledWith(
-      'WORKFLOW_RUN_ROUTING_CONFIG_INVALID: TypeScript new-record rollback is retired.',
+      'WORKFLOW_RUN_ROUTING_CONFIG_INVALID: Workflow run routing mode is unsupported.',
     );
     expect(hoisted.inspectReadOnly).not.toHaveBeenCalled();
   });

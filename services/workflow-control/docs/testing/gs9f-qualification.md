@@ -1,6 +1,9 @@
 # GS9-F1 Foundation, GS9-F2a Contract, and GS9-F2b Runtime Qualification
 
-GS9-F1 qualifies only the frozen Workflow Runner v2 admission/storage, negotiation, and
+This file retains the reviewed GS9-F qualification gates as historical exact-head evidence. GS9-I
+does not rewrite the frozen runner-v1, runner-v2, authority-v2, or F2a contract artifacts.
+
+At the F1 boundary, GS9-F1 qualified only the frozen Workflow Runner v2 admission/storage, negotiation, and
 receipt-before-decision transport foundation plus a local opaque-call ordering seam. It
 does not deliver the real checkpoint, TypeScript effect, budget, or resume adapters and does not
 activate production v2 submission or routing.
@@ -141,9 +144,37 @@ hosted exact-head gates.
 
 ## GS9-H TypeScript read-only recovery gate
 
-GS9-H requires the public package, CLI, TUI, rehearsal scripts, and authenticated runner HTTP surface
+GS9-H required the public package, CLI, TUI, rehearsal scripts, and authenticated runner HTTP surface
 to reject TypeScript create/resume/control composition before a descriptor, route, or store mutation.
 The former rollback configuration must fail closed. A non-initializing receipt lookup must leave flat,
 damaged, and partitioned journal evidence untouched. Go inspection may report authority state only from
 an authenticated durable head that agrees with the immutable receipt; local recovery projections are
-drift evidence only. Legacy worker/parser code remains for drain/recovery and is deleted only in GS9-I.
+drift evidence only. At the H boundary, legacy worker/parser code remained temporarily for
+drain/recovery pending GS9-I.
+
+## GS9-I TypeScript writer deletion gate
+
+GS9-I source and package gates must prove all of the following:
+
+- the package root exposes neither the full `RunStore` writer and its writer options nor a
+  writer-shaped workflow projection factory;
+- ordinary CLI/library readers receive only `openWorkflowRunReadOnly`, and attempted directory,
+  write, append, or atomic-replacement operations fail before changing local evidence;
+- direct TypeScript execute/resume composition is absent; the internal execution adapters require a
+  Go recovery-projection store plus checkpoint and effect authority ports;
+- the packaged worker has no runner-v1 execution branch and no GS9-F1 qualification-only execution
+  mode; retired enablement variables cannot activate either path;
+- the only executable worker configuration requires complete runner-v2 runtime-delivery and Go run
+  authority bindings, and accepts only `go / workflow-control` descriptors; and
+- old `ts-local` receipts remain parseable as historical evidence while new TypeScript route commits,
+  resume, or writer selection fail closed.
+
+The focused TypeScript regression covers the public source boundary, read-only RunStore adapter,
+routing config, execution client, Go projection, worker configuration, and run/resume behavior. The
+existing frozen-contract and Go runner suites remain required because deletion must not change their
+contract bytes, bounded compatibility parsers, or Go authority behavior.
+
+Passing these local gates establishes only physical TypeScript writer deletion for the tested head.
+It performs no migration or data conversion, selects no routing epoch, and activates no deployment.
+Authenticated external regression, hosted exact-head checks, review approval, merge, production
+cutover, release, and live status remain separate evidence.

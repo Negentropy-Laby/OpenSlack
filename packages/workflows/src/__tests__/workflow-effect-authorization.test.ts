@@ -11,7 +11,6 @@ import {
   workflowEffectApprovalAuditEventId,
 } from '../workflow-effect-approval.js';
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
-import { executeRunWithStore } from '../execute.js';
 import { createRuntimeWithHostAuthorities } from '../runtime.js';
 import { RunStore } from '../run-store.js';
 import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
@@ -491,66 +490,6 @@ describe('workflow effect D2 authorization', () => {
     ).toThrow(WorkflowEffectApprovalPendingError);
     expect(appendAuditRecord).not.toHaveBeenCalled();
     expect(await recordFiles(value)).toHaveLength(1);
-  });
-
-  it('keeps a caught pending decision paused at the authenticated worker boundary', async () => {
-    const value = await fixture();
-    const store = new RunStore({
-      baseDir: join(value.workspaceRoot, '.openslack.local', 'workflows'),
-    });
-    const workflow = {
-      hash: SOURCE_HASH,
-      meta: {
-        name: value.binding.workflowId,
-        version: value.binding.workflowVersion,
-        description: 'D2 pending run-state integration.',
-        phases: [{ title: 'Run', detail: 'Run once.' }],
-        risk: 'low' as const,
-      },
-      async run(ctx: WorkflowRuntime) {
-        try {
-          await ctx.openslack.governance.audit('bounded audit');
-        } catch (error) {
-          expect(error).toBeInstanceOf(WorkflowEffectApprovalPendingError);
-        }
-        return { status: 'completed' as const };
-      },
-    };
-    const checkpointAuthority = createWorkflowCheckpointLeaseAuthority({
-      workspaceId: value.binding.workspaceId,
-      jobId: 'job-1',
-      workflowRunId: value.binding.runId,
-      attemptId: 'attempt-1',
-      leaseId: 'lease-1',
-      fencingToken: 1,
-      correlationId: value.binding.correlationId,
-      runnerBuildHash: BUILD_HASH,
-      workflowSourceHash: SOURCE_HASH,
-      manifestHash: MANIFEST_HASH,
-      inputHash: INPUT_HASH,
-    });
-
-    await expect(
-      executeRunWithStore(
-        workflow,
-        {
-          runId: value.binding.runId,
-          manifest: workflow.meta,
-          args: {},
-          budget: { tokens: 1_000, costUsd: 1 },
-          onConfirm: async () => true,
-          rootDir: value.workspaceRoot,
-          effectBoundary: value.boundary,
-        },
-        store,
-        checkpointAuthority,
-        value.makePort(),
-      ),
-    ).rejects.toBeInstanceOf(WorkflowEffectApprovalPendingError);
-    await expect(store.loadStatus(value.binding.runId)).resolves.toMatchObject({
-      status: 'paused_waiting_approval',
-    });
-    await expect(store.loadOutput(value.binding.runId)).resolves.toBeNull();
   });
 
   it('reports only the exact v2 rejection as a rejected runner outcome', async () => {

@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-22
+updated: 2026-09-05
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -16,8 +16,10 @@ sources:
 ## Overview
 
 This document specifies the internal architecture of the `@openslack/workflows`
-package: the runtime engine that loads, validates, executes, checkpoints, and
-resumes OpenSlack workflow modules.
+package: the runtime engine that loads and validates workflow modules and executes
+their JavaScript adapters only inside the sealed Go-authority runner-v2 boundary.
+Go Workflow Control owns the durable workflow record. Ordinary TypeScript callers
+have read-only inspection and historical export, not a RunStore mutation capability.
 
 ## Package Structure
 
@@ -33,8 +35,10 @@ packages/workflows/
     parallel-runner.ts        # Concurrent execution with budget tracking
     pipeline-runner.ts        # Bounded-concurrency item pipeline with per-item checkpoints
     cache.ts                  # Cache key computation and lookup
-    run-store.ts              # Run directory management and persistence
-    resume.ts                 # Resume logic with cached result replay
+    run-store.ts              # Internal read-only and Go recovery-projection storage
+    workflow-run-projection.ts # Bounded read-only projection opener
+    execute.ts                # Dry-run plus sealed Go-authority v2 execution adapters
+    resume.ts                 # Read-only resume checks and cached-result replay helpers
     anthropic-compat.ts       # Compatibility shim for Anthropic-format workflows
     permission-checker.ts     # Permission validation and gating
     html-renderer.ts          # Self-contained HTML artifact generation
@@ -539,6 +543,11 @@ interface CacheEntry {
 
 ## Run Store (`run-store.ts`)
 
+The layout and transitions below document the frozen v1 local-state format. GS9-I preserves those
+bytes and readers but removes the public full writer and public writer-shaped projection factory.
+Ordinary composition uses `openWorkflowRunReadOnly`; the remaining mutation-capable store is
+internal to the sealed Go recovery-projection path and requires Go authority binding.
+
 ### Directory Structure
 
 ```
@@ -581,6 +590,10 @@ Each log entry is a JSONL line:
 ```
 
 ## Resume Logic (`resume.ts`)
+
+The steps below are the historical v1 resume model. Current resume composition first resolves a
+durable Go route and authority head, then submits a sealed runner-v2 descriptor. A TypeScript-owned
+or unrouted historical record can be inspected or exported but cannot enter this execution flow.
 
 ### Resume Flow
 
@@ -1080,7 +1093,8 @@ database-commit reconciliation under the common run lock.
 Public CLI and TUI execution submit to the loopback Workflow Runner control service rather than
 calling `executeRun` or `executeResume` directly. The client seals a descriptor, submits only the
 canonical hash-bound JobSpec, polls the strict JobView, and accepts a completed result only when
-its hash matches the durable RunStore output. Resume creates a new job and descriptor but reuses
+its hash matches the Go recovery-projection output artifact and the durable Workflow Control head
+agrees. Resume creates a new job and descriptor but reuses
 the workflow run ID. Project/user workflow sources remain single-file and self-contained; reviewed
 builtins may use transitive product modules because the exact builtin source hash and the sealed
 runner build hash jointly bind those bytes. Missing transport configuration fails before execution
@@ -1149,8 +1163,8 @@ durably acknowledged. Restart with an unclosed local binding fails closed until 
 coordinator evidence is reconciled.
 
 F2b did not change the public CLI/TUI submission path or choose new-record ownership. GS9-G later
-established routing and the Go single-writer canary; GS9-H now retires TypeScript mutation composition.
-Physical TypeScript writer deletion remains the separate GS9-I batch.
+established routing and the Go single-writer canary; GS9-H retired TypeScript mutation composition.
+GS9-I subsequently deletes the remaining TypeScript writer implementation.
 
 GS9-H keeps GS9-G's process-immutable Go routing composition but makes an explicit Go authority route
 mandatory for every new execution. With no mode, residual settings are diagnostic-only and execution
@@ -1198,9 +1212,24 @@ RunStore-shaped recovery projections are comparison evidence and never become a 
 record. Safe rollback raises the Go epoch, sets `acceptNewRecords=false`, stops admission, and drains
 existing Go routes. TypeScript reactivation requires a separately governed batch.
 
+GS9-I removes `RunStore` and its writer options from the package root and replaces the public
+writer-shaped projection factory with `openWorkflowRunReadOnly`. The returned surface contains only
+bounded reads, and its filesystem adapter rejects mutation. The internal execute and resume functions
+now require a Go recovery-projection store plus checkpoint and effect authority ports; they are loaded
+only by the sealed runner-v2 Go-authority worker. There is no ordinary TypeScript execute/resume path.
+
+The runner-v1 execution branch and the GS9-F1 qualification-only worker mode and enablement are also
+deleted. The only executable worker configuration requires both complete runtime delivery and Go run
+authority. Frozen v1 contract files and old `ts-local` route receipts remain parseable historical
+evidence; neither can select a writer. This deletion performs no migration or data conversion, selects
+no new routing epoch, and does not establish production, release, or live readiness. Authenticated
+external regression, hosted checks, review, and merge remain independent gates.
+
 ### Operator Module
 
-The Operator module provides the CLI commands that interface with the runtime:
+The Operator module provides the CLI commands that interface with the runtime. `run` and `resume`
+submit only sealed Go-authority runner-v2 work; `inspect` and run-listing commands use the read-only
+surface for Go recovery projections or TypeScript-historical evidence:
 
 ```typescript
 // In apps/cli/src/commands/collaboration.ts (Collaboration module owns workflow commands)
@@ -1242,8 +1271,8 @@ import { readModules, getModuleById } from '@openslack/workspace';
 - Manifest: validation rules, required fields, invalid inputs
 - Runtime: phase tracking, budget enforcement, mode restrictions
 - Cache: key computation, invalidation, hit/miss
-- Run store: directory creation, status transitions, log persistence
-- Resume: cached replay, manifest mismatch, interrupted pipeline
+- Run store: read-only enforcement plus internal Go recovery-projection persistence
+- Resume: cached replay, manifest mismatch, historical-record rejection, and Go-authority routing
 - Permission checker: forbidden actions, intersection, trust levels
 - Anthropic compat: global injection, mode mapping
 

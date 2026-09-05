@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
 
@@ -40,9 +41,9 @@ func TestSchedulerRateLimitsSettledRetryableSessionFailure(t *testing.T) {
 func TestSchedulerRequiresAndConsumesV2AuthorityRecovery(t *testing.T) {
 	now := time.Now().UTC()
 	base := testScheduler(t, &schedulerStore{}, now).config
-	base.V2RuntimeDelivery = true
+	base.AuthorityRecovery = nil
 	if _, err := New(base); err == nil || !strings.Contains(err.Error(), "authority recovery store is required") {
-		t.Fatalf("runtime delivery accepted without startup recovery capability: %v", err)
+		t.Fatalf("v2 scheduler accepted without startup recovery capability: %v", err)
 	}
 	base.AuthorityRecovery = authorityRecoveryFunc(func(context.Context, string, time.Time, int) (runnerstore.V2AuthorityRecoverySummary, error) {
 		return runnerstore.V2AuthorityRecoverySummary{Examined: 1, Reconciled: 2}, nil
@@ -56,13 +57,22 @@ func TestSchedulerRequiresAndConsumesV2AuthorityRecovery(t *testing.T) {
 	}
 }
 
-func testScheduler(t testing.TB, store SessionStore, now time.Time) *Scheduler {
+func testScheduler(t testing.TB, store *schedulerStore, now time.Time) *Scheduler {
 	t.Helper()
-	session, err := NewSession(SessionConfig{Store: store, Launcher: processLauncherFunc(func(context.Context) (WorkerProcess, error) { return nil, errors.New("launch failed") }), ControlBuildHash: strings.Repeat("f", 64), HeartbeatInterval: time.Second, LeaseOfferTimeout: time.Second, CancelWindow: time.Second, CancelGrace: 10 * time.Millisecond, TerminalExitGrace: 10 * time.Millisecond, PollInterval: 10 * time.Millisecond, Now: func() time.Time { return now }})
-	if err != nil {
-		t.Fatal(err)
+	if store.lease.RequiredProtocolVersion == "" {
+		store.lease = testLease(now)
+		store.lease.RequiredProtocolVersion = runnerprotocols.V2
 	}
-	scheduler, err := New(Config{Store: store, Session: session, WorkspaceID: "workspace-1", SupervisorInstanceID: "supervisor-1", MaxProcesses: 1, LeaseOfferTimeout: time.Second, LeaseDuration: time.Second, PollInterval: 10 * time.Millisecond, RecoveryInterval: time.Second, Now: func() time.Time { return now }})
+	session := protocolSessionFunc(func(context.Context, runnerstore.AttemptLease) error {
+		if store.settleErr != nil {
+			return store.settleErr
+		}
+		return &sessionRunError{err: errors.New("settled retryable failure"), disposition: sessionErrorSettled}
+	})
+	recovery := authorityRecoveryFunc(func(context.Context, string, time.Time, int) (runnerstore.V2AuthorityRecoverySummary, error) {
+		return runnerstore.V2AuthorityRecoverySummary{}, nil
+	})
+	scheduler, err := New(Config{Store: store, V2Session: session, AuthorityRecovery: recovery, WorkspaceID: "workspace-1", SupervisorInstanceID: "supervisor-1", MaxProcesses: 1, LeaseOfferTimeout: time.Second, LeaseDuration: time.Second, PollInterval: 10 * time.Millisecond, RecoveryInterval: time.Second, Now: func() time.Time { return now }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +89,12 @@ type schedulerStore struct {
 }
 
 type authorityRecoveryFunc func(context.Context, string, time.Time, int) (runnerstore.V2AuthorityRecoverySummary, error)
+
+type protocolSessionFunc func(context.Context, runnerstore.AttemptLease) error
+
+func (function protocolSessionFunc) Run(ctx context.Context, lease runnerstore.AttemptLease) error {
+	return function(ctx, lease)
+}
 
 func (function authorityRecoveryFunc) RecoverAuthorityBindingsAtStartup(ctx context.Context, workspaceID string, before time.Time, limit int) (runnerstore.V2AuthorityRecoverySummary, error) {
 	return function(ctx, workspaceID, before, limit)

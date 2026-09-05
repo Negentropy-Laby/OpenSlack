@@ -344,6 +344,9 @@ export class WorkflowRunRouter {
 
   constructor(value: unknown) {
     this.#policy = validateWorkflowRunRoutingPolicy(value);
+    if (this.#policy.backend !== 'go') {
+      fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', 'New TypeScript workflow routing is retired.');
+    }
     this.#policyHash = hashWorkflowRunRoutingPolicy(this.#policy);
   }
 
@@ -461,6 +464,12 @@ export class WorkflowRunRouteJournal {
 
   async commit(value: unknown): Promise<WorkflowRunRouteReceipt> {
     const receipt = validateWorkflowRunRouteReceipt(value);
+    if (receipt.route.backend !== 'go') {
+      return fail(
+        'WORKFLOW_RUN_ROUTING_POLICY_INVALID',
+        'TypeScript route receipts are historical evidence and cannot be committed.',
+      );
+    }
     await this.#ready();
     let release: (() => Promise<void>) | undefined;
     try {

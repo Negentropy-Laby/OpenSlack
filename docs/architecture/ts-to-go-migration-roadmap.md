@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-22
+updated: 2026-09-05
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -35,7 +35,7 @@ TypeScript
   Qoder Skill
   CLI and TUI
   Operator planner
-  JavaScript Workflow DSL and runner
+  JavaScript Workflow DSL and sealed Go-authority v2 worker adapters
   provider adapters
 
 Go
@@ -551,15 +551,16 @@ wire head alone. The default image and public submission/routing remain unchange
 
 This does not collapse the remaining migration batches. GS9-G established immutable new-record route
 receipts and authenticated Go canary/recovery evidence. After legacy TypeScript active-run drain and
-Go restart/recovery qualification, GS9-H retires ordinary TypeScript mutation composition. GS9-I
-remains an independent implementation-deletion PR after H's read-only boundary is merged and reviewed.
+Go restart/recovery qualification, GS9-H retired ordinary TypeScript mutation composition. GS9-I is
+the independent implementation-deletion batch after H's read-only boundary was merged and reviewed.
 
 GS9-H accepts only an explicit Go route for new execution. Missing routing mode is inspection-only,
 the former higher-epoch TypeScript rollback value fails closed, and both runner v1 admission and a
 v2 TypeScript authority route return the stable retired-mutation response without touching a store.
 Existing TypeScript records remain historical evidence: package-root execute/resume/control exports,
-CLI run controls, TUI run controls/approval mutation, and direct rehearsal composition are removed.
-The legacy worker/parser implementations remain only for bounded drain and recovery until GS9-I.
+CLI run controls, TUI run controls/approval mutation, and direct rehearsal composition were removed.
+At the H boundary, the legacy worker/parser implementations remained temporarily for bounded drain
+and recovery pending GS9-I.
 
 Safe rollback now publishes a higher Go authority epoch with `acceptNewRecords=false`, stops new
 admission, and continues drain/recovery for already routed Go records. Re-enabling a TypeScript writer
@@ -575,6 +576,21 @@ created/running heads, and terminal or effect-output ambiguity enters reconcilia
 the workflow or an effect a second time. `openslack collaboration workflow runs inspect <runId>` uses
 a non-initializing route lookup; a Go-owned view is authoritative only when its durable receipt and
 Workflow Control head agree, while local files are reported solely as drift evidence.
+
+GS9-I physically removes the public/full TypeScript `RunStore` writer and writer factory. Ordinary
+readers receive only the bounded read-only projection surface. Initial execution and resume remain
+TypeScript JavaScript adapter responsibilities only inside the sealed runner-v2 worker, and both
+require the immutable `go / workflow-control` route plus complete Go runtime-delivery, checkpoint,
+effect, budget, and run-authority bindings. The runner-v1 execution branch and the GS9-F1
+qualification-only worker mode and environment are removed. Frozen v1 contract bytes remain as
+historical compatibility evidence, including their bounded protocol parsers, and old `ts-local` route
+receipts remain parseable for inspection; neither is a mutation route.
+
+GS9-I adds no schema migration or data conversion, selects no routing epoch, and activates no
+deployment. It does not by itself establish authenticated external regression, hosted exact-head
+success, human approval, merge, production cutover, release, or live readiness; each remains separate
+evidence. Existing Go routes continue through their recorded epoch, and rollback remains a higher Go
+epoch with new admission disabled rather than TypeScript writer reactivation.
 
 ### GS10–GS13 — Platform Runtime
 

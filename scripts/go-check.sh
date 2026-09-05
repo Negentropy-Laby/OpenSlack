@@ -706,13 +706,18 @@ detect_capabilities() {
       local runner_evidence
       for runner_evidence in \
         cmd/runner-server/main.go \
-        cmd/runner-server/qualification_test.go \
         internal/processsupervisor/supervisor_test.go \
         internal/runnerscheduler/session_test.go \
         internal/runnerstore/postgres/runner_runtime_integration_test.go; do
         [[ -f "${module_dir}/${runner_evidence}" ]] ||
           fail "Workflow Control runner capability is missing ${runner_evidence}"
       done
+      local runner_qualification_evidence="cmd/runner-server/qualification_test.go"
+      if [[ "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+        runner_qualification_evidence="cmd/runner-server/gs9f2_qualification_test.go"
+      fi
+      [[ -f "${module_dir}/${runner_qualification_evidence}" ]] ||
+        fail "Workflow Control runner capability is missing ${runner_qualification_evidence}"
     else
       [[ -f "${module_dir}/cmd/worker/main.go" ]] ||
         fail "worker capability requires cmd/worker/main.go"
@@ -806,22 +811,28 @@ detect_capabilities() {
     "${runtime_profile_ref}" == "workflow-control-runner-v2-foundation-v1" ||
       "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
     local workflow_runner_evidence
+    local workflow_runner_qualification_evidence="cmd/runner-server/qualification_test.go"
+    if [[ "${runtime_profile_ref}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      workflow_runner_qualification_evidence="cmd/runner-server/gs9f2_qualification_test.go"
+    fi
     for workflow_runner_evidence in \
-      cmd/runner-server/qualification_test.go \
+      "${workflow_runner_qualification_evidence}" \
       docs/api/runner-openapi.yaml \
       tests/contracts/runner_openapi_contract_test.go; do
       [[ -f "${module_dir}/${workflow_runner_evidence}" ]] ||
         fail "Workflow Control runner runtime profile is missing ${workflow_runner_evidence}"
     done
-    local workflow_runner_test
-    for workflow_runner_test in \
-      TestGS8BQualification \
-      TestGS8BQualificationProcessIdentityIsStableWithinOneProcess \
-      TestGS8BRestartQualification \
-      TestGS8BImageDefaultOff; do
-      grep -Eq "^func[[:space:]]+${workflow_runner_test}\\(" "${module_dir}"/cmd/runner-server/*_test.go ||
-        fail "Workflow Control runner runtime profile is missing ${workflow_runner_test}"
-    done
+    if [[ "${runtime_profile_ref}" != "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      local workflow_runner_test
+      for workflow_runner_test in \
+        TestGS8BQualification \
+        TestGS8BQualificationProcessIdentityIsStableWithinOneProcess \
+        TestGS8BRestartQualification \
+        TestGS8BImageDefaultOff; do
+        grep -Eq "^func[[:space:]]+${workflow_runner_test}\\(" "${module_dir}"/cmd/runner-server/*_test.go ||
+          fail "Workflow Control runner runtime profile is missing ${workflow_runner_test}"
+      done
+    fi
   fi
 
   if [[ "${runtime_profile_ref}" == "workflow-control-authority-v2" ||
@@ -1170,9 +1181,7 @@ detect_capabilities() {
         "${module_dir}/internal/runnerstore/postgres/gs9f2_runtime_integration_test.go" ||
         fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_test}"
     done
-    for workflow_runner_v2_runtime_test in \
-      TestGS9F2Qualification \
-      TestGS9F2ImageDefaultOff; do
+    for workflow_runner_v2_runtime_test in TestGS9F2Qualification; do
       grep -Eq "^func[[:space:]]+${workflow_runner_v2_runtime_test}\\(" \
         "${module_dir}/cmd/runner-server/gs9f2_qualification_test.go" ||
         fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_test}"
@@ -1182,7 +1191,6 @@ detect_capabilities() {
       'WORKFLOW_RUNNER_GS9F2_QUALIFICATION' \
       'WORKFLOW_RUNNER_GS9F2_RESTART_PHASE' \
       'WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA' \
-      'WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN' \
       'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED'; do
       grep -RqF "${workflow_runner_v2_runtime_marker}" \
         "${module_dir}/cmd/runner-server" \
@@ -1537,8 +1545,7 @@ run_module_gate() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
       run_workflow_runner_qualification \
         "${resource_prefix}" \
         "${network}" \
@@ -2642,75 +2649,6 @@ run_workflow_budget_authority_image_default_off() {
     go test -race ./cmd/budget-authority-server -run '^TestGS9EImageDefaultOff$' -count=1
 }
 
-run_workflow_runner_v2_runtime_delivery_image_default_off() {
-  local resource_prefix="$1"
-  local image_tag="$2"
-  local network="$3"
-  local database_name="$4"
-  local resource_owner="$5"
-  local runner_container="${resource_prefix}-runner-v2-runtime-delivery-default-off"
-  local runner_network_alias="runner-v2-runtime-delivery-default-off"
-  local bundle_root workspace_root bundle_mount workspace_mount bundle_manifest_sha
-
-  bundle_root="$(mktemp -d -t openslack-gs9f2-image-bundle.XXXXXX)"
-  workspace_root="$(mktemp -d -t openslack-gs9f2-image-workspace.XXXXXX)"
-  cleanup_directories+=("${bundle_root}" "${workspace_root}")
-  mkdir -m 0755 "${workspace_root}/descriptors"
-  chmod 0755 "${bundle_root}" "${workspace_root}"
-  printf '#!/bin/sh\nexit 0\n' >"${bundle_root}/runner-executable"
-  printf '// sealed default-off worker is never launched\n' >"${bundle_root}/workflow-runner-worker.cjs"
-  printf '%s\n' \
-    '{"schema":"openslack.workflow_runner_bundle.v1","bundleId":"openslack.gs9f2.image.default-off","runnerBuildHash":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad","executable":{"relativePath":"runner-executable","sha256":"306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"},"entrypoint":{"relativePath":"workflow-runner-worker.cjs","sha256":"73d9bf66e839f2e15975a02b0884783b7638d3e55134057f0469c2483bcb0fad"},"entrypointMode":"first-argument","fixedArguments":[],"fixedEnvironment":["NODE_ENV=test"],"workingDirectory":"."}' \
-    >"${bundle_root}/workflow-runner-bundle.v1.json"
-  chmod 0555 "${bundle_root}/runner-executable"
-  chmod 0444 \
-    "${bundle_root}/workflow-runner-worker.cjs" \
-    "${bundle_root}/workflow-runner-bundle.v1.json"
-  bundle_manifest_sha="$(sha256sum "${bundle_root}/workflow-runner-bundle.v1.json" | cut -d' ' -f1)"
-  [[ "${bundle_manifest_sha}" =~ ^[0-9a-f]{64}$ ]] ||
-    fail "Workflow Control GS9-F2b default-off bundle manifest hash is invalid"
-  bundle_mount="$(docker_path "${bundle_root}")"
-  workspace_mount="$(docker_path "${workspace_root}")"
-
-  cleanup_containers+=("${resource_owner}|${runner_container}")
-  docker_cmd_interruptible run -d --pull=never \
-    --name "${runner_container}" \
-    --label "com.openslack.go-check.run=${resource_owner}" \
-    --read-only \
-    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
-    --network "${network}" \
-    --network-alias "${runner_network_alias}" \
-    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable" \
-    --env WORKFLOW_RUNNER_CONTROL_ENABLED=1 \
-    --env WORKFLOW_RUNNER_CONTROL_HTTP_BIND=0.0.0.0:8081 \
-    --env WORKFLOW_RUNNER_CONTROL_NETWORK_MODE=internal \
-    --env WORKFLOW_RUNNER_CONTROL_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-    --env WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN_SHA256=3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9 \
-    --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID=workspace.gs9f2.image.default-off \
-    --env WORKFLOW_RUNNER_CONTROL_INSTANCE_ID=runner.gs9f2.image.default-off \
-    --env WORKFLOW_RUNNER_CONTROL_BUNDLE_ROOT=/runner-bundle \
-    --env "WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=${bundle_manifest_sha}" \
-    --env WORKFLOW_RUNNER_CONTROL_WORKSPACE_ROOT=/runner-workspace \
-    --env WORKFLOW_RUNNER_CONTROL_DESCRIPTOR_ROOT=/runner-workspace/descriptors \
-    --env WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1 \
-    --env WORKFLOW_CONTROL_HEALTH_URL=http://127.0.0.1:8081/health/ready \
-    --mount "type=bind,source=${bundle_mount},target=/runner-bundle,readonly" \
-    --mount "type=bind,source=${workspace_mount},target=/runner-workspace,readonly" \
-    --health-cmd /container-healthcheck \
-    --health-interval 1s \
-    --health-timeout 3s \
-    --health-retries 60 \
-    --entrypoint /runner-server \
-    "${image_tag}" >/dev/null
-  require_resource_owned container "${runner_container}" "${resource_owner}"
-  wait_for_healthy_container "${runner_container}" "Workflow Control GS9-F2b runtime-delivery default-off runner"
-
-  run_workflow_runner_test_container \
-    "${resource_prefix}" runner-v2-runtime-delivery-image-default-off "${network}" "${database_name}" \
-    "${resource_owner}" ./cmd/runner-server TestGS9F2ImageDefaultOff 1 \
-    "WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN=http://${runner_network_alias}:8081"
-}
-
 run_http_smoke() {
   local resource_prefix="$1"
   local image_tag="$2"
@@ -2829,8 +2767,7 @@ run_http_smoke() {
       "${runtime_profile}" == "workflow-control-checkpoint-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-effect-shadow-v1" ||
       "${runtime_profile}" == "workflow-control-budget-authority-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ||
-      "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
+      "${runtime_profile}" == "workflow-control-runner-v2-foundation-v1" ]]; then
       log "verifying Workflow Control GS8-B default image keeps runner disabled"
       run_workflow_runner_test_container \
         "${resource_prefix}" runner-image-default-off "${network}" "${database_name}" "${resource_owner}" \
@@ -2878,11 +2815,6 @@ run_http_smoke() {
         "${resource_prefix}" runner-v2-foundation-image-default-off "${network}" "${database_name}" \
         "${resource_owner}" ./internal/runnerstore/postgres TestGS9F1ImageDefaultOff 1 \
         "WORKFLOW_RUNNER_GS9F1_DEFAULT_ORIGIN=http://${app_network_alias}:8080"
-    fi
-    if [[ "${runtime_profile}" == "workflow-control-runner-v2-runtime-delivery-v1" ]]; then
-      log "verifying Workflow Control GS9-F2b default image keeps runtime delivery disabled"
-      run_workflow_runner_v2_runtime_delivery_image_default_off \
-        "${resource_prefix}" "${image_tag}" "${network}" "${database_name}" "${resource_owner}"
     fi
   fi
 }

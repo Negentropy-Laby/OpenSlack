@@ -1,9 +1,8 @@
 // Package runnerapp exposes the private, authenticated runner admission
-// surface. It owns runner lifecycle authority and, for an explicit GS9-G
-// new-record route, runs the v2 authority-binding lifecycle after durable Go
-// Workflow Control acceptance. GS9-H retires runner v1 new admission while
-// preserving authenticated reads, cancellations, and the legacy implementation
-// for closed recovery and historical contract evidence.
+// surface. It owns runner lifecycle authority and runs the v2 authority-binding
+// lifecycle only after durable Go Workflow Control acceptance. GS9-I retains an
+// authenticated v1 admission tombstone plus status/cancellation compatibility,
+// but no v1 writer implementation or qualification-only execution mode.
 package runnerapp
 
 import (
@@ -59,9 +58,6 @@ type Options struct {
 	V2Store                 runnerstore.V2JobStore
 	BindingStore            runnerstore.V2AuthorityBindingStore
 	AdmissionStore          runnerstore.V2RuntimeAdmissionStore
-	V2Qualification         bool
-	V2RuntimeDelivery       bool
-	V2NewRecordCanary       bool
 	SchemaVersion           int64
 	BuildSHA                string
 	WorkspaceID             string
@@ -78,9 +74,6 @@ type Service struct {
 	v2Store                 runnerstore.V2JobStore
 	bindingStore            runnerstore.V2AuthorityBindingStore
 	admissionStore          runnerstore.V2RuntimeAdmissionStore
-	v2Enabled               bool
-	v2RuntimeDelivery       bool
-	v2NewRecordCanary       bool
 	schemaVersion           int64
 	buildSHA                string
 	workspaceID             string
@@ -119,35 +112,18 @@ func New(options Options) (*Service, error) {
 	}
 	service := &Service{
 		store: options.Store, buildSHA: options.BuildSHA,
-		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore, v2Enabled: options.V2Qualification,
-		v2RuntimeDelivery: options.V2RuntimeDelivery,
-		v2NewRecordCanary: options.V2NewRecordCanary,
-		schemaVersion:     options.SchemaVersion,
-		workspaceID:       options.WorkspaceID, logger: options.Logger,
+		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore,
+		schemaVersion: options.SchemaVersion,
+		workspaceID:   options.WorkspaceID, logger: options.Logger,
 		runAuthorityOrigin: options.RunAuthorityOrigin, runAuthorityCallerID: options.RunAuthorityCallerID,
 		runAuthorityBuildSHA: options.RunAuthorityBuildSHA, runAuthorityTokenSHA256: options.RunAuthorityTokenSHA256,
 	}
-	if service.v2Enabled && service.v2Store == nil {
-		return nil, fmt.Errorf("runner v2 qualification Store is required when enabled")
+	if service.v2Store == nil || service.bindingStore == nil || service.admissionStore == nil {
+		return nil, fmt.Errorf("runner v2 Store, authority-binding Store, and runtime-admission Store are required")
 	}
-	if service.v2RuntimeDelivery && !service.v2Enabled {
-		return nil, fmt.Errorf("runner v2 runtime delivery requires v2 qualification")
-	}
-	if service.v2NewRecordCanary && !service.v2RuntimeDelivery {
-		return nil, fmt.Errorf("runner v2 new-record canary requires runtime delivery")
-	}
-	if !service.v2NewRecordCanary &&
-		(options.RunAuthorityOrigin != "" || options.RunAuthorityCallerID != "" ||
-			options.RunAuthorityBuildSHA != "" || options.RunAuthorityTokenSHA256 != "") {
-		return nil, fmt.Errorf("runner run-authority binding requires new-record canary mode")
-	}
-	if service.v2NewRecordCanary &&
-		(options.RunAuthorityOrigin == "" || !safeID.MatchString(options.RunAuthorityCallerID) ||
-			!hashPattern.MatchString(options.RunAuthorityBuildSHA) || !hashPattern.MatchString(options.RunAuthorityTokenSHA256)) {
-		return nil, fmt.Errorf("runner v2 new-record canary requires its complete run-authority binding")
-	}
-	if service.v2RuntimeDelivery && (service.bindingStore == nil || service.admissionStore == nil) {
-		return nil, fmt.Errorf("runner authority-binding and runtime-admission Stores are required for runtime delivery")
+	if options.RunAuthorityOrigin == "" || !safeID.MatchString(options.RunAuthorityCallerID) ||
+		!hashPattern.MatchString(options.RunAuthorityBuildSHA) || !hashPattern.MatchString(options.RunAuthorityTokenSHA256) {
+		return nil, fmt.Errorf("runner v2 requires its complete Go run-authority binding")
 	}
 	if service.schemaVersion == 0 {
 		service.schemaVersion = 2
@@ -162,18 +138,12 @@ func (service *Service) Handler() http.Handler { return service.handler }
 func (service *Service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("POST "+RouteJobs, service.requireIdentity(http.HandlerFunc(service.handleRetiredV1Submit)))
-	if service.v2Enabled {
-		mux.Handle("POST "+RouteV2Jobs, service.requireIdentity(http.HandlerFunc(service.handleV2Submit)))
-	}
-	if service.v2RuntimeDelivery {
-		mux.Handle("POST "+RouteV2RuntimeAdmission, service.requireIdentity(http.HandlerFunc(service.handleV2RuntimeAdmission)))
-		mux.Handle("POST "+RouteAuthorityBindingStage, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingStage)))
-		mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
-		mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
-	}
-	if service.v2NewRecordCanary {
-		mux.Handle("GET "+RouteBinding, service.requireIdentity(http.HandlerFunc(service.handleBinding)))
-	}
+	mux.Handle("POST "+RouteV2Jobs, service.requireIdentity(http.HandlerFunc(service.handleV2Submit)))
+	mux.Handle("POST "+RouteV2RuntimeAdmission, service.requireIdentity(http.HandlerFunc(service.handleV2RuntimeAdmission)))
+	mux.Handle("POST "+RouteAuthorityBindingStage, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingStage)))
+	mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
+	mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
+	mux.Handle("GET "+RouteBinding, service.requireIdentity(http.HandlerFunc(service.handleBinding)))
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))
 	mux.HandleFunc("GET "+RouteLive, service.handleLive)

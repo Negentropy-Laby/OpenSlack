@@ -1,9 +1,8 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RunStatus } from './types.js';
-import { RunStore } from './run-store.js';
 import {
-  createWorkflowRunProjectionStore,
+  openWorkflowRunReadOnly,
   locateWorkflowRunProjection,
   resolveWorkflowRunProjectionRoot,
 } from './workflow-run-projection.js';
@@ -61,43 +60,13 @@ export async function showWorkflowRun(
 ): Promise<RunStatus | null> {
   const rootDir = options.rootDir ?? process.cwd();
   const { backend } = await locateWorkflowRunProjection(rootDir, runId);
-  const run = await createWorkflowRunProjectionStore(rootDir, backend).getRunStatus(runId);
+  const run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
   return run
     ? {
         ...run,
         evidenceSource: backend === 'go' ? 'go-recovery-projection' : 'typescript-historical',
       }
     : null;
-}
-
-export async function isAgentLaunchBlockedByWorkflowControl(options: {
-  rootDir?: string;
-  runId: string;
-  phase: string;
-  label: string;
-  agentRunId: string;
-  agentType?: string;
-}): Promise<string | null> {
-  const store = new RunStore({
-    baseDir: join(options.rootDir ?? process.cwd(), '.openslack.local', 'workflows'),
-  });
-  const status = await store.loadStatus(options.runId);
-  const pending = status?.pendingAgentControls;
-  if (!Array.isArray(pending)) return null;
-  const blocked = pending.find((event) => {
-    if (event.action !== 'stopAgent') return false;
-    const target = event.target;
-    if (!target) return false;
-    if (target.agentRunId === options.agentRunId) return true;
-    const samePhase = !target.phase || target.phase === options.phase;
-    const targetAgent = target.agentId;
-    return (
-      samePhase &&
-      !!targetAgent &&
-      (targetAgent === options.label || targetAgent === options.agentType)
-    );
-  });
-  return blocked ? (blocked.message ?? 'Agent launch blocked by pending stopAgent control.') : null;
 }
 
 export function renderWorkflowRuns(

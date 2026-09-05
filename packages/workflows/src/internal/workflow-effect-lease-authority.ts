@@ -35,7 +35,7 @@ export interface WorkflowEffectLeaseBinding {
   ): Promise<WorkflowEffectIntentEvidence>;
 }
 
-/** Opaque host capability minted only by an accepted WorkflowRunnerSession lease. */
+/** Opaque host capability minted only by an accepted sealed v2 worker lease. */
 export interface WorkflowEffectLeaseAuthority {
   readonly kind: 'accepted_workflow_effect_lease';
 }

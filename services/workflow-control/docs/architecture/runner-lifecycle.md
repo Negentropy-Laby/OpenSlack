@@ -10,20 +10,22 @@ private admission API
   -> existing TypeScript workflow runner over canonical JSONL
 ```
 
-Go is the only writer for runner jobs, attempts, leases, cancellation controls, process sessions,
-protocol events, receipts, and runner reconciliation records. TypeScript is the only JavaScript,
-RunStore, checkpoint/resume, effect-approval, effect-execution, agent/provider, and budget writer.
-Those tables and responsibilities are deliberately separate from the GS7-B observation namespace.
+At the GS8-B boundary, Go was the only writer for runner jobs, attempts, leases, cancellation
+controls, process sessions, protocol events, receipts, and runner reconciliation records.
+TypeScript was then the only JavaScript, RunStore, checkpoint/resume, effect-approval,
+effect-execution, agent/provider, and budget writer. Those tables and responsibilities were
+deliberately separate from the GS7-B observation namespace. The current GS9-I boundary is recorded
+below without changing this frozen history.
 
-GS9-A freezes the future Workflow Control authority record but does not change this division. Its
+GS9-A froze the future Workflow Control authority record but did not change that division. Its
 run revision/CAS is independent from this runner attempt's lease and fencing token; neither can
 substitute for the other. See
 [`workflow-authority-contract-v2.md`](workflow-authority-contract-v2.md). GS9-A additionally
-freezes an 18-kind `openslack.workflow_runner.v2` vocabulary containing all 12 v1 kinds plus six
-added authority kinds. GS9-F1 adds a separate default-off qualification profile that negotiates v2,
-persists its foundation events and receipts, and invokes only injected qualification authority
-ports. The default runtime continues to negotiate and execute the GS8 v1 lifecycle. All production
-Workflow Control writes remain TypeScript-owned.
+froze an 18-kind `openslack.workflow_runner.v2` vocabulary containing all 12 v1 kinds plus six
+added authority kinds. GS9-F1 added a separate default-off qualification profile that negotiated v2,
+persisted its foundation events and receipts, and invoked only injected qualification authority
+ports. At that boundary, the default runtime still negotiated and executed the GS8 v1 lifecycle and
+all production Workflow Control writes remained TypeScript-owned.
 
 The scheduler allows one outstanding worker event. JavaScript starts only after the exact
 `lease_accept` receipt is durable. A later fence rejects the old process. An expired unstarted
@@ -39,7 +41,7 @@ Cancellation acknowledgement must bind the exact durable control record. A queue
 receipt-proven terminal or reconciliation record; it cannot move that record back to cancelling.
 Terminal events are accepted only from receipt-gated running or cancelling attempts.
 
-The v2 qualification worker uses one FIFO receiptable lane. A heartbeat is emitted only while that
+The F1 v2 qualification worker used one FIFO receiptable lane. A heartbeat was emitted only while that
 lane is idle. Cancellation aborts workflow execution immediately, queues its acknowledgement behind
 any current event, and sends a sealed terminal only after the acknowledgement receipt. Uncertainty
 delivering the terminal event's own receipt cannot overwrite a receipt-proven terminal; unresolved
@@ -57,9 +59,10 @@ is the normative GS9-F2a boundary. It owns the closed operation facts, protocol 
 locks, exact framing, and authority-ceiling inventories; this lifecycle document intentionally does
 not duplicate them.
 
-F2a does not alter this service's scheduler, worker, store, image entry point, active GS9-F1
-profile, or source manifest. TypeScript remains the production Workflow authority, Go remains a
-pure validator, and GS9-F2b must implement and qualify the manifest's not-delivered runtime work.
+F2a did not alter this service's scheduler, worker, store, image entry point, active GS9-F1
+profile, or source manifest. TypeScript remained the production Workflow authority, Go remained a
+pure validator, and GS9-F2b was required to implement and qualify the manifest's not-delivered
+runtime work.
 
 ## GS9-F2b default-off runtime delivery
 
@@ -73,5 +76,24 @@ Startup recovery validates the binding and ACK in one joined read, then bulk-CAS
 bindings to reconciliation. Its examined/reconciled summary is consumed by the scheduler instead
 of being discarded. Active owner-local journal evidence is indexed separately from closed replay
 evidence; external identity drift forces a full validation before the cache is reused. GS9-G later
-enabled explicit Go new-record routing. GS9-H retires TypeScript new admission while keeping this
-implementation available only for authenticated legacy drain/recovery; GS9-I owns physical deletion.
+enabled explicit Go new-record routing. At the H boundary, GS9-H retired TypeScript new admission
+while keeping the legacy implementation available only for authenticated drain/recovery pending the
+separate GS9-I physical deletion below.
+
+## GS9-I current execution boundary
+
+GS9-I removes the runner-v1 TypeScript execution branch and the separate GS9-F1
+qualification-only worker execution mode and environment. The packaged worker now starts only when
+the complete runner-v2 runtime-delivery and Go run-authority bindings are present. It accepts only a
+sealed descriptor whose immutable route is `go / workflow-control`; execute and resume both use the
+Go recovery-projection store and authority-aware checkpoint, effect, and budget ports.
+
+The public/full TypeScript RunStore writer and writer-shaped factory are removed. Ordinary readers
+open only a bounded read-only view of TypeScript-historical evidence or Go recovery projections.
+Frozen runner-v1 schemas, vectors, receipts, and old `ts-local` route records remain parseable
+history through bounded compatibility parsers, but no worker, routing environment, or public API can
+use them to mutate or resume a run.
+
+This deletion adds no migration, converts no existing state, and activates no route or deployment.
+Authenticated external regression, hosted exact-head qualification, review approval, merge,
+production cutover, release, and live claims remain separate gates.

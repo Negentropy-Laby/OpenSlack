@@ -19,7 +19,6 @@ import (
 	runnerpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
 func TestGS9F2Qualification(t *testing.T) {
@@ -71,9 +70,10 @@ func TestGS9F2Qualification(t *testing.T) {
 	tokenHash := sha256.Sum256([]byte(token))
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: repository, V2Store: repository, BindingStore: repository, AdmissionStore: repository,
-		V2Qualification: true, V2RuntimeDelivery: true, SchemaVersion: 8,
-		BuildSHA: strings.Repeat("a", 64), WorkspaceID: workspace,
-		BearerTokenSHA256: hex.EncodeToString(tokenHash[:]),
+		SchemaVersion: 8, BuildSHA: strings.Repeat("a", 64), WorkspaceID: workspace,
+		BearerTokenSHA256:  hex.EncodeToString(tokenHash[:]),
+		RunAuthorityOrigin: "http://127.0.0.1:8082", RunAuthorityCallerID: "workflow-runner-v2",
+		RunAuthorityBuildSHA: strings.Repeat("5", 64), RunAuthorityTokenSHA256: strings.Repeat("6", 64),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func qualifyGS9F2CheckpointHTTP(t *testing.T, repository *runnerpostgres.Reposit
 		Kind: authoritycontract.KindHello, WorkspaceID: lease.WorkspaceID, EventID: "hello-gs9f2-http",
 		CorrelationID: lease.CorrelationID, SentAt: runnerstore.CanonicalTimestamp(time.Now().UTC()), Payload: map[string]any{
 			"runtimeName": "node", "runtimeVersion": "22.14.0", "runnerBuildHash": strings.Repeat("e", 64),
-			"supportedProtocolVersions": []any{runnerprotocol.ProtocolVersion, authoritycontract.ProtocolVersion},
+			"supportedProtocolVersions": []any{authoritycontract.ProtocolVersion},
 			"capabilities":              []any{"cancel_ack", "effect_receipts", "lease_heartbeat"}, "maxConcurrentJobs": int64(1),
 		}}
 	preparedHello := gs9f2HTTPPrepareMessage(t, hello)
@@ -441,41 +441,5 @@ func gs9f2HTTPNormalize(t testing.TB, value any) any {
 		return current
 	default:
 		return value
-	}
-}
-
-func TestGS9F2ImageDefaultOff(t *testing.T) {
-	origin := strings.TrimRight(strings.TrimSpace(os.Getenv("WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN")), "/")
-	if origin == "" {
-		t.Skip("WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN is not configured")
-	}
-	versionResponse := qualificationOriginRequest(t, http.MethodGet, origin+runnerapp.RouteVersion, nil)
-	var version map[string]any
-	if err := json.Unmarshal(versionResponse.body, &version); err != nil {
-		t.Fatalf("decode default-off runner version: %v body=%s", err, versionResponse.body)
-	}
-	if versionResponse.status != http.StatusOK || version["mode"] != "runner-control-explicit" ||
-		version["schemaVersion"] != float64(8) || version["v2QualificationAdmission"] != true ||
-		version["routingActivated"] != false {
-		t.Fatalf("default-off runner version drifted: status=%d version=%v", versionResponse.status, version)
-	}
-	if _, exists := version["v2RuntimeDeliveryQualification"]; exists {
-		t.Fatalf("default-off image exposed runtime-delivery qualification: %v", version)
-	}
-	if _, exists := version["productionRoutingActivated"]; exists {
-		t.Fatalf("default-off image exposed production routing: %v", version)
-	}
-	bindingID := "WFRUNNER-BINDING-" + strings.Repeat("a", 64)
-	receiptKey := "openslack.workflow-runner-authority-binding.v1." + strings.Repeat("b", 64)
-	for _, probe := range []struct{ method, path string }{
-		{http.MethodPost, runnerapp.RouteAuthorityBindingStage},
-		{http.MethodPost, "/v2/runner/authority-bindings/" + bindingID + ":resolve"},
-		{http.MethodGet, "/v2/runner/authority-bindings/receipts/" + receiptKey},
-		{http.MethodPost, runnerapp.RouteV2RuntimeAdmission},
-	} {
-		response := qualificationOriginRequest(t, probe.method, origin+probe.path, []byte(`{}`))
-		if response.status != http.StatusNotFound {
-			t.Fatalf("default-off image exposed %s %s: %d %s", probe.method, probe.path, response.status, response.body)
-		}
 	}
 }

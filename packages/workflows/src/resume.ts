@@ -1,12 +1,6 @@
-import type {
-  ExecutionMode,
-  PhaseCheckpoint,
-  RunStatus,
-  WorkflowMeta,
-  WorkflowModule,
-} from './types.js';
-import type { RunStore, RunMeta } from './run-store.js';
-import { WorkflowResumeRecoveryRequiredError } from './execute.js';
+import type { PhaseCheckpoint, RunStatus, WorkflowMeta, WorkflowModule } from './types.js';
+import type { RunMeta } from './run-store.js';
+import type { WorkflowRunReadOnlyStore } from './workflow-run-projection.js';
 import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 
@@ -14,6 +8,19 @@ export type WorkflowResumeIdentity = Pick<
   WorkflowModule,
   'meta' | 'hash' | 'format' | 'sourceBody' | 'preview' | 'run'
 >;
+
+export class WorkflowResumeRecoveryRequiredError extends Error {
+  readonly code = 'WORKFLOW_RESUME_RECOVERY_REQUIRED' as const;
+
+  constructor(
+    readonly runId: string,
+    reason: string,
+    options?: ErrorOptions,
+  ) {
+    super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
+    this.name = 'WorkflowResumeRecoveryRequiredError';
+  }
+}
 
 /**
  * Result of a resume check: indicates whether a run can be resumed
@@ -62,7 +69,7 @@ export interface ResumeState {
  * 3. Its full executable SHA-256 identity matches
  */
 export async function checkResumable(
-  runStore: RunStore,
+  runStore: WorkflowRunReadOnlyStore,
   runId: string,
   identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeCheckResult> {
@@ -181,7 +188,7 @@ export async function checkResumable(
  * @throws if the run cannot be resumed
  */
 export async function prepareResume(
-  runStore: RunStore,
+  runStore: WorkflowRunReadOnlyStore,
   runId: string,
   identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeState> {
@@ -242,65 +249,6 @@ function isResumeIdentity(
   value: WorkflowResumeIdentity | WorkflowMeta,
 ): value is WorkflowResumeIdentity {
   return typeof value === 'object' && value !== null && 'meta' in value;
-}
-
-/**
- * Force-resume a run even when the manifest hash does not match.
- *
- * This sets the run status back to "running" and returns the resume
- * state with whatever checkpoints are still valid.
- *
- * **Warning**: This should only be used when the operator explicitly
- * acknowledges the risk.
- */
-export async function forceResume(
-  runStore: RunStore,
-  runId: string,
-  manifest: WorkflowMeta,
-): Promise<ResumeState> {
-  const exists = await runStore.runExists(runId);
-  if (!exists) {
-    throw new Error(`Run ${runId} not found`);
-  }
-
-  const status = await runStore.loadStatus(runId);
-  if (status === null) {
-    throw new Error(`Run ${runId} status not found`);
-  }
-
-  if (status.status !== 'paused') {
-    throw new Error(`Run ${runId} has status "${status.status}", expected "paused"`);
-  }
-
-  // Transition back to running
-  await runStore.transitionStatus(runId, 'running');
-
-  // Load meta
-  const meta = await runStore.loadMeta(runId);
-  if (meta === null) {
-    throw new Error(`Run ${runId} metadata not found`);
-  }
-
-  // Collect completed phase checkpoints
-  const completedPhases: PhaseCheckpoint[] = [];
-  for (const phaseDef of manifest.phases) {
-    const checkpoint = await runStore.loadPhaseCheckpoint(runId, phaseDef.title);
-    if (checkpoint !== null && checkpoint.status === 'completed') {
-      completedPhases.push(checkpoint);
-    } else {
-      break;
-    }
-  }
-
-  const nextPhaseIndex = completedPhases.length;
-
-  return {
-    runId,
-    completedPhases,
-    nextPhaseIndex,
-    cachedAgentResults: new Map(),
-    meta,
-  };
 }
 
 /**

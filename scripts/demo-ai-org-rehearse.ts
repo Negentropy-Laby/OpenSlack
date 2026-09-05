@@ -14,7 +14,6 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { GitHubClient } from '../packages/github/src/index.js';
-import type { executeWorkflowThroughRunner } from '../packages/workflows/src/index.js';
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..');
 const EXAMPLE_ROOT = join(REPOSITORY_ROOT, 'examples', 'ai-organization-demo');
@@ -103,12 +102,6 @@ export class RehearsalBlockedError extends Error {
     this.name = 'RehearsalBlockedError';
     this.code = code;
   }
-}
-
-export interface ConfiguredWorkflowExecutionDependencies {
-  readonly environment?: NodeJS.ProcessEnv;
-  readonly createRunId?: () => string;
-  readonly execute?: typeof executeWorkflowThroughRunner;
 }
 
 export function parseRehearsalArgs(args: string[], cwd = process.cwd()): RehearsalOptions {
@@ -682,34 +675,17 @@ async function createTaskIssue(
   return { number: data.number, url: data.html_url, body: preview.body };
 }
 
-export async function runConfiguredWorkflow(
-  dependencies: ConfiguredWorkflowExecutionDependencies = {},
-): Promise<{
+export async function runConfiguredWorkflow(): Promise<{
   runId: string;
   artifacts: Array<{ filename: string; content: string }>;
 }> {
-  const {
-    createWorkflowRunRoutingExecutionContext,
-    executeWorkflowThroughRunner,
-    loadWorkflow,
-    loadWorkflowRunRoutingConfig,
-    loadWorkflowRunnerControlConfig,
-    readWorkflowRunnerSourceBytes,
-  } = await import('../packages/workflows/src/index.js');
+  const { executeWorkflowThroughRunner, loadWorkflow, readWorkflowRunnerSourceBytes } =
+    await import('../packages/workflows/src/index.js');
   const workflow = await loadWorkflow(WORKFLOW_PATH);
   const scenario = loadScenario();
-  const runId = dependencies.createRunId?.() ?? `run.${randomUUID()}`;
-  const environment = dependencies.environment ?? process.env;
-  const runner = loadWorkflowRunnerControlConfig(environment);
-  const execute = dependencies.execute ?? executeWorkflowThroughRunner;
-  const result = await execute({
+  const runId = `run.${randomUUID()}`;
+  const result = await executeWorkflowThroughRunner({
     workspaceRoot: REPOSITORY_ROOT,
-    config: runner,
-    routing: createWorkflowRunRoutingExecutionContext({
-      runner,
-      workspaceRoot: REPOSITORY_ROOT,
-      config: loadWorkflowRunRoutingConfig(runner, environment),
-    }),
     workflowRunId: runId,
     workflowSource: 'openslack-project',
     workflowSourceBytes: await readWorkflowRunnerSourceBytes({

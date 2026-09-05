@@ -107,15 +107,6 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(goCheckSource).toContain('Workflow Control runner test selector matched no tests:');
     expect(goCheckSource).toContain('type=volume,source=${MOD_CACHE_VOLUME}');
     expect(goCheckSource).toContain('type=volume,source=${BUILD_CACHE_VOLUME}');
-    expect(goCheckSource).toContain(
-      'bundle_manifest_sha="$(sha256sum "${bundle_root}/workflow-runner-bundle.v1.json"',
-    );
-    expect(goCheckSource).toContain(
-      '--env "WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=${bundle_manifest_sha}"',
-    );
-    expect(goCheckSource).not.toContain(
-      '--env WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=968c388f6b84277910c055f163c6db470ae48cfaa3153f52598c4bbef4afab6a',
-    );
     expect(goCheckSource).not.toContain('go work sync');
     expect(goCheckSource).not.toContain('.gomodcache');
     expect(goCheckSource).not.toContain('.gocache');
@@ -1038,12 +1029,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify');
     expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRestartRecovery\\$');
-    expect(log).toContain('-run \\^TestGS9F2ImageDefaultOff\\$');
-    expect(log).toContain(
-      'WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN=http://runner-v2-runtime-delivery-default-off:8081',
-    );
-    expect(log).toContain('--entrypoint /runner-server');
-    expect(log).toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
+    expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
     expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1');
     expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
     expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
@@ -1054,7 +1040,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     ].map((match) => match[1]);
     expect(restartSchemas).toHaveLength(4);
     expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(8);
+    expect(log.match(/ restart /gu)).toHaveLength(7);
 
     const failureFixture = createFixture();
     const failureModuleRoot = join(failureFixture.root, 'services/pure');
@@ -1087,7 +1073,6 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       'runner-v2-runtime-delivery-worker',
       'runner-v2-runtime-delivery-restart-seed',
       'runner-v2-runtime-delivery-restart-verify',
-      'runner-v2-runtime-delivery-image-default-off',
     ]) {
       const phaseFailure = runGoCheck(failureFixture, ['services/pure'], {
         FAKE_GS9F2_FAIL_PHASE: phase,
@@ -1951,7 +1936,6 @@ function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
       'import "testing"',
       '',
       'func TestGS9F2Qualification(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_QUALIFICATION" }',
-      'func TestGS9F2ImageDefaultOff(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN" }',
       '',
     ].join('\n'),
     'utf8',

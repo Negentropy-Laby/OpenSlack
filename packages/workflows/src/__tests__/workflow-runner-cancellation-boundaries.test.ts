@@ -1,31 +1,12 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { executeRun } from '../execute.js';
-import {
-  parseWorkflowRunnerMessageBytes,
-  validateWorkflowRunnerMessage,
-  type WorkflowRunnerMessage,
-} from '../workflow-runner-contract.js';
-import {
-  createWorkflowRunnerExecutionDescriptor,
-  hashWorkflowRunnerDescriptor,
-} from '../workflow-runner-descriptor.js';
+import { describe, expect, it } from 'vitest';
 import {
   createRuntime,
-  WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES,
   WorkflowExecutionCancelledError,
   type WorkflowRunnerCancellationBoundary,
 } from '../runtime.js';
-import { WorkflowRunnerSession } from '../workflow-runner-session.js';
 import type { WorkflowEffectBoundary } from '../workflow-runner-effect-boundary.js';
 import type { WorkflowMeta } from '../types.js';
 
-const roots: string[] = [];
-const runnerBuild = 'b'.repeat(64);
-const controlBuild = 'c'.repeat(64);
-const source = Buffer.from('export const meta = {};', 'utf8');
 const manifest: WorkflowMeta = {
   name: 'cancel-test',
   version: '1.0.0',
@@ -34,38 +15,9 @@ const manifest: WorkflowMeta = {
   risk: 'low',
 };
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
 function cancellationBoundary(error: unknown): WorkflowRunnerCancellationBoundary {
   expect(error).toBeInstanceOf(WorkflowExecutionCancelledError);
   return (error as WorkflowExecutionCancelledError).boundary;
-}
-
-function sealedDescriptor() {
-  return createWorkflowRunnerExecutionDescriptor({
-    descriptorRef: 'descriptor.cancel.1',
-    workspaceId: 'workspace.test',
-    workflowRunId: 'run.cancel.1',
-    correlationId: 'correlation.cancel.1',
-    workflowId: 'cancel-test',
-    workflowVersion: '1.0.0',
-    workflowSource: 'openslack-project',
-    workflowSourceBytes: source,
-    manifest,
-    input: {},
-    budget: { tokens: 1_000, costUsd: 1 },
-    confirmationPolicy: {
-      mode: 'unattended-explicit',
-      actorId: 'test-actor',
-      runId: 'run.cancel.1',
-      allowUnattended: true,
-      onUnexpectedEffect: 'fail',
-    },
-    createdAt: '2026-08-04T01:00:00.000Z',
-    expiresAt: '2026-08-04T02:00:00.000Z',
-  });
 }
 
 describe('GS8-B closed cancellation boundary inventory', () => {
@@ -133,76 +85,6 @@ describe('GS8-B closed cancellation boundary inventory', () => {
       ]),
     );
   });
-
-  it('covers pre-JavaScript, accept-receipt wait, and terminal commit', async () => {
-    const observed = new Set<WorkflowRunnerCancellationBoundary>();
-    const value = sealedDescriptor();
-    const sent: string[] = [];
-    const load = vi.fn();
-    const session = new WorkflowRunnerSession({
-      workspaceId: value.workspaceId,
-      runnerBuildHash: runnerBuild,
-      runtimeVersion: '22.0.0',
-      descriptorStore: { read: vi.fn(async () => value) },
-      sourceLoader: { prepare: vi.fn(async () => ({})), load },
-      execute: vi.fn(),
-      send: (body) => {
-        sent.push(body);
-      },
-      close: vi.fn(),
-      now: () => '2026-08-04T01:00:03.000Z',
-    });
-    await session.start();
-    const hello = parseWorkflowRunnerMessageBytes(Buffer.from(sent[0]!, 'utf8'));
-    await session.receive(helloAck(hello.correlationId));
-    const offerPromise = session.receive(leaseOffer(value));
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    await session.receive(cancelRequest(value));
-    expect(session.state).toBe('cancelling');
-    expect(load).not.toHaveBeenCalled();
-    observed.add('accept_receipt_wait');
-    observed.add('pre_javascript');
-    // Prevent an unhandled pending promise while preserving the pre-receipt assertion.
-    void offerPromise.catch(() => undefined);
-
-    const rootDir = await mkdtemp(join(tmpdir(), 'openslack-runner-terminal-'));
-    roots.push(rootDir);
-    const terminalController = new AbortController();
-    try {
-      await executeRun(
-        {
-          meta: manifest,
-          run: async () => {
-            terminalController.abort(new Error('stop before terminal commit'));
-            return { status: 'completed' };
-          },
-        },
-        {
-          manifest,
-          allowUnattended: true,
-          runId: 'run.terminal-boundary',
-          rootDir,
-          signal: terminalController.signal,
-        },
-      );
-    } catch (error) {
-      observed.add(cancellationBoundary(error));
-    }
-
-    const expected = new Set(WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES);
-    for (const boundary of [
-      'runtime_api',
-      'agent_call',
-      'parallel_dispatch',
-      'pipeline_dispatch',
-      'effect_intent',
-      'effect_execution',
-      'effect_outcome',
-    ] as const) {
-      expected.delete(boundary);
-    }
-    expect(observed).toEqual(expected);
-  });
 });
 
 function effectHandle(operation: string) {
@@ -213,79 +95,4 @@ function effectHandle(operation: string) {
     capabilityHash: 'b'.repeat(64),
     requiresHumanDecision: false,
   } as const;
-}
-
-function helloAck(correlationId: string): WorkflowRunnerMessage {
-  return validateWorkflowRunnerMessage({
-    protocolVersion: 'openslack.workflow_runner.v1',
-    kind: 'hello_ack',
-    workspaceId: 'workspace.test',
-    jobId: null,
-    workflowRunId: null,
-    attemptId: null,
-    leaseId: null,
-    fencingToken: null,
-    sequence: null,
-    eventId: 'hello-ack.cancel',
-    correlationId,
-    sentAt: '2026-08-04T01:00:01.000Z',
-    payload: {
-      controlBuildHash: controlBuild,
-      selectedProtocolVersion: 'openslack.workflow_runner.v1',
-      heartbeatIntervalMs: 1_000,
-      leaseOfferTimeoutMs: 10_000,
-    },
-  });
-}
-
-function leaseOffer(value: ReturnType<typeof sealedDescriptor>): WorkflowRunnerMessage {
-  return validateWorkflowRunnerMessage({
-    protocolVersion: 'openslack.workflow_runner.v1',
-    kind: 'lease_offer',
-    workspaceId: value.workspaceId,
-    jobId: 'job.cancel.1',
-    workflowRunId: value.workflowRunId,
-    attemptId: 'attempt.cancel.1',
-    leaseId: 'lease.cancel.1',
-    fencingToken: 1,
-    sequence: 1,
-    eventId: 'offer.cancel.1',
-    correlationId: value.correlationId,
-    sentAt: '2026-08-04T01:00:02.000Z',
-    payload: {
-      executionDescriptorRef: value.descriptorRef,
-      executionDescriptorHash: hashWorkflowRunnerDescriptor(value),
-      jobSpecHash: 'd'.repeat(64),
-      workflowId: value.workflowId,
-      workflowVersion: value.workflowVersion,
-      workflowSourceHash: value.workflowSourceHash,
-      manifestHash: value.manifestHash,
-      inputHash: value.inputHash,
-      offeredAt: '2026-08-04T01:00:02.000Z',
-      expiresAt: '2026-08-04T01:30:00.000Z',
-    },
-  });
-}
-
-function cancelRequest(value: ReturnType<typeof sealedDescriptor>): WorkflowRunnerMessage {
-  return validateWorkflowRunnerMessage({
-    protocolVersion: 'openslack.workflow_runner.v1',
-    kind: 'cancel_request',
-    workspaceId: value.workspaceId,
-    jobId: 'job.cancel.1',
-    workflowRunId: value.workflowRunId,
-    attemptId: 'attempt.cancel.1',
-    leaseId: 'lease.cancel.1',
-    fencingToken: 1,
-    sequence: 2,
-    eventId: 'cancel.cancel.1',
-    correlationId: value.correlationId,
-    sentAt: '2026-08-04T01:00:03.000Z',
-    payload: {
-      cancelId: 'control.cancel.1',
-      requestedAt: '2026-08-04T01:00:03.000Z',
-      expiresAt: '2026-08-04T01:05:00.000Z',
-      reason: 'operator',
-    },
-  });
 }

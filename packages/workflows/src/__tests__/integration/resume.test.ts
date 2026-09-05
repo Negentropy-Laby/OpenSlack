@@ -1,20 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { executeResume } from '../../execute.js';
+import { describe, it, expect } from 'vitest';
 import { RunStore } from '../../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../../internal/workflow-run-store-recovery-access.js';
 import type { RunStoreFs, RunMeta } from '../../run-store.js';
-import { checkResumable, prepareResume, forceResume, replayCachedPhases } from '../../resume.js';
-import type { AgentLauncher } from '../../agent-shim.js';
-import { WorkflowEffectAuthorizationRequiredError } from '../../internal/workflow-effect-authorization-contract.js';
-import type {
-  WorkflowMeta,
-  WorkflowRuntime,
-  RunResult,
-  PhaseCheckpoint,
-  ExecutionMode,
-} from '../../types.js';
+import { checkResumable, prepareResume, replayCachedPhases } from '../../resume.js';
+import type { WorkflowMeta, PhaseCheckpoint, ExecutionMode } from '../../types.js';
 
 // ── In-memory filesystem ────────────────────────────────────────────────────
 
@@ -43,7 +32,11 @@ function createMemFs(): RunStoreFs & { files: Map<string, string> } {
 
 function makeStore(): { store: RunStore; fs: ReturnType<typeof createMemFs> } {
   const fs = createMemFs();
-  const store = new RunStore({ baseDir: '/test/workflows', fs });
+  const store = new RunStore({
+    access: createWorkflowRunStoreRecoveryAccess(),
+    baseDir: '/test/workflows',
+    fs,
+  });
   return { store, fs };
 }
 
@@ -101,152 +94,6 @@ async function initPausedRun(
   return runId;
 }
 
-async function initPausedExecutionRun(
-  rootDir: string,
-  runId: string,
-  args: Record<string, unknown> = {},
-  budget: { tokens: number; costUsd: number } = { tokens: 100_000, costUsd: 1 },
-): Promise<void> {
-  const store = new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
-  await store.initRun(
-    runId,
-    makeMeta(TEST_MANIFEST, {
-      runId,
-      manifestHash: TEST_HASH,
-      args,
-      budget,
-    }),
-  );
-  await store.transitionStatus(runId, 'paused');
-}
-
-describe('executeResume integration', () => {
-  let executionRoot: string;
-
-  beforeEach(() => {
-    executionRoot = mkdtempSync(join(tmpdir(), 'openslack-workflow-resume-'));
-  });
-
-  afterEach(() => {
-    rmSync(executionRoot, { recursive: true, force: true });
-  });
-
-  it('executes the workflow run function', async () => {
-    const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
-      ctx.phase('Scan');
-      ctx.phase('Verify');
-      ctx.phase('Report');
-      return { status: 'complete' };
-    });
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
-    await initPausedExecutionRun(executionRoot, 'run-resume-001');
-
-    const result = await executeResume(workflow, {
-      runId: 'run-resume-001',
-      manifest: TEST_MANIFEST,
-      onConfirm: async () => true,
-      rootDir: executionRoot,
-    });
-    expect(result.status).toBe('complete');
-    expect(runFn).toHaveBeenCalledTimes(1);
-  });
-
-  it('throws when workflow has no run function', async () => {
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH };
-    await initPausedExecutionRun(executionRoot, 'run-001');
-    await expect(
-      executeResume(workflow, {
-        runId: 'run-001',
-        manifest: TEST_MANIFEST,
-        onConfirm: async () => true,
-        rootDir: executionRoot,
-      }),
-    ).rejects.toThrow('no run function');
-  });
-
-  it('passes args to the workflow', async () => {
-    const runFn = vi.fn(async (ctx: WorkflowRuntime, args: Record<string, unknown>) => {
-      return { status: 'complete', receivedArgs: args };
-    });
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
-    await initPausedExecutionRun(executionRoot, 'run-resume-001', { key: 'value' });
-
-    const result = await executeResume(workflow, {
-      runId: 'run-resume-001',
-      manifest: TEST_MANIFEST,
-      args: { key: 'value' },
-      onConfirm: async () => true,
-      rootDir: executionRoot,
-    });
-    expect(result.receivedArgs).toEqual({ key: 'value' });
-  });
-
-  it('uses provided agent launcher', async () => {
-    const launcher: AgentLauncher = vi.fn(async () => ({
-      data: { resumed: true },
-      tokenUsage: 5,
-    }));
-    const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
-      ctx.phase('Scan');
-      const agentResult = await ctx.agent('test', { label: 'test', phase: 'Scan' });
-      return { status: 'complete', agentResult };
-    });
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
-    await initPausedExecutionRun(executionRoot, 'run-resume-001');
-
-    const result = await executeResume(workflow, {
-      runId: 'run-resume-001',
-      manifest: TEST_MANIFEST,
-      agentLauncher: launcher,
-      onConfirm: async () => true,
-      rootDir: executionRoot,
-    });
-    const agentResult = result.agentResult as { resumed: boolean };
-    expect(agentResult).toEqual({ resumed: true });
-  });
-
-  it('does not treat the provided onConfirm callback as effect authorization', async () => {
-    const onConfirm = vi.fn(async () => true);
-    const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
-      ctx.phase('Scan');
-      await ctx.openslack.task.createIssue({ title: 'Bug' });
-      return { status: 'complete' };
-    });
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
-    await initPausedExecutionRun(executionRoot, 'run-resume-001');
-
-    await expect(
-      executeResume(workflow, {
-        runId: 'run-resume-001',
-        manifest: TEST_MANIFEST,
-        onConfirm,
-        rootDir: executionRoot,
-      }),
-    ).rejects.toBeInstanceOf(WorkflowEffectAuthorizationRequiredError);
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-  });
-
-  it('denies operation when onConfirm returns false', async () => {
-    const onConfirm = vi.fn(async () => false);
-    const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
-      ctx.phase('Scan');
-      await ctx.openslack.task.createIssue({ title: 'Bug' });
-      return { status: 'complete' };
-    });
-    const workflow = { meta: TEST_MANIFEST, hash: TEST_HASH, run: runFn };
-    await initPausedExecutionRun(executionRoot, 'run-resume-001');
-
-    await expect(
-      executeResume(workflow, {
-        runId: 'run-resume-001',
-        manifest: TEST_MANIFEST,
-        onConfirm,
-        rootDir: executionRoot,
-      }),
-    ).rejects.toThrow('Execute denied');
-  });
-});
-
 describe('resume with run store integration', () => {
   it('checkResumable works with in-memory store', async () => {
     const { store } = makeStore();
@@ -266,69 +113,6 @@ describe('resume with run store integration', () => {
     expect(state.completedPhases[0].phase).toBe('Scan');
     expect(state.completedPhases[1].phase).toBe('Verify');
     expect(state.nextPhaseIndex).toBe(2);
-  });
-
-  it('forceResume transitions status back to running', async () => {
-    const { store } = makeStore();
-    await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-
-    const state = await forceResume(store, 'run-resume-001', TEST_MANIFEST);
-    expect(state.runId).toBe('run-resume-001');
-
-    const status = await store.loadStatus('run-resume-001');
-    expect(status!.status).toBe('running');
-  });
-
-  it('can transition resumed run through lifecycle', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-
-    // Resume
-    await forceResume(store, runId, TEST_MANIFEST);
-
-    // Simulate completing another phase
-    await store.savePhaseCheckpoint(runId, {
-      phase: 'Verify',
-      timestamp: new Date().toISOString(),
-      status: 'completed',
-    });
-
-    // Complete the run
-    await store.transitionStatus(runId, 'completed');
-
-    const finalStatus = await store.loadStatus(runId);
-    expect(finalStatus!.status).toBe('completed');
-    expect(finalStatus!.phases).toHaveLength(2);
-  });
-
-  it('stores and retrieves output for resumed runs', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-    await forceResume(store, runId, TEST_MANIFEST);
-
-    const output = { status: 'complete', data: 'test' };
-    await store.saveOutput(runId, output);
-
-    const loaded = await store.loadOutput(runId);
-    expect(loaded).toEqual(output);
-  });
-
-  it('logs entries during resumed run', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-    await forceResume(store, runId, TEST_MANIFEST);
-
-    await store.appendLog(runId, {
-      ts: new Date().toISOString(),
-      phase: 'Verify',
-      message: 'Resumed verify phase',
-      runId,
-    });
-
-    const log = await store.readLog(runId);
-    expect(log).toHaveLength(1);
-    expect(log[0].message).toBe('Resumed verify phase');
-    expect(log[0].phase).toBe('Verify');
   });
 
   it('replayCachedPhases validates checkpoint order for resume', () => {

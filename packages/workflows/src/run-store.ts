@@ -67,6 +67,10 @@ import {
   isWorkflowCheckpointObservationPort,
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
+import {
+  isWorkflowRunStoreRecoveryAccess,
+  type WorkflowRunStoreRecoveryAccess,
+} from './internal/workflow-run-store-recovery-access.js';
 import type { WorkflowCheckpointCommitInput, WorkflowCheckpointCommitResult } from './types.js';
 
 // ── Directory layout ──────────────────────────────────────────────────────────
@@ -115,7 +119,7 @@ const VALID_TRANSITIONS: Record<string, Set<string>> = {
 };
 
 /**
- * Return whether the authoritative RunStore transition method accepts an edge.
+ * Return whether the Go-authority recovery projection accepts an edge.
  *
  * This narrow predicate lets the frozen Workflow Control contract prove parity
  * against runtime behavior without exporting the mutable transition sets.
@@ -309,12 +313,27 @@ interface AuditSession {
 export interface RunStoreOptions {
   /** Root directory for all runs, e.g. `.openslack.local/workflows` */
   baseDir: string;
+  /**
+   * Read-only access is the only ordinary construction mode. The recovery
+   * projection mode is internal to the sealed Go-authority worker and may
+   * never be selected from CLI, MCP, Qoder, or environment composition.
+   */
+  access: 'read-only' | WorkflowRunStoreRecoveryAccess;
   /** Filesystem abstraction. Defaults to Node.js fs if not provided. */
   fs?: RunStoreFs;
   /** Optional, default-off GS7-B fail-open shadow observation seam. */
   observationPort?: WorkflowControlObservationPort;
   /** Optional, default-off GS9-C post-commit checkpoint observer. */
   checkpointObservationPort?: WorkflowCheckpointObservationPort;
+}
+
+export class WorkflowTypeScriptMutationRetiredError extends Error {
+  readonly code = 'WORKFLOW_TYPESCRIPT_MUTATION_RETIRED' as const;
+
+  constructor() {
+    super('TypeScript workflow mutation is retired; Go Workflow Control authority is required.');
+    this.name = 'WorkflowTypeScriptMutationRetiredError';
+  }
 }
 
 /**
@@ -325,6 +344,7 @@ export interface RunStoreOptions {
 export class RunStore {
   private readonly baseDir: string;
   private readonly fs: RunStoreFs;
+  private readonly mutationAccess: boolean;
   private readonly observationPort: WorkflowControlObservationPort | undefined;
   private readonly checkpointObservationPort: WorkflowCheckpointObservationPort | undefined;
   private readonly budgetQueues = new Map<string, Promise<unknown>>();
@@ -335,8 +355,19 @@ export class RunStore {
   private readonly auditSessions = new Map<string, AuditSession>();
 
   constructor(options: RunStoreOptions) {
+    if (options.access !== 'read-only' && !isWorkflowRunStoreRecoveryAccess(options.access)) {
+      throw new WorkflowTypeScriptMutationRetiredError();
+    }
     this.baseDir = options.baseDir;
-    this.fs = options.fs ?? createNodeFs();
+    this.mutationAccess = isWorkflowRunStoreRecoveryAccess(options.access);
+    const fs = options.fs ?? createNodeFs();
+    this.fs = options.access === 'read-only' ? createReadOnlyRunStoreFs(fs) : fs;
+    if (
+      options.access === 'read-only' &&
+      (options.observationPort !== undefined || options.checkpointObservationPort !== undefined)
+    ) {
+      throw new TypeError('Read-only workflow run access cannot receive mutation observers.');
+    }
     if (
       options.observationPort !== undefined &&
       !isWorkflowControlObservationPort(options.observationPort)
@@ -356,11 +387,15 @@ export class RunStore {
     this.checkpointObservationPort = options.checkpointObservationPort;
   }
 
+  private assertMutationAccess(): void {
+    if (!this.mutationAccess) throw new WorkflowTypeScriptMutationRetiredError();
+  }
+
   private observeRun(runId: string): void {
     try {
       this.observationPort?.observeRun(runId);
     } catch {
-      // The Go shadow can never affect the TypeScript RunStore authority.
+      // Projection observation cannot affect the Go Workflow Control authority.
     }
   }
 
@@ -474,6 +509,7 @@ export class RunStore {
    * Initialize a new run: create directory structure and write meta + status.
    */
   async initRun(runId: string, meta: RunMeta): Promise<void> {
+    this.assertMutationAccess();
     const encodedArgs =
       meta.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA
         ? inspectWorkflowArgumentsEnvelope(meta.args)
@@ -563,6 +599,7 @@ export class RunStore {
    * regressing or internally inconsistent update fails closed.
    */
   async persistBudgetState(runId: string, usage: BudgetState): Promise<WorkflowBudgetSnapshot> {
+    this.assertMutationAccess();
     const candidate = cloneBudgetState(usage);
     return enqueueByKey(this.budgetQueues, runId, async () => {
       const current = await this.loadBudgetSnapshotForUpdate(runId);
@@ -609,6 +646,7 @@ export class RunStore {
     operation: string,
     detail: string,
   ): Promise<AppendWorkflowAuditResult> {
+    this.assertMutationAccess();
     if (!operation || operation.length > 256 || /[\r\n]/u.test(operation)) {
       throw new Error('Workflow audit operation is invalid.');
     }
@@ -698,6 +736,7 @@ export class RunStore {
 
   /** Persist a complete status record after closed validation. */
   async saveStatus(runId: string, status: RunStatusFile): Promise<void> {
+    this.assertMutationAccess();
     const validated = validateRunStatus(status, runId);
     await enqueueByKey(this.statusQueues, runId, async () => {
       await this.fs.writeFile(this.statusPath(runId), JSON.stringify(validated, null, 2));
@@ -711,6 +750,7 @@ export class RunStore {
    * Transition run status. Throws if the transition is invalid.
    */
   async transitionStatus(runId: string, newStatus: RunStatus['status']): Promise<void> {
+    this.assertMutationAccess();
     await enqueueByKey(this.statusQueues, runId, async () => {
       const current = await this.readStatus(runId);
       if (current === null) {
@@ -733,6 +773,7 @@ export class RunStore {
    * Update the current phase name in the status file.
    */
   async setCurrentPhase(runId: string, phase: string): Promise<void> {
+    this.assertMutationAccess();
     await enqueueByKey(this.statusQueues, runId, async () => {
       const current = await this.readStatus(runId);
       if (current === null) {
@@ -751,6 +792,7 @@ export class RunStore {
    * Save a phase checkpoint to the phases directory.
    */
   async savePhaseCheckpoint(runId: string, checkpoint: PhaseCheckpoint): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.writeFile(
       this.phasePath(runId, checkpoint.phase),
       JSON.stringify(checkpoint, null, 2),
@@ -789,6 +831,7 @@ export class RunStore {
     runId: string,
     bindingValue: WorkflowCheckpointExecutionBinding,
   ): Promise<WorkflowCheckpointControlState> {
+    this.assertMutationAccess();
     if (this.fs.ensureOwnerOnlyDirectory) {
       await this.fs.ensureOwnerOnlyDirectory(this.checkpointControlDir(runId));
     } else {
@@ -864,6 +907,7 @@ export class RunStore {
       commit(prior: WorkflowCheckpointControlState): Promise<void>;
     },
   ): Promise<WorkflowCheckpointControlState> {
+    this.assertMutationAccess();
     const next = await this.withCheckpointMutation(runId, async () => {
       const binding = checkpointBinding(bindingValue);
       if (binding.workflowRunId !== runId) {
@@ -989,6 +1033,7 @@ export class RunStore {
     phaseIndex: number,
     input: WorkflowCheckpointCommitInput,
   ): Promise<WorkflowCheckpointCommitResult> {
+    this.assertMutationAccess();
     const result = await this.withCheckpointMutation(runId, async () => {
       const binding = checkpointBinding(bindingValue);
       const state = await this.requireCheckpointControl(runId);
@@ -1403,6 +1448,7 @@ export class RunStore {
    * Save an agent call result to the cache.
    */
   async saveAgentResult(runId: string, cacheKey: string, result: unknown): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.writeFile(this.agentPath(runId, cacheKey), JSON.stringify(result, null, 2));
     this.observeRun(runId);
   }
@@ -1412,6 +1458,7 @@ export class RunStore {
     agentRunId: string,
     input: AgentReplayInput,
   ): Promise<AgentReplayInputPersistenceResult> {
+    this.assertMutationAccess();
     await this.fs.mkdir(this.replayDir(runId));
     const targetPath = this.replayInputPath(runId, agentRunId);
     const scan = scanValue(input, 'replayInput');
@@ -1429,6 +1476,7 @@ export class RunStore {
     agentRunId: string,
     reason: string,
   ): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.mkdir(this.replayDir(runId));
     await this.fs.writeFile(
       this.replayUnavailablePath(runId, agentRunId),
@@ -1481,6 +1529,7 @@ export class RunStore {
     index: number,
     result: unknown,
   ): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.mkdir(this.pipelineDir(runId, phase));
     await this.fs.writeFile(
       this.pipelineItemPath(runId, phase, index),
@@ -1503,10 +1552,12 @@ export class RunStore {
    * Append a structured log entry to log.jsonl.
    */
   async appendLog(runId: string, entry: LogEntry): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.appendFile(this.logPath(runId), JSON.stringify(entry) + '\n');
   }
 
   async appendBudgetWarning(runId: string, warning: BudgetWarning): Promise<void> {
+    this.assertMutationAccess();
     await enqueueByKey(this.statusQueues, runId, async () => {
       const status = await this.readStatus(runId);
       if (status === null) return;
@@ -1536,6 +1587,7 @@ export class RunStore {
    * Save the final workflow output.
    */
   async saveOutput(runId: string, output: unknown): Promise<void> {
+    this.assertMutationAccess();
     await this.fs.writeFile(this.outputPath(runId), JSON.stringify(output, null, 2));
   }
 
@@ -1655,6 +1707,7 @@ export class RunStore {
     runId: string,
     approval: Omit<PendingApproval, 'id' | 'status'>,
   ): Promise<void> {
+    this.assertMutationAccess();
     const approvals = await this.loadPendingApprovals(runId);
     approvals.push({
       id: randomUUID(),
@@ -1682,6 +1735,7 @@ export class RunStore {
     approvalId: string,
     decision: 'approved' | 'rejected',
   ): Promise<void> {
+    this.assertMutationAccess();
     const approvals = await this.loadPendingApprovals(runId);
     const idx = approvals.findIndex((a) => a.id === approvalId);
     if (idx < 0) {
@@ -1846,6 +1900,23 @@ function createNodeFs(): RunStoreFs {
         throw error;
       }
     },
+  };
+}
+
+function createReadOnlyRunStoreFs(delegate: RunStoreFs): RunStoreFs {
+  const retired = async (): Promise<never> => {
+    throw new WorkflowTypeScriptMutationRetiredError();
+  };
+  return {
+    mkdir: retired,
+    writeFile: retired,
+    readFile: (path) => delegate.readFile(path),
+    readOwnerOnlyFile: delegate.readOwnerOnlyFile
+      ? (path, maxBytes) => delegate.readOwnerOnlyFile!(path, maxBytes)
+      : undefined,
+    appendFile: retired,
+    exists: (path) => delegate.exists(path),
+    fileIdentity: delegate.fileIdentity ? (path) => delegate.fileIdentity!(path) : undefined,
   };
 }
 

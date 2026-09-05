@@ -17,7 +17,6 @@ import type {
 } from './types.js';
 import { checkPermission } from './permission-checker.js';
 import type { ResolvedAgentConfig } from './agent-resolver.js';
-import { isAgentLaunchBlockedByWorkflowControl } from './workflow-runs.js';
 import type { AgentReplayInput, RunStore } from './run-store.js';
 import {
   estimateWorkflowAgentCost,
@@ -396,19 +395,9 @@ export async function executeAgentCall<T>(
     return cached.data as T;
   }
 
-  // 6. Execute agent call (with optional event emission for execute mode)
-  const blockedReason = await isAgentLaunchBlockedByWorkflowControl({
-    rootDir: config.rootDir,
-    runId: config.runId,
-    phase: options.phase,
-    label: options.label,
-    agentType: options.agentType,
-    agentRunId,
-  });
-  if (blockedReason) {
-    throw new Error(blockedReason);
-  }
-
+  // 6. Execute agent call (with optional event emission for execute mode).
+  // Workflow/agent cancellation is carried by the accepted Go worker lease;
+  // retired TypeScript control files are historical evidence only.
   let result: AgentResult<T> | undefined;
   const startedAt = new Date().toISOString();
   let replayAvailable = true;
