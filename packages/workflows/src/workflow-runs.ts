@@ -1,11 +1,9 @@
-import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { assertWorkflowEvidencePath } from './internal/workflow-evidence-file.js';
 import type { RunStatus } from './types.js';
 import {
   openWorkflowRunReadOnly,
   locateWorkflowRunProjection,
-  resolveWorkflowRunProjectionRoot,
+  WorkflowRunReadContext,
+  verifyWorkflowRunProjectionLocation,
 } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
@@ -18,6 +16,8 @@ import {
 export interface ListWorkflowRunsOptions {
   rootDir?: string;
   status?: RunStatus['status'];
+  /** @internal Shared only by one read query. */
+  readContext?: WorkflowRunReadContext;
 }
 
 export type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
@@ -27,46 +27,24 @@ export async function listWorkflowRuns(
   options: ListWorkflowRunsOptions = {},
 ): Promise<WorkflowRunList> {
   const rootDir = options.rootDir ?? process.cwd();
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
+  readContext.assertRoot(rootDir);
   const diagnostics: WorkflowRunReadDiagnostic[] = [];
-  const readEntries = async (backend: 'ts-local' | 'go') => {
-    try {
-      const directory = join(resolveWorkflowRunProjectionRoot(rootDir, backend), 'runs');
-      await assertWorkflowEvidencePath(directory, { scope: 'backend', backend });
-      return (
-        await readdir(directory, {
-          withFileTypes: true,
-        })
-      )
-        .filter((entry) => {
-          if (entry.isSymbolicLink()) {
-            diagnostics.push({
-              scope: 'run',
-              runId: entry.name,
-              backend,
-              code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID',
-            });
-            return false;
-          }
-          return entry.isDirectory();
-        })
-        .map((entry) => entry.name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      diagnostics.push(workflowRunReadDiagnostic(error, { scope: 'backend', backend }));
-      return [];
-    }
-  };
-  const entries = new Set((await Promise.all([readEntries('ts-local'), readEntries('go')])).flat());
+  const roots = await Promise.all([readContext.entries('ts-local'), readContext.entries('go')]);
+  diagnostics.push(...roots.flatMap((root) => root.diagnostics));
+  const entries = new Set(roots.flatMap((root) => root.names));
   const runs = Object.assign([] as RunStatus[], { diagnostics });
   for (const entry of entries) {
     try {
-      const run = await showWorkflowRun(entry, { rootDir });
+      const run = await showWorkflowRun(entry, { rootDir, readContext });
       if (!run) {
         diagnostics.push({ scope: 'run', runId: entry, code: 'WORKFLOW_RUN_PROJECTION_MISSING' });
         continue;
       }
-      diagnostics.push(...(run.readDiagnostics ?? []));
-      if (!options.status || run.status === options.status) runs.push(run);
+      if (!options.status || run.status === options.status) {
+        runs.push(run);
+        diagnostics.push(...(run.readDiagnostics ?? []));
+      }
     } catch (error) {
       diagnostics.push(
         ...(error instanceof WorkflowRunReadError
@@ -80,17 +58,20 @@ export async function listWorkflowRuns(
 
 export async function showWorkflowRun(
   runId: string,
-  options: { rootDir?: string } = {},
+  options: { rootDir?: string; readContext?: WorkflowRunReadContext } = {},
 ): Promise<RunStatus | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const location = await locateWorkflowRunProjection(rootDir, runId);
+  const location = await locateWorkflowRunProjection(rootDir, runId, {
+    readContext: options.readContext,
+  });
   if (location.state === 'missing') return null;
-  if (location.state !== 'found')
-    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
+  if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
   const { backend, diagnostics } = location;
   let run: RunStatus | null;
   try {
+    await verifyWorkflowRunProjectionLocation(runId, location);
     run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
+    await verifyWorkflowRunProjectionLocation(runId, location);
   } catch (error) {
     throw asWorkflowRunReadError(error, { scope: 'run', runId, backend });
   }

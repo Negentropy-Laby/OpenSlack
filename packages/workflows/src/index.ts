@@ -577,6 +577,7 @@ export {
   renderWorkflowRun,
 } from './workflow-runs.js';
 export type { ListWorkflowRunsOptions } from './workflow-runs.js';
+export { createWorkflowRunReadQuery } from './workflow-run-read-query.js';
 export {
   WorkflowRunReadError,
   WORKFLOW_RUN_READ_POLICIES,

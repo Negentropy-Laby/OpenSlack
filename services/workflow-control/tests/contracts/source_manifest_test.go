@@ -139,7 +139,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 146 || len(manifest.ContractInputs) != 16 {
+		len(manifest.SourceInputs) != 148 || len(manifest.ContractInputs) != 16 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -317,11 +317,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "c9b86c9aba03d7701480db3acbb178edcbcb2d758c55f7b9f071d70f1c7f340d",
+			SHA256: "f1e1f7405529ab9863751e30cf57f901d8ac0037af61a0bbad0eb7709e7133c7",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
-			SHA256: "528dae9356c14fc8bfe9acf692417d54dd4c07ebfcdd68398b1da9bfc06ba037",
+			SHA256: "f2431d805336c4da53c4e992087560aa2f83fdb4bc8401cfedacfdfcbfe42abd",
 		},
 		"workflowRunRoutingConfigSource": {
 			Path:   "packages/workflows/src/workflow-run-routing-config.ts",
@@ -333,7 +333,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionSource": {
 			Path:   "packages/workflows/src/workflow-run-projection.ts",
-			SHA256: "5a47639cdf3e198de7c45d5cba6b951751ecee9230462f5d8668906ea4901bfa",
+			SHA256: "9109819a72962899ff91db0d628049e5b66835d5c396174441efc34c3a6fe46e",
 		},
 		"workflowRunReadOnlyInspectionSource": {
 			Path:   "packages/workflows/src/workflow-run-readonly-inspection.ts",
@@ -361,7 +361,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowTUICompositionSource": {
 			Path:   "apps/cli/src/commands/tui.ts",
-			SHA256: "56c5001d9a69e29d44b2cc7e722def040c6495974630a7613f976b01a4b67662",
+			SHA256: "58e02a3d14a4b0cae2dfa4ef9f5e47b26de9f82247f6da3af587054566d7a79e",
 		},
 		"workflowTUIRunsViewSource": {
 			Path:   "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -477,7 +477,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionReadTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-			SHA256: "6b50f649a27ccc6b42485ea6a4d48a655237eb90c1ac8bfa97cd8110fb009377",
+			SHA256: "2d698feb9f3b7ddcdd920b4c0d8459304713ae97966253fed7a6c70c42fc7625",
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",
@@ -486,6 +486,18 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"runnerMixedOrphanRestartTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
 			SHA256: "d4da6b2efab7b42ddd2dc46964a52e4a22f8decc88c2dcbba4552dcc5be280cc",
+		},
+		"workflowRunReadErrorsSource": {
+			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
+			SHA256: "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4",
+		},
+		"workflowRunReadQuery": {
+			Path:   "packages/workflows/src/workflow-run-read-query.ts",
+			SHA256: "ea383b08041b3c72c9f2a8c59fd59da3bd0229f0d5811954838f66a75c54eb41",
+		},
+		"workflowRunReadQueryTests": {
+			Path:   "packages/workflows/src/__tests__/workflow-run-read-query.test.ts",
+			SHA256: "6f807dce5a146dc0e56791b6e593483057e5610aac3a47d6a18d2f88c482794f",
 		},
 		"runnerRecoveryEvidenceMigrationUp": {
 			Path:   "services/workflow-control/migrations/000009_index_workflow_runner_recovery_evidence.up.sql",
@@ -578,10 +590,6 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
 			SHA256: "978080071354fdcb8af91873f3f25de5c178ef0565063a71da4c12b239ad980b",
-		},
-		"workflowRunReadErrorsSource": {
-			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
-			SHA256: "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4",
 		},
 		"workflowEvidenceFileSource": {
 			Path:   "packages/workflows/src/internal/workflow-evidence-file.ts",

@@ -190,11 +190,11 @@
     },
     "workflowRunRoutingPublicSurface": {
       "path": "packages/workflows/src/index.ts",
-      "sha256": "c9b86c9aba03d7701480db3acbb178edcbcb2d758c55f7b9f071d70f1c7f340d"
+      "sha256": "f1e1f7405529ab9863751e30cf57f901d8ac0037af61a0bbad0eb7709e7133c7"
     },
     "workflowRunRoutingSource": {
       "path": "packages/workflows/src/workflow-run-routing.ts",
-      "sha256": "528dae9356c14fc8bfe9acf692417d54dd4c07ebfcdd68398b1da9bfc06ba037"
+      "sha256": "f2431d805336c4da53c4e992087560aa2f83fdb4bc8401cfedacfdfcbfe42abd"
     },
     "workflowRunRoutingConfigSource": {
       "path": "packages/workflows/src/workflow-run-routing-config.ts",
@@ -206,7 +206,7 @@
     },
     "workflowRunProjectionSource": {
       "path": "packages/workflows/src/workflow-run-projection.ts",
-      "sha256": "5a47639cdf3e198de7c45d5cba6b951751ecee9230462f5d8668906ea4901bfa"
+      "sha256": "9109819a72962899ff91db0d628049e5b66835d5c396174441efc34c3a6fe46e"
     },
     "workflowRunReadOnlyInspectionSource": {
       "path": "packages/workflows/src/workflow-run-readonly-inspection.ts",
@@ -234,7 +234,7 @@
     },
     "workflowTUICompositionSource": {
       "path": "apps/cli/src/commands/tui.ts",
-      "sha256": "56c5001d9a69e29d44b2cc7e722def040c6495974630a7613f976b01a4b67662"
+      "sha256": "58e02a3d14a4b0cae2dfa4ef9f5e47b26de9f82247f6da3af587054566d7a79e"
     },
     "workflowTUIRunsViewSource": {
       "path": "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -350,7 +350,7 @@
     },
     "workflowRunProjectionReadTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-      "sha256": "6b50f649a27ccc6b42485ea6a4d48a655237eb90c1ac8bfa97cd8110fb009377"
+      "sha256": "2d698feb9f3b7ddcdd920b4c0d8459304713ae97966253fed7a6c70c42fc7625"
     },
     "workflowGoExecutionRecoveryTest": {
       "path": "packages/workflows/src/__tests__/execute-go-authority.test.ts",
@@ -359,6 +359,18 @@
     "runnerMixedOrphanRestartTest": {
       "path": "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
       "sha256": "d4da6b2efab7b42ddd2dc46964a52e4a22f8decc88c2dcbba4552dcc5be280cc"
+    },
+    "workflowRunReadErrorsSource": {
+      "path": "packages/workflows/src/workflow-run-read-errors.ts",
+      "sha256": "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4"
+    },
+    "workflowRunReadQuery": {
+      "path": "packages/workflows/src/workflow-run-read-query.ts",
+      "sha256": "ea383b08041b3c72c9f2a8c59fd59da3bd0229f0d5811954838f66a75c54eb41"
+    },
+    "workflowRunReadQueryTests": {
+      "path": "packages/workflows/src/__tests__/workflow-run-read-query.test.ts",
+      "sha256": "6f807dce5a146dc0e56791b6e593483057e5610aac3a47d6a18d2f88c482794f"
     },
     "runnerRecoveryEvidenceMigrationUp": {
       "path": "services/workflow-control/migrations/000009_index_workflow_runner_recovery_evidence.up.sql",
@@ -451,10 +463,6 @@
     "goCheckVerifierRegression": {
       "path": "packages/workspace/src/__tests__/go-check-script.test.ts",
       "sha256": "978080071354fdcb8af91873f3f25de5c178ef0565063a71da4c12b239ad980b"
-    },
-    "workflowRunReadErrorsSource": {
-      "path": "packages/workflows/src/workflow-run-read-errors.ts",
-      "sha256": "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4"
     },
     "workflowEvidenceFileSource": {
       "path": "packages/workflows/src/internal/workflow-evidence-file.ts",
