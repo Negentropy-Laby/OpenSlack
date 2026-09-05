@@ -23,6 +23,32 @@ import { WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES } from '../run-store.js';
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
 
 describe('durable checkpoint recovery evidence', () => {
+  it('reads legacy intents and derives new intent correlation without changing receipt identity', () => {
+    const { intent, stage, target } = resumeIntentFixture(0);
+    const { correlationId, ...compact } = intent;
+    expect(parseWorkflowResumeIntent(canonical(compact) + '\n', stage, target)).toEqual(compact);
+    expect(parseWorkflowResumeIntent(canonical(intent) + '\n', stage, target)).toEqual(intent);
+    expect(() =>
+      parseWorkflowResumeIntent(
+        canonical({ ...intent, correlationId: 'resume.foreign' }) + '\n',
+        stage,
+        target,
+      ),
+    ).toThrow('intent is torn');
+    const legacyFields: Record<string, unknown> = { ...compact };
+    for (const field of ['prior', 'next', 'evidence']) delete legacyFields[field];
+    const legacy = {
+      ...legacyFields,
+      schema: 'openslack.workflow_runner_resume_source_intent.v1',
+      correlationId,
+      record: {
+        ...intent.record,
+        currentPhaseId: intent.expected.currentPhaseId,
+        currentPhaseIndex: intent.expected.currentPhaseIndex,
+      },
+    };
+    expect(parseWorkflowResumeIntent(canonical(legacy) + '\n', stage, target)).toEqual(legacy);
+  });
   it('accepts long immutable intents and rejects altered lineage before any receipt lookup', () => {
     const { intent, stage, target } = resumeIntentFixture(1023);
     const bytes = canonical(intent) + '\n';

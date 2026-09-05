@@ -566,6 +566,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('-qualification-runner-cancel-ack-stability');
     expect(log).toContain('-count=100');
     expect(log).toContain('TestGS9F2MixedOrphanRestartRecovery');
+    expect(log).toContain('TestBudgetManifestPostgresRestart');
+    expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=verify');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify');
     const mixedSchemas = [
@@ -667,6 +670,12 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     });
     expect(mixedSkip.status).toBe(1);
     expect(mixedSkip.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
+    const budgetSkip = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9F2_SKIP_TEST: 'TestBudgetManifestPostgresRestart',
+    });
+    expect(budgetSkip.status).toBe(1);
+    expect(budgetSkip.stderr).toContain('TestBudgetManifestPostgresRestart');
+    expect(budgetSkip.stderr).toContain('qualification test skipped');
     const skipped = runGoCheck(failureFixture, ['services/pure'], {
       FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
     });
@@ -1937,6 +1946,11 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
       'func TestQualificationOnlyOrderingHarnessFailsClosedBeforeCallbacks(t *testing.T) {}',
       '',
     ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/budgetstore/postgres/manifest_restart_integration_test.go'),
+    'package postgres\n\nimport "testing"\n\nfunc TestBudgetManifestPostgresRestart(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(

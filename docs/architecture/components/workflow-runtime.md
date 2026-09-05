@@ -1202,7 +1202,9 @@ Checkpoint source revisions and resume generations must form a contiguous chain.
 checkpoint frontier determines the next phase, and the current Workflow Control head must agree;
 legacy null phase fields are accepted only with sufficient checkpoint evidence.
 
-Version 2 resume intents freeze both checkpoint states and the original source evidence. They use
+Version 2 resume intents freeze both checkpoint states and the original source evidence. New writes
+derive the resume correlation from the immutable stage hash; readers still validate the derived field
+when present in older v1/v2 intents. They use
 the local checkpoint file limit, checked before atomic publication, because two states can exceed
 the old 1 MiB intent reader limit. The checkpoint lock only validates and reserves local state;
 receipt queries and CAS execute outside it, and all writers respect the durable reservation. The

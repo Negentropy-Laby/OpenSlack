@@ -1,3 +1,5 @@
+import { isWorkflowRunId } from './internal/workflow-run-identity.js';
+import { closedDataRecord } from './internal/contract-validation.js';
 import {
   canonicalWorkflowControlAuthorityJson as canonical,
   validateWorkflowControlAuthorityRoute,
@@ -72,16 +74,15 @@ export interface WorkflowRunRecoveryEvidencePort {
 }
 
 function exactFields(value: unknown, fields: string[]): asserts value is Record<string, unknown> {
-  if (
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join(',') !== fields.sort().join(',')
-  )
-    recoveryConflict('Recovery response has invalid fields.');
+  const invalid = (): never => recoveryConflict('Recovery response has invalid fields.');
+  closedDataRecord(value, fields, '$', {
+    inert: invalid,
+    missing: invalid,
+    unknown: invalid,
+    dataField: invalid,
+  });
 }
-const id = (value: unknown): value is string =>
-  typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(value);
+const id = isWorkflowRunId;
 const states = [
   'staged',
   'resolved',

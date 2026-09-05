@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { closedDataRecord } from './contract-validation.js';
 import { RunStore, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES } from '../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from './workflow-run-store-recovery-access.js';
 import { resumeEvidence } from './workflow-runner-checkpoint-evidence.js';
@@ -53,8 +54,10 @@ interface LegacyResumeIntent {
   expected: WorkflowControlAuthorityExpectedHead;
   record: WorkflowControlAuthorityRunRecord;
 }
-interface ResumeIntent extends Omit<LegacyResumeIntent, 'schema'> {
+interface ResumeIntent extends Omit<LegacyResumeIntent, 'schema' | 'correlationId'> {
   schema: 'openslack.workflow_runner_resume_source_intent.v2';
+  /** Older v2 writers persisted this derived value; new writers reconstruct it. */
+  correlationId?: string;
   prior: WorkflowCheckpointControlState;
   next: WorkflowCheckpointControlState;
   evidence: WorkflowRunnerResumeAuthorityEvidence;
@@ -72,7 +75,7 @@ export function parseWorkflowResumeIntent(
     const fields = [
       'schema',
       'stageHash',
-      'correlationId',
+      ...(!v2 || Object.hasOwn(intent, 'correlationId') ? ['correlationId'] : []),
       'stageReceipt',
       'priorRevision',
       'priorBindingHash',
@@ -81,12 +84,21 @@ export function parseWorkflowResumeIntent(
       'record',
       ...(v2 ? ['prior', 'next', 'evidence'] : []),
     ];
+    const invalid = (): never => {
+      throw new TypeError('Invalid resume intent fields.');
+    };
+    closedDataRecord(intent, fields, '$', {
+      inert: invalid,
+      missing: invalid,
+      unknown: invalid,
+      dataField: invalid,
+    });
     if (
       canonical(intent) + '\n' !== bytes ||
       (!v2 && intent.schema !== 'openslack.workflow_runner_resume_source_intent.v1') ||
-      Object.keys(intent).sort().join(',') !== fields.sort().join(',') ||
       intent.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-      intent.correlationId !== `resume.${intent.stageHash}` ||
+      ((!v2 || Object.hasOwn(intent, 'correlationId')) &&
+        intent.correlationId !== `resume.${intent.stageHash}`) ||
       !Number.isSafeInteger(intent.priorRevision) ||
       intent.priorRevision < 1 ||
       !Number.isSafeInteger(intent.phaseCount) ||
@@ -203,7 +215,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     return this.authority.readTransitionReceipt(
       intent.record,
       intent.expected,
-      intent.correlationId,
+      `resume.${intent.stageHash}`,
       signal,
     );
   }
@@ -373,7 +385,6 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             intent = {
               schema: 'openslack.workflow_runner_resume_source_intent.v2',
               stageHash: hashWorkflowRunnerAuthorityBindingStage(stage),
-              correlationId: `resume.${hashWorkflowRunnerAuthorityBindingStage(stage)}`,
               stageReceipt,
               priorRevision: prior.revision,
               priorBindingHash: workflowCheckpointHash(prior.activeBinding),
@@ -423,7 +434,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             await this.authority.transition(
               intent.record,
               intent.expected,
-              intent.correlationId,
+              `resume.${intent.stageHash}`,
               signal,
             );
           }
