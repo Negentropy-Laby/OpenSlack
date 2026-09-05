@@ -1,4 +1,5 @@
 import type { WorkflowArgumentsEnvelope } from './internal/workflow-arguments.js';
+import type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
 
 // ── JSON Schema type (lightweight inline to avoid external dep) ────────────────
 
@@ -123,6 +124,7 @@ export interface PendingApproval {
 export interface RunStatus {
   /** Read surface provenance; local snapshots never authorize execution. */
   evidenceSource?: 'typescript-historical' | 'go-recovery-projection';
+  readDiagnostics?: readonly WorkflowRunReadDiagnostic[];
   runId: string;
   workflowName: string;
   mode: ExecutionMode;
