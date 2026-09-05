@@ -424,7 +424,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerExecutionClientTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-execution-client.test.ts",
-			SHA256: "8a44cf77eaeb9cb6b69902c98d1723cb4e7e86b7654a316786e150931adc63f9",
+			SHA256: "8450d28c669df3c0a20ab3ed77bc7d3b7d7e9e82a647ff64230abdee6c1b5854",
 		},
 		"workflowRunnerV2FoundationTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-v2-foundation.test.ts",

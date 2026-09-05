@@ -24,6 +24,7 @@ import type {
 } from '../workflow-runner-control-client.js';
 import type { RunResult, WorkflowMeta } from '../types.js';
 import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
+import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import {
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
@@ -562,10 +563,10 @@ describe('Workflow Runner public execution client', () => {
       selectedAt: NOW,
       expiresAt: '2026-08-14T00:00:00.000Z',
     };
-    await writeFile(
+    await writeExclusive(
       join(routeRoot, 'active', routeName(value.workflowRunId)),
       `${canonicalWorkflowControlAuthorityJson(receipt)}\n`,
-      { encoding: 'utf8', mode: 0o600 },
+      productionJournalSecurity(),
     );
 
     await expect(
