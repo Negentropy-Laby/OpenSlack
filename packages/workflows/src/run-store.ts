@@ -1,4 +1,5 @@
 import { WorkflowRunReadError } from './workflow-run-read-errors.js';
+import { isWorkflowRunPathId } from './internal/workflow-run-identity.js';
 import type {
   ExecutionMode,
   BudgetState,
@@ -425,6 +426,8 @@ export class RunStore {
 
   /** Path to the run directory. */
   runDir(runId: string): string {
+    if (!isWorkflowRunPathId(runId))
+      throw new TypeError('Workflow run identifier is unsafe for this filesystem.');
     return `${this.baseDir}/runs/${runId}`;
   }
 

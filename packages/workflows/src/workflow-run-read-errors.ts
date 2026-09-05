@@ -30,13 +30,6 @@ const READ_MESSAGES = {
 
 export type WorkflowRunReadCode = keyof typeof READ_MESSAGES;
 
-export function isWorkflowRunProjectionId(runId: string): boolean {
-  return (
-    /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(runId) &&
-    (process.platform !== 'win32' || !runId.includes(':'))
-  );
-}
-
 export interface WorkflowRunReadDiagnostic {
   readonly scope: 'workspace' | 'backend' | 'run';
   readonly runId?: string;

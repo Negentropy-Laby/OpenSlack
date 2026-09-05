@@ -1092,3 +1092,4 @@ export {
   type WorkflowCheckpointRepairReport,
 } from './workflow-checkpoint-repair.js';
 export { createWorkflowRunRecoveryEvidenceClient } from './workflow-runner-authority-binding-client.js';
+export { WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS } from './workflow-runner-authority-binding-schema.js';

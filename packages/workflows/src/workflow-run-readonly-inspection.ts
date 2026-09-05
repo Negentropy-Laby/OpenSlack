@@ -7,7 +7,8 @@ import {
   type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
 import { openWorkflowRunReadOnly } from './workflow-run-projection.js';
-import { isWorkflowRunProjectionId, WorkflowRunReadError } from './workflow-run-read-errors.js';
+import { WorkflowRunReadError } from './workflow-run-read-errors.js';
+import { isWorkflowRunPathId } from './internal/workflow-run-identity.js';
 import {
   createWorkflowRunRouteJournal,
   WorkflowRunRoutingError,
@@ -97,7 +98,7 @@ export async function inspectWorkflowRunReadOnly(
   runId: string,
   options: InspectWorkflowRunReadOnlyOptions = {},
 ): Promise<WorkflowRunReadOnlyInspection | null> {
-  if (!isWorkflowRunProjectionId(runId))
+  if (!isWorkflowRunPathId(runId))
     throw new WorkflowRunReadError([
       { scope: 'run', runId, code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID' },
     ]);

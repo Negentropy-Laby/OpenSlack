@@ -1221,10 +1221,26 @@ Insufficient history, conflicting leases, or a generation rewind are rejected. R
 Go history, starts a workflow, or runs automatically; repeating a completed repair is a no-op.
 
 The additive first-phase wire change refreshes upstream budget manifest locks without changing
-budget record schemas. Readers accept only the current manifest and the exact previous
-`662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable
+budget record schemas. The append-only
+[`compatibility.json`](../../../packages/workflows/contracts/workflow-budget-authority/compatibility.json)
+ledger is the single acceptance inventory. Its generator produces the TypeScript and Go
+acceptance sets and every durable OpenAPI manifest enum. Rotation appends a reviewed digest;
+the generator refuses removal or reordering of accepted digests. Existing durable
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
+
+Authority-binding schemas use explicit field rules, including nullable IDs, receipt lifecycle
+hashes, positive revisions, and canonical timestamps. Schema consumers must enable format assertions
+and register `WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS` from `@openslack/workflows`,
+alongside the standard `date-time` format. The `openslack-utf8-512` format limits error messages
+to 512 UTF-8 bytes; `maxLength` alone counts Unicode code points. The shared boundary corpus runs
+against the schema and the independent TypeScript and Go validators. Runtime validators also check
+cross-record identity, hashes, and sequence relationships.
+
+Logical run IDs retain the wire contract's ASCII ID alphabet, including colon in historical POSIX
+names. Filesystem entrypoints share the same validator and reject colon on Windows to prevent ADS
+interpretation. TUI projections derive their data fields from the workflow package types while
+retaining explicit support for incomplete historical summaries.
 
 Run list, show, progress, and save-run probe the immutable route's selected local directory before
 reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;

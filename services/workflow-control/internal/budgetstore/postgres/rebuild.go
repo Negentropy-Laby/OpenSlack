@@ -214,14 +214,9 @@ func rebuildAccountFromLedger(genesis, head budgetstore.Account, entries []ledge
 		if err != nil {
 			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild produced an invalid account", err)
 		}
-		outer, exact, hash, err := exactDurableRecord(budgetstore.RecordKindAccount, validated, genesis.Durable.AuthorityBuildHash)
-		if err != nil {
-			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "encode workflow budget rebuilt account", err)
-		}
 		// Reconstruct the envelope written with this ledger entry, including its
 		// validated manifest. A read must not rewrite a previous-release hash chain.
-		outer.ContractManifestSHA256 = entry.durable.ContractManifestSHA256
-		exact, err = budgetstore.EncodeDurableRecord(outer)
+		outer, exact, hash, err := exactDurableRecordWithManifest(budgetstore.RecordKindAccount, validated, genesis.Durable.AuthorityBuildHash, entry.durable.ContractManifestSHA256)
 		if err != nil {
 			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "encode historical workflow budget rebuilt account", err)
 		}

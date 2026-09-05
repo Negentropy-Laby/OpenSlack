@@ -319,33 +319,33 @@
   "artifacts": {
     "schemas/workflow-runner-authority-binding-stage.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-stage.v1.schema.json",
-      "byteLength": 34127,
-      "sha256": "44fe46df4fd1f43f8f65e77459d06aaf36ce45d3982433e0d631bd219d746a33"
+      "byteLength": 34025,
+      "sha256": "a320756415ec6e9c4feb23a78a3852b9112da82e9f7e50088f78db9c74075cef"
     },
     "schemas/workflow-runner-authority-binding-resolution.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
-      "byteLength": 79309,
-      "sha256": "ab12593458eea52f31f41adada4386d0b1845ea217d870a289f0e7496811362b"
+      "byteLength": 81143,
+      "sha256": "b62da9bfbfcea433f8ec2ae758b796ffe038d61e6e60775544565d7d8b4239c6"
     },
     "schemas/workflow-runner-authority-binding-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
-      "byteLength": 55817,
-      "sha256": "723be686dcf07c7a336324bcc0759e462b45ff15fb3db69d0e4d838456aed89c"
+      "byteLength": 66824,
+      "sha256": "901762717a31731c046a1e2c1ca114f2f9cfd5d1fe4bfdcb7b79ad492fcae249"
     },
     "schemas/workflow-runner-authority-binding-error.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-error.v1.schema.json",
-      "byteLength": 1954,
-      "sha256": "57927dfa43d7237a6f3822ae4f5445ddb6d4894527addff573d1e0ada7e28d23"
+      "byteLength": 2288,
+      "sha256": "81d05d2428edee32beef772d4664efe15147b239c00082d943600e0e75949bc1"
     },
     "schemas/workflow-runner-v2-runtime-admission.v1.schema.json": {
       "path": "schemas/workflow-runner-v2-runtime-admission.v1.schema.json",
       "byteLength": 1492,
-      "sha256": "daad499aeaa4381a4037b30b6a213b45eb7500d501703048952601d72ad85234"
+      "sha256": "abbdf1ee2198e3306d37f9014a41a505443bc0b0533423489913bcaf5e0da65b"
     },
     "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json",
-      "byteLength": 1934,
-      "sha256": "f68a3e2c21573a9c5529e6de1e68b554c9aa5a5c92c1731c8c1abc087e6e9ec7"
+      "byteLength": 2019,
+      "sha256": "2aaec6183e4bf39e553c2fafad6360d851ed82e414cb5368d7f7262712216de6"
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",

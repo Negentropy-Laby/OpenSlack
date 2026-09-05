@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  WORKFLOW_BUDGET_CURRENT_MANIFEST_SHA256,
+  WORKFLOW_BUDGET_ACCEPTED_MANIFEST_SHA256,
+} from './internal/workflow-budget-compatibility.generated.js';
 
 import {
   WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
@@ -13,7 +17,6 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   WorkflowBudgetAuthorityContractError,
-  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA,
   canonicalWorkflowBudgetAuthorityJson,
   hashWorkflowBudgetAuthorityValue,
@@ -225,7 +228,7 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS = Object.freeze({
   checkpointManifest: 'e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000',
   effectControlManifest: '76929e860fc42573e87dfe09f106d15f4913b2da3da5f96e4a8c1d58d095d1c2',
   effectShadowManifest: '58208d1618b6a629e821dbb10d214a9a57eaf6b3771a1b61e1d2198c4038354a',
-  budgetManifest: '83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b',
+  budgetManifest: WORKFLOW_BUDGET_CURRENT_MANIFEST_SHA256,
   migration7Up: 'bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722',
   migration7Down: '251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7',
 } as const);
@@ -1805,10 +1808,7 @@ export function validateWorkflowRunnerBudgetDurableReceipt(
     productionAuthority: false as const,
     contractManifestSha256: oneOf(
       own(record, 'contractManifestSha256'),
-      [
-        WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
-        WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
-      ],
+      WORKFLOW_BUDGET_ACCEPTED_MANIFEST_SHA256,
       '$/budgetSourceResult/durableReceipt/contractManifestSha256',
     ),
     authorityBuildHash,

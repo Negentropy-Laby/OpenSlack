@@ -22,9 +22,19 @@
         "WORKFLOW_RUNNER_AUTHORITY_BINDING_RECONCILIATION_REQUIRED"
       ]
     },
-    "message": { "type": "string", "minLength": 1, "maxLength": 524288 },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\r\\n\\u2028\\u2029]+$",
+      "format": "openslack-utf8-512",
+      "description": "Single-line error message, at most 512 UTF-8 bytes. The named format must be asserted."
+    },
     "bindingId": {
-      "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$", "maxLength": 256 },
+        { "type": "null" }
+      ]
     },
     "operation": {
       "oneOf": [
@@ -42,7 +52,10 @@
       ]
     },
     "reconciliationToken": {
-      "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$", "maxLength": 512 },
+        { "type": "null" }
+      ]
     }
   },
   "required": ["schema", "code", "message", "bindingId", "operation", "reconciliationToken"]
