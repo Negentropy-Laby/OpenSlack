@@ -136,7 +136,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 109 || len(manifest.ContractInputs) != 15 {
+		len(manifest.SourceInputs) != 110 || len(manifest.ContractInputs) != 15 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -374,7 +374,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowGoCheckSource": {
 			Path:   "scripts/go-check.sh",
-			SHA256: "f5c5213725f9c384c2e8bb393832ac9e192c978994a1b123d8df0e650069613b",
+			SHA256: "c6275a7611638cc36e95c7a88686a9684a695583df0afb23d8f6ef70f0f74672",
 		},
 		"workflowHostedGateSource": {
 			Path:   ".github/workflows/notification-delivery-service.yml",
@@ -571,6 +571,10 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"workflowRecoveryTestFixtures": {
 			Path:   "packages/workflows/src/__tests__/workflow-recovery-fixtures.ts",
 			SHA256: "972d5747739c2603bfc262c4353d32facd3d22b763ed35c080a51f094b882438",
+		},
+		"goCheckVerifierRegression": {
+			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
+			SHA256: "f3175a31658d747c21ebed80189c8a5b299297e96aaa4f7fa936b08df4f6fe35",
 		},
 		"workflowRunReadErrorsSource": {
 			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
