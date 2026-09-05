@@ -82,6 +82,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         if (process.cwd() !== root) {
           process.chdir(root);
         }
+        const { createWorkflowRunReadQuery } = await import('@openslack/workflows');
+        const workflowRunQuery = createWorkflowRunReadQuery(root);
 
         // Pre-fetch dashboard data
         try {
@@ -209,9 +211,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
-            const { findWorkflow, listWorkflowRuns, loadWorkflow } =
-              await import('@openslack/workflows');
-            const workflowRuns = await listWorkflowRuns({ rootDir: root });
+            const { findWorkflow, loadWorkflow } = await import('@openslack/workflows');
+            const workflowRuns = await workflowRunQuery.list();
             const lifecycleBase: Record<
               string,
               {
@@ -252,18 +253,16 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         // Pre-fetch workflow run progress data
         try {
           const {
-            listWorkflowRuns,
-            getWorkflowRunProgress,
             renderWorkflowRunReadDiagnostic,
             WorkflowRunReadError,
             workflowRunReadDiagnostic,
           } = await import('@openslack/workflows');
-          const runs = await listWorkflowRuns({ rootDir: root });
+          const runs = await workflowRunQuery.list();
           const progress = [];
           const readWarnings = runs.diagnostics.map(renderWorkflowRunReadDiagnostic);
           for (const run of runs.slice(0, 20)) {
             try {
-              const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
+              const item = await workflowRunQuery.progress(run.runId);
               if (item) progress.push(item);
             } catch (error) {
               readWarnings.push(

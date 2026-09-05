@@ -136,7 +136,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 110 || len(manifest.ContractInputs) != 15 {
+		len(manifest.SourceInputs) != 112 || len(manifest.ContractInputs) != 15 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -314,11 +314,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "023b89d22ea50e7acbd1f62545ce5e6918fd834aa0508da73e326a231d6798d5",
+			SHA256: "51996dab455fa98e10929c25028e5b1a4f048d41b67529be340a68715767fbc1",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
-			SHA256: "528dae9356c14fc8bfe9acf692417d54dd4c07ebfcdd68398b1da9bfc06ba037",
+			SHA256: "f2431d805336c4da53c4e992087560aa2f83fdb4bc8401cfedacfdfcbfe42abd",
 		},
 		"workflowRunRoutingConfigSource": {
 			Path:   "packages/workflows/src/workflow-run-routing-config.ts",
@@ -330,7 +330,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionSource": {
 			Path:   "packages/workflows/src/workflow-run-projection.ts",
-			SHA256: "789c930318759d9e24c0b7d2c3d3b2ad21366a6c5a5d50fc6620232b7a7646a3",
+			SHA256: "2dc731cef7f9ea0f9221eb6272903d7eec19b711699a491cc49ef29cb04337d6",
 		},
 		"workflowRunReadOnlyInspectionSource": {
 			Path:   "packages/workflows/src/workflow-run-readonly-inspection.ts",
@@ -358,7 +358,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowTUICompositionSource": {
 			Path:   "apps/cli/src/commands/tui.ts",
-			SHA256: "56c5001d9a69e29d44b2cc7e722def040c6495974630a7613f976b01a4b67662",
+			SHA256: "58e02a3d14a4b0cae2dfa4ef9f5e47b26de9f82247f6da3af587054566d7a79e",
 		},
 		"workflowTUIRunsViewSource": {
 			Path:   "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -474,7 +474,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionReadTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-			SHA256: "5e4122028951bb7d5436e7b93c4bd592faf95bd16751d1eb2440a274cc769712",
+			SHA256: "b26e5ef2027333beeeaaa77c1f8898c1525d111450611e9a4f637bd1315d1a43",
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",
@@ -483,6 +483,18 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"runnerMixedOrphanRestartTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
 			SHA256: "d4da6b2efab7b42ddd2dc46964a52e4a22f8decc88c2dcbba4552dcc5be280cc",
+		},
+		"workflowRunReadErrorsSource": {
+			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
+			SHA256: "6359d7030c3ec0432604f4b14d0797a69e21cfca031da09597c9c24733868e0a",
+		},
+		"workflowRunReadQuery": {
+			Path:   "packages/workflows/src/workflow-run-read-query.ts",
+			SHA256: "ea383b08041b3c72c9f2a8c59fd59da3bd0229f0d5811954838f66a75c54eb41",
+		},
+		"workflowRunReadQueryTests": {
+			Path:   "packages/workflows/src/__tests__/workflow-run-read-query.test.ts",
+			SHA256: "6f807dce5a146dc0e56791b6e593483057e5610aac3a47d6a18d2f88c482794f",
 		},
 		"runnerRecoveryEvidenceMigrationUp": {
 			Path:   "services/workflow-control/migrations/000009_index_workflow_runner_recovery_evidence.up.sql",
@@ -575,10 +587,6 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
 			SHA256: "f3175a31658d747c21ebed80189c8a5b299297e96aaa4f7fa936b08df4f6fe35",
-		},
-		"workflowRunReadErrorsSource": {
-			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
-			SHA256: "6359d7030c3ec0432604f4b14d0797a69e21cfca031da09597c9c24733868e0a",
 		},
 	}
 	if !reflect.DeepEqual(manifest.SourceInputs, wantSourceInputs) {

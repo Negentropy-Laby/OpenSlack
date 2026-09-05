@@ -1235,6 +1235,14 @@ malformed records, missing projections, route conflicts, and internal reader fai
 are enumerable, and protocol/export DTOs serialize them explicitly alongside the array. Go statuses
 remain recovery snapshots, including a diagnostic when their route receipt is absent. TUI warnings
 retain partial-read failures. CLI async failures and MCP reads expose stable diagnostic codes.
+
+Each list request or TUI load creates one `createWorkflowRunReadQuery` context. It enumerates each
+backend and the route quarantine once, indexes quarantined receipt names, and shares verified
+locations between the lifecycle list and progress reads. The context is discarded after that load;
+it does not cache file contents or survive a refresh. Reads still check the selected directory's
+identity before and after loading evidence, including Windows reparse components and safe 8.3
+aliases. A replaced directory is diagnosed rather than followed. Quarantine work grows with the
+number of quarantine entries plus the number of runs, instead of their product.
 These reads never initialize, repair, or write route journals or run projections.
 
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
