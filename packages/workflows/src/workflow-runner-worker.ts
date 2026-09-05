@@ -1375,7 +1375,8 @@ export async function executeWorkflowRunnerV2AuthorityJob(
   );
 }
 
-async function createWorkflowRunnerV2RuntimeDelivery(
+/** @internal Sealed composition; excluded from the package root and public worker subpath. */
+export async function createWorkflowRunnerV2RuntimeDelivery(
   config: WorkflowRunnerV2WorkerConfig,
   authority: WorkflowControlAuthorityPort,
 ): Promise<WorkflowRunnerV2RuntimeDeliveryPort> {

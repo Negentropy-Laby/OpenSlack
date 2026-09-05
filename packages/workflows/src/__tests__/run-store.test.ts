@@ -154,6 +154,7 @@ describe('RunStore', () => {
       'savePhaseCheckpoint',
       'initializeCheckpointControl',
       'beginCheckpointResumeGeneration',
+      'advanceCheckpointResumeGeneration',
       'commitWorkflowCheckpoint',
       'saveAgentResult',
       'saveAgentReplayInput',

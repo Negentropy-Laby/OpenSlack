@@ -257,6 +257,7 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
     expect(workerPublic).toContain('loadWorkflowRunnerV2WorkerConfig');
     expect(workerPublic).not.toContain('executeWorkflowRunnerV2AuthorityJob');
     expect(workerPublic).not.toContain('createWorkflowRunnerV2ProviderAttemptPort');
+    expect(workerPublic).not.toContain('createWorkflowRunnerV2RuntimeDelivery');
     expect(index).not.toContain('GoAuthorityWorkflowExecutionOptions');
     expect(index).not.toContain('executeGoAuthorityRun');
     expect(index).not.toContain('executeGoAuthorityResume');
@@ -268,6 +269,7 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
       'WorkflowRunnerV2Session',
       'createWorkflowRunnerAuthorityBindingClient',
       'createWorkflowRunnerV2RuntimeAdmissionClient',
+      'createWorkflowRunnerV2RuntimeDelivery',
       'createWorkflowRunnerBudgetAuthorityClient',
       'createWorkflowRunnerV2EffectAuthorizationPort',
       'createWorkflowRunnerCheckpointSourceAdapter',
