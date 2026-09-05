@@ -13,6 +13,7 @@ import {
 } from './workflow-control-authority-contract.js';
 import {
   WorkflowBudgetAuthorityContractError,
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA,
   canonicalWorkflowBudgetAuthorityJson,
   hashWorkflowBudgetAuthorityValue,
@@ -220,11 +221,11 @@ export const WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS = Object.freeze({
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS = Object.freeze({
   runnerV1Manifest: '908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6',
-  authorityV2Manifest: '2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877',
+  authorityV2Manifest: '7994937f8b66c67ba4c90ce9018fcbde095ad34e6f377b3cd09959bb5c53d2ba',
   checkpointManifest: 'e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000',
-  effectControlManifest: '6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4',
-  effectShadowManifest: '55acf993ae4b951a7426c2d4771733d0ef578095d2b616f7bca0394a43f33b42',
-  budgetManifest: '662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548',
+  effectControlManifest: '76929e860fc42573e87dfe09f106d15f4913b2da3da5f96e4a8c1d58d095d1c2',
+  effectShadowManifest: '58208d1618b6a629e821dbb10d214a9a57eaf6b3771a1b61e1d2198c4038354a',
+  budgetManifest: '83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b',
   migration7Up: 'bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722',
   migration7Down: '251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7',
 } as const);
@@ -1802,9 +1803,12 @@ export function validateWorkflowRunnerBudgetDurableReceipt(
       '$/budgetSourceResult/durableReceipt/authorityMode',
     ),
     productionAuthority: false as const,
-    contractManifestSha256: literal(
+    contractManifestSha256: oneOf(
       own(record, 'contractManifestSha256'),
-      WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+      [
+        WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+        WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+      ],
       '$/budgetSourceResult/durableReceipt/contractManifestSha256',
     ),
     authorityBuildHash,
@@ -2252,8 +2256,8 @@ function assertEvidenceForStage(
       assertEnvelopeRunnerBinding(evidence.envelope, stage, '$/evidence/envelope');
       const observation = evidence.envelope.observation;
       if (
-        evidence.priorCheckpointId === null ||
-        evidence.priorCheckpointHash === null ||
+        ((evidence.priorCheckpointId === null || evidence.priorCheckpointHash === null) &&
+          (evidence.nextPhaseId !== 'phase-0' || evidence.nextPhaseIndex !== 0)) ||
         evidence.logicalResumeAttemptId === stage.runnerAttemptId ||
         evidence.expiresAt !== payload.leaseExpiresAt ||
         payload.acceptedAt !== stage.sentAt ||

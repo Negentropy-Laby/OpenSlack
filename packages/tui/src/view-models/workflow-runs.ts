@@ -85,6 +85,7 @@ export interface WorkflowRunProgressItem {
 }
 
 export interface WorkflowRunProgressViewModel {
+  readWarnings?: string[];
   runs: WorkflowRunProgressItem[];
   selectedRun?: WorkflowRunProgressItem;
   summary: {

@@ -1247,11 +1247,29 @@ function validateAddedPayload(
         'expiresAt',
       ] as const;
       const record = closedRecord(value, fields, path);
+      const checkpointId = nullable(own(record, 'checkpointId'), (entry) =>
+        identifier(entry, `${path}/checkpointId`),
+      );
+      const checkpointHash = nullable(own(record, 'checkpointHash'), (entry) =>
+        hash(entry, `${path}/checkpointHash`),
+      );
+      const nextPhaseId = identifier(own(record, 'nextPhaseId'), `${path}/nextPhaseId`);
+      const nextPhaseIndex = integer(own(record, 'nextPhaseIndex'), `${path}/nextPhaseIndex`, 0);
+      if (
+        (checkpointId === null) !== (checkpointHash === null) ||
+        (checkpointId === null && (nextPhaseId !== 'phase-0' || nextPhaseIndex !== 0))
+      ) {
+        fail(
+          'WORKFLOW_CONTROL_AUTHORITY_INVALID',
+          path,
+          'Only phase-0 reentry permits an empty checkpoint pair.',
+        );
+      }
       return immutable({
-        checkpointId: identifier(own(record, 'checkpointId'), `${path}/checkpointId`),
-        checkpointHash: hash(own(record, 'checkpointHash'), `${path}/checkpointHash`),
-        nextPhaseId: identifier(own(record, 'nextPhaseId'), `${path}/nextPhaseId`),
-        nextPhaseIndex: integer(own(record, 'nextPhaseIndex'), `${path}/nextPhaseIndex`, 0),
+        checkpointId,
+        checkpointHash,
+        nextPhaseId,
+        nextPhaseIndex,
         newResumeGeneration: integer(
           own(record, 'newResumeGeneration'),
           `${path}/newResumeGeneration`,

@@ -37,6 +37,12 @@ export async function collectNegentropyEvidence(
     workflow: {
       totalRuns: workflowRuns.length,
       statusCounts: counts(workflowRuns.map((run) => run.status)),
+      evidenceSourceCounts: counts(
+        workflowRuns.map((run) => run.evidenceSource ?? 'local-evidence'),
+      ),
+      ...(workflowRuns.diagnostics.length === 0
+        ? {}
+        : { readDiagnostics: workflowRuns.diagnostics }),
       ...(latest(workflowRuns.map((run) => run.updatedAt)) === undefined
         ? {}
         : { latestUpdatedAt: latest(workflowRuns.map((run) => run.updatedAt)) }),

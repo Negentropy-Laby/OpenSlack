@@ -850,6 +850,20 @@ export class RunStore {
     nextPhaseId: string,
     nextPhaseIndex: number,
   ): Promise<WorkflowCheckpointControlState> {
+    return this.advanceCheckpointResumeGeneration(runId, bindingValue, nextPhaseId, nextPhaseIndex);
+  }
+
+  /** Internal Go source: validate and commit its staged authority before updating the cache. */
+  protected async advanceCheckpointResumeGeneration(
+    runId: string,
+    bindingValue: WorkflowCheckpointExecutionBinding,
+    nextPhaseId: string,
+    nextPhaseIndex: number,
+    authority?: {
+      expectedGeneration: number;
+      commit(prior: WorkflowCheckpointControlState): Promise<void>;
+    },
+  ): Promise<WorkflowCheckpointControlState> {
     const next = await this.withCheckpointMutation(runId, async () => {
       const binding = checkpointBinding(bindingValue);
       if (binding.workflowRunId !== runId) {
@@ -860,6 +874,19 @@ export class RunStore {
       }
       const state = await this.requireCheckpointControl(runId);
       const bindingHash = workflowCheckpointHash(binding);
+      if (
+        authority &&
+        state.resumeGeneration !== authority.expectedGeneration &&
+        !(
+          state.resumeGeneration === authority.expectedGeneration + 1 &&
+          bindingHash === state.seenBindingHashes.at(-1)
+        )
+      ) {
+        throw workflowCheckpointError(
+          'WORKFLOW_CHECKPOINT_BINDING_STALE',
+          'Go resume generation is stale.',
+        );
+      }
       if (state.seenBindingHashes.includes(bindingHash)) {
         if (
           bindingHash === state.seenBindingHashes.at(-1) &&
@@ -885,7 +912,8 @@ export class RunStore {
         nextPhaseId !== `phase-${nextPhaseIndex}` ||
         binding.attemptId === state.activeBinding.attemptId ||
         binding.leaseId === state.activeBinding.leaseId ||
-        binding.fencingToken <= state.activeBinding.fencingToken ||
+        ((binding.jobId === state.activeBinding.jobId || !authority) &&
+          binding.fencingToken <= state.activeBinding.fencingToken) ||
         binding.workspaceId !== state.activeBinding.workspaceId ||
         binding.workflowRunId !== state.activeBinding.workflowRunId ||
         binding.correlationId !== state.activeBinding.correlationId ||
@@ -900,6 +928,7 @@ export class RunStore {
         );
       }
       if (priorCheckpoint) await this.verifyCheckpointArtifact(runId, priorCheckpoint);
+      if (authority) await authority.commit(state);
       const revision = state.revision + 1;
       const resumeGeneration = state.resumeGeneration + 1;
       const queueObservation = Boolean(

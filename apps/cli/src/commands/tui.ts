@@ -254,12 +254,22 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           const { listWorkflowRuns, getWorkflowRunProgress } = await import('@openslack/workflows');
           const runs = await listWorkflowRuns({ rootDir: root });
           const progress = [];
+          const readWarnings = runs.diagnostics.map(
+            (item) => `${JSON.stringify(item.runId)}: ${item.code}; inspect run evidence.`,
+          );
           for (const run of runs.slice(0, 20)) {
-            const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
-            if (item) progress.push(item);
+            try {
+              const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
+              if (item) progress.push(item);
+            } catch {
+              readWarnings.push(
+                `${JSON.stringify(run.runId)}: progress evidence requires reconciliation.`,
+              );
+            }
           }
           data.workflowRunProgress = progress;
           data.workflowRuns = mapWorkflowRunsToViewModel(progress);
+          data.workflowRuns.readWarnings = readWarnings;
         } catch {
           // Workflow run progress unavailable
         }

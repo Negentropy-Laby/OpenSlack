@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -116,6 +117,90 @@ func TestBudgetStoreRejectedReserveExactReplay(t *testing.T) {
 	statistics, _ := repository.Statistics(context.Background())
 	if statistics.LedgerEntries != 1 || statistics.Receipts != 1 {
 		t.Fatalf("rejected reserve was not durable: %#v", statistics)
+	}
+}
+
+func TestBudgetStorePreviousManifestReadReplayAndSettlement(t *testing.T) {
+	pool := openBudgetPostgres(t)
+	seedRun(t, pool, 4)
+	repository := New(pool)
+	ctx := context.Background()
+	reserve := reserveInput(t, testSeed, 0, 4, "1", "600")
+	first, err := repository.Reserve(ctx, reserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed a second isolated schema with the prior release's envelopes. Keep the
+	// source rows immutable and every database constraint active during the import.
+	var sourceSchema string
+	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&sourceSchema); err != nil {
+		t.Fatal(err)
+	}
+	upgradedPool := openBudgetPostgres(t)
+	seedRun(t, upgradedPool, 5)
+	for _, table := range []string{"workflow_control_budget_accounts", "workflow_control_budget_reservations", "workflow_control_budget_ledger", "workflow_control_budget_receipts"} {
+		rows, err := pool.Query(ctx, `SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 ORDER BY ordinal_position`, sourceSchema, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var columns, projections []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatal(err)
+			}
+			column := pgx.Identifier{name}.Sanitize()
+			columns = append(columns, column)
+			if strings.HasSuffix(name, "_bytes") {
+				projections = append(projections, fmt.Sprintf("convert_to(replace(convert_from(%s,'UTF8'),$1,$2),'UTF8')", column))
+			} else {
+				projections = append(projections, column)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if len(columns) == 0 {
+			t.Fatal("historical table is missing")
+		}
+		query := fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", pgx.Identifier{table}.Sanitize(), strings.Join(columns, ","), strings.Join(projections, ","), pgx.Identifier{sourceSchema, table}.Sanitize())
+		if _, err := upgradedPool.Exec(ctx, query, budgetstore.ContractManifestSHA256, budgetcontract.PreviousManifestSHA256); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository = New(upgradedPool)
+	previousResponse := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+	previousReceipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+	account, err := repository.ReadAccount(ctx, testWorkspace, testRun)
+	if err != nil || account.Durable.ContractManifestSHA256 != budgetcontract.PreviousManifestSHA256 {
+		t.Fatalf("previous account read: %v", err)
+	}
+	if _, err := repository.RebuildAccount(ctx, testWorkspace, testRun); err != nil {
+		t.Fatalf("previous ledger rebuild: %v", err)
+	}
+	if _, err := repository.ReadReservation(ctx, testWorkspace, testRun, "reservation-1"); err != nil {
+		t.Fatal(err)
+	}
+	pointRead, err := repository.ReadReceipt(ctx, testWorkspace, reserve.Prepared.IdempotencyKey)
+	if err != nil || !bytes.Equal(pointRead.ExactResponseBytes, previousResponse) || !bytes.Equal(pointRead.ExactReceiptBytes, previousReceipt) {
+		t.Fatalf("previous point read rewrote bytes: %v", err)
+	}
+	replay, err := repository.Reserve(ctx, reserve)
+	if err != nil || !replay.Replay || !bytes.Equal(replay.ExactResponseBytes, previousResponse) {
+		t.Fatalf("previous exact replay: %v", err)
+	}
+	settle := settlementInput(t, testSeed, replay, 1, 5, "trusted", "provider_response_accepted", "100")
+	settled, err := repository.Settle(ctx, settle)
+	if err != nil || settled.Status != "settled" || settled.DurableReceipt.ContractManifestSHA256 != budgetstore.ContractManifestSHA256 {
+		t.Fatalf("new settlement after old records: %v", err)
+	}
+	if _, err := repository.RebuildAccount(ctx, testWorkspace, testRun); err != nil {
+		t.Fatalf("mixed manifest ledger rebuild: %v", err)
+	}
+	pointRead, err = repository.ReadReceipt(ctx, testWorkspace, reserve.Prepared.IdempotencyKey)
+	if err != nil || !bytes.Equal(pointRead.ExactResponseBytes, previousResponse) {
+		t.Fatalf("new write altered old receipt: %v", err)
 	}
 }
 

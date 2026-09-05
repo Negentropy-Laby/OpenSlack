@@ -1423,8 +1423,15 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "checkpointId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
-            "checkpointHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "checkpointId": {
+              "anyOf": [
+                { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
+                { "type": "null" }
+              ]
+            },
+            "checkpointHash": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
             "nextPhaseId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$" },
             "nextPhaseIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
             "newResumeGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
@@ -1444,6 +1451,23 @@
             "newAttemptId",
             "authorityReceiptHash",
             "expiresAt"
+          ],
+          "allOf": [
+            {
+              "if": { "properties": { "checkpointId": { "type": "null" } } },
+              "then": {
+                "properties": {
+                  "checkpointHash": { "type": "null" },
+                  "nextPhaseId": { "const": "phase-0" },
+                  "nextPhaseIndex": { "const": 0 }
+                }
+              },
+              "else": {
+                "properties": {
+                  "checkpointHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                }
+              }
+            }
           ]
         }
       },

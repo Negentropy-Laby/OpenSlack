@@ -121,6 +121,8 @@ export interface PendingApproval {
 }
 
 export interface RunStatus {
+  /** Read surface provenance; local snapshots never authorize execution. */
+  evidenceSource?: 'typescript-historical' | 'go-recovery-projection';
   runId: string;
   workflowName: string;
   mode: ExecutionMode;

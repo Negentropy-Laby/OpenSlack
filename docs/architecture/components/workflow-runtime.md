@@ -1168,6 +1168,30 @@ reconciliation-required and cannot enter fresh execution. Operators can inspect 
 provably terminal route receipts with `openslack collaboration workflow routes repair [--apply]`;
 paused and incomplete receipts remain active.
 
+The default Go resume source commits before `lease_accept`. It reads checkpoint control from
+`go-recovery-projections`, validates the exact accepted companion stage, persists and syncs an
+immutable source intent, and advances the Workflow Control head to `resuming` with the next
+generation before updating the local checkpoint binding. The intent binds the prior checkpoint
+revision and binding to the complete Go CAS request. A stage-derived mutation correlation separates
+receipts for competing attempts; the checkpoint and F2 evidence retain the original run correlation.
+Recovery requires the exact authority receipt, never an inferred increment in the observed head.
+Checkpoint, runner-binding, and lifecycle revisions remain independent. Fences increase within a
+job; a newly admitted resume job may start at fence 1. With no committed checkpoint, the only valid
+resume destination is `phase-0` with null prior-checkpoint evidence.
+
+The additive first-phase wire change refreshes upstream budget manifest locks without changing
+budget record schemas. Readers accept only the current manifest and the exact previous
+`662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable
+envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
+new budget records use the current manifest. Unknown manifests remain invalid.
+
+Run list, show, progress, and save-run select local evidence using the immutable route when present.
+Lists enumerate both historical TypeScript and Go recovery directories, deduplicate routed run IDs,
+and isolate unreadable or ambiguous entries as reconciliation diagnostics. Go statuses are explicitly
+labelled recovery snapshots; they do not claim to be live authority heads. TUI warnings and exported
+evidence diagnostics preserve partial-read failures while healthy runs remain visible. These reads
+never initialize or repair route journals.
+
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
 the durable Workflow Control head as authority only after receipt/head identity comparison; local
 RunStore-shaped recovery projections are comparison evidence and never become a writer or authority

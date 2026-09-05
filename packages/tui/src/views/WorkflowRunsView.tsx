@@ -17,6 +17,7 @@ import type {
 } from '../view-models/workflow-runs.js';
 import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js';
 import type { TuiActionHandlers, WorkflowSaveTarget } from './render-shell.js';
+import { sanitizeTerminalText } from '../sanitize.js';
 
 type ViewMode = 'runs' | 'phases' | 'agent';
 
@@ -157,6 +158,20 @@ export default function WorkflowRunsView({
         `Runs ${model.summary.total} | running ${model.summary.running} | paused ${model.summary.paused} | failed ${model.summary.failed} | approvals ${model.summary.pendingApprovals}`,
       ),
       decisionSummary ? React.createElement(DecisionSummary, { summary: decisionSummary }) : null,
+      ...(model.readWarnings ?? []).map((warning, index) =>
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'warning', key: `read-warning-${index}` },
+          sanitizeTerminalText(warning),
+        ),
+      ),
+      ...(selectedRun?.warnings ?? []).map((warning, index) =>
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'warning', key: `run-warning-${index}` },
+          sanitizeTerminalText(warning),
+        ),
+      ),
       selectedRun
         ? React.createElement(
             ThemedText,

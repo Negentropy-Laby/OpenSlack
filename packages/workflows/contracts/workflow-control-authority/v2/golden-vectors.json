@@ -324,6 +324,48 @@
         }
       },
       {
+        "kind": "resume_offer",
+        "input": {
+          "schema": "openslack.workflow_control_authority_message.v2",
+          "protocolVersion": "openslack.workflow_runner.v2",
+          "kind": "resume_offer",
+          "workspaceId": "workspace-gs9",
+          "jobId": "job-gs9-001",
+          "workflowRunId": "run-gs9-001",
+          "attemptId": "attempt-gs9-001",
+          "leaseId": "lease-gs9-001",
+          "fencingToken": 7,
+          "sequence": 11,
+          "authorityBackend": "ts-local",
+          "authority": "typescript",
+          "routingEpoch": 1,
+          "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+          "runRevision": 4,
+          "resumeGeneration": 1,
+          "eventId": "event-resume_offer",
+          "correlationId": "corr-gs9-001",
+          "sentAt": "2026-08-04T03:01:00.000Z",
+          "payload": {
+            "checkpointId": null,
+            "checkpointHash": null,
+            "nextPhaseId": "phase-0",
+            "nextPhaseIndex": 0,
+            "newResumeGeneration": 2,
+            "newAttemptId": "attempt-gs9-first-phase",
+            "authorityReceiptHash": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+            "expiresAt": "2026-08-04T03:05:00.000Z"
+          }
+        },
+        "prepared": {
+          "schema": "openslack.workflow_control_authority_prepared_message.v2",
+          "direction": "control-to-runner",
+          "body": "{\"attemptId\":\"attempt-gs9-001\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66\",\"correlationId\":\"corr-gs9-001\",\"eventId\":\"event-resume_offer\",\"fencingToken\":7,\"jobId\":\"job-gs9-001\",\"kind\":\"resume_offer\",\"leaseId\":\"lease-gs9-001\",\"payload\":{\"authorityReceiptHash\":\"6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad\",\"checkpointHash\":null,\"checkpointId\":null,\"expiresAt\":\"2026-08-04T03:05:00.000Z\",\"newAttemptId\":\"attempt-gs9-first-phase\",\"newResumeGeneration\":2,\"nextPhaseId\":\"phase-0\",\"nextPhaseIndex\":0},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":1,\"routingEpoch\":1,\"runRevision\":4,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-04T03:01:00.000Z\",\"sequence\":11,\"workflowRunId\":\"run-gs9-001\",\"workspaceId\":\"workspace-gs9\"}\n",
+          "messageDigest": "9b54713129041c0552032c6dc5ffffa8ceda10336d1f7100b3c56905fc5d76fd",
+          "idempotencyKey": "openslack.workflow-control-authority.v2.9b54713129041c0552032c6dc5ffffa8ceda10336d1f7100b3c56905fc5d76fd",
+          "requestFingerprint": "sha256:550953a8e68ddb0f1a268d7a359882cfb36b9356b3d725ee1383c651f3283949"
+        }
+      },
+      {
         "kind": "heartbeat",
         "input": {
           "schema": "openslack.workflow_control_authority_message.v2",
@@ -471,6 +513,170 @@
     ]
   },
   "negative": [
+    {
+      "id": "resume-missing-checkpoint-hash",
+      "operation": "validate_message",
+      "input": {
+        "schema": "openslack.workflow_control_authority_message.v2",
+        "protocolVersion": "openslack.workflow_runner.v2",
+        "kind": "resume_offer",
+        "workspaceId": "workspace-gs9",
+        "jobId": "job-gs9-001",
+        "workflowRunId": "run-gs9-001",
+        "attemptId": "attempt-gs9-001",
+        "leaseId": "lease-gs9-001",
+        "fencingToken": 7,
+        "sequence": 11,
+        "authorityBackend": "ts-local",
+        "authority": "typescript",
+        "routingEpoch": 1,
+        "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+        "runRevision": 4,
+        "resumeGeneration": 1,
+        "eventId": "event-resume_offer",
+        "correlationId": "corr-gs9-001",
+        "sentAt": "2026-08-04T03:01:00.000Z",
+        "payload": {
+          "checkpointId": "checkpoint-verify-1",
+          "checkpointHash": null,
+          "nextPhaseId": "phase-0",
+          "nextPhaseIndex": 0,
+          "newResumeGeneration": 2,
+          "newAttemptId": "attempt-gs9-first-phase",
+          "authorityReceiptHash": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+          "expiresAt": "2026-08-04T03:05:00.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlAuthorityContractError",
+        "code": "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+        "path": "$/payload",
+        "message": "Only phase-0 reentry permits an empty checkpoint pair."
+      }
+    },
+    {
+      "id": "resume-missing-checkpoint-id",
+      "operation": "validate_message",
+      "input": {
+        "schema": "openslack.workflow_control_authority_message.v2",
+        "protocolVersion": "openslack.workflow_runner.v2",
+        "kind": "resume_offer",
+        "workspaceId": "workspace-gs9",
+        "jobId": "job-gs9-001",
+        "workflowRunId": "run-gs9-001",
+        "attemptId": "attempt-gs9-001",
+        "leaseId": "lease-gs9-001",
+        "fencingToken": 7,
+        "sequence": 11,
+        "authorityBackend": "ts-local",
+        "authority": "typescript",
+        "routingEpoch": 1,
+        "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+        "runRevision": 4,
+        "resumeGeneration": 1,
+        "eventId": "event-resume_offer",
+        "correlationId": "corr-gs9-001",
+        "sentAt": "2026-08-04T03:01:00.000Z",
+        "payload": {
+          "checkpointId": null,
+          "checkpointHash": "47320987f9a49d5b00119b960f247a956773f57543982b8bfcb6da5bb3afd9ef",
+          "nextPhaseId": "phase-0",
+          "nextPhaseIndex": 0,
+          "newResumeGeneration": 2,
+          "newAttemptId": "attempt-gs9-first-phase",
+          "authorityReceiptHash": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+          "expiresAt": "2026-08-04T03:05:00.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlAuthorityContractError",
+        "code": "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+        "path": "$/payload",
+        "message": "Only phase-0 reentry permits an empty checkpoint pair."
+      }
+    },
+    {
+      "id": "resume-without-checkpoint-skips-phase",
+      "operation": "validate_message",
+      "input": {
+        "schema": "openslack.workflow_control_authority_message.v2",
+        "protocolVersion": "openslack.workflow_runner.v2",
+        "kind": "resume_offer",
+        "workspaceId": "workspace-gs9",
+        "jobId": "job-gs9-001",
+        "workflowRunId": "run-gs9-001",
+        "attemptId": "attempt-gs9-001",
+        "leaseId": "lease-gs9-001",
+        "fencingToken": 7,
+        "sequence": 11,
+        "authorityBackend": "ts-local",
+        "authority": "typescript",
+        "routingEpoch": 1,
+        "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+        "runRevision": 4,
+        "resumeGeneration": 1,
+        "eventId": "event-resume_offer",
+        "correlationId": "corr-gs9-001",
+        "sentAt": "2026-08-04T03:01:00.000Z",
+        "payload": {
+          "checkpointId": null,
+          "checkpointHash": null,
+          "nextPhaseId": "phase-0",
+          "nextPhaseIndex": 1,
+          "newResumeGeneration": 2,
+          "newAttemptId": "attempt-gs9-first-phase",
+          "authorityReceiptHash": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+          "expiresAt": "2026-08-04T03:05:00.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlAuthorityContractError",
+        "code": "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+        "path": "$/payload",
+        "message": "Only phase-0 reentry permits an empty checkpoint pair."
+      }
+    },
+    {
+      "id": "resume-without-checkpoint-names-later-phase",
+      "operation": "validate_message",
+      "input": {
+        "schema": "openslack.workflow_control_authority_message.v2",
+        "protocolVersion": "openslack.workflow_runner.v2",
+        "kind": "resume_offer",
+        "workspaceId": "workspace-gs9",
+        "jobId": "job-gs9-001",
+        "workflowRunId": "run-gs9-001",
+        "attemptId": "attempt-gs9-001",
+        "leaseId": "lease-gs9-001",
+        "fencingToken": 7,
+        "sequence": 11,
+        "authorityBackend": "ts-local",
+        "authority": "typescript",
+        "routingEpoch": 1,
+        "authorityBuildHash": "44575cf5b28512d75644bf54a517dcef304ff809fd511747621b4d64f19aac66",
+        "runRevision": 4,
+        "resumeGeneration": 1,
+        "eventId": "event-resume_offer",
+        "correlationId": "corr-gs9-001",
+        "sentAt": "2026-08-04T03:01:00.000Z",
+        "payload": {
+          "checkpointId": null,
+          "checkpointHash": null,
+          "nextPhaseId": "deliver",
+          "nextPhaseIndex": 0,
+          "newResumeGeneration": 2,
+          "newAttemptId": "attempt-gs9-first-phase",
+          "authorityReceiptHash": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+          "expiresAt": "2026-08-04T03:05:00.000Z"
+        }
+      },
+      "expectedError": {
+        "name": "WorkflowControlAuthorityContractError",
+        "code": "WORKFLOW_CONTROL_AUTHORITY_INVALID",
+        "path": "$/payload",
+        "message": "Only phase-0 reentry permits an empty checkpoint pair."
+      }
+    },
     {
       "id": "approval-plane-mismatch",
       "operation": "validate_state",

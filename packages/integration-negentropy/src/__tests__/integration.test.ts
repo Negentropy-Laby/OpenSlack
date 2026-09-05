@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createWorkflowRunProjectionStore } from '@openslack/workflows';
 import {
   NEGENTROPY_SCHEMA_PIN,
   bundledNegentropySchemaBytes,
@@ -21,6 +22,33 @@ import {
 const roots: string[] = [];
 const NOW = new Date('2026-07-17T12:00:00.000Z');
 const SIGNATURE_VALUE = 'A'.repeat(88);
+
+it('includes Go recovery snapshots in evidence counts and keeps ambiguous runs diagnostic', async () => {
+  const root = workspace();
+  for (const [backend, runId] of [
+    ['go', 'run.go'],
+    ['go', 'run.ambiguous'],
+    ['ts-local', 'run.ambiguous'],
+  ] as const) {
+    await createWorkflowRunProjectionStore(root, backend).initRun(runId, {
+      runId,
+      workflowName: 'workflow.test',
+      mode: 'execute',
+      manifestHash: 'a'.repeat(64),
+      args: {},
+      startedAt: NOW.toISOString(),
+    });
+  }
+  const value = await preview(root);
+  expect(value.contribution.metadata.evidence.workflow).toMatchObject({
+    totalRuns: 1,
+    statusCounts: { running: 1 },
+    evidenceSourceCounts: { 'go-recovery-projection': 1 },
+    readDiagnostics: [
+      { runId: 'run.ambiguous', code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' },
+    ],
+  });
+});
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });

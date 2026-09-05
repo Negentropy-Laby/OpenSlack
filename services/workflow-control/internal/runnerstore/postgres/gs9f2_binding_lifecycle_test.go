@@ -138,6 +138,7 @@ func exerciseGS9F2BindingLifecycleUntil(
 	existing *runnerstore.AttemptLease,
 	stopState string,
 	workspaceID string,
+	semanticVariant ...string,
 ) runnerstore.V2AuthorityBindingView {
 	t.Helper()
 	var lease runnerstore.AttemptLease
@@ -186,7 +187,7 @@ WHERE a.attempt_id=$1`, lease.AttemptID).Scan(&workerSequence, &expectedRunRevis
 		t.Fatal(err)
 	}
 
-	vector := gs9f2GoldenForOperation(t, operation)
+	vector := gs9f2GoldenForOperation(t, operation, semanticVariant...)
 	templateTarget := bindingTestRecord(t, vector.Stage.Value["target"])
 	templateMessage, err := authoritycontract.DecodeMessageJSON([]byte(templateTarget["body"].(string)))
 	if err != nil {
@@ -553,8 +554,12 @@ func bindGS9F2Evidence(
 		if operation == runnerbindingcontract.OperationResumeAdvance {
 			evidence["expiresAt"] = message.Payload["leaseExpiresAt"]
 			observation["resumeGeneration"] = expectedGeneration + 1
-			prior := bindingTestRecord(t, observation["priorCheckpoint"])
-			evidence["priorCheckpointHash"] = bindingTestCanonicalHash(t, prior)
+			if observation["priorCheckpoint"] == nil {
+				evidence["priorCheckpointHash"] = nil
+			} else {
+				prior := bindingTestRecord(t, observation["priorCheckpoint"])
+				evidence["priorCheckpointHash"] = bindingTestCanonicalHash(t, prior)
+			}
 		}
 		observationHash := bindingTestCanonicalHash(t, observation)
 		envelope["observationHash"] = observationHash
@@ -736,7 +741,7 @@ func bindGS9F2BudgetEvidence(
 	evidence["rateNanoUsdPerToken"], evidence["providerUsageReceiptHash"] = request["rateNanoUsdPerToken"], budgetCase.providerUsageHash
 }
 
-func gs9f2GoldenForOperation(t testing.TB, operation runnerbindingcontract.Operation) gs9f2GoldenOperation {
+func gs9f2GoldenForOperation(t testing.TB, operation runnerbindingcontract.Operation, semanticVariant ...string) gs9f2GoldenOperation {
 	t.Helper()
 	contents, err := runnerbindingcontract.BundleFile("golden-vectors.json")
 	if err != nil {
@@ -744,7 +749,8 @@ func gs9f2GoldenForOperation(t testing.TB, operation runnerbindingcontract.Opera
 	}
 	var bundle struct {
 		Positive struct {
-			Operations map[string]gs9f2GoldenOperation `json:"operations"`
+			Operations       map[string]gs9f2GoldenOperation `json:"operations"`
+			SemanticVariants map[string]gs9f2GoldenOperation `json:"semanticVariants"`
 		} `json:"positive"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
@@ -753,6 +759,9 @@ func gs9f2GoldenForOperation(t testing.TB, operation runnerbindingcontract.Opera
 		t.Fatal(err)
 	}
 	vector, ok := bundle.Positive.Operations[string(operation)]
+	if len(semanticVariant) == 1 {
+		vector, ok = bundle.Positive.SemanticVariants[semanticVariant[0]]
+	}
 	if !ok {
 		t.Fatalf("missing golden operation %s", operation)
 	}

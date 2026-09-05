@@ -279,7 +279,7 @@
     },
     "authorityV2Manifest": {
       "path": "packages/workflows/contracts/workflow-control-authority/v2/manifest.json",
-      "sha256": "2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877"
+      "sha256": "7994937f8b66c67ba4c90ce9018fcbde095ad34e6f377b3cd09959bb5c53d2ba"
     },
     "checkpointManifest": {
       "path": "packages/workflows/contracts/workflow-checkpoint-shadow/v1/manifest.json",
@@ -287,15 +287,15 @@
     },
     "effectControlManifest": {
       "path": "packages/workflows/contracts/workflow-effect-control/v1/manifest.json",
-      "sha256": "6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4"
+      "sha256": "76929e860fc42573e87dfe09f106d15f4913b2da3da5f96e4a8c1d58d095d1c2"
     },
     "effectShadowManifest": {
       "path": "packages/workflows/contracts/workflow-effect-shadow/v1/manifest.json",
-      "sha256": "55acf993ae4b951a7426c2d4771733d0ef578095d2b616f7bca0394a43f33b42"
+      "sha256": "58208d1618b6a629e821dbb10d214a9a57eaf6b3771a1b61e1d2198c4038354a"
     },
     "budgetManifest": {
       "path": "packages/workflows/contracts/workflow-budget-authority/v1/manifest.json",
-      "sha256": "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548"
+      "sha256": "83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b"
     },
     "migration7Up": {
       "path": "services/workflow-control/migrations/000007_integrate_workflow_runner_v2.up.sql",
@@ -324,8 +324,8 @@
     },
     "schemas/workflow-runner-authority-binding-resolution.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
-      "byteLength": 69349,
-      "sha256": "c403b6cd36ea53c54658dbb7dec3f76c0fadaa23babf25324c283b17683a0c62"
+      "byteLength": 79309,
+      "sha256": "ab12593458eea52f31f41adada4386d0b1845ea217d870a289f0e7496811362b"
     },
     "schemas/workflow-runner-authority-binding-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
@@ -349,8 +349,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 1708338,
-      "sha256": "35159237370ed235a0511722d1e4e0e9ef34ce8a6327cbd90e7eb5f1a362f920"
+      "byteLength": 1738849,
+      "sha256": "d50051ef29dda60003f2f6aa279e3a47b4ab65bedeca2d8498160cc21014c85c"
     }
   }
 }

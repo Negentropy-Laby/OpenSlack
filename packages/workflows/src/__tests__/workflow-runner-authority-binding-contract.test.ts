@@ -496,6 +496,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       'budgetSettleProviderUnreported',
       'goRouteCheckpoint',
       'budgetReserveGoAuthority',
+      'resumeFirstPhase',
     ];
     expect(Object.keys(golden.positive.semanticVariants)).toEqual(expected);
     for (const [name, vectors] of Object.entries(golden.positive.semanticVariants)) {
@@ -525,9 +526,11 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       asJson(exchange.resolution.value, 'budget resolution').evidence,
       'budget evidence',
     ).preparedRequest;
-    for (const [status, reference] of Object.entries(
-      golden.positive.controlDelivery.budgetAuthorization,
-    )) {
+    for (const [variant, reference] of Object.entries({
+      ...golden.positive.controlDelivery.budgetAuthorization,
+      previousManifest: 'budget:previous-manifest',
+    })) {
+      const status = variant === 'previousManifest' ? 'reserved' : variant;
       const item = controlArtifact(reference);
       expect(
         validateWorkflowRunnerBudgetSourceResult(item.budgetSourceResult, prepared),

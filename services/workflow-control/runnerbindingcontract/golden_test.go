@@ -214,7 +214,7 @@ func TestGoldenPositiveOperationExchanges(t *testing.T) {
 func TestGoldenPositiveSemanticVariants(t *testing.T) {
 	t.Parallel()
 	golden := loadBindingGolden(t)
-	if len(golden.Positive.SemanticVariants) != 9 {
+	if len(golden.Positive.SemanticVariants) != 10 {
 		t.Fatalf("semantic variant count = %d", len(golden.Positive.SemanticVariants))
 	}
 	for name, exchange := range golden.Positive.SemanticVariants {
@@ -381,7 +381,11 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	}
 	budgetExchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
 	budgetStage := assertGoldenPrepared(t, budgetExchange.Stage, "stage")
-	for status, reference := range golden.Positive.ControlDelivery.BudgetAuthorization {
+	for status, reference := range map[string]string{
+		"reserved":         golden.Positive.ControlDelivery.BudgetAuthorization["reserved"],
+		"rejected":         golden.Positive.ControlDelivery.BudgetAuthorization["rejected"],
+		"previousManifest": "budget:previous-manifest",
+	} {
 		status, control := status, goldenControlArtifact(t, golden, reference)
 		t.Run("budgetAuthorization/"+status, func(t *testing.T) {
 			t.Parallel()

@@ -103,7 +103,8 @@ func assertEvidenceForStage(evidence, stage Record, resolutionSentAt string, ses
 			return err
 		}
 		observation := envelope["observation"].(Record)
-		if evidence["priorCheckpointId"] == nil || evidence["priorCheckpointHash"] == nil ||
+		if ((evidence["priorCheckpointId"] == nil || evidence["priorCheckpointHash"] == nil) &&
+			(evidence["nextPhaseId"] != "phase-0" || evidence["nextPhaseIndex"] != int64(0))) ||
 			evidence["logicalResumeAttemptId"] == stage["runnerAttemptId"] || evidence["expiresAt"] != payload["leaseExpiresAt"] ||
 			payload["acceptedAt"] != stage["sentAt"] || source["expectedResumeGeneration"] != runnerHead["expectedResumeGeneration"] ||
 			source["acceptedResumeGeneration"] != runnerHead["acceptedResumeGeneration"] ||

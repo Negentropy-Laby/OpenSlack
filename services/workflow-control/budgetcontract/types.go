@@ -1,24 +1,26 @@
 package budgetcontract
 
 const (
-	ContractVersion             = "v1"
-	Authority                   = "typescript"
-	Writer                      = "@openslack/workflows"
-	GoRole                      = "validator_only"
-	GoAuthorityClaim            = "NO_AUTHORITY"
-	MaxInt64Decimal             = "9223372036854775807"
-	IdempotencyPrefix           = "openslack.workflow-budget-authority.v1."
-	ReserveRoute                = "/v1/authority/workflow-budgets:reserve"
-	SettleRoute                 = "/v1/authority/workflow-budgets:settle"
-	MaxAccountBytes             = 64 * 1024
-	MaxRecordBytes              = 256 * 1024
-	MaxJSONDepth                = 16
-	MaxJSONNodes                = 4_096
-	MaxIdentifierBytes          = 256
-	MaxDecimalBytes             = 19
-	MaxRateDecimalBytes         = 64
-	MaxRateFractionDigits       = 18
-	MaxSafeInteger        int64 = 1<<53 - 1
+	// PreviousManifestSHA256 predates only upstream source-lock changes, not budget record semantics.
+	PreviousManifestSHA256       = "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548"
+	ContractVersion              = "v1"
+	Authority                    = "typescript"
+	Writer                       = "@openslack/workflows"
+	GoRole                       = "validator_only"
+	GoAuthorityClaim             = "NO_AUTHORITY"
+	MaxInt64Decimal              = "9223372036854775807"
+	IdempotencyPrefix            = "openslack.workflow-budget-authority.v1."
+	ReserveRoute                 = "/v1/authority/workflow-budgets:reserve"
+	SettleRoute                  = "/v1/authority/workflow-budgets:settle"
+	MaxAccountBytes              = 64 * 1024
+	MaxRecordBytes               = 256 * 1024
+	MaxJSONDepth                 = 16
+	MaxJSONNodes                 = 4_096
+	MaxIdentifierBytes           = 256
+	MaxDecimalBytes              = 19
+	MaxRateDecimalBytes          = 64
+	MaxRateFractionDigits        = 18
+	MaxSafeInteger         int64 = 1<<53 - 1
 )
 
 const (

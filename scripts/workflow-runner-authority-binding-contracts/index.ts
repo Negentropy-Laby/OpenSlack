@@ -49,6 +49,7 @@ import {
 } from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
 import {
   WORKFLOW_BUDGET_RECEIPT_SCHEMA,
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   canonicalWorkflowBudgetAuthorityJson,
   evaluateWorkflowBudgetReserve,
   hashWorkflowBudgetAuthorityValue,
@@ -1482,6 +1483,28 @@ function goRouteSemanticVariant(
   return exchange(staged, structuredClone(checkpoint.resolution.evidence), 30);
 }
 
+function firstPhaseResumeSemanticVariant(
+  exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
+): Exchange {
+  const base = exchanges.resume_advance;
+  const evidence = cloneJson(base.resolution.evidence, 'phase zero resume');
+  const envelope = asJson(evidence.envelope, 'resume envelope');
+  const observation = asJson(envelope.observation, 'resume observation');
+  observation.priorCheckpoint = null;
+  observation.nextPhaseId = 'phase-0';
+  observation.nextPhaseIndex = 0;
+  envelope.observationHash = H(canonicalWorkflowControlAuthorityJson(observation));
+  evidence.envelopeHash = H(canonicalWorkflowControlAuthorityJson(envelope));
+  const source = asJson(evidence.sourceAuthority, 'resume source');
+  source.requestHash = evidence.envelopeHash;
+  source.recordHash = envelope.observationHash;
+  evidence.priorCheckpointId = null;
+  evidence.priorCheckpointHash = null;
+  evidence.nextPhaseId = 'phase-0';
+  evidence.nextPhaseIndex = 0;
+  return exchange(base.stage, evidence, 6);
+}
+
 async function budgetSemanticVariants(
   exchanges: Record<WorkflowRunnerAuthorityBindingOperation, Exchange>,
   records: Json,
@@ -1831,6 +1854,7 @@ async function goldenVectors() {
     ...(await budgetSemanticVariants(exchanges, budgetRecords)),
     goRouteCheckpoint: goRouteSemanticVariant(exchanges),
     budgetReserveGoAuthority: budgetDecisions.exchange,
+    resumeFirstPhase: firstPhaseResumeSemanticVariant(exchanges),
   };
   const controlReceiptMessages = Object.fromEntries(
     WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS.map((operation) => [
@@ -1925,6 +1949,26 @@ async function goldenVectors() {
     budgetDecisions.exchange,
     'budget_authorization',
     budgetDecisions.rejected,
+  );
+  const previousBudgetSource = {
+    ...budgetDecisions.reserved,
+    durableReceiptBytes: canonicalWorkflowBudgetAuthorityJson({
+      ...parseWorkflowRunnerBudgetDurableReceiptBytes(budgetDecisions.reserved.durableReceiptBytes),
+      contractManifestSha256: WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+    }),
+  };
+  const previousBudgetMessage = controlMessage(
+    budgetDecisions.exchange,
+    'budget_authorization',
+    previousBudgetSource,
+  );
+  const previousBudgetReceipt = controlDelivery(
+    budgetDecisions.exchange,
+    previousBudgetMessage,
+    4,
+    'accepted',
+    { message: budgetPriorMessage, receipt: budgetPriorReceipt },
+    previousBudgetSource,
   );
   const budgetAuthorization = {
     reserved: {
@@ -2494,6 +2538,13 @@ async function goldenVectors() {
             message: budgetAuthorization.rejected.message,
             receipt: vector(budgetAuthorization.rejected.receipt, 'receipt'),
             budgetSourceResult: budgetAuthorization.rejected.sourceResult,
+            priorEventDeliveryRef: 'budget-authorization-event-receipt',
+          },
+          'budget:previous-manifest': {
+            operation: 'budget_reserve',
+            message: previousBudgetMessage,
+            receipt: vector(previousBudgetReceipt, 'receipt'),
+            budgetSourceResult: previousBudgetSource,
             priorEventDeliveryRef: 'budget-authorization-event-receipt',
           },
         },
