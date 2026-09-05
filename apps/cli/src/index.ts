@@ -108,7 +108,12 @@ program.addCommand(
 );
 program.addCommand(graphCommands({ workspaceRoot: applicationContext.workspaceRoot }));
 
-if (enforceStartupStateCompatibility(process.argv)) program.parse(process.argv);
+if (enforceStartupStateCompatibility(process.argv)) {
+  void program.parseAsync(process.argv).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : 'Command failed.');
+    process.exitCode = 1;
+  });
+}
 
 function enforceStartupStateCompatibility(argv: string[]): boolean {
   const topLevel = argv[2];

@@ -577,6 +577,12 @@ export {
   renderWorkflowRun,
 } from './workflow-runs.js';
 export type { ListWorkflowRunsOptions } from './workflow-runs.js';
+export {
+  WorkflowRunReadError,
+  renderWorkflowRunReadDiagnostic,
+  workflowRunReadDiagnostic,
+} from './workflow-run-read-errors.js';
+export type { WorkflowRunReadDiagnostic, WorkflowRunReadCode } from './workflow-run-read-errors.js';
 
 export { getWorkflowRunProgress, renderWorkflowRunProgress } from './workflow-progress.js';
 export type { GetWorkflowRunProgressOptions } from './workflow-progress.js';
