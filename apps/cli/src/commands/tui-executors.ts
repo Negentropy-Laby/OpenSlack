@@ -1,7 +1,5 @@
 import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui';
-import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows';
 import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator';
-import { join } from 'node:path';
 import {
   dispatchConversationAgentMessage,
   resolveWorkbenchThread,
@@ -44,11 +42,6 @@ export interface TuiActionHandlers {
   ) => Promise<TuiActionResult>;
   startWorkflowFromPrompt?: (prompt: string) => Promise<TuiActionResult>;
   startWorkflowFromPattern?: (patternId: string) => Promise<TuiActionResult>;
-  controlWorkflowRun?: (
-    runId: string,
-    action: WorkflowRunControlAction,
-    target?: WorkflowRunControlTarget,
-  ) => Promise<TuiActionResult>;
   saveWorkflowRunScript?: (
     runId: string,
     target?: 'project' | 'user' | 'claude-project',
@@ -178,54 +171,14 @@ export async function executeApproval(
       case 'workflow-effect': {
         const { recordDecision } = await import('@openslack/collaboration');
 
-        // If a runId is present, this is a paused workflow run awaiting approval
+        // GS9-H preserves legacy run files as evidence only. The Approval
+        // Center cannot mutate or resume a TypeScript-owned run.
         if (params.runId) {
-          const { RunStore } = await import('@openslack/workflows');
-          const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
-
-          const pending = await store.loadPendingApprovals(params.runId);
-          const unresolved = pending.filter((p) => p.status === 'pending');
-
-          if (isApprove) {
-            // Approve all pending effects for this run
-            for (const approval of unresolved) {
-              await store.resolvePendingApproval(params.runId, approval.id, 'approved');
-            }
-
-            recordDecision({
-              topic: title,
-              decision: 'approved',
-              rationale: `Legacy workflow run gate approved via TUI for run ${params.runId}; no effect authorization or resume was performed`,
-              decidedBy: actorId,
-              tags: ['workflow-run-gate', 'legacy', 'tui', `run-${params.runId}`],
-            });
-
-            return {
-              success: true,
-              message:
-                'Legacy run gate recorded; an exact v2 human decision and authenticated worker resume are still required.',
-              data: { runId: params.runId, effectDecisionAuthority: false },
-            };
-          }
-
-          // Reject: cancel the run
-          for (const approval of unresolved) {
-            await store.resolvePendingApproval(params.runId, approval.id, 'rejected');
-          }
-          await store.transitionStatus(params.runId, 'cancelled');
-
-          recordDecision({
-            topic: title,
-            decision: 'cancelled',
-            rationale: `Workflow effect rejected, run ${params.runId} cancelled`,
-            decidedBy: actorId,
-            tags: ['workflow-run-gate', 'legacy', 'tui', `run-${params.runId}`],
-          });
-
           return {
-            success: true,
-            message: `Workflow run cancelled`,
-            data: { runId: params.runId },
+            success: false,
+            message:
+              'Legacy TypeScript workflow mutation is retired; inspect or export the run and use operator recovery.',
+            data: { runId: params.runId, code: 'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED' },
           };
         }
 
@@ -784,25 +737,6 @@ export function createProfileSyncHandlers(root: string) {
   };
 }
 
-export async function controlWorkflowRunFromTui(
-  runId: string,
-  action: WorkflowRunControlAction,
-  root: string,
-  target?: WorkflowRunControlTarget,
-): Promise<TuiActionResult> {
-  try {
-    const { controlWorkflowRun } = await import('@openslack/workflows');
-    const result = await controlWorkflowRun(runId, action, { rootDir: root, target });
-    return {
-      success: result.status === 'applied' || result.status === 'recorded',
-      message: result.message,
-      data: { runId, action, status: result.status, target },
-    };
-  } catch (err: unknown) {
-    return { success: false, message: `Workflow run control failed: ${(err as Error).message}` };
-  }
-}
-
 export async function saveWorkflowRunScriptFromTui(
   runId: string,
   root: string,
@@ -958,8 +892,6 @@ export function createActionHandlers(
     executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root, actorId),
     startWorkflowFromPrompt: (prompt) => startWorkflowFromPrompt(prompt, root),
     startWorkflowFromPattern: (patternId) => startWorkflowFromPattern(patternId, root),
-    controlWorkflowRun: (runId, action, target) =>
-      controlWorkflowRunFromTui(runId, action, root, target),
     saveWorkflowRunScript: (runId, target) => saveWorkflowRunScriptFromTui(runId, root, target),
     publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root, actorId),
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),

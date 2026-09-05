@@ -243,12 +243,8 @@ describe('HomeView coordinate diagnostic', () => {
 
     const governHeader = indexOfLine('Govern Actions');
     expect(governHeader).toBeGreaterThan(reviewHeader);
-    expect(lines[governHeader + 1]).toContain('Handle paused workflow approvals');
+    expect(lines[governHeader + 1]).toContain('Approve pending items');
     expect(lines[governHeader + 2]).toContain(
-      'Approve or reject workflow effects and budget pauses',
-    );
-    expect(lines[governHeader + 3]).toContain('Approve pending items');
-    expect(lines[governHeader + 4]).toContain(
       'Approve plans, merge requests, and workflow effects',
     );
 
@@ -341,7 +337,8 @@ describe('HomeView coordinate diagnostic', () => {
     expect(output).toContain('Start or continue work');
     expect(output).toContain('Start a workflow');
     expect(output).toContain('Watch running workflows');
-    expect(output).toContain('Handle paused workflow approvals');
+    expect(output).not.toContain('Handle paused workflow approvals');
+    expect(output).toContain('Approve pending items');
     expect(output).toContain('Save/share run');
     expect(output).toContain('Publish workflow to GitHub Issues');
     expect(output).toContain('Review and merge PRs');
@@ -349,12 +346,12 @@ describe('HomeView coordinate diagnostic', () => {
     expect(output).toContain('Maintain organization profile');
     expect(output).toContain('View active conversations');
 
-    // Verify shortcuts [1] through [6] plus workflow [w]/[a]/[s]/[g] and conversations [c].
+    // Verify shortcuts [1] through [6] plus workflow [w]/[s]/[g] and conversations [c].
     expect(output).toContain('[1]');
     expect(output).toContain('[2]');
     expect(output).toContain('[3]');
     expect(output).toContain('[w]');
-    expect(output).toContain('[a]');
+    expect(output).not.toContain('[a]');
     expect(output).toContain('[s]');
     expect(output).toContain('[g]');
     expect(output).toContain('[4]');

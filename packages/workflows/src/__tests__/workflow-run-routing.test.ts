@@ -228,6 +228,104 @@ describe('Workflow run new-record routing', () => {
     await expect(readFile(join(routeRoot, 'active', name), 'utf8')).resolves.toBe(exact);
   });
 
+  it('does not migrate or initialize a journal during read-only route lookup', async () => {
+    const workspace = await routeWorkspace('openslack-workflow-route-readonly-');
+    roots.push(workspace);
+    const routeRoot = join(workspace, 'routes');
+    const route = select(undefined, 'run.canary.readonly');
+    const name = routeName(route.runId);
+    const exact = `${canonicalWorkflowControlAuthorityJson(route)}\n`;
+    await mkdir(routeRoot, { recursive: true });
+    await writeFile(join(routeRoot, name), exact, 'utf8');
+
+    const journal = new WorkflowRunRouteJournal(routeRoot, UNIT_JOURNAL_SECURITY);
+    await expect(journal.locateReadOnly(route.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+      message: 'Legacy flat route receipt requires explicit operator repair before use.',
+    });
+    await expect(readFile(join(routeRoot, name), 'utf8')).resolves.toBe(exact);
+    await expect(readFile(join(routeRoot, 'active', name), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('reads only one partition and fails closed on quarantine, dual, damaged, or misbound receipts', async () => {
+    const createLayout = async (
+      runId: string,
+      location: 'active' | 'closed',
+      body?: string,
+      receipt = select(undefined, runId),
+    ) => {
+      const workspace = await routeWorkspace(`openslack-workflow-route-${location}-`);
+      roots.push(workspace);
+      const routeRoot = join(workspace, 'routes');
+      const name = routeName(runId);
+      const directory =
+        location === 'active'
+          ? join(routeRoot, 'active')
+          : join(routeRoot, 'closed', name.slice(0, 2));
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, name),
+        body ?? `${canonicalWorkflowControlAuthorityJson(receipt)}\n`,
+        'utf8',
+      );
+      return {
+        journal: new WorkflowRunRouteJournal(routeRoot, UNIT_JOURNAL_SECURITY),
+        receipt,
+        routeRoot,
+      };
+    };
+
+    for (const location of ['active', 'closed'] as const) {
+      const fixture = await createLayout(`run.canary.readonly.${location}`, location);
+      await expect(fixture.journal.locateReadOnly(fixture.receipt.runId)).resolves.toEqual({
+        receipt: fixture.receipt,
+        state: location,
+      });
+    }
+
+    const quarantined = await createLayout('run.canary.readonly.quarantine', 'active');
+    const quarantinedName = routeName(quarantined.receipt.runId);
+    await mkdir(join(quarantined.routeRoot, 'quarantine'), { recursive: true });
+    await writeFile(
+      join(quarantined.routeRoot, 'quarantine', `${quarantinedName}.unsafe`),
+      'unsafe\n',
+      'utf8',
+    );
+    await expect(
+      quarantined.journal.locateReadOnly(quarantined.receipt.runId),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED' });
+
+    const dual = await createLayout('run.canary.readonly.dual', 'active');
+    const dualName = routeName(dual.receipt.runId);
+    await mkdir(join(dual.routeRoot, 'closed', dualName.slice(0, 2)), { recursive: true });
+    await writeFile(
+      join(dual.routeRoot, 'closed', dualName.slice(0, 2), dualName),
+      `${canonicalWorkflowControlAuthorityJson(dual.receipt)}\n`,
+      'utf8',
+    );
+    await expect(dual.journal.locateReadOnly(dual.receipt.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+
+    const damaged = await createLayout('run.canary.readonly.damaged', 'active', '{\n');
+    await expect(damaged.journal.locateReadOnly(damaged.receipt.runId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+
+    const requestedRunId = 'run.canary.readonly.requested';
+    const misbound = await createLayout(
+      requestedRunId,
+      'active',
+      undefined,
+      select(undefined, 'run.canary.readonly.other'),
+    );
+    await expect(misbound.journal.locateReadOnly(requestedRunId)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
+  });
+
   it('allows only one policy per epoch and only higher epochs for new records', async () => {
     const workspace = await routeWorkspace('openslack-workflow-route-epoch-');
     roots.push(workspace);
@@ -412,23 +510,18 @@ describe('Process routing configuration', () => {
     });
   });
 
-  it('loads a higher-epoch TS rollback without retaining Go credentials', () => {
-    const config = loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.rollback'), {
-      OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: BUILD,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'external-rollback.test',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: '',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
-    });
-    if (config.mode === 'disabled') throw new Error('Expected explicit rollback config.');
-    expect(config.router.policy).toMatchObject({
-      backend: 'ts-local',
-      routingEpoch: 18,
-    });
-    expect(config).not.toHaveProperty('authority');
-    expect(config).not.toHaveProperty('v2BudgetPolicy');
+  it('rejects the retired higher-epoch TypeScript rollback switch', () => {
+    expect(() =>
+      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.rollback'), {
+        OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
+        OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: BUILD,
+        OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'external-rollback.test',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: '',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
+        OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
+      }),
+    ).toThrow(/TypeScript new-record rollback is retired/u);
   });
 });
 

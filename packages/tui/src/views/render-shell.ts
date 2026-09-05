@@ -13,11 +13,9 @@ import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecyc
 import type { ProfileViewModel } from '../view-models/profile.js';
 import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runtime.js';
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration';
-import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows';
 import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js';
 import type { ConversationActionCard, TuiAskResult } from '@openslack/operator';
 
-export type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows';
 export type { ConversationActionCard, TuiAskResult } from '@openslack/operator';
 
 export interface WorkflowLifecycleBaseData {
@@ -70,11 +68,6 @@ export interface TuiActionHandlers {
   ) => Promise<TuiActionResult>;
   startWorkflowFromPrompt?: (prompt: string) => Promise<TuiActionResult>;
   startWorkflowFromPattern?: (patternId: string) => Promise<TuiActionResult>;
-  controlWorkflowRun?: (
-    runId: string,
-    action: WorkflowRunControlAction,
-    target?: WorkflowRunControlTarget,
-  ) => Promise<TuiActionResult>;
   saveWorkflowRunScript?: (runId: string, target?: WorkflowSaveTarget) => Promise<TuiActionResult>;
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>;
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>;

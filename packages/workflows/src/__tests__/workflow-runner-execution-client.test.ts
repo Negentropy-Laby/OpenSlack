@@ -12,10 +12,7 @@ import {
   hashWorkflowRunnerV2Result,
   hashWorkflowRunnerV2Source,
 } from '../index.js';
-import {
-  executeWorkflowThroughRunner,
-  type WorkflowRunnerPausedResult,
-} from '../workflow-runner-execution-client.js';
+import { executeWorkflowThroughRunner } from '../workflow-runner-execution-client.js';
 import type {
   PreparedWorkflowRunnerJobSpec,
   WorkflowRunnerControlConfig,
@@ -24,12 +21,17 @@ import type {
   WorkflowRunnerJobView,
 } from '../workflow-runner-control-client.js';
 import type { RunResult, WorkflowMeta } from '../types.js';
+import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import {
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
   type WorkflowControlAuthorityRunRecord,
 } from '../workflow-control-authority-client.js';
-import { WorkflowRunRouter, type WorkflowRunRouteReceipt } from '../workflow-run-routing.js';
+import {
+  WorkflowRunRouteJournal,
+  WorkflowRunRouter,
+  type WorkflowRunRouteReceipt,
+} from '../workflow-run-routing.js';
 import type {
   PreparedWorkflowRunnerV2JobSpec,
   WorkflowRunnerV2ControlPort,
@@ -38,6 +40,12 @@ import type {
 const roots: string[] = [];
 const NOW = '2026-08-13T00:00:00.000Z';
 const HASH = '1'.repeat(64);
+
+function authorityRecordHash(record: WorkflowControlAuthorityRunRecord): string {
+  return createHash('sha256')
+    .update(`${canonicalWorkflowControlAuthorityJson(record)}\n`, 'utf8')
+    .digest('hex');
+}
 const manifest: WorkflowMeta = {
   name: 'runner-public-test',
   version: '1.0.0',
@@ -79,7 +87,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fixture(status: 'completed' | 'paused_waiting_approval' | 'failed') {
+async function fixture(status: 'completed' | 'paused_waiting_approval') {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-public-'));
   roots.push(workspaceRoot);
   const workflowRunId = `run.public.${status}`;
@@ -362,14 +370,14 @@ describe('Workflow Runner public execution client', () => {
       read: vi.fn(async () => ({
         ...record!,
         schema: 'openslack.workflow_control_authority_read.v2' as const,
-        recordHash: HASH,
+        recordHash: authorityRecordHash(record!),
         record: record!,
         updatedAt: NOW,
       })),
       readIfExists: vi.fn(async () => ({
         ...record!,
         schema: 'openslack.workflow_control_authority_read.v2' as const,
-        recordHash: HASH,
+        recordHash: authorityRecordHash(record!),
         record: record!,
         updatedAt: NOW,
       })),
@@ -398,6 +406,9 @@ describe('Workflow Runner public execution client', () => {
             return existingRoute ?? null;
           },
           async locate() {
+            return existingRoute ? { receipt: existingRoute, state: 'active' as const } : null;
+          },
+          async locateReadOnly() {
             return existingRoute ? { receipt: existingRoute, state: 'active' as const } : null;
           },
           async commit(route) {
@@ -492,131 +503,8 @@ describe('Workflow Runner public execution client', () => {
     ).resolves.toBe(false);
   });
 
-  it('seals a hash-only JobSpec and returns only the matching durable RunStore result', async () => {
+  it('fails closed before v1 submission when no explicit Go route exists', async () => {
     const value = await fixture('completed');
-    const result = await executeWorkflowThroughRunner({
-      workspaceRoot: value.workspaceRoot,
-      workflowRunId: value.workflowRunId,
-      workflowSource: 'openslack-project',
-      workflowSourceBytes: Buffer.from('export async function run() {}', 'utf8'),
-      manifest,
-      confirmationPolicy: {
-        mode: 'unattended-explicit',
-        actorId: 'operator',
-        runId: value.workflowRunId,
-        allowUnattended: true,
-      },
-      config: value.config,
-      client: value.client,
-      now: () => new Date(NOW),
-    });
-
-    expect(result).toEqual(value.output);
-    expect(value.submitted()?.spec).toMatchObject({
-      workspaceId: value.config.workspaceId,
-      workflowRunId: value.workflowRunId,
-      workflowId: manifest.name,
-    });
-    expect(value.submitted()?.exactBody).not.toContain('export async function');
-    await expect(
-      access(join(value.workspaceRoot, '.openslack.local', 'workflows', 'routes')),
-    ).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('returns the durable approval pause without treating a failed job as workflow failure', async () => {
-    const value = await fixture('paused_waiting_approval');
-    const result = await executeWorkflowThroughRunner({
-      workspaceRoot: value.workspaceRoot,
-      workflowRunId: value.workflowRunId,
-      workflowSource: 'openslack-project',
-      workflowSourceBytes: Buffer.from('export async function run() {}', 'utf8'),
-      manifest,
-      confirmationPolicy: {
-        mode: 'unattended-explicit',
-        actorId: 'operator',
-        runId: value.workflowRunId,
-        allowUnattended: true,
-      },
-      config: value.config,
-      client: value.client,
-      now: () => new Date(NOW),
-    });
-
-    expect(result).toEqual<WorkflowRunnerPausedResult>({
-      status: 'paused_waiting_approval',
-      runId: value.workflowRunId,
-    });
-  });
-
-  it.each(['failed', 'cancelled', 'timed_out', 'reconciliation_required'] as const)(
-    'returns a stable error for the %s terminal instead of masking it with unrelated durable state',
-    async (terminalStatus) => {
-      const value = await fixture(
-        terminalStatus === 'failed' ? 'failed' : 'paused_waiting_approval',
-      );
-      const client: WorkflowRunnerControlPort = {
-        ...value.client,
-        async waitForTerminal(jobId, options) {
-          const terminal = await value.client.waitForTerminal(jobId, options);
-          return terminalStatus === 'reconciliation_required'
-            ? {
-                ...terminal,
-                state: 'reconciliation_required',
-                terminalStatus: 'reconciliation_required',
-                terminalReason: 'commit_outcome_unknown',
-                resultHash: null,
-                reconciliationId: 'reconciliation-1',
-                reconciliationCode: 'commit_outcome_unknown',
-              }
-            : {
-                ...terminal,
-                state: 'terminal',
-                terminalStatus,
-                terminalReason: `runner_${terminalStatus}`,
-                resultHash: null,
-              };
-        },
-      };
-
-      await expect(
-        executeWorkflowThroughRunner({
-          workspaceRoot: value.workspaceRoot,
-          workflowRunId: value.workflowRunId,
-          workflowSource: 'openslack-project',
-          workflowSourceBytes: Buffer.from('export async function run() {}', 'utf8'),
-          manifest,
-          confirmationPolicy: {
-            mode: 'unattended-explicit',
-            actorId: 'operator',
-            runId: value.workflowRunId,
-            allowUnattended: true,
-          },
-          config: value.config,
-          client,
-          now: () => new Date(NOW),
-        }),
-      ).rejects.toMatchObject({
-        code:
-          terminalStatus === 'reconciliation_required'
-            ? 'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED'
-            : terminalStatus === 'timed_out'
-              ? 'WORKFLOW_RUNNER_CONTROL_TIMEOUT'
-              : 'WORKFLOW_RUNNER_CONTROL_REJECTED',
-      });
-    },
-  );
-
-  it('rejects a terminal view that changes the submitted workflow identity', async () => {
-    const value = await fixture('completed');
-    const client: WorkflowRunnerControlPort = {
-      ...value.client,
-      async waitForTerminal(jobId, options) {
-        return {
-          ...(await value.client.waitForTerminal(jobId, options)),
-          correlationId: 'correlation.drifted',
-        };
-      },
-    };
     await expect(
       executeWorkflowThroughRunner({
         workspaceRoot: value.workspaceRoot,
@@ -631,9 +519,78 @@ describe('Workflow Runner public execution client', () => {
           allowUnattended: true,
         },
         config: value.config,
-        client,
+        client: value.client,
         now: () => new Date(NOW),
       }),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID' });
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED',
+      message: 'New workflow execution requires an explicit Go authority route.',
+    });
+    expect(value.submitted()).toBeUndefined();
+    await expect(
+      access(join(value.workspaceRoot, '.openslack.local', 'workflows', 'routes')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects an existing TypeScript route without changing its receipt or submitting v1', async () => {
+    const value = await fixture('paused_waiting_approval');
+    const journal = new WorkflowRunRouteJournal(
+      join(value.workspaceRoot, '.openslack.local', 'workflows', 'routes'),
+    );
+    const router = new WorkflowRunRouter({
+      schema: 'openslack.workflow_run_routing_policy.v1',
+      workspaceId: value.config.workspaceId,
+      backend: 'ts-local',
+      routingEpoch: 8,
+      authorityBuildHash: HASH,
+      qualificationEnvironmentId: 'historical-ts.test',
+      workflowAllowlist: [],
+      runAllowlist: [],
+      expiresAt: '2026-08-14T00:00:00.000Z',
+    });
+    const receipt = await journal.commit(
+      router.select({
+        workspaceId: value.config.workspaceId,
+        runId: value.workflowRunId,
+        workflowId: manifest.name,
+        workflowVersion: manifest.version!,
+        workflowSourceHash: HASH,
+        manifestHash: HASH,
+        inputHash: HASH,
+        correlationId: 'correlation.ts.historical',
+        selectedAt: NOW,
+      }),
+    );
+
+    await expect(
+      executeWorkflowThroughRunner({
+        workspaceRoot: value.workspaceRoot,
+        workflowRunId: value.workflowRunId,
+        workflowSource: 'openslack-project',
+        workflowSourceBytes: Buffer.from('export async function run() {}', 'utf8'),
+        manifest,
+        confirmationPolicy: {
+          mode: 'unattended-explicit',
+          actorId: 'operator',
+          runId: value.workflowRunId,
+          allowUnattended: true,
+        },
+        config: value.config,
+        client: value.client,
+        routing: {
+          mode: 'explicit',
+          router,
+          journal,
+          fingerprint: HASH,
+          diagnostics: [],
+        },
+        now: () => new Date(NOW),
+      }),
+    ).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED',
+      message: 'TypeScript-owned workflow runs are read-only and require operator recovery.',
+    });
+    expect(value.submitted()).toBeUndefined();
+    await expect(journal.load(value.workflowRunId)).resolves.toEqual(receipt);
   });
 });

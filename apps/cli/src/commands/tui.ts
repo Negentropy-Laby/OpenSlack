@@ -2,6 +2,44 @@ import { Command } from 'commander';
 import type { OperatorApplicationContext } from '../boot/context.js';
 import { getBuildInfo } from '../release/build-info.js';
 
+interface WorkflowLifecycleRunCandidate {
+  readonly runId: string;
+  readonly workflowName: string;
+  readonly status: string;
+  readonly startedAt: string;
+  readonly updatedAt: string;
+}
+
+const WORKFLOW_LIFECYCLE_STATUS_PRIORITY = [
+  'running',
+  'resuming',
+  'paused_waiting_approval',
+  'paused',
+  'confirmed',
+  'previewed',
+  'created',
+  'completed',
+  'failed',
+  'cancelled',
+] as const;
+
+export function selectWorkflowLifecycleCurrentRun<T extends WorkflowLifecycleRunCandidate>(
+  runs: readonly T[],
+  workflowName: string,
+): T | undefined {
+  const rank = new Map<string, number>(
+    WORKFLOW_LIFECYCLE_STATUS_PRIORITY.map((status, index) => [status, index]),
+  );
+  return runs
+    .filter((run) => run.workflowName === workflowName)
+    .sort((left, right) => {
+      const priority =
+        (rank.get(left.status) ?? Number.MAX_SAFE_INTEGER) -
+        (rank.get(right.status) ?? Number.MAX_SAFE_INTEGER);
+      return priority !== 0 ? priority : right.updatedAt.localeCompare(left.updatedAt);
+    })[0];
+}
+
 export function tuiCommands(operatorContext?: OperatorApplicationContext): Command {
   return new Command('tui')
     .description('Launch the interactive TUI workbench')
@@ -41,7 +79,6 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         const { resolveWorkspaceContext } = await import('@openslack/workspace');
         const context = resolveWorkspaceContext();
         const root = context.workspaceRoot;
-        const { join } = await import('node:path');
         if (process.cwd() !== root) {
           process.chdir(root);
         }
@@ -172,7 +209,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
-            const { findWorkflow, loadWorkflow, RunStore } = await import('@openslack/workflows');
+            const { findWorkflow, listWorkflowRuns, loadWorkflow } =
+              await import('@openslack/workflows');
+            const workflowRuns = await listWorkflowRuns({ rootDir: root });
             const lifecycleBase: Record<
               string,
               {
@@ -188,39 +227,10 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
               const found = await findWorkflow(wf.name, root);
               if (!found) continue;
               const mod = await loadWorkflow(found.path);
-              const runStore = new RunStore({
-                baseDir: join(root, '.openslack.local', 'workflows'),
-              });
-
-              // Find most recent run for this workflow across all statuses
-              let currentRun: { runId: string; status: string; startedAt: string } | undefined;
-              for (const status of [
-                'running',
-                'paused_waiting_approval',
-                'paused',
-                'completed',
-                'failed',
-                'cancelled',
-              ]) {
-                const runs = await runStore.listRunsByStatus(
-                  status as
-                    | 'running'
-                    | 'paused_waiting_approval'
-                    | 'paused'
-                    | 'completed'
-                    | 'failed'
-                    | 'cancelled',
-                );
-                const match = runs.find((r) => r.workflowName === wf.name);
-                if (match) {
-                  currentRun = {
-                    runId: match.runId,
-                    status: match.status,
-                    startedAt: match.startedAt,
-                  };
-                  break;
-                }
-              }
+              const match = selectWorkflowLifecycleCurrentRun(workflowRuns, wf.name);
+              const currentRun = match
+                ? { runId: match.runId, status: match.status, startedAt: match.startedAt }
+                : undefined;
 
               lifecycleBase[wf.name] = {
                 workflowHash: mod.hash.slice(0, 16),
@@ -480,19 +490,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         try {
           const { listPendingPlans } = await import('@openslack/operator');
           const { listHandoffs } = await import('@openslack/collaboration');
-          const { RunStore } = await import('@openslack/workflows');
 
           const pendingPlans = listPendingPlans(root);
           const openHandoffs = listHandoffs().filter((h) => h.status === 'open');
-
-          // Pre-fetch paused workflow runs
-          let pausedRuns: Array<{ runId: string; workflowName: string; startedAt: string }> = [];
-          try {
-            const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
-            pausedRuns = await store.listRunsByStatus('paused_waiting_approval');
-          } catch {
-            // Run store may not be initialized
-          }
 
           const pendingApprovals = [
             ...pendingPlans
@@ -512,17 +512,6 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
                 requestedAt: p.createdAt,
                 planId: p.planId,
               })),
-            ...pausedRuns.map((run) => ({
-              id: run.runId,
-              category: 'workflow-effect' as const,
-              title: `Workflow "${run.workflowName}" paused — unexpected side effect`,
-              detail: `Run ${run.runId} paused waiting for approval`,
-              risk: 'medium' as const,
-              requestedBy: 'workflow-runtime',
-              requestedAt: run.startedAt,
-              workflowName: run.workflowName,
-              runId: run.runId,
-            })),
             ...openHandoffs.map((h) => ({
               id: h.id,
               category: 'workflow-effect' as const,

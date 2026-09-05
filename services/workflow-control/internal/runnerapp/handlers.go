@@ -31,6 +31,17 @@ type cancellationRequest struct {
 	ExpiresAt         string `json:"expiresAt"`
 }
 
+func (service *Service) handleRetiredV1Submit(w http.ResponseWriter, _ *http.Request) {
+	writeFailure(
+		w,
+		http.StatusGone,
+		"WORKFLOW_RUNNER_TS_MUTATION_RETIRED",
+		"TypeScript workflow runner admission is retired; inspect evidence or use operator recovery",
+	)
+}
+
+// handleSubmit is retained for closed legacy contract/recovery tests. It is no
+// longer composed into the authenticated HTTP surface.
 func (service *Service) handleSubmit(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
 	defer cancel()
@@ -99,6 +110,15 @@ func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Requ
 	}
 	if err != nil || prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
 		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 job specification is invalid")
+		return
+	}
+	if prepared.Spec.AuthorityRoute.Backend != "go" || prepared.Spec.AuthorityRoute.Authority != "workflow-control" {
+		writeFailure(
+			w,
+			http.StatusGone,
+			"WORKFLOW_RUNNER_TS_MUTATION_RETIRED",
+			"TypeScript workflow runner admission is retired; inspect evidence or use operator recovery",
+		)
 		return
 	}
 	key, fingerprint := runnerstore.V2SubmissionBindings(prepared)

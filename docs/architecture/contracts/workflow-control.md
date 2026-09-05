@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-22
+updated: 2026-09-04
 sources:
   - design/cdd/workstreams/workflow-runtime/README.md
   - docs/architecture/components/workflow-runtime.md
@@ -21,22 +21,20 @@ Status: GS7-A contract freeze plus the merged, exact-head-qualified GS7-B Postgr
 shadow, GS8 runner lifecycle, the GS9-A Workflow Control authority v2 contract freeze, the GS9-C
 checkpoint/resume differential, the GS9-D effect-control seam plus default-off parity shadow, and
 the GS9-E1 budget operational bundle plus GS9-E2 default-off durable qualification authority,
-the GS9-F1 runner-v2 foundation, the GS9-F2a authority-binding companion contract freeze, and the
-GS9-F2b default-off runtime-delivery qualification profile.
-TypeScript remains the sole production workflow writer, runner, approval, budget, effect, resume,
-and user-visible read authority. D1 freezes the closed bundle, D2 enforces the owner-local decision
-and one-time claim, and D3 observes only the three credential-free decision/audit projections. E1
-freezes validation and fold semantics; E2 persists only isolated qualification records.
+the GS9-F1 runner-v2 foundation, the GS9-F2a authority-binding companion contract freeze, the
+GS9-F2b runtime-delivery profile, GS9-G Go new-record routing, and the GS9-H TypeScript read-only
+recovery boundary. Go Workflow Control is the durable authority for routed Go records. TypeScript
+still executes sealed workflow/agent/provider adapters, but its ordinary run writer and run-control
+composition are retired; legacy local records remain evidence and recovery input only.
 
 ## Authority boundary
 
-`@openslack/workflows` continues to own the JavaScript/TypeScript DSL and runner, workflow and agent
-calls, permission and trust checks, human decisions, effect execution, local RunStore writes,
-resume behavior, and CLI/TUI/MCP views. The pure `services/workflow-control` Go module accepts only
-the closed, bounded contract record, validates it, checks declared status transitions, and produces
-a deterministic credential-free read model for differential qualification. GS7-B may durably
-record that observation in a separate PostgreSQL namespace, but its result cannot alter a RunStore
-write, workflow result, approval, budget, effect, resume, or user response.
+`@openslack/workflows` continues to own the JavaScript/TypeScript DSL and sealed execution adapters,
+workflow and agent calls, permission/trust checks, and historical export. For Go-owned records,
+`services/workflow-control` owns the durable run head, revision, phase, resume generation, receipts,
+and transition CAS. TypeScript RunStore-shaped files live in the Go recovery-projection namespace and
+are never a read or write authority. For legacy TypeScript records, only inspect, historical export,
+receipt/reconciliation diagnosis, and explicit operator recovery remain reachable.
 
 The cross-language record never carries raw workflow arguments, prompts, phase results, approval
 details, capabilities, decision evidence, provider payloads, transcripts, commands, credentials, or
@@ -693,8 +691,8 @@ to route new production records to Go.
 
 ### GS9-G new-record routing and recovery
 
-The ordinary TypeScript execution path remains the default and does not publish a durable route
-receipt. An explicit process-immutable Go canary or higher-epoch TypeScript rollback first derives the
+At the GS9-G boundary, the ordinary TypeScript execution path remained the default and did not publish
+a durable route receipt. An explicit process-immutable Go canary or higher-epoch TypeScript rollback derived the
 final backend, constructs exactly one matching descriptor, and then commits the descriptor-bound route
 receipt. The policy stores only `backend`; `authority` is derived exhaustively as `workflow-control`
 for Go and `typescript` for TypeScript while the existing receipt wire shape remains unchanged.
@@ -719,3 +717,32 @@ command is audit-first and never deletes an unproved active receipt. Go recovery
 authority-derived caches: safe nonterminal heads may be reconstructed or advanced by the dedicated
 transition policy, while terminal/output ambiguity propagates a typed reconciliation error. Projection
 repair never reruns a workflow effect.
+
+### GS9-H TypeScript read-only recovery
+
+GS9-H removes `executeRun`, `executeResume`, and `controlWorkflowRun` from the package root and removes
+CLI/TUI run-control and legacy approval mutation composition. New execution requires an explicit Go
+route before any descriptor, route-journal mutation, authority accept, or runner submission. The
+recognized TypeScript rollback setting throws a stable configuration error. Authenticated runner v1
+submission and v2 TypeScript-route submission return
+`410 WORKFLOW_RUNNER_TS_MUTATION_RETIRED` without calling either store.
+The Go HTTP wire code deliberately uses the server namespace
+`WORKFLOW_RUNNER_TS_MUTATION_RETIRED`; TypeScript composition rejects before transport with the
+client namespace `WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED`. CLI and TUI adapters preserve the
+client code. These names describe the same retirement boundary but are not interchangeable wire
+values.
+
+The read-only inspection contract point-reads active or closed route evidence without journal
+initialization, migration, repair, or quarantine. Unrouted and routed TypeScript records are explicitly
+historical evidence. A Go record has an authoritative TypeScript-visible view only when an authenticated
+Workflow Control head exists and matches the immutable receipt identity, route, epoch, and build; local
+Go recovery files can only add drift diagnostics. Missing credentials produce `authority-required`, and
+missing, unreadable, conflicting, or legacy-flat route evidence produces `reconciliation-required`;
+flat receipts are never migrated or mislabeled as unrouted by inspection.
+
+H intentionally retains the internal TypeScript writer/parser factories and sealed workers for bounded
+legacy drain and operator-directed recovery. Those paths are not package-root exports or app
+composition and may not create a run, advance workflow authority, approve/execute an effect, reserve or
+settle budget, change a route, or promote a local projection. GS9-I is the separate deletion PR. Safe
+rollback is a higher Go epoch with `acceptNewRecords=false` plus continued drain/recovery; TypeScript
+writer reactivation requires a new governed batch.

@@ -399,6 +399,45 @@ export function workflowControlAuthorityInitialRecord(
   });
 }
 
+export function isWorkflowControlAuthorityHeadBoundToRoute(
+  route: WorkflowRunRouteReceipt,
+  head: WorkflowControlAuthorityRunRead,
+): boolean {
+  try {
+    const initial = workflowControlAuthorityInitialRecord(route);
+    const expected: WorkflowControlAuthorityRunRecord = {
+      ...initial,
+      state: head.state,
+      revision: head.revision,
+      currentPhaseId: head.currentPhaseId,
+      currentPhaseIndex: head.currentPhaseIndex,
+      resumeGeneration: head.resumeGeneration,
+    };
+    return (
+      head.workspaceId === route.workspaceId &&
+      head.runId === route.runId &&
+      head.workflowId === route.workflowId &&
+      head.workflowVersion === route.workflowVersion &&
+      head.workflowSourceHash === route.workflowSourceHash &&
+      head.manifestHash === route.manifestHash &&
+      head.inputHash === route.inputHash &&
+      head.route.backend === route.route.backend &&
+      head.route.authority === route.route.authority &&
+      head.route.routingEpoch === route.route.routingEpoch &&
+      head.route.authorityBuildHash === route.route.authorityBuildHash &&
+      head.record.workspaceId === head.workspaceId &&
+      head.record.runId === head.runId &&
+      head.record.revision === head.revision &&
+      head.record.state === head.state &&
+      head.recordHash === hash(`${canonicalWorkflowControlAuthorityJson(head.record)}\n`) &&
+      canonicalWorkflowControlAuthorityJson(head.record) ===
+        canonicalWorkflowControlAuthorityJson(expected)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function exactOrigin(value: string): string {
   return exactWorkflowRunnerLoopbackOrigin(
     value,

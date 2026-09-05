@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -13,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { GitHubClient } from '../packages/github/src/index.js';
+import type { executeWorkflowThroughRunner } from '../packages/workflows/src/index.js';
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..');
 const EXAMPLE_ROOT = join(REPOSITORY_ROOT, 'examples', 'ai-organization-demo');
@@ -101,6 +103,12 @@ export class RehearsalBlockedError extends Error {
     this.name = 'RehearsalBlockedError';
     this.code = code;
   }
+}
+
+export interface ConfiguredWorkflowExecutionDependencies {
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly createRunId?: () => string;
+  readonly execute?: typeof executeWorkflowThroughRunner;
 }
 
 export function parseRehearsalArgs(args: string[], cwd = process.cwd()): RehearsalOptions {
@@ -674,14 +682,41 @@ async function createTaskIssue(
   return { number: data.number, url: data.html_url, body: preview.body };
 }
 
-async function runConfiguredWorkflow(): Promise<{
+export async function runConfiguredWorkflow(
+  dependencies: ConfiguredWorkflowExecutionDependencies = {},
+): Promise<{
   runId: string;
   artifacts: Array<{ filename: string; content: string }>;
 }> {
-  const { executeRun, loadWorkflow } = await import('../packages/workflows/src/index.js');
+  const {
+    createWorkflowRunRoutingExecutionContext,
+    executeWorkflowThroughRunner,
+    loadWorkflow,
+    loadWorkflowRunRoutingConfig,
+    loadWorkflowRunnerControlConfig,
+    readWorkflowRunnerSourceBytes,
+  } = await import('../packages/workflows/src/index.js');
   const workflow = await loadWorkflow(WORKFLOW_PATH);
   const scenario = loadScenario();
-  const result = await executeRun(workflow, {
+  const runId = dependencies.createRunId?.() ?? `run.${randomUUID()}`;
+  const environment = dependencies.environment ?? process.env;
+  const runner = loadWorkflowRunnerControlConfig(environment);
+  const execute = dependencies.execute ?? executeWorkflowThroughRunner;
+  const result = await execute({
+    workspaceRoot: REPOSITORY_ROOT,
+    config: runner,
+    routing: createWorkflowRunRoutingExecutionContext({
+      runner,
+      workspaceRoot: REPOSITORY_ROOT,
+      config: loadWorkflowRunRoutingConfig(runner, environment),
+    }),
+    workflowRunId: runId,
+    workflowSource: 'openslack-project',
+    workflowSourceBytes: await readWorkflowRunnerSourceBytes({
+      workflowName: workflow.meta.name,
+      discoveredPath: WORKFLOW_PATH,
+      source: 'openslack-project',
+    }),
     manifest: workflow.meta,
     args: {
       organization: scenario.organization,
@@ -690,8 +725,12 @@ async function runConfiguredWorkflow(): Promise<{
       budgetCny: scenario.budgetCny,
     },
     budget: { tokens: 64000, costUsd: 2.5 },
-    rootDir: REPOSITORY_ROOT,
-    onConfirm: async () => false,
+    confirmationPolicy: {
+      mode: 'unattended-explicit',
+      actorId: 'openslack-ai-org-rehearsal',
+      runId,
+      allowUnattended: true,
+    },
   });
   assertWorkflowResult(result);
   return result;

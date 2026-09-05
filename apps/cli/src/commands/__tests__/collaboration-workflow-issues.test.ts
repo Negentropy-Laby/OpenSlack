@@ -1,13 +1,44 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Command } from 'commander';
-import { collaborationCommands } from '../collaboration.js';
+import { collaborationCommands, resolveWorkflowInspectionAuthority } from '../collaboration.js';
 
-const hoisted = vi.hoisted(() => ({
-  evaluateWorkflowGate: vi.fn(),
-  fetchPRDetails: vi.fn(),
-  finalizeWorkflowPR: vi.fn(),
-  loadPRCodeownerEvidence: vi.fn(),
-}));
+const hoisted = vi.hoisted(() => {
+  class RunnerControlError extends Error {
+    constructor(
+      readonly code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  }
+  class RoutingConfigError extends Error {
+    readonly code = 'WORKFLOW_RUN_ROUTING_CONFIG_INVALID';
+  }
+  class RoutingError extends Error {
+    constructor(
+      readonly code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    evaluateWorkflowGate: vi.fn(),
+    fetchPRDetails: vi.fn(),
+    finalizeWorkflowPR: vi.fn(),
+    loadPRCodeownerEvidence: vi.fn(),
+    loadRunnerConfig: vi.fn(),
+    loadRoutingConfig: vi.fn(),
+    createRoutingContext: vi.fn(),
+    createRouteJournal: vi.fn(),
+    createProjectionStore: vi.fn(),
+    inspectReadOnly: vi.fn(),
+    readWorkflowPolicy: vi.fn(),
+    RunnerControlError,
+    RoutingConfigError,
+    RoutingError,
+  };
+});
 
 vi.mock('@openslack/github', () => ({
   publishWorkflowProposal: vi.fn(),
@@ -32,6 +63,16 @@ vi.mock('@openslack/workflows', () => ({
   discoverYamlTemplates: vi.fn().mockResolvedValue([]),
   executePreview: vi.fn(),
   executeDryRun: vi.fn(),
+  createWorkflowRunRouteJournal: (...args: unknown[]) => hoisted.createRouteJournal(...args),
+  createWorkflowRunRoutingExecutionContext: (...args: unknown[]) =>
+    hoisted.createRoutingContext(...args),
+  createWorkflowRunProjectionStore: (...args: unknown[]) => hoisted.createProjectionStore(...args),
+  loadWorkflowRunnerControlConfig: (...args: unknown[]) => hoisted.loadRunnerConfig(...args),
+  loadWorkflowRunRoutingConfig: (...args: unknown[]) => hoisted.loadRoutingConfig(...args),
+  inspectWorkflowRunReadOnly: (...args: unknown[]) => hoisted.inspectReadOnly(...args),
+  WorkflowRunnerControlError: hoisted.RunnerControlError,
+  WorkflowRunRoutingConfigError: hoisted.RoutingConfigError,
+  WorkflowRunRoutingError: hoisted.RoutingError,
   executeRun: vi.fn(),
   executeResume: vi.fn(),
   RunStore: vi.fn().mockImplementation(() => ({
@@ -50,18 +91,11 @@ vi.mock('@openslack/workflows', () => ({
   generateWorkflowDraft: vi.fn(),
   previewWorkflowDraft: vi.fn(),
   renderWorkflowDraftPreview: vi.fn(),
-  readWorkflowPolicy: vi.fn().mockReturnValue({
-    enabled: true,
-    ultracode: false,
-    maxConcurrency: 16,
-    maxAgentsPerRun: 1000,
-    source: 'default',
-  }),
+  readWorkflowPolicy: (...args: unknown[]) => hoisted.readWorkflowPolicy(...args),
   writeWorkflowPolicy: vi.fn(),
   renderWorkflowPolicy: vi.fn(),
   listWorkflowRuns: vi.fn().mockResolvedValue([]),
   showWorkflowRun: vi.fn(),
-  controlWorkflowRun: vi.fn(),
   renderWorkflowRuns: vi.fn(),
   renderWorkflowRun: vi.fn(),
   saveWorkflow: vi.fn(),
@@ -86,6 +120,36 @@ describe('collaboration workflow issue commands', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.exitCode = undefined;
+    hoisted.loadRunnerConfig.mockReturnValue({
+      origin: 'http://127.0.0.1:18183',
+      workspaceId: 'workspace.test',
+      bearerToken: 'a'.repeat(32),
+      descriptorRoot: 'C:\\runner-descriptors',
+    });
+    hoisted.loadRoutingConfig.mockReturnValue({ mode: 'disabled', ignoredSettings: [] });
+    hoisted.createRouteJournal.mockReturnValue({
+      locateReadOnly: vi.fn().mockResolvedValue(null),
+    });
+    hoisted.createRoutingContext.mockReturnValue({
+      mode: 'disabled',
+      authority: undefined,
+      journal: { locateReadOnly: vi.fn().mockResolvedValue(null) },
+    });
+    hoisted.createProjectionStore.mockReturnValue({
+      getRunStatus: vi.fn().mockResolvedValue(null),
+    });
+    hoisted.readWorkflowPolicy.mockReturnValue({
+      enabled: true,
+      ultracode: false,
+      maxConcurrency: 16,
+      maxAgentsPerRun: 1000,
+      source: 'default',
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it('workflow publish command exists', () => {
@@ -156,6 +220,170 @@ describe('collaboration workflow issue commands', () => {
       ?.commands.find((c) => c.name() === 'finalize-pr');
     expect(finalize).toBeDefined();
     expect(finalize?.description()).toContain('Finalize');
+  });
+
+  it('omits authority only when runner and routing configuration are entirely absent', () => {
+    expect(resolveWorkflowInspectionAuthority('C:\\workspace', {})).toBeUndefined();
+    expect(hoisted.loadRunnerConfig).not.toHaveBeenCalled();
+  });
+
+  it('reports partial runner configuration instead of mislabeling it as missing authority', async () => {
+    vi.stubEnv('OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN', 'invalid');
+    hoisted.loadRunnerConfig.mockImplementation(() => {
+      throw new hoisted.RunnerControlError(
+        'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
+        'Workflow runner transport is incomplete.',
+      );
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'runs',
+      'inspect',
+      'run.partial',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(error).toHaveBeenCalledWith(
+      'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID: Workflow runner transport is incomplete.',
+    );
+    expect(hoisted.inspectReadOnly).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the retired rollback mode as a routing configuration failure', async () => {
+    vi.stubEnv('OPENSLACK_WORKFLOW_RUN_ROUTING_MODE', 'ts-new-record-rollback-v1');
+    hoisted.loadRoutingConfig.mockImplementation(() => {
+      throw new hoisted.RoutingConfigError('TypeScript new-record rollback is retired.');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'runs',
+      'inspect',
+      'run.retired',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(error).toHaveBeenCalledWith(
+      'WORKFLOW_RUN_ROUTING_CONFIG_INVALID: TypeScript new-record rollback is retired.',
+    );
+    expect(hoisted.inspectReadOnly).not.toHaveBeenCalled();
+  });
+
+  it('prints reconciliation inspection JSON and exits nonzero', async () => {
+    vi.stubEnv('OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN', 'configured');
+    hoisted.inspectReadOnly.mockResolvedValue({
+      schema: 'openslack.workflow_run_readonly_inspection.v1',
+      runId: 'run.reconcile',
+      ownership: 'unresolved-route',
+      disposition: 'reconciliation-required',
+      route: null,
+      authorityHead: null,
+      localEvidence: { typescriptHistorical: null, goRecovery: null },
+      diagnostics: ['WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED'],
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'runs',
+      'inspect',
+      'run.reconcile',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"reconciliation-required"'));
+  });
+
+  it('refuses Go-owned and unresolved historical exports with stable runs-inspect guidance', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const fixture of [
+      {
+        ownership: 'go-workflow-control',
+        disposition: 'authority-required',
+        code: 'WORKFLOW_RUN_HISTORICAL_EXPORT_GO_OWNED',
+        command: ['inspect', 'run.go'],
+      },
+      {
+        ownership: 'unresolved-route',
+        disposition: 'reconciliation-required',
+        code: 'WORKFLOW_RUN_HISTORICAL_EXPORT_ROUTE_UNRESOLVED',
+        command: ['audit-run', 'run.unresolved'],
+      },
+    ] as const) {
+      hoisted.inspectReadOnly.mockResolvedValue({
+        schema: 'openslack.workflow_run_readonly_inspection.v1',
+        runId: fixture.command[1],
+        ownership: fixture.ownership,
+        disposition: fixture.disposition,
+        route: null,
+        authorityHead: null,
+        localEvidence: { typescriptHistorical: null, goRecovery: null },
+        diagnostics: [],
+      });
+      process.exitCode = undefined;
+      error.mockClear();
+
+      await createTestProgram().parseAsync([
+        'node',
+        'test',
+        'collaboration',
+        'workflow',
+        ...fixture.command,
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining(fixture.code));
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining(`workflow runs inspect ${fixture.command[1]}`),
+      );
+    }
+  });
+
+  it('refuses resume cleanly when read-only route evidence needs reconciliation', async () => {
+    vi.stubEnv('OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN', 'configured');
+    hoisted.createRoutingContext.mockReturnValue({
+      mode: 'explicit',
+      journal: {
+        locateReadOnly: vi
+          .fn()
+          .mockRejectedValue(
+            new hoisted.RoutingError(
+              'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+              'unsafe route fixture',
+            ),
+          ),
+      },
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await createTestProgram().parseAsync([
+      'node',
+      'test',
+      'collaboration',
+      'workflow',
+      'resume',
+      'run.route-error',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED'),
+    );
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('workflow runs inspect run.route-error'),
+    );
   });
 
   it('exits nonzero and does not report completion when a GitHub finalizer write fails', async () => {

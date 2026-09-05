@@ -55,6 +55,7 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		document.Extensions["x-openslack-v2-runtime-delivery-default-off"] != true ||
 		document.Extensions["x-openslack-production-v2-submission"] != "explicit-new-record-canary" ||
 		document.Extensions["x-openslack-production-v2-routing"] != "explicit-new-record-canary" ||
+		document.Extensions["x-openslack-typescript-mutation"] != "retired" ||
 		document.Extensions["x-openslack-max-request-bytes"] != float64(1_048_576) ||
 		document.Extensions["x-openslack-job-request-max-bytes"] != float64(65_536) ||
 		document.Extensions["x-openslack-authority-binding-request-max-bytes"] != float64(1_048_576) ||
@@ -90,6 +91,22 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		if operation == nil || operation.Security == nil || len(*operation.Security) != 0 {
 			t.Fatalf("health route %s must explicitly carry no credential dependency", route)
 		}
+	}
+}
+
+func TestRunnerOpenAPIRetiresTypeScriptAdmission(t *testing.T) {
+	document := loadRunnerOpenAPI(t)
+	v1 := document.Paths.Value("/v1/runner/jobs").Post
+	if v1 == nil || !v1.Deprecated || v1.Extensions["x-openslack-availability"] != "retired" ||
+		v1.Extensions["x-openslack-no-store-mutation"] != true || v1.Responses.Value("410") == nil ||
+		v1.Responses.Value("201") != nil || v1.RequestBody != nil {
+		t.Fatalf("v1 TypeScript admission retirement drifted: %+v", v1)
+	}
+	v2 := document.Paths.Value("/v2/runner/jobs").Post
+	if v2 == nil || v2.Extensions["x-openslack-typescript-route"] != "retired-410" ||
+		v2.Extensions["x-openslack-availability"] != "go-new-record-or-existing-route" ||
+		v2.Responses.Value("410") == nil {
+		t.Fatalf("v2 TypeScript route retirement drifted: %+v", v2)
 	}
 }
 
@@ -131,14 +148,15 @@ func TestRunnerOpenAPIRuntimeAdmissionSealsDurableDisposition(t *testing.T) {
 	}
 }
 
-func TestRunnerOpenAPIV2QualificationAdmissionAndReceiptAreClosed(t *testing.T) {
+func TestRunnerOpenAPIV2GoAdmissionAndReceiptAreClosed(t *testing.T) {
 	document := loadRunnerOpenAPI(t)
 	operation := document.Paths.Value("/v2/runner/jobs").Post
-	if operation == nil || operation.Extensions["x-openslack-availability"] != "qualification-or-new-record-canary" ||
+	if operation == nil || operation.Extensions["x-openslack-availability"] != "go-new-record-or-existing-route" ||
+		operation.Extensions["x-openslack-typescript-route"] != "retired-410" ||
 		operation.Extensions["x-openslack-no-protocol-downgrade"] != true ||
 		operation.Extensions["x-openslack-replay-response"] != "exact-original" ||
 		operation.Responses.Value("201") == nil || operation.Responses.Value("200") == nil || operation.Responses.Value("202") == nil {
-		t.Fatalf("v2 qualification response contract drifted: %+v", operation)
+		t.Fatalf("v2 Go admission response contract drifted: %+v", operation)
 	}
 	hash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	spec := map[string]any{

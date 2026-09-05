@@ -506,14 +506,12 @@ export type {} from './manifest-validator.js';
 // ── Execute ───────────────────────────────────────────────────────────────────
 export {
   executeDryRun,
-  executeRun,
-  executeResume,
   DryRunError,
   createOnConfirmFromPolicy,
   WorkflowResumeRecoveryRequiredError,
   WorkflowRunInputInvalidError,
 } from './execute.js';
-export type { DryRunOptions, DryRunResult, ExecuteRunOptions, SimulatedEffect } from './execute.js';
+export type { DryRunOptions, DryRunResult, SimulatedEffect } from './execute.js';
 
 // ── OpenSlack API ─────────────────────────────────────────────────────────────
 export { createOpenSlackAPI } from './openslack-api.js';
@@ -581,7 +579,6 @@ export type { WorkflowPolicyOptions } from './workflow-policy.js';
 export {
   listWorkflowRuns,
   showWorkflowRun,
-  controlWorkflowRun,
   renderWorkflowRuns,
   renderWorkflowRun,
 } from './workflow-runs.js';
@@ -872,6 +869,7 @@ export type {
   WorkflowRunnerJobView,
 } from './workflow-runner-control-client.js';
 export {
+  createWorkflowRunRouteJournal,
   hashWorkflowRunRoutingPolicy,
   validateWorkflowRunRouteReceipt,
   validateWorkflowRunRoutingPolicy,
@@ -911,11 +909,21 @@ export {
 } from './workflow-run-projection.js';
 export type { WorkflowRunProjectionBackend } from './workflow-run-projection.js';
 export {
+  inspectWorkflowRunReadOnly,
+  WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA,
+} from './workflow-run-readonly-inspection.js';
+export type {
+  InspectWorkflowRunReadOnlyOptions,
+  WorkflowRunReadOnlyLocalEvidence,
+  WorkflowRunReadOnlyInspection,
+} from './workflow-run-readonly-inspection.js';
+export {
   isWorkflowControlBearerToken,
   parseWorkflowControlRoutingEpoch,
   WORKFLOW_CONTROL_MAX_SAFE_INTEGER,
 } from './workflow-control-routing-identity.js';
 export {
+  isWorkflowControlAuthorityHeadBoundToRoute,
   prepareWorkflowControlAuthorityMutation,
   workflowControlAuthorityInitialRecord,
   WORKFLOW_CONTROL_AUTHORITY_ACCEPT_SCHEMA,

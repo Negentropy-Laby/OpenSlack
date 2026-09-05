@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import type { executeWorkflowThroughRunner } from '@openslack/workflows';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const repositoryRoot = resolve(process.cwd());
@@ -60,6 +61,11 @@ async function loadRehearsalModule(): Promise<{
     prHeadSha: string | undefined,
     expectedHead?: string,
   ): { branchSha: string; prHeadSha: string };
+  runConfiguredWorkflow(dependencies?: {
+    environment?: NodeJS.ProcessEnv;
+    createRunId?: () => string;
+    execute?: typeof executeWorkflowThroughRunner;
+  }): Promise<{ runId: string; artifacts: Array<{ filename: string; content: string }> }>;
 }> {
   return import(/* @vite-ignore */ pathToFileURL(scriptPath).href) as never;
 }
@@ -308,6 +314,104 @@ describe('AI organization rehearsal script', { timeout: AI_ORG_DEMO_SUITE_TIMEOU
     expect(rejected.stdout).toContain('durationDays must be an integer from 1 through 90');
   }, 15_000);
 
+  it('composes the live workflow through the explicit Go runner authority path', async () => {
+    const rehearsal = await loadRehearsalModule();
+    const runnerToken = 'a'.repeat(32);
+    const authorityToken = 'b'.repeat(32);
+    const build = 'c'.repeat(64);
+    const environment: NodeJS.ProcessEnv = {
+      OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN: 'http://127.0.0.1:18183',
+      OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID: 'workspace.ai-org-rehearsal',
+      OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN: runnerToken,
+      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(temporaryRoot(), 'descriptors'),
+      OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA: build,
+      OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: 'go-new-record-canary-v1',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '1',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: build,
+      OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'ai-org.rehearsal.test',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: 'ai-org-transformation',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: '2099-09-04T00:00:00.000Z',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_ORIGIN: 'http://127.0.0.1:18184',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BEARER_TOKEN: authorityToken,
+      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BEARER_SHA256: createHash('sha256')
+        .update(authorityToken)
+        .digest('hex'),
+      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_CALLER_ID: 'ai-org-rehearsal',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_ACCOUNT_ID: 'budget.ai-org-rehearsal',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_POLICY_SHA: 'd'.repeat(64),
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_RATE_NANO_USD_PER_TOKEN: '1',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_TOKEN_LIMIT: '64000',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_COST_LIMIT_NANO_USD: '2500000000',
+      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_CALL_LIMIT: '6',
+    };
+    const phaseAgentTypes = [
+      ['business-discovery-agent'],
+      ['business-discovery-agent'],
+      ['roi-analyst-agent'],
+      ['solution-architect-agent'],
+      ['risk-reviewer-agent'],
+      ['delivery-planner-agent'],
+    ];
+    const filenames = [
+      'executive-summary.md',
+      'opportunity-matrix.md',
+      'data-system-map.md',
+      'roi-model.md',
+      'target-architecture.md',
+      'risk-register.md',
+      '90-day-plan.md',
+    ];
+    const execute: typeof executeWorkflowThroughRunner = vi.fn(async (input) => ({
+      status: 'completed' as const,
+      runId: input.workflowRunId!,
+      schema: 'openslack.ai_org_demo_workflow_result.v1',
+      scenario: {
+        schema: 'openslack.ai_org_demo_input.v1',
+        scenarioId: 'manufacturing-90-day',
+        organization: 'Example Manufacturer',
+        industry: 'manufacturing',
+        objective: 'Validate governed AI delivery.',
+        durationDays: 90,
+        budgetCny: 500000,
+        constraints: ['Human approval required'],
+      },
+      phases: ['Intake', 'Discover', 'Select', 'Design', 'Validate', 'Deliver'].map(
+        (id, index) => ({ id, status: 'completed', agentTypes: phaseAgentTypes[index] }),
+      ),
+      artifacts: filenames.map((filename, index) => ({
+        filename,
+        title: filename,
+        ownerAgentType: phaseAgentTypes[Math.min(index, 5)]![0],
+        content: `# ${filename}`,
+        evidenceRefs: ['test:governed-runner'],
+      })),
+      governance: {
+        workflowCanApproveGitHubReview: false,
+        workflowCanMergePullRequest: false,
+        githubHumanApprovalRequired: true,
+        writesGitHubObjects: false,
+        writesMain: false,
+      },
+      evidenceRefs: ['test:governed-runner'],
+    }));
+    const executeMock = vi.mocked(execute);
+
+    const result = await rehearsal.runConfiguredWorkflow({
+      environment,
+      createRunId: () => 'run.ai-org-governed-test',
+      execute,
+    });
+
+    expect(result.runId).toBe('run.ai-org-governed-test');
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0]?.[0]).toMatchObject({
+      workflowRunId: 'run.ai-org-governed-test',
+      budget: { tokens: 64000, costUsd: 2.5 },
+      routing: { mode: 'explicit', v2BudgetPolicy: { accountId: 'budget.ai-org-rehearsal' } },
+    });
+  });
+
   it('blocks sensitive, oversized, and additional workflow result data before materialization', async () => {
     const workflowPath = resolve(
       repositoryRoot,
@@ -384,6 +488,26 @@ describe('AI organization rehearsal script', { timeout: AI_ORG_DEMO_SUITE_TIMEOU
     expect(source).toContain("branch === 'main'");
     expect(source).toContain("ref: 'heads/main'");
     expect(source).toContain("'LOCAL_MAIN_STALE'");
+  });
+
+  it('documents and locks the governed live runner prerequisites', () => {
+    const source = readFileSync(scriptPath, 'utf8');
+    const runbook = readFileSync(
+      join(repositoryRoot, 'docs', 'examples', 'ai-organization', 'runbook.md'),
+      'utf8',
+    );
+    for (const required of [
+      'OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN',
+      'OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA',
+      'OPENSLACK_WORKFLOW_RUN_ROUTING_MODE=go-new-record-canary-v1',
+      'OPENSLACK_WORKFLOW_RUN_ROUTING_*',
+      'ai-org-transformation',
+      'durable budget authority',
+    ]) {
+      expect(runbook).toContain(required);
+    }
+    expect(source).toContain('executeWorkflowThroughRunner');
+    expect(source).not.toMatch(/\bexecuteRun\b/u);
   });
 
   it('validates the fixed input, sanitized recorded run, and read-only projection', () => {

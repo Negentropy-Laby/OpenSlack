@@ -69,13 +69,6 @@ export function createHomeViewModel(): HomeViewModel {
         shortcut: 'w',
       },
       {
-        key: 'approve-workflows',
-        label: 'Handle paused workflow approvals',
-        route: 'approvals',
-        description: 'Approve or reject workflow effects and budget pauses',
-        shortcut: 'a',
-      },
-      {
         key: 'save-share-workflow',
         label: 'Save/share run',
         route: 'workflow-runs',

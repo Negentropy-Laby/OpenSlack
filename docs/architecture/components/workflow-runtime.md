@@ -1148,17 +1148,17 @@ Execution cannot pass the event receipt or a required decision until each exact 
 durably acknowledged. Restart with an unclosed local binding fails closed until the preserved Go
 coordinator evidence is reconciled.
 
-F2b does not change the public CLI/TUI submission path or choose new-record ownership. Production
-routing, canary, single-writer cutover, read-only TS recovery, and TS writer deletion remain GS9-G,
-GS9-H, and GS9-I respectively.
+F2b did not change the public CLI/TUI submission path or choose new-record ownership. GS9-G later
+established routing and the Go single-writer canary; GS9-H now retires TypeScript mutation composition.
+Physical TypeScript writer deletion remains the separate GS9-I batch.
 
-GS9-G composes routing once at each CLI/TUI process boundary and injects that immutable context into
-execution; package execution no longer reads `process.env`. With no explicit mode, residual routing
-settings are diagnostic-only and ordinary TypeScript runs do not write the route journal. Explicit Go
-selection performs authenticated three-party binding preflight before any journal or authority side
-effect, then seals one v2 descriptor. Explicit TypeScript rollback seals one v1 descriptor. Existing
-active or closed receipts always select their recorded backend and identity even after the process mode
-changes.
+GS9-H keeps GS9-G's process-immutable Go routing composition but makes an explicit Go authority route
+mandatory for every new execution. With no mode, residual settings are diagnostic-only and execution
+fails before descriptor submission or route mutation. The former TypeScript rollback mode is retained
+only as a recognized retired value and cannot construct a writer. Runner v1 job admission and v2
+TypeScript-route admission return 410 after authentication without reaching their stores. Existing
+active or closed TypeScript receipts are read-only evidence and cannot resume through package, CLI, or
+TUI composition.
 
 Go-owned run status, resume, execution, and runtime-delivery all resolve the same recovery-projection
 root. The projection store point-reads the authority head, rebuilds only provable created/running state,
@@ -1167,6 +1167,12 @@ transition helper to swallow them. Remote terminal state with missing or inconsi
 reconciliation-required and cannot enter fresh execution. Operators can inspect and close only
 provably terminal route receipts with `openslack collaboration workflow routes repair [--apply]`;
 paused and incomplete receipts remain active.
+
+The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
+the durable Workflow Control head as authority only after receipt/head identity comparison; local
+RunStore-shaped recovery projections are comparison evidence and never become a writer or authority
+record. Safe rollback raises the Go epoch, sets `acceptNewRecords=false`, stops admission, and drains
+existing Go routes. TypeScript reactivation requires a separately governed batch.
 
 ### Operator Module
 

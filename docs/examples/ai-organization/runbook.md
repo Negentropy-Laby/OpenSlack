@@ -90,7 +90,24 @@ The command fails closed before mutations unless all of these are true:
    `main` equals the GitHub App-observed current remote `main` SHA.
 4. GitHub authentication resolves to the configured App installation bot identity.
 5. The repository already has `openslack:task` and `openslack:ready` labels.
-6. The configured Agent Runtime completes the structured workflow with exactly seven artifacts.
+6. The runner transport is configured with
+   `OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN`,
+   `OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID`,
+   `OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN`,
+   `OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT`, and an exact
+   `OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA`.
+7. `OPENSLACK_WORKFLOW_RUN_ROUTING_MODE=go-new-record-canary-v1` is set with the complete
+   `OPENSLACK_WORKFLOW_RUN_ROUTING_*` profile: epoch, authority build, qualification environment,
+   workflow/run allowlists, expiry, authority origin/caller/bearer binding, and budget account,
+   policy, rate, token, cost, and call limits. The workflow allowlist must include
+   `ai-org-transformation`.
+8. The matching Go runner, Workflow Control authority, and durable budget authority are deployed;
+   their build and bearer hashes must match the configured bindings.
+9. The governed Agent Runtime completes the structured workflow with exactly seven artifacts.
+
+Use the sealed qualification environment and secret-injection mechanism described in the Workflow
+Control operations documentation. Do not place bearer values or other credentials in this runbook,
+shell history, generated evidence, or committed files.
 
 Only then does the script create an isolated `demo/ai-org-*` worktree and branch, one parent and
 seven child Issues, and a draft PR through `bot-gh-pr-create`. It never invokes raw

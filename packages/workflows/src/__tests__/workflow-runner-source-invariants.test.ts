@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -21,16 +22,79 @@ function commandPath(command: 'bun' | 'node'): string {
 }
 
 describe('GS8-B source and authority invariants', () => {
-  it('keeps public CLI execution behind runner control and legacy TUI gates nonauthorizing', async () => {
-    const [collaboration, tuiExecutors] = await Promise.all([
+  it('retires everyday TypeScript mutation composition while preserving read-only evidence', async () => {
+    const [
+      index,
+      collaboration,
+      tuiExecutors,
+      tuiComposition,
+      tuiRuns,
+      execution,
+      runnerServer,
+      runnerHandlers,
+      workflowRuns,
+      qualification,
+      workflowControlContract,
+      demo,
+      routing,
+      routingConfig,
+      inspection,
+    ] = await Promise.all([
+      source('packages/workflows/src/index.ts'),
       source('apps/cli/src/commands/collaboration.ts'),
       source('apps/cli/src/commands/tui-executors.ts'),
+      source('apps/cli/src/commands/tui.ts'),
+      source('packages/tui/src/views/WorkflowRunsView.tsx'),
+      source('packages/workflows/src/workflow-runner-execution-client.ts'),
+      source('services/workflow-control/internal/runnerapp/server.go'),
+      source('services/workflow-control/internal/runnerapp/handlers.go'),
+      source('packages/workflows/src/workflow-runs.ts'),
+      source('services/workflow-control/cmd/runner-server/qualification_test.go'),
+      source('docs/architecture/contracts/workflow-control.md'),
+      source('scripts/demo-ai-org-rehearse.ts'),
+      source('packages/workflows/src/workflow-run-routing.ts'),
+      source('packages/workflows/src/workflow-run-routing-config.ts'),
+      source('packages/workflows/src/workflow-run-readonly-inspection.ts'),
     ]);
+    expect(index).not.toMatch(/\bexecuteRun\b/u);
+    expect(index).not.toMatch(/\bexecuteResume\b/u);
+    expect(index).not.toMatch(/\bcontrolWorkflowRun\b/u);
     expect(collaboration).toContain('executeWorkflowThroughRunner');
     expect(collaboration).not.toMatch(/\bexecuteRun\(/u);
     expect(collaboration).not.toMatch(/\bexecuteResume\(/u);
+    expect(collaboration).not.toMatch(/\bcontrolWorkflowRun\b/u);
+    expect(collaboration).not.toContain('new RunStore');
+    expect(collaboration).toContain('journal.locateReadOnly(runId)');
+    expect(collaboration).toContain('for the closed authority view');
+    expect(collaboration).not.toContain('journal.load(runId)');
+    expect(collaboration).not.toContain('journal.locate(runId)');
     expect(tuiExecutors).not.toContain('executeResume');
-    expect(tuiExecutors).toContain('effectDecisionAuthority: false');
+    expect(tuiExecutors).not.toContain('new RunStore');
+    expect(tuiExecutors).not.toContain('controlWorkflowRun');
+    expect(tuiExecutors).toContain('WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED');
+    expect(tuiComposition).not.toContain('new RunStore');
+    expect(tuiComposition).not.toContain('...pausedRuns.map');
+    expect(tuiRuns).not.toContain('controlWorkflowRun');
+    expect(tuiRuns).not.toContain("applyAction('resume')");
+    expect(execution).toContain('journal.locateReadOnly(workflowRunId)');
+    expect(execution).not.toContain('journal.load(workflowRunId)');
+    expect(runnerServer).toContain('http.HandlerFunc(service.handleRetiredV1Submit)');
+    expect(runnerServer).not.toContain('http.HandlerFunc(service.handleSubmit)');
+    expect(runnerHandlers).toContain('WORKFLOW_RUNNER_TS_MUTATION_RETIRED');
+    expect(execution).toContain('WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED');
+    expect(workflowControlContract).toContain('`WORKFLOW_RUNNER_TS_MUTATION_RETIRED`');
+    expect(workflowControlContract).toContain('`WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED`');
+    expect(workflowRuns).not.toMatch(/\bcontrolWorkflowRun\b/u);
+    expect(execution).not.toContain('prepareWorkflowRunnerJobSpec');
+    expect(execution).not.toContain('WORKFLOW_RUNNER_JOB_SPEC_SCHEMA');
+    expect(qualification).not.toContain('runLegacyGS8BQualification');
+    expect(demo).toContain('executeWorkflowThroughRunner');
+    expect(demo).not.toMatch(/\bexecuteRun\(/u);
+    expect(routing).toContain('export function createWorkflowRunRouteJournal');
+    for (const consumer of [collaboration, routingConfig, inspection]) {
+      expect(consumer).toContain('createWorkflowRunRouteJournal');
+      expect(consumer).not.toContain("'.openslack.local', 'workflows', 'routes'");
+    }
     for (const cli of [collaboration, tuiExecutors]) {
       expect(cli).not.toContain('workflow-runner-worker');
       expect(cli).not.toContain('OPENSLACK_WORKFLOW_RUNNER_ENABLED');
@@ -186,7 +250,7 @@ describe('GS8-B source and authority invariants', () => {
   });
 
   it('builds and starts the path-free CJS artifact under a type-module ancestor', () => {
-    const nodeExecutable = commandPath('node');
+    const nodeExecutable = realpathSync(commandPath('node'));
     const output = execFileSync(
       commandPath('bun'),
       [
