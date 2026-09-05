@@ -20,7 +20,7 @@ const (
 	MaxSafeInteger        = int64(1<<53 - 1)
 	MaxRateDecimalBytes   = 64
 	MaxRateFractionDigits = 18
-	budgetManifestSHA256  = "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548"
+	budgetManifestSHA256  = "83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b"
 )
 
 type Operation string
@@ -42,10 +42,10 @@ type SourceLock struct {
 func SourceLocks() []SourceLock {
 	return []SourceLock{
 		{Name: "runnerV1Manifest", SHA256: "908ff368f35033206b975a0421396f49e588098f040aecef2fdd18cd8b67ece6"},
-		{Name: "authorityV2Manifest", SHA256: "2ce5364708165611d0629d293c8ffb9ddd1f6cb7a37b78ded3163e0bdd58c877"},
+		{Name: "authorityV2Manifest", SHA256: "7994937f8b66c67ba4c90ce9018fcbde095ad34e6f377b3cd09959bb5c53d2ba"},
 		{Name: "checkpointManifest", SHA256: "e6b4edefc887f17a83237471e168f4c0819b7848ad6a63d2446fc572bdcff000"},
-		{Name: "effectControlManifest", SHA256: "6114d3282536f4a341102ae7492e32c2f3886de05394751d19fefd9db567f9d4"},
-		{Name: "effectShadowManifest", SHA256: "55acf993ae4b951a7426c2d4771733d0ef578095d2b616f7bca0394a43f33b42"},
+		{Name: "effectControlManifest", SHA256: "76929e860fc42573e87dfe09f106d15f4913b2da3da5f96e4a8c1d58d095d1c2"},
+		{Name: "effectShadowManifest", SHA256: "58208d1618b6a629e821dbb10d214a9a57eaf6b3771a1b61e1d2198c4038354a"},
 		{Name: "budgetManifest", SHA256: budgetManifestSHA256},
 		{Name: "migration7Up", SHA256: "bc09194c0b9ec2d5880a17f71327d99cf5481d88d6dc0d737be099af7a8fd722"},
 		{Name: "migration7Down", SHA256: "251b99eb5e088a468ff524d81e59a98ab57543f2b917331b5ea1c239900947d7"},

@@ -1,4 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
+import { createWorkflowRunProjectionStore } from '../workflow-run-projection.js';
+import { WorkflowRunnerResumeSourceStore } from '../internal/workflow-runner-resume-source.js';
+import {
+  createWorkflowRunnerV2QualificationRuntimeDelivery,
+  type WorkflowRunnerV2GoAuthorityWorkerConfig,
+} from '../workflow-runner-worker.js';
+import {
+  WorkflowControlAuthorityHttpClient,
+  prepareWorkflowControlAuthorityMutation,
+  type WorkflowControlAuthorityRunRecord,
+  type WorkflowControlAuthorityMutation,
+} from '../workflow-control-authority-client.js';
 import { readFileSync } from 'node:fs';
 import { chmod, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -18,6 +31,7 @@ import {
 } from '../workflow-control-authority-contract.js';
 import {
   canonicalWorkflowBudgetAuthorityJson,
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
   prepareWorkflowBudgetAuthorityRequest,
@@ -1491,103 +1505,119 @@ it('uses an HTTP companion seam to seal headers and point-read a lost POST respo
   }
 });
 
-it('validates the exact E2 reserve response and reconstructs its private ledger entry', async () => {
-  const fixture = goFixture('budget_reserve');
-  if (fixture.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1') {
-    throw new Error('budget evidence unavailable');
-  }
-  const sourceResult =
-    vectors.positive.controlDelivery.artifacts['kind:budget_authorization']!.budgetSourceResult!;
-  const buildHash = fixture.stageTemplate.route.authorityBuildHash;
-  const responseBody = `${canonicalWorkflowBudgetAuthorityJson({
-    schema: 'openslack.workflow_control_budget_mutation_response.v1',
-    operation: 'reserve',
-    record: {
+it.each([
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+])(
+  'validates the exact E2 reserve response and ledger without rewriting manifest %s',
+  async (contractManifestSha256) => {
+    const fixture = goFixture('budget_reserve');
+    if (fixture.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1') {
+      throw new Error('budget evidence unavailable');
+    }
+    const currentSource =
+      vectors.positive.controlDelivery.artifacts['kind:budget_authorization']!.budgetSourceResult!;
+    const sourceResult = {
+      ...currentSource,
+      durableReceiptBytes: canonicalWorkflowBudgetAuthorityJson({
+        ...JSON.parse(currentSource.durableReceiptBytes),
+        contractManifestSha256,
+      }),
+    };
+    const buildHash = fixture.stageTemplate.route.authorityBuildHash;
+    const responseBody = `${canonicalWorkflowBudgetAuthorityJson({
+      schema: 'openslack.workflow_control_budget_mutation_response.v1',
+      operation: 'reserve',
+      record: {
+        schema: 'openslack.workflow_control_budget_durable_record.v1',
+        authority: 'workflow-control',
+        writer: 'workflow-control/budget-authority-server',
+        authorityMode: 'local-qualification-v1',
+        productionAuthority: false,
+        contractManifestSha256,
+        authorityBuildHash: buildHash,
+        recordKind: 'reserve_decision',
+        operationalProjection: sourceResult.decision,
+        operationalProjectionHash: hashWorkflowBudgetAuthorityValue(
+          'reserve-decision',
+          sourceResult.decision,
+        ),
+      },
+      receipt: JSON.parse(sourceResult.durableReceiptBytes),
+      reconciliation: null,
+    })}\n`;
+    const divergentAccount = {
+      ...sourceResult.decision.afterAccount,
+      accountRevision: 2,
+      runRevision: 5,
+    };
+    const accountBody = `${canonicalWorkflowBudgetAuthorityJson({
       schema: 'openslack.workflow_control_budget_durable_record.v1',
       authority: 'workflow-control',
       writer: 'workflow-control/budget-authority-server',
       authorityMode: 'local-qualification-v1',
       productionAuthority: false,
-      contractManifestSha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
+      contractManifestSha256,
       authorityBuildHash: buildHash,
-      recordKind: 'reserve_decision',
-      operationalProjection: sourceResult.decision,
-      operationalProjectionHash: hashWorkflowBudgetAuthorityValue(
-        'reserve-decision',
-        sourceResult.decision,
-      ),
-    },
-    receipt: JSON.parse(sourceResult.durableReceiptBytes),
-    reconciliation: null,
-  })}\n`;
-  const divergentAccount = {
-    ...sourceResult.decision.afterAccount,
-    accountRevision: 2,
-    runRevision: 5,
-  };
-  const accountBody = `${canonicalWorkflowBudgetAuthorityJson({
-    schema: 'openslack.workflow_control_budget_durable_record.v1',
-    authority: 'workflow-control',
-    writer: 'workflow-control/budget-authority-server',
-    authorityMode: 'local-qualification-v1',
-    productionAuthority: false,
-    contractManifestSha256: WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
-    authorityBuildHash: buildHash,
-    recordKind: 'account',
-    operationalProjection: divergentAccount,
-    operationalProjectionHash: hashWorkflowBudgetAuthorityValue('account', divergentAccount),
-  })}\n`;
-  const observed: Array<{ headers: IncomingMessage['headers']; body: string }> = [];
-  const server = createServer(async (request, response) => {
-    observed.push({
-      headers: request.headers,
-      body: request.method === 'POST' ? await body(request) : '',
+      recordKind: 'account',
+      operationalProjection: divergentAccount,
+      operationalProjectionHash: hashWorkflowBudgetAuthorityValue('account', divergentAccount),
+    })}\n`;
+    const observed: Array<{ headers: IncomingMessage['headers']; body: string }> = [];
+    const server = createServer(async (request, response) => {
+      observed.push({
+        headers: request.headers,
+        body: request.method === 'POST' ? await body(request) : '',
+      });
+      reply(
+        response,
+        request.url?.endsWith('/account') ? accountBody : responseBody,
+        request.method === 'POST' ? 201 : 200,
+      );
     });
-    reply(
-      response,
-      request.url?.endsWith('/account') ? accountBody : responseBody,
-      request.method === 'POST' ? 201 : 200,
-    );
-  });
-  await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
-  try {
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new Error('test server address unavailable');
-    const client = createWorkflowRunnerBudgetAuthorityClient({
-      origin: `http://127.0.0.1:${address.port}`,
-      workspaceId: fixture.stageTemplate.workspaceId,
-      bearerToken: 'b'.repeat(32),
-      callerId: fixture.evidence.preparedRequest.callerId,
-    });
-    await expect(client.mutate(fixture.evidence.preparedRequest)).resolves.toMatchObject({
-      sourceResult,
-    });
-    await expect(client.pointRead(fixture.evidence.preparedRequest)).resolves.toMatchObject({
-      sourceResult,
-    });
-    await expect(
-      client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
-    ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
-    expect(observed[0]).toMatchObject({ body: fixture.evidence.preparedRequest.body });
-    expect(observed[0]!.headers).toMatchObject({
-      authorization: `Bearer ${'b'.repeat(32)}`,
-      'x-openslack-workflow-budget-caller-id': fixture.evidence.preparedRequest.callerId,
-      'x-openslack-workflow-budget-workspace-id': fixture.stageTemplate.workspaceId,
-      'x-openslack-workflow-budget-routing-epoch': String(fixture.stageTemplate.route.routingEpoch),
-      'x-openslack-workflow-budget-expected-build-sha': buildHash,
-      'idempotency-key': fixture.evidence.preparedRequest.idempotencyKey,
-      'x-openslack-request-fingerprint': fixture.evidence.preparedRequest.requestFingerprint,
-    });
-    expect(observed[2]!.headers).toMatchObject({
-      'x-openslack-workflow-budget-caller-id': fixture.evidence.preparedRequest.callerId,
-      'x-openslack-workflow-budget-workspace-id': fixture.stageTemplate.workspaceId,
-    });
-  } finally {
-    await new Promise<void>((resolveClose, rejectClose) =>
-      server.close((error) => (error ? rejectClose(error) : resolveClose())),
-    );
-  }
-});
+    await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string')
+        throw new Error('test server address unavailable');
+      const client = createWorkflowRunnerBudgetAuthorityClient({
+        origin: `http://127.0.0.1:${address.port}`,
+        workspaceId: fixture.stageTemplate.workspaceId,
+        bearerToken: 'b'.repeat(32),
+        callerId: fixture.evidence.preparedRequest.callerId,
+      });
+      await expect(client.mutate(fixture.evidence.preparedRequest)).resolves.toMatchObject({
+        sourceResult,
+      });
+      await expect(client.pointRead(fixture.evidence.preparedRequest)).resolves.toMatchObject({
+        sourceResult,
+      });
+      await expect(
+        client.readAccount(fixture.stageTemplate.runId, fixture.stageTemplate.route),
+      ).resolves.toMatchObject({ accountRevision: 2, runRevision: 5 });
+      expect(observed[0]).toMatchObject({ body: fixture.evidence.preparedRequest.body });
+      expect(observed[0]!.headers).toMatchObject({
+        authorization: `Bearer ${'b'.repeat(32)}`,
+        'x-openslack-workflow-budget-caller-id': fixture.evidence.preparedRequest.callerId,
+        'x-openslack-workflow-budget-workspace-id': fixture.stageTemplate.workspaceId,
+        'x-openslack-workflow-budget-routing-epoch': String(
+          fixture.stageTemplate.route.routingEpoch,
+        ),
+        'x-openslack-workflow-budget-expected-build-sha': buildHash,
+        'idempotency-key': fixture.evidence.preparedRequest.idempotencyKey,
+        'x-openslack-request-fingerprint': fixture.evidence.preparedRequest.requestFingerprint,
+      });
+      expect(observed[2]!.headers).toMatchObject({
+        'x-openslack-workflow-budget-caller-id': fixture.evidence.preparedRequest.callerId,
+        'x-openslack-workflow-budget-workspace-id': fixture.stageTemplate.workspaceId,
+      });
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  },
+);
 
 it('reads the actual Go budget account handler single-LF response through the TypeScript client', async () => {
   const fixture = goFixture('budget_reserve');
@@ -1841,4 +1871,313 @@ it('seals exact runtime admission identity and recovers a lost response by ident
       server.close((error) => (error ? rejectClose(error) : resolveClose())),
     );
   }
+});
+
+async function defaultResumeFixture(
+  options: { checkpoint?: boolean; loseResponse?: boolean; ahead?: boolean } = {},
+) {
+  const root = await mkdtemp(join(tmpdir(), 'workflow-default-resume-'));
+  roots.push(root);
+  const hash = 'a'.repeat(64);
+  const fixture = goFixture('resume_advance');
+  const original = parseWorkflowControlAuthorityMessageBytes(
+    Buffer.from(fixture.target.body, 'utf8'),
+  );
+  const target = prepareWorkflowControlAuthorityMessage({
+    ...original,
+    fencingToken: 1,
+    // Deliberately independent runner revision (20), checkpoint revision (1/2), and Go revision (7).
+  });
+  const message = parseWorkflowControlAuthorityMessageBytes(Buffer.from(target.body, 'utf8'));
+  const store = createWorkflowRunProjectionStore(root, 'go');
+  const initialBinding = {
+    workspaceId: message.workspaceId!,
+    workflowRunId: message.workflowRunId!,
+    jobId: 'job.prior',
+    attemptId: 'attempt.prior',
+    leaseId: 'lease.prior',
+    fencingToken: 1,
+    correlationId: message.correlationId,
+    runnerBuildHash: hash,
+    workflowSourceHash: hash,
+    manifestHash: hash,
+    inputHash: hash,
+  };
+  await store.initRun(message.workflowRunId!, {
+    runId: message.workflowRunId!,
+    workflowName: 'workflow.test',
+    mode: 'execute',
+    manifestHash: hash,
+    args: {},
+    startedAt: message.sentAt,
+  });
+  await store.initializeCheckpointControl(message.workflowRunId!, initialBinding);
+  if (options.checkpoint)
+    await store.commitWorkflowCheckpoint(message.workflowRunId!, initialBinding, 'phase-0', 0, {
+      artifact: Buffer.from('committed phase output'),
+    });
+  await store.transitionStatus(message.workflowRunId!, 'paused');
+  let record: WorkflowControlAuthorityRunRecord = {
+    schema: 'openslack.workflow_control_authority_run_record.v2',
+    workspaceId: message.workspaceId!,
+    runId: message.workflowRunId!,
+    workflowId: 'workflow.test',
+    workflowVersion: '1.0.0',
+    workflowSourceHash: hash,
+    manifestHash: hash,
+    inputHash: hash,
+    route: fixture.stageTemplate.route,
+    state: options.ahead ? 'resuming' : 'paused',
+    revision: 7,
+    resumeGeneration: options.ahead ? 1 : 0,
+    currentPhaseId: options.checkpoint ? 'phase-0' : null,
+    currentPhaseIndex: options.checkpoint ? 0 : null,
+  };
+  const receipts = new Map<string, string>();
+  const port = new ExactPort();
+  let mutations = 0;
+  let loseResponse = options.loseResponse ?? false;
+  let hideReceipts = false;
+  const server = createServer(async (request, response) => {
+    try {
+      const path = request.url ?? '';
+      if (request.method === 'GET') {
+        if (path.startsWith('/v1/workflow-control/runs/')) {
+          reply(
+            response,
+            canonicalWorkflowControlAuthorityJson({
+              ...record,
+              schema: 'openslack.workflow_control_authority_read.v2',
+              record,
+              recordHash: createHash('sha256')
+                .update(canonicalWorkflowControlAuthorityJson(record) + '\n')
+                .digest('hex'),
+              updatedAt: message.sentAt,
+            }) + '\n',
+          );
+          return;
+        }
+        const key = decodeURIComponent(path.split('/').at(-1)!);
+        const receipt = hideReceipts && path.startsWith('/v1/') ? undefined : receipts.get(key);
+        if (!receipt) {
+          response.writeHead(404, { 'Content-Length': '0' });
+          response.end();
+          return;
+        }
+        reply(response, receipt);
+        return;
+      }
+      const bytes = await body(request);
+      const value = JSON.parse(bytes);
+      if (path.startsWith('/v1/')) {
+        const mutation = value as WorkflowControlAuthorityMutation;
+        const prepared = prepareWorkflowControlAuthorityMutation({
+          ...mutation,
+          callerId: 'workflow-runner-v2',
+          expectedBuildHash: record.route.authorityBuildHash,
+        });
+        expect(bytes).toBe(prepared.exactBody);
+        expect(request.headers['idempotency-key']).toBe(prepared.idempotencyKey);
+        expect(mutation.expected).toMatchObject({
+          revision: record.revision,
+          state: record.state,
+          resumeGeneration: record.resumeGeneration,
+        });
+        record = mutation.record;
+        mutations++;
+        const receipt = {
+          schema: 'openslack.workflow_control_authority_receipt.v2',
+          operation: 'run_transition',
+          status: 'accepted',
+          workspaceId: record.workspaceId,
+          runId: record.runId,
+          expectedRevision: mutation.expected.revision,
+          acceptedRevision: record.revision,
+          resumeGeneration: record.resumeGeneration,
+          route: record.route,
+          idempotencyKey: prepared.idempotencyKey,
+          requestFingerprint: prepared.requestFingerprint,
+          requestHash: prepared.requestHash,
+          recordHash: prepared.recordHash,
+          correlationId: mutation.correlationId,
+          serviceBuildHash: record.route.authorityBuildHash,
+          committedAt: message.sentAt,
+          reconciliationToken: null,
+        };
+        receipts.set(
+          prepared.idempotencyKey,
+          canonicalWorkflowControlAuthorityJson(receipt) + '\n',
+        );
+        if (loseResponse) {
+          loseResponse = false;
+          request.socket.destroy();
+          return;
+        }
+        reply(response, receipts.get(prepared.idempotencyKey)!, 201);
+        return;
+      }
+      const prepared = path.endsWith(':stage')
+        ? prepareWorkflowRunnerAuthorityBindingStage(value)
+        : ({ value, body: bytes } as WorkflowRunnerAuthorityBindingPrepared<unknown>);
+      const receipt = path.endsWith(':stage')
+        ? await port.stage(prepared)
+        : await port.resolve(value.bindingId, prepared);
+      const exact = canonicalWorkflowControlAuthorityJson(receipt) + '\n';
+      receipts.set(String(request.headers['idempotency-key']), exact);
+      reply(response, exact);
+    } catch (error) {
+      response.writeHead(500, { 'Content-Length': '0' });
+      response.end();
+      failures.push(error);
+    }
+  });
+  const failures: unknown[] = [];
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw Error('No address');
+  const origin = `http://127.0.0.1:${address.port}`;
+  const authority = new WorkflowControlAuthorityHttpClient({
+    origin,
+    workspaceId: record.workspaceId,
+    callerId: 'workflow-runner-v2',
+    bearerToken: 'r'.repeat(48),
+    expectedBuildHash: record.route.authorityBuildHash,
+  });
+  const config = {
+    workspaceRoot: root,
+    workspaceId: record.workspaceId,
+    runtimeDelivery: {
+      journalRoot: join(root, 'bindings'),
+      companionOrigin: origin,
+      companionBearerToken: 'c'.repeat(48),
+    },
+  } as WorkflowRunnerV2GoAuthorityWorkerConfig;
+  const delivery = await createWorkflowRunnerV2QualificationRuntimeDelivery(config, authority);
+  return {
+    root,
+    store,
+    target,
+    message,
+    authority,
+    delivery,
+    port,
+    failures,
+    get record() {
+      return record;
+    },
+    get mutations() {
+      return mutations;
+    },
+    hideReceipts(value: boolean) {
+      hideReceipts = value;
+    },
+    close: () => new Promise<void>((done) => server.close(() => done())),
+  };
+}
+
+describe('default Go resume source integration', () => {
+  it.each([false, true])(
+    'commits generation before lease delivery with checkpoint=%s and a per-job fence reset',
+    async (checkpoint) => {
+      const value = await defaultResumeFixture({ checkpoint, loseResponse: true });
+      try {
+        const context = await value.delivery.commit('resume_advance', value.target);
+        expect(context.exactEventBytes).toBe(value.target.body);
+        expect(value.mutations).toBe(1);
+        expect(value.record).toMatchObject({ state: 'resuming', revision: 8, resumeGeneration: 1 });
+        expect(context.resolution.evidence).toMatchObject({
+          sourceAuthority: { expectedResumeGeneration: 0, acceptedResumeGeneration: 1 },
+          nextPhaseId: checkpoint ? 'phase-1' : 'phase-0',
+          priorCheckpointId: checkpoint ? expect.any(String) : null,
+        });
+        const source = new WorkflowRunnerResumeSourceStore(
+          value.root,
+          value.message,
+          value.authority,
+        );
+        const resumed = await source.committed(context.stage);
+        expect(resumed).toMatchObject({
+          resumeGeneration: 1,
+          activeBinding: { jobId: value.message.jobId, fencingToken: 1 },
+        });
+        // The execution boundary repeats the already accepted binding without advancing it again.
+        await value.store.beginCheckpointResumeGeneration(
+          value.message.workflowRunId!,
+          resumed!.activeBinding,
+          `phase-${checkpoint ? 1 : 0}`,
+          checkpoint ? 1 : 0,
+        );
+        expect(
+          (await value.store.loadCheckpointControl(value.message.workflowRunId!))?.resumeGeneration,
+        ).toBe(1);
+        expect(value.failures).toEqual([]);
+      } finally {
+        await value.close();
+      }
+    },
+  );
+
+  it('recovers a committed CAS after losing all receipt responses before the projection write', async () => {
+    const value = await defaultResumeFixture({ loseResponse: true });
+    try {
+      value.hideReceipts(true);
+      await expect(value.delivery.commit('resume_advance', value.target)).rejects.toThrow();
+      expect(value.mutations).toBe(1);
+      expect(
+        (await value.store.loadCheckpointControl(value.message.workflowRunId!))?.resumeGeneration,
+      ).toBe(0);
+      value.hideReceipts(false);
+      // Fresh source object reconstructs intent and point-reads the exact receipt; zero CAS replay.
+      const source = new WorkflowRunnerResumeSourceStore(
+        value.root,
+        value.message,
+        value.authority,
+      );
+      await source.commitResume(value.port.stageValue!, value.port.stageReceipt!);
+      expect(value.mutations).toBe(1);
+      expect((await source.committed(value.port.stageValue!))?.resumeGeneration).toBe(1);
+      const sibling = { ...value.message, attemptId: 'attempt.sibling' };
+      await expect(
+        new WorkflowRunnerResumeSourceStore(value.root, sibling, value.authority).committed(
+          value.port.stageValue!,
+        ),
+      ).rejects.toThrow('exact staged event');
+      const intentPath = join(
+        source.checkpointControlDir(value.message.workflowRunId!),
+        `resume-${createHash('sha256').update(value.port.stageValue!.bindingId).digest('hex')}.json`,
+      );
+      const originalIntent = JSON.parse(readFileSync(intentPath, 'utf8'));
+      const receiptLookup = vi.spyOn(value.authority, 'readTransitionReceipt');
+      for (const drift of [{ runId: 'run.sibling' }, { inputHash: 'f'.repeat(64) }]) {
+        await writeFile(
+          intentPath,
+          canonicalWorkflowControlAuthorityJson({
+            ...originalIntent,
+            record: { ...originalIntent.record, ...drift },
+          }) + '\n',
+        );
+        await expect(source.committed(value.port.stageValue!)).rejects.toThrow(
+          /intent differs|projection is not backed/,
+        );
+        expect(receiptLookup).not.toHaveBeenCalled();
+      }
+      expect(value.failures).toEqual([]);
+    } finally {
+      await value.close();
+    }
+  });
+
+  it('rejects an unowned advanced generation and preserves its old local binding', async () => {
+    const value = await defaultResumeFixture({ ahead: true });
+    try {
+      await expect(value.delivery.commit('resume_advance', value.target)).rejects.toThrow();
+      expect(value.mutations).toBe(0);
+      expect(
+        (await value.store.loadCheckpointControl(value.message.workflowRunId!))?.resumeGeneration,
+      ).toBe(0);
+      expect(value.failures).toEqual([]);
+    } finally {
+      await value.close();
+    }
+  });
 });

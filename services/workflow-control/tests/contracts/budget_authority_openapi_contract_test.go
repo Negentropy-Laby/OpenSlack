@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -142,7 +143,7 @@ func assertBudgetDurableBranches(t *testing.T, document *openapi3.T) {
 		schema := document.Components.Schemas[name].Value
 		if schema == nil || schema.Properties["recordKind"].Value.Const != kind || schema.Properties["productionAuthority"].Value.Const != false ||
 			schema.Properties["authorityMode"].Value.Const != "local-qualification-v1" ||
-			schema.Properties["contractManifestSha256"].Value.Const != budgetstore.ContractManifestSHA256 {
+			!reflect.DeepEqual(schema.Properties["contractManifestSha256"].Value.Enum, []any{budgetstore.ContractManifestSHA256, budgetcontract.PreviousManifestSHA256}) {
 			t.Fatalf("durable branch %s binding drifted", name)
 		}
 	}

@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { locateWorkflowRunProjection } from './workflow-run-projection.js';
 import { TextDecoder } from 'node:util';
 import {
   readRunStateSnapshot,
@@ -366,10 +367,6 @@ function readBoundedText(path: string, maxBytes: number): string {
   } finally {
     closeSync(descriptor);
   }
-}
-
-function workflowsRunDir(rootDir: string, runId: string): string {
-  return resolve(rootDir, '.openslack.local', 'workflows', 'runs', runId);
 }
 
 async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> {
@@ -790,7 +787,7 @@ export async function getWorkflowRunProgress(
   options: GetWorkflowRunProgressOptions = {},
 ): Promise<WorkflowRunProgress | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const runDir = workflowsRunDir(rootDir, runId);
+  const { runDir, backend } = await locateWorkflowRunProjection(rootDir, runId);
   const warnings: string[] = [];
   const metaRead = await readJson<RunMetaFile>(join(runDir, 'meta.json'), 'run meta');
   const statusRead = await readJson<RunStatusFileLike>(join(runDir, 'status.json'), 'run status');
@@ -885,6 +882,11 @@ export async function getWorkflowRunProgress(
   }
   if (options.strictRead && warnings.length > 0) {
     throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
+  }
+  if (backend === 'go') {
+    warnings.push(
+      'Go recovery projection: local snapshot only; inspect Workflow Control for the authoritative head.',
+    );
   }
 
   const startedAt = metaRead.value?.startedAt;

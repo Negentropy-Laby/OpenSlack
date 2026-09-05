@@ -210,8 +210,8 @@
     },
     "schemas/workflow-control-authority-message.v2.schema.json": {
       "path": "schemas/workflow-control-authority-message.v2.schema.json",
-      "byteLength": 61575,
-      "sha256": "c9c372bf78f87a924e419347ef1cfae5360e4db296f2cd76e6c352d614f86ec0"
+      "byteLength": 62316,
+      "sha256": "2ce70a4c1f2a86c48ff2e0b624a906d6b7b665cd7ea5f3ed2f817420619db562"
     },
     "schemas/workflow-control-authority-prepared-message.v2.schema.json": {
       "path": "schemas/workflow-control-authority-prepared-message.v2.schema.json",
@@ -225,8 +225,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 44447,
-      "sha256": "6cb37581c70a6ec83a66c8e0be5dc66e594aaa97488c6fdae6bbccf00ec5420f"
+      "byteLength": 53613,
+      "sha256": "a976326583b23c8a6abfa3d5a66f511ddee90bc56e9d94240118b5da2bc418d6"
     }
   },
   "bundleFiles": [

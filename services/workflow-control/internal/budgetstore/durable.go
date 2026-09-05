@@ -13,7 +13,7 @@ const (
 	DurableRecordSchema       = "openslack.workflow_control_budget_durable_record.v1"
 	DurableWriter             = "workflow-control/budget-authority-server"
 	DurableAuthorityMode      = "local-qualification-v1"
-	ContractManifestSHA256    = "662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548"
+	ContractManifestSHA256    = "83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b"
 	MaxDurableAccountBytes    = 128 * 1024
 	MaxDurableRecordBytes     = 512 * 1024
 	RecordKindAccount         = "account"
@@ -60,7 +60,8 @@ func NewDurableRecord(kind string, projection budgetcontract.Record, authorityBu
 
 func ValidateDurableRecord(value DurableRecord) (DurableRecord, error) {
 	if value.Schema != DurableRecordSchema || value.Authority != Authority || value.Writer != DurableWriter ||
-		value.AuthorityMode != DurableAuthorityMode || value.ProductionAuthority || value.ContractManifestSHA256 != ContractManifestSHA256 ||
+		value.AuthorityMode != DurableAuthorityMode || value.ProductionAuthority ||
+		(value.ContractManifestSHA256 != ContractManifestSHA256 && value.ContractManifestSHA256 != budgetcontract.PreviousManifestSHA256) ||
 		!isLowerHash(value.AuthorityBuildHash) || !isLowerHash(value.OperationalProjectionHash) {
 		return DurableRecord{}, Failure(ErrorContentInvalid, "durable budget authority envelope binding is invalid", nil)
 	}

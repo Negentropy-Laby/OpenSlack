@@ -50,6 +50,16 @@ func TestMutationResponseExactEnvelopeAndCrossSpliceRejection(t *testing.T) {
 	if _, err := DecodeMutationResponse(tampered); !IsCode(err, ErrorIntegrity) {
 		t.Fatalf("tampered exact response err=%v, want %s", err, ErrorIntegrity)
 	}
+	// The prior manifest changed only source pins. Retain its immutable response bytes on replay.
+	previousExact := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+	previous, err := DecodeMutationResponse(previousExact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousReplay, err := EncodeMutationResponse(previous.Operation, previous.Record, previous.Receipt, previous.Reconciliation)
+	if err != nil || !bytes.Equal(previousExact, previousReplay) {
+		t.Fatalf("previous response was rewritten: %v", err)
+	}
 }
 
 const testResponseBuild = "8888888888888888888888888888888888888888888888888888888888888888"

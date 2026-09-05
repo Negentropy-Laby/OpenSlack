@@ -147,6 +147,13 @@ export interface WorkflowControlAuthorityPort {
     correlationId: string,
     signal?: AbortSignal,
   ): Promise<WorkflowControlAuthorityReceipt>;
+  /** Exact receipt lookup for a previously persisted transition intent; never mutates. */
+  readTransitionReceipt?(
+    record: WorkflowControlAuthorityRunRecord,
+    expected: WorkflowControlAuthorityExpectedHead,
+    correlationId: string,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityReceipt | null>;
   read(
     runId: string,
     route: WorkflowControlAuthorityRoute,
@@ -685,6 +692,53 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
         expectedBuildHash: this.#expectedBuildHash,
       }),
       signal,
+    );
+  }
+
+  async readTransitionReceipt(
+    record: WorkflowControlAuthorityRunRecord,
+    expected: WorkflowControlAuthorityExpectedHead,
+    correlationId: string,
+    signal?: AbortSignal,
+  ): Promise<WorkflowControlAuthorityReceipt | null> {
+    if (
+      record.workspaceId !== this.#workspaceId ||
+      record.route.authorityBuildHash !== this.#expectedBuildHash
+    ) {
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_INPUT_INVALID',
+        'Receipt lookup differs from the authority binding.',
+      );
+    }
+    const prepared = prepareWorkflowControlAuthorityMutation({
+      operation: 'transition',
+      record,
+      expected,
+      correlationId,
+      callerId: this.#callerId,
+      expectedBuildHash: this.#expectedBuildHash,
+    });
+    const response = await this.#send(`/v1/workflow-control/receipts/${prepared.idempotencyKey}`, {
+      method: 'GET',
+      signal,
+      headers: this.#headers(record.route),
+    });
+    if (!response.redirected && response.status === 404) {
+      await cancelWorkflowRunnerResponseBody(response);
+      return null;
+    }
+    if (response.redirected || response.status !== 200) {
+      await cancelWorkflowRunnerResponseBody(response);
+      return fail(
+        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RECONCILIATION_REQUIRED',
+        'Exact transition receipt is unavailable.',
+      );
+    }
+    return exactReceipt(
+      await readResponse(response, signal),
+      prepared,
+      this.#workspaceId,
+      this.#expectedBuildHash,
     );
   }
 

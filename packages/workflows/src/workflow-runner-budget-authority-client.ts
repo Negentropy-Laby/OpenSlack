@@ -1,4 +1,5 @@
 import {
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   canonicalWorkflowBudgetAuthorityJson,
   deriveWorkflowBudgetLedgerEntry,
   hashWorkflowBudgetAuthorityValue,
@@ -120,8 +121,9 @@ function durable(
     record.writer !== DURABLE_WRITER ||
     record.authorityMode !== 'local-qualification-v1' ||
     record.productionAuthority !== false ||
-    record.contractManifestSha256 !==
-      WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest ||
+    (record.contractManifestSha256 !==
+      WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest &&
+      record.contractManifestSha256 !== WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256) ||
     record.authorityBuildHash !== buildHash ||
     typeof projection !== 'object' ||
     projection === null ||

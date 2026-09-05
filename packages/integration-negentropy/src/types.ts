@@ -20,6 +20,8 @@ export interface NegentropyEvidenceProjection {
   readonly workflow: {
     readonly totalRuns: number;
     readonly statusCounts: Readonly<Record<string, number>>;
+    readonly evidenceSourceCounts?: Readonly<Record<string, number>>;
+    readonly readDiagnostics?: readonly { readonly runId: string; readonly code: string }[];
     readonly latestUpdatedAt?: string;
   };
   readonly prms: {

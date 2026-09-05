@@ -313,75 +313,83 @@ describe('GS8-B workflow runner worker', () => {
     expect(observedGeneration).toBe(1);
   });
 
-  it('seeds the first durable budget account from the current Workflow Control revision', async () => {
-    const base = v2Descriptor(0);
-    const sealed = {
-      ...base,
-      authorityRoute: {
-        backend: 'go' as const,
-        authority: 'workflow-control' as const,
-        routingEpoch: 1,
-        authorityBuildHash: 'a'.repeat(64),
-      },
-    };
-    const stop = new Error('fresh reserve reached');
-    let expectedRunRevision: number | undefined;
-    const context = {
-      resumeGeneration: 0,
-      async reserveBudget(
-        _payload: Readonly<Record<string, unknown>>,
-        source?: WorkflowRunnerAuthoritySourceAdapter,
-      ) {
-        const probe = await source!.probe({
-          operation: 'budget_reserve',
-        } as WorkflowRunnerAuthorityBindingStage);
-        if (
-          probe.state !== 'committed' ||
-          probe.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1'
+  it.each([0, 1])(
+    'seeds the first durable budget account from the current Workflow Control revision at generation %i',
+    async (resumeGeneration) => {
+      const base = v2Descriptor(0);
+      const sealed = {
+        ...base,
+        authorityRoute: {
+          backend: 'go' as const,
+          authority: 'workflow-control' as const,
+          routingEpoch: 1,
+          authorityBuildHash: 'a'.repeat(64),
+        },
+      };
+      const stop = new Error('fresh reserve reached');
+      let expectedRunRevision: number | undefined;
+      let expectedGeneration: number | undefined;
+      const context = {
+        resumeGeneration,
+        async reserveBudget(
+          _payload: Readonly<Record<string, unknown>>,
+          source?: WorkflowRunnerAuthoritySourceAdapter,
         ) {
-          throw new Error('prepared budget evidence unavailable');
-        }
-        const request = parseWorkflowBudgetAuthorityBytes(
-          Buffer.from(probe.evidence.preparedRequest.body, 'utf8'),
-        ) as WorkflowBudgetReserveRequest;
-        expectedRunRevision = request.expectedRunRevision;
-        throw stop;
-      },
-    } as unknown as WorkflowRunnerV2ExecutionContext;
-    const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary = {
-      callerId: 'workflow-runner-v2',
-      client: {
-        async readAccount() {
-          return null;
+          const probe = await source!.probe({
+            operation: 'budget_reserve',
+          } as WorkflowRunnerAuthorityBindingStage);
+          if (
+            probe.state !== 'committed' ||
+            probe.evidence.schema !== 'openslack.workflow_runner_budget_authority_evidence.v1'
+          ) {
+            throw new Error('prepared budget evidence unavailable');
+          }
+          const request = parseWorkflowBudgetAuthorityBytes(
+            Buffer.from(probe.evidence.preparedRequest.body, 'utf8'),
+          ) as WorkflowBudgetReserveRequest;
+          expectedRunRevision = request.expectedRunRevision;
+          expectedGeneration = probe.evidence.sourceAuthority.expectedResumeGeneration;
+          throw stop;
         },
-        async mutate() {
-          throw new Error('source mutation must remain closed');
+      } as unknown as WorkflowRunnerV2ExecutionContext;
+      const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary = {
+        callerId: 'workflow-runner-v2',
+        client: {
+          async readAccount() {
+            return null;
+          },
+          async mutate() {
+            throw new Error('source mutation must remain closed');
+          },
+          async pointRead() {
+            return null;
+          },
         },
-        async pointRead() {
-          return null;
-        },
-      },
-      now: () => '2026-08-22T00:00:00.000Z',
-    };
-    const runAuthority = readOnlyRunAuthority(workflowControlRunHead(sealed, { revision: 5 }));
+        now: () => '2026-08-22T00:00:00.000Z',
+      };
+      const runAuthority = readOnlyRunAuthority(
+        workflowControlRunHead(sealed, { revision: 5, resumeGeneration }),
+      );
 
-    const port = createWorkflowRunnerV2ProviderAttemptPort(
-      sealed,
-      context,
-      budgetAuthority,
-      runAuthority,
-    );
-    await expect(
-      port.reserve({
-        providerId: 'aby',
-        modelId: 'default',
-        providerRunId: 'provider-run.fresh',
-        providerAttempt: '1',
-        requestedTokens: '100',
-      }),
-    ).rejects.toBe(stop);
-    expect(expectedRunRevision).toBe(5);
-  });
+      const port = createWorkflowRunnerV2ProviderAttemptPort(
+        sealed,
+        context,
+        budgetAuthority,
+        runAuthority,
+      );
+      await expect(
+        port.reserve({
+          providerId: 'aby',
+          modelId: 'default',
+          providerRunId: 'provider-run.fresh',
+          providerAttempt: '1',
+          requestedTokens: '100',
+        }),
+      ).rejects.toBe(stop);
+      expect(expectedRunRevision).toBe(5);
+      expect(expectedGeneration).toBe(resumeGeneration);
+    },
+  );
 
   it.each([
     ['identity', { workflowId: 'workflow.drifted' }],

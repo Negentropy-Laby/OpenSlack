@@ -108,10 +108,11 @@ describe('WorkflowRunsView', () => {
             },
           ],
           logTail: [],
-          warnings: [],
+          warnings: ['Go recovery projection: local snapshot only.'],
         },
       ],
       selectedRun: undefined,
+      readWarnings: ['run.unreadable: evidence requires reconciliation.'],
       summary: {
         total: 1,
         running: 0,
@@ -124,6 +125,8 @@ describe('WorkflowRunsView', () => {
     const output = await renderRuns(model);
 
     expect(output).toContain('Dynamic Workflows / Runs');
+    expect(output).toContain('Go recovery projection: local snapshot only.');
+    expect(output).toContain('run.unreadable: evidence requires reconciliation.');
     expect(output).toContain('approvals 1');
     expect(output).toContain('Decision Summary');
     expect(output).toContain('Status: paused_waiting_approval | Owner: human');

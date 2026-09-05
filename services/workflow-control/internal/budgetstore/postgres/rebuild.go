@@ -218,6 +218,13 @@ func rebuildAccountFromLedger(genesis, head budgetstore.Account, entries []ledge
 		if err != nil {
 			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "encode workflow budget rebuilt account", err)
 		}
+		// Reconstruct the envelope written with this ledger entry, including its
+		// validated manifest. A read must not rewrite a previous-release hash chain.
+		outer.ContractManifestSHA256 = entry.durable.ContractManifestSHA256
+		exact, err = budgetstore.EncodeDurableRecord(outer)
+		if err != nil {
+			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "encode historical workflow budget rebuilt account", err)
+		}
 		if hash != recordString(ledger, "accountHash") {
 			return budgetstore.Account{}, budgetstore.Failure(budgetstore.ErrorIntegrity, "workflow budget rebuild account hash differs from ledger", nil)
 		}

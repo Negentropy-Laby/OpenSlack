@@ -90,6 +90,7 @@ function strictObject(properties: JsonRecord, required = Object.keys(properties)
 }
 
 const idSchema = { type: 'string', pattern: SAFE_ID_PATTERN };
+const nullableIdSchema = { anyOf: [idSchema, { type: 'null' }] };
 const refSchema = { type: 'string', pattern: SAFE_REF_PATTERN };
 const hashSchema = { type: 'string', pattern: HASH_PATTERN };
 const nullableHashSchema = { anyOf: [hashSchema, { type: 'null' }] };
@@ -269,16 +270,31 @@ function addedPayloadSchemas(): Record<string, JsonRecord> {
       authorityReceiptHash: hashSchema,
       expiresAt: timestampSchema,
     }),
-    resume_offer: strictObject({
-      checkpointId: idSchema,
-      checkpointHash: hashSchema,
-      nextPhaseId: idSchema,
-      nextPhaseIndex: safeIntegerSchema,
-      newResumeGeneration: positiveIntegerSchema,
-      newAttemptId: idSchema,
-      authorityReceiptHash: hashSchema,
-      expiresAt: timestampSchema,
-    }),
+    resume_offer: {
+      ...strictObject({
+        checkpointId: nullableIdSchema,
+        checkpointHash: nullableHashSchema,
+        nextPhaseId: idSchema,
+        nextPhaseIndex: safeIntegerSchema,
+        newResumeGeneration: positiveIntegerSchema,
+        newAttemptId: idSchema,
+        authorityReceiptHash: hashSchema,
+        expiresAt: timestampSchema,
+      }),
+      allOf: [
+        {
+          if: { properties: { checkpointId: { type: 'null' } } },
+          then: {
+            properties: {
+              checkpointHash: { type: 'null' },
+              nextPhaseId: { const: 'phase-0' },
+              nextPhaseIndex: { const: 0 },
+            },
+          },
+          else: { properties: { checkpointHash: hashSchema } },
+        },
+      ],
+    },
   };
 }
 
@@ -580,6 +596,16 @@ function positiveMessages(): WorkflowControlAuthorityMessage[] {
       authorityReceiptHash: hashes.receipt,
       expiresAt: '2026-08-04T03:05:00.000Z',
     }),
+    message('resume_offer', {
+      checkpointId: null,
+      checkpointHash: null,
+      nextPhaseId: 'phase-0',
+      nextPhaseIndex: 0,
+      newResumeGeneration: 2,
+      newAttemptId: 'attempt-gs9-first-phase',
+      authorityReceiptHash: hashes.receipt,
+      expiresAt: '2026-08-04T03:05:00.000Z',
+    }),
     message('heartbeat', {
       observedAt: '2026-08-04T03:01:00.000Z',
       leaseExpiresAt: '2026-08-04T03:02:00.000Z',
@@ -685,6 +711,15 @@ function goldenVectors(): JsonRecord {
   jsonRecord(rejectedBudgetAuthorization.payload, 'budget authorization payload').status =
     'rejected';
   const oldProtocol = { ...checkpoint, protocolVersion: 'openslack.workflow_runner.v1' };
+  const firstPhaseResume = messages.find(
+    (entry) => entry.kind === 'resume_offer' && entry.payload.checkpointId === null,
+  )!;
+  const invalidResumes = [
+    ['resume-missing-checkpoint-hash', { checkpointId: 'checkpoint-verify-1' }],
+    ['resume-missing-checkpoint-id', { checkpointHash: hashes.checkpoint }],
+    ['resume-without-checkpoint-skips-phase', { nextPhaseIndex: 1 }],
+    ['resume-without-checkpoint-names-later-phase', { nextPhaseId: 'deliver' }],
+  ] as const;
   return {
     schema: 'openslack.workflow_control_authority_golden_vectors.v2',
     contractVersion: WORKFLOW_CONTROL_AUTHORITY_CONTRACT_VERSION,
@@ -721,6 +756,15 @@ function goldenVectors(): JsonRecord {
       ],
     },
     negative: [
+      ...invalidResumes.map(([id, payload]) => {
+        const input = { ...firstPhaseResume, payload: { ...firstPhaseResume.payload, ...payload } };
+        return {
+          id,
+          operation: 'validate_message',
+          input,
+          expectedError: errorOf(() => validateWorkflowControlAuthorityMessage(input)),
+        };
+      }),
       {
         id: 'approval-plane-mismatch',
         operation: 'validate_state',

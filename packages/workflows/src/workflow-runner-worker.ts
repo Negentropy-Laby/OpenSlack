@@ -21,6 +21,7 @@ import {
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import { RunStore } from './run-store.js';
+import { WorkflowRunnerResumeSourceStore } from './internal/workflow-runner-resume-source.js';
 import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
 import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 import {
@@ -1703,12 +1704,11 @@ function resumeEvidence(
     .digest('hex');
   const priorCheckpoint = envelope.observation.priorCheckpoint;
   if (
-    !priorCheckpoint ||
     target.attemptId === null ||
     target.authorityBuildHash === null ||
     typeof target.payload.leaseExpiresAt !== 'string'
   ) {
-    throw new Error('Resume source evidence lacks its prior checkpoint or lease identity.');
+    throw new Error('Resume source evidence lacks its lease identity.');
   }
   return Object.freeze({
     schema: 'openslack.workflow_runner_resume_authority_evidence.v1',
@@ -1737,10 +1737,12 @@ function resumeEvidence(
     },
     envelope,
     envelopeHash,
-    priorCheckpointId: priorCheckpoint.checkpointId,
-    priorCheckpointHash: createHash('sha256')
-      .update(canonicalWorkflowControlAuthorityJson(priorCheckpoint), 'utf8')
-      .digest('hex'),
+    priorCheckpointId: priorCheckpoint?.checkpointId ?? null,
+    priorCheckpointHash: priorCheckpoint
+      ? createHash('sha256')
+          .update(canonicalWorkflowControlAuthorityJson(priorCheckpoint), 'utf8')
+          .digest('hex')
+      : null,
     nextPhaseId: envelope.observation.nextPhaseId!,
     nextPhaseIndex: envelope.observation.nextPhaseIndex!,
     logicalResumeAttemptId: `logical.resume.${createHash('sha256')
@@ -1752,6 +1754,7 @@ function resumeEvidence(
 
 function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
   config: WorkflowRunnerV2GoAuthorityWorkerConfig,
+  authority: WorkflowControlAuthorityPort,
 ): WorkflowRunnerV2AuthoritySourceFactories {
   return Object.freeze({
     async checkpoint() {
@@ -1775,54 +1778,16 @@ function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
       ) {
         throw new Error('Resume target lacks its exact runner binding.');
       }
-      const store = new RunStore({
-        baseDir: join(config.workspaceRoot, '.openslack.local', 'workflows'),
-      });
-      const committedState = async () => {
-        const state = await store.loadCheckpointControl(target.workflowRunId!);
-        return state &&
-          state.activeBinding.workspaceId === target.workspaceId &&
-          state.activeBinding.jobId === target.jobId &&
-          state.activeBinding.attemptId === target.attemptId &&
-          state.activeBinding.leaseId === target.leaseId &&
-          state.activeBinding.fencingToken === target.fencingToken &&
-          state.resumeGeneration === target.resumeGeneration! + 1
-          ? state
-          : null;
-      };
+      const store = new WorkflowRunnerResumeSourceStore(config.workspaceRoot, target, authority);
       return createWorkflowRunnerResumeSourceAdapter({
-        pointRead: async () => {
-          const state = await committedState();
+        pointRead: async (stage) => {
+          const state = await store.committed(stage);
           return state
             ? { state: 'committed' as const, evidence: resumeEvidence(state, target) }
             : { state: 'not_committed' as const };
         },
-        commit: async () => {
-          const prior = await store.loadCheckpointControl(target.workflowRunId!);
-          const priorCheckpoint = prior?.checkpoints.at(-1);
-          if (!prior || !priorCheckpoint) {
-            throw new Error('Resume source lacks its durable prior checkpoint.');
-          }
-          const binding = {
-            ...prior.activeBinding,
-            workspaceId: target.workspaceId!,
-            jobId: target.jobId!,
-            workflowRunId: target.workflowRunId!,
-            attemptId: target.attemptId!,
-            leaseId: target.leaseId!,
-            fencingToken: target.fencingToken!,
-            correlationId: target.correlationId,
-          };
-          await store.beginCheckpointResumeGeneration(
-            target.workflowRunId!,
-            binding,
-            `phase-${priorCheckpoint.phaseIndex + 1}`,
-            priorCheckpoint.phaseIndex + 1,
-          );
-          const state = await committedState();
-          if (!state) throw new Error('Resume source commit is not point-readable.');
-          return resumeEvidence(state, target);
-        },
+        commit: async (stage, receipt) =>
+          resumeEvidence(await store.commitResume(stage, receipt), target),
       });
     },
   });
@@ -2050,6 +2015,7 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
   authority: WorkflowControlAuthorityPort,
   sourceFactories: WorkflowRunnerV2AuthoritySourceFactories = createWorkflowRunnerV2DefaultAuthoritySourceFactories(
     config,
+    authority,
   ),
 ): Promise<WorkflowRunnerV2RuntimeDeliveryPort> {
   const runtime = new WorkflowRunnerAuthorityBindingRuntime({

@@ -249,6 +249,18 @@ SET exact_resolution_receipt_bytes=$2 WHERE binding_id=$1 AND state='resolved'`,
 		})
 	}
 
+	t.Run("resume before first checkpoint completes both control acknowledgements", func(t *testing.T) {
+		view := exerciseGS9F2BindingLifecycleUntil(t, repository, runnerbindingcontract.OperationResumeAdvance,
+			"f2-resume-first-phase", nil, "completed", "", "resumeFirstPhase")
+		_, decision := gs9f2BoundControl(t, repository, view, true)
+		if decision.Kind != authoritycontract.KindResumeOffer || decision.Payload["checkpointId"] != nil ||
+			decision.Payload["checkpointHash"] != nil || decision.Payload["nextPhaseId"] != "phase-0" ||
+			decision.Payload["nextPhaseIndex"] != int64(0) || decision.Payload["newResumeGeneration"] != int64(1) ||
+			view.State != "completed" || len(view.ControlACKs) != 2 {
+			t.Fatalf("first-phase resume did not complete its exact nullable decision: %+v %+v", decision, view)
+		}
+	})
+
 	t.Run("decision ACK4 is followed by ordinary cancel and cancel_ack", func(t *testing.T) {
 		ctx := context.Background()
 		view := exerciseGS9F2BindingLifecycle(t, repository, runnerbindingcontract.OperationEffectAuthorize,

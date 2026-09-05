@@ -135,17 +135,30 @@ func validateAddedPayload(kind Kind, value any) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, field := range []string{"checkpointId", "nextPhaseId", "newAttemptId"} {
+		if record["checkpointId"] != nil {
+			if _, err := requireIdentifier(record["checkpointId"], path+"/checkpointId"); err != nil {
+				return nil, err
+			}
+		}
+		if record["checkpointHash"] != nil {
+			if _, err := requireHash(record["checkpointHash"], path+"/checkpointHash"); err != nil {
+				return nil, err
+			}
+		}
+		nextPhaseIndex, err := requireInteger(record["nextPhaseIndex"], path+"/nextPhaseIndex", 0)
+		if err != nil {
+			return nil, err
+		}
+		if (record["checkpointId"] == nil) != (record["checkpointHash"] == nil) ||
+			(record["checkpointId"] == nil && (record["nextPhaseId"] != "phase-0" || nextPhaseIndex != 0)) {
+			return nil, failure(ErrorInvalid, path, "Only phase-0 reentry permits an empty checkpoint pair.")
+		}
+		for _, field := range []string{"nextPhaseId", "newAttemptId"} {
 			if _, err := requireIdentifier(record[field], path+"/"+field); err != nil {
 				return nil, err
 			}
 		}
-		for _, field := range []string{"checkpointHash", "authorityReceiptHash"} {
-			if _, err := requireHash(record[field], path+"/"+field); err != nil {
-				return nil, err
-			}
-		}
-		if _, err := requireInteger(record["nextPhaseIndex"], path+"/nextPhaseIndex", 0); err != nil {
+		if _, err := requireHash(record["authorityReceiptHash"], path+"/authorityReceiptHash"); err != nil {
 			return nil, err
 		}
 		if _, err := requireInteger(record["newResumeGeneration"], path+"/newResumeGeneration", 1); err != nil {

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { findWorkflow, loadWorkflow } from './loader.js';
+import { locateWorkflowRunProjection } from './workflow-run-projection.js';
 import type { WorkflowRunScriptSource } from './types.js';
 
 export interface SaveWorkflowOptions {
@@ -60,7 +61,8 @@ export async function saveWorkflowRunScript(
   options: SaveWorkflowRunOptions,
 ): Promise<SaveWorkflowResult & WorkflowRunScriptSource> {
   const rootDir = options.rootDir ?? process.cwd();
-  const metaPath = resolve(rootDir, '.openslack.local', 'workflows', 'runs', runId, 'meta.json');
+  const { runDir } = await locateWorkflowRunProjection(rootDir, runId);
+  const metaPath = join(runDir, 'meta.json');
   let meta: { workflowName?: string };
   try {
     meta = JSON.parse(await readFile(metaPath, 'utf-8')) as { workflowName?: string };
