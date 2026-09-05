@@ -13,6 +13,8 @@ import { join, resolve } from 'node:path';
 import {
   locateWorkflowRunProjection,
   type WorkflowRunProjectionLocation,
+  type WorkflowRunReadContext,
+  verifyWorkflowRunProjectionLocation,
 } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
@@ -93,6 +95,8 @@ export interface GetWorkflowRunProgressOptions {
   loadWorkflowManifest?: boolean;
   loadCostConfig?: boolean;
   strictRead?: boolean;
+  /** @internal Reuse the location already verified by this read query. */
+  readContext?: WorkflowRunReadContext;
 }
 
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
@@ -804,11 +808,16 @@ export async function getWorkflowRunProgress(
   options: GetWorkflowRunProgressOptions = {},
 ): Promise<WorkflowRunProgress | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const location = await locateWorkflowRunProjection(rootDir, runId);
+  const location = await locateWorkflowRunProjection(rootDir, runId, {
+    readContext: options.readContext,
+  });
   if (location.state === 'missing') return null;
   if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics);
   try {
-    return await readLocatedProgress(runId, rootDir, location, options);
+    await verifyWorkflowRunProjectionLocation(runId, location);
+    const progress = await readLocatedProgress(runId, rootDir, location, options);
+    await verifyWorkflowRunProjectionLocation(runId, location);
+    return progress;
   } catch (error) {
     throw new WorkflowRunReadError(
       error instanceof WorkflowRunReadError
