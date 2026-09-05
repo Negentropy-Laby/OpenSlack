@@ -300,7 +300,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowExecutionAuthoritySource": {
 			Path:   "packages/workflows/src/execute.ts",
-			SHA256: "6a2e30fe82825fa9912ccd41b5dd2fcf42ddb52883b57fe8615f3a4908e13a7b",
+			SHA256: "e7bf367cf3fcd7ce0a51f1f00f9b0a09c3143eb2896633cc6ad795c6ed753832",
 		},
 		"workflowResumeReadOnlySource": {
 			Path:   "packages/workflows/src/resume.ts",
@@ -348,11 +348,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerSourceInvariantTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-			SHA256: "adccab0774bc78ababaeb8470b44660fd5932cde5023464760ad39e159a12b6f",
+			SHA256: "6fed02908603332784df9ca3455e650757c9ac0ef47cb3b5bd7232467a10a50a",
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
-			SHA256: "dbacf260242563e03b0c40b08216f8a7a9d50f96174e3104e39961ddead003d2",
+			SHA256: "c7317ef0e6013f99a7c88c228c7ab642e59014e507140bf3bda7b3ecafb01d6e",
 		},
 		"workflowTUIExecutorsSource": {
 			Path:   "apps/cli/src/commands/tui-executors.ts",
@@ -376,7 +376,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowGoCheckSource": {
 			Path:   "scripts/go-check.sh",
-			SHA256: "e6ae34a5aa40763a58932542f893545dd7ddf27b17e50799b1f080994404ae69",
+			SHA256: "ee126666d1190fbe166ced93ac6d8dda54e5e9b22ef6135dc958fe2a5c868c4f",
 		},
 		"workflowHostedGateSource": {
 			Path:   ".github/workflows/notification-delivery-service.yml",

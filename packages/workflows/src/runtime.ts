@@ -229,20 +229,6 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
 }
 
 /** @internal Accepted worker path; intentionally not exported from the package root. */
-export function createRuntimeWithCheckpointAuthority(
-  options: RuntimeOptions,
-  authority: WorkflowCheckpointLeaseAuthority,
-): WorkflowCheckpointRuntime {
-  if (!options.runStore) {
-    throw workflowCheckpointError(
-      'WORKFLOW_CHECKPOINT_BINDING_INVALID',
-      'Workflow checkpoint commit requires an accepted runner binding and RunStore.',
-    );
-  }
-  return createRuntimeInternal(options, authority) as WorkflowCheckpointRuntime;
-}
-
-/** @internal Accepted worker path; intentionally not exported from the package root. */
 export function createRuntimeWithHostAuthorities(
   options: RuntimeOptions,
   checkpointAuthority: WorkflowCheckpointLeaseAuthority,

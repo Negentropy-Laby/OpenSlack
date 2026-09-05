@@ -174,7 +174,7 @@
     },
     "workflowExecutionAuthoritySource": {
       "path": "packages/workflows/src/execute.ts",
-      "sha256": "6a2e30fe82825fa9912ccd41b5dd2fcf42ddb52883b57fe8615f3a4908e13a7b"
+      "sha256": "e7bf367cf3fcd7ce0a51f1f00f9b0a09c3143eb2896633cc6ad795c6ed753832"
     },
     "workflowResumeReadOnlySource": {
       "path": "packages/workflows/src/resume.ts",
@@ -222,11 +222,11 @@
     },
     "workflowRunnerSourceInvariantTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-      "sha256": "adccab0774bc78ababaeb8470b44660fd5932cde5023464760ad39e159a12b6f"
+      "sha256": "6fed02908603332784df9ca3455e650757c9ac0ef47cb3b5bd7232467a10a50a"
     },
     "workflowCLICompositionSource": {
       "path": "apps/cli/src/commands/collaboration.ts",
-      "sha256": "dbacf260242563e03b0c40b08216f8a7a9d50f96174e3104e39961ddead003d2"
+      "sha256": "c7317ef0e6013f99a7c88c228c7ab642e59014e507140bf3bda7b3ecafb01d6e"
     },
     "workflowTUIExecutorsSource": {
       "path": "apps/cli/src/commands/tui-executors.ts",
@@ -250,7 +250,7 @@
     },
     "workflowGoCheckSource": {
       "path": "scripts/go-check.sh",
-      "sha256": "e6ae34a5aa40763a58932542f893545dd7ddf27b17e50799b1f080994404ae69"
+      "sha256": "ee126666d1190fbe166ced93ac6d8dda54e5e9b22ef6135dc958fe2a5c868c4f"
     },
     "workflowHostedGateSource": {
       "path": ".github/workflows/notification-delivery-service.yml",
@@ -351,6 +351,14 @@
     "workflowRunProjectionReadTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
       "sha256": "f3cf4a23d1aa59a2d0c03feebecefde9b2be3b1142d6f37a97430b23eae4f538"
+    },
+    "workflowGoExecutionRecoveryTest": {
+      "path": "packages/workflows/src/__tests__/execute-go-authority.test.ts",
+      "sha256": "5f61881238629bf4c5e385f9ae9f08dd320eb1f9f37ab86ffff19d5197026274"
+    },
+    "runnerMixedOrphanRestartTest": {
+      "path": "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
+      "sha256": "d4da6b2efab7b42ddd2dc46964a52e4a22f8decc88c2dcbba4552dcc5be280cc"
     }
   },
   "contractInputs": {

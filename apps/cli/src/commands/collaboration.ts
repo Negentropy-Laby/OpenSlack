@@ -2236,7 +2236,6 @@ export function collaborationCommands(): Command {
         if (!admitted) throw new Error('Workflow runner resume was not admitted.');
         const result = await executeWorkflowThroughRunner({
           workspaceRoot: root,
-          ...composition,
           workflowRunId: runId,
           workflowSource: found.source,
           workflowSourceBytes: await readWorkflowRunnerSourceBytes({

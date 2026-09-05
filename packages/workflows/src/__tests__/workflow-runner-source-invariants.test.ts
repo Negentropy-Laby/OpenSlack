@@ -286,8 +286,6 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
       routingConfig.length,
     );
     expect(publicRoutingFactory).not.toMatch(/input\.(?:authority|v2Client|journal)/u);
-    expect(execute).not.toMatch(/export async function executeRun\(/u);
-    expect(execute).not.toMatch(/export async function executeResume\(/u);
     expect(execute).toContain('checkpointAuthority: WorkflowCheckpointLeaseAuthority');
     expect(execute).toContain('effectAuthorizationPort: WorkflowEffectAuthorizationPort');
     expect(

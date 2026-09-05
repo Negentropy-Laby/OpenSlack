@@ -607,8 +607,9 @@ mints a workflow resume identity distinct from the runner lease attempt; it does
 lease identity carried by later envelopes and receipts. Receipt transport uncertainty for an
 already persisted terminal cannot replace that terminal with reconciliation.
 
-The service profile is `workflow-control-runner-v2-foundation-v1`. Its mechanical gate remains a
-strict superset of the earlier GS7-B, GS8-B, and GS9-B/C/D/E repository checks, but its evidence
+The historical F1 service profile was `workflow-control-runner-v2-foundation-v1`; GS9-I retired
+that entry profile. The current service profile is `workflow-control-runner-v2-runtime-delivery-v1`,
+which retains the applicable earlier qualification components. The historical F1 evidence
 ceiling is only `GS9-F1 FOUNDATION LOCAL_PASS / runtime delivery NOT_CLAIMED`. Production v2
 submission/routing, new-record acceptance, canary, TypeScript fallback removal, release, live,
 Qoder, tag, npm, and production remain unclaimed or not activated.

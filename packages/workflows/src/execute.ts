@@ -626,6 +626,12 @@ export async function executeGoAuthorityResume(
       `status "${status.status}" cannot be replayed automatically`,
     );
   }
+  if (status.pendingAgentControls?.length) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'legacy pending agent controls are read-only evidence and cannot authorize Go execution',
+    );
+  }
   let currentWorkflowHash: string;
   try {
     currentWorkflowHash = resolveWorkflowIdentityHash(workflow, manifest);

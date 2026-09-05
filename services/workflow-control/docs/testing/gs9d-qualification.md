@@ -1,13 +1,15 @@
 # GS9-D Qualification
 
-GS9-D qualification proves post-commit effect-decision and audit parity while TypeScript remains
-the sole effect decision and execution authority.
+This document records historical GS9-D post-commit effect-decision and audit parity,
+when TypeScript was the sole effect decision and execution authority.
 
-The reviewed gate is `scripts/go-check.sh services/workflow-control` with runtime profile
-`workflow-control-effect-shadow-v1`. It is a strict superset of the GS7-B shadow, GS8-B runner,
-GS9-B authority, and GS9-C checkpoint-shadow gates.
+GS9-I retired the `workflow-control-effect-shadow-v1` entry profile. Run the current gate
+with `bash scripts/go-check.sh services/workflow-control` and the checked-in
+`workflow-control-runner-v2-runtime-delivery-v1` configuration. That gate retains the
+applicable GS9-D parity checks alongside the current runner qualification; do not restore
+the retired profile to perform a drain or rollback.
 
-Required evidence includes:
+The historical evidence included:
 
 - deterministic regeneration and exact checking of the D1 effect-control contract and D3 shadow
   envelope, receipt, head, outbox, schema, manifest, and golden-vector bundle;

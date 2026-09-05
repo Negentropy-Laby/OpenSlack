@@ -27,9 +27,10 @@ bunx vitest run packages/workflows/src/__tests__/workflow-runner-authority-bindi
 (cd services/workflow-control && go test -race ./runnerbindingcontract -count=1)
 ```
 
-The service config must select
-`workflow-control-runner-v2-foundation-v1`. Its mechanical repository gate is a strict superset of
-GS7-B, GS8-B, and GS9-B/C/D/E and runs:
+The historical F1 service config selected `workflow-control-runner-v2-foundation-v1`.
+GS9-I retired that entry profile. The current checked-in configuration selects
+`workflow-control-runner-v2-runtime-delivery-v1`; keep it when running the gate above.
+The F1 component of that gate retains these applicable GS7-B and GS9-B/C/D/E checks:
 
 - frozen runner-v1 and authority-v2 parity checks without modifying their source bytes;
 - exact ordered `[v1, v2]` negotiation, v2 selection, old-worker and capability rejection, and no
