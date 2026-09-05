@@ -1,54 +1,53 @@
-import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { RunStatus } from './types.js';
 import {
   openWorkflowRunReadOnly,
   locateWorkflowRunProjection,
-  resolveWorkflowRunProjectionRoot,
+  WorkflowRunReadContext,
+  verifyWorkflowRunProjectionLocation,
 } from './workflow-run-projection.js';
+import {
+  WorkflowRunReadError,
+  workflowRunReadDiagnostic,
+  renderWorkflowRunReadDiagnostic,
+  type WorkflowRunReadDiagnostic,
+} from './workflow-run-read-errors.js';
 
 export interface ListWorkflowRunsOptions {
   rootDir?: string;
   status?: RunStatus['status'];
+  /** @internal Shared only by one read query. */
+  readContext?: WorkflowRunReadContext;
 }
 
-export interface WorkflowRunReadDiagnostic {
-  runId: string;
-  code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED';
-}
+export type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
 export type WorkflowRunList = RunStatus[] & { readonly diagnostics: WorkflowRunReadDiagnostic[] };
 
 export async function listWorkflowRuns(
   options: ListWorkflowRunsOptions = {},
 ): Promise<WorkflowRunList> {
   const rootDir = options.rootDir ?? process.cwd();
-  const readEntries = async (backend: 'ts-local' | 'go') => {
-    try {
-      return (
-        await readdir(join(resolveWorkflowRunProjectionRoot(rootDir, backend), 'runs'), {
-          withFileTypes: true,
-        })
-      )
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
-    }
-  };
-  const entries = new Set((await Promise.all([readEntries('ts-local'), readEntries('go')])).flat());
-  const runs = Object.assign([] as RunStatus[], { diagnostics: [] as WorkflowRunReadDiagnostic[] });
-  Object.defineProperty(runs, 'diagnostics', { enumerable: false });
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
+  readContext.assertRoot(rootDir);
+  const diagnostics: WorkflowRunReadDiagnostic[] = [];
+  const roots = await Promise.all([readContext.entries('ts-local'), readContext.entries('go')]);
+  diagnostics.push(...roots.flatMap((root) => root.diagnostics));
+  const entries = new Set(roots.flatMap((root) => root.names));
+  const runs = Object.assign([] as RunStatus[], { diagnostics });
   for (const entry of entries) {
     try {
-      const run = await showWorkflowRun(entry, { rootDir });
-      if (!run) throw new Error('Selected evidence is missing.');
+      const run = await showWorkflowRun(entry, { rootDir, readContext });
+      if (!run) {
+        diagnostics.push({ scope: 'run', runId: entry, code: 'WORKFLOW_RUN_PROJECTION_MISSING' });
+        continue;
+      }
+      diagnostics.push(...(run.readDiagnostics ?? []));
       if (!options.status || run.status === options.status) runs.push(run);
-    } catch {
-      runs.diagnostics.push({
-        runId: entry,
-        code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
-      });
+    } catch (error) {
+      diagnostics.push(
+        ...(error instanceof WorkflowRunReadError
+          ? error.diagnostics
+          : [workflowRunReadDiagnostic(error, { scope: 'run', runId: entry })]),
+      );
     }
   }
   return runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -56,15 +55,42 @@ export async function listWorkflowRuns(
 
 export async function showWorkflowRun(
   runId: string,
-  options: { rootDir?: string } = {},
+  options: { rootDir?: string; readContext?: WorkflowRunReadContext } = {},
 ): Promise<RunStatus | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const { backend } = await locateWorkflowRunProjection(rootDir, runId);
-  const run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
+  const location = await locateWorkflowRunProjection(rootDir, runId, {
+    readContext: options.readContext,
+  });
+  if (location.state === 'missing') return null;
+  if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics);
+  const { backend, diagnostics } = location;
+  let run: RunStatus | null;
+  try {
+    await verifyWorkflowRunProjectionLocation(runId, location);
+    run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
+    await verifyWorkflowRunProjectionLocation(runId, location);
+  } catch (error) {
+    if (error instanceof WorkflowRunReadError) throw error;
+    throw new WorkflowRunReadError([
+      workflowRunReadDiagnostic(error, { scope: 'run', runId, backend }),
+    ]);
+  }
+  if (
+    run &&
+    (run.runId !== runId ||
+      typeof run.updatedAt !== 'string' ||
+      typeof run.status !== 'string' ||
+      !Array.isArray(run.phases))
+  ) {
+    throw new WorkflowRunReadError([
+      { scope: 'run', runId, backend, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+    ]);
+  }
   return run
     ? {
         ...run,
         evidenceSource: backend === 'go' ? 'go-recovery-projection' : 'typescript-historical',
+        ...(diagnostics.length ? { readDiagnostics: diagnostics } : {}),
       }
     : null;
 }
@@ -72,10 +98,7 @@ export async function showWorkflowRun(
 export function renderWorkflowRuns(
   runs: RunStatus[] & { diagnostics?: WorkflowRunReadDiagnostic[] },
 ): string {
-  const diagnostics = (runs.diagnostics ?? []).map(
-    (item) =>
-      `Run ${JSON.stringify(item.runId)}: ${item.code}. Use runs inspect to reconcile its evidence.`,
-  );
+  const diagnostics = (runs.diagnostics ?? []).map(renderWorkflowRunReadDiagnostic);
   if (runs.length === 0)
     return [
       diagnostics.length ? 'No readable workflow runs found.' : 'No workflow runs found.',
@@ -97,6 +120,7 @@ export function renderWorkflowRun(run: RunStatus): string {
   lines.push(`Run: ${run.runId}`);
   lines.push(`Workflow: ${run.workflowName}`);
   lines.push(`Evidence source: ${run.evidenceSource ?? 'local evidence'}`);
+  lines.push(...(run.readDiagnostics ?? []).map(renderWorkflowRunReadDiagnostic));
   if (run.evidenceSource === 'go-recovery-projection')
     lines.push(
       'Status is a local recovery snapshot; inspect Workflow Control for the authoritative head.',

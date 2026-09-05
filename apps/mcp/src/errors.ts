@@ -1,4 +1,5 @@
 import { GovernedPlanServiceError, GovernedPlanStoreError } from '@openslack/operator';
+import { WorkflowRunReadError } from '@openslack/workflows';
 
 export class OpenSlackMcpProtocolError extends Error {
   constructor(
@@ -23,6 +24,13 @@ export class OpenSlackMcpToolError extends Error {
 
 export function safeToolError(error: unknown): OpenSlackMcpToolError {
   if (error instanceof OpenSlackMcpToolError) return error;
+  if (error instanceof WorkflowRunReadError) {
+    return new OpenSlackMcpToolError(
+      error.code,
+      error.message,
+      error.code.includes('RECONCILIATION') ? 'blocked' : 'failed',
+    );
+  }
   if (error instanceof GovernedPlanServiceError) {
     return new OpenSlackMcpToolError(
       error.code,

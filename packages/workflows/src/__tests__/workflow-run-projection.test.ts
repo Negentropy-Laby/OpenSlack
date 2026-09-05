@@ -1,7 +1,8 @@
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   locateWorkflowRunProjection,
   resolveWorkflowRunProjectionRoot,
@@ -15,11 +16,24 @@ import {
   renderWorkflowRuns,
 } from '../workflow-runs.js';
 import { getWorkflowRunProgress } from '../workflow-progress.js';
-import { WorkflowRunRouter, createWorkflowRunRouteJournal } from '../workflow-run-routing.js';
+import {
+  WorkflowRunRouter,
+  WorkflowRunRouteJournal,
+  WorkflowRunRoutingError,
+  createWorkflowRunRouteJournal,
+} from '../workflow-run-routing.js';
+import { WorkflowRunReadError, workflowRunReadDiagnostic } from '../workflow-run-read-errors.js';
+import { saveWorkflowRunScript } from '../workflow-save.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  return { ...actual, readdir: vi.fn(actual.readdir) };
+});
 
 const roots: string[] = [];
 const HASH = 'a'.repeat(64);
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 async function fixture() {
@@ -32,7 +46,7 @@ async function fixture() {
     });
     await store.initRun(runId, {
       runId,
-      workflowName: 'workflow.test',
+      workflowName: 'workflow-test',
       mode: 'execute',
       manifestHash: HASH,
       args: {},
@@ -80,9 +94,11 @@ describe('workflow run evidence selection', () => {
     await seed('go', 'run.healthy');
     const runs = await listWorkflowRuns({ rootDir: root });
     expect(runs.map((run) => run.runId)).toEqual(['run.healthy']);
-    expect(runs.diagnostics).toEqual([
-      { runId: 'run.same', code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' },
-    ]);
+    expect(runs.diagnostics).toContainEqual({
+      scope: 'run',
+      runId: 'run.same',
+      code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
+    });
     expect(renderWorkflowRuns(runs)).toContain(
       '"run.same": WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
     );
@@ -106,7 +122,7 @@ describe('workflow run evidence selection', () => {
       routingEpoch: 21,
       authorityBuildHash: HASH,
       qualificationEnvironmentId: 'recovery.test',
-      workflowAllowlist: ['workflow.test'],
+      workflowAllowlist: ['workflow-test'],
       runAllowlist: [],
       expiresAt: '2026-09-06T00:00:00.000Z',
     });
@@ -114,7 +130,7 @@ describe('workflow run evidence selection', () => {
       router.select({
         workspaceId: 'workspace.test',
         runId: 'run.routed',
-        workflowId: 'workflow.test',
+        workflowId: 'workflow-test',
         workflowVersion: '1.0.0',
         workflowSourceHash: HASH,
         manifestHash: HASH,
@@ -124,8 +140,131 @@ describe('workflow run evidence selection', () => {
       }),
     );
     expect(await locateWorkflowRunProjection(root, 'run.routed')).toMatchObject({ backend: 'go' });
-    expect(await listWorkflowRuns({ rootDir: root })).toMatchObject([
+    expect([...(await listWorkflowRuns({ rootDir: root }))]).toMatchObject([
       { runId: 'run.routed', status: 'paused' },
     ]);
   }, 30_000);
+
+  it('returns typed missing and invalid outcomes without creating journal state', async () => {
+    const { root } = await fixture();
+    expect(await locateWorkflowRunProjection(root, 'run.missing')).toEqual({
+      state: 'missing',
+      diagnostics: [],
+    });
+    for (const id of ['_x', '../x', 'x/y', 'x\\y', 'a'.repeat(257)]) {
+      expect(await locateWorkflowRunProjection(root, id)).toMatchObject({ state: 'invalid_id' });
+      await expect(showWorkflowRun(id, { rootDir: root })).rejects.toMatchObject({
+        code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
+      });
+    }
+    expect(await locateWorkflowRunProjection(root, 'x:stream')).toMatchObject({
+      state: process.platform === 'win32' ? 'invalid_id' : 'missing',
+    });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('keeps historical evidence readable when the routed Go projection is missing', async () => {
+    const { root, seed } = await fixture();
+    await seed('ts-local', 'run.routed');
+    const receipt = { receipt: { route: { backend: 'go' } } } as Awaited<
+      ReturnType<WorkflowRunRouteJournal['locateReadOnly']>
+    >;
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      locateReadOnly: vi.fn().mockResolvedValue(receipt),
+    });
+    const result = await showWorkflowRun('run.routed', { rootDir: root });
+    expect(result).toMatchObject({
+      evidenceSource: 'typescript-historical',
+      readDiagnostics: [{ code: 'WORKFLOW_RUN_ROUTED_PROJECTION_MISSING' }],
+    });
+    expect(renderWorkflowRun(result!)).toContain('comparison evidence only');
+    const progress = await getWorkflowRunProgress('run.routed', {
+      rootDir: root,
+      loadWorkflowManifest: false,
+    });
+    expect(progress?.warnings.join('\n')).toContain('WORKFLOW_RUN_ROUTED_PROJECTION_MISSING');
+    expect(await readdir(join(root, '.openslack.local', 'workflows'))).not.toContain('routes');
+  });
+
+  it('preserves a healthy backend and classifies a directory permission failure', async () => {
+    const { root, seed } = await fixture();
+    await seed('go', 'run.healthy');
+    vi.mocked(readdir).mockRejectedValueOnce(
+      Object.assign(new Error('private path'), { code: 'EACCES' }),
+    );
+    const result = await listWorkflowRuns({ rootDir: root });
+    expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
+    expect(result.diagnostics).toContainEqual({
+      scope: 'backend',
+      backend: 'ts-local',
+      code: 'WORKFLOW_RUN_EVIDENCE_PERMISSION_DENIED',
+    });
+    expect(renderWorkflowRuns(result)).not.toContain('private path');
+    expect(Object.keys(result)).toContain('diagnostics');
+    expect(
+      JSON.parse(JSON.stringify({ runs: result, diagnostics: result.diagnostics })).diagnostics,
+    ).toHaveLength(result.diagnostics.length);
+  });
+
+  it('distinguishes invalid directory roots and corrupt run evidence from ambiguity', async () => {
+    const { root, seed } = await fixture();
+    const corrupt = await seed('go', 'run.corrupt');
+    await seed('go', 'run.healthy');
+    await writeFile(corrupt.statusPath('run.corrupt'), '{');
+    await writeFile(
+      join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'),
+      'not a directory',
+    );
+    const result = await listWorkflowRuns({ rootDir: root });
+    expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        { scope: 'backend', backend: 'ts-local', code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' },
+        { scope: 'run', runId: 'run.corrupt', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+      ]),
+    );
+    expect(
+      workflowRunReadDiagnostic(new TypeError('reader defect'), { scope: 'workspace' }).code,
+    ).toBe('WORKFLOW_RUN_EVIDENCE_INTERNAL_ERROR');
+  });
+
+  it('retains single-copy evidence and the journal ownership diagnostic', async () => {
+    const { root, seed } = await fixture();
+    await seed('ts-local', 'run.backup');
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      locateReadOnly: vi
+        .fn()
+        .mockRejectedValue(
+          new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'unsafe owner'),
+        ),
+    });
+    const run = await showWorkflowRun('run.backup', { rootDir: root });
+    expect(run?.readDiagnostics).toContainEqual({
+      scope: 'run',
+      runId: 'run.backup',
+      code: 'WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE',
+    });
+  });
+
+  it('salvages complete metadata only after explicitly selecting conflicting evidence', async () => {
+    const { root, seed } = await fixture();
+    await seed('ts-local', 'run.salvage');
+    await seed('go', 'run.salvage');
+    const sourceDir = join(root, '.openslack', 'workflows');
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, 'workflow-test.mjs'),
+      'export const meta = { name: "workflow-test", description: "Recovery", phases: [{title: "Recover", detail: "Read evidence"}] }; export default async function () {}',
+    );
+    await expect(
+      saveWorkflowRunScript('run.salvage', { rootDir: root, to: 'claude-project' }),
+    ).rejects.toBeInstanceOf(WorkflowRunReadError);
+    const result = await saveWorkflowRunScript('run.salvage', {
+      rootDir: root,
+      to: 'claude-project',
+      evidenceSource: 'ts-local',
+    });
+    expect(result.sourceRunId).toBe('run.salvage');
+    expect(await readFile(result.path, 'utf8')).toContain('Recovery');
+  });
 });

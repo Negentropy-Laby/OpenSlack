@@ -10,7 +10,18 @@ import {
 } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { locateWorkflowRunProjection } from './workflow-run-projection.js';
+import {
+  locateWorkflowRunProjection,
+  type WorkflowRunProjectionLocation,
+  type WorkflowRunReadContext,
+  verifyWorkflowRunProjectionLocation,
+} from './workflow-run-projection.js';
+import {
+  WorkflowRunReadError,
+  renderWorkflowRunReadDiagnostic,
+  workflowRunReadDiagnostic,
+  type WorkflowRunReadCode,
+} from './workflow-run-read-errors.js';
 import { TextDecoder } from 'node:util';
 import {
   readRunStateSnapshot,
@@ -76,6 +87,7 @@ interface ReadResult<T> {
   value: T | null;
   present: boolean;
   warning?: string;
+  failureCode?: WorkflowRunReadCode;
 }
 
 export interface GetWorkflowRunProgressOptions {
@@ -83,6 +95,8 @@ export interface GetWorkflowRunProgressOptions {
   loadWorkflowManifest?: boolean;
   loadCostConfig?: boolean;
   strictRead?: boolean;
+  /** @internal Reuse the location already verified by this read query. */
+  readContext?: WorkflowRunReadContext;
 }
 
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
@@ -142,7 +156,9 @@ const AGENT_BRIDGE_MODES = new Set(['local', 'external-command', 'process', 'fak
 const AGENT_ISOLATION_MODES = new Set(['none', 'worktree']);
 
 function invalidLocalEvidence(): never {
-  throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
+  throw new WorkflowRunReadError([
+    { scope: 'workspace', code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' },
+  ]);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -383,7 +399,12 @@ async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> 
     if (code === 'ENOENT') {
       return { value: null, present: false, warning: `${label} not recorded` };
     }
-    return { value: null, present: true, warning: `${label} could not be parsed` };
+    return {
+      value: null,
+      present: true,
+      warning: `${label} could not be parsed`,
+      failureCode: workflowRunReadDiagnostic(err, { scope: 'workspace' }).code,
+    };
   }
 }
 
@@ -787,7 +808,37 @@ export async function getWorkflowRunProgress(
   options: GetWorkflowRunProgressOptions = {},
 ): Promise<WorkflowRunProgress | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const { runDir, backend } = await locateWorkflowRunProjection(rootDir, runId);
+  const location = await locateWorkflowRunProjection(rootDir, runId, {
+    readContext: options.readContext,
+  });
+  if (location.state === 'missing') return null;
+  if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics);
+  try {
+    await verifyWorkflowRunProjectionLocation(runId, location);
+    const progress = await readLocatedProgress(runId, rootDir, location, options);
+    await verifyWorkflowRunProjectionLocation(runId, location);
+    return progress;
+  } catch (error) {
+    throw new WorkflowRunReadError(
+      error instanceof WorkflowRunReadError
+        ? error.diagnostics.map((diagnostic) => ({
+            ...diagnostic,
+            scope: 'run',
+            runId,
+            backend: location.backend,
+          }))
+        : [workflowRunReadDiagnostic(error, { scope: 'run', runId, backend: location.backend })],
+    );
+  }
+}
+
+async function readLocatedProgress(
+  runId: string,
+  rootDir: string,
+  location: Extract<WorkflowRunProjectionLocation, { state: 'found' }>,
+  options: GetWorkflowRunProgressOptions,
+): Promise<WorkflowRunProgress | null> {
+  const { runDir, backend } = location;
   const warnings: string[] = [];
   const metaRead = await readJson<RunMetaFile>(join(runDir, 'meta.json'), 'run meta');
   const statusRead = await readJson<RunStatusFileLike>(join(runDir, 'status.json'), 'run status');
@@ -800,7 +851,15 @@ export async function getWorkflowRunProgress(
   ) {
     invalidLocalEvidence();
   }
-  if (!metaRead.value && !statusRead.value) return null;
+  if (!metaRead.value && !statusRead.value)
+    throw new WorkflowRunReadError([
+      {
+        scope: 'run',
+        runId,
+        backend,
+        code: metaRead.failureCode ?? statusRead.failureCode ?? 'WORKFLOW_RUN_EVIDENCE_INVALID',
+      },
+    ]);
 
   const pendingRead = await readJson<PendingApproval[]>(
     join(runDir, 'pending-approvals.json'),
@@ -881,8 +940,9 @@ export async function getWorkflowRunProgress(
     }
   }
   if (options.strictRead && warnings.length > 0) {
-    throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
+    invalidLocalEvidence();
   }
+  warnings.push(...location.diagnostics.map(renderWorkflowRunReadDiagnostic));
   if (backend === 'go') {
     warnings.push(
       'Go recovery projection: local snapshot only; inspect Workflow Control for the authoritative head.',

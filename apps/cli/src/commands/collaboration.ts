@@ -1653,10 +1653,21 @@ export function collaborationCommands(): Command {
     .command('save-run <runId>')
     .description('Save the workflow script associated with a recorded run')
     .requiredOption('--to <target>', 'project, user, or claude-project')
-    .action(async (runId: string, options: { to: string }) => {
+    .option('--evidence-source <backend>', 'Explicit comparison evidence source: ts-local or go')
+    .action(async (runId: string, options: { to: string; evidenceSource?: string }) => {
       const target = parseWorkflowSaveTarget(options.to);
       try {
-        const result = await saveWorkflowRunScript(runId, { rootDir: findRepoRoot(), to: target });
+        if (
+          options.evidenceSource !== undefined &&
+          options.evidenceSource !== 'ts-local' &&
+          options.evidenceSource !== 'go'
+        )
+          throw new Error('Evidence source must be ts-local or go.');
+        const result = await saveWorkflowRunScript(runId, {
+          rootDir: findRepoRoot(),
+          to: target,
+          evidenceSource: options.evidenceSource,
+        });
         console.log(
           `Saved workflow "${result.workflowName}" from run ${runId} to ${result.source}.`,
         );

@@ -1199,12 +1199,24 @@ budget record schemas. Readers accept only the current manifest and the exact pr
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
 
-Run list, show, progress, and save-run select local evidence using the immutable route when present.
-Lists enumerate both historical TypeScript and Go recovery directories, deduplicate routed run IDs,
-and isolate unreadable or ambiguous entries as reconciliation diagnostics. Go statuses are explicitly
-labelled recovery snapshots; they do not claim to be live authority heads. TUI warnings and exported
-evidence diagnostics preserve partial-read failures while healthy runs remain visible. These reads
-never initialize or repair route journals.
+Run list, show, progress, and save-run probe the immutable route's selected local directory before
+reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;
+the view preserves its provenance and route diagnostic without changing the execution authority.
+Conflicting unrouted copies require inspection or an explicit save-run evidence-source selection.
+Lists retain healthy roots and runs while reporting backend permission/path failures separately from
+malformed records, missing projections, route conflicts, and internal reader failures. List diagnostics
+are enumerable, and protocol/export DTOs serialize them explicitly alongside the array. Go statuses
+remain recovery snapshots, including a diagnostic when their route receipt is absent. TUI warnings
+retain partial-read failures. CLI async failures and MCP reads expose stable diagnostic codes.
+
+Each list request or TUI load creates one `createWorkflowRunReadQuery` context. It enumerates each
+backend and the route quarantine once, indexes quarantined receipt names, and shares verified
+locations between the lifecycle list and progress reads. The context is discarded after that load;
+it does not cache file contents or survive a refresh. Reads still check the selected directory's
+identity before and after loading evidence, including Windows reparse components and safe 8.3
+aliases. A replaced directory is diagnosed rather than followed. Quarantine work grows with the
+number of quarantine entries plus the number of runs, instead of their product.
+These reads never initialize, repair, or write route journals or run projections.
 
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
 the durable Workflow Control head as authority only after receipt/head identity comparison; local

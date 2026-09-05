@@ -1,3 +1,4 @@
+import { WorkflowRunReadError } from './workflow-run-read-errors.js';
 import type {
   ExecutionMode,
   BudgetState,
@@ -731,7 +732,20 @@ export class RunStore {
   private async readStatus(runId: string): Promise<RunStatusFile | null> {
     const raw = await this.fs.readFile(this.statusPath(runId));
     if (raw === null) return null;
-    return validateRunStatus(parseBoundedJson(raw, `Workflow run status for ${runId}`), runId);
+    try {
+      return validateRunStatus(parseBoundedJson(raw, `Workflow run status for ${runId}`), runId);
+    } catch {
+      throw new WorkflowRunReadError([
+        {
+          scope: 'run',
+          runId,
+          code:
+            Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes
+              ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
+              : 'WORKFLOW_RUN_EVIDENCE_INVALID',
+        },
+      ]);
+    }
   }
 
   /** Persist a complete status record after closed validation. */
@@ -1608,7 +1622,20 @@ export class RunStore {
   async loadMeta(runId: string): Promise<RunMeta | null> {
     const raw = await this.fs.readFile(this.metaPath(runId));
     if (raw === null) return null;
-    return validateRunMeta(parseBoundedJson(raw, `Workflow run metadata for ${runId}`), runId);
+    try {
+      return validateRunMeta(parseBoundedJson(raw, `Workflow run metadata for ${runId}`), runId);
+    } catch {
+      throw new WorkflowRunReadError([
+        {
+          scope: 'run',
+          runId,
+          code:
+            Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes
+              ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
+              : 'WORKFLOW_RUN_EVIDENCE_INVALID',
+        },
+      ]);
+    }
   }
 
   /**

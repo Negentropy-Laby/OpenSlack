@@ -1167,63 +1167,64 @@ and fragments are rejected. The token is sent only in the loopback request and i
 the descriptor or RunStore. Missing or partial transport configuration fails before execution and
 does not fall back to direct in-process execution.
 
-| Command                                                                                | Purpose                                                                                |
-| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `openslack collaboration workflow list`                                                | List all available workflows (YAML templates and JS modules)                           |
-| `openslack collaboration workflow show <name>`                                         | Show detailed information about a workflow (phases, inputs, permissions, side effects) |
-| `openslack collaboration workflow validate <name>`                                     | Validate a workflow template or JS module by name                                      |
-| `openslack collaboration workflow preview <file>`                                      | Preview a YAML workflow template without executing it                                  |
-| `openslack collaboration workflow preview <file> --input key=value`                    | Preview with template input values                                                     |
-| `openslack collaboration workflow preview-js <name>`                                   | Preview a JS workflow module in read-only mode                                         |
-| `openslack collaboration workflow preview-js <name> --input key=value`                 | Preview JS module with input values                                                    |
-| `openslack collaboration workflow preview-js <name> --budget-tokens 10000`             | Preview with custom token budget                                                       |
-| `openslack collaboration workflow dry-run <name>`                                      | Simulate workflow execution without real side effects                                  |
-| `openslack collaboration workflow dry-run <name> --input key=value`                    | Dry-run with input values                                                              |
-| `openslack collaboration workflow dry-run <name> --budget-tokens 50000`                | Dry-run with custom token budget                                                       |
-| `openslack collaboration workflow run <name>`                                          | Execute a workflow with real side effects                                              |
-| `openslack collaboration workflow run <name> --input key=value`                        | Execute with input values                                                              |
-| `openslack collaboration workflow run <name> --yes`                                    | Skip the legacy prompt; exact v2 effect authorization remains required                 |
-| `openslack collaboration workflow run <name> --agent-id <id>`                          | Bind the submitted runner admission to the named actor                                 |
-| `openslack collaboration workflow run <name> --budget-tokens 100000`                   | Execute with custom token budget                                                       |
-| `openslack collaboration workflow resume <runId>`                                      | Resume a paused workflow run from its last checkpoint                                  |
-| `openslack collaboration workflow resume <runId> --yes`                                | Resume without the legacy prompt; exact v2 effect authorization remains required       |
-| `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Bind the resume admission to the named actor                                           |
-| `openslack collaboration workflow approvals repair-security`                           | Audit legacy Windows effect-authority ACLs without modifying them                      |
-| `openslack collaboration workflow approvals repair-security --apply`                   | Rebuild exact owner-plus-SYSTEM ACLs after complete canonical lineage validation       |
-| `openslack collaboration workflow routes repair`                                       | Audit explicit route capacity, quarantine, and provably terminal active receipts       |
-| `openslack collaboration workflow routes repair --apply`                               | Move only evidence-backed terminal route receipts into closed replay history           |
-| `openslack collaboration workflow start --prompt "..."`                                | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
-| `openslack collaboration workflow start --pattern <pattern>`                           | Start from a known orchestration pattern without executing                             |
-| `openslack collaboration workflow start --saved <name>`                                | Show preview, dry-run, and run commands for a saved workflow                           |
-| `openslack collaboration workflow patterns list`                                       | List dynamic workflow orchestration patterns                                           |
-| `openslack collaboration workflow patterns show <pattern>`                             | Show a dynamic workflow pattern                                                        |
-| `openslack collaboration workflow catalog list`                                        | List workflow use-case catalog entries                                                 |
-| `openslack collaboration workflow catalog show <id>`                                   | Show when to use a catalog workflow and required evidence                              |
-| `openslack collaboration workflow catalog preview <id>`                                | Preview the catalog phases and draft command without writing a draft                   |
-| `openslack collaboration workflow generate --prompt "..."`                             | Generate a safe dynamic workflow draft without running it                              |
-| `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."` | Generate a draft from a specific pattern                                               |
-| `openslack collaboration workflow preview-draft <draftId>`                             | Preview a generated draft's phases, budget, permissions, and side effects              |
-| `openslack collaboration workflow runs list`                                           | List recorded workflow runs                                                            |
-| `openslack collaboration workflow runs show <runId>`                                   | Show run-level phase evidence                                                          |
-| `openslack collaboration workflow runs show <runId> --detail progress`                 | Show run, phase, agent, transcript, and budget evidence                                |
-| `openslack collaboration workflow runs show <runId> --detail progress --format json`   | Emit structured run progress evidence                                                  |
-| `openslack collaboration workflow runs control <runId> --action pause`                 | Record a workflow run control action                                                   |
-| `openslack collaboration workflow config show`                                         | Show project workflow policy                                                           |
-| `openslack collaboration workflow config enable --ultracode`                           | Enable workflows and ultracode draft triggers                                          |
-| `openslack collaboration workflow config disable`                                      | Disable workflow generation and execution                                              |
-| `openslack collaboration workflow save <name> --to project`                            | Save a reusable workflow to project workflow storage                                   |
-| `openslack collaboration workflow save <name> --to claude-project`                     | Save a reusable workflow to `.claude/workflows/` for Claude-compatible project sharing |
-| `openslack collaboration workflow save-run <runId> --to project`                       | Save the workflow script associated with a recorded run                                |
-| `openslack collaboration workflow export-skill <name> --out skills/<name>`             | Export a workflow as a skill-style package                                             |
-| `openslack collaboration workflow trust <name>`                                        | View the current trust level for a workflow                                            |
-| `openslack collaboration workflow trust <name> --level <level>`                        | Set trust level (untrusted, trusted)                                                   |
-| `openslack collaboration inspect <runId>`                                              | Inspect a workflow run (HTML, JSON, or Markdown)                                       |
-| `openslack collaboration inspect <runId> --format html`                                | Inspect with self-contained HTML artifact                                              |
-| `openslack collaboration inspect <runId> --format json`                                | Inspect as structured JSON                                                             |
-| `openslack collaboration inspect <runId> --format markdown`                            | Inspect as Markdown (default)                                                          |
-| `openslack collaboration inspect <runId> --out <file>`                                 | Write output to file instead of stdout                                                 |
-| `openslack collaboration inspect <runId> --no-run-output`                              | Exclude run output section from report                                                 |
-| `openslack collaboration inspect <runId> --no-log`                                     | Exclude log entries from report                                                        |
+| Command                                                                                     | Purpose                                                                                |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `openslack collaboration workflow list`                                                     | List all available workflows (YAML templates and JS modules)                           |
+| `openslack collaboration workflow show <name>`                                              | Show detailed information about a workflow (phases, inputs, permissions, side effects) |
+| `openslack collaboration workflow validate <name>`                                          | Validate a workflow template or JS module by name                                      |
+| `openslack collaboration workflow preview <file>`                                           | Preview a YAML workflow template without executing it                                  |
+| `openslack collaboration workflow preview <file> --input key=value`                         | Preview with template input values                                                     |
+| `openslack collaboration workflow preview-js <name>`                                        | Preview a JS workflow module in read-only mode                                         |
+| `openslack collaboration workflow preview-js <name> --input key=value`                      | Preview JS module with input values                                                    |
+| `openslack collaboration workflow preview-js <name> --budget-tokens 10000`                  | Preview with custom token budget                                                       |
+| `openslack collaboration workflow dry-run <name>`                                           | Simulate workflow execution without real side effects                                  |
+| `openslack collaboration workflow dry-run <name> --input key=value`                         | Dry-run with input values                                                              |
+| `openslack collaboration workflow dry-run <name> --budget-tokens 50000`                     | Dry-run with custom token budget                                                       |
+| `openslack collaboration workflow run <name>`                                               | Execute a workflow with real side effects                                              |
+| `openslack collaboration workflow run <name> --input key=value`                             | Execute with input values                                                              |
+| `openslack collaboration workflow run <name> --yes`                                         | Skip the legacy prompt; exact v2 effect authorization remains required                 |
+| `openslack collaboration workflow run <name> --agent-id <id>`                               | Bind the submitted runner admission to the named actor                                 |
+| `openslack collaboration workflow run <name> --budget-tokens 100000`                        | Execute with custom token budget                                                       |
+| `openslack collaboration workflow resume <runId>`                                           | Resume a paused workflow run from its last checkpoint                                  |
+| `openslack collaboration workflow resume <runId> --yes`                                     | Resume without the legacy prompt; exact v2 effect authorization remains required       |
+| `openslack collaboration workflow resume <runId> --agent-id <id>`                           | Bind the resume admission to the named actor                                           |
+| `openslack collaboration workflow approvals repair-security`                                | Audit legacy Windows effect-authority ACLs without modifying them                      |
+| `openslack collaboration workflow approvals repair-security --apply`                        | Rebuild exact owner-plus-SYSTEM ACLs after complete canonical lineage validation       |
+| `openslack collaboration workflow routes repair`                                            | Audit explicit route capacity, quarantine, and provably terminal active receipts       |
+| `openslack collaboration workflow routes repair --apply`                                    | Move only evidence-backed terminal route receipts into closed replay history           |
+| `openslack collaboration workflow start --prompt "..."`                                     | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
+| `openslack collaboration workflow start --pattern <pattern>`                                | Start from a known orchestration pattern without executing                             |
+| `openslack collaboration workflow start --saved <name>`                                     | Show preview, dry-run, and run commands for a saved workflow                           |
+| `openslack collaboration workflow patterns list`                                            | List dynamic workflow orchestration patterns                                           |
+| `openslack collaboration workflow patterns show <pattern>`                                  | Show a dynamic workflow pattern                                                        |
+| `openslack collaboration workflow catalog list`                                             | List workflow use-case catalog entries                                                 |
+| `openslack collaboration workflow catalog show <id>`                                        | Show when to use a catalog workflow and required evidence                              |
+| `openslack collaboration workflow catalog preview <id>`                                     | Preview the catalog phases and draft command without writing a draft                   |
+| `openslack collaboration workflow generate --prompt "..."`                                  | Generate a safe dynamic workflow draft without running it                              |
+| `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."`      | Generate a draft from a specific pattern                                               |
+| `openslack collaboration workflow preview-draft <draftId>`                                  | Preview a generated draft's phases, budget, permissions, and side effects              |
+| `openslack collaboration workflow runs list`                                                | List recorded workflow runs                                                            |
+| `openslack collaboration workflow runs show <runId>`                                        | Show run-level phase evidence                                                          |
+| `openslack collaboration workflow runs show <runId> --detail progress`                      | Show run, phase, agent, transcript, and budget evidence                                |
+| `openslack collaboration workflow runs show <runId> --detail progress --format json`        | Emit structured run progress evidence                                                  |
+| `openslack collaboration workflow runs control <runId> --action pause`                      | Record a workflow run control action                                                   |
+| `openslack collaboration workflow config show`                                              | Show project workflow policy                                                           |
+| `openslack collaboration workflow config enable --ultracode`                                | Enable workflows and ultracode draft triggers                                          |
+| `openslack collaboration workflow config disable`                                           | Disable workflow generation and execution                                              |
+| `openslack collaboration workflow save <name> --to project`                                 | Save a reusable workflow to project workflow storage                                   |
+| `openslack collaboration workflow save <name> --to claude-project`                          | Save a reusable workflow to `.claude/workflows/` for Claude-compatible project sharing |
+| `openslack collaboration workflow save-run <runId> --to project`                            | Save the workflow script associated with a recorded run                                |
+| `openslack collaboration workflow save-run <runId> --to project --evidence-source ts-local` | Select historical metadata explicitly when local evidence copies conflict              |
+| `openslack collaboration workflow export-skill <name> --out skills/<name>`                  | Export a workflow as a skill-style package                                             |
+| `openslack collaboration workflow trust <name>`                                             | View the current trust level for a workflow                                            |
+| `openslack collaboration workflow trust <name> --level <level>`                             | Set trust level (untrusted, trusted)                                                   |
+| `openslack collaboration inspect <runId>`                                                   | Inspect a workflow run (HTML, JSON, or Markdown)                                       |
+| `openslack collaboration inspect <runId> --format html`                                     | Inspect with self-contained HTML artifact                                              |
+| `openslack collaboration inspect <runId> --format json`                                     | Inspect as structured JSON                                                             |
+| `openslack collaboration inspect <runId> --format markdown`                                 | Inspect as Markdown (default)                                                          |
+| `openslack collaboration inspect <runId> --out <file>`                                      | Write output to file instead of stdout                                                 |
+| `openslack collaboration inspect <runId> --no-run-output`                                   | Exclude run output section from report                                                 |
+| `openslack collaboration inspect <runId> --no-log`                                          | Exclude log entries from report                                                        |
 
 ### Workflow Discovery
 
