@@ -1,3 +1,4 @@
+import { isWorkflowRunPathId } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { throwIfWorkflowRunnerAborted } from './workflow-runner-control-http.js';
 import { readdir, unlink } from 'node:fs/promises';
@@ -193,10 +194,7 @@ export async function repairWorkflowCheckpoints(
     actions,
     backups,
   });
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(runId) ||
-    (process.platform === 'win32' && runId.includes(':'))
-  ) {
+  if (!isWorkflowRunPathId(runId)) {
     diagnostics.push('WORKFLOW_RUN_PROJECTION_ID_INVALID');
     return report();
   }

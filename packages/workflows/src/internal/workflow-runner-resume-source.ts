@@ -101,7 +101,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     return this.authority.readTransitionReceipt(
       intent.record,
       intent.expected,
-      intent.correlationId,
+      `resume.${intent.stageHash}`,
       signal,
     );
   }
@@ -431,7 +431,6 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             intent = {
               schema: 'openslack.workflow_runner_resume_source_intent.v2',
               stageHash: hashWorkflowRunnerAuthorityBindingStage(stage),
-              correlationId: `resume.${hashWorkflowRunnerAuthorityBindingStage(stage)}`,
               stageReceipt,
               priorRevision: prior.revision,
               priorBindingHash: workflowCheckpointHash(prior.activeBinding),
@@ -481,7 +480,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             await this.authority.transition(
               intent.record,
               intent.expected,
-              intent.correlationId,
+              `resume.${intent.stageHash}`,
               signal,
             );
           }

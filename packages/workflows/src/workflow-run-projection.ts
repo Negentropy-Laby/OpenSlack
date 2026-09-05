@@ -597,7 +597,7 @@ export function openWorkflowRunReadOnly(
       (runId: string, ...args: unknown[]) =>
         retryWorkflowRunRead(async () => {
           await context.assertRoot(workspaceRoot);
-          if (!isWorkflowRunProjectionId(runId))
+          if (!isWorkflowRunPathId(runId))
             throw new WorkflowRunReadError([
               { scope: 'run', runId, backend, code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID' },
             ]);
