@@ -12,7 +12,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -40,7 +40,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -81,7 +81,7 @@
               "properties": {
                 "schema": { "const": "openslack.workflow_checkpoint_shadow_envelope.v1" },
                 "goRole": { "const": "observer_only" },
-                "sourceSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                 "operation": { "const": "checkpoint_commit" },
                 "observation": {
                   "type": "object",
@@ -95,7 +95,7 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
                       "maxLength": 256
                     },
-                    "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                     "resumeGeneration": {
                       "type": "integer",
                       "minimum": 0,
@@ -121,13 +121,17 @@
                           "maximum": 9007199254740991
                         },
                         "commitPoint": { "const": "after_phase_work" },
-                        "artifactRef": { "type": "string", "minLength": 1, "maxLength": 524288 },
+                        "artifactRef": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                          "maxLength": 512
+                        },
                         "artifactHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "resultHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "cacheKeyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "committedRevision": {
                           "type": "integer",
-                          "minimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         },
                         "resumeGeneration": {
@@ -137,7 +141,8 @@
                         },
                         "committedAt": {
                           "type": "string",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                          "format": "date-time"
                         }
                       },
                       "required": [
@@ -157,7 +162,11 @@
                     "priorCheckpoint": { "type": "null" },
                     "nextPhaseId": {
                       "oneOf": [
-                        { "type": "string", "minLength": 1, "maxLength": 512 },
+                        {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                          "maxLength": 256
+                        },
                         { "type": "null" }
                       ]
                     },
@@ -191,7 +200,7 @@
                         },
                         "fencingToken": {
                           "type": "integer",
-                          "minimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         },
                         "correlationId": {
@@ -247,7 +256,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -276,7 +286,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -304,7 +314,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -372,7 +382,8 @@
             "grantHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "expiresAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
             }
           },
           "required": [
@@ -399,7 +410,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -428,7 +440,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -456,7 +468,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -511,7 +523,14 @@
             "status": { "const": "executed" },
             "outcomeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "reconciliationToken": {
-              "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                  "maxLength": 512
+                },
+                { "type": "null" }
+              ]
             }
           },
           "required": [
@@ -530,7 +549,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -559,7 +579,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -599,7 +619,11 @@
                 "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                 "receiptSchema": {
                   "oneOf": [
-                    { "type": "string", "minLength": 1, "maxLength": 512 },
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                      "maxLength": 512
+                    },
                     { "type": "null" }
                   ]
                 },
@@ -640,7 +664,10 @@
                 },
                 "body": { "type": "string", "minLength": 2, "maxLength": 524288 },
                 "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                "idempotencyKey": { "type": "string", "pattern": "^openslack\\.[A-Za-z0-9._:-]+$" },
+                "idempotencyKey": {
+                  "type": "string",
+                  "pattern": "^openslack\\.workflow-budget-authority\\.v1\\.[0-9a-f]{64}$"
+                },
                 "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
               },
               "required": [
@@ -658,7 +685,7 @@
             "providerHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
             "modelHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
             "providerRunHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-            "providerAttempt": { "type": "string", "minLength": 1, "maxLength": 524288 },
+            "providerAttempt": { "type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 19 },
             "accountId": {
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -671,7 +698,10 @@
               "maxLength": 64
             },
             "providerUsageReceiptHash": {
-              "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+              "oneOf": [
+                { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+                { "type": "null" }
+              ]
             }
           },
           "required": [
@@ -691,7 +721,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -720,7 +751,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -760,7 +791,11 @@
                 "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                 "receiptSchema": {
                   "oneOf": [
-                    { "type": "string", "minLength": 1, "maxLength": 512 },
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                      "maxLength": 512
+                    },
                     { "type": "null" }
                   ]
                 },
@@ -801,7 +836,10 @@
                 },
                 "body": { "type": "string", "minLength": 2, "maxLength": 524288 },
                 "requestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                "idempotencyKey": { "type": "string", "pattern": "^openslack\\.[A-Za-z0-9._:-]+$" },
+                "idempotencyKey": {
+                  "type": "string",
+                  "pattern": "^openslack\\.workflow-budget-authority\\.v1\\.[0-9a-f]{64}$"
+                },
                 "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
               },
               "required": [
@@ -819,7 +857,7 @@
             "providerHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
             "modelHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
             "providerRunHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-            "providerAttempt": { "type": "string", "minLength": 1, "maxLength": 524288 },
+            "providerAttempt": { "type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 19 },
             "accountId": {
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -850,7 +888,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -879,7 +918,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -907,7 +946,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -948,7 +987,7 @@
               "properties": {
                 "schema": { "const": "openslack.workflow_checkpoint_shadow_envelope.v1" },
                 "goRole": { "const": "observer_only" },
-                "sourceSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                 "operation": { "const": "resume_advance" },
                 "observation": {
                   "type": "object",
@@ -962,7 +1001,7 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
                       "maxLength": 256
                     },
-                    "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                     "resumeGeneration": {
                       "type": "integer",
                       "minimum": 0,
@@ -989,13 +1028,17 @@
                           "maximum": 9007199254740991
                         },
                         "commitPoint": { "const": "after_phase_work" },
-                        "artifactRef": { "type": "string", "minLength": 1, "maxLength": 524288 },
+                        "artifactRef": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                          "maxLength": 512
+                        },
                         "artifactHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "resultHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "cacheKeyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                         "committedRevision": {
                           "type": "integer",
-                          "minimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         },
                         "resumeGeneration": {
@@ -1005,7 +1048,8 @@
                         },
                         "committedAt": {
                           "type": "string",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                          "format": "date-time"
                         }
                       },
                       "required": [
@@ -1061,7 +1105,7 @@
                         },
                         "fencingToken": {
                           "type": "integer",
-                          "minimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         },
                         "correlationId": {
@@ -1130,7 +1174,8 @@
             },
             "expiresAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
             }
           },
           "required": [
@@ -1149,7 +1194,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -1178,7 +1224,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -1206,7 +1252,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -1266,7 +1312,14 @@
             "humanBindingHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "attestationHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "executionId": {
-              "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                { "type": "null" }
+              ]
             },
             "claimHash": {
               "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
@@ -1276,7 +1329,8 @@
             },
             "expiresAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
             }
           },
           "required": [
@@ -1303,7 +1357,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -1332,7 +1387,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -1360,7 +1415,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -1428,7 +1483,14 @@
               "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
             },
             "executionId": {
-              "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                { "type": "null" }
+              ]
             },
             "claimHash": {
               "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
@@ -1438,7 +1500,8 @@
             },
             "expiresAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
             }
           },
           "required": [
@@ -1465,7 +1528,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -1494,7 +1558,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -1522,7 +1586,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -1577,7 +1641,14 @@
             "status": { "const": "failed" },
             "outcomeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "reconciliationToken": {
-              "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+                  "maxLength": 512
+                },
+                { "type": "null" }
+              ]
             }
           },
           "required": [
@@ -1596,7 +1667,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -1625,7 +1697,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -1653,7 +1725,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -1707,7 +1779,11 @@
             "claimHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "status": { "const": "reconciliation_required" },
             "outcomeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "reconciliationToken": { "type": "string", "minLength": 1, "maxLength": 524288 }
+            "reconciliationToken": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$",
+              "maxLength": 512
+            }
           },
           "required": [
             "schema",
@@ -1725,7 +1801,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [
@@ -1754,7 +1831,7 @@
         "profile": { "const": "workflow-control-runner-v2-runtime-delivery-v1" },
         "phase": { "const": "commit_authority" },
         "direction": { "const": "runner-to-control" },
-        "companionSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "companionSequence": { "const": 2 },
         "bindingId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
@@ -1782,7 +1859,7 @@
                 },
                 "acceptedRevision": {
                   "type": "integer",
-                  "minimum": 0,
+                  "minimum": 1,
                   "maximum": 9007199254740991
                 },
                 "expectedResumeGeneration": {
@@ -1823,7 +1900,7 @@
               "properties": {
                 "schema": { "const": "openslack.workflow_checkpoint_shadow_envelope.v1" },
                 "goRole": { "const": "observer_only" },
-                "sourceSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "sourceSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                 "operation": { "const": "resume_advance" },
                 "observation": {
                   "type": "object",
@@ -1837,7 +1914,7 @@
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
                       "maxLength": 256
                     },
-                    "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                     "resumeGeneration": {
                       "type": "integer",
                       "minimum": 0,
@@ -1884,7 +1961,7 @@
                         },
                         "fencingToken": {
                           "type": "integer",
-                          "minimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         },
                         "correlationId": {
@@ -1935,7 +2012,14 @@
             },
             "envelopeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "priorCheckpointId": {
-              "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
+                  "maxLength": 256
+                },
+                { "type": "null" }
+              ]
             },
             "priorCheckpointHash": {
               "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
@@ -1953,7 +2037,8 @@
             },
             "expiresAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+              "format": "date-time"
             }
           },
           "required": [
@@ -1972,7 +2057,8 @@
         "evidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "sentAt": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "format": "date-time"
         }
       },
       "required": [

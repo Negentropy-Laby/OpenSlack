@@ -1,5 +1,7 @@
 package runnerbindingcontract
 
+import "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
+
 const (
 	ContractVersion      = "openslack.workflow_runner_authority_binding.v1"
 	StageSchema          = "openslack.workflow_runner_authority_binding_stage.v1"
@@ -20,7 +22,7 @@ const (
 	MaxSafeInteger        = int64(1<<53 - 1)
 	MaxRateDecimalBytes   = 64
 	MaxRateFractionDigits = 18
-	budgetManifestSHA256  = "83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b"
+	budgetManifestSHA256  = budgetcontract.CurrentManifestSHA256
 )
 
 type Operation string

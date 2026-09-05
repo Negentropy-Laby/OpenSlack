@@ -1,0 +1,440 @@
+[
+  {
+    "id": "error-valid",
+    "kind": "error",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "error-unknown-field",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "error-missing-schema",
+    "kind": "error",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "receipt-valid",
+    "kind": "receipt",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "receipt-unknown-field",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "receipt-missing-schema",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "stage-valid",
+    "kind": "stage",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "stage-unknown-field",
+    "kind": "stage",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "stage-missing-schema",
+    "kind": "stage",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "resolution-valid",
+    "kind": "resolution",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "resolution-unknown-field",
+    "kind": "resolution",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "resolution-missing-schema",
+    "kind": "resolution",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "runtimeAdmission-valid",
+    "kind": "runtimeAdmission",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "runtimeAdmission-unknown-field",
+    "kind": "runtimeAdmission",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "runtimeAdmission-missing-schema",
+    "kind": "runtimeAdmission",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "runtimeAdmissionReceipt-valid",
+    "kind": "runtimeAdmissionReceipt",
+    "accepted": true,
+    "set": {},
+    "remove": []
+  },
+  {
+    "id": "runtimeAdmissionReceipt-unknown-field",
+    "kind": "runtimeAdmissionReceipt",
+    "accepted": false,
+    "set": {
+      "/unexpected": true
+    },
+    "remove": []
+  },
+  {
+    "id": "runtimeAdmissionReceipt-missing-schema",
+    "kind": "runtimeAdmissionReceipt",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/schema"
+    ]
+  },
+  {
+    "id": "nullable",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/bindingId": null
+    },
+    "remove": []
+  },
+  {
+    "id": "id-colon",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/bindingId": "run:historical"
+    },
+    "remove": []
+  },
+  {
+    "id": "id-256",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/bindingId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "id-257",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/bindingId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "id-empty",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/bindingId": ""
+    },
+    "remove": []
+  },
+  {
+    "id": "id-slash",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/bindingId": "run/bad"
+    },
+    "remove": []
+  },
+  {
+    "id": "id-leading-underscore",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/bindingId": "_run"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-512",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-513",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-utf8-512",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/message": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界ab"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-utf8-513",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-newline",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": "one\ntwo"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-cr",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": "one\rtwo"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-separator",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": "one two"
+    },
+    "remove": []
+  },
+  {
+    "id": "message-empty",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/message": ""
+    },
+    "remove": []
+  },
+  {
+    "id": "ref-512",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/reconciliationToken": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "ref-513",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/reconciliationToken": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "ref-slash",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/reconciliationToken": "reconcile/record:1"
+    },
+    "remove": []
+  },
+  {
+    "id": "ref-invalid",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/reconciliationToken": "../escape"
+    },
+    "remove": []
+  },
+  {
+    "id": "receipt-id-max",
+    "kind": "receipt",
+    "accepted": true,
+    "set": {
+      "/targetEventId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "receipt-id-too-long",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/targetEventId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    "remove": []
+  },
+  {
+    "id": "receipt-null-id",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/targetEventId": null
+    },
+    "remove": []
+  },
+  {
+    "id": "time-leap",
+    "kind": "receipt",
+    "accepted": true,
+    "set": {
+      "/committedAt": "2028-02-29T00:00:00.000Z"
+    },
+    "remove": []
+  },
+  {
+    "id": "time-invalid-day",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/committedAt": "2026-02-29T00:00:00.000Z"
+    },
+    "remove": []
+  },
+  {
+    "id": "time-offset",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/committedAt": "2026-08-20T00:06:01.000+00:00"
+    },
+    "remove": []
+  },
+  {
+    "id": "time-no-milliseconds",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/committedAt": "2026-08-20T00:06:01Z"
+    },
+    "remove": []
+  },
+  {
+    "id": "revision-zero",
+    "kind": "stage",
+    "accepted": false,
+    "set": {
+      "/runnerAuthority/expectedGlobalRunRevision": 0
+    },
+    "remove": []
+  },
+  {
+    "id": "fencing-zero",
+    "kind": "runtimeAdmission",
+    "accepted": false,
+    "set": {
+      "/fencingToken": 0
+    },
+    "remove": []
+  },
+  {
+    "id": "hash-uppercase",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/requestHash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "remove": []
+  },
+  {
+    "id": "error-unknown-operation",
+    "kind": "error",
+    "accepted": false,
+    "set": {
+      "/operation": "resume"
+    },
+    "remove": []
+  },
+  {
+    "id": "error-known-operation",
+    "kind": "error",
+    "accepted": true,
+    "set": {
+      "/operation": "resume_advance"
+    },
+    "remove": []
+  },
+  {
+    "id": "stage-receipt-evidence-must-be-null",
+    "kind": "receipt",
+    "accepted": false,
+    "set": {
+      "/evidenceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "remove": []
+  }
+]

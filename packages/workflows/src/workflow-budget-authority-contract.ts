@@ -9,9 +9,7 @@ import {
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION = 'v1' as const;
-// Prior manifest differs only in upstream source locks; its durable bytes remain valid.
-export const WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256 =
-  '662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548' as const;
+export { WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256 } from './internal/workflow-budget-compatibility.generated.js';
 export const WORKFLOW_BUDGET_AUTHORITY = 'typescript' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_WRITER = '@openslack/workflows' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_GO_ROLE = 'validator_only' as const;

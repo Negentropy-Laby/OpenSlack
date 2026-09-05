@@ -15,7 +15,6 @@ import {
 } from './internal/workflow-evidence-file.js';
 import { createWorkflowRunRouteJournal, WorkflowRunRoutingError } from './workflow-run-routing.js';
 import {
-  isWorkflowRunProjectionId,
   primaryWorkflowRunReadCode,
   type WorkflowRunReadCode,
   type WorkflowRunReadProvenance,
@@ -25,6 +24,7 @@ import {
   type WorkflowRunReadDiagnostic,
   type WorkflowRunProjectionBackend,
 } from './workflow-run-read-errors.js';
+import { isWorkflowRunPathId } from './internal/workflow-run-identity.js';
 
 export type { WorkflowRunProjectionBackend } from './workflow-run-read-errors.js';
 
@@ -357,7 +357,7 @@ async function locateProjection(
   routeRevision?: string,
 ): Promise<WorkflowRunProjectionLocation> {
   // RunStore paths are directory names. Reject separators and Windows stream syntax.
-  if (!isWorkflowRunProjectionId(runId)) {
+  if (!isWorkflowRunPathId(runId)) {
     return {
       state: 'invalid_id',
       primaryCode: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',

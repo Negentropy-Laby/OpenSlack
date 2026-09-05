@@ -302,10 +302,15 @@ func operationRecordDomain(operation string) string {
 }
 
 func exactDurableRecord(kind string, value budgetcontract.Record, authorityBuildHash string) (budgetstore.DurableRecord, []byte, string, error) {
+	return exactDurableRecordWithManifest(kind, value, authorityBuildHash, budgetstore.ContractManifestSHA256)
+}
+
+func exactDurableRecordWithManifest(kind string, value budgetcontract.Record, authorityBuildHash, manifest string) (budgetstore.DurableRecord, []byte, string, error) {
 	outer, err := budgetstore.NewDurableRecord(kind, value, authorityBuildHash)
 	if err != nil {
 		return budgetstore.DurableRecord{}, nil, "", err
 	}
+	outer.ContractManifestSHA256 = manifest
 	encoded, err := budgetstore.EncodeDurableRecord(outer)
 	if err != nil {
 		return budgetstore.DurableRecord{}, nil, "", err

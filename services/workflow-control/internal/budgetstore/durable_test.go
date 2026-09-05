@@ -73,16 +73,18 @@ func TestPreviousManifestDurableRecordsPreserveExactBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			previousExact := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
-			previous, err := DecodeDurableRecord(previousExact)
-			if err != nil {
-				t.Fatal(err)
+			for _, manifest := range budgetcontract.AcceptedManifestSHA256() {
+				previousExact := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), []byte(manifest))
+				previous, err := DecodeDurableRecord(previousExact)
+				if err != nil {
+					t.Fatal(err)
+				}
+				replay, err := EncodeDurableRecord(previous)
+				if err != nil || !bytes.Equal(replay, previousExact) || previous.OperationalProjectionHash != current.OperationalProjectionHash {
+					t.Fatalf("historical durable bytes or hash drifted: %v", err)
+				}
 			}
-			replay, err := EncodeDurableRecord(previous)
-			if err != nil || !bytes.Equal(replay, previousExact) || previous.OperationalProjectionHash != current.OperationalProjectionHash {
-				t.Fatalf("historical durable bytes or hash drifted: %v", err)
-			}
-			unknown := bytes.ReplaceAll(previousExact, []byte(budgetcontract.PreviousManifestSHA256), bytes.Repeat([]byte("0"), 64))
+			unknown := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), bytes.Repeat([]byte("0"), 64))
 			if _, err := DecodeDurableRecord(unknown); !IsCode(err, ErrorIntegrity) {
 				t.Fatalf("unknown manifest accepted: %v", err)
 			}

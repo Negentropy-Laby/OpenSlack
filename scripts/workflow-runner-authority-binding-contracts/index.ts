@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { authorityBindingFieldSchema } from './schema-fields.js';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -259,12 +260,8 @@ const budgetDecisionDelivery = Object.freeze({
 });
 
 const HASH = '^[0-9a-f]{64}$';
-const PREFIXED_HASH = '^sha256:[0-9a-f]{64}$';
-const SAFE_ID = '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$';
 const SAFE_REF = '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$';
 const TIME = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
-const V2_KEY = '^openslack\\.workflow-control-authority\\.v2\\.[0-9a-f]{64}$';
-const RATE = '^(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,17}[1-9])?$';
 
 const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const h = (character: string): string => character.repeat(64);
@@ -335,7 +332,7 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
   const phase = value.phase;
   if (phase === 'control_delivery') {
     properties.status = { const: 'accepted' };
-    properties.committedAt = { type: 'string', pattern: TIME };
+    properties.committedAt = { type: 'string', pattern: TIME, format: 'date-time' };
     properties.reconciliationToken = { type: 'null' };
     properties.disposition = { enum: ['accepted', 'reconciliation_required'] };
     properties.controlKind = {
@@ -350,9 +347,11 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
     return schema;
   }
   if (phase === 'stage_event' || phase === 'commit_authority') {
+    properties.evidenceHash =
+      phase === 'stage_event' ? { type: 'null' } : { type: 'string', pattern: HASH };
     properties.status = { enum: ['accepted', 'reconciliation_required'] };
     properties.committedAt = {
-      oneOf: [{ type: 'string', pattern: TIME }, { type: 'null' }],
+      oneOf: [{ type: 'string', pattern: TIME, format: 'date-time' }, { type: 'null' }],
     };
     properties.reconciliationToken = {
       oneOf: [{ type: 'string', pattern: SAFE_REF, maxLength: 512 }, { type: 'null' }],
@@ -362,7 +361,7 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
         if: { properties: { status: { const: 'accepted' } }, required: ['status'] },
         then: {
           properties: {
-            committedAt: { type: 'string', pattern: TIME },
+            committedAt: { type: 'string', pattern: TIME, format: 'date-time' },
             reconciliationToken: { type: 'null' },
           },
         },
@@ -385,114 +384,30 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
 }
 
 function schemaForValue(value: unknown, path: readonly string[] = []): Json {
-  const key = path.at(-1) ?? '';
-  if (value === null) {
-    if (/Hash$/u.test(key)) return { oneOf: [{ type: 'string', pattern: HASH }, { type: 'null' }] };
-    if (/(?:Id|Schema|Token|At)$/u.test(key)) {
-      return { oneOf: [{ type: 'string', minLength: 1, maxLength: 512 }, { type: 'null' }] };
-    }
-    return { type: 'null' };
+  if (path.at(-1) === 'route') return routeSchema();
+  const field = authorityBindingFieldSchema(value, path);
+  if (field) return field;
+  const record = value as Json;
+  const schema = strict(
+    Object.fromEntries(
+      Object.entries(record).map(([name, entry]) => [name, schemaForValue(entry, [...path, name])]),
+    ),
+  );
+  if (
+    record.schema === WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA &&
+    typeof record.phase === 'string'
+  ) {
+    receiptLifecycleSchema(schema, record);
   }
-  if (Array.isArray(value)) {
-    return value.length === 0
-      ? { type: 'array', maxItems: 0 }
-      : { type: 'array', items: schemaForValue(value[0], [...path, '0']) };
+  if (record.schema === 'openslack.workflow_runner_effect_completion_evidence.v1') {
+    asJson(schema.properties, 'effect completion properties').status = { const: record.status };
   }
-  if (typeof value === 'object') {
-    const record = value as Json;
-    if (
-      Object.keys(record).length === 4 &&
-      ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'].every((field) =>
-        Object.hasOwn(record, field),
-      )
-    ) {
-      return routeSchema();
-    }
-    const schema = strict(
-      Object.fromEntries(
-        Object.entries(record).map(([name, entry]) => [
-          name,
-          schemaForValue(entry, [...path, name]),
-        ]),
-      ),
-    );
-    if (
-      record.schema === WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_SCHEMA &&
-      typeof record.phase === 'string'
-    ) {
-      receiptLifecycleSchema(schema, record);
-    }
-    if (record.schema === 'openslack.workflow_runner_effect_completion_evidence.v1') {
-      asJson(schema.properties, 'effect completion properties').status = {
-        const: record.status,
-      };
-    }
-    if (record.schema === 'openslack.workflow_runner_effect_authority_evidence.v1') {
-      asJson(schema.properties, 'effect authority properties').approvalStatus = {
-        const: record.approvalStatus,
-      };
-    }
-    return schema;
-  }
-  if (typeof value === 'boolean') return { type: 'boolean' };
-  if (typeof value === 'number') {
-    return {
-      type: 'integer',
-      minimum: 0,
-      maximum: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxSafeInteger,
+  if (record.schema === 'openslack.workflow_runner_effect_authority_evidence.v1') {
+    asJson(schema.properties, 'effect authority properties').approvalStatus = {
+      const: record.approvalStatus,
     };
   }
-  if (typeof value !== 'string') throw new Error(`Unsupported schema sample at ${path.join('/')}.`);
-
-  const fixedKeys = new Set([
-    'schema',
-    'contractVersion',
-    'profile',
-    'phase',
-    'direction',
-    'operation',
-    'kind',
-    'plane',
-    'evidenceState',
-    'receiptSchema',
-    'protocolVersion',
-    'authority',
-    'goRole',
-    'goAuthorityClaim',
-    'writer',
-    'method',
-    'path',
-    'commitPoint',
-  ]);
-  if (fixedKeys.has(key)) return { const: value };
-  if (key === 'status') return { type: 'string', minLength: 1, maxLength: 64 };
-  if (key === 'approvalStatus') return { enum: ['approved', 'rejected', 'expired'] };
-  if (key === 'disposition') return { enum: ['accepted', 'reconciliation_required'] };
-  if (key === 'body') {
-    return {
-      type: 'string',
-      minLength: 2,
-      maxLength: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxStringBytes,
-    };
-  }
-  if (key === 'idempotencyKey') {
-    return {
-      type: 'string',
-      pattern: value.startsWith('openslack.workflow-control-authority')
-        ? V2_KEY
-        : '^openslack\\.[A-Za-z0-9._:-]+$',
-    };
-  }
-  if (key === 'requestFingerprint' || value.startsWith('sha256:')) {
-    return { type: 'string', pattern: PREFIXED_HASH };
-  }
-  if (key === 'rateNanoUsdPerToken') {
-    return { type: 'string', pattern: RATE, maxLength: 64 };
-  }
-  if (/(?:Hash|Digest)$/u.test(key)) return { type: 'string', pattern: HASH };
-  if (/(?:At|ExpiresAt)$/u.test(key)) return { type: 'string', pattern: TIME };
-  if (/(?:Id|Kind)$/u.test(key)) return { type: 'string', pattern: SAFE_ID, maxLength: 256 };
-  return { type: 'string', minLength: 1, maxLength: 524_288 };
+  return schema;
 }
 
 function replaceRootConst(schema: Json, field: string, value: unknown): void {
@@ -1604,8 +1519,8 @@ function controlMessage(
     throw new Error('Budget authorization golden requires an exact source result.');
   }
   const authorityReceiptHash =
-    kind === 'budget_authorization'
-      ? hashWorkflowRunnerBudgetSourceReceipt(budgetSourceResult!.durableReceiptBytes)
+    kind === 'budget_authorization' && budgetSourceResult !== null
+      ? hashWorkflowRunnerBudgetSourceReceipt(budgetSourceResult.durableReceiptBytes)
       : hashWorkflowRunnerAuthorityBindingReceipt(exchangeValue.resolutionReceipt);
   const head =
     kind === 'resume_offer'
