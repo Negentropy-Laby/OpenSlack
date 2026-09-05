@@ -48,7 +48,15 @@ import type {
 export type WorkflowRunnerAuthoritySourceProbe =
   | { readonly state: 'not_committed' }
   | { readonly state: 'unknown'; readonly reason: string }
-  | { readonly state: 'committed'; readonly evidence: WorkflowRunnerAuthorityEvidence };
+  | {
+      readonly state: 'committed';
+      readonly evidence: WorkflowRunnerAuthorityEvidence;
+      /** Exact pre-existing companion resolution, including its original timestamp. */
+      readonly durableResolution?: {
+        readonly resolution: WorkflowRunnerAuthorityBindingResolution;
+        readonly receipt: WorkflowRunnerAuthorityResolutionReceipt;
+      };
+    };
 
 /**
  * A source adapter must point-read its own C/D/E authority before mutation.
@@ -57,10 +65,14 @@ export type WorkflowRunnerAuthoritySourceProbe =
  * second mutation.
  */
 export interface WorkflowRunnerAuthoritySourceAdapter {
-  probe(stage: WorkflowRunnerAuthorityBindingStage): Promise<WorkflowRunnerAuthoritySourceProbe>;
+  probe(
+    stage: WorkflowRunnerAuthorityBindingStage,
+    signal?: AbortSignal,
+  ): Promise<WorkflowRunnerAuthoritySourceProbe>;
   commit(
     stage: WorkflowRunnerAuthorityBindingStage,
     stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerAuthorityEvidence>;
   /**
    * Budget E1 is deliberately later than the accepted companion resolution.
@@ -70,6 +82,7 @@ export interface WorkflowRunnerAuthoritySourceAdapter {
   probePostResolution?(
     stage: WorkflowRunnerAuthorityBindingStage,
     resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+    signal?: AbortSignal,
   ): Promise<
     | { readonly state: 'not_committed' }
     | { readonly state: 'unknown'; readonly reason: string }
@@ -81,6 +94,7 @@ export interface WorkflowRunnerAuthoritySourceAdapter {
   commitPostResolution?(
     stage: WorkflowRunnerAuthorityBindingStage,
     resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerBudgetSourceResult | undefined>;
 }
 
@@ -552,8 +566,12 @@ export class WorkflowRunnerAuthorityBindingRuntime {
     }
     await this.#accepted(stageReceipt, 'stage');
     let evidence = entry.sourceEvidence;
+    let durableResolution: Extract<
+      WorkflowRunnerAuthoritySourceProbe,
+      { state: 'committed' }
+    >['durableResolution'];
     if (!evidence) {
-      const first = await source.probe(entry.stage);
+      const first = await this.#probeSource(source, entry.stage, signal);
       if (first.state === 'unknown') {
         return fail(
           'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
@@ -562,19 +580,23 @@ export class WorkflowRunnerAuthorityBindingRuntime {
       }
       if (first.state === 'committed') {
         evidence = first.evidence;
+        durableResolution = first.durableResolution;
       } else {
         try {
-          evidence = await source.commit(entry.stage, stageReceipt);
+          evidence = await source.commit(entry.stage, stageReceipt, signal);
         } catch (error) {
-          const recovered = await source.probe(entry.stage);
+          const recovered = await this.#probeSource(source, entry.stage, signal);
           if (recovered.state !== 'committed') {
             return fail(
-              'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
+              isWorkflowAuthorityConflict(error)
+                ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RECONCILIATION_REQUIRED'
+                : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
               'Source commit outcome is not durably point-readable; mutation will not be replayed.',
               error,
             );
           }
           evidence = recovered.evidence;
+          durableResolution = recovered.durableResolution;
         }
       }
       try {
@@ -587,6 +609,41 @@ export class WorkflowRunnerAuthorityBindingRuntime {
         );
       }
       await this.#journal.putSourceEvidence(bindingId, entry.stage.operation, evidence);
+      entry = (await this.#journal.read(bindingId))!;
+    } else if (!entry.resolution) {
+      const probe = await this.#probeSource(source, entry.stage, signal);
+      if (probe.state !== 'committed')
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
+          'Persisted source evidence requires its current exact operation proof.',
+        );
+      if (!exactEqual(probe.evidence, evidence))
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_CONFLICT',
+          'Durable source evidence differs from the local journal.',
+        );
+      durableResolution = probe.durableResolution;
+    }
+    if (durableResolution && !entry.resolution) {
+      const historical = validateWorkflowRunnerAuthorityBindingResolutionForStage(
+        durableResolution.resolution,
+        entry.stage,
+        stageReceipt,
+      );
+      const receipt = validateWorkflowRunnerAuthorityBindingResolutionReceipt(
+        durableResolution.receipt,
+        historical,
+        entry.stage,
+        stageReceipt,
+      );
+      if (!exactEqual(historical.evidence, evidence))
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_CONFLICT',
+          'Historical resolution differs from its immutable source evidence.',
+        );
+      await this.#accepted(receipt, 'resolution');
+      await this.#journal.putResolution(bindingId, historical);
+      await this.#journal.putResolutionReceipt(bindingId, receipt);
       entry = (await this.#journal.read(bindingId))!;
     }
     let resolution = entry.resolution;
@@ -655,6 +712,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
       entry,
       source,
       resolutionReceipt,
+      signal,
     );
     return Object.freeze({
       stage: entry.stage,
@@ -670,6 +728,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
     entry: WorkflowRunnerAuthorityBindingJournalEntry,
     source: WorkflowRunnerAuthoritySourceAdapter,
     resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerBudgetSourceResult | undefined> {
     const isBudget =
       entry.stage.operation === 'budget_reserve' || entry.stage.operation === 'budget_settle';
@@ -691,7 +750,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
     if (entry.stage.operation === 'budget_reserve' && entry.budgetSourceResult) {
       return entry.budgetSourceResult;
     }
-    let outcome = await source.probePostResolution(entry.stage, resolutionReceipt);
+    let outcome = await source.probePostResolution(entry.stage, resolutionReceipt, signal);
     if (outcome.state === 'unknown') {
       return fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
@@ -700,13 +759,13 @@ export class WorkflowRunnerAuthorityBindingRuntime {
     }
     if (outcome.state === 'not_committed') {
       try {
-        const result = await source.commitPostResolution(entry.stage, resolutionReceipt);
+        const result = await source.commitPostResolution(entry.stage, resolutionReceipt, signal);
         outcome = {
           state: 'committed',
           ...(result === undefined ? {} : { budgetSourceResult: result }),
         };
       } catch (error) {
-        const recovered = await source.probePostResolution(entry.stage, resolutionReceipt);
+        const recovered = await source.probePostResolution(entry.stage, resolutionReceipt, signal);
         if (recovered.state !== 'committed') {
           return fail(
             'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
@@ -785,7 +844,9 @@ export class WorkflowRunnerAuthorityBindingRuntime {
       before = await this.#port.readReceipt(prepared.idempotencyKey, signal);
     } catch (error) {
       return fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
+        isWorkflowAuthorityConflict(error)
+          ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RECONCILIATION_REQUIRED'
+          : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
         'Companion receipt point-read failed; POST will not be attempted.',
         error,
       );
@@ -799,13 +860,17 @@ export class WorkflowRunnerAuthorityBindingRuntime {
         if (recovered) return recovered;
       } catch (readError) {
         return fail(
-          'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
+          isWorkflowAuthorityConflict(readError)
+            ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RECONCILIATION_REQUIRED'
+            : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
           'Companion POST outcome and point-read are both unknown; bytes will not be changed.',
           readError,
         );
       }
       return fail(
-        'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
+        isWorkflowAuthorityConflict(error)
+          ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RECONCILIATION_REQUIRED'
+          : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
         'Companion POST response was lost and no durable receipt is point-readable.',
         error,
       );
@@ -823,4 +888,29 @@ export class WorkflowRunnerAuthorityBindingRuntime {
       );
     }
   }
+
+  async #probeSource(
+    source: WorkflowRunnerAuthoritySourceAdapter,
+    stage: WorkflowRunnerAuthorityBindingStage,
+    signal?: AbortSignal,
+  ): Promise<WorkflowRunnerAuthoritySourceProbe> {
+    try {
+      return await source.probe(stage, signal);
+    } catch (error) {
+      if (signal?.aborted || isWorkflowAuthorityRetryable(error))
+        return {
+          state: 'unknown',
+          reason: 'Source evidence transport is temporarily unavailable.',
+        };
+      return fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RECONCILIATION_REQUIRED',
+        'Source evidence failed its identity or integrity checks.',
+        error,
+      );
+    }
+  }
 }
+import {
+  isWorkflowAuthorityRetryable,
+  isWorkflowAuthorityConflict,
+} from './internal/workflow-authority-failure.js';

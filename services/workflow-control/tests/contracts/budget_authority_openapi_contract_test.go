@@ -133,6 +133,11 @@ func TestBudgetAuthorityOpenAPIContract(t *testing.T) {
 
 func assertBudgetDurableBranches(t *testing.T, document *openapi3.T) {
 	t.Helper()
+	accepted := budgetcontract.AcceptedManifestSHA256()
+	wantManifests := make([]any, 0, len(accepted))
+	for index := len(accepted) - 1; index >= 0; index-- {
+		wantManifests = append(wantManifests, accepted[index])
+	}
 	want := map[string]string{
 		"DurableRecordAccountBranch": "account", "DurableRecordReserveDecisionBranch": "reserve_decision",
 		"DurableRecordReservationBranch": "reservation", "DurableRecordSettlementBranch": "settlement",
@@ -143,7 +148,7 @@ func assertBudgetDurableBranches(t *testing.T, document *openapi3.T) {
 		schema := document.Components.Schemas[name].Value
 		if schema == nil || schema.Properties["recordKind"].Value.Const != kind || schema.Properties["productionAuthority"].Value.Const != false ||
 			schema.Properties["authorityMode"].Value.Const != "local-qualification-v1" ||
-			!reflect.DeepEqual(schema.Properties["contractManifestSha256"].Value.Enum, []any{budgetstore.ContractManifestSHA256, budgetcontract.PreviousManifestSHA256}) {
+			!reflect.DeepEqual(schema.Properties["contractManifestSha256"].Value.Enum, wantManifests) {
 			t.Fatalf("durable branch %s binding drifted", name)
 		}
 	}

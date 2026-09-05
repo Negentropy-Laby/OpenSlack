@@ -90,6 +90,7 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
     operation: WorkflowRunnerAuthorityBindingOperation,
     target: WorkflowControlAuthorityPreparedMessage,
     sourceOverride?: WorkflowRunnerAuthoritySourceAdapter,
+    signal?: AbortSignal,
   ) {
     const message = parseWorkflowControlAuthorityMessageBytes(Buffer.from(target.body, 'utf8'));
     if (
@@ -113,6 +114,7 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
       operation,
       target,
       source,
+      signal,
       lease: {
         workspaceId: message.workspaceId,
         jobId: message.jobId,

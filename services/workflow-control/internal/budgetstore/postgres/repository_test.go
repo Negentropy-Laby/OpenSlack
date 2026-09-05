@@ -132,43 +132,9 @@ func TestBudgetStorePreviousManifestReadReplayAndSettlement(t *testing.T) {
 	}
 	// Seed a second isolated schema with the prior release's envelopes. Keep the
 	// source rows immutable and every database constraint active during the import.
-	var sourceSchema string
-	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&sourceSchema); err != nil {
-		t.Fatal(err)
-	}
 	upgradedPool := openBudgetPostgres(t)
 	seedRun(t, upgradedPool, 5)
-	for _, table := range []string{"workflow_control_budget_accounts", "workflow_control_budget_reservations", "workflow_control_budget_ledger", "workflow_control_budget_receipts"} {
-		rows, err := pool.Query(ctx, `SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 ORDER BY ordinal_position`, sourceSchema, table)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var columns, projections []string
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				t.Fatal(err)
-			}
-			column := pgx.Identifier{name}.Sanitize()
-			columns = append(columns, column)
-			if strings.HasSuffix(name, "_bytes") {
-				projections = append(projections, fmt.Sprintf("convert_to(replace(convert_from(%s,'UTF8'),$1,$2),'UTF8')", column))
-			} else {
-				projections = append(projections, column)
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			t.Fatal(err)
-		}
-		if len(columns) == 0 {
-			t.Fatal("historical table is missing")
-		}
-		query := fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", pgx.Identifier{table}.Sanitize(), strings.Join(columns, ","), strings.Join(projections, ","), pgx.Identifier{sourceSchema, table}.Sanitize())
-		if _, err := upgradedPool.Exec(ctx, query, budgetstore.ContractManifestSHA256, budgetcontract.PreviousManifestSHA256); err != nil {
-			t.Fatal(err)
-		}
-	}
+	importBudgetRecordsWithManifest(t, pool, upgradedPool, budgetcontract.PreviousManifestSHA256)
 	repository = New(upgradedPool)
 	previousResponse := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
 	previousReceipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
@@ -201,6 +167,46 @@ func TestBudgetStorePreviousManifestReadReplayAndSettlement(t *testing.T) {
 	pointRead, err = repository.ReadReceipt(ctx, testWorkspace, reserve.Prepared.IdempotencyKey)
 	if err != nil || !bytes.Equal(pointRead.ExactResponseBytes, previousResponse) {
 		t.Fatalf("new write altered old receipt: %v", err)
+	}
+}
+
+func importBudgetRecordsWithManifest(t testing.TB, pool, upgradedPool *pgxpool.Pool, manifest string) {
+	t.Helper()
+	ctx := context.Background()
+	var sourceSchema string
+	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&sourceSchema); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"workflow_control_budget_accounts", "workflow_control_budget_reservations", "workflow_control_budget_ledger", "workflow_control_budget_receipts"} {
+		rows, err := pool.Query(ctx, `SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 ORDER BY ordinal_position`, sourceSchema, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var columns, projections []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatal(err)
+			}
+			column := pgx.Identifier{name}.Sanitize()
+			columns = append(columns, column)
+			if strings.HasSuffix(name, "_bytes") {
+				projections = append(projections, fmt.Sprintf("convert_to(replace(convert_from(%s,'UTF8'),$1,$2),'UTF8')", column))
+			} else {
+				projections = append(projections, column)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if len(columns) == 0 {
+			t.Fatal("historical table is missing")
+		}
+		query := fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", pgx.Identifier{table}.Sanitize(), strings.Join(columns, ","), strings.Join(projections, ","), pgx.Identifier{sourceSchema, table}.Sanitize())
+		if _, err := upgradedPool.Exec(ctx, query, budgetstore.ContractManifestSHA256, manifest); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

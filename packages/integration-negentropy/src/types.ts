@@ -21,7 +21,12 @@ export interface NegentropyEvidenceProjection {
     readonly totalRuns: number;
     readonly statusCounts: Readonly<Record<string, number>>;
     readonly evidenceSourceCounts?: Readonly<Record<string, number>>;
-    readonly readDiagnostics?: readonly { readonly runId: string; readonly code: string }[];
+    readonly readDiagnostics?: readonly {
+      readonly scope: 'workspace' | 'backend' | 'run';
+      readonly runId?: string;
+      readonly backend?: 'ts-local' | 'go';
+      readonly code: string;
+    }[];
     readonly latestUpdatedAt?: string;
   };
   readonly prms: {

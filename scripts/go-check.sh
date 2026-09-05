@@ -1008,8 +1008,8 @@ detect_capabilities() {
       fail "Workflow Control budget authority runtime profile is missing TestBudgetAuthorityOpenAPIContract"
     local budget_authority_named_test test_path test_function
     for budget_authority_named_test in \
-      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEight' \
-      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums' \
+      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughNine' \
+      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationNineAndRecoveryRuntimeMinimum' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
       'internal/budgetapp/server_test.go|TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics' \
@@ -1113,6 +1113,12 @@ detect_capabilities() {
     for workflow_runner_v2_runtime_evidence in \
       migrations/000008_deliver_workflow_runner_authority_bindings.up.sql \
       migrations/000008_deliver_workflow_runner_authority_bindings.down.sql \
+      migrations/000009_index_workflow_runner_recovery_evidence.up.sql \
+      migrations/000009_index_workflow_runner_recovery_evidence.down.sql \
+      internal/runnerstore/postgres/recovery_evidence.go \
+      internal/runnerstore/postgres/recovery_evidence_integration_test.go \
+      internal/budgetstore/postgres/manifest_restart_integration_test.go \
+      internal/runnerapp/recovery_evidence.go \
       internal/runnerstore/v2_binding.go \
       internal/runnerstore/postgres/v2_binding.go \
       internal/runnerstore/postgres/gs9f2_runtime_integration_test.go \
@@ -1121,6 +1127,12 @@ detect_capabilities() {
         fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_evidence}"
     done
     local workflow_runner_v2_runtime_test
+    grep -Eq '^func[[:space:]]+TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe\(' \
+      "${module_dir}/internal/runnerstore/postgres/recovery_evidence_integration_test.go" ||
+      fail "Workflow Control recovery evidence profile is missing the scoped upgrade test"
+    grep -Eq '^func[[:space:]]+TestBudgetManifestPostgresRestart\(' \
+      "${module_dir}/internal/budgetstore/postgres/manifest_restart_integration_test.go" ||
+      fail "Workflow Control runtime profile is missing the budget manifest restart test"
     for workflow_runner_v2_runtime_test in \
       TestGS9F2AuthorityBindingRuntimeDelivery \
       TestGS9F2AuthorityBindingRestartRecovery \
@@ -1882,7 +1894,7 @@ run_workflow_runner_test_container() {
     rm -f -- "${selection_file}"
     command+=(-run "^${test_name}$")
   fi
-  if [[ "${test_name}" == TestGS9F2* ]]; then
+  if [[ "${test_name}" == TestGS9F2* || "${test_name}" == TestBudgetManifestPostgresRestart ]]; then
     local result_file
     result_file="$(mktemp -t openslack-go-check-runner-results.XXXXXX)"
     cleanup_files+=("${result_file}")
@@ -2257,6 +2269,7 @@ run_workflow_runner_v2_runtime_delivery() {
   local restart_token="${run_token,,}"
   local restart_schema="workflow_control_gs9f2_restart_${restart_token//-/}"
   local mixed_restart_schema="workflow_control_gs9f2_mixed_${restart_token//-/}"
+  local budget_manifest_restart_schema="workflow_budget_manifest_${restart_token//-/}"
 
   log "qualifying Workflow Control runner lifecycle bounds and cancel acknowledgement stability"
   run_workflow_runner_test_container \
@@ -2277,6 +2290,12 @@ run_workflow_runner_v2_runtime_delivery() {
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-v2-runtime-delivery-migration "${network}" "${database_name}" "${resource_owner}" \
     ./internal/runnerstore/postgres TestGS9F2AuthorityBindingMigrationGuards 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
+  log "qualifying Workflow Control schema-9 read-only recovery evidence and upgrade preservation"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-recovery-evidence "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe 1 \
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
 
   log "qualifying Workflow Control GS9-F2b worker/control lifecycle composition"
@@ -2301,6 +2320,13 @@ run_workflow_runner_v2_runtime_delivery() {
     WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed \
     "WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=${mixed_restart_schema}"
 
+  log "seeding historical budget manifests before the runtime PostgreSQL restart"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" budget-manifest-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/budgetstore/postgres TestBudgetManifestPostgresRestart 1 \
+    WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=seed \
+    "WORKFLOW_BUDGET_MANIFEST_RESTART_SCHEMA=${budget_manifest_restart_schema}"
+
   require_resource_owned container "${database_container}" "${resource_owner}"
   docker_cmd_interruptible restart "${database_container}" >/dev/null
   wait_for_healthy_container "${database_container}" "PostgreSQL after GS9-F2b runtime-delivery restart"
@@ -2320,6 +2346,13 @@ run_workflow_runner_v2_runtime_delivery() {
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
     WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify \
     "WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=${mixed_restart_schema}"
+
+  log "verifying historical budget bytes and mixed-manifest rebuild after PostgreSQL restart"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" budget-manifest-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/budgetstore/postgres TestBudgetManifestPostgresRestart 1 \
+    WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=verify \
+    "WORKFLOW_BUDGET_MANIFEST_RESTART_SCHEMA=${budget_manifest_restart_schema}"
 }
 
 run_prometheus_gate() {

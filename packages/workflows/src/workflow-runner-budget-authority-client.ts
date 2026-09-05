@@ -1,5 +1,4 @@
 import {
-  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
   canonicalWorkflowBudgetAuthorityJson,
   deriveWorkflowBudgetLedgerEntry,
   hashWorkflowBudgetAuthorityValue,
@@ -18,10 +17,10 @@ import {
 } from './workflow-budget-authority-contract.js';
 import {
   WORKFLOW_RUNNER_BUDGET_SOURCE_RESULT_SCHEMA,
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS,
   validateWorkflowRunnerBudgetSourceResult,
   type WorkflowRunnerBudgetSourceResult,
 } from './workflow-runner-authority-binding-contract.js';
+import { isAcceptedWorkflowBudgetManifest } from './internal/workflow-budget-compatibility.generated.js';
 import {
   cancelWorkflowRunnerResponseBody,
   readWorkflowRunnerResponseBytes,
@@ -121,9 +120,7 @@ function durable(
     record.writer !== DURABLE_WRITER ||
     record.authorityMode !== 'local-qualification-v1' ||
     record.productionAuthority !== false ||
-    (record.contractManifestSha256 !==
-      WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest &&
-      record.contractManifestSha256 !== WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256) ||
+    !isAcceptedWorkflowBudgetManifest(record.contractManifestSha256) ||
     record.authorityBuildHash !== buildHash ||
     typeof projection !== 'object' ||
     projection === null ||
@@ -256,7 +253,10 @@ async function exactBody(response: Response, signal?: AbortSignal): Promise<stri
     minimumBytes: 2,
     failure: (message, options) => {
       throw new WorkflowRunnerBudgetAuthorityClientError(
-        'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+        message === 'Budget authority response body could not be read.' ||
+          message === 'Budget authority response read was aborted.'
+          ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+          : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         message,
         options,
       );
@@ -362,7 +362,9 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
     if (![200, 201, 202].includes(response.status)) {
       await cancelWorkflowRunnerResponseBody(response);
       throw new WorkflowRunnerBudgetAuthorityClientError(
-        'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+        response.status === 429 || response.status >= 500
+          ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+          : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         `Budget authority returned HTTP ${response.status}.`,
       );
     }
@@ -415,7 +417,9 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
       if (response.status !== 200) {
         await cancelWorkflowRunnerResponseBody(response);
         throw new WorkflowRunnerBudgetAuthorityClientError(
-          'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+          response.status === 429 || response.status >= 500
+            ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+            : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
           `Budget account point-read returned HTTP ${response.status}.`,
         );
       }

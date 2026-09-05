@@ -1193,18 +1193,75 @@ Checkpoint, runner-binding, and lifecycle revisions remain independent. Fences i
 job; a newly admitted resume job may start at fence 1. With no committed checkpoint, the only valid
 resume destination is `phase-0` with null prior-checkpoint evidence.
 
+Recovery reads `GET /v2/runner/runs/{runId}/recovery-evidence` from the authenticated runner
+service. Schema 9 adds the workspace/run index; the query returns exact durable stage and resolution
+frames, unfinished-operation diagnostics, and active attempts without artifact contents. A
+`bindingId` query proves one historical operation. Full history uses pages bounded by the existing
+2 MiB runner response limit, with a shared snapshot digest; a changed snapshot requires a fresh query.
+Checkpoint source revisions and resume generations must form a contiguous chain. Its committed
+checkpoint frontier determines the next phase, and the current Workflow Control head must agree;
+legacy null phase fields are accepted only with sufficient checkpoint evidence.
+
+Version 2 resume intents freeze both checkpoint states and the original source evidence. New writes
+derive the resume correlation from the immutable stage hash; readers still validate the derived field
+when present in older v1/v2 intents. They use
+the local checkpoint file limit, checked before atomic publication, because two states can exceed
+the old 1 MiB intent reader limit. The checkpoint lock only validates and reserves local state;
+receipt queries and CAS execute outside it, and all writers respect the durable reservation. The
+cache is committed only after rechecking the reserved state. Historical operation proof and its
+original resolution survive later progress and journal reconstruction; they do not grant a current
+lease. Cancellation and lease expiry bound authority calls. Transport failures, 429, and 5xx retain
+the same frozen operation for the existing retry tick; identity and integrity conflicts require
+reconciliation.
+
+`openslack collaboration workflow runs repair-checkpoints <runId>` diagnoses without writing.
+`--apply` revalidates exact Go evidence, route identity, current head, active leases, and local file
+identity under a durable repair reservation. It preserves original bytes, including invalid UTF-8,
+before reconstructing only the provable local checkpoint cache. Torn or inconsistent intents can
+be removed only after their committed resolution is proven and their original bytes are preserved.
+Insufficient history, conflicting leases, or a generation rewind are rejected. Repair never changes
+Go history, starts a workflow, or runs automatically; repeating a completed repair is a no-op.
+
 The additive first-phase wire change refreshes upstream budget manifest locks without changing
-budget record schemas. Readers accept only the current manifest and the exact previous
-`662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable
+budget record schemas. The append-only
+[`compatibility.json`](../../../packages/workflows/contracts/workflow-budget-authority/compatibility.json)
+ledger is the single acceptance inventory. Its generator produces the TypeScript and Go
+acceptance sets and every durable OpenAPI manifest enum. Rotation appends a reviewed digest;
+the generator refuses removal or reordering of accepted digests. Existing durable
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
 
-Run list, show, progress, and save-run select local evidence using the immutable route when present.
-Lists enumerate both historical TypeScript and Go recovery directories, deduplicate routed run IDs,
-and isolate unreadable or ambiguous entries as reconciliation diagnostics. Go statuses are explicitly
-labelled recovery snapshots; they do not claim to be live authority heads. TUI warnings and exported
-evidence diagnostics preserve partial-read failures while healthy runs remain visible. These reads
-never initialize or repair route journals.
+Authority-binding schemas use explicit field rules, including nullable IDs, receipt lifecycle
+hashes, positive revisions, and canonical timestamps. Schema consumers must enable format assertions
+and register `WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS` from `@openslack/workflows`,
+alongside the standard `date-time` format. The `openslack-utf8-512` format limits error messages
+to 512 UTF-8 bytes; `maxLength` alone counts Unicode code points. The shared boundary corpus runs
+against the schema and the independent TypeScript and Go validators. Runtime validators also check
+cross-record identity, hashes, and sequence relationships.
+
+Logical run IDs retain the wire contract's ASCII ID alphabet, including colon in historical POSIX
+names. Filesystem entrypoints share the same validator and reject colon on Windows to prevent ADS
+interpretation. TUI projections derive their data fields from the workflow package types while
+retaining explicit support for incomplete historical summaries.
+
+Run list, show, progress, and save-run probe the immutable route's selected local directory before
+reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;
+the view preserves its provenance and route diagnostic without changing the execution authority.
+Conflicting unrouted copies require inspection or an explicit save-run evidence-source selection.
+Lists retain healthy roots and runs while reporting backend permission/path failures separately from
+malformed records, missing projections, route conflicts, and internal reader failures. List diagnostics
+are enumerable, and protocol/export DTOs serialize them explicitly alongside the array. Go statuses
+remain recovery snapshots, including a diagnostic when their route receipt is absent. TUI warnings
+retain partial-read failures. CLI async failures and MCP reads expose stable diagnostic codes.
+
+Each list request or TUI load creates one `createWorkflowRunReadQuery` context. It enumerates each
+backend and the route quarantine once, indexes quarantined receipt names, and shares verified
+locations between the lifecycle list and progress reads. The context is discarded after that load;
+it does not cache file contents or survive a refresh. Reads still check the selected directory's
+identity before and after loading evidence, including Windows reparse components and safe 8.3
+aliases. A replaced directory is diagnosed rather than followed. Quarantine work grows with the
+number of quarantine entries plus the number of runs, instead of their product.
+These reads never initialize, repair, or write route journals or run projections.
 
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
 the durable Workflow Control head as authority only after receipt/head identity comparison; local

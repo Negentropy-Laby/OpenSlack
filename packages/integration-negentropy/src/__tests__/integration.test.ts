@@ -61,6 +61,7 @@ it('includes Go recovery snapshots in evidence counts and keeps ambiguous runs d
     evidenceSourceCounts: { 'go-recovery-projection': 1 },
     readDiagnostics: [
       { runId: 'run.ambiguous', code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED' },
+      { runId: 'run.go', code: 'WORKFLOW_RUN_UNROUTED_GO_PROJECTION' },
     ],
   });
 });

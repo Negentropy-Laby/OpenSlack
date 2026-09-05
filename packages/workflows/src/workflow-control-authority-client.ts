@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { closedDataRecord } from './internal/contract-validation.js';
 
 import {
   canonicalWorkflowControlAuthorityJson,
@@ -166,6 +167,10 @@ export interface WorkflowControlAuthorityPort {
   ): Promise<WorkflowControlAuthorityRunRead | null>;
 }
 
+export interface WorkflowControlResumeAuthorityPort extends WorkflowControlAuthorityPort {
+  readTransitionReceipt: NonNullable<WorkflowControlAuthorityPort['readTransitionReceipt']>;
+}
+
 export interface WorkflowControlAuthorityBinding {
   readonly schema: 'openslack.workflow_control_authority_binding.v1';
   readonly workspaceId: string;
@@ -207,11 +212,20 @@ function hash(value: string): string {
 }
 
 function hasExactKeys(value: Record<string, unknown>, fields: readonly string[]): boolean {
-  const keys = Object.keys(value).sort();
-  return (
-    keys.length === fields.length &&
-    [...fields].sort().every((field, index) => keys[index] === field)
-  );
+  const reject = (): never => {
+    throw new TypeError('Expected a closed data record.');
+  };
+  try {
+    closedDataRecord(value, fields, '$', {
+      inert: reject,
+      missing: reject,
+      unknown: reject,
+      dataField: reject,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isCanonicalTimestamp(value: unknown): value is string {
@@ -368,13 +382,14 @@ export function prepareWorkflowControlAuthorityMutation(input: {
     `POST\n${path}\n${callerId}\n${record.workspaceId}\n${record.route.routingEpoch}\n${expectedBuildHash}\n${exactBody}`,
   )}`;
   const recordBody = `${canonicalWorkflowControlAuthorityJson(record)}\n`;
+  const requestHash = hash(exactBody);
   return Object.freeze({
     value,
     path,
     exactBody,
-    requestHash: hash(exactBody),
+    requestHash,
     recordHash: hash(recordBody),
-    idempotencyKey: `${AUTHORITY_KEY_PREFIX}${hash(exactBody)}`,
+    idempotencyKey: `${AUTHORITY_KEY_PREFIX}${requestHash}`,
     requestFingerprint,
   });
 }
@@ -420,6 +435,7 @@ export function isWorkflowControlAuthorityHeadBoundToRoute(
       currentPhaseIndex: head.currentPhaseIndex,
       resumeGeneration: head.resumeGeneration,
     };
+    const recordJson = canonicalWorkflowControlAuthorityJson(head.record);
     return (
       head.workspaceId === route.workspaceId &&
       head.runId === route.runId &&
@@ -436,9 +452,8 @@ export function isWorkflowControlAuthorityHeadBoundToRoute(
       head.record.runId === head.runId &&
       head.record.revision === head.revision &&
       head.record.state === head.state &&
-      head.recordHash === hash(`${canonicalWorkflowControlAuthorityJson(head.record)}\n`) &&
-      canonicalWorkflowControlAuthorityJson(head.record) ===
-        canonicalWorkflowControlAuthorityJson(expected)
+      head.recordHash === hash(`${recordJson}\n`) &&
+      recordJson === canonicalWorkflowControlAuthorityJson(expected)
     );
   } catch {
     return false;
@@ -464,7 +479,14 @@ async function readResponse(response: Response, signal?: AbortSignal): Promise<B
     validateContentLength: true,
     minimumBytes: 2,
     failure: (message, options) =>
-      fail('WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID', message, options),
+      fail(
+        message === 'Workflow authority response read failed.' ||
+          message === 'Workflow authority response read was aborted.'
+          ? 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED'
+          : 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+        message,
+        options,
+      ),
     messages: {
       contentType: 'Workflow authority response content type is invalid.',
       contentLength: 'Workflow authority response content length is invalid.',
@@ -730,7 +752,9 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     if (response.redirected || response.status !== 200) {
       await cancelWorkflowRunnerResponseBody(response);
       return fail(
-        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RECONCILIATION_REQUIRED',
+        !response.redirected && (response.status === 429 || response.status >= 500)
+          ? 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED'
+          : 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RECONCILIATION_REQUIRED',
         'Exact transition receipt is unavailable.',
       );
     }
@@ -789,7 +813,9 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     if (response.redirected || response.status !== 200) {
       await cancelWorkflowRunnerResponseBody(response);
       return fail(
-        'WORKFLOW_CONTROL_AUTHORITY_CLIENT_REJECTED',
+        !response.redirected && (response.status === 429 || response.status >= 500)
+          ? 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED'
+          : 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_REJECTED',
         `Workflow authority read rejected (${response.status}).`,
       );
     }
@@ -878,7 +904,8 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     if (response.redirected || ![200, 201, 202].includes(response.status)) {
       const status = response.status;
       await cancelWorkflowRunnerResponseBody(response);
-      if (status >= 500) return this.#recoverReceipt(prepared, signal);
+      if (!response.redirected && (status >= 500 || status === 429))
+        return this.#recoverReceipt(prepared, signal);
       return fail(
         'WORKFLOW_CONTROL_AUTHORITY_CLIENT_REJECTED',
         `Workflow authority mutation rejected (${status}).`,

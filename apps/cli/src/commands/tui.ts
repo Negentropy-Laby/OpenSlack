@@ -82,6 +82,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         if (process.cwd() !== root) {
           process.chdir(root);
         }
+        const { createWorkflowRunReadQuery } = await import('@openslack/workflows');
+        const workflowRunQuery = createWorkflowRunReadQuery(root);
 
         // Pre-fetch dashboard data
         try {
@@ -209,9 +211,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
-            const { findWorkflow, listWorkflowRuns, loadWorkflow } =
-              await import('@openslack/workflows');
-            const workflowRuns = await listWorkflowRuns({ rootDir: root });
+            const { findWorkflow, loadWorkflow } = await import('@openslack/workflows');
+            const workflowRuns = await workflowRunQuery.list();
             const lifecycleBase: Record<
               string,
               {
@@ -251,19 +252,24 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
         // Pre-fetch workflow run progress data
         try {
-          const { listWorkflowRuns, getWorkflowRunProgress } = await import('@openslack/workflows');
-          const runs = await listWorkflowRuns({ rootDir: root });
+          const {
+            renderWorkflowRunReadDiagnostic,
+            WorkflowRunReadError,
+            workflowRunReadDiagnostic,
+          } = await import('@openslack/workflows');
+          const runs = await workflowRunQuery.list();
           const progress = [];
-          const readWarnings = runs.diagnostics.map(
-            (item) => `${JSON.stringify(item.runId)}: ${item.code}; inspect run evidence.`,
-          );
+          const readWarnings = runs.diagnostics.map(renderWorkflowRunReadDiagnostic);
           for (const run of runs.slice(0, 20)) {
             try {
-              const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
+              const item = await workflowRunQuery.progress(run.runId);
               if (item) progress.push(item);
-            } catch {
+            } catch (error) {
               readWarnings.push(
-                `${JSON.stringify(run.runId)}: progress evidence requires reconciliation.`,
+                ...(error instanceof WorkflowRunReadError
+                  ? error.diagnostics
+                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]
+                ).map(renderWorkflowRunReadDiagnostic),
               );
             }
           }
@@ -271,7 +277,11 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           data.workflowRuns = mapWorkflowRunsToViewModel(progress);
           data.workflowRuns.readWarnings = readWarnings;
         } catch {
-          // Workflow run progress unavailable
+          data.workflowRunProgress = [];
+          data.workflowRuns = mapWorkflowRunsToViewModel([]);
+          data.workflowRuns.readWarnings = [
+            'WORKFLOW_RUN_EVIDENCE_INTERNAL_ERROR: workflow run reader failed.',
+          ];
         }
 
         data.workflowLifecycleLoader = async (

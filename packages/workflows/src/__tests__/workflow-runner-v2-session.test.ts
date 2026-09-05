@@ -806,13 +806,17 @@ describe('WorkflowRunnerV2Session', () => {
     expect(acknowledged).toEqual(['event_receipt', 'budget_authorization']);
   });
 
-  it('does not emit terminal after an authority commit outcome becomes unknown', async () => {
+  it('retries unknown authority outcomes with the same event and remains cancellable', async () => {
     const fatalReports: Error[] = [];
+    const attempts: string[] = [];
+    const signals: AbortSignal[] = [];
     const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
       async isResume() {
         return false;
       },
-      async commit() {
+      async commit(_operation, target, _source, signal) {
+        attempts.push(target.body);
+        signals.push(signal!);
         throw Object.assign(new Error('source response unknown'), {
           code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
         });
@@ -849,16 +853,23 @@ describe('WorkflowRunnerV2Session', () => {
     await offerTask;
     await turn();
     await turn();
+    expect(value.closed).toEqual([]);
+    expect(attempts).toHaveLength(1);
+    expect(await value.session.retryOutstanding()).toBe(true);
+    await turn();
+    expect(attempts).toEqual([attempts[0], attempts[0]]);
+    // A cancel interrupts a retry wait without emitting an uncommitted event.
+    void value.session.receive(cancelRequest(value.sealed, 3, 1)).catch(() => undefined);
+    await turn();
+    await turn();
     expect(value.closed).toEqual([2]);
     expect(value.session.state).toBe('reconciliation_required');
     expect(fatalReports).toHaveLength(1);
     expect(fatalReports[0]).toMatchObject({
       code: 'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
-      cause: {
-        code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_SOURCE_UNKNOWN',
-      },
     });
     expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
   });
 
   it('owns a synchronous authority event send failure without an unhandled rejection', async () => {
@@ -918,6 +929,96 @@ describe('WorkflowRunnerV2Session', () => {
     expect(fatalReports).toHaveLength(1);
     expect(unhandled).toEqual([]);
   });
+
+  it('completes a retryable authority operation once without changing the event bytes', async () => {
+    const attempts: string[] = [];
+    const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+      async isResume() {
+        return false;
+      },
+      async commit(_operation, target) {
+        attempts.push(target.body);
+        if (attempts.length === 1)
+          throw Object.assign(new Error('503'), { code: 'WORKFLOW_RUN_RECOVERY_UNKNOWN' });
+        return {
+          stage: { bindingId: 'WFRUNNER-BINDING-' + '4'.repeat(64) },
+          exactEventBytes: target.body,
+        } as never;
+      },
+      async acknowledgeControl() {},
+    };
+    const value = harness(
+      0,
+      { backend: 'go', authority: 'workflow-control', routingEpoch: 1, authorityBuildHash: HASH_A },
+      { runtimeDelivery },
+    );
+    await handshake(value);
+    const offer = value.session.receive(leaseOffer(value.sealed));
+    await turn();
+    await value.session.receive(receipt(value.sent.at(-1)!, 2));
+    await offer;
+    await turn();
+    const pending = value
+      .context()!
+      .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.retry'));
+    await turn();
+    expect(value.sent.filter((message) => message.kind === 'checkpoint_commit')).toHaveLength(0);
+    expect(await value.session.retryOutstanding()).toBe(true);
+    await turn();
+    const checkpoint = value.sent.at(-1)!;
+    expect(checkpoint.kind).toBe('checkpoint_commit');
+    await value.session.receive(receipt(checkpoint, 3, 2));
+    await pending;
+    expect(attempts).toEqual([attempts[0], attempts[0]]);
+    expect(value.sent.filter((message) => message.kind === 'checkpoint_commit')).toHaveLength(1);
+    expect(value.closed).toEqual([]);
+  });
+
+  it.each([0, 25])(
+    'bounds an authority probe by the remaining lease (%i ms)',
+    async (remaining) => {
+      let now = NOW,
+        calls = 0;
+      const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+        async isResume() {
+          return false;
+        },
+        async commit(_operation, _target, _source, signal) {
+          calls++;
+          await new Promise((_, reject) => {
+            signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+            signal!.throwIfAborted();
+          });
+          throw Error('expired operation resumed');
+        },
+        async acknowledgeControl() {},
+      };
+      const value = harness(
+        0,
+        {
+          backend: 'go',
+          authority: 'workflow-control',
+          routingEpoch: 1,
+          authorityBuildHash: HASH_A,
+        },
+        { runtimeDelivery, now: () => now },
+      );
+      await handshake(value);
+      const offer = value.session.receive(leaseOffer(value.sealed));
+      await turn();
+      await value.session.receive(receipt(value.sent.at(-1)!, 2));
+      await offer;
+      await turn();
+      now = new Date(Date.parse(LATER) - remaining).toISOString();
+      await expect(
+        value.context()!.checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.expired')),
+      ).rejects.toBeDefined();
+      expect(value.closed).toEqual([2]);
+      expect(calls).toBe(remaining === 0 ? 0 : 1);
+      expect(value.sent.map((message) => message.kind)).not.toContain('checkpoint_commit');
+      expect(value.sent.map((message) => message.kind)).not.toContain('terminal');
+    },
+  );
 
   it('rejects a Go-routed lease before source preparation or JavaScript loading', async () => {
     const value = harness(0, {

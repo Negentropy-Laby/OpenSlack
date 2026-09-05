@@ -577,6 +577,13 @@ export {
   renderWorkflowRun,
 } from './workflow-runs.js';
 export type { ListWorkflowRunsOptions } from './workflow-runs.js';
+export { createWorkflowRunReadQuery } from './workflow-run-read-query.js';
+export {
+  WorkflowRunReadError,
+  renderWorkflowRunReadDiagnostic,
+  workflowRunReadDiagnostic,
+} from './workflow-run-read-errors.js';
+export type { WorkflowRunReadDiagnostic, WorkflowRunReadCode } from './workflow-run-read-errors.js';
 
 export { getWorkflowRunProgress, renderWorkflowRunProgress } from './workflow-progress.js';
 export type { GetWorkflowRunProgressOptions } from './workflow-progress.js';
@@ -1079,3 +1086,10 @@ export type {
   ExportWorkflowSkillOptions,
   ExportWorkflowSkillResult,
 } from './workflow-save.js';
+export {
+  repairWorkflowCheckpoints,
+  type WorkflowCheckpointRepairOptions,
+  type WorkflowCheckpointRepairReport,
+} from './workflow-checkpoint-repair.js';
+export { createWorkflowRunRecoveryEvidenceClient } from './workflow-runner-authority-binding-client.js';
+export { WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS } from './workflow-runner-authority-binding-schema.js';

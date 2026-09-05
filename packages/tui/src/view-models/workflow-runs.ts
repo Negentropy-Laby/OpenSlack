@@ -1,88 +1,30 @@
 import { sanitizeTerminalText } from '../sanitize.js';
-import type { WorkflowArgumentsEnvelope } from '@openslack/workflows';
+import type {
+  WorkflowToolEvidence,
+  WorkflowAgentProgress,
+  WorkflowPhaseProgress,
+  WorkflowRunProgress,
+  WorkflowBudgetUsage,
+} from '@openslack/workflows';
 
-export interface WorkflowToolEvidenceViewModel {
-  type: 'tool_call' | 'tool_result' | 'progress';
-  name: string;
-  timestamp?: string;
-  summary: string;
-}
+export type WorkflowToolEvidenceViewModel = WorkflowToolEvidence;
+export type WorkflowAgentProgressItem = WorkflowAgentProgress;
+export type WorkflowPhaseProgressItem = WorkflowPhaseProgress;
 
-export interface WorkflowAgentProgressItem {
-  id: string;
-  label: string;
-  phase: string;
-  status: string;
-  cached: boolean;
-  agentRunId?: string;
-  model?: string;
-  runtimeProvider?: string;
-  bridgeMode?: string;
-  isolation?: 'none' | 'worktree';
-  worktreePath?: string;
-  promptSummary: string;
-  transcriptPath?: string;
-  resultSummary?: string;
-  terminalReason?: string;
-  replayAvailable?: boolean;
-  replayUnavailableReason?: string;
-  tokensUsed: number;
-  tokensRemaining: number | null;
-  recentTools: WorkflowToolEvidenceViewModel[];
-  warnings: string[];
-}
-
-export interface WorkflowPhaseProgressItem {
-  phase: string;
-  status: 'not-started' | 'running' | 'completed' | 'failed' | 'skipped' | 'unknown';
-  timestamp?: string;
-  elapsedMs?: number;
-  agentCount: number;
-  tokenTotal: number;
-  cachedCount: number;
-  liveCount: number;
-  failedCount: number;
-  agents: WorkflowAgentProgressItem[];
-  resultSummary?: string;
-  warnings: string[];
-}
-
-export interface WorkflowRunProgressItem {
-  runId: string;
-  workflowName: string;
+// Presentation also accepts incomplete historical summaries; the remaining fields
+// come from the package projection contract instead of a second field inventory.
+export type WorkflowRunProgressItem = Omit<WorkflowRunProgress, 'mode' | 'status' | 'budget'> & {
   mode: string;
   status: string;
-  startedAt?: string;
-  updatedAt?: string;
-  elapsedMs?: number;
-  currentPhase?: string;
-  argsEncoding: 'openslack.workflow_arguments.v1';
-  args: WorkflowArgumentsEnvelope;
-  phaseCount: number;
-  agentCount: number;
-  pendingApprovalCount: number;
-  budget: {
-    tokenBudget: number | null;
-    tokensUsed: number;
-    tokensRemaining: number | null;
-    costUsd?: number;
-    costEstimateUsd?: number;
-    costSource?: string;
-    tokenBudgetPercent?: number;
-    warningThreshold?: number;
-    status?: 'ok' | 'warning' | 'exceeded' | 'unknown';
-    warnings?: string[];
-    agentCalls: number;
-    maxAgents?: number;
-    maxConcurrency?: number;
-    onExceeded?: 'pause' | 'fail';
-    source: string;
-  };
-  phases: WorkflowPhaseProgressItem[];
-  outputSummary?: string;
-  logTail: string[];
-  warnings: string[];
-}
+  budget: Omit<
+    WorkflowBudgetUsage,
+    'costSource' | 'source' | 'warnings' | 'status' | 'warningThreshold'
+  > &
+    Partial<Pick<WorkflowBudgetUsage, 'warnings' | 'status' | 'warningThreshold'>> & {
+      costSource?: string;
+      source: string;
+    };
+};
 
 export interface WorkflowRunProgressViewModel {
   readWarnings?: string[];

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isWorkflowRunId } from './internal/workflow-run-identity.js';
 import { lstat, readdir, rename } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
@@ -92,7 +93,6 @@ export class WorkflowRunRoutingError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const HASH = /^[0-9a-f]{64}$/u;
@@ -140,7 +140,7 @@ function exactKeys(value: JsonRecord, expected: readonly string[], label: string
 }
 
 function id(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !SAFE_ID.test(value)) {
+  if (!isWorkflowRunId(value)) {
     return fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', `${label} is invalid.`);
   }
   return value;
@@ -538,17 +538,55 @@ export class WorkflowRunRouteJournal {
    * retired TypeScript execution checks must use this path.
    */
   async locateReadOnly(runId: string): Promise<WorkflowRunRouteJournalEntry | null> {
+    return this.createReadOnlyQuery().locateReadOnly(runId);
+  }
+
+  /** A request-local reader. Discard it after the list/inspection finishes. */
+  createReadOnlyQuery(): Pick<WorkflowRunRouteJournal, 'locateReadOnly'> {
+    let quarantine: Promise<ReadonlySet<string>> | undefined;
+    return {
+      locateReadOnly: (runId) =>
+        this.#locateReadOnly(runId, () => (quarantine ??= this.#readQuarantineNames())),
+    };
+  }
+
+  async #readQuarantineNames(): Promise<ReadonlySet<string>> {
+    const directory = join(this.#root, 'quarantine');
+    try {
+      await assertOwnerDirectory(directory, this.#security, this.#root);
+      const before = await lstat(directory, { bigint: true });
+      const entries = await readdir(directory);
+      await assertOwnerDirectory(directory, this.#security, this.#root);
+      const after = await lstat(directory, { bigint: true });
+      if (
+        before.dev !== after.dev ||
+        before.ino !== after.ino ||
+        before.mtimeNs !== after.mtimeNs
+      ) {
+        throw new TypeError('Route quarantine changed during enumeration.');
+      }
+      // Quarantine suffixes describe the incident; the first 69 bytes identify the route.
+      return new Set(
+        entries
+          .map((entry) => entry.match(/^[0-9a-f]{64}\.json(?=\.|$)/)?.[0])
+          .filter((name): name is string => name !== undefined),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+      throw error;
+    }
+  }
+
+  async #locateReadOnly(
+    runId: string,
+    readQuarantine: () => Promise<ReadonlySet<string>>,
+  ): Promise<WorkflowRunRouteJournalEntry | null> {
     if (!(await this.#rootExists())) return null;
     await assertOwnerDirectory(this.#root, this.#security);
     const name = routeFileName(runId);
     try {
-      const quarantine = await readdir(join(this.#root, 'quarantine')).catch(
-        (error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return [];
-          throw error;
-        },
-      );
-      if (quarantine.some((entry) => entry === name || entry.startsWith(`${name}.`))) {
+      const quarantine = await readQuarantine();
+      if (quarantine.has(name)) {
         return fail(
           'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
           'Requested run route receipt is quarantined and requires operator reconciliation.',
