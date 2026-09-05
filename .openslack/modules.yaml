@@ -505,6 +505,7 @@ modules:
       - repo:packages/workflows/src/workflow-run-routing-config.ts
       - repo:packages/workflows/src/workflow-control-authority-client.ts
       - repo:packages/workflows/src/workflow-runner-v2-go-projection-store.ts
+      - commit:cd6f264f717f2d42bccbdc954d3f88f9375597d2
       - test:packages/workflows/src/__tests__/run-store.test.ts
       - test:packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts
       - test:services/workflow-control/tests/contracts/source_manifest_test.go
