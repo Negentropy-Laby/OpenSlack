@@ -119,7 +119,7 @@ func main() {
 	}
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
-		V2Store: store, BindingStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
+		V2Store: store, BindingStore: store, RecoveryStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
 		RunAuthorityOrigin:      config.V2RunAuthorityOrigin,
 		RunAuthorityCallerID:    config.V2RunAuthorityCallerID,

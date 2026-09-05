@@ -1079,3 +1079,9 @@ export type {
   ExportWorkflowSkillOptions,
   ExportWorkflowSkillResult,
 } from './workflow-save.js';
+export {
+  repairWorkflowCheckpoints,
+  type WorkflowCheckpointRepairOptions,
+  type WorkflowCheckpointRepairReport,
+} from './workflow-checkpoint-repair.js';
+export { createWorkflowRunRecoveryEvidenceClient } from './workflow-runner-authority-binding-client.js';

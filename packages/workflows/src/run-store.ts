@@ -163,7 +163,28 @@ export interface WorkflowBudgetSnapshot {
 export const WORKFLOW_AUDIT_RECORD_SCHEMA = 'openslack.workflow_audit_record.v1' as const;
 export const WORKFLOW_AUDIT_MAX_BYTES = 2 * 1024 * 1024;
 export const WORKFLOW_CHECKPOINT_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
-const WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES = 8 * 1024 * 1024;
+export const WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES = 8 * 1024 * 1024;
+
+export function parseWorkflowCheckpointReservation(raw: string): string | null {
+  try {
+    const value = JSON.parse(raw) as { schema?: unknown; bindingId?: unknown };
+    if (
+      Object.keys(value).sort().join(',') !== 'bindingId,schema' ||
+      value.schema !== 'openslack.workflow_checkpoint_reservation.v1' ||
+      (value.bindingId !== null &&
+        (typeof value.bindingId !== 'string' ||
+          !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(value.bindingId))) ||
+      workflowCheckpointCanonicalJson(value) !== raw
+    )
+      throw new Error();
+    return value.bindingId as string | null;
+  } catch {
+    throw workflowCheckpointError(
+      'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+      'Checkpoint reservation is corrupt; explicit repair is required.',
+    );
+  }
+}
 const WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES = 6 * 1024 * 1024;
 const WORKFLOW_CHECKPOINT_HASH = /^[0-9a-f]{64}$/u;
 const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
@@ -343,7 +364,7 @@ export class WorkflowTypeScriptMutationRetiredError extends Error {
  */
 export class RunStore {
   private readonly baseDir: string;
-  private readonly fs: RunStoreFs;
+  protected readonly fs: RunStoreFs;
   private readonly mutationAccess: boolean;
   private readonly observationPort: WorkflowControlObservationPort | undefined;
   private readonly checkpointObservationPort: WorkflowCheckpointObservationPort | undefined;
@@ -904,123 +925,142 @@ export class RunStore {
     nextPhaseIndex: number,
     authority?: {
       expectedGeneration: number;
-      commit(prior: WorkflowCheckpointControlState): Promise<void>;
+      reservationId: string;
+      prepare(
+        prior: WorkflowCheckpointControlState,
+        next: WorkflowCheckpointControlState,
+      ): Promise<WorkflowCheckpointControlState | void>;
+      commit(): Promise<void>;
     },
   ): Promise<WorkflowCheckpointControlState> {
     this.assertMutationAccess();
-    const next = await this.withCheckpointMutation(runId, async () => {
-      const binding = checkpointBinding(bindingValue);
-      if (binding.workflowRunId !== runId) {
-        throw workflowCheckpointError(
-          'WORKFLOW_CHECKPOINT_BINDING_INVALID',
-          'Workflow checkpoint binding run is mismatched.',
-        );
-      }
-      const state = await this.requireCheckpointControl(runId);
-      const bindingHash = workflowCheckpointHash(binding);
-      if (
-        authority &&
-        state.resumeGeneration !== authority.expectedGeneration &&
-        !(
-          state.resumeGeneration === authority.expectedGeneration + 1 &&
-          bindingHash === state.seenBindingHashes.at(-1)
-        )
-      ) {
-        throw workflowCheckpointError(
-          'WORKFLOW_CHECKPOINT_BINDING_STALE',
-          'Go resume generation is stale.',
-        );
-      }
-      if (state.seenBindingHashes.includes(bindingHash)) {
-        if (
-          bindingHash === state.seenBindingHashes.at(-1) &&
-          nextPhaseId === `phase-${nextPhaseIndex}` &&
-          nextPhaseIndex === state.checkpoints.length
-        ) {
-          return state;
+    let reservedPrior: WorkflowCheckpointControlState | undefined;
+    const next = await this.withCheckpointMutation(
+      runId,
+      async () => {
+        const binding = checkpointBinding(bindingValue);
+        if (binding.workflowRunId !== runId) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_BINDING_INVALID',
+            'Workflow checkpoint binding run is mismatched.',
+          );
         }
-        throw workflowCheckpointError(
-          'WORKFLOW_CHECKPOINT_BINDING_STALE',
-          'Workflow checkpoint binding is stale.',
+        const state = await this.requireCheckpointControl(runId);
+        const bindingHash = workflowCheckpointHash(binding);
+        if (
+          authority &&
+          state.resumeGeneration !== authority.expectedGeneration &&
+          !(
+            state.resumeGeneration === authority.expectedGeneration + 1 &&
+            bindingHash === state.seenBindingHashes.at(-1)
+          )
+        ) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_BINDING_STALE',
+            'Go resume generation is stale.',
+          );
+        }
+        if (state.seenBindingHashes.includes(bindingHash)) {
+          if (
+            bindingHash === state.seenBindingHashes.at(-1) &&
+            nextPhaseId === `phase-${nextPhaseIndex}` &&
+            nextPhaseIndex === state.checkpoints.length
+          ) {
+            return state;
+          }
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_BINDING_STALE',
+            'Workflow checkpoint binding is stale.',
+          );
+        }
+        const priorCheckpoint = state.checkpoints.at(-1) ?? null;
+        const initialPhaseReentry =
+          priorCheckpoint === null &&
+          state.checkpoints.length === 0 &&
+          nextPhaseIndex === 0 &&
+          nextPhaseId === 'phase-0';
+        if (
+          (!initialPhaseReentry &&
+            (priorCheckpoint === null || nextPhaseIndex !== priorCheckpoint.phaseIndex + 1)) ||
+          nextPhaseId !== `phase-${nextPhaseIndex}` ||
+          binding.attemptId === state.activeBinding.attemptId ||
+          binding.leaseId === state.activeBinding.leaseId ||
+          ((binding.jobId === state.activeBinding.jobId || !authority) &&
+            binding.fencingToken <= state.activeBinding.fencingToken) ||
+          binding.workspaceId !== state.activeBinding.workspaceId ||
+          binding.workflowRunId !== state.activeBinding.workflowRunId ||
+          binding.correlationId !== state.activeBinding.correlationId ||
+          binding.runnerBuildHash !== state.activeBinding.runnerBuildHash ||
+          binding.workflowSourceHash !== state.activeBinding.workflowSourceHash ||
+          binding.manifestHash !== state.activeBinding.manifestHash ||
+          binding.inputHash !== state.activeBinding.inputHash
+        ) {
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_RESUME_INVALID',
+            'Workflow checkpoint resume binding or next phase is invalid.',
+          );
+        }
+        if (priorCheckpoint) await this.verifyCheckpointArtifact(runId, priorCheckpoint);
+        const revision = state.revision + 1;
+        const resumeGeneration = state.resumeGeneration + 1;
+        const queueObservation = Boolean(
+          state.shadowEnabled &&
+          this.checkpointObservationPort &&
+          !state.shadowOverflowed &&
+          state.pendingObservations.length < 1024,
         );
-      }
-      const priorCheckpoint = state.checkpoints.at(-1) ?? null;
-      const initialPhaseReentry =
-        priorCheckpoint === null &&
-        state.checkpoints.length === 0 &&
-        nextPhaseIndex === 0 &&
-        nextPhaseId === 'phase-0';
-      if (
-        (!initialPhaseReentry &&
-          (priorCheckpoint === null || nextPhaseIndex !== priorCheckpoint.phaseIndex + 1)) ||
-        nextPhaseId !== `phase-${nextPhaseIndex}` ||
-        binding.attemptId === state.activeBinding.attemptId ||
-        binding.leaseId === state.activeBinding.leaseId ||
-        ((binding.jobId === state.activeBinding.jobId || !authority) &&
-          binding.fencingToken <= state.activeBinding.fencingToken) ||
-        binding.workspaceId !== state.activeBinding.workspaceId ||
-        binding.workflowRunId !== state.activeBinding.workflowRunId ||
-        binding.correlationId !== state.activeBinding.correlationId ||
-        binding.runnerBuildHash !== state.activeBinding.runnerBuildHash ||
-        binding.workflowSourceHash !== state.activeBinding.workflowSourceHash ||
-        binding.manifestHash !== state.activeBinding.manifestHash ||
-        binding.inputHash !== state.activeBinding.inputHash
-      ) {
-        throw workflowCheckpointError(
-          'WORKFLOW_CHECKPOINT_RESUME_INVALID',
-          'Workflow checkpoint resume binding or next phase is invalid.',
-        );
-      }
-      if (priorCheckpoint) await this.verifyCheckpointArtifact(runId, priorCheckpoint);
-      if (authority) await authority.commit(state);
-      const revision = state.revision + 1;
-      const resumeGeneration = state.resumeGeneration + 1;
-      const queueObservation = Boolean(
-        state.shadowEnabled &&
-        this.checkpointObservationPort &&
-        !state.shadowOverflowed &&
-        state.pendingObservations.length < 1024,
-      );
-      const sourceSequence = state.sourceSequence + (queueObservation ? 1 : 0);
-      const observation: WorkflowCheckpointShadowObservation = {
-        schema: WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
-        authority: 'typescript',
-        goRole: 'observer_only',
-        runId,
-        revision,
-        resumeGeneration,
-        workflowSourceHash: binding.workflowSourceHash,
-        manifestHash: binding.manifestHash,
-        inputHash: binding.inputHash,
-        runner: this.checkpointRunner(binding),
-        checkpoint: null,
-        priorCheckpoint,
-        nextPhaseId,
-        nextPhaseIndex,
-      };
-      const next = validateWorkflowCheckpointControlState(
-        {
-          ...state,
+        const sourceSequence = state.sourceSequence + (queueObservation ? 1 : 0);
+        const observation: WorkflowCheckpointShadowObservation = {
+          schema: WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
+          authority: 'typescript',
+          goRole: 'observer_only',
+          runId,
           revision,
           resumeGeneration,
-          sourceSequence,
-          shadowOverflowed:
-            state.shadowOverflowed || Boolean(state.shadowEnabled && !queueObservation),
-          activeBinding: binding,
-          seenBindingHashes: [...state.seenBindingHashes, bindingHash],
-          pendingObservations: queueObservation
-            ? [
-                ...state.pendingObservations,
-                { sourceSequence, operation: 'resume_advance', observation },
-              ]
-            : state.pendingObservations,
-          updatedAt: new Date().toISOString(),
-        },
-        runId,
-      );
-      await this.writeCheckpointControl(runId, next);
-      return next;
-    });
+          workflowSourceHash: binding.workflowSourceHash,
+          manifestHash: binding.manifestHash,
+          inputHash: binding.inputHash,
+          runner: this.checkpointRunner(binding),
+          checkpoint: null,
+          priorCheckpoint,
+          nextPhaseId,
+          nextPhaseIndex,
+        };
+        let next = validateWorkflowCheckpointControlState(
+          {
+            ...state,
+            revision,
+            resumeGeneration,
+            sourceSequence,
+            shadowOverflowed:
+              state.shadowOverflowed || Boolean(state.shadowEnabled && !queueObservation),
+            activeBinding: binding,
+            seenBindingHashes: [...state.seenBindingHashes, bindingHash],
+            pendingObservations: queueObservation
+              ? [
+                  ...state.pendingObservations,
+                  { sourceSequence, operation: 'resume_advance', observation },
+                ]
+              : state.pendingObservations,
+            updatedAt: new Date().toISOString(),
+          },
+          runId,
+        );
+        if (authority) {
+          next = (await authority.prepare(state, next)) ?? next;
+          await this.writeCheckpointReservation(runId, authority.reservationId);
+          reservedPrior = state;
+        } else {
+          await this.writeCheckpointControl(runId, next);
+        }
+        return next;
+      },
+      authority?.reservationId,
+    );
+    if (authority && reservedPrior) {
+      await authority.commit();
+      await this.finalizeCheckpointResume(runId, authority.reservationId, reservedPrior, next);
+    }
     await this.drainPendingCheckpointObservations(runId);
     return next;
   }
@@ -1222,7 +1262,7 @@ export class RunStore {
     return state;
   }
 
-  private async writeCheckpointControl(
+  protected async writeCheckpointControl(
     runId: string,
     state: WorkflowCheckpointControlState,
   ): Promise<void> {
@@ -1382,13 +1422,73 @@ export class RunStore {
     }
   }
 
-  private async withCheckpointMutation<T>(runId: string, action: () => Promise<T>): Promise<T> {
-    return enqueueByKey(this.checkpointQueues, runId, async () => {
-      if (this.fs.withExclusiveLock) {
-        return this.fs.withExclusiveLock(`${this.checkpointControlPath(runId)}.lock`, action);
+  protected async withCheckpointMutation<T>(
+    runId: string,
+    action: () => Promise<T>,
+    reservationId?: string,
+  ): Promise<T> {
+    const guarded = async () => {
+      const path = `${this.checkpointControlPath(runId)}.intent`;
+      const raw = this.fs.readOwnerOnlyFile
+        ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES)
+        : await this.fs.readFile(path);
+      if (raw !== null) {
+        const pending = parseWorkflowCheckpointReservation(raw);
+        if (pending !== null && pending !== reservationId)
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_RECONCILIATION_REQUIRED',
+            'An unfinished resume intent reserves this checkpoint cache.',
+          );
       }
       return action();
+    };
+    return enqueueByKey(this.checkpointQueues, runId, async () => {
+      if (this.fs.withExclusiveLock) {
+        return this.fs.withExclusiveLock(`${this.checkpointControlPath(runId)}.lock`, guarded);
+      }
+      return guarded();
     });
+  }
+
+  private async writeCheckpointReservation(runId: string, bindingId: string | null): Promise<void> {
+    const path = `${this.checkpointControlPath(runId)}.intent`;
+    const body = workflowCheckpointCanonicalJson({
+      schema: 'openslack.workflow_checkpoint_reservation.v1',
+      bindingId,
+    });
+    if (this.fs.writeOwnerOnlyAtomic) await this.fs.writeOwnerOnlyAtomic(path, body);
+    else await this.fs.writeFile(path, body);
+  }
+
+  /** Finish a proven CAS after a lost response/cache write; never rewind newer state. */
+  protected async finalizeCheckpointResume(
+    runId: string,
+    reservationId: string,
+    prior: WorkflowCheckpointControlState,
+    next: WorkflowCheckpointControlState,
+  ): Promise<void> {
+    this.assertMutationAccess();
+    await this.withCheckpointMutation(
+      runId,
+      async () => {
+        const current = await this.requireCheckpointControl(runId);
+        if (
+          current.resumeGeneration > next.resumeGeneration ||
+          (current.resumeGeneration === next.resumeGeneration && current.revision > next.revision)
+        )
+          return;
+        if (workflowCheckpointHash(current) !== workflowCheckpointHash(next)) {
+          if (workflowCheckpointHash(current) !== workflowCheckpointHash(prior))
+            throw workflowCheckpointError(
+              'WORKFLOW_CHECKPOINT_RECONCILIATION_REQUIRED',
+              'Checkpoint cache changed after its resume intent.',
+            );
+          await this.writeCheckpointControl(runId, next);
+        }
+        await this.writeCheckpointReservation(runId, null);
+      },
+      reservationId,
+    );
   }
 
   private async drainPendingCheckpointObservations(runId: string): Promise<void> {

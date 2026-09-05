@@ -1454,9 +1454,32 @@ function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
     'internal/runnerconfig',
     'internal/runnerstore',
     'internal/runnerstore/postgres',
+    'internal/runnerapp',
   ]) {
     mkdirSync(join(moduleRoot, directory), { recursive: true });
   }
+  for (const suffix of ['up', 'down']) {
+    writeFileSync(
+      join(moduleRoot, `migrations/000009_index_workflow_runner_recovery_evidence.${suffix}.sql`),
+      'BEGIN;\nCOMMIT;\n',
+      'utf8',
+    );
+  }
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/recovery_evidence.go'),
+    'package postgres\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerapp/recovery_evidence.go'),
+    'package runnerapp\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/recovery_evidence_integration_test.go'),
+    'package postgres\n\nimport "testing"\n\nfunc TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe(t *testing.T) {}\n',
+    'utf8',
+  );
   writeFileSync(
     join(moduleRoot, 'migrations/000008_deliver_workflow_runner_authority_bindings.up.sql'),
     'BEGIN;\nCOMMIT;\n',
@@ -1860,7 +1883,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   writeFileSync(join(moduleRoot, 'cmd/budget-authority-server/main.go'), 'package main\n', 'utf8');
   writeFileSync(
     join(moduleRoot, 'cmd/budget-authority-server/main_test.go'),
-    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEight(t *testing.T) {}\n',
+    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughNine(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
@@ -2008,7 +2031,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   );
   writeFileSync(
     join(moduleRoot, 'internal/databaseready/databaseready_test.go'),
-    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums(t *testing.T) {}\n',
+    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationNineAndRecoveryRuntimeMinimum(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
