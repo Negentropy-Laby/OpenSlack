@@ -43,6 +43,46 @@ x-openslack-forbidden-authority-fields:
     resume,
   ]
 paths:
+  /v2/runner/runs/{runId}/recovery-evidence:
+    get:
+      operationId: readWorkflowRunnerRecoveryEvidence
+      description: >-
+        Read exact durable checkpoint and resume frames plus unfinished-operation
+        diagnostics for this workspace and immutable Go route. No artifact bodies
+        are returned. A bindingId selects one historical operation. Full history
+        is paged by afterBindingId and snapshot together; a changed snapshot is
+        retryable and requires restarting the complete query. History never grants
+        a current lease or permits execution. Requires schema 9.
+      security: [{ bearerAuth: [] }]
+      x-openslack-no-store-mutation: true
+      x-openslack-max-response-bytes: 2097152
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - name: runId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Identifier' }
+        - name: bindingId
+          in: query
+          schema: { $ref: '#/components/schemas/RecoveryBindingId' }
+        - name: afterBindingId
+          in: query
+          schema: { $ref: '#/components/schemas/RecoveryBindingId' }
+        - name: snapshot
+          in: query
+          schema: { $ref: '#/components/schemas/Hash' }
+      responses:
+        '200':
+          description: A consistent read-only page with exact original frames.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/RecoveryEvidence' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/workflow-runner/binding:
     get:
       operationId: inspectWorkflowRunnerControlBinding
@@ -559,6 +599,98 @@ components:
       description: PostgreSQL or commit-outcome recovery is unavailable.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    RecoveryBindingId:
+      type: string
+      pattern: '^WFRUNNER-BINDING-[0-9a-f]{64}$'
+    RecoveryEvidence:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          runId,
+          route,
+          complete,
+          snapshot,
+          nextCursor,
+          bindings,
+          unfinished,
+          activeAttempts,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_recovery_evidence.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        route:
+          type: object
+          additionalProperties: false
+          unevaluatedProperties: false
+          required: [backend, authority, routingEpoch, authorityBuildHash]
+          properties:
+            backend: { const: go }
+            authority: { const: workflow-control }
+            routingEpoch: { $ref: '#/components/schemas/SafePositiveInteger' }
+            authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+        complete: { type: boolean }
+        snapshot: { $ref: '#/components/schemas/Hash' }
+        nextCursor: { type: [string, 'null'], pattern: '^WFRUNNER-BINDING-[0-9a-f]{64}$' }
+        bindings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            unevaluatedProperties: false
+            required: [bindingId, state, stage, stageReceipt, resolution, resolutionReceipt]
+            properties:
+              bindingId: { $ref: '#/components/schemas/RecoveryBindingId' }
+              state:
+                {
+                  enum:
+                    [
+                      staged,
+                      resolved,
+                      runner_committed,
+                      completed,
+                      aborted,
+                      reconciliation_required,
+                    ],
+                }
+              stage:
+                {
+                  type: string,
+                  minLength: 1,
+                  description: Exact canonical stage bytes including the original LF.,
+                }
+              stageReceipt: { type: string, minLength: 1 }
+              resolution: { type: [string, 'null'], minLength: 1 }
+              resolutionReceipt: { type: [string, 'null'], minLength: 1 }
+        unfinished:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            unevaluatedProperties: false
+            required: [bindingId, operation, state]
+            properties:
+              bindingId: { $ref: '#/components/schemas/RecoveryBindingId' }
+              operation:
+                {
+                  enum:
+                    [
+                      checkpoint_commit,
+                      resume_advance,
+                      effect_authorize,
+                      effect_complete,
+                      budget_reserve,
+                      budget_settle,
+                    ],
+                }
+              state: { enum: [staged, resolved, runner_committed, reconciliation_required] }
+        activeAttempts:
+          type: array
+          items: { $ref: '#/components/schemas/Identifier' }
     RunnerBinding:
       type: object
       additionalProperties: false
@@ -8291,7 +8423,7 @@ components:
         schemaVersion:
           type: integer
           minimum: 2
-          maximum: 8
+          maximum: 9
         mode: { const: runner-control-go-authority }
         workflowAuthority: { const: workflow-control }
         routingActivated: { type: boolean }
