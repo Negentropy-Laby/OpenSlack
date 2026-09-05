@@ -426,6 +426,17 @@ func TestGS9F2AuthorityBindingRestartRecovery(t *testing.T) {
 			if view.JobID != "job-f2-restart-staged" && (len(view.ExactResolutionBytes) == 0 || len(view.ExactResolutionReceipt) == 0) {
 				t.Fatalf("post-resolution recovery lost exact evidence: %+v", view)
 			}
+			stage, parseErr := runnerbindingcontract.ParseStageBytes(view.ExactStageBytes)
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			proof, proofErr := repository.ReadRecoveryEvidence(context.Background(), prepared.Value.WorkspaceID, bindingString(stage, "runId"), view.BindingID, "", "")
+			if proofErr != nil || len(proof.Bindings) != 1 || proof.Bindings[0].State != "reconciliation_required" || proof.Bindings[0].Stage != string(view.ExactStageBytes) {
+				t.Fatalf("restarted evidence query lost frozen history: %+v %v", proof, proofErr)
+			}
+			if len(view.ExactResolutionBytes) > 0 && (proof.Bindings[0].Resolution == nil || *proof.Bindings[0].Resolution != string(view.ExactResolutionBytes) || proof.Bindings[0].ResolutionReceipt == nil || *proof.Bindings[0].ResolutionReceipt != string(view.ExactResolutionReceipt)) {
+				t.Fatal("reconciliation state hid accepted pre-restart evidence")
+			}
 		}
 		var reconciledControls int
 		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM workflow_runner_control_messages WHERE delivery_state='reconciliation_required'`).Scan(&reconciledControls); err != nil || reconciledControls != 1 {

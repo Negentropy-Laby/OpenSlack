@@ -1225,6 +1225,8 @@ does not fall back to direct in-process execution.
 | `openslack collaboration inspect <runId> --out <file>`                                      | Write output to file instead of stdout                                                 |
 | `openslack collaboration inspect <runId> --no-run-output`                                   | Exclude run output section from report                                                 |
 | `openslack collaboration inspect <runId> --no-log`                                          | Exclude log entries from report                                                        |
+| `openslack collaboration workflow runs repair-checkpoints <runId>`                     | Diagnose checkpoint cache damage and report provable repairs without writing            |
+| `openslack collaboration workflow runs repair-checkpoints <runId> --apply`             | Preserve original files and rebuild a provable local cache after fresh authority checks |
 
 ### Workflow Discovery
 

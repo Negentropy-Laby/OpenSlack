@@ -814,6 +814,17 @@ export async function readOwnerFile(
   security: WorkflowControlShadowJournalSecurityDependencies,
   maxBytes: number,
 ): Promise<string> {
+  return new TextDecoder('utf-8', { fatal: true }).decode(
+    await readOwnerFileBytes(path, security, maxBytes),
+  );
+}
+
+/** Preserve invalid UTF-8 during explicit repair while retaining every owner/path check. */
+export async function readOwnerFileBytes(
+  path: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+  maxBytes: number,
+): Promise<Buffer> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
     throw new TypeError('Owner-only file read bound is invalid.');
   }
@@ -837,7 +848,7 @@ export async function readOwnerFile(
     ) {
       throw new TypeError('Owner-only file changed during read.');
     }
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return bytes;
   } finally {
     await handle.close();
   }
@@ -845,7 +856,7 @@ export async function readOwnerFile(
 
 async function writeExclusiveWithIdentity(
   path: string,
-  body: string,
+  body: string | Uint8Array,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<BigIntStats> {
   const handle = await open(
@@ -875,6 +886,14 @@ async function writeExclusiveWithIdentity(
 export async function writeExclusive(
   path: string,
   body: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
+  await writeExclusiveWithIdentity(path, body, security);
+}
+
+export async function writeExclusiveBytes(
+  path: string,
+  body: Uint8Array,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<void> {
   await writeExclusiveWithIdentity(path, body, security);

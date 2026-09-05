@@ -4,6 +4,10 @@ import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js'
 import { RunStore } from '../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { WorkflowRunnerResumeSourceStore } from '../internal/workflow-runner-resume-source.js';
+import { atomicWrite, productionJournalSecurity } from '../workflow-control-shadow.js';
+import { recoveryFrame } from './workflow-recovery-fixtures.js';
+import type { WorkflowRunRecoveryEvidence } from '../workflow-run-recovery-evidence.js';
+import { WORKFLOW_RUNNER_CONTRACT_LIMITS } from '../workflow-runner-contract.js';
 import {
   createWorkflowRunnerV2RuntimeDelivery,
   type WorkflowRunnerV2WorkerConfig,
@@ -1881,6 +1885,7 @@ async function defaultResumeFixture(
   const root = await mkdtemp(join(tmpdir(), 'workflow-default-resume-'));
   roots.push(root);
   const hash = 'a'.repeat(64);
+  const acceptedAt = new Date().toISOString();
   const fixture = goFixture('resume_advance');
   const original = parseWorkflowControlAuthorityMessageBytes(
     Buffer.from(fixture.target.body, 'utf8'),
@@ -1888,6 +1893,13 @@ async function defaultResumeFixture(
   const target = prepareWorkflowControlAuthorityMessage({
     ...original,
     fencingToken: 1,
+    sentAt: acceptedAt,
+    payload: {
+      acceptedAt,
+      leaseExpiresAt: new Date(
+        Date.parse(acceptedAt) + WORKFLOW_RUNNER_CONTRACT_LIMITS.maxLeaseDurationMs,
+      ).toISOString(),
+    },
     // Deliberately independent runner revision (20), checkpoint revision (1/2), and Go revision (7).
   });
   const message = parseWorkflowControlAuthorityMessageBytes(Buffer.from(target.body, 'utf8'));
@@ -1922,6 +1934,14 @@ async function defaultResumeFixture(
       artifact: Buffer.from('committed phase output'),
     });
   await store.transitionStatus(message.workflowRunId!, 'paused');
+  const recoveryBindings: WorkflowRunRecoveryEvidence['bindings'][number][] = options.checkpoint
+    ? [
+        recoveryFrame(
+          (await store.loadCheckpointControl(message.workflowRunId!))!,
+          'checkpoint_commit',
+        ),
+      ]
+    : [];
   let record: WorkflowControlAuthorityRunRecord = {
     schema: 'openslack.workflow_control_authority_run_record.v2',
     workspaceId: message.workspaceId!,
@@ -1947,6 +1967,33 @@ async function defaultResumeFixture(
     try {
       const path = request.url ?? '';
       if (request.method === 'GET') {
+        if (path.startsWith('/v2/runner/runs/')) {
+          const selected = new URL(path, 'http://localhost').searchParams.get('bindingId');
+          reply(
+            response,
+            canonicalWorkflowControlAuthorityJson({
+              schema: 'openslack.workflow_runner_recovery_evidence.v1',
+              workspaceId: record.workspaceId,
+              runId: record.runId,
+              route: record.route,
+              complete: selected === null,
+              snapshot: 'c'.repeat(64),
+              nextCursor: null,
+              bindings: recoveryBindings.filter(
+                (entry) => selected === null || entry.bindingId === selected,
+              ),
+              unfinished: recoveryBindings
+                .filter((entry) => entry.state !== 'completed')
+                .map((entry) => ({
+                  bindingId: entry.bindingId,
+                  operation: JSON.parse(entry.stage).operation,
+                  state: entry.state,
+                })),
+              activeAttempts: [message.attemptId],
+            }) + '\n',
+          );
+          return;
+        }
         if (path.startsWith('/v1/workflow-control/runs/')) {
           reply(
             response,
@@ -2028,6 +2075,24 @@ async function defaultResumeFixture(
         ? await port.stage(prepared)
         : await port.resolve(value.bindingId, prepared);
       const exact = canonicalWorkflowControlAuthorityJson(receipt) + '\n';
+      if (path.endsWith(':stage')) {
+        recoveryBindings.push({
+          bindingId: value.bindingId,
+          state: 'staged',
+          stage: bytes,
+          stageReceipt: exact,
+          resolution: null,
+          resolutionReceipt: null,
+        });
+      } else {
+        const entry = recoveryBindings.find((entry) => entry.bindingId === value.bindingId)!;
+        recoveryBindings[recoveryBindings.indexOf(entry)] = {
+          ...entry,
+          state: 'completed',
+          resolution: bytes,
+          resolutionReceipt: exact,
+        };
+      }
       receipts.set(String(request.headers['idempotency-key']), exact);
       reply(response, exact);
     } catch (error) {
@@ -2064,6 +2129,11 @@ async function defaultResumeFixture(
     target,
     message,
     authority,
+    recovery: createWorkflowRunnerAuthorityBindingClient({
+      origin,
+      workspaceId: record.workspaceId,
+      bearerToken: 'c'.repeat(48),
+    }),
     delivery,
     port,
     failures,
@@ -2099,6 +2169,7 @@ describe('default Go resume source integration', () => {
           value.root,
           value.message,
           value.authority,
+          value.recovery,
         );
         const resumed = await source.committed(context.stage);
         expect(resumed).toMatchObject({
@@ -2137,15 +2208,19 @@ describe('default Go resume source integration', () => {
         value.root,
         value.message,
         value.authority,
+        value.recovery,
       );
       await source.commitResume(value.port.stageValue!, value.port.stageReceipt!);
       expect(value.mutations).toBe(1);
       expect((await source.committed(value.port.stageValue!))?.resumeGeneration).toBe(1);
       const sibling = { ...value.message, attemptId: 'attempt.sibling' };
       await expect(
-        new WorkflowRunnerResumeSourceStore(value.root, sibling, value.authority).committed(
-          value.port.stageValue!,
-        ),
+        new WorkflowRunnerResumeSourceStore(
+          value.root,
+          sibling,
+          value.authority,
+          value.recovery,
+        ).committed(value.port.stageValue!),
       ).rejects.toThrow('exact staged event');
       const intentPath = join(
         source.checkpointControlDir(value.message.workflowRunId!),
@@ -2162,7 +2237,7 @@ describe('default Go resume source integration', () => {
           }) + '\n',
         );
         await expect(source.committed(value.port.stageValue!)).rejects.toThrow(
-          /intent differs|projection is not backed/,
+          /intent is torn|intent differs|projection is not backed/,
         );
         expect(receiptLookup).not.toHaveBeenCalled();
       }
@@ -2181,6 +2256,62 @@ describe('default Go resume source integration', () => {
         (await value.store.loadCheckpointControl(value.message.workflowRunId!))?.resumeGeneration,
       ).toBe(0);
       expect(value.failures).toEqual([]);
+    } finally {
+      await value.close();
+    }
+  });
+
+  it('replays A with its exact resolution after a later reservation and a rebuilt local journal', async () => {
+    const value = await defaultResumeFixture({ checkpoint: true });
+    try {
+      const accepted = await value.delivery.commit('resume_advance', value.target);
+      const source = new WorkflowRunnerResumeSourceStore(
+        value.root,
+        value.message,
+        value.authority,
+        value.recovery,
+      );
+      const marker = source.checkpointControlPath(value.message.workflowRunId!) + '.intent';
+      await atomicWrite(
+        marker,
+        canonicalWorkflowControlAuthorityJson({
+          schema: 'openslack.workflow_checkpoint_reservation.v1',
+          bindingId: 'WFRUNNER-BINDING-' + 'e'.repeat(64),
+        }),
+        productionJournalSecurity(),
+      );
+      expect(await source.probeEvidence(accepted.stage)).toEqual(accepted.resolution.evidence);
+      // A new empty journal must restore the original timestamp and receipt,
+      // not create a new resolution for this already committed operation.
+      const journal = new WorkflowRunnerAuthorityBindingJournal(
+        join(value.root, 'rebuilt-bindings'),
+      );
+      const runtime = new WorkflowRunnerAuthorityBindingRuntime({ journal, port: value.port });
+      await runtime.initialize();
+      const recovered = await runtime.commit({
+        operation: 'resume_advance',
+        target: value.target,
+        lease: {
+          workspaceId: accepted.stage.workspaceId,
+          jobId: accepted.stage.jobId,
+          runId: accepted.stage.runId,
+          runnerAttemptId: accepted.stage.runnerAttemptId,
+          leaseId: accepted.stage.leaseId,
+          fencingToken: accepted.stage.fencingToken,
+          route: accepted.stage.route,
+          runnerAuthority: accepted.stage.runnerAuthority,
+          correlationId: accepted.stage.correlationId,
+        },
+        source: {
+          probe: (stage, signal) => source.probe(stage, signal),
+          commit: async () => {
+            throw Error('historical operation must not commit again');
+          },
+        },
+      });
+      expect(recovered.resolution).toEqual(accepted.resolution);
+      expect(recovered.resolutionReceipt).toEqual(accepted.resolutionReceipt);
+      expect(value.mutations).toBe(1);
     } finally {
       await value.close();
     }

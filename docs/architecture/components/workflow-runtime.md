@@ -1193,6 +1193,33 @@ Checkpoint, runner-binding, and lifecycle revisions remain independent. Fences i
 job; a newly admitted resume job may start at fence 1. With no committed checkpoint, the only valid
 resume destination is `phase-0` with null prior-checkpoint evidence.
 
+Recovery reads `GET /v2/runner/runs/{runId}/recovery-evidence` from the authenticated runner
+service. Schema 9 adds the workspace/run index; the query returns exact durable stage and resolution
+frames, unfinished-operation diagnostics, and active attempts without artifact contents. A
+`bindingId` query proves one historical operation. Full history uses pages bounded by the existing
+2 MiB runner response limit, with a shared snapshot digest; a changed snapshot requires a fresh query.
+Checkpoint source revisions and resume generations must form a contiguous chain. Its committed
+checkpoint frontier determines the next phase, and the current Workflow Control head must agree;
+legacy null phase fields are accepted only with sufficient checkpoint evidence.
+
+Version 2 resume intents freeze both checkpoint states and the original source evidence. They use
+the local checkpoint file limit, checked before atomic publication, because two states can exceed
+the old 1 MiB intent reader limit. The checkpoint lock only validates and reserves local state;
+receipt queries and CAS execute outside it, and all writers respect the durable reservation. The
+cache is committed only after rechecking the reserved state. Historical operation proof and its
+original resolution survive later progress and journal reconstruction; they do not grant a current
+lease. Cancellation and lease expiry bound authority calls. Transport failures, 429, and 5xx retain
+the same frozen operation for the existing retry tick; identity and integrity conflicts require
+reconciliation.
+
+`openslack collaboration workflow runs repair-checkpoints <runId>` diagnoses without writing.
+`--apply` revalidates exact Go evidence, route identity, current head, active leases, and local file
+identity under a durable repair reservation. It preserves original bytes, including invalid UTF-8,
+before reconstructing only the provable local checkpoint cache. Torn or inconsistent intents can
+be removed only after their committed resolution is proven and their original bytes are preserved.
+Insufficient history, conflicting leases, or a generation rewind are rejected. Repair never changes
+Go history, starts a workflow, or runs automatically; repeating a completed repair is a no-op.
+
 The additive first-phase wire change refreshes upstream budget manifest locks without changing
 budget record schemas. Readers accept only the current manifest and the exact previous
 `662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable

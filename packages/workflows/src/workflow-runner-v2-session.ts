@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isWorkflowAuthorityRetryable } from './internal/workflow-authority-failure.js';
 import type { RunResult, WorkflowModule } from './types.js';
 import {
   prepareWorkflowControlAuthorityMessage,
@@ -132,6 +133,7 @@ export interface WorkflowRunnerV2RuntimeDeliveryPort {
     operation: WorkflowRunnerAuthorityBindingOperation,
     target: WorkflowControlAuthorityPreparedMessage,
     source?: WorkflowRunnerAuthoritySourceAdapter,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerAuthorityBindingCommittedContext>;
   acknowledgeControl(
     bindingId: string,
@@ -287,6 +289,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   #eventLaneTail: Promise<void> = Promise.resolve();
   #eventLanePending = 0;
   #controlLaneTail: Promise<void> = Promise.resolve();
+  #retryAuthority?: () => void;
 
   constructor(options: WorkflowRunnerV2SessionOptions<TPrepared, TWorkflow>) {
     if (!HASH.test(options.runnerBuildHash)) {
@@ -717,6 +720,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     status: 'completed' | 'failed' | 'cancelled',
     evidence: Readonly<Record<string, unknown>>,
   ): Promise<void> {
+    if (this.#state === 'closed' || this.#state === 'reconciliation_required') return;
     this.#terminal = true;
     this.#state = 'waiting_terminal_receipt';
     const resultHash =
@@ -760,6 +764,10 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
   }
 
   async retryOutstanding(): Promise<boolean> {
+    if (this.#retryAuthority) {
+      this.#retryAuthority();
+      return true;
+    }
     if (!this.#outstanding || this.#outstanding.receiptAccepted || this.#state === 'closed')
       return false;
     await this.#options.send(this.#outstanding.prepared.body);
@@ -857,7 +865,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     let authorityContext: WorkflowRunnerAuthorityBindingCommittedContext | undefined;
     try {
       authorityContext = authorityOperation
-        ? await this.#options.runtimeDelivery?.commit(authorityOperation, prepared, authoritySource)
+        ? await this.#commitAuthority(authorityOperation, prepared, authoritySource)
         : undefined;
     } catch (error) {
       if (authorityOperation) {
@@ -1173,12 +1181,61 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     await this.#fatal(failure);
   }
 
+  async #commitAuthority(
+    operation: WorkflowRunnerAuthorityBindingOperation,
+    prepared: WorkflowControlAuthorityPreparedMessage,
+    source?: WorkflowRunnerAuthoritySourceAdapter,
+  ): Promise<WorkflowRunnerAuthorityBindingCommittedContext | undefined> {
+    const delivery = this.#options.runtimeDelivery;
+    if (!delivery) return undefined;
+    const remaining = Date.parse(this.#requireLease().leaseExpiresAt) - Date.parse(this.#now());
+    if (remaining <= 0)
+      throw new WorkflowRunnerV2SessionError(
+        'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+        'The current lease expired before its authority operation.',
+      );
+    const signal = AbortSignal.any([
+      ...(this.#abortController ? [this.#abortController.signal] : []),
+      AbortSignal.timeout(Math.max(0, remaining)),
+    ]);
+    for (;;) {
+      signal.throwIfAborted();
+      try {
+        return await delivery.commit(operation, prepared, source, signal);
+      } catch (error) {
+        if (!isWorkflowAuthorityRetryable(error) || signal.aborted) throw error;
+        // Reuse the worker's existing retry tick; retain the exact event and
+        // source. No new event ID or side-effect request is generated.
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            this.#retryAuthority = undefined;
+            signal.removeEventListener('abort', abort);
+          };
+          const abort = () => {
+            cleanup();
+            reject(signal.reason);
+          };
+          this.#retryAuthority = () => {
+            cleanup();
+            resolve();
+          };
+          signal.addEventListener('abort', abort, { once: true });
+          if (signal.aborted) abort();
+        });
+      }
+    }
+  }
+
   async #applyQueuedCancel(): Promise<void> {
     if (!this.#queuedCancel) return;
     await this.#withEventLane(() => this.#applyQueuedCancelInLane());
   }
 
   async #applyQueuedCancelInLane(): Promise<void> {
+    if (this.#state === 'closed' || this.#state === 'reconciliation_required') {
+      this.#queuedCancel = undefined;
+      return;
+    }
     const cancel = this.#queuedCancel;
     if (!cancel || this.#outstanding) return;
     this.#queuedCancel = undefined;
@@ -1210,6 +1267,12 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#eventLaneTail = predecessor.catch(() => undefined).then(() => current);
     await predecessor.catch(() => undefined);
     try {
+      if (this.#state === 'closed' || this.#state === 'reconciliation_required') {
+        throw new WorkflowRunnerV2SessionError(
+          'WORKFLOW_RUNNER_V2_RECONCILIATION_REQUIRED',
+          'A queued event cannot reopen a closed or reconciled session.',
+        );
+      }
       return await operation();
     } finally {
       this.#eventLanePending -= 1;
@@ -1363,6 +1426,7 @@ export class WorkflowRunnerV2Session<TPrepared, TWorkflow = WorkflowModule> {
     this.#outstanding?.rejectDecision?.(failure);
     this.#outstanding = undefined;
     this.#state = 'reconciliation_required';
+    this.#queuedCancel = undefined;
     try {
       await this.#options.reportFatal?.(failure);
     } catch {
