@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRuntime, WorkflowExecutionCancelledError } from '../runtime.js';
 import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import type { RunStoreFs } from '../run-store.js';
 import type { WorkflowEffectBoundary } from '../workflow-runner-effect-boundary.js';
 import type { WorkflowMeta } from '../types.js';
@@ -13,7 +14,7 @@ const manifest: WorkflowMeta = {
   risk: 'low',
 };
 
-describe('GS8-B executeRun/runtime worker integration', () => {
+describe('GS9-I sealed runtime authorization boundaries', () => {
   it('reports intent before legacy admission and refuses execution without exact v2 authority', async () => {
     const order: string[] = [];
     let releaseIntent!: () => void;
@@ -139,7 +140,11 @@ describe('GS8-B executeRun/runtime worker integration', () => {
       manifest,
       onConfirm: async () => true,
       effectBoundary: boundary,
-      runStore: new RunStore({ baseDir: '/audit-test', fs }),
+      runStore: new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir: '/audit-test',
+        fs,
+      }),
     });
 
     await expect(

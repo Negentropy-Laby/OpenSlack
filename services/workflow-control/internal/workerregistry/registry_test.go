@@ -11,11 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
 )
 
-func TestProtocolSupervisorsUseMutuallyExclusiveReservedEnablement(t *testing.T) {
+func TestSupervisorRejectsRetiredEnablementAndUsesOnlyGoAuthorityV2(t *testing.T) {
 	for _, reserved := range []string{"OPENSLACK_WORKFLOW_RUNNER_ENABLED", "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED"} {
 		root, hash, runtimeConfig := writeBundle(t, func(value *Manifest) { value.FixedEnvironment = []string{reserved + "=1"} })
 		if _, err := Load(root, hash, runtimeConfig); err == nil {
@@ -27,36 +26,25 @@ func TestProtocolSupervisorsUseMutuallyExclusiveReservedEnablement(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1 := strings.Join(selectProtocolEnvironment(registry.command.Environment, "openslack.workflow_runner.v1"), "\n")
-	v2 := strings.Join(selectProtocolEnvironment(registry.command.Environment, authoritycontract.ProtocolVersion), "\n")
-	if !strings.Contains(v1, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") || strings.Contains(v1, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") {
-		t.Fatalf("v1 sealed environment is ambiguous: %s", v1)
+	environment := strings.Join(registry.command.Environment, "\n")
+	if strings.Contains(environment, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=") || strings.Contains(environment, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=") {
+		t.Fatalf("retired worker enablement leaked into the sealed environment: %s", environment)
 	}
-	if !strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") || strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") {
-		t.Fatalf("v2 sealed environment is ambiguous: %s", v2)
-	}
-	if _, err := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion); err != nil {
+	if _, err := registry.NewSupervisor(); err != nil {
 		t.Fatalf("construct sealed v2 supervisor: %v", err)
 	}
 }
 
-func TestV2QualificationSupervisorStripsIncompatibleShadowInjection(t *testing.T) {
-	environment := []string{
-		"OPENSLACK_WORKFLOW_RUNNER_ENABLED=1",
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1",
-		"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT=http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints",
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1",
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT=http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events",
-		"OPENSLACK_AGENT_ID=agent.test",
+func TestLoadRequiresCompleteGoAuthorityRuntime(t *testing.T) {
+	root, hash, runtimeConfig := writeBundle(t, nil)
+	runtimeConfig.V2RunAuthority = nil
+	if _, err := Load(root, hash, runtimeConfig); err == nil {
+		t.Fatal("worker registry accepted a missing Go run authority")
 	}
-	v1 := strings.Join(selectProtocolEnvironment(environment, "openslack.workflow_runner.v1"), "\n")
-	v2 := strings.Join(selectProtocolEnvironment(environment, authoritycontract.ProtocolVersion), "\n")
-	if !strings.Contains(v1, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1") || !strings.Contains(v1, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1") {
-		t.Fatalf("v1 supervisor lost configured shadow transport: %s", v1)
-	}
-	if strings.Contains(v2, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_") || strings.Contains(v2, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_") ||
-		!strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED=1") || strings.Contains(v2, "OPENSLACK_WORKFLOW_RUNNER_ENABLED=1") {
-		t.Fatalf("v2 qualification supervisor received incompatible shadow configuration: %s", v2)
+	root, hash, runtimeConfig = writeBundle(t, nil)
+	runtimeConfig.V2RuntimeDelivery = nil
+	if _, err := Load(root, hash, runtimeConfig); err == nil {
+		t.Fatal("worker registry accepted missing v2 runtime delivery")
 	}
 }
 
@@ -104,12 +92,8 @@ func TestV2RuntimeDeliveryEnvironmentIsReservedHashedAndV2Only(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1 := strings.Join(selectProtocolEnvironment(registry.command.Environment, "openslack.workflow_runner.v1"), "\n")
-	v2 := strings.Join(selectProtocolEnvironment(registry.command.Environment, authoritycontract.ProtocolVersion), "\n")
+	v2 := strings.Join(registry.command.Environment, "\n")
 	for _, name := range reserved {
-		if strings.Contains(v1, name+"=") {
-			t.Fatalf("v1 supervisor received %s", name)
-		}
 		if !strings.Contains(v2, name+"=") {
 			t.Fatalf("v2 runtime supervisor missed %s", name)
 		}
@@ -148,7 +132,24 @@ func writeBundle(t *testing.T, mutate func(*Manifest)) (string, string, Runtime)
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(body)
-	return root, fmt.Sprintf("%x", digest[:]), Runtime{WorkspaceID: "workspace.test", WorkspaceRoot: root, DescriptorRoot: filepath.Join(root, "descriptors")}
+	runtimeToken := strings.Repeat("r", 40)
+	runtimeDigest := sha256.Sum256([]byte(runtimeToken))
+	authorityToken := strings.Repeat("a", 40)
+	authorityDigest := sha256.Sum256([]byte(authorityToken))
+	return root, fmt.Sprintf("%x", digest[:]), Runtime{
+		WorkspaceID: "workspace.test", WorkspaceRoot: root, DescriptorRoot: filepath.Join(root, "descriptors"),
+		V2RuntimeDelivery: &runnerconfig.V2RuntimeDeliveryRuntime{
+			Origin: "http://127.0.0.1:8081", BearerToken: runtimeToken,
+			BearerSHA256: fmt.Sprintf("%x", runtimeDigest[:]),
+			JournalRoot:  filepath.Join(root, ".openslack.local", "workflow-runner-v2-runtime-delivery"),
+			BudgetOrigin: "http://127.0.0.1:8085", BudgetToken: strings.Repeat("b", 40), BudgetCallerID: "runner-control",
+		},
+		V2RunAuthority: &runnerconfig.V2RunAuthorityRuntime{
+			Origin: "http://127.0.0.1:8082", BearerToken: authorityToken,
+			BearerSHA256: fmt.Sprintf("%x", authorityDigest[:]), CallerID: "workflow-runner-v2",
+			ExpectedBuild: strings.Repeat("d", 64),
+		},
+	}
 }
 
 func TestLoadSealsTrustedBundleWithoutPerJobLaunchOptions(t *testing.T) {
@@ -173,7 +174,7 @@ func TestLoadSealsTrustedBundleWithoutPerJobLaunchOptions(t *testing.T) {
 	}
 }
 
-func TestCheckpointShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testing.T) {
+func TestRetiredCheckpointShadowEnvironmentIsReservedAndNeverInjected(t *testing.T) {
 	reserved := []string{"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT"}
 	for _, name := range reserved {
 		t.Run("reject "+name, func(t *testing.T) {
@@ -193,44 +194,9 @@ func TestCheckpointShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testin
 			t.Fatalf("disabled runtime injected %s", entry)
 		}
 	}
-	runtimeConfig.CheckpointShadowEnabled = true
-	runtimeConfig.CheckpointShadowEndpoint = "http://127.0.0.1:8083/v1/shadow/workflow-control/checkpoints"
-	runtimeConfig.CheckpointShadowBearerToken = strings.Repeat("t", 32)
-	runtimeConfig.CheckpointShadowCallerID = "runner-control"
-	runtimeConfig.CheckpointShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-checkpoint-shadow")
-	registry, err = Load(root, hash, runtimeConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.Join(registry.command.Environment, "\n")
-	for _, want := range []string{"OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED=1", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT=" + runtimeConfig.CheckpointShadowEndpoint, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN=" + runtimeConfig.CheckpointShadowBearerToken, "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID=runner-control", "OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT=" + runtimeConfig.CheckpointShadowJournalRoot} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing trusted injection %s", want)
-		}
-	}
 }
 
-func TestCheckpointShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
-	for _, endpoint := range []string{
-		"http://localhost:8083/v1/shadow/workflow-control/checkpoints",
-		"http://user@127.0.0.1:8083/v1/shadow/workflow-control/checkpoints",
-		"http://user:password@[::1]:8083/v1/shadow/workflow-control/checkpoints",
-	} {
-		t.Run(endpoint, func(t *testing.T) {
-			root, hash, runtimeConfig := writeBundle(t, nil)
-			runtimeConfig.CheckpointShadowEnabled = true
-			runtimeConfig.CheckpointShadowEndpoint = endpoint
-			runtimeConfig.CheckpointShadowBearerToken = strings.Repeat("t", 32)
-			runtimeConfig.CheckpointShadowCallerID = "runner-control"
-			runtimeConfig.CheckpointShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-checkpoint-shadow")
-			if _, err := Load(root, hash, runtimeConfig); err == nil {
-				t.Fatal("unsafe checkpoint shadow endpoint was accepted")
-			}
-		})
-	}
-}
-
-func TestEffectShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testing.T) {
+func TestRetiredEffectShadowEnvironmentIsReservedAndNeverInjected(t *testing.T) {
 	reserved := []string{"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID", "OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT"}
 	for _, name := range reserved {
 		t.Run("reject "+name, func(t *testing.T) {
@@ -249,47 +215,6 @@ func TestEffectShadowEnvironmentIsReservedAndInjectedOnlyByRuntime(t *testing.T)
 		if strings.HasPrefix(entry, "OPENSLACK_WORKFLOW_EFFECT_SHADOW_") {
 			t.Fatalf("disabled runtime injected %s", entry)
 		}
-	}
-	runtimeConfig.EffectShadowEnabled = true
-	runtimeConfig.EffectShadowEndpoint = "http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events"
-	runtimeConfig.EffectShadowBearerToken = strings.Repeat("e", 32)
-	runtimeConfig.EffectShadowCallerID = "runner-control"
-	runtimeConfig.EffectShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-effect-shadow")
-	registry, err = Load(root, hash, runtimeConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.Join(registry.command.Environment, "\n")
-	for _, want := range []string{
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED=1",
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT=" + runtimeConfig.EffectShadowEndpoint,
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN=" + runtimeConfig.EffectShadowBearerToken,
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID=runner-control",
-		"OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT=" + runtimeConfig.EffectShadowJournalRoot,
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing trusted injection %s", want)
-		}
-	}
-}
-
-func TestEffectShadowEndpointRejectsDNSAndURLUserinfo(t *testing.T) {
-	for _, endpoint := range []string{
-		"http://localhost:8084/v1/shadow/workflow-control/effect-events",
-		"http://user@127.0.0.1:8084/v1/shadow/workflow-control/effect-events",
-		"http://user:password@[::1]:8084/v1/shadow/workflow-control/effect-events",
-	} {
-		t.Run(endpoint, func(t *testing.T) {
-			root, hash, runtimeConfig := writeBundle(t, nil)
-			runtimeConfig.EffectShadowEnabled = true
-			runtimeConfig.EffectShadowEndpoint = endpoint
-			runtimeConfig.EffectShadowBearerToken = strings.Repeat("e", 32)
-			runtimeConfig.EffectShadowCallerID = "runner-control"
-			runtimeConfig.EffectShadowJournalRoot = filepath.Join(root, ".openslack.local", "workflow-effect-shadow")
-			if _, err := Load(root, hash, runtimeConfig); err == nil {
-				t.Fatal("unsafe effect shadow endpoint was accepted")
-			}
-		})
 	}
 }
 

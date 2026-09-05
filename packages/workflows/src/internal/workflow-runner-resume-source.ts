@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createWorkflowRunStoreRecoveryAccess } from './workflow-run-store-recovery-access.js';
 import { join } from 'node:path';
 import { RunStore } from '../run-store.js';
 import {
@@ -48,7 +49,10 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     readonly target: WorkflowControlAuthorityMessage,
     readonly authority: WorkflowControlAuthorityPort,
   ) {
-    super({ baseDir: resolveWorkflowRunProjectionRoot(workspaceRoot, 'go') });
+    super({
+      baseDir: resolveWorkflowRunProjectionRoot(workspaceRoot, 'go'),
+      access: createWorkflowRunStoreRecoveryAccess(),
+    });
     if (!authority.readTransitionReceipt)
       throw new Error('Resume requires exact authority receipt recovery.');
   }

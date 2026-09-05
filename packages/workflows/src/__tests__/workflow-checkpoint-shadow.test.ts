@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunStore, type RunStoreFs } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
   validateWorkflowCheckpointShadowObservation,
   validateWorkflowCheckpointControlState,
@@ -164,6 +165,7 @@ function memoryStore(
   };
   return {
     store: new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
       baseDir: '/memory/workflows',
       fs,
       checkpointObservationPort: options.observer
@@ -443,7 +445,11 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
       journalRoot: join(workspace, 'journal'),
       publisher,
     });
-    const store = new RunStore({ baseDir, checkpointObservationPort: observer });
+    const store = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
+      baseDir,
+      checkpointObservationPort: observer,
+    });
 
     expect((await store.initializeCheckpointControl('run.checkpoint.1', binding())).revision).toBe(
       1,
@@ -511,7 +517,11 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
       journalRoot: join(workspace, 'journal'),
       publisher,
     });
-    const store = new RunStore({ baseDir, checkpointObservationPort: observer });
+    const store = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
+      baseDir,
+      checkpointObservationPort: observer,
+    });
     await store.initializeCheckpointControl('run.checkpoint.1', binding());
 
     await expect(
@@ -569,6 +579,7 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
 
     await unlink(invalidEntry);
     const restarted = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
       baseDir: '/memory/workflows',
       fs: memory.fs,
       checkpointObservationPort: observer,
@@ -589,6 +600,7 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
 
     failAcknowledgement = false;
     const secondRestart = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
       baseDir: '/memory/workflows',
       fs: memory.fs,
       checkpointObservationPort: observer,

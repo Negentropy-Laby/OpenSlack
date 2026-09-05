@@ -20,13 +20,13 @@ import {
   type WorkflowRunRoutingPolicy,
 } from '../workflow-run-routing.js';
 import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
 import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
 import {
-  loadWorkflowRunRoutingExecutionConfig,
+  loadWorkflowRunRoutingConfig,
   WORKFLOW_RUN_ROUTING_MODE_GO,
-  WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
 } from '../workflow-run-routing-config.js';
 import type { WorkflowRunnerControlConfig } from '../workflow-runner-control-client.js';
 import type { WorkflowControlShadowJournalSecurityDependencies } from '../workflow-control-shadow.js';
@@ -349,21 +349,20 @@ describe('Workflow run new-record routing', () => {
       ),
     ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT' });
 
-    const rollback = select(
-      new WorkflowRunRouter(
-        policy({
-          backend: 'ts-local',
-          routingEpoch: 18,
-          workflowAllowlist: [],
-        }),
-      ),
-      'run.rollback.epoch.18',
-    );
-    await expect(journal.commit(rollback)).resolves.toEqual(rollback);
+    expect(
+      () =>
+        new WorkflowRunRouter(
+          policy({
+            backend: 'ts-local',
+            routingEpoch: 18,
+            workflowAllowlist: [],
+          }),
+        ),
+    ).toThrow(/New TypeScript workflow routing is retired/u);
     await expect(journal.commit(first)).resolves.toEqual(first);
     await expect(
-      journal.commit(select(activeRouter, 'run.canary.epoch.17.after-rollback')),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_ROUTE_RECEIPT_CONFLICT' });
+      journal.commit(select(activeRouter, 'run.canary.epoch.17.after-rejection')),
+    ).resolves.toMatchObject({ route: { backend: 'go', routingEpoch: 17 } });
     await expect(journal.load(first.runId)).resolves.toEqual(first);
   });
 
@@ -456,12 +455,12 @@ describe('Process routing configuration', () => {
   }
 
   it('is default-off, reports ignored residual settings, and parses one exact Go profile', () => {
-    expect(loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.off'), {})).toEqual({
+    expect(loadWorkflowRunRoutingConfig(runner('workspace.config.off'), {})).toEqual({
       mode: 'disabled',
       ignoredSettings: [],
     });
     expect(
-      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.partial'), {
+      loadWorkflowRunRoutingConfig(runner('workspace.config.partial'), {
         OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '17',
       }),
     ).toEqual({
@@ -491,16 +490,13 @@ describe('Process routing configuration', () => {
       OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_COST_LIMIT_NANO_USD: '1000000000',
       OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_CALL_LIMIT: '10',
     } satisfies NodeJS.ProcessEnv;
-    const config = loadWorkflowRunRoutingExecutionConfig(
-      runner('workspace.config.go'),
-      environment,
-    );
+    const config = loadWorkflowRunRoutingConfig(runner('workspace.config.go'), environment);
     expect(config).toMatchObject({
       router: { policy: { backend: 'go', routingEpoch: 17 } },
       v2BudgetPolicy: { accountId: 'budget.canary' },
     });
     expect(
-      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.go'), {
+      loadWorkflowRunRoutingConfig(runner('workspace.config.go'), {
         ...environment,
         OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
       }),
@@ -510,10 +506,10 @@ describe('Process routing configuration', () => {
     });
   });
 
-  it('rejects the retired higher-epoch TypeScript rollback switch', () => {
+  it('rejects the removed TypeScript rollback value as unsupported', () => {
     expect(() =>
-      loadWorkflowRunRoutingExecutionConfig(runner('workspace.config.rollback'), {
-        OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
+      loadWorkflowRunRoutingConfig(runner('workspace.config.rollback'), {
+        OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: 'ts-new-record-rollback-v1',
         OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '18',
         OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: BUILD,
         OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'external-rollback.test',
@@ -521,7 +517,7 @@ describe('Process routing configuration', () => {
         OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
         OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: EXPIRES,
       }),
-    ).toThrow(/TypeScript new-record rollback is retired/u);
+    ).toThrow(/routing mode is unsupported/u);
   });
 });
 
@@ -734,7 +730,10 @@ describe('Go-owned worker recovery projection', () => {
         if (transitionFailure) throw transitionFailure;
         if (record.state === 'created') {
           await expect(
-            new RunStore({ baseDir: projectionBase }).runExists(route.runId),
+            new RunStore({
+              access: createWorkflowRunStoreRecoveryAccess(),
+              baseDir: projectionBase,
+            }).runExists(route.runId),
           ).resolves.toBe(false);
         }
         transitions.push(`${record.state}->${next.state}`);
@@ -745,7 +744,6 @@ describe('Go-owned worker recovery projection', () => {
     const projection = new WorkflowRunnerV2GoProjectionRunStore({
       baseDir: projectionBase,
       descriptor,
-      mode: 'authority',
       authority,
     });
 
@@ -782,6 +780,7 @@ describe('Go-owned worker recovery projection', () => {
     });
     await expect(
       new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
         baseDir: join(workspace, '.openslack.local', 'workflows'),
       }).runExists(route.runId),
     ).resolves.toBe(false);

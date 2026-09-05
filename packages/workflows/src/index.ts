@@ -350,20 +350,13 @@ export type { WorkflowSummary } from './loader.js';
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
 export {
-  createRuntime,
   ExecuteDeniedError,
   WORKFLOW_RUNNER_CANCELLATION_BOUNDARIES,
   WorkflowAuditDetailInvalidError,
   WorkflowExecutionCancelledError,
   WorkflowPausedError,
 } from './runtime.js';
-export type {
-  RuntimeOptions,
-  RuntimeInternals,
-  ConfirmCallback,
-  RuntimeWithPersistence,
-  WorkflowRunnerCancellationBoundary,
-} from './runtime.js';
+export type { ConfirmCallback, WorkflowRunnerCancellationBoundary } from './runtime.js';
 
 // ── Permission Checker ────────────────────────────────────────────────────────
 export {
@@ -422,7 +415,6 @@ export type { PipelineCacheStore } from './pipeline-runner.js';
 
 // ── Run Store ─────────────────────────────────────────────────────────────────
 export {
-  RunStore,
   WORKFLOW_AUDIT_RECORD_SCHEMA,
   WORKFLOW_AUDIT_MAX_BYTES,
   WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
@@ -430,8 +422,6 @@ export {
   encodeRunMetaArguments,
 } from './run-store.js';
 export type {
-  RunStoreFs,
-  RunStoreOptions,
   RunStoreFileIdentity,
   RunMeta,
   RunStatusFile,
@@ -459,7 +449,12 @@ export {
 export type { CacheStore, CacheEntry } from './cache.js';
 
 // ── Resume ────────────────────────────────────────────────────────────────────
-export { checkResumable, prepareResume, forceResume, replayCachedPhases } from './resume.js';
+export {
+  checkResumable,
+  prepareResume,
+  replayCachedPhases,
+  WorkflowResumeRecoveryRequiredError,
+} from './resume.js';
 export type { ResumeCheckResult, ResumeState, WorkflowResumeIdentity } from './resume.js';
 
 // ── Workflow Arguments and Identity ──────────────────────────────────────────
@@ -508,7 +503,6 @@ export {
   executeDryRun,
   DryRunError,
   createOnConfirmFromPolicy,
-  WorkflowResumeRecoveryRequiredError,
   WorkflowRunInputInvalidError,
 } from './execute.js';
 export type { DryRunOptions, DryRunResult, SimulatedEffect } from './execute.js';
@@ -842,14 +836,13 @@ export {
 export type { WorkflowRunnerDescriptorPathSecurity } from './workflow-runner-descriptor-store.js';
 export {
   loadWorkflowRunnerControlConfig,
-  prepareWorkflowRunnerJobSpec,
   validateWorkflowRunnerJobReceipt,
   validateWorkflowRunnerJobSpec,
   validateWorkflowRunnerJobView,
   WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA,
   WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
   WORKFLOW_RUNNER_JOB_VIEW_SCHEMA,
-  WorkflowRunnerControlClient,
+  WorkflowRunnerStatusClient,
   WorkflowRunnerControlError,
 } from './workflow-runner-control-client.js';
 export {
@@ -861,9 +854,8 @@ export type {
   WorkflowRunnerPausedResult,
 } from './workflow-runner-execution-client.js';
 export type {
-  PreparedWorkflowRunnerJobSpec,
   WorkflowRunnerControlConfig,
-  WorkflowRunnerControlPort,
+  WorkflowRunnerStatusPort,
   WorkflowRunnerJobReceipt,
   WorkflowRunnerJobSpec,
   WorkflowRunnerJobView,
@@ -892,10 +884,8 @@ export type {
 export {
   createWorkflowRunRoutingExecutionContext,
   loadWorkflowRunRoutingConfig,
-  loadWorkflowRunRoutingExecutionConfig,
   WORKFLOW_RUN_ROUTING_MODE_ENV,
   WORKFLOW_RUN_ROUTING_MODE_GO,
-  WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK,
   WorkflowRunRoutingConfigError,
 } from './workflow-run-routing-config.js';
 export type {
@@ -904,10 +894,13 @@ export type {
   WorkflowRunRoutingExecutionContext,
 } from './workflow-run-routing-config.js';
 export {
-  createWorkflowRunProjectionStore,
+  openWorkflowRunReadOnly,
   resolveWorkflowRunProjectionRoot,
 } from './workflow-run-projection.js';
-export type { WorkflowRunProjectionBackend } from './workflow-run-projection.js';
+export type {
+  WorkflowRunProjectionBackend,
+  WorkflowRunReadOnlyStore,
+} from './workflow-run-projection.js';
 export {
   inspectWorkflowRunReadOnly,
   WORKFLOW_RUN_READONLY_INSPECTION_SCHEMA,
@@ -955,14 +948,6 @@ export type {
   WorkflowEffectBoundaryOutcomeInput,
   WorkflowRunnerEffectEventPort,
 } from './workflow-runner-effect-boundary.js';
-export { WorkflowRunnerSession, WorkflowRunnerSessionError } from './workflow-runner-session.js';
-export type {
-  WorkflowRunnerExecutionContext,
-  WorkflowRunnerPreparedSource,
-  WorkflowRunnerSessionOptions,
-  WorkflowRunnerSessionState,
-  WorkflowRunnerSourceLoader,
-} from './workflow-runner-session.js';
 export type {
   CreateWorkflowRunnerEventReceiptInput,
   WorkflowRunnerCancelAckMessage,
@@ -1069,144 +1054,6 @@ export type {
   WorkflowRunnerSourceAuthority,
 } from './workflow-runner-authority-binding-contract.js';
 
-// ── Workflow Runner GS9-F2b qualification runtime delivery ────────────
-export {
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_RECEIPT_ROUTE_PREFIX,
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_ROUTE_PREFIX,
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_ROUTE,
-  WorkflowRunnerAuthorityBindingClientError,
-  createWorkflowRunnerAuthorityBindingClient,
-} from './workflow-runner-authority-binding-client.js';
-export type {
-  WorkflowRunnerAuthorityBindingClientConfig,
-  WorkflowRunnerAuthorityBindingPort,
-} from './workflow-runner-authority-binding-client.js';
-export {
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_SCHEMA,
-  WorkflowRunnerAuthorityBindingJournal,
-  WorkflowRunnerAuthorityBindingJournalError,
-  workflowRunnerAuthorityBindingJournalEntryClosed,
-} from './workflow-runner-authority-binding-journal.js';
-export type {
-  WorkflowRunnerAuthorityBindingJournalEntry,
-  WorkflowRunnerAuthorityControlDeliveryJournalEntry,
-} from './workflow-runner-authority-binding-journal.js';
-export {
-  WorkflowRunnerAuthorityBindingRuntime,
-  WorkflowRunnerAuthorityBindingRuntimeError,
-} from './workflow-runner-authority-binding-runtime.js';
-export { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
-export type { WorkflowRunnerV2AuthoritySourceResolver } from './workflow-runner-v2-runtime-delivery.js';
-export { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
-export {
-  WorkflowRunnerV2AuthoritySources,
-  createWorkflowRunnerPreparedBudgetSourceAdapter,
-  createWorkflowRunnerBudgetSourceAdapter,
-  createWorkflowRunnerCheckpointSourceAdapter,
-  createWorkflowRunnerEffectSourceAdapter,
-  createWorkflowRunnerResumeSourceAdapter,
-} from './workflow-runner-runtime-authorities.js';
-export {
-  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
-  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
-  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
-  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_RECEIPT_SCHEMA,
-  WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA,
-  WorkflowRunnerV2RuntimeAdmissionError,
-  createWorkflowRunnerV2RuntimeAdmissionClient,
-  parseWorkflowRunnerV2RuntimeAdmissionBytes,
-  parseWorkflowRunnerV2RuntimeAdmissionReceiptBytes,
-  prepareWorkflowRunnerV2RuntimeAdmission,
-  validateWorkflowRunnerV2RuntimeAdmission,
-  validateWorkflowRunnerV2RuntimeAdmissionReceipt,
-} from './workflow-runner-v2-runtime-admission.js';
-export type {
-  WorkflowRunnerV2PreparedRuntimeAdmission,
-  WorkflowRunnerV2RuntimeAdmission,
-  WorkflowRunnerV2RuntimeAdmissionPort,
-  WorkflowRunnerV2RuntimeAdmissionReceipt,
-} from './workflow-runner-v2-runtime-admission.js';
-export {
-  WorkflowRunnerBudgetAuthorityClientError,
-  createWorkflowRunnerBudgetAuthorityClient,
-} from './workflow-runner-budget-authority-client.js';
-export type {
-  WorkflowRunnerBudgetAuthorityClient,
-  WorkflowRunnerBudgetMutationResult,
-} from './workflow-runner-budget-authority-client.js';
-export type {
-  WorkflowRunnerBudgetE2Port,
-  WorkflowRunnerDurableAuthorityMutationPort,
-  WorkflowRunnerDurableAuthorityPointRead,
-  WorkflowRunnerV2AuthoritySourceFactories,
-} from './workflow-runner-runtime-authorities.js';
-export type {
-  WorkflowRunnerAuthorityBindingCommitInput,
-  WorkflowRunnerAuthorityBindingCommittedContext,
-  WorkflowRunnerAuthorityBindingLeaseInput,
-  WorkflowRunnerAuthorityControlAckInput,
-  WorkflowRunnerAuthoritySourceAdapter,
-  WorkflowRunnerAuthoritySourceProbe,
-} from './workflow-runner-authority-binding-runtime.js';
-
-// ── Workflow Runner GS9-F qualification-only v2 transport ───────────────
-export {
-  assertWorkflowRunnerV2AdmissionBinding,
-  canonicalWorkflowRunnerV2DescriptorJson,
-  createWorkflowRunnerV2ExecutionDescriptor,
-  hashWorkflowRunnerV2Descriptor,
-  hashWorkflowRunnerV2Domain,
-  hashWorkflowRunnerV2Input,
-  hashWorkflowRunnerV2Manifest,
-  hashWorkflowRunnerV2Result,
-  hashWorkflowRunnerV2Source,
-  validateWorkflowRunnerV2ExecutionDescriptor,
-  WORKFLOW_RUNNER_V2_DESCRIPTOR_LIMITS,
-  WORKFLOW_RUNNER_V2_DESCRIPTOR_SCHEMA,
-  WorkflowRunnerV2DescriptorError,
-} from './workflow-runner-v2-descriptor.js';
-export type {
-  CreateWorkflowRunnerV2ExecutionDescriptorInput,
-  WorkflowRunnerV2BudgetPolicyBinding,
-  WorkflowRunnerV2Capability,
-  WorkflowRunnerV2ExecutionDescriptor,
-} from './workflow-runner-v2-descriptor.js';
-export {
-  prepareWorkflowRunnerV2JobSpec,
-  validateWorkflowRunnerV2JobReceipt,
-  validateWorkflowRunnerV2JobSpec,
-  WORKFLOW_RUNNER_V2_JOB_RECEIPT_SCHEMA,
-  WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
-  WorkflowRunnerV2ControlClient,
-  WorkflowRunnerV2ControlError,
-} from './workflow-runner-v2-control-client.js';
-export type {
-  PreparedWorkflowRunnerV2JobSpec,
-  WorkflowRunnerV2ControlPort,
-  WorkflowRunnerControlBinding,
-  WorkflowRunnerV2JobReceipt,
-  WorkflowRunnerV2JobSpec,
-  WorkflowRunnerV2RequiredCapability,
-} from './workflow-runner-v2-control-client.js';
-export { WorkflowRunnerGoProjectionError } from './workflow-runner-v2-go-projection-store.js';
-export {
-  decodeWorkflowRunnerV2Frame,
-  WorkflowRunnerV2FramingError,
-  WorkflowRunnerV2JsonlDecoder,
-} from './workflow-runner-v2-framing.js';
-export {
-  WorkflowRunnerV2Session,
-  WorkflowRunnerV2SessionError,
-} from './workflow-runner-v2-session.js';
-export type {
-  WorkflowRunnerV2DescriptorStore,
-  WorkflowRunnerV2ExecutionContext,
-  WorkflowRunnerV2PreparedSource,
-  WorkflowRunnerV2SessionOptions,
-  WorkflowRunnerV2SessionState,
-  WorkflowRunnerV2SourceLoader,
-  WorkflowRunnerV2RuntimeDeliveryPort,
-} from './workflow-runner-v2-session.js';
 export {
   bindLocalHumanSubject,
   createLocalHumanAttestationProvider,

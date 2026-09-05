@@ -5,7 +5,7 @@ import {
   type WorkflowCheckpointExecutionBinding,
 } from '../workflow-checkpoint-shadow-contract.js';
 
-/** Opaque capability minted by WorkflowRunnerSession only after advancing lease_accept. */
+/** Opaque capability minted by the sealed v2 worker only after advancing lease_accept. */
 export interface WorkflowCheckpointLeaseAuthority {
   readonly kind: 'accepted_workflow_runner_lease';
 }

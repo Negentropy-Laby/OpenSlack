@@ -17,10 +17,7 @@ type ProtocolSession interface {
 
 type Config struct {
 	Store                runnerstore.Store
-	Session              *Session
 	V2Session            ProtocolSession
-	V2Qualification      bool
-	V2RuntimeDelivery    bool
 	AuthorityRecovery    runnerstore.V2AuthorityRecoveryStore
 	WorkspaceID          string
 	SupervisorInstanceID string
@@ -35,14 +32,11 @@ type Config struct {
 type Scheduler struct{ config Config }
 
 func New(config Config) (*Scheduler, error) {
-	if config.Store == nil || config.Session == nil {
-		return nil, fmt.Errorf("runner scheduler store and session are required")
+	if config.Store == nil || config.V2Session == nil {
+		return nil, fmt.Errorf("runner scheduler store and v2 session are required")
 	}
-	if config.V2Qualification && config.V2Session == nil {
-		return nil, fmt.Errorf("runner scheduler v2 qualification session is required when enabled")
-	}
-	if config.V2RuntimeDelivery && config.AuthorityRecovery == nil {
-		return nil, fmt.Errorf("runner scheduler authority recovery store is required for runtime delivery")
+	if config.AuthorityRecovery == nil {
+		return nil, fmt.Errorf("runner scheduler authority recovery store is required")
 	}
 	if config.WorkspaceID == "" || config.SupervisorInstanceID == "" {
 		return nil, fmt.Errorf("runner scheduler identities are required")
@@ -66,14 +60,12 @@ func (scheduler *Scheduler) Run(ctx context.Context) error {
 	if _, err := scheduler.config.Store.RecoverOrphans(ctx, scheduler.config.SupervisorInstanceID, scheduler.config.Now(), 1000); err != nil {
 		return fmt.Errorf("recover orphan runner attempts: %w", err)
 	}
-	if scheduler.config.V2RuntimeDelivery {
-		summary, err := scheduler.config.AuthorityRecovery.RecoverAuthorityBindingsAtStartup(ctx, scheduler.config.WorkspaceID, scheduler.config.Now(), 1000)
-		if err != nil {
-			return fmt.Errorf("recover workflow runner authority bindings: %w", err)
-		}
-		if summary.Reconciled > summary.Examined {
-			return fmt.Errorf("recover workflow runner authority bindings: invalid recovery summary")
-		}
+	summary, err := scheduler.config.AuthorityRecovery.RecoverAuthorityBindingsAtStartup(ctx, scheduler.config.WorkspaceID, scheduler.config.Now(), 1000)
+	if err != nil {
+		return fmt.Errorf("recover workflow runner authority bindings: %w", err)
+	}
+	if summary.Reconciled > summary.Examined {
+		return fmt.Errorf("recover workflow runner authority bindings: invalid recovery summary")
 	}
 	groupCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -101,27 +93,16 @@ func (scheduler *Scheduler) workerLoop(ctx context.Context, failures chan<- erro
 	ticker := time.NewTicker(scheduler.config.PollInterval)
 	defer ticker.Stop()
 	for {
-		protocols := runnerprotocols.Enabled(scheduler.config.V2Qualification)
-		lease, err := scheduler.config.Store.ClaimNext(ctx, runnerstore.ClaimInput{WorkspaceID: scheduler.config.WorkspaceID, SupervisorInstanceID: scheduler.config.SupervisorInstanceID, LeaseOfferTimeout: scheduler.config.LeaseOfferTimeout, LeaseDuration: scheduler.config.LeaseDuration, Now: scheduler.config.Now(), ProtocolVersions: protocols})
+		lease, err := scheduler.config.Store.ClaimNext(ctx, runnerstore.ClaimInput{WorkspaceID: scheduler.config.WorkspaceID, SupervisorInstanceID: scheduler.config.SupervisorInstanceID, LeaseOfferTimeout: scheduler.config.LeaseOfferTimeout, LeaseDuration: scheduler.config.LeaseDuration, Now: scheduler.config.Now(), ProtocolVersions: []string{runnerprotocols.V2}})
 		if err == nil {
-			selected := ProtocolSession(scheduler.config.Session)
-			if lease.RequiredProtocolVersion == runnerprotocols.V2 {
-				if !scheduler.config.V2Qualification || scheduler.config.V2Session == nil {
-					select {
-					case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "v2 lease was claimed without the qualification session", nil):
-					case <-ctx.Done():
-					}
-					return
-				}
-				selected = scheduler.config.V2Session
-			} else if lease.RequiredProtocolVersion != "" && lease.RequiredProtocolVersion != runnerprotocols.V1 {
+			if lease.RequiredProtocolVersion != runnerprotocols.V2 {
 				select {
-				case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "claimed lease requires an unsupported protocol", nil):
+				case failures <- runnerstore.Failure(runnerstore.ErrorUnsupportedProtocol, "claimed lease is not bound to workflow runner protocol v2", nil):
 				case <-ctx.Done():
 				}
 				return
 			}
-			runErr := selected.Run(ctx, lease)
+			runErr := scheduler.config.V2Session.Run(ctx, lease)
 			if runErr == nil {
 				continue
 			}

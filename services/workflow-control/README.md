@@ -7,8 +7,8 @@ checkpoint/resume differential observer, and the GS9-D effect decision/audit dif
 observer. It also contains the GS9-E1 budget operational contract mirror and the GS9-E2 default-off
 PostgreSQL budget qualification authority, the GS9-F1 runner-v2 transport foundation, the GS9-F2a
 authority-binding contract mirror, and the default-off GS9-F2b runtime-delivery qualification
-profile. The six servers are separate entry points with separate configuration and authority
-boundaries.
+profile. GS9-I removes the remaining public TypeScript writer and legacy worker execution paths;
+the six Go servers remain separate entry points with separate configuration and authority boundaries.
 
 The GS7-B service is observational only. It durably records exact TypeScript observations,
 idempotency receipts, parity mismatches, and ambiguous commit outcomes. A mismatch advances the
@@ -22,6 +22,12 @@ externally SHA-256-anchored TypeScript worker bundle by direct argv, never a com
 HTTP request or job. `@openslack/workflows` still owns JavaScript execution, provider calls,
 RunStore, checkpoints, resume, effect approval and execution, and budgets through GS8. GS9 alone
 may transfer those records.
+
+At the current GS9-I boundary, the packaged TypeScript worker executes only sealed runner-v2 jobs
+whose route and complete runtime bindings select Go Workflow Control authority. The public/full
+RunStore writer and writer-shaped projection factory are gone; ordinary consumers use the bounded
+read-only projection surface. TypeScript-historical local state is inspectable evidence, never a
+mutation fallback.
 
 Run the module tests with the pinned repository toolchain:
 
@@ -83,8 +89,10 @@ decisions are not accepted.
 
 Stage the reviewed three-file bundle with
 `bun scripts/qualification/workflow-runner-bundle.ts stage --bundle-root <absolute-root> --node-executable <absolute-node>`.
-The sealed v1 and v2 workers reject `workflowSource: builtin` before any catalog path lookup; builtin
-discovery remains available only to ordinary TypeScript composition paths.
+The current bundle contains only the sealed Go-authority v2 worker. Its frozen source policy rejects
+`workflowSource: builtin` before any catalog path lookup. The removed v1 worker followed the same rule;
+its contract and qualification evidence remain historical rather than executable. Builtin discovery
+outside the sealed worker remains a non-authoritative TypeScript catalog concern.
 
 The lease duration is a hard, immutable execution bound; heartbeats prove liveness but do not
 extend it. The configuration is extension-only: operators running work that may exceed the
@@ -252,9 +260,10 @@ original idempotency key. Missing or drifted source evidence, lease/fence/head m
 loss with outstanding authority, or an unprovable control ACK latches reconciliation and never
 chooses another key or locally replays a provider/effect.
 
-This profile remains default-off and qualification-only. The default image entry point, production
-v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, release, and live
-claims remain unchanged and outside GS9-F2b.
+At the F2b gate this profile was default-off and qualification-only. The default image entry point,
+production v2 submission, new-record routing, canary, cutover, TypeScript writer retirement, release,
+and live claims remained unchanged and outside GS9-F2b. GS9-I later removes the qualification-only
+TypeScript worker execution mode; it does not rewrite this historical F2b evidence.
 
 GS9-G added an independently default-off new-record canary. Its authenticated binding endpoints expose
 only non-secret workspace, caller, mode, epoch, build, capability, acceptance, and token-digest
@@ -264,8 +273,21 @@ ordinary TypeScript writer. The TypeScript route journal is active-only bounded,
 closed replay evidence, quarantines damaged ordinary entries, and requires reconciliation for the
 requested damaged run.
 
-GS9-H retires TypeScript new admission. Authenticated `POST /v1/runner/jobs` and any v2 request carrying
+GS9-H retired TypeScript new admission. Authenticated `POST /v1/runner/jobs` and any v2 request carrying
 a TypeScript authority route return `410 WORKFLOW_RUNNER_TS_MUTATION_RETIRED` before store mutation.
-Go new records and existing Go drain/recovery continue on v2. Legacy v1 reads/cancellation and the
-underlying parser/worker implementation remain only for closed recovery until GS9-I. Safe rollback is
-a higher Go epoch with new-record acceptance disabled, never a switch back to the TypeScript writer.
+Go new records and existing Go drain/recovery continue on v2. At the H boundary, legacy v1
+reads/cancellation and the underlying parser/worker implementation remained only for closed recovery
+pending GS9-I. Safe rollback is a higher Go epoch with new-record acceptance disabled, never a switch
+back to the TypeScript writer.
+
+GS9-I deletes the public/full TypeScript RunStore writer, its public writer factory, runner-v1 worker
+execution, and the separate v2 qualification-only worker mode and enablement. `run` and `resume` now
+reach only the sealed Go-authority v2 composition, which requires complete runtime-delivery and run
+authority configuration. Old `ts-local` receipts and frozen v1 bytes remain readable historical
+evidence but cannot be admitted, resumed, converted into Go authority, or selected through an
+environment rollback value.
+
+No service migration, database schema, stored record, route receipt, or routing epoch is created or
+changed by this deletion. It activates no deployment and makes no production, release, or live claim.
+Authenticated external regression, hosted exact-head results, review approval, and merge are separate
+gates for the exact GS9-I head.

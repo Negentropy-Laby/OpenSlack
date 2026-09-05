@@ -5,7 +5,6 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { RunStore } from '../run-store.js';
 import {
   isWorkflowControlAuthorityHeadBoundToRoute,
   workflowControlAuthorityInitialRecord,
@@ -14,7 +13,10 @@ import {
 } from '../workflow-control-authority-client.js';
 import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import type { WorkflowControlShadowJournalSecurityDependencies } from '../workflow-control-shadow.js';
-import { createWorkflowRunProjectionStore } from '../workflow-run-projection.js';
+import {
+  resolveWorkflowRunProjectionRoot,
+  type WorkflowRunProjectionBackend,
+} from '../workflow-run-projection.js';
 import { inspectWorkflowRunReadOnly } from '../workflow-run-readonly-inspection.js';
 import {
   WorkflowRunRouteJournal,
@@ -55,6 +57,35 @@ function recordHash(record: WorkflowControlAuthorityRunRead['record']): string {
   return createHash('sha256')
     .update(`${canonicalWorkflowControlAuthorityJson(record)}\n`, 'utf8')
     .digest('hex');
+}
+
+async function writeHistoricalProjection(
+  workspaceRoot: string,
+  backend: WorkflowRunProjectionBackend,
+  runId: string,
+  workflowName: string,
+): Promise<void> {
+  const runRoot = join(resolveWorkflowRunProjectionRoot(workspaceRoot, backend), 'runs', runId);
+  await mkdir(runRoot, { recursive: true });
+  await Promise.all([
+    writeFile(
+      join(runRoot, 'meta.json'),
+      JSON.stringify({
+        runId,
+        workflowName,
+        mode: 'execute',
+        manifestHash: HASH,
+        args: {},
+        startedAt: NOW,
+      }),
+      'utf8',
+    ),
+    writeFile(
+      join(runRoot, 'status.json'),
+      JSON.stringify({ runId, status: 'running', updatedAt: NOW, phases: [] }),
+      'utf8',
+    ),
+  ]);
 }
 
 describe('GS9-H workflow run read-only inspection', () => {
@@ -110,17 +141,7 @@ describe('GS9-H workflow run read-only inspection', () => {
 
   it('labels an unrouted TypeScript record as historical evidence', async () => {
     const workspaceRoot = await root();
-    const store = new RunStore({
-      baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
-    });
-    await store.initRun('run.legacy', {
-      runId: 'run.legacy',
-      workflowName: 'workflow.legacy',
-      mode: 'execute',
-      manifestHash: HASH,
-      args: {},
-      startedAt: NOW,
-    });
+    await writeHistoricalProjection(workspaceRoot, 'ts-local', 'run.legacy', 'workflow.legacy');
 
     await expect(
       inspectWorkflowRunReadOnly('run.legacy', { rootDir: workspaceRoot }),
@@ -167,14 +188,7 @@ describe('GS9-H workflow run read-only inspection', () => {
         selectedAt: NOW,
       }),
     );
-    await createWorkflowRunProjectionStore(workspaceRoot, 'go').initRun(runId, {
-      runId,
-      workflowName: 'workflow.go',
-      mode: 'execute',
-      manifestHash: HASH,
-      args: {},
-      startedAt: NOW,
-    });
+    await writeHistoricalProjection(workspaceRoot, 'go', runId, 'workflow.go');
     const record = {
       ...workflowControlAuthorityInitialRecord(receipt),
       state: 'paused' as const,
@@ -276,14 +290,7 @@ describe('GS9-H workflow run read-only inspection', () => {
     const workspaceRoot = await root();
     const runId = 'run.dual';
     for (const backend of ['ts-local', 'go'] as const) {
-      await createWorkflowRunProjectionStore(workspaceRoot, backend).initRun(runId, {
-        runId,
-        workflowName: 'workflow.dual',
-        mode: 'execute',
-        manifestHash: HASH,
-        args: {},
-        startedAt: NOW,
-      });
+      await writeHistoricalProjection(workspaceRoot, backend, runId, 'workflow.dual');
     }
 
     await expect(

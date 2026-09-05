@@ -3,11 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { canonicalWorkflowEffectJson } from '../workflow-effect-json.js';
 import {
   loadWorkflowRunnerControlConfig,
-  prepareWorkflowRunnerJobSpec,
   validateWorkflowRunnerJobView,
-  WorkflowRunnerControlClient,
   WorkflowRunnerControlError,
-  WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
+  WorkflowRunnerStatusClient,
 } from '../workflow-runner-control-client.js';
 
 const HASH = '1'.repeat(64);
@@ -21,25 +19,6 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
-function prepared() {
-  return prepareWorkflowRunnerJobSpec({
-    schema: WORKFLOW_RUNNER_JOB_SPEC_SCHEMA,
-    workspaceId: WORKSPACE,
-    jobId: 'job-1',
-    workflowRunId: 'run-1',
-    correlationId: 'correlation-1',
-    executionDescriptorRef: 'descriptor-1',
-    executionDescriptorHash: HASH,
-    workflowId: 'workflow-1',
-    workflowVersion: '1.0.0',
-    workflowSourceHash: HASH,
-    manifestHash: HASH,
-    inputHash: HASH,
-    wholeTimeoutMs: 60_000,
-    submittedAt: '2026-08-13T00:00:00.000Z',
-  });
-}
-
 function config() {
   return {
     origin: 'http://127.0.0.1:18183',
@@ -49,7 +28,7 @@ function config() {
   } as const;
 }
 
-describe('WorkflowRunnerControlClient', () => {
+describe('WorkflowRunnerStatusClient', () => {
   it('requires the complete loopback-only transport configuration', () => {
     expect(() => loadWorkflowRunnerControlConfig({})).toThrow(
       /OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN/u,
@@ -89,48 +68,11 @@ describe('WorkflowRunnerControlClient', () => {
     ).toBe('http://[::1]:18183');
     expect(
       () =>
-        new WorkflowRunnerControlClient({
+        new WorkflowRunnerStatusClient({
           ...config(),
           bearerToken: undefined as never,
         }),
     ).toThrow(WorkflowRunnerControlError);
-  });
-
-  it('binds the exact canonical JobSpec to Go-compatible admission headers', async () => {
-    const value = prepared();
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
-      expect(init?.redirect).toBe('error');
-      expect(init?.body).toBe(value.exactBody);
-      const headers = new Headers(init?.headers);
-      expect(headers.get('Authorization')).toBe(`Bearer ${TOKEN}`);
-      expect(headers.get('Idempotency-Key')).toBe(value.idempotencyKey);
-      expect(headers.get('X-OpenSlack-Request-Fingerprint')).toBe(value.requestFingerprint);
-      return jsonResponse(
-        {
-          schema: 'openslack.workflow_runner_job_receipt.v1',
-          status: 'accepted',
-          workspaceId: WORKSPACE,
-          jobId: 'job-1',
-          workflowRunId: 'run-1',
-          state: 'queued',
-          revision: 1,
-          jobSpecHash: value.jobSpecHash,
-          idempotencyKey: value.idempotencyKey,
-          requestFingerprint: value.requestFingerprint,
-          committedAt: '2026-08-13T00:00:01.000Z',
-          reconciliationId: null,
-        },
-        201,
-      );
-    });
-    const receipt = await new WorkflowRunnerControlClient(config(), {
-      fetch: fetchMock,
-    }).submit(value);
-    expect(receipt.status).toBe('accepted');
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:18183/v1/runner/jobs',
-      expect.any(Object),
-    );
   });
 
   it('strictly validates every terminal JobView field and result binding shape', () => {
@@ -205,18 +147,18 @@ describe('WorkflowRunnerControlClient', () => {
   });
 
   it('does not expose the bearer token when transport fails', async () => {
-    const client = new WorkflowRunnerControlClient(config(), {
+    const client = new WorkflowRunnerStatusClient(config(), {
       fetch: vi.fn<typeof fetch>(async () => {
         throw new Error(`request contained ${TOKEN}`);
       }),
     });
-    const error = await client.submit(prepared()).catch((reason: unknown) => reason);
+    const error = await client.readJob('job-1').catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(WorkflowRunnerControlError);
     expect(String((error as Error).message)).not.toContain(TOKEN);
   });
 
   it('maps a 202 error envelope to reconciliation instead of accepting it as a receipt', async () => {
-    const client = new WorkflowRunnerControlClient(config(), {
+    const client = new WorkflowRunnerStatusClient(config(), {
       fetch: vi.fn<typeof fetch>(async () =>
         jsonResponse(
           {
@@ -228,13 +170,13 @@ describe('WorkflowRunnerControlClient', () => {
         ),
       ),
     });
-    await expect(client.submit(prepared())).rejects.toMatchObject({
+    await expect(client.readJob('job-1')).rejects.toMatchObject({
       code: 'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
     });
   });
 
   it('keeps the timeout active while reading a stalled response body', async () => {
-    const client = new WorkflowRunnerControlClient(config(), {
+    const client = new WorkflowRunnerStatusClient(config(), {
       requestTimeoutMs: 25,
       fetch: vi.fn<typeof fetch>(
         async () =>
@@ -244,13 +186,13 @@ describe('WorkflowRunnerControlClient', () => {
           }),
       ),
     });
-    await expect(client.submit(prepared())).rejects.toMatchObject({
+    await expect(client.readJob('job-1')).rejects.toMatchObject({
       code: 'WORKFLOW_RUNNER_CONTROL_TIMEOUT',
     });
   });
 
   it('bounds the complete polling operation even while one response body is stalled', async () => {
-    const client = new WorkflowRunnerControlClient(config(), {
+    const client = new WorkflowRunnerStatusClient(config(), {
       requestTimeoutMs: 10_000,
       fetch: vi.fn<typeof fetch>(
         async () =>

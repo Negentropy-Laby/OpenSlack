@@ -272,10 +272,14 @@ func TestRunnerOpenAPIAuthorityBindingCompanionIsExactDefaultOffQualificationOnl
 	}
 	version := document.Components.Schemas["Version"].Value
 	if version.Properties["schemaVersion"].Value.Max == nil || *version.Properties["schemaVersion"].Value.Max != 8 ||
-		version.Properties["v2RuntimeDeliveryQualification"] == nil ||
+		version.Properties["mode"].Value.Const != "runner-control-go-authority" ||
+		version.Properties["workflowAuthority"].Value.Const != "workflow-control" ||
+		version.Properties["routingActivated"] == nil ||
 		version.Properties["productionRoutingActivated"] == nil ||
-		version.Properties["newRecordCanary"] == nil {
-		t.Fatalf("schema-8 runtime-delivery version surface drifted: %+v", version.Properties)
+		version.Properties["newRecordCanary"] == nil ||
+		version.Properties["v2QualificationAdmission"] != nil ||
+		version.Properties["v2RuntimeDeliveryQualification"] != nil {
+		t.Fatalf("schema-8 Go-authority version surface drifted: %+v", version.Properties)
 	}
 }
 

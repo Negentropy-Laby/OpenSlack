@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createWorkflowRunProjectionStore } from '@openslack/workflows';
 import {
   NEGENTROPY_SCHEMA_PIN,
   bundledNegentropySchemaBytes,
@@ -30,14 +29,30 @@ it('includes Go recovery snapshots in evidence counts and keeps ambiguous runs d
     ['go', 'run.ambiguous'],
     ['ts-local', 'run.ambiguous'],
   ] as const) {
-    await createWorkflowRunProjectionStore(root, backend).initRun(runId, {
+    const runDir = join(
+      root,
+      '.openslack.local',
+      'workflows',
+      ...(backend === 'go' ? ['go-recovery-projections'] : []),
+      'runs',
       runId,
-      workflowName: 'workflow.test',
-      mode: 'execute',
-      manifestHash: 'a'.repeat(64),
-      args: {},
-      startedAt: NOW.toISOString(),
-    });
+    );
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, 'meta.json'),
+      JSON.stringify({
+        runId,
+        workflowName: 'workflow.test',
+        mode: 'execute',
+        manifestHash: 'a'.repeat(64),
+        args: {},
+        startedAt: NOW.toISOString(),
+      }),
+    );
+    writeFileSync(
+      join(runDir, 'status.json'),
+      JSON.stringify({ runId, status: 'running', updatedAt: NOW.toISOString(), phases: [] }),
+    );
   }
   const value = await preview(root);
   expect(value.contribution.metadata.evidence.workflow).toMatchObject({

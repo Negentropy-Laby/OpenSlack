@@ -77,7 +77,6 @@ vi.mock('@openslack/workflows', async () => {
     loadWorkflowRunRoutingConfig: vi.fn(() => ({ mode: 'disabled', ignoredSettings: [] })),
     createWorkflowRunRoutingExecutionContext: vi.fn(() => ({ mode: 'disabled' })),
     readWorkflowRunnerSourceBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
-    executeResume: vi.fn(),
     buildApprovalManifest: vi.fn(() => ({
       workflowName: 'test-wf',
       runId: 'dryrun-test-001',
@@ -139,13 +138,6 @@ vi.mock('@openslack/workflows', async () => {
       }
     },
     hashString: vi.fn(() => 'hashed-input'),
-    RunStore: vi.fn(() => ({
-      loadPendingApprovals: vi.fn(() => []),
-      resolvePendingApproval: vi.fn(),
-      transitionStatus: vi.fn(),
-      loadMeta: vi.fn(),
-      listRunsByStatus: vi.fn(() => []),
-    })),
   };
 });
 

@@ -312,9 +312,6 @@ export async function executeWorkflowRun(
     executePreview,
     executeDryRun,
     executeWorkflowThroughRunner,
-    createWorkflowRunRoutingExecutionContext,
-    loadWorkflowRunRoutingConfig,
-    loadWorkflowRunnerControlConfig,
     readWorkflowRunnerSourceBytes,
     TrustStore,
     buildApprovalManifest,
@@ -378,16 +375,9 @@ export async function executeWorkflowRun(
       dryResult.simulatedEffects,
     );
 
-    // Step 3: Seal the manifest admission and execute through runner v1.
-    const runnerConfig = loadWorkflowRunnerControlConfig();
+    // Step 3: Seal the manifest admission and execute through Go-authority runner v2.
     const result = await executeWorkflowThroughRunner({
       workspaceRoot: root,
-      config: runnerConfig,
-      routing: createWorkflowRunRoutingExecutionContext({
-        runner: runnerConfig,
-        workspaceRoot: root,
-        config: loadWorkflowRunRoutingConfig(runnerConfig),
-      }),
       workflowRunId: dryResult.runId,
       workflowSource: found.source,
       workflowSourceBytes: await readWorkflowRunnerSourceBytes({

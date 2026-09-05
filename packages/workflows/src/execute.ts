@@ -6,10 +6,10 @@ import type {
   ExecutionMode,
   WorkflowFormat,
   ConfirmationPolicy,
+  RunStatus,
 } from './types.js';
 import {
   createRuntime,
-  createRuntimeWithCheckpointAuthority,
   createRuntimeWithHostAuthorities,
   ExecuteDeniedError,
   WorkflowExecutionCancelledError,
@@ -19,11 +19,12 @@ import type { ConfirmCallback } from './runtime.js';
 import { validateEffectAgainstManifest } from './manifest-validator.js';
 import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
-import { RunStore, encodeRunMetaArguments } from './run-store.js';
+import { encodeRunMetaArguments } from './run-store.js';
+import type { RunStore } from './run-store.js';
 import type { RuntimeOptions, RuntimeWithPersistence } from './runtime.js';
 import { WorkflowBudgetPausedError } from './agent-shim.js';
-import { join } from 'node:path';
 import type { WorkflowEffectBoundary } from './workflow-runner-effect-boundary.js';
+import type { WorkflowRunnerV2GoProjectionRunStore } from './workflow-runner-v2-go-projection-store.js';
 import {
   WORKFLOW_ARGUMENTS_SCHEMA,
   decodeValidatedWorkflowArguments,
@@ -33,6 +34,7 @@ import {
 } from './internal/workflow-arguments.js';
 import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
+import { WorkflowResumeRecoveryRequiredError } from './resume.js';
 import {
   workflowCheckpointBindingFromAuthority,
   type WorkflowCheckpointLeaseAuthority,
@@ -53,19 +55,6 @@ export class DryRunError extends Error {
     super(`Dry-run validation failed: ${violations.join('; ')}`);
     this.name = 'DryRunError';
     this.violations = violations;
-  }
-}
-
-export class WorkflowResumeRecoveryRequiredError extends Error {
-  readonly code = 'WORKFLOW_RESUME_RECOVERY_REQUIRED' as const;
-
-  constructor(
-    readonly runId: string,
-    reason: string,
-    options?: ErrorOptions,
-  ) {
-    super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
-    this.name = 'WorkflowResumeRecoveryRequiredError';
   }
 }
 
@@ -124,9 +113,9 @@ export interface DryRunOptions {
 }
 
 /**
- * Options for executeRun.
+ * Closed options for the sealed Go-authority workflow worker.
  */
-export interface ExecuteRunOptions {
+export interface GoAuthorityWorkflowExecutionOptions {
   /** Workflow manifest */
   manifest: WorkflowMeta;
   /** Workflow arguments */
@@ -169,9 +158,9 @@ export interface ExecuteRunOptions {
    * Defaults to process.cwd().
    */
   rootDir?: string;
-  /** Exact host-selected run identity. Must match confirmationPolicy.runId when both are present. */
-  runId?: string;
-  /** Cooperative cancellation for the default-off GS8-B worker path. */
+  /** Exact host-selected run identity from the accepted Go route. */
+  runId: string;
+  /** Cooperative cancellation for the sealed Go-authority worker path. */
   signal?: AbortSignal;
   /** Durable runner intent/outcome observation; never an approval or execution authority. */
   effectBoundary?: WorkflowEffectBoundary;
@@ -189,10 +178,6 @@ function throwIfExecutionAborted(
     reason instanceof Error ? reason.message : String(reason ?? 'workflow control cancelled'),
     boundary,
   );
-}
-
-function workflowRunStore(rootDir: string): RunStore {
-  return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
 }
 
 function canonicalArguments(value: Record<string, unknown>): EncodedWorkflowArguments {
@@ -237,7 +222,7 @@ function createRunStorePipelineCache(
 async function safeTransition(
   store: RunStore,
   runId: string,
-  status: import('./types.js').RunStatus['status'],
+  status: RunStatus['status'],
 ): Promise<void> {
   try {
     const current = await store.loadStatus(runId);
@@ -347,24 +332,6 @@ export async function executeDryRun(
   const simulatedEffects: SimulatedEffect[] = [];
   const errors: string[] = [];
 
-  // Track simulated effects by wrapping log
-  const originalLog = (message: string) => {};
-  const effectTracker = {
-    log(message: string) {
-      // Detect [DRY-RUN] messages and track them as simulated effects
-      if (message.startsWith('[DRY-RUN]')) {
-        const match = message.match(/^\[DRY-RUN\]\s+(\S+):\s+(.*)$/);
-        if (match) {
-          simulatedEffects.push({
-            operation: match[1],
-            detail: match[2],
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-    },
-  };
-
   const runtime = createRuntime({
     runId,
     mode: 'dry-run' as ExecutionMode,
@@ -454,39 +421,21 @@ export function createOnConfirmFromPolicy(policy: ConfirmationPolicy): ConfirmCa
   };
 }
 
-/**
- * Execute a workflow in execute mode with real side effects.
- *
- * SAFETY: Execute mode requires either a legacy admission callback (onConfirm)
- * or an explicit allowUnattended flag. Neither grants effect authority. Real
- * effects additionally require the authenticated worker's exact v2 decision
- * and one-time execution claim; public callers fail closed before the effect.
- *
- * When a callback is provided, it is called before each side-effect operation;
- * returning false aborts the operation with ExecuteDeniedError. When
- * allowUnattended is set, legacy admission proceeds without prompting, but the
- * authenticated v2 authorization boundary remains mandatory.
- */
-export async function executeRun(
-  workflow: {
-    meta: WorkflowMeta;
-    hash?: string;
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
-    format?: WorkflowFormat;
-    sourceBody?: string;
-  },
-  options: ExecuteRunOptions,
-): Promise<RunResult> {
-  return executeRunWithStore(workflow, options);
+interface ExecutableWorkflow {
+  meta: WorkflowMeta;
+  hash?: string;
+  run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
+  format?: WorkflowFormat;
+  sourceBody?: string;
 }
 
-/** @internal Worker authority path; not exported from the package root. */
-export async function executeRunWithStore(
-  workflow: Parameters<typeof executeRun>[0],
-  options: ExecuteRunOptions,
-  storeOverride?: RunStore,
-  checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
-  effectAuthorizationPort?: WorkflowEffectAuthorizationPort,
+/** @internal Sealed worker path; every mutation is bound to Go authority. */
+export async function executeGoAuthorityRun(
+  workflow: ExecutableWorkflow,
+  options: GoAuthorityWorkflowExecutionOptions,
+  store: WorkflowRunnerV2GoProjectionRunStore,
+  checkpointAuthority: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort: WorkflowEffectAuthorizationPort,
 ): Promise<RunResult> {
   const { manifest, budget } = options;
   const encodedArgs = canonicalArguments(options.args ?? {});
@@ -500,12 +449,8 @@ export async function executeRunWithStore(
   ) {
     throw new Error('Execute runId must match confirmationPolicy.runId.');
   }
-  const runId =
-    options.runId ??
-    options.confirmationPolicy?.runId ??
-    `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const runId = options.runId;
   const rootDir = options.rootDir ?? process.cwd();
-  const store = storeOverride ?? workflowRunStore(rootDir);
   const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
   throwIfExecutionAborted(options.signal, runId);
 
@@ -518,12 +463,10 @@ export async function executeRunWithStore(
     manifestHash: resolveWorkflowIdentityHash(workflow, manifest),
     budget: effectiveBudget,
   });
-  if (checkpointAuthority) {
-    await store.initializeCheckpointControl(
-      runId,
-      workflowCheckpointBindingFromAuthority(checkpointAuthority),
-    );
-  }
+  await store.initializeCheckpointControl(
+    runId,
+    workflowCheckpointBindingFromAuthority(checkpointAuthority),
+  );
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined;
@@ -567,20 +510,11 @@ export async function executeRunWithStore(
       await store.persistBudgetState(runId, state);
     },
   };
-  if (effectAuthorizationPort && !checkpointAuthority) {
-    throw new Error(
-      'Workflow effect authorization requires the accepted runner checkpoint authority.',
-    );
-  }
-  const runtime = checkpointAuthority
-    ? effectAuthorizationPort
-      ? createRuntimeWithHostAuthorities(
-          runtimeOptions,
-          checkpointAuthority,
-          effectAuthorizationPort,
-        )
-      : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
-    : createRuntime(runtimeOptions);
+  const runtime = createRuntimeWithHostAuthorities(
+    runtimeOptions,
+    checkpointAuthority,
+    effectAuthorizationPort,
+  );
 
   let outputPersisted = false;
   try {
@@ -650,58 +584,16 @@ export async function executeRunWithStore(
   }
 }
 
-/**
- * Execute a workflow in resume mode using an existing run store.
- *
- * Re-enters the workflow from its function boundary with the original args,
- * immutable workflow identity, cumulative budget, and persisted caches. A
- * workflow must place replay-safe cached work before any approval pause; this
- * function does not claim arbitrary JavaScript can resume mid-function.
- *
- * SAFETY: Like executeRun, resume mode requires legacy admission and the
- * authenticated worker's exact v2 decision plus one-time execution claim.
- */
-export async function executeResume(
-  workflow: {
-    meta: WorkflowMeta;
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
-    format?: WorkflowFormat;
-    sourceBody?: string;
-  },
-  options: {
-    runId: string;
-    manifest: WorkflowMeta;
-    args?: Record<string, unknown>;
-    budget?: { tokens: number; costUsd: number };
-    agentLauncher?: AgentLauncher;
-    agentCache?: AgentCacheStore;
-    pipelineCache?: PipelineCacheStore;
-    onConfirm?: ConfirmCallback;
-    /** Allow non-interactive legacy admission; does not grant effect authority. */
-    allowUnattended?: boolean;
-    confirmationPolicy?: ConfirmationPolicy;
-    /** Optional event emitter for agent conversation lifecycle events. */
-    agentEventEmitter?: AgentEventEmitter;
-    /** Root directory for resolving agent types and collaboration paths. */
-    rootDir?: string;
-    signal?: AbortSignal;
-    effectBoundary?: WorkflowEffectBoundary;
-  },
-): Promise<RunResult> {
-  return executeResumeWithStore(workflow, options);
-}
-
-/** @internal Worker authority path; not exported from the package root. */
-export async function executeResumeWithStore(
-  workflow: Parameters<typeof executeResume>[0],
-  options: Parameters<typeof executeResume>[1],
-  storeOverride?: RunStore,
-  checkpointAuthority?: WorkflowCheckpointLeaseAuthority,
-  effectAuthorizationPort?: WorkflowEffectAuthorizationPort,
+/** @internal Sealed resume path; every mutation is bound to Go authority. */
+export async function executeGoAuthorityResume(
+  workflow: ExecutableWorkflow,
+  options: GoAuthorityWorkflowExecutionOptions,
+  store: WorkflowRunnerV2GoProjectionRunStore,
+  checkpointAuthority: WorkflowCheckpointLeaseAuthority,
+  effectAuthorizationPort: WorkflowEffectAuthorizationPort,
 ): Promise<RunResult> {
   const { runId, manifest } = options;
   const rootDir = options.rootDir ?? process.cwd();
-  const store = storeOverride ?? workflowRunStore(rootDir);
   throwIfExecutionAborted(options.signal, runId);
 
   if (options.confirmationPolicy !== undefined && options.confirmationPolicy.runId !== runId) {
@@ -732,6 +624,12 @@ export async function executeResumeWithStore(
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
       `status "${status.status}" cannot be replayed automatically`,
+    );
+  }
+  if (status.pendingAgentControls?.length) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'legacy pending agent controls are read-only evidence and cannot authorize Go execution',
     );
   }
   let currentWorkflowHash: string;
@@ -818,24 +716,22 @@ export async function executeResumeWithStore(
     );
   }
 
-  if (checkpointAuthority) {
-    const checkpointBinding = workflowCheckpointBindingFromAuthority(checkpointAuthority);
-    const checkpointControl = await store.loadCheckpointControl(runId);
-    const nextPhaseIndex = checkpointControl?.checkpoints.length ?? 0;
-    const nextPhase = manifest.phases[nextPhaseIndex];
-    if (!checkpointControl || !nextPhase) {
-      throw new WorkflowResumeRecoveryRequiredError(
-        runId,
-        'checkpoint resume head or next phase is unavailable',
-      );
-    }
-    await store.beginCheckpointResumeGeneration(
+  const checkpointBinding = workflowCheckpointBindingFromAuthority(checkpointAuthority);
+  const checkpointControl = await store.loadCheckpointControl(runId);
+  const nextPhaseIndex = checkpointControl?.checkpoints.length ?? 0;
+  const nextPhase = manifest.phases[nextPhaseIndex];
+  if (!checkpointControl || !nextPhase) {
+    throw new WorkflowResumeRecoveryRequiredError(
       runId,
-      checkpointBinding,
-      `phase-${nextPhaseIndex}`,
-      nextPhaseIndex,
+      'checkpoint resume head or next phase is unavailable',
     );
   }
+  await store.beginCheckpointResumeGeneration(
+    runId,
+    checkpointBinding,
+    `phase-${nextPhaseIndex}`,
+    nextPhaseIndex,
+  );
 
   const runtimeOptions: RuntimeOptions = {
     runId,
@@ -862,20 +758,11 @@ export async function executeResumeWithStore(
       await store.persistBudgetState(runId, state);
     },
   };
-  if (effectAuthorizationPort && !checkpointAuthority) {
-    throw new Error(
-      'Workflow effect authorization requires the accepted runner checkpoint authority.',
-    );
-  }
-  const runtime = checkpointAuthority
-    ? effectAuthorizationPort
-      ? createRuntimeWithHostAuthorities(
-          runtimeOptions,
-          checkpointAuthority,
-          effectAuthorizationPort,
-        )
-      : createRuntimeWithCheckpointAuthority(runtimeOptions, checkpointAuthority)
-    : createRuntime(runtimeOptions);
+  const runtime = createRuntimeWithHostAuthorities(
+    runtimeOptions,
+    checkpointAuthority,
+    effectAuthorizationPort,
+  );
 
   let outputPersisted = false;
   try {

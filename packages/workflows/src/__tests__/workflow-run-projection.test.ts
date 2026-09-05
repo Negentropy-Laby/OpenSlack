@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  createWorkflowRunProjectionStore,
   locateWorkflowRunProjection,
+  resolveWorkflowRunProjectionRoot,
 } from '../workflow-run-projection.js';
+import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
   listWorkflowRuns,
   showWorkflowRun,
@@ -24,7 +26,10 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'workflow-projection-'));
   roots.push(root);
   const seed = async (backend: 'go' | 'ts-local', runId: string) => {
-    const store = createWorkflowRunProjectionStore(root, backend);
+    const store = new RunStore({
+      baseDir: resolveWorkflowRunProjectionRoot(root, backend),
+      access: createWorkflowRunStoreRecoveryAccess(),
+    });
     await store.initRun(runId, {
       runId,
       workflowName: 'workflow.test',

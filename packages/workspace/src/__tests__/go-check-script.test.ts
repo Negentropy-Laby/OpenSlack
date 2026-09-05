@@ -107,15 +107,6 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(goCheckSource).toContain('Workflow Control runner test selector matched no tests:');
     expect(goCheckSource).toContain('type=volume,source=${MOD_CACHE_VOLUME}');
     expect(goCheckSource).toContain('type=volume,source=${BUILD_CACHE_VOLUME}');
-    expect(goCheckSource).toContain(
-      'bundle_manifest_sha="$(sha256sum "${bundle_root}/workflow-runner-bundle.v1.json"',
-    );
-    expect(goCheckSource).toContain(
-      '--env "WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=${bundle_manifest_sha}"',
-    );
-    expect(goCheckSource).not.toContain(
-      '--env WORKFLOW_RUNNER_CONTROL_BUNDLE_MANIFEST_SHA256=968c388f6b84277910c055f163c6db470ae48cfaa3153f52598c4bbef4afab6a',
-    );
     expect(goCheckSource).not.toContain('go work sync');
     expect(goCheckSource).not.toContain('.gomodcache');
     expect(goCheckSource).not.toContain('.gocache');
@@ -505,508 +496,35 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   }, 15_000);
 
-  it('runs the Workflow Control GS8-B runner profile with durable restart and default-off image gates', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v1',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=verify');
-    expect(log).toContain('./internal/runnerstore/postgres');
-    expect(log).toContain('-qualification-runner-cancel-ack-stability');
-    expect(log).toContain(
-      '-run \\^Test\\(CancelAckMustBindPersistedCancel\\|LateAlreadyTerminalCancelAckPreservesReceiptProvenTerminal\\)\\$',
-    );
-    expect(log).toContain('-count=100');
-    expect(
-      readFileSync(join(moduleRoot, 'cmd/runner-server/qualification_test.go'), 'utf8'),
-    ).toContain('TestGS8BQualificationProcessIdentityIsStableWithinOneProcess');
-    expect(log).toContain('-run \\^TestGS8BRestartQualification\\$');
-    expect(log).toContain('-run \\^TestGS8BImageDefaultOff\\$');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_DEFAULT_ORIGIN=http://application:8080');
-    const runnerBoundsIndex = log.indexOf('-qualification-runner-bounds');
-    const cancelAckStabilityIndex = log.indexOf('-qualification-runner-cancel-ack-stability');
-    const runnerRestartSeedIndex = log.indexOf('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(runnerBoundsIndex).toBeGreaterThan(-1);
-    expect(cancelAckStabilityIndex).toBeGreaterThan(runnerBoundsIndex);
-    expect(runnerRestartSeedIndex).toBeGreaterThan(cancelAckStabilityIndex);
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_RUNNER_GS8B_RESTART_SCHEMA=(workflow_control_gs8b_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    // Each seed/verify phase is logged once for selector discovery and once for execution.
-    expect(restartSchemas).toHaveLength(4);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(2);
-    expect(log).not.toContain('WORKFLOW_RUNNER_GS8B_QUALIFICATION=1');
-    expect(log).not.toContain('GOVERNANCE_AUTHORITY_MODE=');
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v1',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS8B_FAIL_PHASE: 'runner-cancel-ack-stability',
-      FAKE_GS8B_FAIL_STATUS: '47',
-    });
-    expect(failure.status).toBe(47);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-runner-cancel-ack-stability');
-    expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-  }, 15_000);
-
-  it('runs the Workflow Control GS9-B authority profile as a GS7/GS8 superset with durable default-off gates', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-authority-v2',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
-    expect(log).toContain('-qualification-runner-bounds');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_MODE=local-qualification-v1');
-    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_HTTP_BIND=127.0.0.1:8082');
-    expect(log).toContain('WORKFLOW_CONTROL_AUTHORITY_ROUTING_EPOCH=9');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
-    expect(log).toContain('-run \\^TestGS9BQualification\\$');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9BRestartQualification\\$');
-    expect(log).toContain('--entrypoint /authority-server');
-    expect(log).toContain('--network container:');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_DEFAULT_ORIGIN=http://127.0.0.1:8082');
-    expect(log).toContain('-run \\^TestGS9BImageDefaultOff\\$');
-    const authorityDefaultOffRun = log
-      .split('\n')
-      .find((line) => line.includes('--entrypoint /authority-server'));
-    expect(authorityDefaultOffRun).toContain('--network none');
-    expect(authorityDefaultOffRun).toContain('--health-cmd kill\\ -0\\ 1');
-    expect(authorityDefaultOffRun).not.toContain('DATABASE_URL=');
-    expect(authorityDefaultOffRun).not.toContain('WORKFLOW_CONTROL_AUTHORITY_MODE=');
-    for (const requiredStoreTest of [
-      'TestGS9BAuthorityAcceptAndByteIdenticalReplay',
-      'TestGS9BAuthorityReadRejectsTamperedCanonicalRecordBytes',
-      'TestGS9BAuthorityReadRejectsTamperedCanonicalOutboxBytes',
-      'TestGS9BAuthorityRejectsCorruptStoredReceiptAsIntegrityFailure',
-      'TestGS9BAuthorityReadyUsesLightweightProbe',
-      'TestGS9BAuthoritySameKeyDifferentFingerprintConflicts',
-      'TestGS9BAuthorityTransitionCASAndOutboxAtomicity',
-      'TestGS9BAuthorityRouteDriftConflicts',
-      'TestGS9BAuthorityConcurrentCASHasOneWinner',
-      'TestGS9BAuthorityCommittedResponseLossRecoversExactReceipt',
-      'TestGS9BAuthorityUnknownCommitPersistsReconciliationWithoutHead',
-      'TestGS9BAuthorityDoubleUnknownFailsClosed',
-      'TestPrepareRequestRejectsNonCanonicalAndInvalidTransition',
-      'TestServiceMapsCommitUnknownToStableNon2xx',
-      'TestServiceMapsStoredIntegrityFailureTo500',
-      'TestQualificationReadinessUsesLightweightProbe',
-      'TestQualificationReadinessFailureIsNotReady',
-      'TestAuthorityTimeoutBudgetsLeaveWriteSlack',
-      'TestMigrationCreatesIsolatedShadowRunnerAndAuthorityNamespacesWithImmutableEvidence',
-      'TestAuthorityMigrationDoesNotClaimLaterGS9OrRunnerLifecycle',
-      'TestAuthorityDownMigrationIsIsolatedAndRefusesRegisteredEpochs',
-    ]) {
-      expect(goCheckSource).toContain(requiredStoreTest);
-    }
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_CONTROL_GS9B_RESTART_SCHEMA=(workflow_control_gs9b_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(restartSchemas).toHaveLength(2);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(3);
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-authority-v2',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9B_FAIL_PHASE: 'authority-bounds',
-      FAKE_GS9B_FAIL_STATUS: '48',
-    });
-    expect(failure.status).toBe(48);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-authority-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9B_RESTART_PHASE=seed');
-  }, 15_000);
-
-  it('runs the Workflow Control GS9-C checkpoint profile as a strict GS7/GS8/GS9-B superset', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    addWorkflowCheckpointShadowEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-checkpoint-shadow-v1',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=local-qualification-v1');
-    expect(log).toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_HTTP_BIND=127.0.0.1:8083');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
-    expect(log).toContain('-run \\^TestGS9CQualification\\$');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9CRestartQualification\\$');
-    expect(log).toContain('--entrypoint /checkpoint-shadow-server');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_DEFAULT_ORIGIN=http://127.0.0.1:8083');
-    expect(log).toContain('-run \\^TestGS9CImageDefaultOff\\$');
-    const checkpointDefaultOffRun = log
-      .split('\n')
-      .find((line) => line.includes('--entrypoint /checkpoint-shadow-server'));
-    expect(checkpointDefaultOffRun).toContain('--network none');
-    expect(checkpointDefaultOffRun).not.toContain('DATABASE_URL=');
-    expect(checkpointDefaultOffRun).not.toContain('WORKFLOW_CONTROL_CHECKPOINT_SHADOW_MODE=');
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_CONTROL_GS9C_RESTART_SCHEMA=(workflow_control_gs9c_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(restartSchemas).toHaveLength(2);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(4);
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-checkpoint-shadow-v1',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9C_FAIL_PHASE: 'checkpoint-bounds',
-      FAKE_GS9C_FAIL_STATUS: '49',
-    });
-    expect(failure.status).toBe(49);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-checkpoint-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9C_RESTART_PHASE=seed');
-  }, 30_000);
-
-  it('runs the Workflow Control GS9-D effect profile as a strict GS7/GS8/GS9-B/GS9-C superset', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    addWorkflowCheckpointShadowEvidence(moduleRoot);
-    addWorkflowEffectShadowEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-effect-shadow-v1',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=local-qualification-v1');
-    expect(log).toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_HTTP_BIND=127.0.0.1:8084');
-    expect(log).toContain(
-      'WORKFLOW_CONTROL_EFFECT_SHADOW_CALLER_ID=typescript:workflow-effect-shadow',
-    );
-    expect(log).toContain('WORKFLOW_CONTROL_GS9D_QUALIFICATION=1');
-    expect(log).toContain('-run \\^TestGS9DQualification\\$');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9DRestartQualification\\$');
-    expect(log).toContain('--entrypoint /effect-shadow-server');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9D_DEFAULT_ORIGIN=http://127.0.0.1:8084');
-    expect(log).toContain('-run \\^TestGS9DImageDefaultOff\\$');
-    for (const requiredName of [
-      'TestWorkflowEffectShadowGoldenVectors',
-      'TestWorkflowEffectShadowRejectsFramingAndAuthorityDrift',
-      'TestGS9DEffectShadowLifecycleOutboxAndExactReplay',
-      'TestGS9DEffectShadowOutboxPaginationTraversesBeyondFirstHundred',
-      'TestGS9DEffectShadowMismatchDoesNotCreateOutbox',
-      'TestGS9DEffectShadowCommittedResponseLossKeepsOutboxAtomic',
-      'TestGS9DEffectShadowRejectsCorruptOutboxPayload',
-      'TestGS9DEffectShadowConflictsConcurrencyAndStoredIntegrity',
-      'TestGS9DEffectShadowCommitUnknownReconciliationAndDoubleUnknown',
-      'TestGS9DEffectShadowCommitUnknownRereadsReceiptAfterScopeLock',
-      'TestEffectShadowDownMigrationIsIsolatedAndRefusesEvidence',
-    ]) {
-      expect(goCheckSource).toContain(requiredName);
-    }
-    const effectDefaultOffRun = log
-      .split('\n')
-      .find((line) => line.includes('--entrypoint /effect-shadow-server'));
-    expect(effectDefaultOffRun).toContain('--network none');
-    expect(effectDefaultOffRun).not.toContain('DATABASE_URL=');
-    expect(effectDefaultOffRun).not.toContain('WORKFLOW_CONTROL_EFFECT_SHADOW_MODE=');
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_CONTROL_GS9D_RESTART_SCHEMA=(workflow_control_gs9d_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(restartSchemas).toHaveLength(2);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(5);
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
-    addWorkflowEffectShadowEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-effect-shadow-v1',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9D_FAIL_PHASE: 'effect-bounds',
-      FAKE_GS9D_FAIL_STATUS: '50',
-    });
-    expect(failure.status).toBe(50);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-effect-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9D_RESTART_PHASE=seed');
-  }, 30_000);
-
-  it('runs the Workflow Control GS9-E budget profile as a strict GS7/GS8/GS9-B/C/D superset', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    addWorkflowCheckpointShadowEvidence(moduleRoot);
-    addWorkflowEffectShadowEvidence(moduleRoot);
-    addWorkflowBudgetAuthorityEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-budget-authority-v1',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS7B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS8B_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9B_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9C_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9D_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=local-qualification-v1');
-    expect(log).toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_HTTP_BIND=127.0.0.1:8085');
-    expect(log).toContain(
-      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_ROUTING_EPOCH}`,
-    );
-    expect(log).toContain(
-      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH}`,
-    );
-    expect(log).toContain(
-      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_TOKENS}`,
-    );
-    expect(log).toContain(
-      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_NANO_USD}`,
-    );
-    expect(log).toContain(
-      `WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS=${gs9eQualificationFixture.WORKFLOW_CONTROL_BUDGET_AUTHORITY_LIMIT_CALLS}`,
-    );
-    expect(goCheckSource).toContain('${staged_module_dir}/testdata/gs9e-qualification.conf');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9E_QUALIFICATION=1');
-    expect(log).toContain('-run \\^TestGS9EQualification\\$');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9ERestartQualification\\$');
-    expect(log).toContain('--entrypoint /budget-authority-server');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9E_DEFAULT_ORIGIN=http://127.0.0.1:8085');
-    expect(log).toContain('-run \\^TestGS9EImageDefaultOff\\$');
-    const budgetDefaultOffRun = log
-      .split('\n')
-      .find((line) => line.includes('--entrypoint /budget-authority-server'));
-    expect(budgetDefaultOffRun).toContain('--network none');
-    expect(budgetDefaultOffRun).not.toContain('DATABASE_URL=');
-    expect(budgetDefaultOffRun).not.toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_MODE=');
-    expect(budgetDefaultOffRun).not.toContain('WORKFLOW_CONTROL_BUDGET_AUTHORITY_POLICY_HASH=');
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_CONTROL_GS9E_RESTART_SCHEMA=(workflow_control_gs9e_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(restartSchemas).toHaveLength(2);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(6);
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
-    addWorkflowEffectShadowEvidence(failureModuleRoot);
-    addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-budget-authority-v1',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9E_FAIL_PHASE: 'budget-bounds',
-      FAKE_GS9E_FAIL_STATUS: '51',
-    });
-    expect(failure.status).toBe(51);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-budget-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_CONTROL_GS9E_RESTART_PHASE=seed');
-  }, 30_000);
-
-  it('runs the Workflow Control GS9-F1 foundation profile as a default-off GS9-E superset', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowRunnerV2FoundationEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    addWorkflowCheckpointShadowEvidence(moduleRoot);
-    addWorkflowEffectShadowEvidence(moduleRoot);
-    addWorkflowBudgetAuthorityEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v2-foundation-v1',
-    });
-    commitFixture(fixture.root);
-
-    const result = runGoCheck(fixture, ['services/pure']);
-
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_CONTROL_GS9E_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_QUALIFICATION=1');
-    expect(log).toContain('./internal/runnerstore/postgres');
-    expect(log).toContain('-run \\^TestGS9F1QualificationFoundation\\$');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9F1RestartFoundation\\$');
-    expect(log).toContain('-run \\^TestGS9F1ImageDefaultOff\\$');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_DEFAULT_ORIGIN=http://application:8080');
-    expect(log).not.toContain('./cmd/runner-server -list \\^TestGS9F1');
-    expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
-    expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
-    for (const deferredAdapter of [
-      'WORKFLOW_RUNNER_V2_CHECKPOINT_ADAPTER',
-      'WORKFLOW_RUNNER_V2_EFFECT_ADAPTER',
-      'WORKFLOW_RUNNER_V2_BUDGET_ADAPTER',
-      'WORKFLOW_RUNNER_V2_RESUME_ADAPTER',
-    ]) {
-      expect(log).not.toContain(deferredAdapter);
-      expect(goCheckSource).not.toContain(deferredAdapter);
-    }
-    expect(log).not.toContain('WORKFLOW_RUNNER_GS9F2');
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_RUNNER_GS9F1_RESTART_SCHEMA=(workflow_control_gs9f1_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    // Each seed/verify phase is logged once for selector discovery and once for execution.
-    expect(restartSchemas).toHaveLength(4);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(7);
-
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowRunnerV2FoundationEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
-    addWorkflowEffectShadowEvidence(failureModuleRoot);
-    addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v2-foundation-v1',
-    });
-    commitFixture(failureFixture.root);
-
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9F1_FAIL_PHASE: 'runner-v2-foundation-bounds',
-      FAKE_GS9F1_FAIL_STATUS: '52',
-    });
-    expect(failure.status).toBe(52);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-runner-v2-foundation-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS9F1_RESTART_PHASE=seed');
-
-    const emptySelection = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GO_TEST_LIST_EMPTY: '1',
-    });
-    expect(emptySelection.status).toBe(1);
-    expect(emptySelection.stderr).toContain(
-      'Workflow Control runner test selector matched no tests:',
-    );
-  }, 30_000);
+  it.each([
+    'workflow-control-runner-v1',
+    'workflow-control-authority-v2',
+    'workflow-control-checkpoint-shadow-v1',
+    'workflow-control-effect-shadow-v1',
+    'workflow-control-budget-authority-v1',
+    'workflow-control-runner-v2-foundation-v1',
+  ])(
+    'rejects retired profile %s with the current replacement before runtime gates',
+    (runtimeProfile) => {
+      const fixture = createFixture();
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'pure',
+        dockerTarget: 'none',
+        runtimeProfile,
+      });
+      commitFixture(fixture.root);
+      const result = runGoCheck(fixture, ['services/pure']);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        'service verification runtime profile is retired: ' + runtimeProfile,
+      );
+      expect(result.stderr).toContain('use workflow-control-runner-v2-runtime-delivery-v1');
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).not.toContain('-qualification-');
+      expect(log).not.toContain(' network create ');
+      expect(log).not.toContain(' build ');
+    },
+  );
 
   it('runs the Workflow Control GS9-F2b runtime-delivery profile as a real F1 superset', () => {
     const fixture = createFixture();
@@ -1032,18 +550,40 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     const log = readFileSync(fixture.dockerLog, 'utf8');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F1_QUALIFICATION=1');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1');
+    for (const stage of ['GS7B', 'GS9B', 'GS9C', 'GS9D', 'GS9E']) {
+      expect(log).toContain('WORKFLOW_CONTROL_' + stage + '_QUALIFICATION=1');
+    }
+    for (const binary of [
+      'authority-server',
+      'checkpoint-shadow-server',
+      'effect-shadow-server',
+      'budget-authority-server',
+    ]) {
+      const command = log.split('\n').find((line) => line.includes('--entrypoint /' + binary));
+      expect(command).toContain('--network none');
+      expect(command).not.toContain('DATABASE_URL=');
+    }
+    expect(log).toContain('-qualification-runner-cancel-ack-stability');
+    expect(log).toContain('-count=100');
+    expect(log).toContain('TestGS9F2MixedOrphanRestartRecovery');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify');
+    const mixedSchemas = [
+      ...log.matchAll(
+        /WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=(workflow_control_gs9f2_mixed_[a-z0-9]+)/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(mixedSchemas).toHaveLength(4);
+    expect(new Set(mixedSchemas).size).toBe(1);
+    expect(log).not.toContain('TestGS8BRestartQualification');
+    expect(log).not.toContain('TestGS8BImageDefaultOff');
     expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRuntimeDelivery\\$');
     expect(log).toContain('-run \\^TestGS9F2AuthorityBindingMigrationGuards\\$');
     expect(log).toContain('-run \\^TestGS9F2Qualification\\$');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
     expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify');
     expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRestartRecovery\\$');
-    expect(log).toContain('-run \\^TestGS9F2ImageDefaultOff\\$');
-    expect(log).toContain(
-      'WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN=http://runner-v2-runtime-delivery-default-off:8081',
-    );
-    expect(log).toContain('--entrypoint /runner-server');
-    expect(log).toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
+    expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
     expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1');
     expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
     expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
@@ -1054,7 +594,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     ].map((match) => match[1]);
     expect(restartSchemas).toHaveLength(4);
     expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(8);
+    expect(log.match(/ restart /gu)).toHaveLength(7);
 
     const failureFixture = createFixture();
     const failureModuleRoot = join(failureFixture.root, 'services/pure');
@@ -1083,11 +623,12 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
 
     for (const phase of [
+      'runner-mixed-restart-seed',
+      'runner-mixed-restart-verify',
       'runner-v2-runtime-delivery-migration',
       'runner-v2-runtime-delivery-worker',
       'runner-v2-runtime-delivery-restart-seed',
       'runner-v2-runtime-delivery-restart-verify',
-      'runner-v2-runtime-delivery-image-default-off',
     ]) {
       const phaseFailure = runGoCheck(failureFixture, ['services/pure'], {
         FAKE_GS9F2_FAIL_PHASE: phase,
@@ -1096,6 +637,36 @@ describeOnBashHosts('reviewed Go module verifier', () => {
       expect(phaseFailure.status, phase).toBe(53);
     }
 
+    for (const [prefix, phase, status] of [
+      ['GS8B', 'runner-cancel-ack-stability', 47],
+      ['GS9B', 'authority-bounds', 48],
+      ['GS9C', 'checkpoint-bounds', 49],
+      ['GS9D', 'effect-bounds', 50],
+      ['GS9E', 'budget-bounds', 51],
+      ['GS9F1', 'runner-v2-foundation-bounds', 52],
+    ] as const) {
+      const priorLogLength = readFileSync(failureFixture.dockerLog, 'utf8').length;
+      const failed = runGoCheck(failureFixture, ['services/pure'], {
+        ['FAKE_' + prefix + '_FAIL_PHASE']: phase,
+        ['FAKE_' + prefix + '_FAIL_STATUS']: String(status),
+      });
+      expect(failed.status, phase).toBe(status);
+      const failedLog = readFileSync(failureFixture.dockerLog, 'utf8').slice(priorLogLength);
+      expect(failedLog).toContain('-qualification-' + phase);
+      expect(failedLog).not.toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
+    }
+    const emptySelection = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GO_TEST_LIST_EMPTY: '1',
+    });
+    expect(emptySelection.status).toBe(1);
+    expect(emptySelection.stderr).toContain(
+      'Workflow Control runner test selector matched no tests:',
+    );
+    const mixedSkip = runGoCheck(failureFixture, ['services/pure'], {
+      FAKE_GS9F2_SKIP_TEST: 'TestGS9F2MixedOrphanRestartRecovery',
+    });
+    expect(mixedSkip.status).toBe(1);
+    expect(mixedSkip.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
     const skipped = runGoCheck(failureFixture, ['services/pure'], {
       FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
     });
@@ -1827,21 +1398,6 @@ function addWorkflowRunnerEvidence(moduleRoot: string): void {
   }
   writeFileSync(join(moduleRoot, 'cmd/runner-server/main.go'), 'package main\n', 'utf8');
   writeFileSync(
-    join(moduleRoot, 'cmd/runner-server/qualification_test.go'),
-    [
-      'package main',
-      '',
-      'import "testing"',
-      '',
-      'func TestGS8BQualification(t *testing.T) {}',
-      'func TestGS8BQualificationProcessIdentityIsStableWithinOneProcess(t *testing.T) {}',
-      'func TestGS8BRestartQualification(t *testing.T) {}',
-      'func TestGS8BImageDefaultOff(t *testing.T) {}',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  writeFileSync(
     join(moduleRoot, 'internal/processsupervisor/supervisor_test.go'),
     'package processsupervisor\n',
     'utf8',
@@ -1944,6 +1500,11 @@ function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
     'utf8',
   );
   writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/runner_recovery_restart_integration_test.go'),
+    'package postgres\n\nimport "testing"\n\nfunc TestGS9F2MixedOrphanRestartRecovery(t *testing.T) {}\nfunc TestGS9F2RecoveryProcessIdentityIsStable(t *testing.T) {}\n',
+    'utf8',
+  );
+  writeFileSync(
     join(moduleRoot, 'cmd/runner-server/gs9f2_qualification_test.go'),
     [
       'package main',
@@ -1951,7 +1512,6 @@ function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
       'import "testing"',
       '',
       'func TestGS9F2Qualification(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_QUALIFICATION" }',
-      'func TestGS9F2ImageDefaultOff(t *testing.T) { _ = "WORKFLOW_RUNNER_GS9F2_DEFAULT_ORIGIN" }',
       '',
     ].join('\n'),
     'utf8',

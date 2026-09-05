@@ -48,9 +48,36 @@ export function resolveWorkflowRunProjectionRoot(
   );
 }
 
-export function createWorkflowRunProjectionStore(
+export type WorkflowRunReadOnlyStore = Pick<
+  RunStore,
+  | 'getRunStatus'
+  | 'listRunsByStatus'
+  | 'loadAgentReplayInput'
+  | 'loadAgentResult'
+  | 'loadBudgetSnapshot'
+  | 'loadCheckpointControl'
+  | 'loadMeta'
+  | 'loadOutput'
+  | 'loadPendingApprovals'
+  | 'loadPhaseCheckpoint'
+  | 'loadPipelineItem'
+  | 'loadStatus'
+  | 'readAuditRecords'
+  | 'readLog'
+  | 'runExists'
+>;
+
+/**
+ * Open historical TypeScript evidence or a Go recovery projection without a
+ * mutation capability. The returned surface cannot initialize or advance a
+ * workflow run.
+ */
+export function openWorkflowRunReadOnly(
   workspaceRoot: string,
   backend: WorkflowRunProjectionBackend,
-): RunStore {
-  return new RunStore({ baseDir: resolveWorkflowRunProjectionRoot(workspaceRoot, backend) });
+): WorkflowRunReadOnlyStore {
+  return new RunStore({
+    baseDir: resolveWorkflowRunProjectionRoot(workspaceRoot, backend),
+    access: 'read-only',
+  });
 }

@@ -67,7 +67,7 @@ import {
   createWorkflowRunRouteJournal,
   loadWorkflowRunRoutingConfig,
   loadWorkflowRunnerControlConfig,
-  createWorkflowRunProjectionStore,
+  openWorkflowRunReadOnly,
   WorkflowRunRoutingConfigError,
   WorkflowRunRoutingError,
   WorkflowRunnerControlError,
@@ -229,7 +229,7 @@ async function workflowProjectionForRun(workspaceRoot: string, runId: string) {
       `Run ${runId} route ownership is unresolved. ${historicalExportGuidance(runId)}`,
     );
   }
-  return createWorkflowRunProjectionStore(workspaceRoot, 'ts-local');
+  return openWorkflowRunReadOnly(workspaceRoot, 'ts-local');
 }
 
 function findRepoRoot(): string {
@@ -2055,7 +2055,6 @@ export function collaborationCommands(): Command {
           const runId = `run.${randomUUID()}`;
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
-            ...workflowRunnerComposition(root),
             workflowRunId: runId,
             workflowSource: found.source,
             workflowSourceBytes: await readWorkflowRunnerSourceBytes({
@@ -2154,7 +2153,7 @@ export function collaborationCommands(): Command {
         );
         process.exit(1);
       }
-      const store = createWorkflowRunProjectionStore(root, 'go');
+      const store = openWorkflowRunReadOnly(root, 'go');
 
       // Load run metadata
       const meta = await store.loadMeta(runId);
@@ -2237,7 +2236,6 @@ export function collaborationCommands(): Command {
         if (!admitted) throw new Error('Workflow runner resume was not admitted.');
         const result = await executeWorkflowThroughRunner({
           workspaceRoot: root,
-          ...composition,
           workflowRunId: runId,
           workflowSource: found.source,
           workflowSourceBytes: await readWorkflowRunnerSourceBytes({
@@ -2311,7 +2309,7 @@ export function collaborationCommands(): Command {
       const report = await journal.repair({
         apply: options.apply === true,
         async canClose(receipt) {
-          const store = createWorkflowRunProjectionStore(root, receipt.route.backend);
+          const store = openWorkflowRunReadOnly(root, receipt.route.backend);
           const status = await store.loadStatus(receipt.runId);
           if (status && ['completed', 'failed', 'cancelled'].includes(status.status)) return true;
           if (receipt.route.backend === 'go' && authority) {
@@ -2435,7 +2433,7 @@ export function collaborationCommands(): Command {
         }
 
         const root = findRepoRoot();
-        let store: ReturnType<typeof createWorkflowRunProjectionStore>;
+        let store: ReturnType<typeof openWorkflowRunReadOnly>;
         try {
           store = await workflowProjectionForRun(root, runId);
         } catch (error) {
@@ -2586,7 +2584,7 @@ export function collaborationCommands(): Command {
         options: { issue?: string; createIssue: boolean; agentId?: string },
       ) => {
         const root = findRepoRoot();
-        let store: ReturnType<typeof createWorkflowRunProjectionStore>;
+        let store: ReturnType<typeof openWorkflowRunReadOnly>;
         try {
           store = await workflowProjectionForRun(root, runId);
         } catch (error) {
@@ -3132,7 +3130,6 @@ export function collaborationCommands(): Command {
           const runId = `run.${randomUUID()}`;
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
-            ...workflowRunnerComposition(root),
             workflowRunId: runId,
             workflowSource: found.source,
             workflowSourceBytes: await readWorkflowRunnerSourceBytes({

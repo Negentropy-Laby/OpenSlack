@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunStore, type RunStoreFs, type RunMeta } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
   createWorkflowControlObservationPortForTest,
   createWorkflowControlShadowPublisherPort,
@@ -105,7 +106,12 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
     const published: number[] = [];
     const port = await observationPort(journal, published);
     const fs = memFs();
-    const store = new RunStore({ baseDir: '/test/workflows', fs, observationPort: port });
+    const store = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
+      baseDir: '/test/workflows',
+      fs,
+      observationPort: port,
+    });
 
     await store.initRun('run-shadow-test', meta());
     await port.flush();
@@ -147,6 +153,7 @@ describe('Workflow Control GS7-B authoritative post-commit hooks', () => {
       failedPublished,
     );
     const failing = new RunStore({
+      access: createWorkflowRunStoreRecoveryAccess(),
       baseDir: '/failed/workflows',
       fs: memFs('/failed/workflows/runs/run-shadow-test/status.json'),
       observationPort: failedPort,

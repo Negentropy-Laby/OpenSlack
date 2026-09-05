@@ -22,8 +22,6 @@ import {
 
 export const WORKFLOW_RUN_ROUTING_MODE_ENV = 'OPENSLACK_WORKFLOW_RUN_ROUTING_MODE' as const;
 export const WORKFLOW_RUN_ROUTING_MODE_GO = 'go-new-record-canary-v1' as const;
-/** @deprecated GS9-H retired TypeScript new-record rollback. Retained for closed diagnostics only. */
-export const WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK = 'ts-new-record-rollback-v1' as const;
 
 const PREFIX = 'OPENSLACK_WORKFLOW_RUN_ROUTING_';
 const HASH = /^[0-9a-f]{64}$/u;
@@ -156,8 +154,8 @@ function fingerprint(value: Readonly<Record<string, string>>): string {
 
 /**
  * Loads one process-immutable Go new-record routing profile. GS9-H keeps
- * missing configuration read-only and rejects the retired TypeScript rollback
- * mode; safe rollback now stops new admission while existing Go routes drain.
+ * missing configuration read-only. Unknown historical values fail closed;
+ * safe rollback stops new admission while existing Go routes drain.
  */
 export function loadWorkflowRunRoutingConfig(
   runner: WorkflowRunnerControlConfig,
@@ -169,11 +167,6 @@ export function loadWorkflowRunRoutingConfig(
       .filter((name) => name.startsWith(PREFIX) && name !== WORKFLOW_RUN_ROUTING_MODE_ENV)
       .sort();
     return Object.freeze({ mode: 'disabled', ignoredSettings: Object.freeze(ignoredSettings) });
-  }
-  if (mode === WORKFLOW_RUN_ROUTING_MODE_TS_ROLLBACK) {
-    return fail(
-      'TypeScript new-record rollback is retired; stop new admission and drain existing Go routes.',
-    );
   }
   if (mode !== WORKFLOW_RUN_ROUTING_MODE_GO) {
     return fail('Workflow run routing mode is unsupported.');
@@ -248,11 +241,8 @@ export function createWorkflowRunRoutingExecutionContext(input: {
   readonly runner: WorkflowRunnerControlConfig;
   readonly workspaceRoot: string;
   readonly config: WorkflowRunRoutingConfig | WorkflowRunRoutingDisabledConfig;
-  readonly authority?: WorkflowControlAuthorityPort;
-  readonly v2Client?: WorkflowRunnerV2ControlPort;
-  readonly journal?: WorkflowRunRouteJournal;
 }): WorkflowRunRoutingExecutionContext {
-  const journal = input.journal ?? createWorkflowRunRouteJournal(input.workspaceRoot);
+  const journal = createWorkflowRunRouteJournal(input.workspaceRoot);
   if (input.config.mode === 'disabled') {
     return Object.freeze({
       mode: 'disabled',
@@ -268,12 +258,10 @@ export function createWorkflowRunRoutingExecutionContext(input: {
   if (!input.runner.expectedBuildHash) {
     fail('Go workflow routing requires an expected runner build hash.');
   }
-  const authority =
-    input.authority ??
-    (input.config.authorityOptions
-      ? new WorkflowControlAuthorityHttpClient(input.config.authorityOptions)
-      : undefined);
-  const v2Client = input.v2Client ?? new WorkflowRunnerV2ControlClient(input.runner);
+  const authority = input.config.authorityOptions
+    ? new WorkflowControlAuthorityHttpClient(input.config.authorityOptions)
+    : undefined;
+  const v2Client = new WorkflowRunnerV2ControlClient(input.runner);
   return Object.freeze({
     mode: 'explicit',
     router: input.config.router,
@@ -302,12 +290,4 @@ export function createWorkflowRunRoutingExecutionContext(input: {
         }
       : {}),
   });
-}
-
-/** @deprecated Use the pure loader plus the explicit execution-context factory. */
-export function loadWorkflowRunRoutingExecutionConfig(
-  runner: WorkflowRunnerControlConfig,
-  environment: NodeJS.ProcessEnv = process.env,
-): WorkflowRunRoutingConfig | WorkflowRunRoutingDisabledConfig {
-  return loadWorkflowRunRoutingConfig(runner, environment);
 }

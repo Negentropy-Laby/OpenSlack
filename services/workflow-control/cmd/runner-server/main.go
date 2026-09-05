@@ -1,6 +1,6 @@
-// runner-server is the separate, explicitly enabled runner lifecycle control
-// entry point. It can host the default-off GS9-G v2 new-record canary; the
-// default credential-free cmd/server never starts it.
+// runner-server is the separate, explicitly enabled Go-authority v2 runner
+// lifecycle control entry point. The default credential-free cmd/server never
+// starts it.
 package main
 
 import (
@@ -24,7 +24,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerapp"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerconfig"
@@ -59,14 +58,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	schemaRange := databaseready.RunnerRange(config.CheckpointShadowEnabled, config.EffectShadowEnabled)
-	if config.V2QualificationEnabled {
-		schemaRange = databaseready.RunnerV2FoundationProfile
-	}
-	if config.V2RuntimeDeliveryEnabled {
-		schemaRange = databaseready.RunnerV2RuntimeDeliveryProfile
-	}
-	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, schemaRange)
+	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, databaseready.RunnerV2RuntimeDeliveryProfile)
 	if err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
@@ -90,19 +82,9 @@ func main() {
 	}
 	registry, err := workerregistry.Load(config.BundleRoot, config.BundleManifestSHA256, workerregistry.Runtime{
 		WorkspaceID: config.WorkspaceID, WorkspaceRoot: config.WorkspaceRoot,
-		DescriptorRoot:              config.DescriptorRoot,
-		CheckpointShadowEnabled:     config.CheckpointShadowEnabled,
-		CheckpointShadowEndpoint:    config.CheckpointShadowEndpoint,
-		CheckpointShadowBearerToken: config.CheckpointShadowBearerToken,
-		CheckpointShadowCallerID:    config.CheckpointShadowCallerID,
-		CheckpointShadowJournalRoot: config.CheckpointShadowJournalRoot,
-		EffectShadowEnabled:         config.EffectShadowEnabled,
-		EffectShadowEndpoint:        config.EffectShadowEndpoint,
-		EffectShadowBearerToken:     config.EffectShadowBearerToken,
-		EffectShadowCallerID:        config.EffectShadowCallerID,
-		EffectShadowJournalRoot:     config.EffectShadowJournalRoot,
-		V2RuntimeDelivery:           config.V2RuntimeDeliveryRuntime(),
-		V2RunAuthority:              config.V2RunAuthorityRuntime(),
+		DescriptorRoot:    config.DescriptorRoot,
+		V2RuntimeDelivery: config.V2RuntimeDeliveryRuntime(),
+		V2RunAuthority:    config.V2RunAuthorityRuntime(),
 	})
 	if err != nil {
 		logger.Error("workflow_runner_control_bundle_invalid", "code", "WORKER_BUNDLE_INVALID")
@@ -113,44 +95,20 @@ func main() {
 		logger.Error("workflow_runner_control_supervisor_invalid", "code", "SUPERVISOR_INVALID")
 		os.Exit(1)
 	}
-	store := runnerpostgres.NewForSchema(pool, schemaVersion)
-	if config.V2RuntimeDeliveryEnabled {
-		store = runnerpostgres.NewForV2RuntimeDelivery(pool, runnerstore.V2AuthorityPorts{})
-	}
-	var v2Session runnerscheduler.ProtocolSession
-	if config.V2QualificationEnabled {
-		v2Supervisor, supervisorErr := registry.NewSupervisorForProtocol(authoritycontract.ProtocolVersion)
-		if supervisorErr != nil {
-			logger.Error("workflow_runner_control_v2_supervisor_invalid", "code", "SUPERVISOR_INVALID")
-			os.Exit(1)
-		}
-		v2Session, err = runnerscheduler.NewV2Session(runnerscheduler.V2SessionConfig{
-			Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: v2Supervisor},
-			ControlBuildHash: config.ServiceBuildSHA, ExpectedRunnerBuildHash: registry.RunnerBuildHash(),
-			HeartbeatInterval: config.HeartbeatInterval, LeaseOfferTimeout: config.LeaseOfferTimeout,
-			CancelGrace: config.CancelGrace, TerminalExitGrace: config.TerminalExitGrace,
-		})
-		if err != nil {
-			logger.Error("workflow_runner_control_v2_session_invalid", "code", "COMPOSITION_INVALID")
-			os.Exit(1)
-		}
-	}
-	session, err := runnerscheduler.NewSession(runnerscheduler.SessionConfig{
+	store := runnerpostgres.NewForV2RuntimeDelivery(pool, runnerstore.V2AuthorityPorts{})
+	v2Session, err := runnerscheduler.NewV2Session(runnerscheduler.V2SessionConfig{
 		Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: supervisor},
-		ControlBuildHash:  config.ServiceBuildSHA,
+		ControlBuildHash: config.ServiceBuildSHA, ExpectedRunnerBuildHash: registry.RunnerBuildHash(),
 		HeartbeatInterval: config.HeartbeatInterval, LeaseOfferTimeout: config.LeaseOfferTimeout,
-		CancelWindow: config.CancelWindow, CancelGrace: config.CancelGrace,
-		TerminalExitGrace: config.TerminalExitGrace, PollInterval: config.PollInterval,
+		CancelGrace: config.CancelGrace, TerminalExitGrace: config.TerminalExitGrace,
 	})
 	if err != nil {
-		logger.Error("workflow_runner_control_session_invalid", "code", "COMPOSITION_INVALID")
+		logger.Error("workflow_runner_control_v2_session_invalid", "code", "COMPOSITION_INVALID")
 		os.Exit(1)
 	}
 	scheduler, err := runnerscheduler.New(runnerscheduler.Config{
-		Store: store, Session: session, WorkspaceID: config.WorkspaceID,
-		V2Session: v2Session, V2Qualification: config.V2QualificationEnabled,
-		V2RuntimeDelivery:    config.V2RuntimeDeliveryEnabled,
-		AuthorityRecovery:    store,
+		Store: store, V2Session: v2Session, AuthorityRecovery: store,
+		WorkspaceID:          config.WorkspaceID,
 		SupervisorInstanceID: bootInstanceID, MaxProcesses: config.MaxProcesses,
 		LeaseOfferTimeout: config.LeaseOfferTimeout, LeaseDuration: config.LeaseDuration,
 		PollInterval: config.PollInterval, RecoveryInterval: config.RecoveryInterval,
@@ -161,8 +119,7 @@ func main() {
 	}
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
-		V2Store: store, BindingStore: store, AdmissionStore: store, V2Qualification: config.V2QualificationEnabled,
-		V2RuntimeDelivery: config.V2RuntimeDeliveryEnabled, V2NewRecordCanary: config.V2RunAuthorityEnabled, SchemaVersion: schemaVersion,
+		V2Store: store, BindingStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
 		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
 		RunAuthorityOrigin:      config.V2RunAuthorityOrigin,
 		RunAuthorityCallerID:    config.V2RunAuthorityCallerID,
@@ -177,9 +134,8 @@ func main() {
 		"http_bind", config.HTTPBind, "network_mode", config.NetworkMode,
 		"workspace_id", config.WorkspaceID, "build_sha", config.ServiceBuildSHA,
 		"worker_bundle_id", registry.BundleID(), "worker_build_hash", registry.RunnerBuildHash(),
-		"v2_qualification", config.V2QualificationEnabled, "routing_activated", config.V2RunAuthorityEnabled,
-		"v2_runtime_delivery_qualification", config.V2RuntimeDeliveryEnabled,
-		"v2_new_record_canary", config.V2RunAuthorityEnabled,
+		"protocol", "openslack.workflow_runner_control.v2", "authority", "workflow-control",
+		"routing_activated", true, "v2_runtime_delivery", true,
 	)
 	if err := run(ctx, service, scheduler, config); err != nil {
 		logger.Error("workflow_runner_control_stopped_with_error", "code", "RUNNER_CONTROL_FAILED")

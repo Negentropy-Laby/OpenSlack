@@ -1,21 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createWorkflowRunnerExecutionDescriptor } from '../workflow-runner-descriptor.js';
 import {
   createSealedWorkflowRunnerV2SourceLoader,
-  createSealedWorkflowRunnerSourceLoader,
-  loadWorkflowRunnerV2QualificationWorkerConfig,
-  loadWorkflowRunnerWorkerConfig,
+  loadWorkflowRunnerV2WorkerConfig,
   prepareWorkflowRunnerV2BudgetReserveSource,
   createWorkflowRunnerV2ProviderAttemptPort,
-  executeWorkflowRunnerV2QualificationJob,
+  executeWorkflowRunnerV2AuthorityJob,
   type WorkflowRunnerV2BudgetAuthorityBoundary,
-  WorkflowRunnerV2RuntimeBoundaryUnavailableError,
-  WorkflowRunnerWorkerConfigError,
 } from '../workflow-runner-worker.js';
 import {
   parseWorkflowBudgetAuthorityBytes,
@@ -37,6 +32,7 @@ import {
 } from '../internal/workflow-effect-authorization-contract.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
   classifyWorkflowRunnerRunState,
   WorkflowRunnerRunStateError,
@@ -75,32 +71,10 @@ function shortWindowsPath(path: string): string {
   return resolve(windowsPaths?.sort((left, right) => right.length - left.length)[0] ?? output);
 }
 
-function descriptor(workflowSourceBytes: Uint8Array = sourceBytes, workflowRunId = 'run.worker.1') {
-  return createWorkflowRunnerExecutionDescriptor({
-    descriptorRef: 'descriptor.worker.1',
-    workspaceId: 'workspace.test',
-    workflowRunId,
-    correlationId: 'correlation.worker.1',
-    workflowId: 'sealed-test',
-    workflowVersion: '1.0.0',
-    workflowSource: 'openslack-project',
-    workflowSourceBytes,
-    manifest,
-    input: {},
-    budget: { tokens: 1_000, costUsd: 1 },
-    confirmationPolicy: {
-      mode: 'unattended-explicit',
-      actorId: 'test-actor',
-      runId: workflowRunId,
-      allowUnattended: true,
-      onUnexpectedEffect: 'fail',
-    },
-    createdAt: '2026-08-04T01:00:00.000Z',
-    expiresAt: '2026-08-04T02:00:00.000Z',
-  });
-}
-
-function v2Descriptor(resumeGeneration: number): WorkflowRunnerV2ExecutionDescriptor {
+function v2Descriptor(
+  resumeGeneration: number,
+  workflowSourceBytes: Uint8Array = sourceBytes,
+): WorkflowRunnerV2ExecutionDescriptor {
   return workflowRunnerV2DescriptorFixture({
     descriptorRef: `descriptor.worker.v2.${resumeGeneration}`,
     workspaceId: 'workspace.test',
@@ -109,7 +83,7 @@ function v2Descriptor(resumeGeneration: number): WorkflowRunnerV2ExecutionDescri
     workflowId: 'sealed-test',
     workflowVersion: '1.0.0',
     workflowSource: 'openslack-project',
-    workflowSourceBytes: sourceBytes,
+    workflowSourceBytes,
     manifest,
     input: {},
     confirmationPolicy: {
@@ -121,8 +95,8 @@ function v2Descriptor(resumeGeneration: number): WorkflowRunnerV2ExecutionDescri
     },
     requiredCapabilities: WORKFLOW_RUNNER_CAPABILITIES,
     authorityRoute: {
-      backend: 'ts-local',
-      authority: 'typescript',
+      backend: 'go',
+      authority: 'workflow-control',
       routingEpoch: 1,
       authorityBuildHash: 'a'.repeat(64),
     },
@@ -184,6 +158,44 @@ function readOnlyRunAuthority(head: WorkflowControlAuthorityRunRead): WorkflowCo
     },
     async readIfExists() {
       return head;
+    },
+  };
+}
+
+function mutableRunAuthority(
+  descriptor: WorkflowRunnerV2ExecutionDescriptor,
+): WorkflowControlAuthorityPort {
+  let record: WorkflowControlAuthorityRunRecord = {
+    ...workflowControlRunHead(descriptor, {
+      state: 'created',
+      revision: 1,
+      currentPhaseId: null,
+      currentPhaseIndex: null,
+      resumeGeneration: 0,
+    }).record,
+  };
+  const read = async (): Promise<WorkflowControlAuthorityRunRead> => ({
+    ...record,
+    schema: 'openslack.workflow_control_authority_read.v2',
+    recordHash: 'c'.repeat(64),
+    record,
+    updatedAt: '2026-08-22T00:00:00.000Z',
+  });
+  return {
+    inspectBinding: async () => {
+      throw new Error('unexpected Workflow Control binding inspection');
+    },
+    accept: async () => {
+      throw new Error('unexpected Workflow Control run acceptance');
+    },
+    async transition(next, expected) {
+      expect(expected).toMatchObject({ revision: record.revision, state: record.state });
+      record = next;
+      return {} as never;
+    },
+    read,
+    async readIfExists() {
+      return read();
     },
   };
 }
@@ -752,12 +764,13 @@ describe('GS8-B workflow runner worker', () => {
             return { status: 'completed' };
           },
         };
-        const execution = executeWorkflowRunnerV2QualificationJob(
+        const execution = executeWorkflowRunnerV2AuthorityJob(
           workflow,
           sealed,
           context,
           workspaceRoot,
-          true,
+          { callerId: 'workflow-runner-v2', client: {} as never },
+          mutableRunAuthority(sealed),
         );
         if (responseLost) {
           await expect(execution).rejects.toBeInstanceOf(WorkflowEffectReconciliationRequiredError);
@@ -770,7 +783,8 @@ describe('GS8-B workflow runner worker', () => {
         expect(authorizationCalls).toBe(1);
         expect(completionCalls).toBe(1);
         const runStore = new RunStore({
-          baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
+          access: createWorkflowRunStoreRecoveryAccess(),
+          baseDir: join(workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections'),
         });
         expect(await runStore.readAuditRecords(workflowRunId)).toHaveLength(1);
 
@@ -804,46 +818,17 @@ describe('GS8-B workflow runner worker', () => {
     process.platform === 'win32' ? 120_000 : 20_000,
   );
 
-  it('is default-off and requires a closed valid startup configuration', () => {
-    expect(() => loadWorkflowRunnerWorkerConfig({})).toThrow(WorkflowRunnerWorkerConfigError);
-    expect(() =>
-      loadWorkflowRunnerWorkerConfig({ OPENSLACK_WORKFLOW_RUNNER_ENABLED: 'true' }),
-    ).toThrowError(/explicit enablement/u);
-  });
-
-  it('keeps v2 qualification default-off and mutually exclusive with v1 execution', () => {
+  it('requires the complete Go-authority worker profile and ignores retired enablement', () => {
     const workspaceRoot = resolve('workflow-runner-v2-config-workspace');
-    const base = {
-      OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED: '1',
+    const companionToken = 'c'.repeat(48);
+    const runAuthorityToken = 'r'.repeat(48);
+    const complete = {
+      WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED: '1',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '1',
       OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.v2',
       OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
       OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors-v2'),
       OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
-    } satisfies NodeJS.ProcessEnv;
-
-    expect(() => loadWorkflowRunnerV2QualificationWorkerConfig({})).toThrowError(/default-off/u);
-    expect(loadWorkflowRunnerV2QualificationWorkerConfig(base)).toMatchObject({
-      enabled: true,
-      mode: 'qualification',
-      workspaceId: 'workspace.v2',
-      workspaceRoot,
-    });
-    expect(() =>
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
-      }),
-    ).toThrowError(/cannot be enabled together/u);
-    expect(() =>
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED: '1',
-      }),
-    ).toThrowError(/cannot configure checkpoint or effect authority boundaries/u);
-
-    const companionToken = 'c'.repeat(48);
-    const runtimeEnvironment = {
-      WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED: '1',
       OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
       OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN: companionToken,
       OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256: createHash('sha256')
@@ -857,57 +842,44 @@ describe('GS8-B workflow runner worker', () => {
       OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN: 'http://127.0.0.1:8089',
       OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN: 'b'.repeat(48),
       OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID: 'workflow-runner-v2',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN: 'http://127.0.0.1:8082',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN: runAuthorityToken,
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256: createHash('sha256')
+        .update(runAuthorityToken, 'utf8')
+        .digest('hex'),
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID: 'workflow-runner-v2',
+      OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA: 'd'.repeat(64),
     } satisfies NodeJS.ProcessEnv;
-    expect(() =>
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        ...runtimeEnvironment,
-      }),
-    ).toThrowError(/requires the complete Go-authority profile/u);
-    expect(() =>
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN: 'http://127.0.0.1:8088',
-      }),
-    ).toThrowError(/must be empty/u);
 
-    const runAuthorityToken = 'r'.repeat(48);
-    expect(
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        ...runtimeEnvironment,
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '1',
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN: 'http://127.0.0.1:8082',
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN: runAuthorityToken,
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256: createHash('sha256')
-          .update(runAuthorityToken, 'utf8')
-          .digest('hex'),
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID: 'workflow-runner-v2',
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA: 'd'.repeat(64),
+    expect(() => loadWorkflowRunnerV2WorkerConfig({})).toThrowError(/runtime-delivery/u);
+    expect(() =>
+      loadWorkflowRunnerV2WorkerConfig({ OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1' }),
+    ).toThrowError(/runtime-delivery/u);
+    expect(() =>
+      loadWorkflowRunnerV2WorkerConfig({
+        ...complete,
+        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '0',
       }),
-    ).toMatchObject({
-      mode: 'go-authority',
+    ).toThrowError(/run authority/u);
+    expect(loadWorkflowRunnerV2WorkerConfig(complete)).toMatchObject({
+      enabled: true,
+      workspaceId: 'workspace.v2',
+      workspaceRoot,
       runAuthority: {
         origin: 'http://127.0.0.1:8082',
         callerId: 'workflow-runner-v2',
         expectedBuildHash: 'd'.repeat(64),
       },
     });
-    expect(() =>
-      loadWorkflowRunnerV2QualificationWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED: '1',
-      }),
-    ).toThrowError(/requires the complete runtime-delivery profile/u);
   });
 
-  it('keeps the production canary single-writer boundary distinct from F2 qualification', async () => {
-    const tsDescriptor = v2Descriptor(0);
-    const goDescriptor: WorkflowRunnerV2ExecutionDescriptor = {
-      ...tsDescriptor,
+  it('rejects a TypeScript-owned descriptor before constructing a projection', async () => {
+    const goDescriptor = v2Descriptor(0);
+    const tsDescriptor: WorkflowRunnerV2ExecutionDescriptor = {
+      ...goDescriptor,
       authorityRoute: {
-        backend: 'go',
-        authority: 'workflow-control',
+        backend: 'ts-local',
+        authority: 'typescript',
         routingEpoch: 17,
         authorityBuildHash: 'd'.repeat(64),
       },
@@ -916,143 +888,15 @@ describe('GS8-B workflow runner worker', () => {
     const context = {} as WorkflowRunnerV2ExecutionContext;
 
     await expect(
-      executeWorkflowRunnerV2QualificationJob(
+      executeWorkflowRunnerV2AuthorityJob(
         workflow,
         tsDescriptor,
         context,
         resolve('.'),
-        true,
-        undefined,
-        undefined,
-        'go-authority',
+        {} as WorkflowRunnerV2BudgetAuthorityBoundary,
+        mutableRunAuthority(goDescriptor),
       ),
-    ).rejects.toThrowError(/accepts only Go-owned/u);
-    await expect(
-      executeWorkflowRunnerV2QualificationJob(
-        workflow,
-        goDescriptor,
-        context,
-        resolve('.'),
-        true,
-        undefined,
-        undefined,
-        'go-authority',
-      ),
-    ).rejects.toThrowError(/requires the Workflow Control run authority/u);
-  });
-
-  it('rejects v2 resume delivery before source preparation in the F1 worker', async () => {
-    await expect(
-      createSealedWorkflowRunnerV2SourceLoader(resolve('.')).prepare(v2Descriptor(1)),
-    ).rejects.toMatchObject({
-      code: 'WORKFLOW_RUNNER_V2_RUNTIME_BOUNDARY_UNAVAILABLE',
-      name: WorkflowRunnerV2RuntimeBoundaryUnavailableError.name,
-    });
-  });
-
-  it('confines the checkpoint shadow journal to the canonical local-state root', () => {
-    const workspaceRoot = resolve('workflow-runner-config-workspace');
-    const base = {
-      OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
-      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.test',
-      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
-      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors'),
-      OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
-      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED: '1',
-      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT: 'http://127.0.0.1:8085',
-      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
-      OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID: 'runner.test',
-    } satisfies NodeJS.ProcessEnv;
-
-    expect(
-      loadWorkflowRunnerWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT: join(
-          workspaceRoot,
-          '.openslack.local',
-          'checkpoint-shadow',
-        ),
-      }).checkpointShadow?.journalRoot,
-    ).toBe(join(workspaceRoot, '.openslack.local', 'checkpoint-shadow'));
-
-    expect(() =>
-      loadWorkflowRunnerWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT: join(
-          workspaceRoot,
-          'nested',
-          '.openslack.local',
-          'checkpoint-shadow',
-        ),
-      }),
-    ).toThrowError(/workspace-local journal/u);
-  });
-
-  it('keeps the effect shadow default-off and confines its exact route and journal', () => {
-    const workspaceRoot = resolve('workflow-runner-effect-shadow-workspace');
-    const base = {
-      OPENSLACK_WORKFLOW_RUNNER_ENABLED: '1',
-      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID: 'workspace.test',
-      OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT: workspaceRoot,
-      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(workspaceRoot, 'descriptors'),
-      OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH: 'a'.repeat(64),
-    } satisfies NodeJS.ProcessEnv;
-    const enabled = {
-      ...base,
-      OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED: '1',
-      OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT:
-        'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
-      OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
-      OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID: 'runner.test',
-      OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: join(
-        workspaceRoot,
-        '.openslack.local',
-        'workflow-effect-shadow',
-      ),
-    } satisfies NodeJS.ProcessEnv;
-
-    expect(loadWorkflowRunnerWorkerConfig(base).effectShadow).toBeUndefined();
-    expect(loadWorkflowRunnerWorkerConfig(enabled).effectShadow).toMatchObject({
-      endpoint: 'http://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
-      journalRoot: join(workspaceRoot, '.openslack.local', 'workflow-effect-shadow'),
-    });
-    expect(() =>
-      loadWorkflowRunnerWorkerConfig({
-        ...base,
-        OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN: 'b'.repeat(32),
-      }),
-    ).toThrowError(/Disabled Workflow effect shadow configuration must be empty/u);
-    for (const endpoint of [
-      'https://127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
-      'http://example.com:8084/v1/shadow/workflow-control/effect-events',
-      'http://127.0.0.1:8084/v1/shadow/workflow-control/checkpoints',
-      'http://user:pass@127.0.0.1:8084/v1/shadow/workflow-control/effect-events',
-    ]) {
-      expect(() =>
-        loadWorkflowRunnerWorkerConfig({
-          ...enabled,
-          OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT: endpoint,
-        }),
-      ).toThrowError(/exact loopback route/u);
-    }
-    expect(() =>
-      loadWorkflowRunnerWorkerConfig({
-        ...enabled,
-        OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: join(workspaceRoot, 'outside-local-state'),
-      }),
-    ).toThrowError(/workspace-local journal/u);
-    for (const journalRoot of [
-      join(workspaceRoot, '.openslack.local', 'workflows'),
-      join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals', 'shadow'),
-      join(workspaceRoot, '.openslack.local', 'workflows', 'effect-authority', 'shadow'),
-    ]) {
-      expect(() =>
-        loadWorkflowRunnerWorkerConfig({
-          ...enabled,
-          OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT: journalRoot,
-        }),
-      ).toThrowError(/workspace-local journal/u);
-    }
+    ).rejects.toThrowError(/only Go-owned Workflow Control/u);
   });
 
   it('reads and hashes the sealed source during prepare without dynamically importing it', async () => {
@@ -1063,8 +907,8 @@ describe('GS8-B workflow runner worker', () => {
     await mkdir(sourceDirectory, { recursive: true });
     await writeFile(sourcePath, sourceBytes);
 
-    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
-    const prepared = await loader.prepare(descriptor());
+    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+    const prepared = await loader.prepare(v2Descriptor(0));
 
     expect(prepared).toMatchObject({
       path: await realpath(sourcePath),
@@ -1072,20 +916,13 @@ describe('GS8-B workflow runner worker', () => {
     });
   });
 
-  it('rejects builtin v1 and v2 sources before resolving or reading a catalog path', async () => {
-    const builtinV1 = {
-      ...descriptor(),
-      workflowSource: 'builtin' as const,
-    };
+  it('rejects builtin v2 sources before resolving or reading a catalog path', async () => {
     const builtinV2 = {
       ...v2Descriptor(0),
       workflowSource: 'builtin' as const,
     };
     const unavailableRoot = join(tmpdir(), 'openslack-runner-builtin-root-must-not-exist');
 
-    await expect(
-      createSealedWorkflowRunnerSourceLoader(unavailableRoot).prepare(builtinV1),
-    ).rejects.toThrow('Sealed workflow runners do not support builtin workflow sources.');
     await expect(
       createSealedWorkflowRunnerV2SourceLoader(unavailableRoot).prepare(builtinV2),
     ).rejects.toThrow('Sealed workflow runners do not support builtin workflow sources.');
@@ -1116,7 +953,9 @@ describe('GS8-B workflow runner worker', () => {
     const shortRoot = shortWindowsPath(workspaceRoot);
     if (shortRoot.toUpperCase() === workspaceRoot.toUpperCase()) return;
 
-    const prepared = await createSealedWorkflowRunnerSourceLoader(shortRoot).prepare(descriptor());
+    const prepared = await createSealedWorkflowRunnerV2SourceLoader(shortRoot).prepare(
+      v2Descriptor(0),
+    );
     expect(prepared).toMatchObject({
       path: join(await realpath(workspaceRoot), '.openslack', 'workflows', 'sealed-test.js'),
       bytes: sourceBytes,
@@ -1148,7 +987,7 @@ describe('GS8-B workflow runner worker', () => {
     const sourceBytes = Buffer.from(source, 'utf8');
     const { loader } = await sealedSourceLoader(sourceBytes);
 
-    await expect(loader.prepare(descriptor(sourceBytes))).rejects.toThrow(
+    await expect(loader.prepare(v2Descriptor(0, sourceBytes))).rejects.toThrow(
       /may not (?:contain static or dynamic imports|dynamically evaluate|reference (?:Node process or global module-loader surfaces|require)|re-export)/u,
     );
   });
@@ -1169,7 +1008,7 @@ describe('GS8-B workflow runner worker', () => {
     );
     const { loader, sourcePath } = await sealedSourceLoader(inert);
 
-    await expect(loader.prepare(descriptor(inert))).resolves.toMatchObject({
+    await expect(loader.prepare(v2Descriptor(0, inert))).resolves.toMatchObject({
       path: sourcePath,
       bytes: inert,
     });
@@ -1186,8 +1025,8 @@ describe('GS8-B workflow runner worker', () => {
     await writeFile(join(sourceDirectory, 'sealed-test.js'), sourceBytes);
     await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
 
-    const loader = createSealedWorkflowRunnerSourceLoader(join(alias, 'workspace'));
-    await expect(loader.prepare(descriptor())).rejects.toThrow(
+    const loader = createSealedWorkflowRunnerV2SourceLoader(join(alias, 'workspace'));
+    await expect(loader.prepare(v2Descriptor(0))).rejects.toThrow(
       /(?:reparse component|canonical and non-symlinked)/u,
     );
   });
@@ -1201,11 +1040,11 @@ describe('GS8-B workflow runner worker', () => {
     const first = workflowSource(1);
     await writeFile(sourcePath, first);
 
-    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
-    const prepared = await loader.prepare(descriptor(first));
+    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+    const prepared = await loader.prepare(v2Descriptor(0, first));
     await writeFile(sourcePath, workflowSource(2));
 
-    await expect(loader.load(descriptor(first), prepared)).rejects.toThrow(
+    await expect(loader.load(prepared, v2Descriptor(0, first))).rejects.toThrow(
       'changed after lease acceptance',
     );
   });
@@ -1216,20 +1055,20 @@ describe('GS8-B workflow runner worker', () => {
     const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
     const sourcePath = join(sourceDirectory, 'sealed-test.js');
     await mkdir(sourceDirectory, { recursive: true });
-    const loader = createSealedWorkflowRunnerSourceLoader(workspaceRoot);
+    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
 
     const first = workflowSource(1);
     await writeFile(sourcePath, first);
-    const firstDescriptor = descriptor(first);
-    const firstWorkflow = await loader.load(firstDescriptor, await loader.prepare(firstDescriptor));
+    const firstDescriptor = v2Descriptor(0, first);
+    const firstWorkflow = await loader.load(await loader.prepare(firstDescriptor), firstDescriptor);
     expect(await firstWorkflow.run!({} as never, {})).toMatchObject({ revision: 1 });
 
     const second = workflowSource(2);
     await writeFile(sourcePath, second);
-    const secondDescriptor = descriptor(second);
+    const secondDescriptor = v2Descriptor(0, second);
     const secondWorkflow = await loader.load(
-      secondDescriptor,
       await loader.prepare(secondDescriptor),
+      secondDescriptor,
     );
     expect(await secondWorkflow.run!({} as never, {})).toMatchObject({ revision: 2 });
   }, 15_000);
@@ -1243,7 +1082,7 @@ async function sealedSourceLoader(source: Uint8Array) {
   await mkdir(sourceDirectory, { recursive: true });
   await writeFile(sourcePath, source);
   return {
-    loader: createSealedWorkflowRunnerSourceLoader(workspaceRoot),
+    loader: createSealedWorkflowRunnerV2SourceLoader(workspaceRoot),
     sourcePath: await realpath(sourcePath),
   };
 }

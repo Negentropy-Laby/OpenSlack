@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ConfirmationPolicy, RunResult, WorkflowMeta, WorkflowSource } from './types.js';
-import { createWorkflowRunProjectionStore } from './workflow-run-projection.js';
+import { openWorkflowRunReadOnly } from './workflow-run-projection.js';
 import {
   isWorkflowControlAuthorityHeadBoundToRoute,
   workflowControlAuthorityInitialRecord,
@@ -10,7 +10,11 @@ import {
   type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
 import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
-import type { WorkflowRunRoutingExecutionContext } from './workflow-run-routing-config.js';
+import {
+  createWorkflowRunRoutingExecutionContext,
+  loadWorkflowRunRoutingConfig,
+  type WorkflowRunRoutingExecutionContext,
+} from './workflow-run-routing-config.js';
 import type { WorkflowRunRouteJournalEntry } from './workflow-run-routing.js';
 import {
   createWorkflowRunnerV2ExecutionDescriptor,
@@ -28,10 +32,10 @@ import { WORKFLOW_RUNNER_CAPABILITIES } from './workflow-runner-contract.js';
 import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
 import {
   loadWorkflowRunnerControlConfig,
-  WorkflowRunnerControlClient,
+  WorkflowRunnerStatusClient,
   WorkflowRunnerControlError,
   type WorkflowRunnerControlConfig,
-  type WorkflowRunnerControlPort,
+  type WorkflowRunnerStatusPort,
   type WorkflowRunnerJobView,
 } from './workflow-runner-control-client.js';
 
@@ -48,10 +52,14 @@ export interface ExecuteWorkflowThroughRunnerInput {
   readonly wholeTimeoutMs?: number;
   readonly descriptorLifetimeMs?: number;
   readonly signal?: AbortSignal;
-  readonly config?: WorkflowRunnerControlConfig;
-  readonly client?: WorkflowRunnerControlPort;
-  readonly now?: () => Date;
-  readonly routing?: WorkflowRunRoutingExecutionContext;
+}
+
+/** @internal Closed test/runtime seam; never exported from the package surface. */
+export interface WorkflowRunnerExecutionRuntimeInput extends ExecuteWorkflowThroughRunnerInput {
+  readonly config: WorkflowRunnerControlConfig;
+  readonly client: WorkflowRunnerStatusPort;
+  readonly now: () => Date;
+  readonly routing: WorkflowRunRoutingExecutionContext;
 }
 
 export interface WorkflowRunnerPausedResult extends RunResult {
@@ -371,7 +379,7 @@ async function replayClosedProjection(input: {
   readonly signal?: AbortSignal;
 }): Promise<RunResult> {
   const { receipt } = input.entry;
-  const store = createWorkflowRunProjectionStore(input.workspaceRoot, receipt.route.backend);
+  const store = openWorkflowRunReadOnly(input.workspaceRoot, receipt.route.backend);
   const status = await store.loadStatus(receipt.runId);
   if (receipt.route.backend === 'go') {
     if (!input.authority) {
@@ -447,7 +455,25 @@ function terminalError(view: WorkflowRunnerJobView): never {
 export async function executeWorkflowThroughRunner(
   input: ExecuteWorkflowThroughRunnerInput,
 ): Promise<RunResult | WorkflowRunnerPausedResult> {
-  const now = input.now ?? (() => new Date());
+  const config = loadWorkflowRunnerControlConfig();
+  return executeWorkflowThroughRunnerWithRuntime({
+    ...input,
+    config,
+    client: new WorkflowRunnerStatusClient(config),
+    now: () => new Date(),
+    routing: createWorkflowRunRoutingExecutionContext({
+      runner: config,
+      workspaceRoot: input.workspaceRoot,
+      config: loadWorkflowRunRoutingConfig(config),
+    }),
+  });
+}
+
+/** @internal Used only by closed tests; package consumers cannot inject authority clients. */
+export async function executeWorkflowThroughRunnerWithRuntime(
+  input: WorkflowRunnerExecutionRuntimeInput,
+): Promise<RunResult | WorkflowRunnerPausedResult> {
+  const now = input.now;
   const created = now();
   const wholeTimeoutMs = input.wholeTimeoutMs ?? 60 * 60_000;
   const descriptorLifetimeMs = input.descriptorLifetimeMs ?? wholeTimeoutMs;
@@ -473,8 +499,8 @@ export async function executeWorkflowThroughRunner(
       'Runner execution time bounds are invalid.',
     );
   }
-  const config = input.config ?? loadWorkflowRunnerControlConfig();
-  const client = input.client ?? new WorkflowRunnerControlClient(config);
+  const config = input.config;
+  const client = input.client;
   if (client.descriptorRoot !== config.descriptorRoot) {
     throw new WorkflowRunnerControlError(
       'WORKFLOW_RUNNER_CONTROL_CONFIG_INVALID',
@@ -641,7 +667,7 @@ export async function executeWorkflowThroughRunner(
   });
   const head = await authority.read(workflowRunId, route.route, input.signal);
   assertGoAuthorityHead(route, head);
-  const projection = createWorkflowRunProjectionStore(input.workspaceRoot, 'go');
+  const projection = openWorkflowRunReadOnly(input.workspaceRoot, 'go');
   const status = await projection.loadStatus(workflowRunId);
   if (status?.status === 'paused' || status?.status === 'paused_waiting_approval') {
     if (head.state !== status.status) {

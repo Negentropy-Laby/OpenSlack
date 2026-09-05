@@ -3,24 +3,10 @@ import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import {
-  decodeWorkflowRunnerFrame,
-  WorkflowRunnerJsonlDecoder,
-} from './workflow-runner-framing.js';
-import {
-  hashWorkflowRunnerManifest,
-  hashWorkflowRunnerSource,
-  type WorkflowRunnerExecutionDescriptor,
-} from './workflow-runner-descriptor.js';
 import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
-import {
-  WorkflowRunnerSession,
-  type WorkflowRunnerExecutionContext,
-  type WorkflowRunnerSourceLoader,
-} from './workflow-runner-session.js';
 import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
 import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
-import { RunStore } from './run-store.js';
+import type { RunStore } from './run-store.js';
 import { WorkflowRunnerResumeSourceStore } from './internal/workflow-runner-resume-source.js';
 import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
 import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
@@ -33,23 +19,6 @@ import {
   type WorkflowCheckpointShadowEnvelope,
 } from './workflow-checkpoint-shadow-contract.js';
 import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
-import {
-  createWorkflowCheckpointObservationPort,
-  createWorkflowCheckpointShadowHttpPublisher,
-  type WorkflowCheckpointShadowDiagnostic,
-  type WorkflowCheckpointObservationPort,
-} from './workflow-checkpoint-shadow.js';
-import { createWorkflowEffectAuthorizationPort } from './workflow-effect-authorization.js';
-import { WORKFLOW_EFFECT_CONTROL_ROUTE } from './workflow-effect-control-contract.js';
-import {
-  createWorkflowEffectShadowHttpPublisher,
-  createWorkflowEffectShadowObservationPort,
-  type WorkflowEffectShadowDiagnostic,
-  type WorkflowEffectShadowObservationPort,
-} from './workflow-effect-shadow.js';
-import type { WorkflowControlObservationPort } from './workflow-control-shadow.js';
-import { workflowEffectLeaseAuthorityFromBoundary } from './internal/workflow-effect-lease-authority.js';
-import { validateWorkflowLocalShadowConfig } from './internal/workflow-local-shadow-config.js';
 import { loadWorkflowFile } from './internal/workflow-file-loader.js';
 import type {
   ProviderAttemptPort,
@@ -87,7 +56,6 @@ import {
 } from './workflow-runner-v2-descriptor.js';
 import {
   WorkflowRunnerV2Session,
-  WorkflowRunnerV2SessionError,
   workflowRunnerV2BudgetDecisionMatchesRequest,
   type WorkflowRunnerV2ExecutionContext,
   type WorkflowRunnerV2RuntimeDeliveryPort,
@@ -124,50 +92,17 @@ import type {
   WorkflowRunnerResumeAuthorityEvidence,
 } from './workflow-runner-authority-binding-contract.js';
 
-export const WORKFLOW_RUNNER_WORKER_ENABLED_ENV = 'OPENSLACK_WORKFLOW_RUNNER_ENABLED' as const;
-export const WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV =
-  'OPENSLACK_WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED' as const;
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
   'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED' as const;
 export const WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV =
   'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED' as const;
 
-export interface WorkflowRunnerWorkerConfig {
+export interface WorkflowRunnerV2WorkerConfig {
   readonly enabled: true;
   readonly workspaceId: string;
   readonly workspaceRoot: string;
   readonly descriptorRoot: string;
   readonly runnerBuildHash: string;
-  readonly checkpointShadow?: {
-    readonly endpoint: string;
-    readonly bearerToken: string;
-    readonly callerId: string;
-    readonly journalRoot: string;
-  };
-  readonly effectShadow?: {
-    readonly endpoint: string;
-    readonly bearerToken: string;
-    readonly callerId: string;
-    readonly journalRoot: string;
-  };
-}
-
-interface WorkflowRunnerV2WorkerConfigBase {
-  readonly enabled: true;
-  readonly workspaceId: string;
-  readonly workspaceRoot: string;
-  readonly descriptorRoot: string;
-  readonly runnerBuildHash: string;
-}
-
-export interface WorkflowRunnerV2QualificationWorkerConfig extends WorkflowRunnerV2WorkerConfigBase {
-  readonly mode: 'qualification';
-  readonly runtimeDelivery?: never;
-  readonly runAuthority?: never;
-}
-
-export interface WorkflowRunnerV2GoAuthorityWorkerConfig extends WorkflowRunnerV2WorkerConfigBase {
-  readonly mode: 'go-authority';
   readonly runtimeDelivery: {
     readonly companionOrigin: string;
     readonly companionBearerToken: string;
@@ -184,23 +119,10 @@ export interface WorkflowRunnerV2GoAuthorityWorkerConfig extends WorkflowRunnerV
   };
 }
 
-export type WorkflowRunnerV2WorkerConfig =
-  | WorkflowRunnerV2QualificationWorkerConfig
-  | WorkflowRunnerV2GoAuthorityWorkerConfig;
-
 export class WorkflowRunnerWorkerConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'WorkflowRunnerWorkerConfigError';
-  }
-}
-
-export class WorkflowRunnerV2RuntimeBoundaryUnavailableError extends Error {
-  readonly code = 'WORKFLOW_RUNNER_V2_RUNTIME_BOUNDARY_UNAVAILABLE' as const;
-
-  constructor(boundary: 'resume' | 'checkpoint' | 'effect') {
-    super(`Workflow runner v2 ${boundary} delivery remains unavailable in GS9-F1.`);
-    this.name = 'WorkflowRunnerV2RuntimeBoundaryUnavailableError';
   }
 }
 
@@ -318,133 +240,71 @@ function loopbackOrigin(value: string | undefined, name: string): string {
   );
 }
 
-export function loadWorkflowRunnerWorkerConfig(
+export function loadWorkflowRunnerV2WorkerConfig(
   environment: NodeJS.ProcessEnv = process.env,
-): WorkflowRunnerWorkerConfig {
-  if (environment[WORKFLOW_RUNNER_WORKER_ENABLED_ENV] !== '1') {
+): WorkflowRunnerV2WorkerConfig {
+  if (environment[WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV] !== '1') {
     throw new WorkflowRunnerWorkerConfigError(
-      'Workflow runner worker is default-off; explicit enablement is required.',
+      'Workflow runner v2 requires the complete runtime-delivery profile.',
+    );
+  }
+  if (environment[WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV] !== '1') {
+    throw new WorkflowRunnerWorkerConfigError(
+      'Workflow runner v2 requires the Workflow Control run authority.',
     );
   }
   const workspaceId = environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID;
   const runnerBuildHash = environment.OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH;
   if (!workspaceId || !SAFE_ID.test(workspaceId)) {
-    throw new WorkflowRunnerWorkerConfigError('Worker workspace ID is invalid.');
+    throw new WorkflowRunnerWorkerConfigError('V2 worker workspace ID is invalid.');
   }
   if (!runnerBuildHash || !HASH.test(runnerBuildHash)) {
-    throw new WorkflowRunnerWorkerConfigError('Worker build hash is invalid.');
+    throw new WorkflowRunnerWorkerConfigError('V2 worker build hash is invalid.');
   }
   const workspaceRoot = absolutePath(
     environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
-    'Worker workspace root',
+    'V2 worker workspace root',
   );
-  const checkpointKeys = [
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT',
-  ] as const;
-  const enabledValue = environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED;
-  if (enabledValue !== undefined && enabledValue !== '0' && enabledValue !== '1') {
-    throw new WorkflowRunnerWorkerConfigError('Workflow checkpoint shadow enablement is invalid.');
-  }
-  const checkpointEnabled = enabledValue === '1';
-  if (!checkpointEnabled && checkpointKeys.some((key) => environment[key] !== undefined)) {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Disabled Workflow checkpoint shadow configuration must be empty.',
-    );
-  }
-  const checkpointShadow = checkpointEnabled
-    ? {
-        endpoint: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT ?? '',
-        bearerToken: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN ?? '',
-        callerId: environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID ?? '',
-        journalRoot: absolutePath(
-          environment.OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT,
-          'Workflow checkpoint shadow journal root',
-        ),
-      }
-    : undefined;
+  const companionBearerToken =
+    environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN ?? '';
+  const expectedBearerHash =
+    environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256 ?? '';
+  const budgetBearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN ?? '';
+  const budgetCallerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID ?? '';
   if (
-    checkpointEnabled &&
-    (!checkpointShadow?.endpoint ||
-      checkpointShadow.bearerToken.length < 32 ||
-      !SAFE_ID.test(checkpointShadow.callerId))
+    !isWorkflowControlBearerToken(companionBearerToken) ||
+    !HASH.test(expectedBearerHash) ||
+    createHash('sha256').update(companionBearerToken, 'utf8').digest('hex') !==
+      expectedBearerHash ||
+    !isWorkflowControlBearerToken(budgetBearerToken) ||
+    !SAFE_ID.test(budgetCallerId)
   ) {
     throw new WorkflowRunnerWorkerConfigError(
-      'Workflow checkpoint shadow configuration is invalid.',
+      'V2 runtime-delivery bearer or budget caller identity is invalid.',
     );
   }
-  if (checkpointShadow) {
-    try {
-      validateWorkflowLocalShadowConfig({
-        workspaceRoot,
-        journalRoot: checkpointShadow.journalRoot,
-        endpoint: checkpointShadow.endpoint,
-        routes: ['/', '/v1/shadow/workflow-control/checkpoints'],
-      });
-    } catch {
-      throw new WorkflowRunnerWorkerConfigError(
-        'Workflow checkpoint shadow must use loopback and a workspace-local journal.',
-      );
-    }
-  }
-  const effectKeys = [
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT',
-  ] as const;
-  const effectEnabledValue = environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED;
-  if (
-    effectEnabledValue !== undefined &&
-    effectEnabledValue !== '0' &&
-    effectEnabledValue !== '1'
-  ) {
-    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow enablement is invalid.');
-  }
-  const effectEnabled = effectEnabledValue === '1';
-  if (!effectEnabled && effectKeys.some((key) => environment[key] !== undefined)) {
+  const journalRoot = absolutePath(
+    environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT,
+    'V2 runtime-delivery journal root',
+  );
+  const localStateRoot = join(workspaceRoot, '.openslack.local');
+  if (!within(localStateRoot, journalRoot) || journalRoot === localStateRoot) {
     throw new WorkflowRunnerWorkerConfigError(
-      'Disabled Workflow effect shadow configuration must be empty.',
+      'V2 runtime-delivery journal must be beneath the workspace-local state root.',
     );
   }
-  const effectShadow = effectEnabled
-    ? {
-        endpoint: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT ?? '',
-        bearerToken: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN ?? '',
-        callerId: environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID ?? '',
-        journalRoot: absolutePath(
-          environment.OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT,
-          'Workflow effect shadow journal root',
-        ),
-      }
-    : undefined;
+  const bearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN ?? '';
+  const bearerHash = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256 ?? '';
+  const callerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID ?? '';
+  const expectedBuildHash = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA ?? '';
   if (
-    effectEnabled &&
-    (!effectShadow?.endpoint ||
-      effectShadow.bearerToken.length < 32 ||
-      !SAFE_ID.test(effectShadow.callerId))
+    !isWorkflowControlBearerToken(bearerToken) ||
+    !HASH.test(bearerHash) ||
+    createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash ||
+    !SAFE_ID.test(callerId) ||
+    !HASH.test(expectedBuildHash)
   ) {
-    throw new WorkflowRunnerWorkerConfigError('Workflow effect shadow configuration is invalid.');
-  }
-  if (effectShadow) {
-    try {
-      validateWorkflowLocalShadowConfig({
-        workspaceRoot,
-        journalRoot: effectShadow.journalRoot,
-        endpoint: effectShadow.endpoint,
-        routes: [WORKFLOW_EFFECT_CONTROL_ROUTE],
-        protectedRelativeRoots: [
-          join('workflows', 'effect-approvals'),
-          join('workflows', 'effect-authority'),
-        ],
-      });
-    } catch {
-      throw new WorkflowRunnerWorkerConfigError(
-        'Workflow effect shadow must use its exact loopback route and a workspace-local journal.',
-      );
-    }
+    throw new WorkflowRunnerWorkerConfigError('V2 run authority identity is invalid.');
   }
   return Object.freeze({
     enabled: true,
@@ -452,114 +312,10 @@ export function loadWorkflowRunnerWorkerConfig(
     workspaceRoot,
     descriptorRoot: absolutePath(
       environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT,
-      'Worker descriptor root',
+      'V2 worker descriptor root',
     ),
     runnerBuildHash,
-    ...(checkpointShadow ? { checkpointShadow: Object.freeze(checkpointShadow) } : {}),
-    ...(effectShadow ? { effectShadow: Object.freeze(effectShadow) } : {}),
-  });
-}
-
-export function loadWorkflowRunnerV2QualificationWorkerConfig(
-  environment: NodeJS.ProcessEnv = process.env,
-): WorkflowRunnerV2WorkerConfig {
-  if (environment[WORKFLOW_RUNNER_V2_QUALIFICATION_ENABLED_ENV] !== '1') {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Workflow runner v2 qualification is default-off; explicit enablement is required.',
-    );
-  }
-  if (environment[WORKFLOW_RUNNER_WORKER_ENABLED_ENV] === '1') {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Workflow runner v1 and v2 qualification modes cannot be enabled together.',
-    );
-  }
-  const unavailableBoundaryKeys = [
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENABLED',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_ENDPOINT',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_CALLER_ID',
-    'OPENSLACK_WORKFLOW_CHECKPOINT_SHADOW_JOURNAL_ROOT',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENABLED',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_ENDPOINT',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_CALLER_ID',
-    'OPENSLACK_WORKFLOW_EFFECT_SHADOW_JOURNAL_ROOT',
-  ] as const;
-  if (unavailableBoundaryKeys.some((key) => environment[key] !== undefined)) {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Workflow runner v2 GS9-F1 cannot configure checkpoint or effect authority boundaries.',
-    );
-  }
-  const workspaceId = environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ID;
-  const runnerBuildHash = environment.OPENSLACK_WORKFLOW_RUNNER_BUILD_HASH;
-  if (!workspaceId || !SAFE_ID.test(workspaceId)) {
-    throw new WorkflowRunnerWorkerConfigError('V2 qualification workspace ID is invalid.');
-  }
-  if (!runnerBuildHash || !HASH.test(runnerBuildHash)) {
-    throw new WorkflowRunnerWorkerConfigError('V2 qualification runner build hash is invalid.');
-  }
-  const workspaceRoot = absolutePath(
-    environment.OPENSLACK_WORKFLOW_RUNNER_WORKSPACE_ROOT,
-    'V2 qualification workspace root',
-  );
-  const runtimeDeliveryKeys = [
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_ORIGIN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID',
-  ] as const;
-  const runtimeDeliveryEnabled =
-    environment[WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV] === '1';
-  const runtimeDeliveryFlag = environment[WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV];
-  if (
-    runtimeDeliveryFlag !== undefined &&
-    runtimeDeliveryFlag !== '0' &&
-    runtimeDeliveryFlag !== '1'
-  ) {
-    throw new WorkflowRunnerWorkerConfigError('V2 runtime delivery enablement is invalid.');
-  }
-  if (
-    !runtimeDeliveryEnabled &&
-    runtimeDeliveryKeys.some((key) => environment[key] !== undefined)
-  ) {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Disabled v2 runtime-delivery configuration must be empty.',
-    );
-  }
-  let runtimeDelivery: WorkflowRunnerV2GoAuthorityWorkerConfig['runtimeDelivery'] | undefined;
-  if (runtimeDeliveryEnabled) {
-    const companionBearerToken =
-      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_TOKEN ?? '';
-    const expectedBearerHash =
-      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_BEARER_SHA256 ?? '';
-    const budgetBearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_BEARER_TOKEN ?? '';
-    const budgetCallerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_BUDGET_CALLER_ID ?? '';
-    if (
-      !isWorkflowControlBearerToken(companionBearerToken) ||
-      !HASH.test(expectedBearerHash) ||
-      createHash('sha256').update(companionBearerToken, 'utf8').digest('hex') !==
-        expectedBearerHash ||
-      !isWorkflowControlBearerToken(budgetBearerToken) ||
-      !SAFE_ID.test(budgetCallerId)
-    ) {
-      throw new WorkflowRunnerWorkerConfigError(
-        'V2 runtime-delivery bearer or budget caller identity is invalid.',
-      );
-    }
-    const journalRoot = absolutePath(
-      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_JOURNAL_ROOT,
-      'V2 runtime-delivery journal root',
-    );
-    const localStateRoot = join(workspaceRoot, '.openslack.local');
-    if (!within(localStateRoot, journalRoot) || journalRoot === localStateRoot) {
-      throw new WorkflowRunnerWorkerConfigError(
-        'V2 runtime-delivery journal must be beneath the workspace-local state root.',
-      );
-    }
-    runtimeDelivery = Object.freeze({
+    runtimeDelivery: Object.freeze({
       companionOrigin: loopbackOrigin(
         environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ORIGIN,
         'V2 runtime-delivery companion origin',
@@ -572,47 +328,8 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       ),
       budgetBearerToken,
       budgetCallerId,
-    });
-  }
-  const runAuthorityKeys = [
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID',
-    'OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA',
-  ] as const;
-  const runAuthorityFlag = environment[WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ENABLED_ENV];
-  if (runAuthorityFlag !== undefined && runAuthorityFlag !== '0' && runAuthorityFlag !== '1') {
-    throw new WorkflowRunnerWorkerConfigError('V2 run authority enablement is invalid.');
-  }
-  const runAuthorityEnabled = runAuthorityFlag === '1';
-  if (!runAuthorityEnabled && runAuthorityKeys.some((key) => environment[key] !== undefined)) {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Disabled v2 run authority configuration must be empty.',
-    );
-  }
-  if (runAuthorityEnabled && !runtimeDeliveryEnabled) {
-    throw new WorkflowRunnerWorkerConfigError(
-      'V2 run authority requires the complete runtime-delivery profile.',
-    );
-  }
-  let runAuthority: WorkflowRunnerV2GoAuthorityWorkerConfig['runAuthority'] | undefined;
-  if (runAuthorityEnabled) {
-    const bearerToken = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_TOKEN ?? '';
-    const bearerHash = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BEARER_SHA256 ?? '';
-    const callerId = environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_CALLER_ID ?? '';
-    const expectedBuildHash =
-      environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_BUILD_SHA ?? '';
-    if (
-      !isWorkflowControlBearerToken(bearerToken) ||
-      !HASH.test(bearerHash) ||
-      createHash('sha256').update(bearerToken, 'utf8').digest('hex') !== bearerHash ||
-      !SAFE_ID.test(callerId) ||
-      !HASH.test(expectedBuildHash)
-    ) {
-      throw new WorkflowRunnerWorkerConfigError('V2 run authority identity is invalid.');
-    }
-    runAuthority = Object.freeze({
+    }),
+    runAuthority: Object.freeze({
       origin: loopbackOrigin(
         environment.OPENSLACK_WORKFLOW_RUNNER_V2_RUN_AUTHORITY_ORIGIN,
         'V2 run authority origin',
@@ -620,31 +337,7 @@ export function loadWorkflowRunnerV2QualificationWorkerConfig(
       bearerToken,
       callerId,
       expectedBuildHash,
-    });
-  }
-  const common = Object.freeze({
-    enabled: true as const,
-    workspaceId,
-    workspaceRoot,
-    descriptorRoot: absolutePath(
-      environment.OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT,
-      'V2 qualification descriptor root',
-    ),
-    runnerBuildHash,
-  });
-  if (!runAuthorityEnabled) {
-    if (runtimeDelivery !== undefined) {
-      throw new WorkflowRunnerWorkerConfigError(
-        'V2 runtime delivery requires the complete Go-authority profile.',
-      );
-    }
-    return Object.freeze({ ...common, mode: 'qualification' as const });
-  }
-  return Object.freeze({
-    ...common,
-    mode: 'go-authority' as const,
-    runtimeDelivery: runtimeDelivery!,
-    runAuthority: runAuthority!,
+    }),
   });
 }
 
@@ -654,7 +347,7 @@ function within(root: string, candidate: string): boolean {
 }
 
 async function sourceRoot(
-  workflowSource: Exclude<WorkflowRunnerExecutionDescriptor['workflowSource'], 'builtin'>,
+  workflowSource: Exclude<WorkflowRunnerV2ExecutionDescriptor['workflowSource'], 'builtin'>,
   workspaceRoot: string,
 ): Promise<string> {
   switch (workflowSource) {
@@ -668,7 +361,7 @@ async function sourceRoot(
 }
 
 interface SealedWorkflowDescriptor {
-  readonly workflowSource: WorkflowRunnerExecutionDescriptor['workflowSource'];
+  readonly workflowSource: WorkflowRunnerV2ExecutionDescriptor['workflowSource'];
   readonly workflowId: string;
   readonly workflowVersion: string;
   readonly workflowSourceHash: string;
@@ -797,46 +490,12 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
   });
 }
 
-export function createSealedWorkflowRunnerSourceLoader(
-  workspaceRoot: string,
-): WorkflowRunnerSourceLoader<PreparedWorkflowSource> {
-  const core = createSealedWorkflowSourceLoaderCore<WorkflowRunnerExecutionDescriptor>(
-    workspaceRoot,
-    {
-      hashSource: hashWorkflowRunnerSource,
-      hashManifest: hashWorkflowRunnerManifest,
-      messages: {
-        unsafeRoot: 'Sealed workflow catalog root is unsafe.',
-        nonCanonicalRoot: 'Sealed workflow catalog root must be canonical and non-symlinked.',
-        ambiguousEntry: 'Sealed workflow catalog entry is missing or ambiguous.',
-        unsafeSource: 'Sealed workflow source has an unsafe type.',
-        escapedSource: 'Sealed workflow source escapes its catalog root.',
-        changedRoot: 'Sealed workflow catalog root changed during validation.',
-        sourceHash: 'Sealed workflow source hash does not match the descriptor.',
-        changedSource: 'Sealed workflow source changed after lease acceptance.',
-        loadedIdentity: 'Loaded workflow identity does not match the sealed descriptor.',
-      },
-    },
-  );
-  return Object.freeze({
-    prepare: core.prepare,
-    load: (descriptor: WorkflowRunnerExecutionDescriptor, prepared: PreparedWorkflowSource) =>
-      core.load(prepared, descriptor),
-  });
-}
-
 export function createSealedWorkflowRunnerV2SourceLoader(
   workspaceRoot: string,
-  runtimeDeliveryEnabled = false,
 ): WorkflowRunnerV2SourceLoader<PreparedWorkflowSource, WorkflowModule> {
   return createSealedWorkflowSourceLoaderCore<WorkflowRunnerV2ExecutionDescriptor>(workspaceRoot, {
     hashSource: hashWorkflowRunnerV2Source,
     hashManifest: hashWorkflowRunnerV2Manifest,
-    beforePrepare(descriptor) {
-      if (!runtimeDeliveryEnabled && descriptor.resumeGeneration !== 0) {
-        throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
-      }
-    },
     messages: {
       unsafeRoot: 'Sealed v2 workflow catalog root is unsafe.',
       nonCanonicalRoot: 'Sealed v2 workflow catalog root must be canonical and non-symlinked.',
@@ -873,275 +532,6 @@ function boundedDiagnostic(error: unknown): string {
       ? (error as Error & { code: string }).code
       : 'WORKFLOW_RUNNER_WORKER_FAILED';
   return `[${String(code).slice(0, 128)}] ${String(name).slice(0, 128)}\n`;
-}
-
-function writeCheckpointDiagnostic(diagnostic: WorkflowCheckpointShadowDiagnostic): void {
-  writeSync(
-    2,
-    `${JSON.stringify({ schema: 'openslack.workflow_checkpoint_shadow_diagnostic.v1', ...diagnostic })}\n`,
-    undefined,
-    'utf8',
-  );
-}
-
-function writeEffectShadowDiagnostic(diagnostic: WorkflowEffectShadowDiagnostic): void {
-  writeSync(
-    2,
-    `${JSON.stringify({ schema: 'openslack.workflow_effect_shadow_diagnostic.v1', ...diagnostic })}\n`,
-    undefined,
-    'utf8',
-  );
-}
-
-/**
- * Dispatch one accepted runner job without ever treating an existing run as a
- * fresh execution. Only paused/resuming runs enter the strict resume path;
- * terminal, running, or incomplete local state fails closed.
- */
-async function executeWorkflowRunnerJob(
-  workflow: WorkflowModule,
-  descriptor: WorkflowRunnerExecutionDescriptor,
-  context: WorkflowRunnerExecutionContext,
-  workspaceRoot: string,
-  checkpointObservationPort?: WorkflowCheckpointObservationPort,
-  observationPort?: WorkflowControlObservationPort,
-  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
-): Promise<RunResult> {
-  const store = new RunStore({
-    baseDir: join(workspaceRoot, '.openslack.local', 'workflows'),
-    observationPort,
-    checkpointObservationPort,
-  });
-  const exists = await store.runExists(descriptor.workflowRunId);
-  const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
-  const disposition = classifyWorkflowRunnerRunState(
-    descriptor.workflowRunId,
-    exists,
-    status?.status ?? null,
-  );
-  const { executeResumeWithStore, executeRunWithStore } = await loadWorkflowExecutionAuthority();
-  const unattended = descriptor.confirmationPolicy.mode === 'unattended-explicit';
-  const common = {
-    manifest: workflow.meta,
-    args: { ...descriptor.input },
-    budget: descriptor.budget,
-    runId: descriptor.workflowRunId,
-    ...(unattended
-      ? { allowUnattended: true as const }
-      : { confirmationPolicy: descriptor.confirmationPolicy }),
-    signal: context.signal,
-    effectBoundary: context.effectBoundary,
-    rootDir: workspaceRoot,
-  };
-  const effectAuthorizationPort = createWorkflowEffectAuthorizationPort({
-    workspaceRoot,
-    effectBoundary: context.effectBoundary,
-    leaseAuthority: workflowEffectLeaseAuthorityFromBoundary(context.effectBoundary),
-    observationPort,
-    effectShadowObservationPort,
-  });
-
-  return disposition === 'initialize'
-    ? executeRunWithStore(
-        workflow,
-        common,
-        store,
-        context.checkpointAuthority,
-        effectAuthorizationPort,
-      )
-    : executeResumeWithStore(
-        workflow,
-        common,
-        store,
-        context.checkpointAuthority,
-        effectAuthorizationPort,
-      );
-}
-
-export async function runWorkflowRunnerWorker(
-  config: WorkflowRunnerWorkerConfig = loadWorkflowRunnerWorkerConfig(),
-  checkpointObservationPort?: WorkflowCheckpointObservationPort,
-  observationPort?: WorkflowControlObservationPort,
-  effectShadowObservationPort?: WorkflowEffectShadowObservationPort,
-): Promise<void> {
-  installProtocolOnlyStreams();
-  const effectiveCheckpointObservationPort =
-    checkpointObservationPort ??
-    (config.checkpointShadow
-      ? await createWorkflowCheckpointObservationPort({
-          enabled: true,
-          journalRoot: config.checkpointShadow.journalRoot,
-          publisher: createWorkflowCheckpointShadowHttpPublisher({
-            endpoint: config.checkpointShadow.endpoint,
-            bearerToken: config.checkpointShadow.bearerToken,
-            callerId: config.checkpointShadow.callerId,
-          }),
-          diagnosticSink: writeCheckpointDiagnostic,
-        })
-      : undefined);
-  let effectiveEffectShadowObservationPort = effectShadowObservationPort;
-  if (!effectiveEffectShadowObservationPort && config.effectShadow) {
-    try {
-      effectiveEffectShadowObservationPort = await createWorkflowEffectShadowObservationPort({
-        enabled: true,
-        workspaceRoot: config.workspaceRoot,
-        journalRoot: config.effectShadow.journalRoot,
-        publisher: createWorkflowEffectShadowHttpPublisher({
-          endpoint: config.effectShadow.endpoint,
-          bearerToken: config.effectShadow.bearerToken,
-          callerId: config.effectShadow.callerId,
-        }),
-        diagnosticSink: writeEffectShadowDiagnostic,
-      });
-    } catch (error) {
-      writeEffectShadowDiagnostic({
-        outcome: 'failed',
-        runIdHash: 'unavailable',
-        approvalIdHash: 'unavailable',
-        observationHash: null,
-        code:
-          error &&
-          typeof error === 'object' &&
-          typeof (error as { readonly code?: unknown }).code === 'string'
-            ? String((error as { readonly code: string }).code).slice(0, 128)
-            : 'WORKFLOW_EFFECT_SHADOW_INITIALIZATION_FAILED',
-      });
-    }
-  }
-  if (effectiveEffectShadowObservationPort) {
-    void (async () => {
-      await effectiveEffectShadowObservationPort.replay();
-      await effectiveEffectShadowObservationPort.synchronize();
-    })().catch((error) => {
-      writeEffectShadowDiagnostic({
-        outcome: 'failed',
-        runIdHash: 'unavailable',
-        approvalIdHash: 'unavailable',
-        observationHash: null,
-        code:
-          error &&
-          typeof error === 'object' &&
-          typeof (error as { readonly code?: unknown }).code === 'string'
-            ? String((error as { readonly code: string }).code).slice(0, 128)
-            : 'WORKFLOW_EFFECT_SHADOW_REPLAY_FAILED',
-      });
-    });
-  }
-  const descriptorStore = new WorkflowRunnerDescriptorStore(config.descriptorRoot);
-  await descriptorStore.initialize();
-  let closed = false;
-  const timers: {
-    heartbeat?: NodeJS.Timeout;
-    retry?: NodeJS.Timeout;
-    effectShadowSync?: NodeJS.Timeout;
-  } = {};
-  const close = async (exitCode: number) => {
-    if (closed) return;
-    closed = true;
-    if (timers.heartbeat) clearInterval(timers.heartbeat);
-    if (timers.retry) clearInterval(timers.retry);
-    if (timers.effectShadowSync) clearInterval(timers.effectShadowSync);
-    process.stdin.pause();
-    process.exitCode = exitCode;
-  };
-  const sourceLoader = createSealedWorkflowRunnerSourceLoader(config.workspaceRoot);
-  const session = new WorkflowRunnerSession<PreparedWorkflowSource>({
-    workspaceId: config.workspaceId,
-    runnerBuildHash: config.runnerBuildHash,
-    runtimeVersion: process.versions.node,
-    descriptorStore,
-    sourceLoader,
-    send: (exactBytes) => {
-      writeSync(1, exactBytes, undefined, 'utf8');
-    },
-    close,
-    execute: async (
-      workflow: WorkflowModule,
-      descriptor: WorkflowRunnerExecutionDescriptor,
-      context: WorkflowRunnerExecutionContext,
-    ): Promise<RunResult> => {
-      return executeWorkflowRunnerJob(
-        workflow,
-        descriptor,
-        context,
-        config.workspaceRoot,
-        effectiveCheckpointObservationPort,
-        observationPort,
-        effectiveEffectShadowObservationPort,
-      );
-    },
-  });
-
-  const fatal = async (error: unknown) => {
-    if (closed) return;
-    writeSync(2, boundedDiagnostic(error), undefined, 'utf8');
-    await close(1);
-  };
-  const decoder = new WorkflowRunnerJsonlDecoder();
-  process.stdin.on('data', (chunk: Buffer) => {
-    try {
-      for (const frame of decoder.push(chunk)) {
-        const message = decodeWorkflowRunnerFrame(frame);
-        void session.receive(message).catch(fatal);
-      }
-    } catch (error) {
-      void fatal(error);
-    }
-  });
-  process.stdin.on('end', () => {
-    try {
-      decoder.finish();
-      if (!closed) void fatal(new Error('Workflow runner control stream ended unexpectedly.'));
-    } catch (error) {
-      void fatal(error);
-    }
-  });
-  process.stdin.on('error', fatal);
-
-  await session.start();
-  let lastHeartbeat = 0;
-  let heartbeatInFlight: Promise<void> | undefined;
-  timers.heartbeat = setInterval(() => {
-    const interval = session.heartbeatIntervalMs;
-    if (interval <= 0 || heartbeatInFlight || Date.now() - lastHeartbeat < interval) return;
-    heartbeatInFlight = session
-      .heartbeat()
-      .then((sent) => {
-        if (sent) lastHeartbeat = Date.now();
-      })
-      .catch(fatal)
-      .finally(() => {
-        heartbeatInFlight = undefined;
-      });
-  }, 250);
-  timers.retry = setInterval(() => {
-    void session.retryOutstanding().catch(fatal);
-  }, 2_000);
-  if (effectiveEffectShadowObservationPort) {
-    let synchronizationInFlight: Promise<void> | undefined;
-    timers.effectShadowSync = setInterval(() => {
-      if (synchronizationInFlight) return;
-      synchronizationInFlight = effectiveEffectShadowObservationPort!
-        .synchronize()
-        .catch((error) => {
-          writeEffectShadowDiagnostic({
-            outcome: 'failed',
-            runIdHash: 'unavailable',
-            approvalIdHash: 'unavailable',
-            observationHash: null,
-            code:
-              error &&
-              typeof error === 'object' &&
-              typeof (error as { readonly code?: unknown }).code === 'string'
-                ? String((error as { readonly code: string }).code).slice(0, 128)
-                : 'WORKFLOW_EFFECT_SHADOW_SYNCHRONIZATION_FAILED',
-          });
-        })
-        .finally(() => {
-          synchronizationInFlight = undefined;
-        });
-    }, 2_000);
-  }
 }
 
 class WorkflowRunnerV2BudgetBoundaryError extends Error {
@@ -1753,7 +1143,7 @@ function resumeEvidence(
 }
 
 function createWorkflowRunnerV2DefaultAuthoritySourceFactories(
-  config: WorkflowRunnerV2GoAuthorityWorkerConfig,
+  config: WorkflowRunnerV2WorkerConfig,
   authority: WorkflowControlAuthorityPort,
 ): WorkflowRunnerV2AuthoritySourceFactories {
   return Object.freeze({
@@ -1801,15 +1191,12 @@ class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRun
     baseDir: string,
     context: WorkflowRunnerV2ExecutionContext,
     descriptor: WorkflowRunnerV2ExecutionDescriptor,
-    runAuthority?: WorkflowControlAuthorityPort,
-    mode: 'qualification' | 'go-authority' = 'qualification',
+    runAuthority: WorkflowControlAuthorityPort,
   ) {
     super({
       baseDir,
       descriptor,
-      ...(mode === 'go-authority'
-        ? { mode: 'authority' as const, authority: runAuthority! }
-        : { mode: 'qualification' as const }),
+      authority: runAuthority,
     });
     this.#context = context;
     this.#descriptor = descriptor;
@@ -1906,41 +1293,23 @@ class WorkflowRunnerV2CheckpointRunStore extends WorkflowRunnerV2GoProjectionRun
   }
 }
 
-/** @internal Exact v2 worker execution seam used by the bundled qualification worker. */
-export async function executeWorkflowRunnerV2QualificationJob(
+/** @internal Exact Go-authority execution seam used by the sealed v2 worker. */
+export async function executeWorkflowRunnerV2AuthorityJob(
   workflow: WorkflowModule,
   descriptor: WorkflowRunnerV2ExecutionDescriptor,
   context: WorkflowRunnerV2ExecutionContext,
   workspaceRoot: string,
-  runtimeDeliveryEnabled: boolean,
-  budgetAuthority?: WorkflowRunnerV2BudgetAuthorityBoundary,
-  runAuthority?: WorkflowControlAuthorityPort,
-  mode: 'qualification' | 'go-authority' = 'qualification',
+  budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary,
+  runAuthority: WorkflowControlAuthorityPort,
 ): Promise<RunResult> {
-  const selectedGo = descriptor.authorityRoute.backend === 'go';
-  if (mode === 'go-authority' && !selectedGo) {
-    throw new Error('The new-record canary worker accepts only Go-owned v2 descriptors.');
+  if (
+    descriptor.authorityRoute.backend !== 'go' ||
+    descriptor.authorityRoute.authority !== 'workflow-control'
+  ) {
+    throw new Error('The v2 worker accepts only Go-owned Workflow Control descriptors.');
   }
-  if (mode === 'qualification' && selectedGo) {
-    throw new Error('Qualification-only v2 execution rejects Go-owned descriptors.');
-  }
-  if (mode === 'qualification' && runAuthority) {
-    throw new Error('Qualification-only v2 execution cannot receive the production run authority.');
-  }
-  const goOwned = mode === 'go-authority';
-  if (goOwned && !runtimeDeliveryEnabled) {
-    throw new Error('Go-owned v2 execution requires the complete runtime-delivery profile.');
-  }
-  if (goOwned && !runAuthority) {
-    throw new Error('Go-owned v2 execution requires the Workflow Control run authority.');
-  }
-  if (!goOwned && runAuthority) {
-    throw new Error('TypeScript-owned v2 execution cannot receive a Go run authority.');
-  }
-  const baseDir = resolveWorkflowRunProjectionRoot(workspaceRoot, goOwned ? 'go' : 'ts-local');
-  const store = runtimeDeliveryEnabled
-    ? new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor, runAuthority, mode)
-    : new RunStore({ baseDir });
+  const baseDir = resolveWorkflowRunProjectionRoot(workspaceRoot, 'go');
+  const store = new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor, runAuthority);
   const exists = await store.runExists(descriptor.workflowRunId);
   const status = exists ? await store.loadStatus(descriptor.workflowRunId) : null;
   const disposition = classifyWorkflowRunnerRunState(
@@ -1948,10 +1317,8 @@ export async function executeWorkflowRunnerV2QualificationJob(
     exists,
     status?.status ?? null,
   );
-  if (disposition === 'resume' && !runtimeDeliveryEnabled) {
-    throw new WorkflowRunnerV2RuntimeBoundaryUnavailableError('resume');
-  }
-  const { executeResumeWithStore, executeRunWithStore } = await loadWorkflowExecutionAuthority();
+  const { executeGoAuthorityResume, executeGoAuthorityRun } =
+    await loadWorkflowExecutionAuthority();
   const tokenLimit = Number(descriptor.budgetPolicy.tokenLimit);
   const costLimitNanoUsd = BigInt(descriptor.budgetPolicy.costLimitNanoUsd);
   const costUsd = Number(costLimitNanoUsd) / 1_000_000_000;
@@ -1985,38 +1352,33 @@ export async function executeWorkflowRunnerV2QualificationJob(
       });
     })(),
   };
-  const effectAuthorizationPort = runtimeDeliveryEnabled
-    ? await createWorkflowRunnerV2EffectAuthorizationPort({
-        workspaceRoot,
-        descriptor,
-        context,
-      })
-    : undefined;
+  const effectAuthorizationPort = await createWorkflowRunnerV2EffectAuthorizationPort({
+    workspaceRoot,
+    descriptor,
+    context,
+  });
   if (disposition === 'resume') {
-    return executeResumeWithStore(
+    return executeGoAuthorityResume(
       workflow,
       common,
       store,
-      runtimeDeliveryEnabled ? context.checkpointAuthority : undefined,
+      context.checkpointAuthority,
       effectAuthorizationPort,
     );
   }
-  return executeRunWithStore(
+  return executeGoAuthorityRun(
     workflow,
     common,
     store,
-    runtimeDeliveryEnabled ? context.checkpointAuthority : undefined,
+    context.checkpointAuthority,
     effectAuthorizationPort,
   );
 }
 
-export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
-  config: WorkflowRunnerV2GoAuthorityWorkerConfig,
+/** @internal Sealed composition; excluded from the package root and public worker subpath. */
+export async function createWorkflowRunnerV2RuntimeDelivery(
+  config: WorkflowRunnerV2WorkerConfig,
   authority: WorkflowControlAuthorityPort,
-  sourceFactories: WorkflowRunnerV2AuthoritySourceFactories = createWorkflowRunnerV2DefaultAuthoritySourceFactories(
-    config,
-    authority,
-  ),
 ): Promise<WorkflowRunnerV2RuntimeDeliveryPort> {
   const runtime = new WorkflowRunnerAuthorityBindingRuntime({
     journal: new WorkflowRunnerAuthorityBindingJournal(config.runtimeDelivery.journalRoot),
@@ -2028,13 +1390,14 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
   });
   const delivery = new WorkflowRunnerV2RuntimeDelivery({
     runtime,
-    sources: new WorkflowRunnerV2AuthoritySources(sourceFactories),
+    sources: new WorkflowRunnerV2AuthoritySources(
+      createWorkflowRunnerV2DefaultAuthoritySourceFactories(config, authority),
+    ),
     projection: {
       async classify(descriptor) {
         const store = new WorkflowRunnerV2GoProjectionRunStore({
           baseDir: resolveWorkflowRunProjectionRoot(config.workspaceRoot, 'go'),
           descriptor,
-          mode: 'authority',
           authority,
         });
         const exists = await store.runExists(descriptor.workflowRunId);
@@ -2057,14 +1420,8 @@ export async function createWorkflowRunnerV2QualificationRuntimeDelivery(
   return delivery;
 }
 
-export interface WorkflowRunnerV2QualificationWorkerDependencies {
-  readonly authoritySourceFactories?: WorkflowRunnerV2AuthoritySourceFactories;
-  readonly runAuthority?: WorkflowControlAuthorityPort;
-}
-
-export async function runWorkflowRunnerV2QualificationWorker(
-  config: WorkflowRunnerV2WorkerConfig = loadWorkflowRunnerV2QualificationWorkerConfig(),
-  dependencies: WorkflowRunnerV2QualificationWorkerDependencies = {},
+export async function runWorkflowRunnerV2Worker(
+  config: WorkflowRunnerV2WorkerConfig = loadWorkflowRunnerV2WorkerConfig(),
 ): Promise<void> {
   installProtocolOnlyStreams();
   const descriptorStore = new WorkflowRunnerDescriptorStore<WorkflowRunnerV2ExecutionDescriptor>(
@@ -2073,44 +1430,23 @@ export async function runWorkflowRunnerV2QualificationWorker(
     WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
   );
   await descriptorStore.initialize();
-  const runAuthority =
-    dependencies.runAuthority ??
-    (config.mode === 'go-authority'
-      ? new WorkflowControlAuthorityHttpClient({
-          origin: config.runAuthority.origin,
-          workspaceId: config.workspaceId,
-          callerId: config.runAuthority.callerId,
-          bearerToken: config.runAuthority.bearerToken,
-          expectedBuildHash: config.runAuthority.expectedBuildHash,
-        })
-      : undefined);
-  if (dependencies.runAuthority && config.mode !== 'go-authority') {
-    throw new WorkflowRunnerWorkerConfigError(
-      'Injected v2 run authority requires an explicitly enabled run-authority profile.',
-    );
-  }
-  const runtimeDelivery =
-    config.mode === 'go-authority'
-      ? dependencies.authoritySourceFactories
-        ? await createWorkflowRunnerV2QualificationRuntimeDelivery(
-            config,
-            runAuthority!,
-            dependencies.authoritySourceFactories,
-          )
-        : await createWorkflowRunnerV2QualificationRuntimeDelivery(config, runAuthority!)
-      : undefined;
-  const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary | undefined =
-    config.mode === 'go-authority'
-      ? Object.freeze({
-          callerId: config.runtimeDelivery.budgetCallerId,
-          client: createWorkflowRunnerBudgetAuthorityClient({
-            origin: config.runtimeDelivery.budgetOrigin,
-            workspaceId: config.workspaceId,
-            bearerToken: config.runtimeDelivery.budgetBearerToken,
-            callerId: config.runtimeDelivery.budgetCallerId,
-          }),
-        })
-      : undefined;
+  const runAuthority = new WorkflowControlAuthorityHttpClient({
+    origin: config.runAuthority.origin,
+    workspaceId: config.workspaceId,
+    callerId: config.runAuthority.callerId,
+    bearerToken: config.runAuthority.bearerToken,
+    expectedBuildHash: config.runAuthority.expectedBuildHash,
+  });
+  const runtimeDelivery = await createWorkflowRunnerV2RuntimeDelivery(config, runAuthority);
+  const budgetAuthority: WorkflowRunnerV2BudgetAuthorityBoundary = Object.freeze({
+    callerId: config.runtimeDelivery.budgetCallerId,
+    client: createWorkflowRunnerBudgetAuthorityClient({
+      origin: config.runtimeDelivery.budgetOrigin,
+      workspaceId: config.workspaceId,
+      bearerToken: config.runtimeDelivery.budgetBearerToken,
+      callerId: config.runtimeDelivery.budgetCallerId,
+    }),
+  });
   let closed = false;
   const timers: { heartbeat?: NodeJS.Timeout; retry?: NodeJS.Timeout } = {};
   const close = async (exitCode: number) => {
@@ -2126,10 +1462,7 @@ export async function runWorkflowRunnerV2QualificationWorker(
     runnerBuildHash: config.runnerBuildHash,
     runtimeVersion: process.versions.node,
     descriptorStore,
-    sourceLoader: createSealedWorkflowRunnerV2SourceLoader(
-      config.workspaceRoot,
-      runtimeDelivery !== undefined,
-    ),
+    sourceLoader: createSealedWorkflowRunnerV2SourceLoader(config.workspaceRoot),
     send: (exactBytes) => {
       writeSync(1, exactBytes, undefined, 'utf8');
     },
@@ -2138,17 +1471,15 @@ export async function runWorkflowRunnerV2QualificationWorker(
     },
     close,
     execute: (workflow, descriptor, context) =>
-      executeWorkflowRunnerV2QualificationJob(
+      executeWorkflowRunnerV2AuthorityJob(
         workflow,
         descriptor,
         context,
         config.workspaceRoot,
-        runtimeDelivery !== undefined,
         budgetAuthority,
         runAuthority,
-        config.mode,
       ),
-    ...(runtimeDelivery ? { runtimeDelivery } : {}),
+    runtimeDelivery,
   });
   const fatal = async (error: unknown) => {
     if (closed) return;
@@ -2196,8 +1527,8 @@ export async function runWorkflowRunnerV2QualificationWorker(
   }, 2_000);
 }
 
-async function loadWorkflowExecutionAuthority(): Promise<typeof import('./execute.js')> {
-  // Keep executable authority loading behind WorkflowRunnerSession's advancing
+async function loadWorkflowExecutionAuthority() {
+  // Keep executable authority loading behind WorkflowRunnerV2Session's advancing
   // lease_accept receipt. The executor is module-private and is only invoked by
   // the accepted session callback; pure status classification is tested apart
   // from execution authority.

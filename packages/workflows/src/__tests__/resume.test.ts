@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { checkResumable, prepareResume, forceResume, replayCachedPhases } from '../resume.js';
+import { checkResumable, prepareResume, replayCachedPhases } from '../resume.js';
 import type { ResumeState, WorkflowResumeIdentity } from '../resume.js';
 import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import type { RunStoreFs, RunMeta } from '../run-store.js';
 import type { PhaseCheckpoint, WorkflowMeta, ExecutionMode } from '../types.js';
 
@@ -32,7 +33,11 @@ function createMemFs(): RunStoreFs & { files: Map<string, string> } {
 
 function makeStore(): { store: RunStore; fs: ReturnType<typeof createMemFs> } {
   const fs = createMemFs();
-  const store = new RunStore({ baseDir: '/test/workflows', fs });
+  const store = new RunStore({
+    access: createWorkflowRunStoreRecoveryAccess(),
+    baseDir: '/test/workflows',
+    fs,
+  });
   return { store, fs };
 }
 
@@ -258,54 +263,6 @@ describe('prepareResume', () => {
     expect(state.meta.runId).toBe('run-001');
     expect(state.meta.workflowName).toBe('test-scan');
     expect(state.meta.manifestHash).toBe(TEST_HASH);
-  });
-});
-
-describe('forceResume', () => {
-  it('transitions paused run back to running', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-
-    const state = await forceResume(store, runId, TEST_MANIFEST);
-    expect(state.runId).toBe('run-001');
-
-    const status = await store.loadStatus(runId);
-    expect(status!.status).toBe('running');
-  });
-
-  it('works even with manifest hash mismatch', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan']);
-
-    const modifiedManifest: WorkflowMeta = {
-      ...TEST_MANIFEST,
-      description: 'Changed!',
-    };
-    // forceResume should NOT throw even with mismatched hash
-    const state = await forceResume(store, runId, modifiedManifest);
-    expect(state.runId).toBe('run-001');
-  });
-
-  it('throws for non-existent run', async () => {
-    const { store } = makeStore();
-    await expect(forceResume(store, 'nope', TEST_MANIFEST)).rejects.toThrow('not found');
-  });
-
-  it('throws for non-paused status', async () => {
-    const { store } = makeStore();
-    await store.initRun('run-001', makeMeta(TEST_MANIFEST));
-    // Still in "running" state
-
-    await expect(forceResume(store, 'run-001', TEST_MANIFEST)).rejects.toThrow('expected "paused"');
-  });
-
-  it('returns completed phases from previous run', async () => {
-    const { store } = makeStore();
-    const runId = await initPausedRun(store, TEST_MANIFEST, ['Scan', 'Verify']);
-
-    const state = await forceResume(store, runId, TEST_MANIFEST);
-    expect(state.completedPhases).toHaveLength(2);
-    expect(state.nextPhaseIndex).toBe(2);
   });
 });
 

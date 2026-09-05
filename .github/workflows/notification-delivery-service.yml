@@ -286,7 +286,7 @@ jobs:
           bun run build
           bunx vitest run \
             packages/workflows/src/__tests__/workflow-checkpoint-shadow.test.ts \
-            packages/workflows/src/__tests__/workflow-runner-session.test.ts \
+            packages/workflows/src/__tests__/workflow-runner-v2-session.test.ts \
             packages/workflows/src/__tests__/workflow-runner-worker.test.ts \
             packages/workflows/src/__tests__/run-store.test.ts
       - name: Qualify GS9-D TypeScript effect decision observer
@@ -533,7 +533,6 @@ jobs:
           bunx vitest run `
             packages/workflows/src/__tests__/workflow-runner-descriptor.test.ts `
             packages/workflows/src/__tests__/workflow-runner-worker.test.ts `
-            packages/workflows/src/__tests__/workflow-runner-session.test.ts `
             packages/workflows/src/__tests__/workflow-runner-cancellation-boundaries.test.ts `
             packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts `
             packages/workflows/src/__tests__/workflow-runner-execute.test.ts `

@@ -17,13 +17,14 @@ import {
   readWorkflowPolicy,
   renderWorkflowRunProgress,
   renderWorkflowDraftPreview,
-  RunStore,
   saveWorkflow,
   saveWorkflowRunScript,
   WorkflowBudgetExceededError,
   WorkflowBudgetPausedError,
   writeWorkflowPolicy,
 } from '../index.js';
+import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { executeAgentCall } from '../agent-shim.js';
 import { AgentRunRestartRequestedError } from '@openslack/agent-runtime';
 
@@ -249,53 +250,6 @@ describe('dynamic workflow drafts and policy', () => {
     expect(progress?.budget.tokensUsed).toBe(12);
     expect(progress?.phases[0].agents[0].recentTools[0].name).toBe('read_file');
     expect(renderWorkflowRunProgress(progress!)).toContain('scan-api');
-  });
-
-  it('blocks a matching future agent launch after pending stopAgent', async () => {
-    const statusPath = writeWorkflowRunStatus(root, 'run-block-agent', 'running');
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as Record<string, unknown>;
-    status.pendingAgentControls = [
-      {
-        action: 'stopAgent',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        target: {
-          runId: 'run-block-agent',
-          phase: 'Scan',
-          agentRunId: 'RUN-20260101-BLOCKED',
-          agentId: 'scan-api',
-        },
-        status: 'recorded',
-        message: 'Pending stop recorded for test.',
-      },
-    ];
-    writeFileSync(statusPath, JSON.stringify(status, null, 2));
-
-    await expect(
-      executeAgentCall(
-        'scan packages/api.ts',
-        {
-          label: 'scan-api',
-          phase: 'Scan',
-        },
-        {
-          runId: 'run-block-agent',
-          mode: 'execute',
-          budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
-          permissions: new Set(),
-          cache: {
-            async load() {
-              return null;
-            },
-            async save() {},
-          },
-          launcher: async () => ({ data: { ok: true }, tokenUsage: 1 }),
-          log: () => {},
-          cacheKey: 'cache-key',
-          agentRunId: 'RUN-20260101-BLOCKED',
-          rootDir: root,
-        },
-      ),
-    ).rejects.toThrow(/Pending stop recorded/);
   });
 
   it('loads configured workflow cost rates and leaves unknown rates unknown', async () => {
@@ -696,7 +650,10 @@ async function initWorkflowRunStore(
     onExceeded: 'pause' | 'fail';
   },
 ): Promise<RunStore> {
-  const runStore = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
+  const runStore = new RunStore({
+    access: createWorkflowRunStoreRecoveryAccess(),
+    baseDir: join(root, '.openslack.local', 'workflows'),
+  });
   await runStore.initRun(runId, {
     runId,
     workflowName: 'test-workflow',

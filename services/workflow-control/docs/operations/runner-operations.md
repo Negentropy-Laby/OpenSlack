@@ -1,4 +1,33 @@
-# GS8-B Runner Operations
+# Workflow Runner Operations
+
+## GS9-I upgrade
+
+The current gate uses `workflow-control-runner-v2-runtime-delivery-v1`. The six
+retired runner, authority, checkpoint-shadow, effect-shadow, budget-authority,
+and F1 foundation entry profiles are rejected with this replacement named in the
+error. Their applicable component checks remain in the current gate.
+
+Before starting an upgraded `/runner-server`, remove
+`WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED` and every variable with prefix
+`WORKFLOW_RUNNER_CONTROL_CHECKPOINT_SHADOW_` or
+`WORKFLOW_RUNNER_CONTROL_EFFECT_SHADOW_` from the host service environment. Even
+an empty value or `ENABLED=0` still supplies a retired name and fails startup with
+`workflow_runner_control_config_failed` / `CONFIG_INVALID`. Configure the sealed
+Go-v2 runtime-delivery and run-authority bindings from the service README instead.
+The legacy shadow components described below remain qualification evidence, not
+alternative runner execution modes.
+
+Legacy `pendingAgentControls` / `stopAgent` records remain parseable for historical
+inspection. They no longer control a running agent. A Go resume carrying pending
+legacy controls is rejected as `WORKFLOW_RESUME_RECOVERY_REQUIRED` before its
+generation advances or an agent launches. Preserve that evidence for reconciliation;
+do not edit a recovery projection to simulate an operator control or clear a blocker.
+
+The current restart gate covers safe, running, open-effect, and pending-cancel
+orphans using new Go process and PostgreSQL postmaster identities. Only the safe
+unstarted job can receive a new attempt and exactly incremented fence.
+
+## Runtime and retained qualification components
 
 The default image starts `/server` and keeps runner control disabled. To operate `/runner-server`,
 first apply the reviewed migration chain for the selected schema profile, pre-create an owner-only descriptor root, build the

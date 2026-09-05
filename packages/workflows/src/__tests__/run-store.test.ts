@@ -7,10 +7,12 @@ import {
   WORKFLOW_AUDIT_MAX_BYTES,
   WORKFLOW_AUDIT_RECORD_SCHEMA,
   WORKFLOW_BUDGET_SNAPSHOT_SCHEMA,
+  WorkflowTypeScriptMutationRetiredError,
   decodeRunMetaArguments,
   isRunStatusTransitionAllowed,
 } from '../run-store.js';
-import type { RunStoreFs, RunMeta, LogEntry } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
+import type { RunStoreFs, RunStoreOptions, RunMeta, LogEntry } from '../run-store.js';
 import type { PhaseCheckpoint, ExecutionMode } from '../types.js';
 import {
   WORKFLOW_CONTROL_RUN_STATES,
@@ -49,7 +51,11 @@ function createMemFs(): RunStoreFs & { files: Map<string, string> } {
 
 function makeStore(): { store: RunStore; fs: ReturnType<typeof createMemFs> } {
   const fs = createMemFs();
-  const store = new RunStore({ baseDir: '/test/workflows', fs });
+  const store = new RunStore({
+    access: createWorkflowRunStoreRecoveryAccess(),
+    baseDir: '/test/workflows',
+    fs,
+  });
   return { store, fs };
 }
 
@@ -111,6 +117,69 @@ function makeMeta(overrides: Partial<RunMeta> = {}): RunMeta {
 }
 
 describe('RunStore', () => {
+  it('fails closed when legacy JavaScript omits or invents the access mode', () => {
+    for (const options of [
+      { baseDir: '/test/workflows' },
+      { access: 'ts-local', baseDir: '/test/workflows' },
+      { access: { kind: 'go-authority-recovery-projection' }, baseDir: '/test/workflows' },
+    ]) {
+      let error: unknown;
+      try {
+        new RunStore(options as unknown as RunStoreOptions);
+      } catch (reason) {
+        error = reason;
+      }
+      expect(error).toBeInstanceOf(WorkflowTypeScriptMutationRetiredError);
+      expect(error).toMatchObject({ code: 'WORKFLOW_TYPESCRIPT_MUTATION_RETIRED' });
+    }
+  });
+
+  it('rejects every mutation method before filesystem or queue activity in read-only mode', async () => {
+    const fs = createMemFs();
+    const filesystemSpies = [
+      vi.spyOn(fs, 'mkdir'),
+      vi.spyOn(fs, 'writeFile'),
+      vi.spyOn(fs, 'readFile'),
+      vi.spyOn(fs, 'appendFile'),
+      vi.spyOn(fs, 'exists'),
+    ];
+    const reader = new RunStore({ access: 'read-only', baseDir: '/test/workflows', fs });
+    const mutationMethods = [
+      'initRun',
+      'persistBudgetState',
+      'appendAuditRecord',
+      'saveStatus',
+      'transitionStatus',
+      'setCurrentPhase',
+      'savePhaseCheckpoint',
+      'initializeCheckpointControl',
+      'beginCheckpointResumeGeneration',
+      'advanceCheckpointResumeGeneration',
+      'commitWorkflowCheckpoint',
+      'saveAgentResult',
+      'saveAgentReplayInput',
+      'markAgentReplayUnavailable',
+      'savePipelineItem',
+      'appendLog',
+      'appendBudgetWarning',
+      'saveOutput',
+      'savePendingApproval',
+      'resolvePendingApproval',
+    ] as const;
+    const callable = reader as unknown as Record<
+      (typeof mutationMethods)[number],
+      (...args: unknown[]) => Promise<unknown>
+    >;
+
+    for (const method of mutationMethods) {
+      await expect(Reflect.apply(callable[method], reader, [])).rejects.toMatchObject({
+        code: 'WORKFLOW_TYPESCRIPT_MUTATION_RETIRED',
+      });
+    }
+    expect(fs.files.size).toBe(0);
+    for (const spy of filesystemSpies) expect(spy).not.toHaveBeenCalled();
+  });
+
   // ── Path helpers ────────────────────────────────────────────────────────
 
   describe('path helpers', () => {
@@ -847,7 +916,11 @@ describe('RunStore', () => {
   describe('run-scoped budget and audit writers', () => {
     it('reuses validated budget and audit state while file identity is stable', async () => {
       const fs = createIdentityFs();
-      const store = new RunStore({ baseDir: '/test/workflows', fs });
+      const store = new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir: '/test/workflows',
+        fs,
+      });
       await store.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
       const budgetPath = store.budgetSnapshotPath('run-001');
       const auditPath = store.auditPath('run-001');
@@ -873,7 +946,11 @@ describe('RunStore', () => {
 
     it('reloads identity drift and conservatively rereads without identity support', async () => {
       const identityFs = createIdentityFs();
-      const identityStore = new RunStore({ baseDir: '/test/workflows', fs: identityFs });
+      const identityStore = new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir: '/test/workflows',
+        fs: identityFs,
+      });
       await identityStore.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
       await identityStore.persistBudgetState('run-001', {
         tokensUsed: 1,
@@ -904,7 +981,11 @@ describe('RunStore', () => {
 
       const fallbackFs = createMemFs();
       const read = vi.spyOn(fallbackFs, 'readFile');
-      const fallbackStore = new RunStore({ baseDir: '/test/workflows', fs: fallbackFs });
+      const fallbackStore = new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir: '/test/workflows',
+        fs: fallbackFs,
+      });
       await fallbackStore.initRun('run-001', makeMeta({ budget: { tokens: 100, costUsd: 1 } }));
       for (const used of [1, 2]) {
         await fallbackStore.persistBudgetState('run-001', {
@@ -1078,7 +1159,11 @@ describe('RunStore', () => {
           return value;
         },
       };
-      const store = new RunStore({ baseDir: '/test/workflows', fs });
+      const store = new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir: '/test/workflows',
+        fs,
+      });
       const runIds = Array.from(
         { length: 12 },
         (_, index) => `run-${String(index).padStart(3, '0')}`,

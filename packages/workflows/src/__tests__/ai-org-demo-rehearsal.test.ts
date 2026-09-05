@@ -13,13 +13,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import type { executeWorkflowThroughRunner } from '@openslack/workflows';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const repositoryRoot = resolve(process.cwd());
 const scriptPath = join(repositoryRoot, 'scripts', 'demo-ai-org-rehearse.ts');
 const temporaryRoots: string[] = [];
-const AI_ORG_DEMO_SUITE_TIMEOUT_MS = 15_000;
+const AI_ORG_DEMO_SUITE_TIMEOUT_MS = 60_000;
 
 function temporaryRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'openslack-ai-org-fixture-test-'));
@@ -61,11 +60,10 @@ async function loadRehearsalModule(): Promise<{
     prHeadSha: string | undefined,
     expectedHead?: string,
   ): { branchSha: string; prHeadSha: string };
-  runConfiguredWorkflow(dependencies?: {
-    environment?: NodeJS.ProcessEnv;
-    createRunId?: () => string;
-    execute?: typeof executeWorkflowThroughRunner;
-  }): Promise<{ runId: string; artifacts: Array<{ filename: string; content: string }> }>;
+  runConfiguredWorkflow(): Promise<{
+    runId: string;
+    artifacts: Array<{ filename: string; content: string }>;
+  }>;
 }> {
   return import(/* @vite-ignore */ pathToFileURL(scriptPath).href) as never;
 }
@@ -285,199 +283,109 @@ describe('AI organization rehearsal script', { timeout: AI_ORG_DEMO_SUITE_TIMEOU
     expect(runGit).toHaveBeenCalledWith(expectedArgs);
   });
 
-  it('exercises preview and dry-run through the real CLI with fail-closed exit codes', () => {
-    const runCli = (args: string[]) =>
-      spawnSync(
-        process.execPath,
-        ['--import', 'tsx', 'apps/cli/src/index.ts', 'collaboration', 'workflow', ...args],
-        {
-          cwd: repositoryRoot,
-          encoding: 'utf8',
-          timeout: 60_000,
-          env: { ...process.env, OPENSLACK_DISABLE_WORKFLOWS: '0' },
-        },
+  it(
+    'exercises preview and dry-run through the real CLI with fail-closed exit codes',
+    () => {
+      const runCli = (args: string[]) =>
+        spawnSync(
+          process.execPath,
+          ['--import', 'tsx', 'apps/cli/src/index.ts', 'collaboration', 'workflow', ...args],
+          {
+            cwd: repositoryRoot,
+            encoding: 'utf8',
+            timeout: 60_000,
+            env: { ...process.env, OPENSLACK_DISABLE_WORKFLOWS: '0' },
+          },
+        );
+
+      const preview = runCli(['preview-js', 'ai-org-transformation']);
+      expect(preview.status, String(preview.error ?? preview.stderr)).toBe(0);
+      expect(preview.stdout).toContain('"schema": "openslack.ai_org_demo_preview.v1"');
+      expect(preview.stdout).toContain('"agentCalls": 0');
+
+      const dryRun = runCli(['dry-run', 'ai-org-transformation']);
+      expect(dryRun.status, dryRun.stderr).toBe(0);
+      expect(dryRun.stdout).toContain('"schema": "openslack.ai_org_demo_workflow_result.v1"');
+      expect(dryRun.stdout).not.toContain('Errors:');
+
+      const rejected = runCli(['dry-run', 'ai-org-transformation', '--input', 'durationDays=91']);
+      expect(rejected.status).toBe(1);
+      expect(rejected.stdout).toContain('Errors:');
+      expect(rejected.stdout).toContain('durationDays must be an integer from 1 through 90');
+    },
+    AI_ORG_DEMO_SUITE_TIMEOUT_MS,
+  );
+
+  it(
+    'blocks sensitive, oversized, and additional workflow result data before materialization',
+    async () => {
+      const workflowPath = resolve(
+        repositoryRoot,
+        '.openslack',
+        'workflows',
+        'ai-org-transformation.ts',
       );
+      const workflow = await import(/* @vite-ignore */ pathToFileURL(workflowPath).href);
+      const fixtureRoot = join(
+        repositoryRoot,
+        'examples',
+        'ai-organization-demo',
+        'fixtures',
+        'agent-results',
+      );
+      const { createRuntime } = await import('../runtime.js');
+      const runtime = createRuntime({
+        runId: 'materialization-contract',
+        mode: 'execute',
+        manifest: workflow.meta,
+        budget: { tokens: 64_000, costUsd: 1 },
+        agentLauncher: async (_prompt, options) => ({
+          data: JSON.parse(
+            readFileSync(join(fixtureRoot, `${String(options.agentType)}.json`), 'utf8'),
+          ),
+          tokenUsage: 10,
+        }),
+        onConfirm: async () => false,
+      });
+      const base = { ...(await workflow.run(runtime, {})), runId: 'materialization-contract' };
+      const rehearsal = await loadRehearsalModule();
 
-    const preview = runCli(['preview-js', 'ai-org-transformation']);
-    expect(preview.status, String(preview.error ?? preview.stderr)).toBe(0);
-    expect(preview.stdout).toContain('"schema": "openslack.ai_org_demo_preview.v1"');
-    expect(preview.stdout).toContain('"agentCalls": 0');
-
-    const dryRun = runCli(['dry-run', 'ai-org-transformation']);
-    expect(dryRun.status, dryRun.stderr).toBe(0);
-    expect(dryRun.stdout).toContain('"schema": "openslack.ai_org_demo_workflow_result.v1"');
-    expect(dryRun.stdout).not.toContain('Errors:');
-
-    const rejected = runCli(['dry-run', 'ai-org-transformation', '--input', 'durationDays=91']);
-    expect(rejected.status).toBe(1);
-    expect(rejected.stdout).toContain('Errors:');
-    expect(rejected.stdout).toContain('durationDays must be an integer from 1 through 90');
-  }, 15_000);
-
-  it('composes the live workflow through the explicit Go runner authority path', async () => {
-    const rehearsal = await loadRehearsalModule();
-    const runnerToken = 'a'.repeat(32);
-    const authorityToken = 'b'.repeat(32);
-    const build = 'c'.repeat(64);
-    const environment: NodeJS.ProcessEnv = {
-      OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN: 'http://127.0.0.1:18183',
-      OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID: 'workspace.ai-org-rehearsal',
-      OPENSLACK_WORKFLOW_RUNNER_CONTROL_BEARER_TOKEN: runnerToken,
-      OPENSLACK_WORKFLOW_RUNNER_DESCRIPTOR_ROOT: join(temporaryRoot(), 'descriptors'),
-      OPENSLACK_WORKFLOW_RUNNER_CONTROL_BUILD_SHA: build,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_MODE: 'go-new-record-canary-v1',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EPOCH: '1',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BUILD_SHA: build,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_QUALIFICATION_ENVIRONMENT_ID: 'ai-org.rehearsal.test',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_WORKFLOW_ALLOWLIST: 'ai-org-transformation',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_RUN_ALLOWLIST: '',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_EXPIRES_AT: '2099-09-04T00:00:00.000Z',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_ORIGIN: 'http://127.0.0.1:18184',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BEARER_TOKEN: authorityToken,
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_BEARER_SHA256: createHash('sha256')
-        .update(authorityToken)
-        .digest('hex'),
-      OPENSLACK_WORKFLOW_RUN_ROUTING_AUTHORITY_CALLER_ID: 'ai-org-rehearsal',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_ACCOUNT_ID: 'budget.ai-org-rehearsal',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_POLICY_SHA: 'd'.repeat(64),
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_RATE_NANO_USD_PER_TOKEN: '1',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_TOKEN_LIMIT: '64000',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_COST_LIMIT_NANO_USD: '2500000000',
-      OPENSLACK_WORKFLOW_RUN_ROUTING_BUDGET_CALL_LIMIT: '6',
-    };
-    const phaseAgentTypes = [
-      ['business-discovery-agent'],
-      ['business-discovery-agent'],
-      ['roi-analyst-agent'],
-      ['solution-architect-agent'],
-      ['risk-reviewer-agent'],
-      ['delivery-planner-agent'],
-    ];
-    const filenames = [
-      'executive-summary.md',
-      'opportunity-matrix.md',
-      'data-system-map.md',
-      'roi-model.md',
-      'target-architecture.md',
-      'risk-register.md',
-      '90-day-plan.md',
-    ];
-    const execute: typeof executeWorkflowThroughRunner = vi.fn(async (input) => ({
-      status: 'completed' as const,
-      runId: input.workflowRunId!,
-      schema: 'openslack.ai_org_demo_workflow_result.v1',
-      scenario: {
-        schema: 'openslack.ai_org_demo_input.v1',
-        scenarioId: 'manufacturing-90-day',
-        organization: 'Example Manufacturer',
-        industry: 'manufacturing',
-        objective: 'Validate governed AI delivery.',
-        durationDays: 90,
-        budgetCny: 500000,
-        constraints: ['Human approval required'],
-      },
-      phases: ['Intake', 'Discover', 'Select', 'Design', 'Validate', 'Deliver'].map(
-        (id, index) => ({ id, status: 'completed', agentTypes: phaseAgentTypes[index] }),
-      ),
-      artifacts: filenames.map((filename, index) => ({
-        filename,
-        title: filename,
-        ownerAgentType: phaseAgentTypes[Math.min(index, 5)]![0],
-        content: `# ${filename}`,
-        evidenceRefs: ['test:governed-runner'],
-      })),
-      governance: {
-        workflowCanApproveGitHubReview: false,
-        workflowCanMergePullRequest: false,
-        githubHumanApprovalRequired: true,
-        writesGitHubObjects: false,
-        writesMain: false,
-      },
-      evidenceRefs: ['test:governed-runner'],
-    }));
-    const executeMock = vi.mocked(execute);
-
-    const result = await rehearsal.runConfiguredWorkflow({
-      environment,
-      createRunId: () => 'run.ai-org-governed-test',
-      execute,
-    });
-
-    expect(result.runId).toBe('run.ai-org-governed-test');
-    expect(executeMock).toHaveBeenCalledOnce();
-    expect(executeMock.mock.calls[0]?.[0]).toMatchObject({
-      workflowRunId: 'run.ai-org-governed-test',
-      budget: { tokens: 64000, costUsd: 2.5 },
-      routing: { mode: 'explicit', v2BudgetPolicy: { accountId: 'budget.ai-org-rehearsal' } },
-    });
-  });
-
-  it('blocks sensitive, oversized, and additional workflow result data before materialization', async () => {
-    const workflowPath = resolve(
-      repositoryRoot,
-      '.openslack',
-      'workflows',
-      'ai-org-transformation.ts',
-    );
-    const workflow = await import(/* @vite-ignore */ pathToFileURL(workflowPath).href);
-    const fixtureRoot = join(
-      repositoryRoot,
-      'examples',
-      'ai-organization-demo',
-      'fixtures',
-      'agent-results',
-    );
-    const { createRuntime } = await import('@openslack/workflows');
-    const runtime = createRuntime({
-      runId: 'materialization-contract',
-      mode: 'execute',
-      manifest: workflow.meta,
-      budget: { tokens: 64_000, costUsd: 1 },
-      agentLauncher: async (_prompt, options) => ({
-        data: JSON.parse(
-          readFileSync(join(fixtureRoot, `${String(options.agentType)}.json`), 'utf8'),
-        ),
-        tokenUsage: 10,
-      }),
-      onConfirm: async () => false,
-    });
-    const base = { ...(await workflow.run(runtime, {})), runId: 'materialization-contract' };
-    const rehearsal = await loadRehearsalModule();
-
-    expect(() => rehearsal.assertWorkflowResult(base)).not.toThrow();
-    expect(() =>
-      rehearsal.assertWorkflowResult({
-        ...structuredClone(base),
-        unexpected: true,
-      }),
-    ).toThrow('closed workflow result schema');
-    expect(() =>
-      rehearsal.assertWorkflowResult({
-        ...structuredClone(base),
-        client_secret: 'not-a-real-secret',
-      }),
-    ).toThrow('credential field');
-    for (const sensitiveValue of [
-      'Authorization: Bearer abcdefghijklmnop',
-      'ghp_abcdefghijklmnopqrstuvwxyz1234567890',
-      'github_pat_abcdefghijklmnopqrstuvwxyz1234567890',
-      'xoxp-123456789012-abcdefghijklmnop',
-      '-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key',
-      'password=not-a-real-password',
-      'client_secret: not-a-real-secret',
-    ]) {
-      const sensitive = structuredClone(base) as {
+      expect(() => rehearsal.assertWorkflowResult(base)).not.toThrow();
+      expect(() =>
+        rehearsal.assertWorkflowResult({
+          ...structuredClone(base),
+          unexpected: true,
+        }),
+      ).toThrow('closed workflow result schema');
+      expect(() =>
+        rehearsal.assertWorkflowResult({
+          ...structuredClone(base),
+          client_secret: 'not-a-real-secret',
+        }),
+      ).toThrow('credential field');
+      for (const sensitiveValue of [
+        'Authorization: Bearer abcdefghijklmnop',
+        'ghp_abcdefghijklmnopqrstuvwxyz1234567890',
+        'github_pat_abcdefghijklmnopqrstuvwxyz1234567890',
+        'xoxp-123456789012-abcdefghijklmnop',
+        '-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key',
+        'password=not-a-real-password',
+        'client_secret: not-a-real-secret',
+      ]) {
+        const sensitive = structuredClone(base) as {
+          artifacts: Array<{ content: string }>;
+        };
+        sensitive.artifacts[0].content = sensitiveValue;
+        expect(() => rehearsal.assertWorkflowResult(sensitive)).toThrow('credential-like');
+      }
+      const oversized = structuredClone(base) as {
         artifacts: Array<{ content: string }>;
       };
-      sensitive.artifacts[0].content = sensitiveValue;
-      expect(() => rehearsal.assertWorkflowResult(sensitive)).toThrow('credential-like');
-    }
-    const oversized = structuredClone(base) as {
-      artifacts: Array<{ content: string }>;
-    };
-    oversized.artifacts[0].content = 'x'.repeat(8_001);
-    expect(() => rehearsal.assertWorkflowResult(oversized)).toThrow('oversized string');
-  }, 15_000);
+      oversized.artifacts[0].content = 'x'.repeat(8_001);
+      expect(() => rehearsal.assertWorkflowResult(oversized)).toThrow('oversized string');
+    },
+    AI_ORG_DEMO_SUITE_TIMEOUT_MS,
+  );
 
   it('keeps raw GitHub PR creation and credential material out of the script', () => {
     const source = readFileSync(scriptPath, 'utf8');

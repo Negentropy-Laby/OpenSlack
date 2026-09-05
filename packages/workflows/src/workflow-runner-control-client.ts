@@ -116,12 +116,8 @@ export interface WorkflowRunnerJobView {
   readonly updatedAt: string;
 }
 
-export interface WorkflowRunnerControlPort {
+export interface WorkflowRunnerStatusPort {
   readonly descriptorRoot: string;
-  submit(
-    prepared: PreparedWorkflowRunnerJobSpec,
-    signal?: AbortSignal,
-  ): Promise<WorkflowRunnerJobReceipt>;
   waitForTerminal(
     jobId: string,
     options: {
@@ -611,7 +607,8 @@ function boundedSignal(
   };
 }
 
-export class WorkflowRunnerControlClient implements WorkflowRunnerControlPort {
+/** Read-only observer for historical or Go-v2 runner job state. */
+export class WorkflowRunnerStatusClient implements WorkflowRunnerStatusPort {
   readonly #config: WorkflowRunnerControlConfig;
   readonly #fetch: typeof fetch;
   readonly #requestTimeoutMs: number;
@@ -645,60 +642,6 @@ export class WorkflowRunnerControlClient implements WorkflowRunnerControlPort {
 
   get descriptorRoot(): string {
     return this.#config.descriptorRoot;
-  }
-
-  async submit(
-    preparedValue: PreparedWorkflowRunnerJobSpec,
-    signal?: AbortSignal,
-  ): Promise<WorkflowRunnerJobReceipt> {
-    const prepared = prepareWorkflowRunnerJobSpec(preparedValue.spec);
-    if (
-      prepared.exactBody !== preparedValue.exactBody ||
-      prepared.jobSpecHash !== preparedValue.jobSpecHash ||
-      prepared.idempotencyKey !== preparedValue.idempotencyKey ||
-      prepared.requestFingerprint !== preparedValue.requestFingerprint
-    ) {
-      return fail(
-        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
-        'Prepared runner job binding is invalid.',
-      );
-    }
-    const response = await this.#requestJson(
-      '/v1/runner/jobs',
-      {
-        method: 'POST',
-        body: prepared.exactBody,
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': prepared.idempotencyKey,
-          'X-OpenSlack-Request-Fingerprint': prepared.requestFingerprint,
-        },
-      },
-      signal,
-    );
-    if (![200, 201, 202].includes(response.status)) return this.#rejected(response);
-    const errorCode = runnerErrorCode(response.value);
-    if (response.status === 202 && errorCode !== undefined) {
-      return fail(
-        'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
-        `Runner control rejected the request (${errorCode}).`,
-      );
-    }
-    const receipt = validateWorkflowRunnerJobReceipt(response.value);
-    if (
-      receipt.workspaceId !== this.#config.workspaceId ||
-      receipt.jobId !== prepared.spec.jobId ||
-      receipt.workflowRunId !== prepared.spec.workflowRunId ||
-      receipt.jobSpecHash !== prepared.jobSpecHash ||
-      receipt.idempotencyKey !== prepared.idempotencyKey ||
-      receipt.requestFingerprint !== prepared.requestFingerprint ||
-      (response.status === 200 && receipt.status !== 'duplicate') ||
-      (response.status === 201 && receipt.status !== 'accepted') ||
-      (response.status === 202 && receipt.status !== 'reconciliation_required')
-    ) {
-      return fail('WORKFLOW_RUNNER_CONTROL_RESPONSE_INVALID', 'Runner receipt binding is invalid.');
-    }
-    return receipt;
   }
 
   async readJob(jobIdValue: string, signal?: AbortSignal): Promise<WorkflowRunnerJobView> {

@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createRuntime,
-  createRuntimeWithCheckpointAuthority,
+  createRuntimeWithHostAuthorities,
   WorkflowAuditDetailInvalidError,
 } from '../runtime.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
+import { registerWorkflowEffectAuthorizationPort } from '../internal/workflow-effect-authorization-contract.js';
 import type { RuntimeOptions } from '../runtime.js';
 import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
 import type { PipelineCacheStore } from '../pipeline-runner.js';
@@ -99,7 +100,17 @@ describe('createRuntime', () => {
         manifestHash: 'c'.repeat(64),
         inputHash: 'd'.repeat(64),
       });
-      const runtime = createRuntimeWithCheckpointAuthority(
+      const unexpectedEffect = async (): Promise<never> => {
+        throw new Error('Unexpected effect');
+      };
+      const effects = {
+        prepare: unexpectedEffect,
+        authorize: unexpectedEffect,
+        complete: unexpectedEffect,
+        reconcile: unexpectedEffect,
+      };
+      registerWorkflowEffectAuthorizationPort(effects);
+      const runtime = createRuntimeWithHostAuthorities(
         {
           runId: 'test-run-001',
           mode: 'execute',
@@ -108,6 +119,7 @@ describe('createRuntime', () => {
           runStore,
         },
         authority,
+        effects,
       );
       runtime.phase('Scan');
       await runtime.checkpoint.commit({ artifact: Buffer.from('artifact') });

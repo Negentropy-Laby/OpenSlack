@@ -1,10 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
-import { createWorkflowRunProjectionStore } from '../workflow-run-projection.js';
+import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
+import { RunStore } from '../run-store.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { WorkflowRunnerResumeSourceStore } from '../internal/workflow-runner-resume-source.js';
 import {
-  createWorkflowRunnerV2QualificationRuntimeDelivery,
-  type WorkflowRunnerV2GoAuthorityWorkerConfig,
+  createWorkflowRunnerV2RuntimeDelivery,
+  type WorkflowRunnerV2WorkerConfig,
 } from '../workflow-runner-worker.js';
 import {
   WorkflowControlAuthorityHttpClient,
@@ -1889,7 +1891,10 @@ async function defaultResumeFixture(
     // Deliberately independent runner revision (20), checkpoint revision (1/2), and Go revision (7).
   });
   const message = parseWorkflowControlAuthorityMessageBytes(Buffer.from(target.body, 'utf8'));
-  const store = createWorkflowRunProjectionStore(root, 'go');
+  const store = new RunStore({
+    baseDir: resolveWorkflowRunProjectionRoot(root, 'go'),
+    access: createWorkflowRunStoreRecoveryAccess(),
+  });
   const initialBinding = {
     workspaceId: message.workspaceId!,
     workflowRunId: message.workflowRunId!,
@@ -2051,8 +2056,8 @@ async function defaultResumeFixture(
       companionOrigin: origin,
       companionBearerToken: 'c'.repeat(48),
     },
-  } as WorkflowRunnerV2GoAuthorityWorkerConfig;
-  const delivery = await createWorkflowRunnerV2QualificationRuntimeDelivery(config, authority);
+  } as WorkflowRunnerV2WorkerConfig;
+  const delivery = await createWorkflowRunnerV2RuntimeDelivery(config, authority);
   return {
     root,
     store,

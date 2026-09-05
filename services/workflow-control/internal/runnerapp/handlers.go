@@ -40,56 +40,6 @@ func (service *Service) handleRetiredV1Submit(w http.ResponseWriter, _ *http.Req
 	)
 }
 
-// handleSubmit is retained for closed legacy contract/recovery tests. It is no
-// longer composed into the authenticated HTTP surface.
-func (service *Service) handleSubmit(w http.ResponseWriter, request *http.Request) {
-	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
-	defer cancel()
-	request = request.WithContext(ctx)
-	if !requireMutationHeaders(w, request) {
-		return
-	}
-	body, err := readBoundedBody(w, request, runnerstore.MaxJobSpecBytes)
-	if err != nil {
-		writeReadError(w, ctx, err)
-		return
-	}
-	prepared, err := runnerstore.ParseJobSpec(body)
-	if err != nil || prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
-		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_UNPROCESSABLE", "runner job specification is invalid")
-		return
-	}
-	key, fingerprint := runnerstore.SubmissionBindings(prepared)
-	if request.Header.Get("Idempotency-Key") != key || request.Header.Get(HeaderRequestFingerprint) != fingerprint {
-		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_UNPROCESSABLE", "job request headers do not bind the exact body")
-		return
-	}
-	receipt, err := service.store.Submit(ctx, runnerstore.SubmitInput{
-		Prepared: prepared, IdempotencyKey: key, RequestFingerprint: fingerprint,
-	})
-	if err != nil {
-		service.writeStoreError(w, err)
-		return
-	}
-	exact, err := jobReceiptBytes(receipt)
-	if err != nil || !bytes.Equal(exact, receipt.ExactBytes) || !validJobReceipt(receipt, prepared, key, fingerprint) {
-		service.logger.Error("workflow_runner_invalid_store_job_receipt")
-		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner control failure")
-		return
-	}
-	status := http.StatusCreated
-	switch receipt.Status {
-	case runnerstore.ReceiptDuplicate:
-		service.duplicates.Add(1)
-		status = http.StatusOK
-	case runnerstore.ReceiptReconciliationRequired:
-		status = http.StatusAccepted
-	default:
-		service.accepted.Add(1)
-	}
-	writeExactJSON(w, status, exact)
-}
-
 func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel := context.WithTimeout(request.Context(), requestDeadline)
 	defer cancel()
@@ -102,23 +52,26 @@ func (service *Service) handleV2Submit(w http.ResponseWriter, request *http.Requ
 		writeReadError(w, ctx, err)
 		return
 	}
-	var prepared runnerstore.PreparedV2JobSpec
-	if service.v2RuntimeDelivery {
-		prepared, err = runnerstore.ParseV2RuntimeJobSpec(body)
-	} else {
-		prepared, err = runnerstore.ParseV2JobSpec(body)
-	}
-	if err != nil || prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
-		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 job specification is invalid")
+	prepared, err := runnerstore.ParseV2RuntimeJobSpec(body)
+	if err != nil {
+		// The frozen TypeScript-route parser is retained only to identify an
+		// authenticated historical request and return the explicit retirement
+		// tombstone. It is never passed to a mutation store.
+		legacy, legacyErr := runnerstore.ParseV2JobSpec(body)
+		if legacyErr == nil && legacy.Spec.WorkspaceID == service.workspaceID && bytes.Equal(body, legacy.ExactBody) {
+			writeFailure(
+				w,
+				http.StatusGone,
+				"WORKFLOW_RUNNER_TS_MUTATION_RETIRED",
+				"TypeScript workflow runner admission is retired; inspect evidence or use operator recovery",
+			)
+			return
+		}
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 runtime job specification is invalid")
 		return
 	}
-	if prepared.Spec.AuthorityRoute.Backend != "go" || prepared.Spec.AuthorityRoute.Authority != "workflow-control" {
-		writeFailure(
-			w,
-			http.StatusGone,
-			"WORKFLOW_RUNNER_TS_MUTATION_RETIRED",
-			"TypeScript workflow runner admission is retired; inspect evidence or use operator recovery",
-		)
+	if prepared.Spec.WorkspaceID != service.workspaceID || !bytes.Equal(body, prepared.ExactBody) {
+		writeFailure(w, http.StatusUnprocessableEntity, "WORKFLOW_RUNNER_V2_UNPROCESSABLE", "runner v2 job specification is invalid")
 		return
 	}
 	key, fingerprint := runnerstore.V2SubmissionBindings(prepared)
@@ -475,21 +428,8 @@ func (service *Service) handleVersion(w http.ResponseWriter, request *http.Reque
 	version := canonicaljson.Object{
 		"schema":   "openslack.workflow_runner_control_service_version.v1",
 		"buildSha": service.buildSHA, "schemaVersion": service.schemaVersion,
-		"mode": "runner-control-explicit", "workflowAuthority": "typescript",
-	}
-	if service.v2NewRecordCanary {
-		version["workflowAuthority"] = "immutable-route-receipt"
-	}
-	if service.v2Enabled {
-		version["v2QualificationAdmission"] = true
-		version["routingActivated"] = service.v2NewRecordCanary
-	}
-	if service.v2RuntimeDelivery {
-		version["v2RuntimeDeliveryQualification"] = true
-		version["productionRoutingActivated"] = service.v2NewRecordCanary
-	}
-	if service.v2NewRecordCanary {
-		version["newRecordCanary"] = true
+		"mode": "runner-control-go-authority", "workflowAuthority": "workflow-control",
+		"routingActivated": true, "productionRoutingActivated": false, "newRecordCanary": true,
 	}
 	writeCanonical(w, http.StatusOK, version)
 }
@@ -502,8 +442,8 @@ func (service *Service) handleBinding(w http.ResponseWriter, request *http.Reque
 		"schema":      "openslack.workflow_runner_control_binding.v1",
 		"workspaceId": service.workspaceID, "buildSha": service.buildSHA,
 		"runnerTokenSha256": hex.EncodeToString(service.tokenHash[:]),
-		"v2Enabled":         service.v2Enabled, "runtimeDeliveryEnabled": service.v2RuntimeDelivery,
-		"newRecordCanary":      service.v2NewRecordCanary,
+		"v2Enabled":         true, "runtimeDeliveryEnabled": true,
+		"newRecordCanary":      true,
 		"authorityOrigin":      service.runAuthorityOrigin,
 		"authorityCallerId":    service.runAuthorityCallerID,
 		"authorityBuildSha":    service.runAuthorityBuildSHA,
@@ -645,39 +585,6 @@ func (service *Service) writeStoreError(w http.ResponseWriter, err error) {
 		service.logger.Error("workflow_runner_unmapped_store_failure", "code", failure.Code)
 		writeFailure(w, http.StatusInternalServerError, "WORKFLOW_RUNNER_INTERNAL", "internal runner control failure")
 	}
-}
-
-func validJobReceipt(receipt runnerstore.JobReceipt, prepared runnerstore.PreparedJobSpec, key, fingerprint string) bool {
-	if receipt.Schema != runnerstore.JobReceiptSchema || receipt.WorkspaceID != prepared.Spec.WorkspaceID ||
-		receipt.JobID != prepared.Spec.JobID || receipt.WorkflowRunID != prepared.Spec.WorkflowRunID ||
-		receipt.JobSpecHash != prepared.JobSpecHash || receipt.IdempotencyKey != key ||
-		receipt.RequestFingerprint != fingerprint || receipt.Revision < 1 || receipt.CommittedAt == "" {
-		return false
-	}
-	switch receipt.Status {
-	case runnerstore.ReceiptAccepted, runnerstore.ReceiptDuplicate:
-		return receipt.State == runnerstore.JobQueued && receipt.ReconciliationID == nil
-	case runnerstore.ReceiptReconciliationRequired:
-		return receipt.State == runnerstore.JobReconciliationRequired && receipt.ReconciliationID != nil && *receipt.ReconciliationID != ""
-	default:
-		return false
-	}
-}
-
-func jobReceiptBytes(receipt runnerstore.JobReceipt) ([]byte, error) {
-	body, err := canonicaljson.Encode(canonicaljson.Object{
-		"schema": receipt.Schema, "status": string(receipt.Status),
-		"workspaceId": receipt.WorkspaceID, "jobId": receipt.JobID,
-		"workflowRunId": receipt.WorkflowRunID, "state": string(receipt.State),
-		"revision": receipt.Revision, "jobSpecHash": receipt.JobSpecHash,
-		"idempotencyKey":     receipt.IdempotencyKey,
-		"requestFingerprint": receipt.RequestFingerprint,
-		"committedAt":        receipt.CommittedAt, "reconciliationId": receipt.ReconciliationID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return append(body, '\n'), nil
 }
 
 func writeFailure(w http.ResponseWriter, status int, code, message string) {
