@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import { workspaceCommands } from './commands/workspace.js';
 import { selfCommands } from './commands/self.js';
 import { agentCommands } from './commands/agent.js';
@@ -109,7 +109,12 @@ program.addCommand(
 program.addCommand(graphCommands({ workspaceRoot: applicationContext.workspaceRoot }));
 
 if (enforceStartupStateCompatibility(process.argv)) {
+  program.exitOverride();
   void program.parseAsync(process.argv).catch((error: unknown) => {
+    if (error instanceof CommanderError) {
+      process.exitCode = error.exitCode;
+      return;
+    }
     console.error(error instanceof Error ? error.message : 'Command failed.');
     process.exitCode = 1;
   });
