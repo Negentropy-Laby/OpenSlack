@@ -1590,6 +1590,31 @@ export function collaborationCommands(): Command {
       if (inspection.disposition === 'reconciliation-required') process.exitCode = 1;
     });
 
+  runs
+    .command('repair-checkpoints <runId>')
+    .description('Diagnose checkpoint caches; apply only repairs proven by durable Go receipts')
+    .option('--apply', 'Preserve damaged files and apply a proven local cache repair')
+    .action(async (runId: string, options: { apply?: boolean }) => {
+      const rootDir = findRepoRoot();
+      const authority = resolveWorkflowInspectionAuthority(rootDir);
+      const recovery = authority
+        ? createWorkflowRunRecoveryEvidenceClient(loadWorkflowRunnerControlConfig())
+        : undefined;
+      const report = await repairWorkflowCheckpoints(runId, {
+        rootDir,
+        apply: options.apply,
+        authority,
+        recovery,
+      });
+      console.log(JSON.stringify(report, null, 2));
+      if (
+        options.apply &&
+        !report.applied &&
+        !report.diagnostics.includes('WORKFLOW_CHECKPOINT_CACHE_HEALTHY')
+      )
+        process.exitCode = 1;
+    });
+
   workflow.addCommand(runs);
 
   const config = new Command('config').description('Show or change workflow policy');
@@ -3293,3 +3318,7 @@ function renderProfileSyncPreviewMarkdown(
 
   return lines.join('\n');
 }
+import {
+  repairWorkflowCheckpoints,
+  createWorkflowRunRecoveryEvidenceClient,
+} from '@openslack/workflows';

@@ -30,6 +30,7 @@ const (
 	RouteAuthorityBindingStage = "/v2/runner/authority-bindings:stage"
 	RouteAuthorityBinding      = "/v2/runner/authority-bindings/{bindingAction}"
 	RouteAuthorityReceipt      = "/v2/runner/authority-bindings/receipts/{idempotencyKey}"
+	RouteRecoveryEvidence      = "/v2/runner/runs/{runId}/recovery-evidence"
 	RouteV2RuntimeAdmission    = "/v2/runner/runtime-admissions:seal"
 	RouteJob                   = "/v1/runner/jobs/{jobId}"
 	RouteCancellation          = "/v1/runner/jobs/{jobId}/cancellations"
@@ -57,6 +58,7 @@ type Options struct {
 	Store                   runnerstore.Store
 	V2Store                 runnerstore.V2JobStore
 	BindingStore            runnerstore.V2AuthorityBindingStore
+	RecoveryStore           runnerstore.RecoveryEvidenceStore
 	AdmissionStore          runnerstore.V2RuntimeAdmissionStore
 	SchemaVersion           int64
 	BuildSHA                string
@@ -73,6 +75,7 @@ type Service struct {
 	store                   runnerstore.Store
 	v2Store                 runnerstore.V2JobStore
 	bindingStore            runnerstore.V2AuthorityBindingStore
+	recoveryStore           runnerstore.RecoveryEvidenceStore
 	admissionStore          runnerstore.V2RuntimeAdmissionStore
 	schemaVersion           int64
 	buildSHA                string
@@ -113,6 +116,7 @@ func New(options Options) (*Service, error) {
 	service := &Service{
 		store: options.Store, buildSHA: options.BuildSHA,
 		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore,
+		recoveryStore: options.RecoveryStore,
 		schemaVersion: options.SchemaVersion,
 		workspaceID:   options.WorkspaceID, logger: options.Logger,
 		runAuthorityOrigin: options.RunAuthorityOrigin, runAuthorityCallerID: options.RunAuthorityCallerID,
@@ -143,6 +147,7 @@ func (service *Service) routes() http.Handler {
 	mux.Handle("POST "+RouteAuthorityBindingStage, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingStage)))
 	mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
 	mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
+	mux.Handle("GET "+RouteRecoveryEvidence, service.requireIdentity(http.HandlerFunc(service.handleRecoveryEvidence)))
 	mux.Handle("GET "+RouteBinding, service.requireIdentity(http.HandlerFunc(service.handleBinding)))
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))

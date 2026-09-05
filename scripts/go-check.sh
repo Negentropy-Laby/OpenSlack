@@ -1008,7 +1008,7 @@ detect_capabilities() {
       fail "Workflow Control budget authority runtime profile is missing TestBudgetAuthorityOpenAPIContract"
     local budget_authority_named_test test_path test_function
     for budget_authority_named_test in \
-      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEight' \
+      'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughNine' \
       'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
@@ -1113,6 +1113,11 @@ detect_capabilities() {
     for workflow_runner_v2_runtime_evidence in \
       migrations/000008_deliver_workflow_runner_authority_bindings.up.sql \
       migrations/000008_deliver_workflow_runner_authority_bindings.down.sql \
+      migrations/000009_index_workflow_runner_recovery_evidence.up.sql \
+      migrations/000009_index_workflow_runner_recovery_evidence.down.sql \
+      internal/runnerstore/postgres/recovery_evidence.go \
+      internal/runnerstore/postgres/recovery_evidence_integration_test.go \
+      internal/runnerapp/recovery_evidence.go \
       internal/runnerstore/v2_binding.go \
       internal/runnerstore/postgres/v2_binding.go \
       internal/runnerstore/postgres/gs9f2_runtime_integration_test.go \
@@ -2277,6 +2282,12 @@ run_workflow_runner_v2_runtime_delivery() {
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-v2-runtime-delivery-migration "${network}" "${database_name}" "${resource_owner}" \
     ./internal/runnerstore/postgres TestGS9F2AuthorityBindingMigrationGuards 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
+  log "qualifying Workflow Control schema-9 read-only recovery evidence and upgrade preservation"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-recovery-evidence "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe 1 \
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
 
   log "qualifying Workflow Control GS9-F2b worker/control lifecycle composition"

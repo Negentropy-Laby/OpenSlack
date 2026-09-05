@@ -25,6 +25,7 @@ import type { WorkflowRunnerV2AuthoritySourceResolver } from './workflow-runner-
 
 export type WorkflowRunnerDurableAuthorityPointRead = (
   stage: WorkflowRunnerAuthorityBindingStage,
+  signal?: AbortSignal,
 ) => Promise<WorkflowRunnerAuthoritySourceProbe>;
 
 export interface WorkflowRunnerDurableAuthorityMutationPort {
@@ -32,6 +33,7 @@ export interface WorkflowRunnerDurableAuthorityMutationPort {
   commit(
     stage: WorkflowRunnerAuthorityBindingStage,
     stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerAuthorityEvidence>;
 }
 
@@ -48,19 +50,20 @@ function createCommittedAuthorityAdapter(
   port: WorkflowRunnerDurableAuthorityMutationPort,
 ): WorkflowRunnerAuthoritySourceAdapter {
   return Object.freeze({
-    async probe(stage: WorkflowRunnerAuthorityBindingStage) {
+    async probe(stage: WorkflowRunnerAuthorityBindingStage, signal?: AbortSignal) {
       if (stage.operation !== operation) throw new Error('Authority source operation drifted.');
-      const result = await port.pointRead(stage);
+      const result = await port.pointRead(stage, signal);
       return result.state === 'committed'
-        ? { state: 'committed' as const, evidence: exactEvidence(operation, result.evidence) }
+        ? { ...result, evidence: exactEvidence(operation, result.evidence) }
         : result;
     },
     async commit(
       stage: WorkflowRunnerAuthorityBindingStage,
       stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+      signal?: AbortSignal,
     ) {
       if (stage.operation !== operation) throw new Error('Authority source operation drifted.');
-      return exactEvidence(operation, await port.commit(stage, stageReceipt));
+      return exactEvidence(operation, await port.commit(stage, stageReceipt, signal));
     },
   });
 }
@@ -91,6 +94,7 @@ export interface WorkflowRunnerBudgetE2Port {
   pointRead(
     stage: WorkflowRunnerAuthorityBindingStage,
     resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+    signal?: AbortSignal,
   ): Promise<
     | { readonly state: 'not_committed' }
     | { readonly state: 'unknown'; readonly reason: string }
@@ -102,6 +106,7 @@ export interface WorkflowRunnerBudgetE2Port {
   mutate(
     stage: WorkflowRunnerAuthorityBindingStage,
     resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+    signal?: AbortSignal,
   ): Promise<WorkflowRunnerBudgetSourceResult | undefined>;
 }
 
@@ -133,8 +138,9 @@ export function createWorkflowRunnerBudgetSourceAdapter(options: {
     async probePostResolution(
       stage: WorkflowRunnerAuthorityBindingStage,
       resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+      signal?: AbortSignal,
     ) {
-      const result = await options.e2.pointRead(stage, resolutionReceipt);
+      const result = await options.e2.pointRead(stage, resolutionReceipt, signal);
       if (result.state !== 'committed') return result;
       if (options.operation === 'budget_settle' && result.budgetSourceResult !== undefined) {
         throw new Error('Budget settlement cannot expose a reserve-only source result.');
@@ -156,8 +162,9 @@ export function createWorkflowRunnerBudgetSourceAdapter(options: {
     async commitPostResolution(
       stage: WorkflowRunnerAuthorityBindingStage,
       resolutionReceipt: WorkflowRunnerAuthorityResolutionReceipt,
+      signal?: AbortSignal,
     ) {
-      const result = await options.e2.mutate(stage, resolutionReceipt);
+      const result = await options.e2.mutate(stage, resolutionReceipt, signal);
       if (options.operation === 'budget_settle') {
         if (result !== undefined) {
           throw new Error('Budget settlement cannot expose a reserve-only source result.');
