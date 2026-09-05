@@ -224,7 +224,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliveryHTTPQualificationTest": {
 			Path:   "services/workflow-control/cmd/runner-server/gs9f2_qualification_test.go",
-			SHA256: "3cbe1be0d1a4c6e2a98fd55a831656065fc87472a3a65ea431bd8a259938504b",
+			SHA256: "a2b7af31a242ca8493f2b3b4206376d675d8b4e672980e6250c23d861d68a33f",
 		},
 		"runnerV2AuthorityBindingDomainSource": {
 			Path:   "services/workflow-control/internal/runnerstore/v2_binding.go",

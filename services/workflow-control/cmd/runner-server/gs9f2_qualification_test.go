@@ -19,6 +19,7 @@ import (
 	runnerpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
 func TestGS9F2Qualification(t *testing.T) {
@@ -103,7 +104,7 @@ func qualifyGS9F2CheckpointHTTP(t *testing.T, repository *runnerpostgres.Reposit
 		Kind: authoritycontract.KindHello, WorkspaceID: lease.WorkspaceID, EventID: "hello-gs9f2-http",
 		CorrelationID: lease.CorrelationID, SentAt: runnerstore.CanonicalTimestamp(time.Now().UTC()), Payload: map[string]any{
 			"runtimeName": "node", "runtimeVersion": "22.14.0", "runnerBuildHash": strings.Repeat("e", 64),
-			"supportedProtocolVersions": []any{authoritycontract.ProtocolVersion},
+			"supportedProtocolVersions": []any{runnerprotocol.ProtocolVersion, authoritycontract.ProtocolVersion},
 			"capabilities":              []any{"cancel_ack", "effect_receipts", "lease_heartbeat"}, "maxConcurrentJobs": int64(1),
 		}}
 	preparedHello := gs9f2HTTPPrepareMessage(t, hello)
