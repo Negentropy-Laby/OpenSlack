@@ -1009,7 +1009,7 @@ detect_capabilities() {
     local budget_authority_named_test test_path test_function
     for budget_authority_named_test in \
       'cmd/budget-authority-server/main_test.go|TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughNine' \
-      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationEightWithoutRaisingExistingMinimums' \
+      'internal/databaseready/databaseready_test.go|TestSchemaProfilesAcceptMigrationNineAndRecoveryRuntimeMinimum' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityRejectsNonCanonicalQualificationSeed' \
       'internal/config/budget_authority_test.go|TestBudgetAuthorityDisabledDoesNotRetainDatabaseOrIdentityBindings' \
       'internal/budgetapp/server_test.go|TestBudgetServiceDefaultsToHealthOnlyWithoutMetrics' \
@@ -1126,6 +1126,9 @@ detect_capabilities() {
         fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_evidence}"
     done
     local workflow_runner_v2_runtime_test
+    grep -Eq '^func[[:space:]]+TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe\(' \
+      "${module_dir}/internal/runnerstore/postgres/recovery_evidence_integration_test.go" ||
+      fail "Workflow Control recovery evidence profile is missing the scoped upgrade test"
     for workflow_runner_v2_runtime_test in \
       TestGS9F2AuthorityBindingRuntimeDelivery \
       TestGS9F2AuthorityBindingRestartRecovery \

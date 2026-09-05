@@ -250,7 +250,7 @@
     },
     "workflowGoCheckSource": {
       "path": "scripts/go-check.sh",
-      "sha256": "f5c5213725f9c384c2e8bb393832ac9e192c978994a1b123d8df0e650069613b"
+      "sha256": "c6275a7611638cc36e95c7a88686a9684a695583df0afb23d8f6ef70f0f74672"
     },
     "workflowHostedGateSource": {
       "path": ".github/workflows/notification-delivery-service.yml",
@@ -447,6 +447,10 @@
     "workflowRecoveryTestFixtures": {
       "path": "packages/workflows/src/__tests__/workflow-recovery-fixtures.ts",
       "sha256": "972d5747739c2603bfc262c4353d32facd3d22b763ed35c080a51f094b882438"
+    },
+    "goCheckVerifierRegression": {
+      "path": "packages/workspace/src/__tests__/go-check-script.test.ts",
+      "sha256": "f3175a31658d747c21ebed80189c8a5b299297e96aaa4f7fa936b08df4f6fe35"
     }
   },
   "contractInputs": {
