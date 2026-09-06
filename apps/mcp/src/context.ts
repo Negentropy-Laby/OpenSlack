@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { workflowReadMetadata } from './workflow-read-metadata.js';
 import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
@@ -1084,6 +1085,7 @@ function workflowProgressDto(value: unknown): Record<string, unknown> {
   const budget = (progress.budget ?? {}) as Record<string, unknown>;
   const phases = Array.isArray(progress.phases) ? progress.phases : [];
   return {
+    ...workflowReadMetadata(progress),
     runId: safeText(progress.runId, 160),
     workflowName: safeText(progress.workflowName, 160),
     mode: safeText(progress.mode, 40),

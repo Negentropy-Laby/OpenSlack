@@ -1,5 +1,8 @@
 import type { WorkflowArgumentsEnvelope } from './internal/workflow-arguments.js';
-import type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
+import type {
+  WorkflowRunReadDiagnostic,
+  WorkflowRunReadProvenance,
+} from './workflow-run-read-errors.js';
 
 // ── JSON Schema type (lightweight inline to avoid external dep) ────────────────
 
@@ -122,6 +125,8 @@ export interface PendingApproval {
 }
 
 export interface RunStatus {
+  provenance?: WorkflowRunReadProvenance;
+  degraded?: boolean;
   /** Read surface provenance; local snapshots never authorize execution. */
   evidenceSource?: 'typescript-historical' | 'go-recovery-projection';
   readDiagnostics?: readonly WorkflowRunReadDiagnostic[];
@@ -602,6 +607,9 @@ export interface WorkflowPhaseProgress {
 }
 
 export interface WorkflowRunProgress {
+  provenance?: WorkflowRunReadProvenance;
+  degraded?: boolean;
+  readDiagnostics?: readonly WorkflowRunReadDiagnostic[];
   runId: string;
   workflowName: string;
   mode: ExecutionMode | 'not-recorded';
@@ -637,6 +645,9 @@ export interface WorkflowAgentControlResult {
 }
 
 export interface WorkflowRunScriptSource {
+  provenance?: WorkflowRunReadProvenance;
+  degraded?: boolean;
+  readDiagnostics?: readonly WorkflowRunReadDiagnostic[];
   runId: string;
   workflowName: string;
   sourcePath: string;

@@ -1228,6 +1228,15 @@ does not fall back to direct in-process execution.
 
 ### Workflow Discovery
 
+`save-run` can recover the associated script from historical metadata containing a valid workflow
+name. A recorded run ID must match the requested run; unrelated old fields are ignored. The command
+uses normal workflow discovery and prints evidence provenance and diagnostics. Conflicting copies
+require `--evidence-source ts-local` or `--evidence-source go`. Original run files remain unchanged.
+
+List, show, and progress report unsafe paths, permission failures, corrupt or oversized local files,
+and route conflicts using stable codes. Local metadata/status reads are bounded at 2 MiB and never
+truncate evidence. Comparison copies remain historical evidence; use `runs inspect` to reconcile them.
+
 Workflows are discovered from:
 
 1. `.openslack/workflows/*.ts` -- project-local TypeScript workflows

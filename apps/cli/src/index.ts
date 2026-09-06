@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
+import { WorkflowRunReadError, renderWorkflowRunReadError } from '@openslack/workflows';
 import { workspaceCommands } from './commands/workspace.js';
 import { selfCommands } from './commands/self.js';
 import { agentCommands } from './commands/agent.js';
@@ -115,7 +116,13 @@ if (enforceStartupStateCompatibility(process.argv)) {
       process.exitCode = error.exitCode;
       return;
     }
-    console.error(error instanceof Error ? error.message : 'Command failed.');
+    console.error(
+      error instanceof WorkflowRunReadError
+        ? renderWorkflowRunReadError(error)
+        : error instanceof Error
+          ? error.message
+          : 'Command failed.',
+    );
     process.exitCode = 1;
   });
 }

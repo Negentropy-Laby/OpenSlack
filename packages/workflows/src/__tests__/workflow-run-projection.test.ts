@@ -27,7 +27,7 @@ import { saveWorkflowRunScript } from '../workflow-save.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>();
-  return { ...actual, readdir: vi.fn(actual.readdir) };
+  return { ...actual, readdir: vi.fn(actual.readdir), lstat: vi.fn(actual.lstat) };
 });
 
 const roots: string[] = [];
@@ -149,7 +149,10 @@ describe('workflow run evidence selection', () => {
     const { root } = await fixture();
     expect(await locateWorkflowRunProjection(root, 'run.missing')).toEqual({
       state: 'missing',
-      diagnostics: [],
+      primaryCode: 'WORKFLOW_RUN_PROJECTION_MISSING',
+      diagnostics: [
+        { scope: 'run', runId: 'run.missing', code: 'WORKFLOW_RUN_PROJECTION_MISSING' },
+      ],
     });
     for (const id of ['_x', '../x', 'x/y', 'x\\y', 'a'.repeat(257)]) {
       expect(await locateWorkflowRunProjection(root, id)).toMatchObject({ state: 'invalid_id' });
@@ -187,9 +190,15 @@ describe('workflow run evidence selection', () => {
   it('preserves a healthy backend and classifies a directory permission failure', async () => {
     const { root, seed } = await fixture();
     await seed('go', 'run.healthy');
-    vi.mocked(readdir).mockRejectedValueOnce(
-      Object.assign(new Error('private path'), { code: 'EACCES' }),
-    );
+    await mkdir(join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'), {
+      recursive: true,
+    });
+    const actual = await vi.importActual<typeof fs>('node:fs/promises');
+    vi.mocked(readdir).mockImplementation(((path: string, options: unknown) => {
+      if (String(path) === join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'))
+        throw Object.assign(new Error('private path'), { code: 'EACCES' });
+      return actual.readdir(path, options as never);
+    }) as typeof readdir);
     const result = await listWorkflowRuns({ rootDir: root });
     expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
     expect(result.diagnostics).toContainEqual({
@@ -213,12 +222,20 @@ describe('workflow run evidence selection', () => {
       join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'),
       'not a directory',
     );
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockResolvedValue({
+      receipt: { route: { backend: 'go' } },
+    } as never);
     const result = await listWorkflowRuns({ rootDir: root });
     expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         { scope: 'backend', backend: 'ts-local', code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' },
-        { scope: 'run', runId: 'run.corrupt', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+        {
+          scope: 'run',
+          runId: 'run.corrupt',
+          backend: 'go',
+          code: 'WORKFLOW_RUN_EVIDENCE_INVALID',
+        },
       ]),
     );
     expect(

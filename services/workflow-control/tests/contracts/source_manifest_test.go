@@ -136,13 +136,33 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 87 || len(manifest.ContractInputs) != 15 {
+		len(manifest.SourceInputs) != 92 || len(manifest.ContractInputs) != 15 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
+		"workflowCliReadBoundaryTest": {
+			Path:   "apps/cli/src/__tests__/workflow-read-boundary.test.ts",
+			SHA256: "16e2a69a140596ab811b0e085f912cdd250c2a24347533d00591ead1eaf8fae4",
+		},
+		"workflowMcpReadErrorsTest": {
+			Path:   "apps/mcp/src/__tests__/workflow-read-errors.test.ts",
+			SHA256: "ed291287fa71356cc99862b1a9a3f2b0d1619b651f70ab6325f372c52737835f",
+		},
+		"workflowMcpReadMetadataSource": {
+			Path:   "apps/mcp/src/workflow-read-metadata.ts",
+			SHA256: "6fc154ad4a9491bfdac4ad95c039cf196488856e9a4f28ee2c328832a6404dc7",
+		},
+		"workflowReadCorrectnessTest": {
+			Path:   "packages/workflows/src/__tests__/workflow-read-correctness.test.ts",
+			SHA256: "eeaed41f2ced64e0e3791024158c3f755b3329161769f1d8eb8ec94f17aebd65",
+		},
+		"workflowEvidenceFileSource": {
+			Path:   "packages/workflows/src/internal/workflow-evidence-file.ts",
+			SHA256: "41953bcbe3ae32e49c9f07796a232d688cf9d5ed7ab7cab32bf393185008a122",
+		},
 		"workflowRunReadErrorsSource": {
 			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
-			SHA256: "6359d7030c3ec0432604f4b14d0797a69e21cfca031da09597c9c24733868e0a",
+			SHA256: "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4",
 		},
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",
@@ -294,7 +314,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunStoreSource": {
 			Path:   "packages/workflows/src/run-store.ts",
-			SHA256: "5edd6141de26d9f56da3343a75d031cb15770feec30968b04b0d9888b586e4ea",
+			SHA256: "20f5867459754514770b8f296acc815bd7e38b907c2ce6fd4401c777012008be",
 		},
 		"workflowRunStoreRecoveryAccessSource": {
 			Path:   "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
@@ -318,7 +338,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "26c18119de3b4335cf0f220fe5e9921a098bb70e85d5aef1e956fe13b4414c47",
+			SHA256: "122ef016bd922b08d9e20c993a6d940fc777a64444db79947c465e75d802548f",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
@@ -334,7 +354,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionSource": {
 			Path:   "packages/workflows/src/workflow-run-projection.ts",
-			SHA256: "789c930318759d9e24c0b7d2c3d3b2ad21366a6c5a5d50fc6620232b7a7646a3",
+			SHA256: "5a47639cdf3e198de7c45d5cba6b951751ecee9230462f5d8668906ea4901bfa",
 		},
 		"workflowRunReadOnlyInspectionSource": {
 			Path:   "packages/workflows/src/workflow-run-readonly-inspection.ts",
@@ -354,7 +374,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
-			SHA256: "fe1ccd995fcd2cfd2afc98f960b2423d36db1baa1bb94a1c41d5ca44b95db5e6",
+			SHA256: "7e2dc91485efd595b3f040eda14e9a25f228dd174f1b1f5db5fe4d2066f0133b",
 		},
 		"workflowTUIExecutorsSource": {
 			Path:   "apps/cli/src/commands/tui-executors.ts",
@@ -478,7 +498,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionReadTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-			SHA256: "5e4122028951bb7d5436e7b93c4bd592faf95bd16751d1eb2440a274cc769712",
+			SHA256: "6b50f649a27ccc6b42485ea6a4d48a655237eb90c1ac8bfa97cd8110fb009377",
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",

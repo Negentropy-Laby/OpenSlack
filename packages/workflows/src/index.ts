@@ -579,10 +579,20 @@ export {
 export type { ListWorkflowRunsOptions } from './workflow-runs.js';
 export {
   WorkflowRunReadError,
+  WORKFLOW_RUN_READ_POLICIES,
+  primaryWorkflowRunReadCode,
+  isWorkflowRunReadProvenance,
+  isWorkflowRunReadDiagnostic,
+  renderWorkflowRunReadError,
+  asWorkflowRunReadError,
   renderWorkflowRunReadDiagnostic,
   workflowRunReadDiagnostic,
 } from './workflow-run-read-errors.js';
-export type { WorkflowRunReadDiagnostic, WorkflowRunReadCode } from './workflow-run-read-errors.js';
+export type {
+  WorkflowRunReadDiagnostic,
+  WorkflowRunReadCode,
+  WorkflowRunReadProvenance,
+} from './workflow-run-read-errors.js';
 
 export { getWorkflowRunProgress, renderWorkflowRunProgress } from './workflow-progress.js';
 export type { GetWorkflowRunProgressOptions } from './workflow-progress.js';

@@ -2,12 +2,16 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { findWorkflow, loadWorkflow } from './loader.js';
-import { locateWorkflowRunProjection, openWorkflowRunReadOnly } from './workflow-run-projection.js';
+import { locateWorkflowRunProjection } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
-  workflowRunReadDiagnostic,
+  asWorkflowRunReadError,
   type WorkflowRunProjectionBackend,
 } from './workflow-run-read-errors.js';
+import {
+  readWorkflowEvidenceText,
+  WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+} from './internal/workflow-evidence-file.js';
 import type { WorkflowRunScriptSource } from './types.js';
 
 export interface SaveWorkflowOptions {
@@ -71,25 +75,32 @@ export async function saveWorkflowRunScript(
     evidenceSource: options.evidenceSource,
   });
   if (location.state !== 'found')
-    throw new WorkflowRunReadError(
-      location.diagnostics.length
-        ? location.diagnostics
-        : [{ scope: 'run', runId, code: 'WORKFLOW_RUN_PROJECTION_MISSING' }],
-    );
-  let meta;
+    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
+  const context = { scope: 'run' as const, runId, backend: location.backend };
+  let meta: { workflowName: string };
   try {
-    meta = await openWorkflowRunReadOnly(rootDir, location.backend).loadMeta(runId);
+    const value: unknown = JSON.parse(
+      await readWorkflowEvidenceText(
+        join(location.runDir, 'meta.json'),
+        WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+        context,
+      ),
+    );
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      !('workflowName' in value) ||
+      typeof value.workflowName !== 'string' ||
+      !/^[a-z][a-z0-9-]*$/.test(value.workflowName) ||
+      Buffer.byteLength(value.workflowName, 'utf8') > 512 ||
+      ('runId' in value && value.runId !== runId)
+    )
+      throw new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' }]);
+    meta = { workflowName: value.workflowName };
   } catch (error) {
-    if (error instanceof WorkflowRunReadError) throw error;
-    throw new WorkflowRunReadError([
-      workflowRunReadDiagnostic(error, { scope: 'run', runId, backend: location.backend }),
-    ]);
+    throw asWorkflowRunReadError(error, context);
   }
-  if (!meta)
-    throw new WorkflowRunReadError([
-      { scope: 'run', runId, code: 'WORKFLOW_RUN_PROJECTION_MISSING' },
-    ]);
-  if (!meta.workflowName) throw new Error(`Workflow run ${runId} does not record workflowName`);
   const found = await findWorkflow(meta.workflowName, rootDir);
   if (!found) throw new Error(`Workflow source not found for run ${runId}: ${meta.workflowName}`);
   const result = await saveWorkflow(meta.workflowName, {
@@ -100,6 +111,9 @@ export async function saveWorkflowRunScript(
   return {
     ...result,
     sourceRunId: runId,
+    provenance: location.provenance,
+    degraded: location.degraded,
+    readDiagnostics: location.diagnostics,
     runId,
     workflowName: result.workflowName,
     sourcePath: found.path,

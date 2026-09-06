@@ -1,4 +1,5 @@
 import type { OpenSlackReadToolName } from '@openslack/qoder-adapter';
+import { workflowReadMetadata } from './workflow-read-metadata.js';
 
 type Row = Record<string, unknown>;
 
@@ -178,6 +179,7 @@ function workflow(value: unknown): Row {
   const item = row(value);
   const budget = row(item.budget);
   return {
+    ...workflowReadMetadata(item),
     runId: text(item.runId),
     workflowName: text(item.workflowName),
     mode: text(item.mode),

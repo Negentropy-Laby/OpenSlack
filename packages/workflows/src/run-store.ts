@@ -35,6 +35,11 @@ import {
 } from './workflow-control-shadow.js';
 import { enqueueByKey } from './internal/keyed-serial-queue.js';
 import {
+  readWorkflowEvidenceText,
+  WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+} from './internal/workflow-evidence-file.js';
+import type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
+import {
   canonicalTimestamp,
   closedDataRecord,
   finiteNumber,
@@ -272,7 +277,10 @@ export interface RunStoreFs {
   /** Write a file with UTF-8 text content. */
   writeFile(path: string, content: string): Promise<void>;
   /** Read a file as UTF-8 text. Returns null if file does not exist. */
-  readFile(path: string): Promise<string | null>;
+  readFile(
+    path: string,
+    options?: { maxBytes: number; context: Omit<WorkflowRunReadDiagnostic, 'code'> },
+  ): Promise<string | null>;
   /** Hardened owner-only/no-follow bounded read for checkpoint authority files. */
   readOwnerOnlyFile?(path: string, maxBytes: number): Promise<string | null>;
   /** Append a line to a file (creates if missing). */
@@ -730,21 +738,34 @@ export class RunStore {
   }
 
   private async readStatus(runId: string): Promise<RunStatusFile | null> {
-    const raw = await this.fs.readFile(this.statusPath(runId));
+    const raw = await this.fs.readFile(this.statusPath(runId), {
+      maxBytes: WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+      context: { scope: 'run', runId },
+    });
     if (raw === null) return null;
     try {
-      return validateRunStatus(parseBoundedJson(raw, `Workflow run status for ${runId}`), runId);
-    } catch {
-      throw new WorkflowRunReadError([
-        {
-          scope: 'run',
-          runId,
-          code:
-            Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes
-              ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
-              : 'WORKFLOW_RUN_EVIDENCE_INVALID',
-        },
-      ]);
+      return validateRunStatus(
+        parseBoundedJson(
+          raw,
+          `Workflow run status for ${runId}`,
+          WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+        ),
+        runId,
+      );
+    } catch (cause) {
+      throw new WorkflowRunReadError(
+        [
+          {
+            scope: 'run',
+            runId,
+            code:
+              Buffer.byteLength(raw, 'utf8') > WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES
+                ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
+                : 'WORKFLOW_RUN_EVIDENCE_INVALID',
+          },
+        ],
+        { cause },
+      );
     }
   }
 
@@ -1620,21 +1641,34 @@ export class RunStore {
    * Load run metadata. Returns null if not found.
    */
   async loadMeta(runId: string): Promise<RunMeta | null> {
-    const raw = await this.fs.readFile(this.metaPath(runId));
+    const raw = await this.fs.readFile(this.metaPath(runId), {
+      maxBytes: WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+      context: { scope: 'run', runId },
+    });
     if (raw === null) return null;
     try {
-      return validateRunMeta(parseBoundedJson(raw, `Workflow run metadata for ${runId}`), runId);
-    } catch {
-      throw new WorkflowRunReadError([
-        {
-          scope: 'run',
-          runId,
-          code:
-            Buffer.byteLength(raw, 'utf8') > WORKFLOW_CONTROL_CONTRACT_LIMITS.maxObservationBytes
-              ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
-              : 'WORKFLOW_RUN_EVIDENCE_INVALID',
-        },
-      ]);
+      return validateRunMeta(
+        parseBoundedJson(
+          raw,
+          `Workflow run metadata for ${runId}`,
+          WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+        ),
+        runId,
+      );
+    } catch (cause) {
+      throw new WorkflowRunReadError(
+        [
+          {
+            scope: 'run',
+            runId,
+            code:
+              Buffer.byteLength(raw, 'utf8') > WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES
+                ? 'WORKFLOW_RUN_EVIDENCE_TOO_LARGE'
+                : 'WORKFLOW_RUN_EVIDENCE_INVALID',
+          },
+        ],
+        { cause },
+      );
     }
   }
 
@@ -1842,9 +1876,11 @@ function createNodeFs(): RunStoreFs {
         });
       }
     },
-    async readFile(path: string) {
+    async readFile(path, options) {
       try {
-        return await fsReadFile(resolve(path), 'utf-8');
+        return options
+          ? await readWorkflowEvidenceText(resolve(path), options.maxBytes, options.context)
+          : await fsReadFile(resolve(path), 'utf-8');
       } catch (err: unknown) {
         if (
           err &&
@@ -1937,7 +1973,7 @@ function createReadOnlyRunStoreFs(delegate: RunStoreFs): RunStoreFs {
   return {
     mkdir: retired,
     writeFile: retired,
-    readFile: (path) => delegate.readFile(path),
+    readFile: (path, options) => delegate.readFile(path, options),
     readOwnerOnlyFile: delegate.readOwnerOnlyFile
       ? (path, maxBytes) => delegate.readOwnerOnlyFile!(path, maxBytes)
       : undefined,

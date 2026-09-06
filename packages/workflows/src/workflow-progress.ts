@@ -1,13 +1,4 @@
-import {
-  closeSync,
-  constants,
-  existsSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  opendirSync,
-  readSync,
-} from 'node:fs';
+import { existsSync, lstatSync, opendirSync } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
@@ -16,11 +7,15 @@ import {
 } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
+  asWorkflowRunReadError,
+  type WorkflowRunReadDiagnostic,
   renderWorkflowRunReadDiagnostic,
   workflowRunReadDiagnostic,
-  type WorkflowRunReadCode,
 } from './workflow-run-read-errors.js';
-import { TextDecoder } from 'node:util';
+import {
+  readWorkflowEvidenceText,
+  WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+} from './internal/workflow-evidence-file.js';
 import {
   readRunStateSnapshot,
   type AgentRunEvent,
@@ -85,7 +80,7 @@ interface ReadResult<T> {
   value: T | null;
   present: boolean;
   warning?: string;
-  failureCode?: WorkflowRunReadCode;
+  failure?: WorkflowRunReadError;
 }
 
 export interface GetWorkflowRunProgressOptions {
@@ -95,7 +90,7 @@ export interface GetWorkflowRunProgressOptions {
   strictRead?: boolean;
 }
 
-const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_JSON_BYTES = WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES;
 const MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
 const MAX_JSONL_LINES = 10_000;
 const MAX_AGENT_RESULT_FILES = 256;
@@ -151,10 +146,23 @@ const AGENT_FAILURE_CODES = new Set([
 const AGENT_BRIDGE_MODES = new Set(['local', 'external-command', 'process', 'fake']);
 const AGENT_ISOLATION_MODES = new Set(['none', 'worktree']);
 
-function invalidLocalEvidence(): never {
+type ReadContext = Omit<WorkflowRunReadDiagnostic, 'code'>;
+
+function invalidLocalEvidence(context: ReadContext): never {
   throw new WorkflowRunReadError([
-    { scope: 'workspace', code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' },
+    { ...context, code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' },
   ]);
+}
+
+function recordReadFailure(
+  error: unknown,
+  context: ReadContext,
+  strictRead: boolean,
+  diagnostics: WorkflowRunReadDiagnostic[],
+): void {
+  const failure = asWorkflowRunReadError(error, context);
+  if (strictRead) throw failure;
+  diagnostics.push(...failure.diagnostics);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -341,50 +349,14 @@ function validateAgentRunEvent(value: unknown): value is AgentRunEvent {
   );
 }
 
-function readBoundedText(path: string, maxBytes: number): string {
-  const entry = lstatSync(path, { bigint: true });
-  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('not a regular file');
-  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  try {
-    const before = fstatSync(descriptor, { bigint: true });
-    if (
-      before.dev !== entry.dev ||
-      before.ino !== entry.ino ||
-      before.mode !== entry.mode ||
-      before.size > BigInt(maxBytes)
-    ) {
-      throw new Error('file identity changed before read');
-    }
-    const buffer = Buffer.alloc(maxBytes + 1);
-    let bytesRead = 0;
-    while (bytesRead < buffer.length) {
-      const count = readSync(descriptor, buffer, bytesRead, buffer.length - bytesRead, null);
-      if (count === 0) break;
-      bytesRead += count;
-    }
-    if (bytesRead > maxBytes) throw new Error('file exceeds read bound');
-    const after = fstatSync(descriptor, { bigint: true });
-    if (
-      before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs ||
-      before.ctimeNs !== after.ctimeNs ||
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.mode !== after.mode ||
-      BigInt(bytesRead) !== after.size
-    ) {
-      throw new Error('file changed during read');
-    }
-    return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
-  } finally {
-    closeSync(descriptor);
-  }
-}
-
-async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> {
+async function readJson<T>(
+  path: string,
+  label: string,
+  context: Omit<WorkflowRunReadDiagnostic, 'code'> = { scope: 'workspace' },
+): Promise<ReadResult<T>> {
   try {
     return {
-      value: JSON.parse(readBoundedText(path, MAX_JSON_BYTES)) as T | null,
+      value: JSON.parse(await readWorkflowEvidenceText(path, MAX_JSON_BYTES, context)) as T | null,
       present: true,
     };
   } catch (err) {
@@ -399,7 +371,7 @@ async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> 
       value: null,
       present: true,
       warning: `${label} could not be parsed`,
-      failureCode: workflowRunReadDiagnostic(err, { scope: 'workspace' }).code,
+      failure: asWorkflowRunReadError(err, context),
     };
   }
 }
@@ -407,20 +379,34 @@ async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> 
 async function readJsonl<T>(
   path: string,
   label: string,
-): Promise<{ values: T[]; warning?: string }> {
+  context: ReadContext,
+): Promise<{ values: T[]; warning?: string; failure?: WorkflowRunReadError }> {
   try {
-    const raw = readBoundedText(path, MAX_JSON_BYTES);
+    const raw = await readWorkflowEvidenceText(path, MAX_JSON_BYTES, context);
     const values: T[] = [];
     const lines = raw.split('\n');
     if (lines.length > MAX_JSONL_LINES) {
-      return { values: [], warning: `${label} exceeds the line bound` };
+      return {
+        values: [],
+        warning: `${label} exceeds the line bound`,
+        failure: new WorkflowRunReadError([
+          { ...context, code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' },
+        ]),
+      };
     }
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
         values.push(JSON.parse(line) as T);
-      } catch {
-        return { values, warning: `${label} contains a malformed JSONL line` };
+      } catch (cause) {
+        return {
+          values,
+          warning: `${label} contains a malformed JSONL line`,
+          failure: new WorkflowRunReadError(
+            [{ ...context, code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID' }],
+            { cause },
+          ),
+        };
       }
     }
     return { values };
@@ -430,7 +416,11 @@ async function readJsonl<T>(
         ? (err as NodeJS.ErrnoException).code
         : undefined;
     if (code === 'ENOENT') return { values: [], warning: `${label} not recorded` };
-    return { values: [], warning: `${label} could not be read` };
+    return {
+      values: [],
+      warning: `${label} could not be read`,
+      failure: asWorkflowRunReadError(err, context),
+    };
   }
 }
 
@@ -511,13 +501,15 @@ function toolEvidenceFromTranscript(events: AgentRunEvent[]): WorkflowToolEviden
     });
 }
 
-function readAgentTranscript(
+async function readAgentTranscript(
   state: AgentRunState | null,
   agentRunId: string,
   rootDir: string,
   warnings: string[],
   strictRead: boolean,
-): AgentRunEvent[] {
+  context: ReadContext,
+  readDiagnostics: WorkflowRunReadDiagnostic[],
+): Promise<AgentRunEvent[]> {
   if (!state) return [];
   const transcriptPath = resolve(
     rootDir,
@@ -527,12 +519,12 @@ function readAgentTranscript(
     agentRunId,
     'transcript.jsonl',
   );
-  if (!existsSync(transcriptPath)) return [];
   let raw: string;
   try {
-    raw = readBoundedText(transcriptPath, MAX_TRANSCRIPT_BYTES);
+    raw = await readWorkflowEvidenceText(transcriptPath, MAX_TRANSCRIPT_BYTES, context);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      recordReadFailure(error, context, strictRead, readDiagnostics);
       warnings.push(`agent transcript ${agentRunId} could not be read safely`);
     }
     return [];
@@ -547,10 +539,10 @@ function readAgentTranscript(
     if (!line.trim()) continue;
     try {
       const event = JSON.parse(line) as AgentRunEvent;
-      if (strictRead && !validateAgentRunEvent(event)) invalidLocalEvidence();
+      if (strictRead && !validateAgentRunEvent(event)) invalidLocalEvidence(context);
       events.push(event);
     } catch {
-      if (strictRead) invalidLocalEvidence();
+      if (strictRead) invalidLocalEvidence(context);
       warnings.push(`agent transcript ${agentRunId} contains a malformed JSONL line`);
       return [];
     }
@@ -558,25 +550,36 @@ function readAgentTranscript(
   return events;
 }
 
-function enrichAgent(
+async function enrichAgent(
   agent: WorkflowAgentProgress,
   rootDir: string,
   warnings: string[],
   strictRead: boolean,
-): WorkflowAgentProgress {
+  context: ReadContext,
+  readDiagnostics: WorkflowRunReadDiagnostic[],
+): Promise<WorkflowAgentProgress> {
   if (!agent.agentRunId) return agent;
   let state: AgentRunState | null = null;
   try {
     state = readRunStateSnapshot(agent.agentRunId, rootDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      recordReadFailure(error, context, strictRead, readDiagnostics);
       warnings.push(`agent run state ${agent.agentRunId} could not be read safely`);
     }
     state = null;
   }
   if (!state) return agent;
-  if (strictRead && !validateAgentRunState(state, agent.agentRunId)) invalidLocalEvidence();
-  const transcript = readAgentTranscript(state, agent.agentRunId, rootDir, warnings, strictRead);
+  if (strictRead && !validateAgentRunState(state, agent.agentRunId)) invalidLocalEvidence(context);
+  const transcript = await readAgentTranscript(
+    state,
+    agent.agentRunId,
+    rootDir,
+    warnings,
+    strictRead,
+    context,
+    readDiagnostics,
+  );
   const complete = [...transcript].reverse().find((event) => event.type === 'complete');
   const fail = [...transcript].reverse().find((event) => event.type === 'fail');
   const cancel = [...transcript].reverse().find((event) => event.type === 'cancel');
@@ -609,6 +612,8 @@ async function readAgentResults(
   rootDir: string,
   warnings: string[],
   strictRead: boolean,
+  context: ReadContext,
+  readDiagnostics: WorkflowRunReadDiagnostic[],
 ): Promise<WorkflowAgentProgress[]> {
   const agentDir = join(runDir, 'agents');
   let before: BigIntStats;
@@ -616,18 +621,26 @@ async function readAgentResults(
     before = lstatSync(agentDir, { bigint: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      recordReadFailure(error, context, strictRead, readDiagnostics);
       warnings.push('agent result directory could not be read safely');
     }
     return [];
   }
   if (!before.isDirectory() || before.isSymbolicLink()) {
+    recordReadFailure(
+      new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' }]),
+      context,
+      strictRead,
+      readDiagnostics,
+    );
     warnings.push('agent result directory is not a regular directory');
     return [];
   }
-  const handle = opendirSync(agentDir);
+  let handle: ReturnType<typeof opendirSync> | undefined;
   const agents: WorkflowAgentProgress[] = [];
   let seen = 0;
   try {
+    handle = opendirSync(agentDir);
     for (;;) {
       const entry = handle.readSync();
       if (!entry) break;
@@ -638,20 +651,45 @@ async function readAgentResults(
       }
       if (!entry.name.endsWith('.json')) continue;
       if (!entry.isFile() || entry.isSymbolicLink()) {
+        recordReadFailure(
+          new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' }]),
+          context,
+          strictRead,
+          readDiagnostics,
+        );
         warnings.push(`agent result ${entry.name} is not a regular file`);
         return [];
       }
       const read = await readJson<AgentResult | Record<string, unknown>>(
         join(agentDir, entry.name),
         `agent result ${entry.name}`,
+        context,
       );
+      if (read.failure) {
+        if (strictRead) throw read.failure;
+        readDiagnostics.push(...read.failure.diagnostics);
+      }
       if (read.warning) warnings.push(read.warning);
-      if (strictRead && read.present && !validateAgentResult(read.value)) invalidLocalEvidence();
+      if (strictRead && read.present && !validateAgentResult(read.value))
+        invalidLocalEvidence(context);
       if (!read.value) continue;
-      agents.push(enrichAgent(readEvidence(read.value, entry.name), rootDir, warnings, strictRead));
+      agents.push(
+        await enrichAgent(
+          readEvidence(read.value, entry.name),
+          rootDir,
+          warnings,
+          strictRead,
+          context,
+          readDiagnostics,
+        ),
+      );
     }
+  } catch (error) {
+    recordReadFailure(error, context, strictRead, readDiagnostics);
+    warnings.push('agent results could not be read safely');
+    return [];
   } finally {
-    handle.closeSync();
+    handle?.closeSync();
   }
   const after = lstatSync(agentDir, { bigint: true });
   if (
@@ -661,6 +699,12 @@ async function readAgentResults(
     before.mtimeNs !== after.mtimeNs ||
     before.ctimeNs !== after.ctimeNs
   ) {
+    recordReadFailure(
+      new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_IO_FAILED' }]),
+      context,
+      strictRead,
+      readDiagnostics,
+    );
     warnings.push('agent result directory changed during read');
     return [];
   }
@@ -792,7 +836,8 @@ async function loadWorkflowMeta(
     const { findWorkflow, loadWorkflow } = await import('./loader.js');
     const found = await findWorkflow(workflowName, rootDir);
     if (!found) return null;
-    if (!found.path.startsWith('builtin:')) readBoundedText(found.path, MAX_JSON_BYTES);
+    if (!found.path.startsWith('builtin:'))
+      await readWorkflowEvidenceText(found.path, MAX_JSON_BYTES);
     return (await loadWorkflow(found.path)).meta;
   } catch {
     return null;
@@ -806,20 +851,12 @@ export async function getWorkflowRunProgress(
   const rootDir = options.rootDir ?? process.cwd();
   const location = await locateWorkflowRunProjection(rootDir, runId);
   if (location.state === 'missing') return null;
-  if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics);
+  if (location.state !== 'found')
+    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
   try {
     return await readLocatedProgress(runId, rootDir, location, options);
   } catch (error) {
-    throw new WorkflowRunReadError(
-      error instanceof WorkflowRunReadError
-        ? error.diagnostics.map((diagnostic) => ({
-            ...diagnostic,
-            scope: 'run',
-            runId,
-            backend: location.backend,
-          }))
-        : [workflowRunReadDiagnostic(error, { scope: 'run', runId, backend: location.backend })],
-    );
+    throw asWorkflowRunReadError(error, { scope: 'run', runId, backend: location.backend });
   }
 }
 
@@ -831,16 +868,32 @@ async function readLocatedProgress(
 ): Promise<WorkflowRunProgress | null> {
   const { runDir, backend } = location;
   const warnings: string[] = [];
-  const metaRead = await readJson<RunMetaFile>(join(runDir, 'meta.json'), 'run meta');
-  const statusRead = await readJson<RunStatusFileLike>(join(runDir, 'status.json'), 'run status');
+  const context = { scope: 'run' as const, runId, backend };
+  const readDiagnostics = [...location.diagnostics];
+  const metaRead = await readJson<RunMetaFile>(join(runDir, 'meta.json'), 'run meta', context);
+  const statusRead = await readJson<RunStatusFileLike>(
+    join(runDir, 'status.json'),
+    'run status',
+    context,
+  );
   if (metaRead.warning) warnings.push(metaRead.warning);
   if (statusRead.warning) warnings.push(statusRead.warning);
   if (!metaRead.present && !statusRead.present) return null;
+  for (const value of [metaRead.value, statusRead.value]) {
+    if (isRecord(value) && Object.hasOwn(value, 'runId') && value.runId !== runId)
+      throw new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' }]);
+  }
+  const failures = [metaRead.failure, statusRead.failure].filter(
+    (error): error is WorkflowRunReadError => Boolean(error),
+  );
+  readDiagnostics.push(...failures.flatMap((error) => error.diagnostics));
+  if (failures.length && (options.strictRead || (!metaRead.value && !statusRead.value)))
+    throw new WorkflowRunReadError(readDiagnostics, { cause: failures[0] });
   if (
     options.strictRead &&
     (!validateRunMeta(metaRead.value, runId) || !validateRunStatus(statusRead.value, runId))
   ) {
-    invalidLocalEvidence();
+    invalidLocalEvidence(context);
   }
   if (!metaRead.value && !statusRead.value)
     throw new WorkflowRunReadError([
@@ -848,14 +901,19 @@ async function readLocatedProgress(
         scope: 'run',
         runId,
         backend,
-        code: metaRead.failureCode ?? statusRead.failureCode ?? 'WORKFLOW_RUN_EVIDENCE_INVALID',
+        code: 'WORKFLOW_RUN_EVIDENCE_INVALID',
       },
     ]);
 
   const pendingRead = await readJson<PendingApproval[]>(
     join(runDir, 'pending-approvals.json'),
     'pending approvals',
+    context,
   );
+  if (pendingRead.failure) {
+    if (options.strictRead) throw pendingRead.failure;
+    readDiagnostics.push(...pendingRead.failure.diagnostics);
+  }
   if (pendingRead.warning && pendingRead.warning !== 'pending approvals not recorded')
     warnings.push(pendingRead.warning);
   if (
@@ -870,15 +928,31 @@ async function readLocatedProgress(
     pendingRead.present &&
     (!Array.isArray(pendingRead.value) || !pendingRead.value.every(validatePendingApproval))
   ) {
-    invalidLocalEvidence();
+    invalidLocalEvidence(context);
   }
-  const logRead = await readJsonl<ProgressLogEntry>(join(runDir, 'log.jsonl'), 'workflow log');
+  const logRead = await readJsonl<ProgressLogEntry>(
+    join(runDir, 'log.jsonl'),
+    'workflow log',
+    context,
+  );
+  if (logRead.failure) {
+    if (options.strictRead) throw logRead.failure;
+    readDiagnostics.push(...logRead.failure.diagnostics);
+  }
   if (logRead.warning && logRead.warning !== 'workflow log not recorded')
     warnings.push(logRead.warning);
   if (options.strictRead && !logRead.values.every((entry) => validateLogEntry(entry, runId))) {
-    invalidLocalEvidence();
+    invalidLocalEvidence(context);
   }
-  const outputRead = await readJson<unknown>(join(runDir, 'output.json'), 'workflow output');
+  const outputRead = await readJson<unknown>(
+    join(runDir, 'output.json'),
+    'workflow output',
+    context,
+  );
+  if (outputRead.failure) {
+    if (options.strictRead) throw outputRead.failure;
+    readDiagnostics.push(...outputRead.failure.diagnostics);
+  }
   if (outputRead.warning && outputRead.warning !== 'workflow output not recorded')
     warnings.push(outputRead.warning);
   if (
@@ -902,7 +976,14 @@ async function readLocatedProgress(
     options.loadWorkflowManifest === false
       ? null
       : await loadWorkflowMeta(rootDir, metaRead.value?.workflowName);
-  const agents = await readAgentResults(runDir, rootDir, warnings, options.strictRead === true);
+  const agents = await readAgentResults(
+    runDir,
+    rootDir,
+    warnings,
+    options.strictRead === true,
+    context,
+    readDiagnostics,
+  );
   const phases = groupPhases(statusRead.value, workflowMeta, agents);
   const costPath = resolve(rootDir, '.openslack', 'workflows', 'cost.yaml');
   const costConfig =
@@ -910,12 +991,10 @@ async function readLocatedProgress(
       ? null
       : await (async () => {
           if (!existsSync(costPath)) return null;
-          const raw = readBoundedText(costPath, MAX_JSON_BYTES);
+          const raw = await readWorkflowEvidenceText(costPath, MAX_JSON_BYTES);
           return parseWorkflowCostConfig(raw);
-        })().catch((err) => {
-          warnings.push(
-            `workflow cost config could not be loaded: ${err instanceof Error ? err.message : String(err)}`,
-          );
+        })().catch(() => {
+          warnings.push('workflow cost config could not be loaded safely');
           return null;
         });
   const budget = buildBudget(workflowMeta, agents, statusRead.value, costConfig);
@@ -931,7 +1010,7 @@ async function readLocatedProgress(
     }
   }
   if (options.strictRead && warnings.length > 0) {
-    invalidLocalEvidence();
+    invalidLocalEvidence(context);
   }
   warnings.push(...location.diagnostics.map(renderWorkflowRunReadDiagnostic));
   if (backend === 'go') {
@@ -945,6 +1024,9 @@ async function readLocatedProgress(
   return {
     runId,
     workflowName,
+    provenance: location.provenance,
+    degraded: location.degraded || warnings.length > 0,
+    readDiagnostics,
     mode: metaRead.value?.mode ?? 'not-recorded',
     status: statusRead.value?.status ?? 'not-recorded',
     startedAt,
