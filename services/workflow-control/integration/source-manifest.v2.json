@@ -166,7 +166,7 @@
     },
     "workflowRunStoreSource": {
       "path": "packages/workflows/src/run-store.ts",
-      "sha256": "5b4c5855f92c5e292bbca0c24f9dc2d895aa8422149915517e4c960b389cb9f3"
+      "sha256": "20f5867459754514770b8f296acc815bd7e38b907c2ce6fd4401c777012008be"
     },
     "workflowRunStoreRecoveryAccessSource": {
       "path": "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
@@ -190,7 +190,7 @@
     },
     "workflowRunRoutingPublicSurface": {
       "path": "packages/workflows/src/index.ts",
-      "sha256": "1a591db5f03b6323c3e02953239265ee1c5d0248984413cef3979d81b98ac68b"
+      "sha256": "122ef016bd922b08d9e20c993a6d940fc777a64444db79947c465e75d802548f"
     },
     "workflowRunRoutingSource": {
       "path": "packages/workflows/src/workflow-run-routing.ts",
@@ -206,11 +206,11 @@
     },
     "workflowRunProjectionSource": {
       "path": "packages/workflows/src/workflow-run-projection.ts",
-      "sha256": "f713a1f370f57560f5d0fc7998a7ffbe5419c7792d71b3bdc5483bb5a10c3517"
+      "sha256": "5a47639cdf3e198de7c45d5cba6b951751ecee9230462f5d8668906ea4901bfa"
     },
     "workflowRunReadOnlyInspectionSource": {
       "path": "packages/workflows/src/workflow-run-readonly-inspection.ts",
-      "sha256": "c9b764a32e4f9955e0033f2d87bca09c99a3ccb93439015763afd0bc27c3b561"
+      "sha256": "e65e4e53df6b326f6f0ecb0429e96cefc67008f409bc0cd11e069fd75e5239cc"
     },
     "workflowRunReadOnlyInspectionTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-readonly-inspection.test.ts",
@@ -226,7 +226,7 @@
     },
     "workflowCLICompositionSource": {
       "path": "apps/cli/src/commands/collaboration.ts",
-      "sha256": "c7317ef0e6013f99a7c88c228c7ab642e59014e507140bf3bda7b3ecafb01d6e"
+      "sha256": "7e2dc91485efd595b3f040eda14e9a25f228dd174f1b1f5db5fe4d2066f0133b"
     },
     "workflowTUIExecutorsSource": {
       "path": "apps/cli/src/commands/tui-executors.ts",
@@ -234,7 +234,7 @@
     },
     "workflowTUICompositionSource": {
       "path": "apps/cli/src/commands/tui.ts",
-      "sha256": "670232dc3453b9059572bf3080c95db110733bf16644b64ec3696631758a27ac"
+      "sha256": "56c5001d9a69e29d44b2cc7e722def040c6495974630a7613f976b01a4b67662"
     },
     "workflowTUIRunsViewSource": {
       "path": "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -350,7 +350,7 @@
     },
     "workflowRunProjectionReadTest": {
       "path": "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-      "sha256": "52d9fafa29265a734c497152230c0ced8ee72959d8c46f43020fdf001188283c"
+      "sha256": "6b50f649a27ccc6b42485ea6a4d48a655237eb90c1ac8bfa97cd8110fb009377"
     },
     "workflowGoExecutionRecoveryTest": {
       "path": "packages/workflows/src/__tests__/execute-go-authority.test.ts",
@@ -359,6 +359,30 @@
     "runnerMixedOrphanRestartTest": {
       "path": "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",
       "sha256": "d4da6b2efab7b42ddd2dc46964a52e4a22f8decc88c2dcbba4552dcc5be280cc"
+    },
+    "workflowRunReadErrorsSource": {
+      "path": "packages/workflows/src/workflow-run-read-errors.ts",
+      "sha256": "0954ef6ca9adc0b842c2294fd56f1ae00d154a43bac2ba4b39d0925a357c45a4"
+    },
+    "workflowEvidenceFileSource": {
+      "path": "packages/workflows/src/internal/workflow-evidence-file.ts",
+      "sha256": "41953bcbe3ae32e49c9f07796a232d688cf9d5ed7ab7cab32bf393185008a122"
+    },
+    "workflowReadCorrectnessTest": {
+      "path": "packages/workflows/src/__tests__/workflow-read-correctness.test.ts",
+      "sha256": "eeaed41f2ced64e0e3791024158c3f755b3329161769f1d8eb8ec94f17aebd65"
+    },
+    "workflowMcpReadMetadataSource": {
+      "path": "apps/mcp/src/workflow-read-metadata.ts",
+      "sha256": "6fc154ad4a9491bfdac4ad95c039cf196488856e9a4f28ee2c328832a6404dc7"
+    },
+    "workflowMcpReadErrorsTest": {
+      "path": "apps/mcp/src/__tests__/workflow-read-errors.test.ts",
+      "sha256": "ed291287fa71356cc99862b1a9a3f2b0d1619b651f70ab6325f372c52737835f"
+    },
+    "workflowCliReadBoundaryTest": {
+      "path": "apps/cli/src/__tests__/workflow-read-boundary.test.ts",
+      "sha256": "16e2a69a140596ab811b0e085f912cdd250c2a24347533d00591ead1eaf8fae4"
     }
   },
   "contractInputs": {

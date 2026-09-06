@@ -1,4 +1,9 @@
 import { GovernedPlanServiceError, GovernedPlanStoreError } from '@openslack/operator';
+import {
+  WorkflowRunReadError,
+  WORKFLOW_RUN_READ_POLICIES,
+  type WorkflowRunReadDiagnostic,
+} from '@openslack/workflows';
 
 export class OpenSlackMcpProtocolError extends Error {
   constructor(
@@ -15,6 +20,7 @@ export class OpenSlackMcpToolError extends Error {
     readonly safeCode: string,
     readonly safeMessage: string,
     readonly safeStatus: 'failed' | 'blocked' = 'failed',
+    readonly readDiagnostics?: readonly WorkflowRunReadDiagnostic[],
   ) {
     super(safeMessage);
     this.name = 'OpenSlackMcpToolError';
@@ -23,6 +29,14 @@ export class OpenSlackMcpToolError extends Error {
 
 export function safeToolError(error: unknown): OpenSlackMcpToolError {
   if (error instanceof OpenSlackMcpToolError) return error;
+  if (error instanceof WorkflowRunReadError) {
+    return new OpenSlackMcpToolError(
+      error.code,
+      error.message,
+      WORKFLOW_RUN_READ_POLICIES[error.code].status,
+      error.diagnostics,
+    );
+  }
   if (error instanceof GovernedPlanServiceError) {
     return new OpenSlackMcpToolError(
       error.code,

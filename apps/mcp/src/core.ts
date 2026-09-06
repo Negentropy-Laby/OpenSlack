@@ -209,6 +209,15 @@ function failedResult(code: string, message: string): OpenSlackMcpResult {
 }
 
 function toolErrorResult(error: OpenSlackMcpToolError): OpenSlackMcpResult {
+  if (error.readDiagnostics) {
+    return createOpenSlackMcpResult({
+      status: error.safeStatus,
+      summary: error.safeMessage,
+      governance: { blocker: error.safeCode },
+      error: { code: error.safeCode, message: error.safeMessage },
+      data: { degraded: true, readDiagnostics: error.readDiagnostics },
+    });
+  }
   if (error.safeStatus === 'blocked') {
     return createOpenSlackMcpResult({
       status: 'blocked',
@@ -679,7 +688,7 @@ export class OpenSlackMcpCore {
       return Object.freeze({
         content: Object.freeze([{ type: 'text' as const, text: serialized }]),
         structuredContent: structured,
-        isError: result.status === 'failed',
+        isError: result.status === 'failed' || result.error !== undefined,
       });
     } catch {
       const fallback = deepFreezeJson(

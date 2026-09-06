@@ -1199,12 +1199,35 @@ budget record schemas. Readers accept only the current manifest and the exact pr
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
 
-Run list, show, progress, and save-run select local evidence using the immutable route when present.
-Lists enumerate both historical TypeScript and Go recovery directories, deduplicate routed run IDs,
-and isolate unreadable or ambiguous entries as reconciliation diagnostics. Go statuses are explicitly
-labelled recovery snapshots; they do not claim to be live authority heads. TUI warnings and exported
-evidence diagnostics preserve partial-read failures while healthy runs remain visible. These reads
-never initialize or repair route journals.
+Run list, show, progress, and save-run probe the immutable route's selected local directory before
+reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;
+the view preserves its provenance and route diagnostic without changing the execution authority.
+Conflicting unrouted copies require inspection or an explicit save-run evidence-source selection.
+Lists retain healthy roots and runs while reporting backend permission/path failures separately from
+malformed records, missing projections, route conflicts, and internal reader failures. List diagnostics
+are enumerable, and protocol/export DTOs serialize them explicitly alongside the array. Go statuses
+remain recovery snapshots, including a diagnostic when their route receipt is absent. TUI warnings
+retain partial-read failures. CLI async failures and MCP reads expose stable diagnostic codes.
+These reads never initialize, repair, or write route journals or run projections.
+
+Read outcomes select a terminal primary code independently of diagnostic ordering. Reconciliation
+outranks route-read precursors; all diagnostics retain their scope and source identity. CLI messages
+and MCP errors expose safe descriptions only. Actual MCP read failures include a structured error
+and blocker with `isError: true`, including blocked integrity/path/permission failures. Normal
+not-found and ordinary governance blocks keep their existing protocol semantics.
+
+Read DTOs carry `provenance` (backend, routed/legacy/comparison/explicit selection, and
+`authorityVerified: false`), `degraded`, and `readDiagnostics`. Comparison-only MCP reads preserve
+historical data but return blocked, never a successful top-level result. Explicit selection probes
+only the selected backend, and a valid route hit does not inspect unrelated copies. Fallback requires
+a definitely missing routed directory; an unreadable unselected backend cannot establish uniqueness.
+
+Local metadata and status use the existing 2 MiB progress bound, strict UTF-8 decoding, no-follow
+path checks, and file identity checks before and after reading. Oversize evidence is diagnosed without
+truncation. The independent 256 KiB Go observation and argument-encoding contracts are unchanged.
+Save-run extracts only a valid workflow name and checks a stored run ID when present; unrelated legacy
+fields do not prevent script salvage. Discovery and module loading still select and validate the script.
+The result includes source diagnostics and does not alter the original run evidence.
 
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
 the durable Workflow Control head as authority only after receipt/head identity comparison; local

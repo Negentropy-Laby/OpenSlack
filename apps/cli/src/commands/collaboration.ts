@@ -1,4 +1,9 @@
 import { Command } from 'commander';
+import {
+  WorkflowRunReadError,
+  renderWorkflowRunReadError,
+  renderWorkflowRunReadDiagnostic,
+} from '@openslack/workflows';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1653,19 +1658,38 @@ export function collaborationCommands(): Command {
     .command('save-run <runId>')
     .description('Save the workflow script associated with a recorded run')
     .requiredOption('--to <target>', 'project, user, or claude-project')
-    .action(async (runId: string, options: { to: string }) => {
+    .option('--evidence-source <backend>', 'Explicit comparison evidence source: ts-local or go')
+    .action(async (runId: string, options: { to: string; evidenceSource?: string }) => {
       const target = parseWorkflowSaveTarget(options.to);
       try {
-        const result = await saveWorkflowRunScript(runId, { rootDir: findRepoRoot(), to: target });
+        if (
+          options.evidenceSource !== undefined &&
+          options.evidenceSource !== 'ts-local' &&
+          options.evidenceSource !== 'go'
+        )
+          throw new Error('Evidence source must be ts-local or go.');
+        const result = await saveWorkflowRunScript(runId, {
+          rootDir: findRepoRoot(),
+          to: target,
+          evidenceSource: options.evidenceSource,
+        });
         console.log(
           `Saved workflow "${result.workflowName}" from run ${runId} to ${result.source}.`,
         );
+        if (result.provenance)
+          console.log(
+            `Evidence: ${result.provenance.backend} (${result.provenance.selection}; authority unverified)`,
+          );
+        for (const diagnostic of result.readDiagnostics ?? [])
+          console.log(renderWorkflowRunReadDiagnostic(diagnostic));
         console.log(`Source: ${result.sourcePath}`);
         console.log(`Path: ${result.path}`);
         console.log(`Hash: ${result.scriptHash}`);
       } catch (err) {
-        console.error(`Workflow save-run failed: ${(err as Error).message}`);
-        process.exit(1);
+        console.error(
+          `Workflow save-run failed: ${err instanceof WorkflowRunReadError ? renderWorkflowRunReadError(err) : (err as Error).message}`,
+        );
+        process.exitCode = 1;
       }
     });
 

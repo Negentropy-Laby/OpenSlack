@@ -1,54 +1,78 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertWorkflowEvidencePath } from './internal/workflow-evidence-file.js';
 import type { RunStatus } from './types.js';
 import {
   openWorkflowRunReadOnly,
   locateWorkflowRunProjection,
   resolveWorkflowRunProjectionRoot,
 } from './workflow-run-projection.js';
+import {
+  WorkflowRunReadError,
+  asWorkflowRunReadError,
+  workflowRunReadDiagnostic,
+  renderWorkflowRunReadDiagnostic,
+  type WorkflowRunReadDiagnostic,
+} from './workflow-run-read-errors.js';
 
 export interface ListWorkflowRunsOptions {
   rootDir?: string;
   status?: RunStatus['status'];
 }
 
-export interface WorkflowRunReadDiagnostic {
-  runId: string;
-  code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED';
-}
+export type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
 export type WorkflowRunList = RunStatus[] & { readonly diagnostics: WorkflowRunReadDiagnostic[] };
 
 export async function listWorkflowRuns(
   options: ListWorkflowRunsOptions = {},
 ): Promise<WorkflowRunList> {
   const rootDir = options.rootDir ?? process.cwd();
+  const diagnostics: WorkflowRunReadDiagnostic[] = [];
   const readEntries = async (backend: 'ts-local' | 'go') => {
     try {
+      const directory = join(resolveWorkflowRunProjectionRoot(rootDir, backend), 'runs');
+      await assertWorkflowEvidencePath(directory, { scope: 'backend', backend });
       return (
-        await readdir(join(resolveWorkflowRunProjectionRoot(rootDir, backend), 'runs'), {
+        await readdir(directory, {
           withFileTypes: true,
         })
       )
-        .filter((entry) => entry.isDirectory())
+        .filter((entry) => {
+          if (entry.isSymbolicLink()) {
+            diagnostics.push({
+              scope: 'run',
+              runId: entry.name,
+              backend,
+              code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID',
+            });
+            return false;
+          }
+          return entry.isDirectory();
+        })
         .map((entry) => entry.name);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
+      diagnostics.push(workflowRunReadDiagnostic(error, { scope: 'backend', backend }));
+      return [];
     }
   };
   const entries = new Set((await Promise.all([readEntries('ts-local'), readEntries('go')])).flat());
-  const runs = Object.assign([] as RunStatus[], { diagnostics: [] as WorkflowRunReadDiagnostic[] });
-  Object.defineProperty(runs, 'diagnostics', { enumerable: false });
+  const runs = Object.assign([] as RunStatus[], { diagnostics });
   for (const entry of entries) {
     try {
       const run = await showWorkflowRun(entry, { rootDir });
-      if (!run) throw new Error('Selected evidence is missing.');
+      if (!run) {
+        diagnostics.push({ scope: 'run', runId: entry, code: 'WORKFLOW_RUN_PROJECTION_MISSING' });
+        continue;
+      }
+      diagnostics.push(...(run.readDiagnostics ?? []));
       if (!options.status || run.status === options.status) runs.push(run);
-    } catch {
-      runs.diagnostics.push({
-        runId: entry,
-        code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
-      });
+    } catch (error) {
+      diagnostics.push(
+        ...(error instanceof WorkflowRunReadError
+          ? error.diagnostics
+          : [workflowRunReadDiagnostic(error, { scope: 'run', runId: entry })]),
+      );
     }
   }
   return runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -59,12 +83,35 @@ export async function showWorkflowRun(
   options: { rootDir?: string } = {},
 ): Promise<RunStatus | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const { backend } = await locateWorkflowRunProjection(rootDir, runId);
-  const run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
+  const location = await locateWorkflowRunProjection(rootDir, runId);
+  if (location.state === 'missing') return null;
+  if (location.state !== 'found')
+    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
+  const { backend, diagnostics } = location;
+  let run: RunStatus | null;
+  try {
+    run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
+  } catch (error) {
+    throw asWorkflowRunReadError(error, { scope: 'run', runId, backend });
+  }
+  if (
+    run &&
+    (run.runId !== runId ||
+      typeof run.updatedAt !== 'string' ||
+      typeof run.status !== 'string' ||
+      !Array.isArray(run.phases))
+  ) {
+    throw new WorkflowRunReadError([
+      { scope: 'run', runId, backend, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+    ]);
+  }
   return run
     ? {
         ...run,
+        provenance: location.provenance,
+        degraded: location.degraded,
         evidenceSource: backend === 'go' ? 'go-recovery-projection' : 'typescript-historical',
+        ...(diagnostics.length ? { readDiagnostics: diagnostics } : {}),
       }
     : null;
 }
@@ -72,10 +119,7 @@ export async function showWorkflowRun(
 export function renderWorkflowRuns(
   runs: RunStatus[] & { diagnostics?: WorkflowRunReadDiagnostic[] },
 ): string {
-  const diagnostics = (runs.diagnostics ?? []).map(
-    (item) =>
-      `Run ${JSON.stringify(item.runId)}: ${item.code}. Use runs inspect to reconcile its evidence.`,
-  );
+  const diagnostics = (runs.diagnostics ?? []).map(renderWorkflowRunReadDiagnostic);
   if (runs.length === 0)
     return [
       diagnostics.length ? 'No readable workflow runs found.' : 'No workflow runs found.',
@@ -97,6 +141,7 @@ export function renderWorkflowRun(run: RunStatus): string {
   lines.push(`Run: ${run.runId}`);
   lines.push(`Workflow: ${run.workflowName}`);
   lines.push(`Evidence source: ${run.evidenceSource ?? 'local evidence'}`);
+  lines.push(...(run.readDiagnostics ?? []).map(renderWorkflowRunReadDiagnostic));
   if (run.evidenceSource === 'go-recovery-projection')
     lines.push(
       'Status is a local recovery snapshot; inspect Workflow Control for the authoritative head.',

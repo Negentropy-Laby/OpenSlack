@@ -758,7 +758,9 @@ describe('OpenSlack MCP core', () => {
     ).callTool('openslack_get_workflow_progress', { runId });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.error).toMatchObject({ code: 'READ_PROJECTION_FAILED' });
+    expect(result.structuredContent.error).toMatchObject({
+      code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID',
+    });
 
     writeFileSync(
       join(runDir, 'log.jsonl'),
@@ -778,7 +780,7 @@ describe('OpenSlack MCP core', () => {
     ).callTool('openslack_get_workflow_progress', { runId });
     expect(nullArtifact.isError).toBe(true);
     expect(nullArtifact.structuredContent.error).toMatchObject({
-      code: 'READ_PROJECTION_FAILED',
+      code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID',
     });
   });
 
