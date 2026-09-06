@@ -906,8 +906,8 @@ describe('RunStore', () => {
     it('bounds metadata and status bytes before parsing', async () => {
       const { store, fs } = makeStore();
       await store.initRun('run-001', makeMeta());
-      fs.files.set(store.metaPath('run-001'), ' '.repeat(256 * 1024 + 1));
-      fs.files.set(store.statusPath('run-001'), ' '.repeat(256 * 1024 + 1));
+      fs.files.set(store.metaPath('run-001'), ' '.repeat(2 * 1024 * 1024 + 1));
+      fs.files.set(store.statusPath('run-001'), ' '.repeat(2 * 1024 * 1024 + 1));
       await expect(store.loadMeta('run-001')).rejects.toThrow('byte limit');
       await expect(store.loadStatus('run-001')).rejects.toThrow('byte limit');
     });
