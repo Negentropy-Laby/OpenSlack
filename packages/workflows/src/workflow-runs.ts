@@ -10,6 +10,7 @@ import {
   asWorkflowRunReadError,
   workflowRunReadDiagnostic,
   renderWorkflowRunReadDiagnostic,
+  renderWorkflowRunReadDiagnostics,
   type WorkflowRunReadDiagnostic,
 } from './workflow-run-read-errors.js';
 
@@ -65,7 +66,8 @@ export async function showWorkflowRun(
     readContext: options.readContext,
   });
   if (location.state === 'missing') return null;
-  if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
+  if (location.state !== 'found')
+    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
   const { backend, diagnostics } = location;
   let run: RunStatus | null;
   try {
@@ -100,7 +102,7 @@ export async function showWorkflowRun(
 export function renderWorkflowRuns(
   runs: RunStatus[] & { diagnostics?: WorkflowRunReadDiagnostic[] },
 ): string {
-  const diagnostics = (runs.diagnostics ?? []).map(renderWorkflowRunReadDiagnostic);
+  const diagnostics = renderWorkflowRunReadDiagnostics(runs.diagnostics ?? []);
   if (runs.length === 0)
     return [
       diagnostics.length ? 'No readable workflow runs found.' : 'No workflow runs found.',

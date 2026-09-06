@@ -587,6 +587,7 @@ export {
   renderWorkflowRunReadError,
   asWorkflowRunReadError,
   renderWorkflowRunReadDiagnostic,
+  renderWorkflowRunReadDiagnostics,
   workflowRunReadDiagnostic,
 } from './workflow-run-read-errors.js';
 export type {

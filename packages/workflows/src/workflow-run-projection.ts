@@ -135,16 +135,31 @@ export class WorkflowRunReadContext {
       const directory = join(resolveWorkflowRunProjectionRoot(this.rootDir, backend), 'runs');
       await assertWorkflowEvidencePath(directory, { scope: 'backend', backend });
       const entries = await readdir(directory, { withFileTypes: true });
-      return { names: entries.filter((entry) => {
-        if (entry.isSymbolicLink()) {
-          diagnostics.push({ scope: 'run', runId: entry.name, backend, code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' });
-          return false;
-        }
-        return entry.isDirectory();
-      }).map((entry) => entry.name), diagnostics };
+      return {
+        names: entries
+          .filter((entry) => {
+            if (entry.isSymbolicLink()) {
+              diagnostics.push({
+                scope: 'run',
+                runId: entry.name,
+                backend,
+                code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID',
+              });
+              return false;
+            }
+            return entry.isDirectory();
+          })
+          .map((entry) => entry.name),
+        diagnostics,
+      };
     } catch (error) {
-      return { names: [], diagnostics: (error as NodeJS.ErrnoException).code === 'ENOENT'
-        ? [] : [workflowRunReadDiagnostic(error, { scope: 'backend', backend })] };
+      return {
+        names: [],
+        diagnostics:
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? []
+            : [workflowRunReadDiagnostic(error, { scope: 'backend', backend })],
+      };
     }
   }
 }
@@ -204,9 +219,15 @@ async function locateProjection(
       return 'unreadable';
     }
   };
-  const found = (backend: WorkflowRunProjectionBackend, selection: WorkflowRunReadProvenance['selection']): WorkflowRunProjectionLocation => {
+  const found = (
+    backend: WorkflowRunProjectionBackend,
+    selection: WorkflowRunReadProvenance['selection'],
+  ): WorkflowRunProjectionLocation => {
     const location: FoundLocation = Object.freeze({
-      state: 'found', backend, runDir: path(backend), diagnostics,
+      state: 'found',
+      backend,
+      runDir: path(backend),
+      diagnostics,
       provenance: { backend, selection, authorityVerified: false as const },
       degraded: selection === 'comparison' || selection === 'explicit',
     });

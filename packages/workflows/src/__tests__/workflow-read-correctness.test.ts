@@ -58,9 +58,11 @@ async function fixture(backend: 'ts-local' | 'go' = 'ts-local') {
   };
 }
 function route(backend: 'ts-local' | 'go') {
-  return vi
-    .spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly')
-    .mockResolvedValue({ receipt: { route: { backend } } } as never);
+  const locateReadOnly = vi.fn().mockResolvedValue({ receipt: { route: { backend } } });
+  vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+    locateReadOnly,
+  });
+  return locateReadOnly;
 }
 describe('read correctness across evidence boundaries', () => {
   it('reports a non-directory agent result path with its run identity', async () => {
@@ -139,9 +141,13 @@ describe('read correctness across evidence boundaries', () => {
     await fs.mkdir(join(resolveWorkflowRunProjectionRoot(root, 'go'), 'runs', id), {
       recursive: true,
     });
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockRejectedValue(
-      new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'private cause'),
-    );
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      locateReadOnly: vi
+        .fn()
+        .mockRejectedValue(
+          new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'private cause'),
+        ),
+    });
     const location = await locateWorkflowRunProjection(root, id);
     expect(location).toMatchObject({
       state: 'reconciliation_required',

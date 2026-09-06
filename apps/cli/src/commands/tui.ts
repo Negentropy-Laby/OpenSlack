@@ -253,29 +253,31 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         // Pre-fetch workflow run progress data
         try {
           const {
-            renderWorkflowRunReadDiagnostic,
+            renderWorkflowRunReadDiagnostics,
             WorkflowRunReadError,
             workflowRunReadDiagnostic,
           } = await import('@openslack/workflows');
           const runs = await workflowRunQuery.list();
           const progress = [];
-          const readWarnings = runs.diagnostics.map(renderWorkflowRunReadDiagnostic);
+          const readDiagnostics = [...runs.diagnostics];
           for (const run of runs.slice(0, 20)) {
             try {
               const item = await workflowRunQuery.progress(run.runId);
-              if (item) progress.push(item);
+              if (item) {
+                progress.push(item);
+                readDiagnostics.push(...(item.readDiagnostics ?? []));
+              }
             } catch (error) {
-              readWarnings.push(
+              readDiagnostics.push(
                 ...(error instanceof WorkflowRunReadError
                   ? error.diagnostics
-                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]
-                ).map(renderWorkflowRunReadDiagnostic),
+                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]),
               );
             }
           }
           data.workflowRunProgress = progress;
           data.workflowRuns = mapWorkflowRunsToViewModel(progress);
-          data.workflowRuns.readWarnings = readWarnings;
+          data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(readDiagnostics);
         } catch {
           data.workflowRunProgress = [];
           data.workflowRuns = mapWorkflowRunsToViewModel([]);

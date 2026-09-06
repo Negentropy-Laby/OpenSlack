@@ -1299,6 +1299,11 @@ Save-run extracts only a valid workflow name and checks a stored run ID when pre
 fields do not prevent script salvage. Discovery and module loading still select and validate the script.
 The result includes source diagnostics and does not alter the original run evidence.
 
+Within a read query, status filters are applied before collecting readable-run diagnostics.
+Unreadable runs remain diagnosed because their status is unknown. Presentation groups duplicate
+reasons by scope and backend and names affected runs; machine diagnostics preserve each original
+run identity and scope. TUI collects list and progress diagnostics before rendering those groups.
+
 The GS9-H inspection surface uses a non-initializing journal point-read. For Go-owned records it reports
 the durable Workflow Control head as authority only after receipt/head identity comparison; local
 RunStore-shaped recovery projections are comparison evidence and never become a writer or authority

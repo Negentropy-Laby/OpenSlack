@@ -205,3 +205,28 @@ export function renderWorkflowRunReadDiagnostic(diagnostic: WorkflowRunReadDiagn
         : 'Workflow workspace';
   return `${target}: ${diagnostic.code}. ${READ_MESSAGES[diagnostic.code]}`;
 }
+
+/** Aggregate presentation only; the machine diagnostics remain individual scoped records. */
+export function renderWorkflowRunReadDiagnostics(
+  diagnostics: readonly WorkflowRunReadDiagnostic[],
+): string[] {
+  const groups = new Map<string, { diagnostic: WorkflowRunReadDiagnostic; runIds: Set<string> }>();
+  for (const diagnostic of diagnostics) {
+    const key = JSON.stringify([diagnostic.scope, diagnostic.backend, diagnostic.code]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { diagnostic, runIds: new Set() };
+      groups.set(key, group);
+    }
+    if (diagnostic.runId !== undefined) group.runIds.add(diagnostic.runId);
+  }
+  return [...groups.values()].map(({ diagnostic, runIds }) => {
+    if (diagnostic.scope !== 'run' || runIds.size <= 1)
+      return renderWorkflowRunReadDiagnostic(diagnostic);
+    const ids = [...runIds]
+      .sort()
+      .map((runId) => JSON.stringify(runId))
+      .join(', ');
+    return `Runs ${ids}: ${diagnostic.code}. ${READ_MESSAGES[diagnostic.code]}${diagnostic.backend ? ` (backend: ${diagnostic.backend})` : ''}`;
+  });
+}

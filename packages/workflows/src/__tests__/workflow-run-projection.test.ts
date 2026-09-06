@@ -224,9 +224,11 @@ describe('workflow run evidence selection', () => {
       join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'),
       'not a directory',
     );
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockResolvedValue({
-      receipt: { route: { backend: 'go' } },
-    } as never);
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      locateReadOnly: vi.fn().mockResolvedValue({
+        receipt: { route: { backend: 'go' } },
+      }),
+    });
     const result = await listWorkflowRuns({ rootDir: root });
     expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
     expect(result.diagnostics).toEqual(

@@ -11,6 +11,10 @@ import {
   WorkflowRunReadContext,
 } from '../workflow-run-projection.js';
 import { getWorkflowRunProgress } from '../workflow-progress.js';
+import {
+  renderWorkflowRunReadDiagnostics,
+  type WorkflowRunReadDiagnostic,
+} from '../workflow-run-read-errors.js';
 
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof fs>();
@@ -120,6 +124,48 @@ function fileCalls() {
 }
 
 describe('one workflow read query', { timeout: 30_000 }, () => {
+  it('filters readable-run diagnostics while retaining unreadable runs with unknown status', async () => {
+    const { root, workflows } = await seed(3, 0);
+    const go = resolveWorkflowRunProjectionRoot(root, 'go');
+    await fs.mkdir(go, { recursive: true });
+    await fs.rename(join(workflows, 'runs'), join(go, 'runs'));
+    const completedPath = join(go, 'runs', 'run.1', 'status.json');
+    const completed = JSON.parse(await fs.readFile(completedPath, 'utf8'));
+    completed.status = 'completed';
+    await fs.writeFile(completedPath, JSON.stringify(completed));
+    await fs.writeFile(join(go, 'runs', 'run.2', 'status.json'), '{');
+    const query = createWorkflowRunReadQuery(root);
+    const rows = await query.list({ status: 'paused' });
+    expect(rows.map((run) => run.runId)).toEqual(['run.0']);
+    expect(rows.diagnostics).toEqual(
+      expect.arrayContaining([
+        {
+          scope: 'run',
+          runId: 'run.0',
+          backend: 'go',
+          code: 'WORKFLOW_RUN_UNROUTED_GO_PROJECTION',
+        },
+        { scope: 'run', runId: 'run.2', backend: 'go', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+      ]),
+    );
+    expect(rows.diagnostics.some((diagnostic) => diagnostic.runId === 'run.1')).toBe(false);
+  });
+
+  it('aggregates presentation reasons without losing machine identities or scopes', () => {
+    const diagnostics: WorkflowRunReadDiagnostic[] = [
+      { scope: 'run', runId: 'run.b', backend: 'go', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+      { scope: 'run', runId: 'run.a', backend: 'go', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+      { scope: 'run', runId: 'run.a', backend: 'go', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+      { scope: 'backend', backend: 'go', code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
+    ];
+    const bytes = JSON.stringify(diagnostics);
+    const rendered = renderWorkflowRunReadDiagnostics(diagnostics);
+    expect(rendered).toHaveLength(2);
+    expect(rendered[0]).toContain('Runs "run.a", "run.b"');
+    expect(rendered[1]).toContain('Backend go');
+    expect(JSON.stringify(diagnostics)).toBe(bytes);
+    expect(diagnostics).toHaveLength(4);
+  });
   it.each([
     [4, 8],
     [12, 8],
@@ -157,7 +203,8 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
       expect(locate).toHaveBeenCalledTimes(runCount);
       const enumerated = vi.mocked(fs.readdir).mock.calls.map(([path]) => String(path));
       expect(enumerated.filter((path) => path.endsWith('quarantine'))).toHaveLength(1);
-      expect(enumerated.filter((path) => path.endsWith('runs'))).toHaveLength(2);
+      // The absent Go root is checked without attempting an enumeration.
+      expect(enumerated.filter((path) => path.endsWith('runs'))).toHaveLength(1);
       console.log(
         'WORKFLOW_READ_QUERY_MEASUREMENT',
         JSON.stringify({
@@ -197,7 +244,7 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
     const statusPath = join(workflows, 'runs', 'run.0', 'status.json');
     await fs.writeFile(statusPath, '{');
     await expect(query.progress('run.0', { strictRead: true })).rejects.toMatchObject({
-      code: 'WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID',
+      code: 'WORKFLOW_RUN_EVIDENCE_INVALID',
     });
     await expect(
       getWorkflowRunProgress('run.0', {
