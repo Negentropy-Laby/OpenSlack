@@ -361,7 +361,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowTUICompositionSource": {
 			Path:   "apps/cli/src/commands/tui.ts",
-			SHA256: "c422c7c9244ace34b7a54757fbcc94577eee011536e2ed193a48a25c4cf4280a",
+			SHA256: "fb571e6925d3470f192f934a6cae5d844e2c7cf6c0ab61cc57a4ed131f8ba8cc",
 		},
 		"workflowTUIRunsViewSource": {
 			Path:   "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -489,7 +489,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunReadErrorsSource": {
 			Path:   "packages/workflows/src/workflow-run-read-errors.ts",
-			SHA256: "0fb3ba7f000d144efc86790aedc114f9f6ebd19a52594176bc8d0da92b8f6d09",
+			SHA256: "6e537b901ef232f748f267252f64145ee143733d3cee9a5e4c9b6a88338a2106",
 		},
 		"budgetCompatibilityLedger": {
 			Path:   "packages/workflows/contracts/workflow-budget-authority/compatibility.json",
@@ -533,11 +533,11 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runIdentity": {
 			Path:   "packages/workflows/src/internal/workflow-run-identity.ts",
-			SHA256: "e703be73e342895c30b3adc031bd43d1d2cdd041c20db17b424d94c24fa0a732",
+			SHA256: "a84c19e1d50c35483b51c75affbfdb3a303766e2265824e4be82fdc6f105974b",
 		},
 		"runIdentityRegression": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-identity.test.ts",
-			SHA256: "e52efcc0e8bc82cf13ae499c4c6078e54b9a65779a547a485efbbeb846d7a272",
+			SHA256: "1d07f1e633f87cbcf84b7842b5b61dee19aa194aecaa07f5a3d3f5df2d54b727",
 		},
 		"budgetManifestRestartRegression": {
 			Path:   "services/workflow-control/internal/budgetstore/postgres/manifest_restart_integration_test.go",

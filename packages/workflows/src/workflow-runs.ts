@@ -93,13 +93,7 @@ async function showWorkflowRunOnce(
   } catch (error) {
     throw asWorkflowRunReadError(error, { scope: 'run', runId, backend });
   }
-  if (
-    run &&
-    (run.runId !== runId ||
-      typeof run.updatedAt !== 'string' ||
-      typeof run.status !== 'string' ||
-      !Array.isArray(run.phases))
-  ) {
+  if (run && run.runId !== runId) {
     throw new WorkflowRunReadError([
       { scope: 'run', runId, backend, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' },
     ]);

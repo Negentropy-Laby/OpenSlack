@@ -108,7 +108,6 @@ export function primaryWorkflowRunReadCode(
   );
 }
 
-
 export interface WorkflowRunReadDiagnostic {
   readonly scope: 'workspace' | 'backend' | 'run';
   readonly runId?: string;

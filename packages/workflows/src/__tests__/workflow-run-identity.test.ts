@@ -3,6 +3,29 @@ import { isWorkflowRunId, isWorkflowRunPathId } from '../internal/workflow-run-i
 import { RunStore } from '../run-store.js';
 
 describe('logical workflow IDs and platform path IDs', () => {
+  it.each([
+    'run.',
+    'NUL',
+    'con.txt',
+    'PrN.archive',
+    'AUX',
+    'com1.log',
+    'COM9',
+    'lpt1',
+    'LPT9.out',
+    'run:stream',
+  ])('rejects Windows aliases while preserving legal historical POSIX identity: %s', (id) => {
+    expect(isWorkflowRunId(id)).toBe(true);
+    expect(isWorkflowRunPathId(id, 'linux')).toBe(true);
+    expect(isWorkflowRunPathId(id, 'darwin')).toBe(true);
+    expect(isWorkflowRunPathId(id, 'win32')).toBe(false);
+  });
+  it.each(['console', 'auxiliary', 'com0', 'lpt10', 'run.con', 'run@host'])(
+    'keeps ordinary Windows path IDs: %s',
+    (id) => {
+      expect(isWorkflowRunPathId(id, 'win32')).toBe(true);
+    },
+  );
   it.each(['run', 'run:historic', 'run._@-9', 'r'.repeat(256)])(
     'preserves legal wire and POSIX IDs: %s',
     (id) => {

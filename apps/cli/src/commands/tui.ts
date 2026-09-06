@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { asWorkflowRunReadError, renderWorkflowRunReadDiagnostics } from '@openslack/workflows';
 import type { OperatorApplicationContext } from '../boot/context.js';
 import { getBuildInfo } from '../release/build-info.js';
 
@@ -252,7 +253,6 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         // Pre-fetch workflow run progress data
         try {
           const {
-            renderWorkflowRunReadDiagnostics,
             uniqueWorkflowRunReadDiagnostics,
             WorkflowRunReadError,
             workflowRunReadDiagnostic,
@@ -269,9 +269,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
               }
             } catch (error) {
               readDiagnostics.push(
-                ...(error instanceof WorkflowRunReadError
-                  ? error.diagnostics
-                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]),
+                ...asWorkflowRunReadError(error, { scope: 'run', runId: run.runId }).diagnostics,
               );
             }
           }
@@ -280,12 +278,12 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(
             uniqueWorkflowRunReadDiagnostics(readDiagnostics),
           );
-        } catch {
+        } catch (error) {
           data.workflowRunProgress = [];
           data.workflowRuns = mapWorkflowRunsToViewModel([]);
-          data.workflowRuns.readWarnings = [
-            'WORKFLOW_RUN_EVIDENCE_INTERNAL_ERROR: workflow run reader failed.',
-          ];
+          data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(
+            asWorkflowRunReadError(error, { scope: 'workspace' }).diagnostics,
+          );
         }
 
         data.workflowLifecycleLoader = async (

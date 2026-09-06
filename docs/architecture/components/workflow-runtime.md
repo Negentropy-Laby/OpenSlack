@@ -1308,8 +1308,10 @@ against the schema and the independent TypeScript and Go validators. Runtime val
 cross-record identity, hashes, and sequence relationships.
 
 Logical run IDs retain the wire contract's ASCII ID alphabet, including colon in historical POSIX
-names. Filesystem entrypoints share the same validator and reject colon on Windows to prevent ADS
-interpretation. TUI projections derive their data fields from the workflow package types while
+names. Filesystem entrypoints share the same validator and reject Windows ADS syntax, trailing dots,
+and reserved device basenames (including extensions). POSIX keeps those legal historical names. These
+run-ID rules do not reject verified Windows workspace paths that use equivalent long and 8.3 names.
+TUI projections derive their data fields from the workflow package types while
 retaining explicit support for incomplete historical summaries.
 
 Run list, show, progress, and save-run probe the immutable route's selected local directory before
