@@ -265,7 +265,12 @@ func TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying(t *testing.
 		t.Fatal(err)
 	}
 	// A new repository instance models response loss plus process restart.
-	restarted := NewForV2RuntimeDelivery(repo.pool, runnerstore.V2AuthorityPorts{}).WithReconciliationWriter(repo.reconciliationWriter, "recovery-test")
+	writerCalls := 0
+	unavailableWriter := func(context.Context, storageproof.Challenge, int64) (storageproof.Answer, error) {
+		writerCalls++
+		return storageproof.Answer{}, context.DeadlineExceeded
+	}
+	restarted := NewForV2RuntimeDelivery(repo.pool, runnerstore.V2AuthorityPorts{}).WithReconciliationWriter(unavailableWriter, "recovery-test")
 	replay, err := restarted.ApplyBindingReconciliation(ctx, request)
 	if err != nil || !bytes.Equal(receipt, replay) {
 		t.Fatalf("exact replay: %v", err)
@@ -294,13 +299,21 @@ func TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := repo.PauseReconciledRun(ctx, pause)
+	again, err := restarted.PauseReconciledRun(ctx, pause)
 	if err != nil || !bytes.Equal(pauseReceipt, again) {
 		t.Fatal("pause replay differs", err)
 	}
 	after, err := source.Read(ctx, v.WorkspaceID, v.RunID)
 	if err != nil || after.State != "paused" || after.Revision != head.Revision+1 || after.ResumeGeneration != head.ResumeGeneration {
 		t.Fatalf("pause head: %+v %v", after, err)
+	}
+	if writerCalls != 0 {
+		t.Fatalf("historical replay accessed the unavailable source: %d", writerCalls)
+	}
+	fresh := pause
+	fresh.ExpectedRevision, fresh.ExpectedRecordHash = after.Revision, after.RecordHash
+	if _, err = restarted.PauseReconciledRun(ctx, fresh); !runnerstore.IsCode(err, runnerstore.ErrorAuthorityUnavailable) || writerCalls != 1 {
+		t.Fatalf("fresh convergence did not require live source proof: calls=%d err=%v", writerCalls, err)
 	}
 	// The old job cannot regain a lease after the exact head CAS.
 	if _, err = repo.pool.Exec(ctx, `UPDATE workflow_runner_leases SET state='active' WHERE lease_id=$1`, v.LeaseID); err == nil {

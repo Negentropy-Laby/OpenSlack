@@ -25,6 +25,22 @@ func (repository *Repository) PauseReconciledRun(ctx context.Context, input runn
 	if err := validateID(input.RunID, "runId"); err != nil {
 		return nil, err
 	}
+	if repository.schemaVersion < 10 || !repository.v2RuntimeDelivery {
+		return nil, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "recovery pause requires the schema 10 runtime capability", nil)
+	}
+	// Returning an immutable historical receipt grants no new execution authority.
+	// Fresh convergence still requires the live source proof and run locks below.
+	var prior, raw []byte
+	err := repository.pool.QueryRow(ctx, `SELECT prior_record_hash,exact_receipt_bytes FROM workflow_control_recovery_pauses WHERE workspace_id=$1 AND run_id=$2 AND expected_revision=$3`, input.WorkspaceID, input.RunID, input.ExpectedRevision).Scan(&prior, &raw)
+	if err == nil {
+		if hex.EncodeToString(prior) != input.ExpectedRecordHash {
+			return nil, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "recovery pause expected head differs", nil)
+		}
+		return raw, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, databaseFailure("read prior recovery pause receipt", err)
+	}
 	tx, err := repository.reconciliationTx(ctx, input.WorkspaceID, input.RunID)
 	if err != nil {
 		return nil, err
@@ -33,7 +49,6 @@ func (repository *Repository) PauseReconciledRun(ctx context.Context, input runn
 	if err = lockReconciliationRun(ctx, tx, input.WorkspaceID, input.RunID); err != nil {
 		return nil, err
 	}
-	var prior, raw []byte
 	err = tx.QueryRow(ctx, `SELECT prior_record_hash,exact_receipt_bytes FROM workflow_control_recovery_pauses WHERE workspace_id=$1 AND run_id=$2 AND expected_revision=$3`, input.WorkspaceID, input.RunID, input.ExpectedRevision).Scan(&prior, &raw)
 	if err == nil {
 		if hex.EncodeToString(prior) != input.ExpectedRecordHash {

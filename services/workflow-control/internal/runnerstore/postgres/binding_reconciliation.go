@@ -412,30 +412,26 @@ func (repository *Repository) ApplyBindingReconciliation(ctx context.Context, in
 		return nil, err
 	}
 	v := prepared.Value
+	if repository.schemaVersion < 10 || !repository.v2RuntimeDelivery {
+		return nil, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "reconciliation requires the schema 10 runtime capability", nil)
+	}
+	// An exact committed retry must not depend on a currently reachable source.
+	var priorRequest []byte
+	err = repository.pool.QueryRow(ctx, `SELECT exact_request_bytes FROM workflow_runner_binding_settlements WHERE binding_id=$1 AND workspace_id=$2 AND run_id=$3`, v.BindingID, v.WorkspaceID, v.RunID).Scan(&priorRequest)
+	if err == nil {
+		if !bytes.Equal(priorRequest, prepared.ExactBytes) {
+			return nil, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "binding already has another terminal conclusion", nil)
+		}
+		return repository.ReadBindingSettlementReceipt(ctx, v.WorkspaceID, v.RunID, prepared.IdempotencyKey)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, databaseFailure("read prior settlement", err)
+	}
 	tx, err := repository.reconciliationTx(ctx, v.WorkspaceID, v.RunID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	// An exact committed retry must not depend on a currently reachable source.
-	var priorRequest, priorReceipt []byte
-	err = tx.QueryRow(ctx, `SELECT exact_request_bytes,exact_receipt_bytes FROM workflow_runner_binding_settlements WHERE binding_id=$1 AND workspace_id=$2 AND run_id=$3`, v.BindingID, v.WorkspaceID, v.RunID).Scan(&priorRequest, &priorReceipt)
-	if err == nil {
-		if !bytes.Equal(priorRequest, prepared.ExactBytes) {
-			return nil, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "binding already has another terminal conclusion", nil)
-		}
-		original, e := reconciliationBinding(ctx, tx, v.WorkspaceID, v.RunID, v.BindingID, false)
-		if e != nil {
-			return nil, e
-		}
-		if _, e = validateBindingSettlement(priorReceipt, original); e != nil {
-			return nil, e
-		}
-		return priorReceipt, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, databaseFailure("read prior settlement", err)
-	}
 	original, err := reconciliationBinding(ctx, tx, v.WorkspaceID, v.RunID, v.BindingID, false)
 	if err != nil {
 		return nil, err
