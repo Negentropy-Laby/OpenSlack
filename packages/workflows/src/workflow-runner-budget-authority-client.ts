@@ -25,6 +25,7 @@ import {
 import {
   cancelWorkflowRunnerResponseBody,
   readWorkflowRunnerResponseBytes,
+  throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -256,8 +257,7 @@ async function exactBody(response: Response, signal?: AbortSignal): Promise<stri
     minimumBytes: 2,
     failure: (message, options) => {
       throw new WorkflowRunnerBudgetAuthorityClientError(
-        message === 'Budget authority response body could not be read.' ||
-          message === 'Budget authority response read was aborted.'
+        options.kind === 'transport'
           ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
           : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         message,
@@ -331,6 +331,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
         ? `${config.origin}${prepared.path}`
         : `${config.origin}/v1/authority/workflow-budgets/receipts/${encodeURIComponent(prepared.idempotencyKey)}`;
     let response: Response;
+    throwIfWorkflowRunnerAborted(signal);
     try {
       response = await send(url, {
         method,
@@ -352,6 +353,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
         signal,
       });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
       throw new WorkflowRunnerBudgetAuthorityClientError(
         'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED',
         'Budget authority transport failed.',
@@ -380,6 +382,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
     pointRead: (prepared: WorkflowBudgetPreparedRequest, signal?: AbortSignal) =>
       request(prepared, 'GET', signal),
     async readAccount(runId: string, route: WorkflowBudgetRoute, signal?: AbortSignal) {
+      throwIfWorkflowRunnerAborted(signal);
       if (
         !SAFE_ID.test(runId) ||
         route.backend !== 'go' ||
@@ -407,6 +410,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
           },
         );
       } catch (error) {
+        throwIfWorkflowRunnerAborted(signal);
         throw new WorkflowRunnerBudgetAuthorityClientError(
           'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED',
           'Budget account point-read transport failed.',

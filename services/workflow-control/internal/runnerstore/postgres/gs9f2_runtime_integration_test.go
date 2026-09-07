@@ -480,6 +480,15 @@ VALUES ('forged-control','forged-binding','event_receipt',3,3,decode(repeat('11'
 
 	t.Run("schema7 exact authority row survives schema8 upgrade", func(t *testing.T) {
 		upgradePool := testsupport.OpenPostgres(t)
+		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
+			raw, err := os.ReadFile(v2MigrationPath(t, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = upgradePool.Exec(context.Background(), string(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		downMigration, err := os.ReadFile(v2MigrationPath(t, "000008_deliver_workflow_runner_authority_bindings.down.sql"))
 		if err != nil {
 			t.Fatal(err)
@@ -528,7 +537,8 @@ FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, event.Message.EventID).S
 			t.Fatalf("schema8 upgrade rewrote exact schema7 authority evidence: before=%s/%s/%x/%q after=%s/%s/%x/%q",
 				beforeState, beforeOperation, beforeHash, beforeExact, afterState, afterOperation, afterHash, afterExact)
 		}
-		schema8Repository := NewWithV2Authorities(upgradePool, runnerstore.V2AuthorityPorts{Budget: adapter})
+		schema8Repository := NewForSchema(upgradePool, 8)
+		schema8Repository.v2Authorities = runnerstore.V2AuthorityPorts{Budget: adapter}
 		replay, err := schema8Repository.RecordV2Event(context.Background(), event)
 		if err != nil || !replay.Duplicate || adapter.applyCalls != 1 ||
 			!bytes.Equal(replay.ReceiptBytes, recorded.ReceiptBytes) || !bytes.Equal(replay.DecisionBytes, recorded.DecisionBytes) {
@@ -538,6 +548,15 @@ FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, event.Message.EventID).S
 
 	t.Run("schema7 authority outcome cross-splice blocks schema8 upgrade", func(t *testing.T) {
 		upgradePool := testsupport.OpenPostgres(t)
+		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
+			raw, err := os.ReadFile(v2MigrationPath(t, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = upgradePool.Exec(context.Background(), string(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		downMigration, err := os.ReadFile(v2MigrationPath(t, "000008_deliver_workflow_runner_authority_bindings.down.sql"))
 		if err != nil {
 			t.Fatal(err)

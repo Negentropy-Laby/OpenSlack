@@ -243,8 +243,15 @@ function harness(
     readonly now?: () => string;
     readonly runtimeDelivery?: WorkflowRunnerV2RuntimeDeliveryPort;
     readonly activity?: string[];
+    readonly beforeRead?: () => Promise<void>;
+    readonly beforePrepare?: () => Promise<void>;
+    readonly beforeLoad?: () => Promise<void>;
     readonly reportFatal?: (error: Error) => void | Promise<void>;
-    readonly send?: (message: WorkflowControlAuthorityMessage, exactBytes: string) => void;
+    readonly send?: (
+      message: WorkflowControlAuthorityMessage,
+      exactBytes: string,
+    ) => void | Promise<void>;
+    readonly close?: () => void | Promise<void>;
   } = {},
 ) {
   const sealed = descriptor(resumeGeneration, authorityRoute);
@@ -261,16 +268,19 @@ function harness(
     runtimeVersion: '22.14.0',
     descriptorStore: {
       async read() {
+        await options.beforeRead?.();
         return sealed;
       },
     },
     sourceLoader: {
       async prepare() {
         prepared += 1;
+        await options.beforePrepare?.();
         return { sealed: true };
       },
       async load() {
         loaded += 1;
+        await options.beforeLoad?.();
         return { meta: { name: sealed.workflowId }, format: 'typescript', hash: HASH_C };
       },
     },
@@ -279,10 +289,11 @@ function harness(
       const message = JSON.parse(exactBytes) as WorkflowControlAuthorityMessage;
       sent.push(message);
       options.activity?.push(`send:${message.kind}`);
-      options.send?.(message, exactBytes);
+      return options.send?.(message, exactBytes);
     },
     close(exitCode) {
       closed.push(exitCode);
+      return options.close?.();
     },
     async execute(_workflow, _descriptor, context) {
       executed += 1;
@@ -327,6 +338,93 @@ async function handshake(harnessValue: ReturnType<typeof harness>): Promise<void
 }
 
 describe('WorkflowRunnerV2Session', () => {
+  it.each(['descriptor', 'prepare', 'resume', 'load', 'send', 'ack'] as const)(
+    'releases a pending %s call on fatal and ignores its late completion',
+    async (stage) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const never = new Promise<void>(() => undefined);
+      const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+        async isResume() {
+          if (stage === 'resume') await gate;
+          return false;
+        },
+        async commit(_operation, target) {
+          return {
+            stage: { bindingId: 'WFRUNNER-BINDING-' + '4'.repeat(64) },
+            exactEventBytes: target.body,
+          } as never;
+        },
+        async acknowledgeControl() {
+          if (stage === 'ack') await gate;
+        },
+      };
+      const value = harness(
+        0,
+        {
+          backend: 'go',
+          authority: 'workflow-control',
+          routingEpoch: 1,
+          authorityBuildHash: HASH_A,
+        },
+        {
+          runtimeDelivery,
+          beforeRead: stage === 'descriptor' ? () => gate : undefined,
+          beforePrepare: stage === 'prepare' ? () => gate : undefined,
+          beforeLoad: stage === 'load' ? () => gate : undefined,
+          send: (message) =>
+            stage === 'send' && message.kind === 'lease_accept' ? gate : undefined,
+          reportFatal: () => never,
+          close: () => never,
+        },
+      );
+      await handshake(value);
+      let offerSettled = false;
+      const offer = value.session.receive(leaseOffer(value.sealed)).finally(() => {
+        offerSettled = true;
+      });
+      await turn();
+      const pending: Promise<unknown>[] = [offer];
+      if (stage === 'load' || stage === 'ack') {
+        await value.session.receive(receipt(value.sent.at(-1)!, 2));
+        await offer;
+        await turn();
+      }
+      let ackSettled = stage !== 'ack';
+      if (stage === 'ack') {
+        pending.push(
+          value
+            .context()!
+            .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.ack-fatal'))
+            .catch(() => undefined),
+        );
+        await turn();
+        pending.push(
+          value.session.receive(receipt(value.sent.at(-1)!, 3, 2)).finally(() => {
+            ackSettled = true;
+          }),
+        );
+        await turn();
+      }
+      await value.session.receive({} as never);
+      await turn();
+      expect(offerSettled).toBe(true);
+      expect(ackSettled).toBe(true);
+      expect(value.closed).toEqual([2]);
+      const sent = value.sent.length,
+        executed = value.counts().executed;
+      release();
+      await Promise.all(pending);
+      await turn();
+      expect(value.session.state).toBe('reconciliation_required');
+      expect(value.sent).toHaveLength(sent);
+      expect(value.counts().executed).toBe(executed);
+      expect(value.closed).toEqual([2]);
+    },
+  );
+
   it('sends exact F2b checkpoint bytes only after companion resolution and ACKs before progress', async () => {
     const activity: string[] = [];
     let binding = 0;
@@ -929,6 +1027,80 @@ describe('WorkflowRunnerV2Session', () => {
     expect(fatalReports).toHaveLength(1);
     expect(unhandled).toEqual([]);
   });
+
+  it.each(['parked', 'inflight'] as const)(
+    'terminates a %s authority operation before asynchronous fatal reporting completes',
+    async (mode) => {
+      let attempts = 0;
+      let signal: AbortSignal | undefined;
+      let finishCommit: (() => void) | undefined;
+      let finishReport!: () => void;
+      const report = new Promise<void>((resolve) => {
+        finishReport = resolve;
+      });
+      const runtimeDelivery: WorkflowRunnerV2RuntimeDeliveryPort = {
+        async isResume() {
+          return false;
+        },
+        async commit(_operation, target, _source, currentSignal) {
+          attempts++;
+          signal = currentSignal;
+          if (mode === 'parked')
+            throw Object.assign(new Error('retry'), { code: 'WORKFLOW_RUN_RECOVERY_UNKNOWN' });
+          await new Promise<void>((resolve) => {
+            finishCommit = resolve;
+          });
+          return {
+            stage: { bindingId: 'WFRUNNER-BINDING-' + '4'.repeat(64) },
+            exactEventBytes: target.body,
+          } as never;
+        },
+        async acknowledgeControl() {},
+      };
+      const value = harness(
+        0,
+        {
+          backend: 'go',
+          authority: 'workflow-control',
+          routingEpoch: 1,
+          authorityBuildHash: HASH_A,
+        },
+        { runtimeDelivery, reportFatal: () => report },
+      );
+      await handshake(value);
+      const offer = value.session.receive(leaseOffer(value.sealed));
+      await turn();
+      await value.session.receive(receipt(value.sent.at(-1)!, 2));
+      await offer;
+      await turn();
+      let rejected = false;
+      const pending = value
+        .context()!
+        .checkpointCommit(checkpointPayload(value.sealed, 'checkpoint.fatal'))
+        .catch(() => {
+          rejected = true;
+        });
+      await turn();
+      const fatal = value.session.receive({} as never);
+      await turn();
+      expect(signal?.aborted).toBe(true);
+      expect(value.context()!.signal.aborted).toBe(true);
+      expect(rejected).toBe(true);
+      expect(await value.session.retryOutstanding()).toBe(false);
+      expect(attempts).toBe(1);
+      finishReport();
+      await fatal;
+      const count = value.sent.length;
+      finishCommit?.();
+      await turn();
+      await pending;
+      expect(value.session.state).toBe('reconciliation_required');
+      expect(value.sent).toHaveLength(count);
+      expect(value.closed).toEqual([2]);
+      await value.session.receive({} as never);
+      expect(value.closed).toEqual([2]);
+    },
+  );
 
   it('completes a retryable authority operation once without changing the event bytes', async () => {
     const attempts: string[] = [];

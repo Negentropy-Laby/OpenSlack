@@ -50,6 +50,11 @@ func (repository *Repository) markV2Delivery(ctx context.Context, attemptID, eve
 		return databaseFailure("begin v2 control delivery", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	if settled, err := repository.controlIsSettled(ctx, tx, eventID); err != nil {
+		return err
+	} else if settled {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "settled historical control cannot be delivered or acknowledged", nil)
+	}
 	var sequence *int64
 	var state string
 	if err := tx.QueryRow(ctx, `SELECT sequence,delivery_state FROM workflow_runner_control_messages
@@ -164,6 +169,11 @@ func (repository *Repository) signalV2ControlAcknowledged(attemptID, eventID str
 }
 
 func (repository *Repository) readV2ControlAcknowledgement(ctx context.Context, attemptID, eventID string) (runnerstore.V2ControlDeliveryDisposition, bool, error) {
+	if settled, err := repository.controlIsSettled(ctx, repository.pool, eventID); err != nil {
+		return "", false, err
+	} else if settled {
+		return runnerstore.V2ControlDeliveryReconciliationRequired, true, nil
+	}
 	var state string
 	if err := repository.pool.QueryRow(ctx, `SELECT delivery_state FROM workflow_runner_control_messages
 WHERE attempt_id=$1 AND control_event_id=$2`, attemptID, eventID).Scan(&state); err != nil {

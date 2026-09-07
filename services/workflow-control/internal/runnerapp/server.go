@@ -59,6 +59,8 @@ type Options struct {
 	V2Store                 runnerstore.V2JobStore
 	BindingStore            runnerstore.V2AuthorityBindingStore
 	RecoveryStore           runnerstore.RecoveryEvidenceStore
+	RecoveryV2Store         runnerstore.RecoveryEvidenceV2Store
+	ReconciliationStore     runnerstore.BindingReconciliationStore
 	AdmissionStore          runnerstore.V2RuntimeAdmissionStore
 	SchemaVersion           int64
 	BuildSHA                string
@@ -76,6 +78,8 @@ type Service struct {
 	v2Store                 runnerstore.V2JobStore
 	bindingStore            runnerstore.V2AuthorityBindingStore
 	recoveryStore           runnerstore.RecoveryEvidenceStore
+	recoveryV2Store         runnerstore.RecoveryEvidenceV2Store
+	reconciliationStore     runnerstore.BindingReconciliationStore
 	admissionStore          runnerstore.V2RuntimeAdmissionStore
 	schemaVersion           int64
 	buildSHA                string
@@ -116,7 +120,7 @@ func New(options Options) (*Service, error) {
 	service := &Service{
 		store: options.Store, buildSHA: options.BuildSHA,
 		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore,
-		recoveryStore: options.RecoveryStore,
+		recoveryStore: options.RecoveryStore, recoveryV2Store: options.RecoveryV2Store, reconciliationStore: options.ReconciliationStore,
 		schemaVersion: options.SchemaVersion,
 		workspaceID:   options.WorkspaceID, logger: options.Logger,
 		runAuthorityOrigin: options.RunAuthorityOrigin, runAuthorityCallerID: options.RunAuthorityCallerID,
@@ -148,6 +152,10 @@ func (service *Service) routes() http.Handler {
 	mux.Handle("POST "+RouteAuthorityBinding, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingAction)))
 	mux.Handle("GET "+RouteAuthorityReceipt, service.requireIdentity(http.HandlerFunc(service.handleAuthorityBindingReceipt)))
 	mux.Handle("GET "+RouteRecoveryEvidence, service.requireIdentity(http.HandlerFunc(service.handleRecoveryEvidence)))
+	mux.Handle("GET "+RouteBindingReconciliation, service.requireIdentity(http.HandlerFunc(service.handleBindingReconciliationPreview)))
+	mux.Handle("POST "+RouteBindingReconciliation, service.requireIdentity(http.HandlerFunc(service.handleBindingReconciliationApply)))
+	mux.Handle("GET "+RouteBindingSettlementReceipt, service.requireIdentity(http.HandlerFunc(service.handleBindingSettlementReceipt)))
+	mux.Handle("POST "+RouteRecoveryPause, service.requireIdentity(http.HandlerFunc(service.handleRecoveryPause)))
 	mux.Handle("GET "+RouteBinding, service.requireIdentity(http.HandlerFunc(service.handleBinding)))
 	mux.Handle("GET "+RouteJob, service.requireIdentity(http.HandlerFunc(service.handleReadJob)))
 	mux.Handle("POST "+RouteCancellation, service.requireIdentity(http.HandlerFunc(service.handleCancellation)))

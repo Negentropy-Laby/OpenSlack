@@ -152,6 +152,7 @@ func (service *Service) routes() http.Handler {
 		mux.Handle("GET "+RouteReceipt, protected(service.handleReadReceipt))
 		mux.Handle("GET "+RouteOutbox, protected(service.handleReadOutbox))
 		mux.Handle("GET "+RouteBinding, protected(service.handleBinding))
+		mux.Handle("GET "+RouteStorageProof, protected(service.handleStorageProof))
 		mux.Handle("GET "+RouteMetrics, protected(service.handleMetrics))
 	} else {
 		mux.HandleFunc("GET "+RouteMetrics, service.handleMetrics)

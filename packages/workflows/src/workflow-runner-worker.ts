@@ -1268,6 +1268,16 @@ export async function createWorkflowRunnerV2RuntimeDelivery(
           exists,
           status?.status ?? null,
         );
+        if (disposition !== 'initialize') {
+          const recovery = createWorkflowRunnerAuthorityBindingClient({
+            origin: config.runtimeDelivery.companionOrigin,
+            workspaceId: config.workspaceId,
+            bearerToken: config.runtimeDelivery.companionBearerToken,
+          });
+          await runtime.acceptSettlements(
+            await recovery.readRecoveryEvidence(descriptor.workflowRunId),
+          );
+        }
         return disposition === 'initialize' ? 'initial' : 'resume';
       },
     },

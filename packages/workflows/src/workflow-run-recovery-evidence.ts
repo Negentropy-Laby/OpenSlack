@@ -1,9 +1,17 @@
 import {
+  parseWorkflowBindingSettlement,
+  validateWorkflowBindingSettlement,
+  type WorkflowBindingSettlementReceipt,
+} from './workflow-binding-reconciliation-contract.js';
+import {
   canonicalWorkflowControlAuthorityJson as canonical,
   validateWorkflowControlAuthorityRoute,
+  validateWorkflowControlAuthorityReceipt,
   type WorkflowControlAuthorityRoute,
 } from './workflow-control-authority-contract.js';
 import type { WorkflowControlAuthorityRunRead } from './workflow-control-authority-client.js';
+import { prepareWorkflowControlAuthorityMutation } from './workflow-control-authority-client.js';
+import { parseWorkflowResumeIntent, type ResumeIntent } from './internal/workflow-resume-intent.js';
 import {
   parseWorkflowRunnerAuthorityBindingStageBytes,
   parseWorkflowRunnerAuthorityBindingResolutionBytes,
@@ -27,10 +35,13 @@ export class WorkflowRunRecoveryError extends Error {
   constructor(
     readonly code:
       | 'WORKFLOW_RUN_RECOVERY_UNKNOWN'
-      | 'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
+      | 'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED'
+      | 'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED'
+      | 'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(`${code}: ${message}`);
+    super(`${code}: ${message}`, options);
     this.name = 'WorkflowRunRecoveryError';
   }
 }
@@ -40,7 +51,9 @@ export function recoveryConflict(message: string): never {
 }
 
 export interface WorkflowRunRecoveryEvidence {
-  readonly schema: 'openslack.workflow_runner_recovery_evidence.v1';
+  readonly schema:
+    | 'openslack.workflow_runner_recovery_evidence.v1'
+    | 'openslack.workflow_runner_recovery_evidence.v2';
   readonly workspaceId: string;
   readonly runId: string;
   readonly route: WorkflowControlAuthorityRoute;
@@ -61,6 +74,8 @@ export interface WorkflowRunRecoveryEvidence {
     readonly state: string;
   }[];
   readonly activeAttempts: readonly string[];
+  readonly settlements?: readonly WorkflowBindingSettlementReceipt[];
+  readonly recordKeys?: readonly string[];
 }
 
 export interface WorkflowRunRecoveryEvidencePort {
@@ -91,6 +106,79 @@ const states = [
   'reconciliation_required',
 ];
 
+function normalizeRecoveryV2(value: Record<string, unknown>): Record<string, unknown> {
+  exactFields(value, [
+    'schema',
+    'workspaceId',
+    'runId',
+    'route',
+    'complete',
+    'snapshot',
+    'nextCursor',
+    'records',
+  ]);
+  if (!Array.isArray(value.records))
+    return recoveryConflict('Recovery v2 record stream is invalid.');
+  const bindings: unknown[] = [],
+    unfinished: unknown[] = [],
+    activeAttempts: unknown[] = [];
+  const settlements: WorkflowBindingSettlementReceipt[] = [],
+    recordKeys: string[] = [];
+  for (const record of value.records) {
+    exactFields(record, ['key', 'kind', 'value']);
+    let key: string;
+    if (record.kind === 'binding' || record.kind === 'diagnostic') {
+      if (
+        !record.value ||
+        typeof record.value !== 'object' ||
+        !('bindingId' in record.value) ||
+        !id(record.value.bindingId)
+      )
+        return recoveryConflict('Recovery record identity is invalid.');
+      key = `${record.kind}.${record.value.bindingId}`;
+      (record.kind === 'binding' ? bindings : unfinished).push(record.value);
+    } else if (record.kind === 'settlement' && typeof record.value === 'string') {
+      const receipt = parseWorkflowBindingSettlement(record.value);
+      if (receipt.workspaceId !== value.workspaceId || receipt.runId !== value.runId)
+        return recoveryConflict('Recovery settlement belongs to another run.');
+      key = `settlement.${receipt.bindingId}`;
+      settlements.push(receipt);
+    } else if (record.kind === 'active_attempt' && id(record.value)) {
+      key = `attempt.${record.value}`;
+      activeAttempts.push(record.value);
+    } else return recoveryConflict('Recovery record kind is invalid.');
+    if (record.key !== key || (recordKeys.length > 0 && key <= recordKeys.at(-1)!))
+      return recoveryConflict('Recovery records repeat or reorder their identity.');
+    recordKeys.push(key);
+  }
+  if (value.nextCursor !== null && value.nextCursor !== recordKeys.at(-1))
+    return recoveryConflict('Recovery record cursor does not advance.');
+  return {
+    schema: value.schema,
+    workspaceId: value.workspaceId,
+    runId: value.runId,
+    route: value.route,
+    complete: value.complete,
+    snapshot: value.snapshot,
+    nextCursor: value.nextCursor,
+    bindings,
+    unfinished,
+    activeAttempts,
+    settlements,
+    recordKeys,
+  };
+}
+
+export function validateWorkflowRunRecoveryEvidence(view: WorkflowRunRecoveryEvidence): void {
+  for (const entry of view.bindings) readRecoveryBinding(view, entry);
+  for (const settlement of view.settlements ?? []) {
+    const entry = view.bindings.find((binding) => binding.bindingId === settlement.bindingId);
+    if (!entry) return recoveryConflict('Recovery settlement has no original binding.');
+    const stage = parseWorkflowRunnerAuthorityBindingStageBytes(Buffer.from(entry.stage));
+    validateWorkflowBindingSettlement(settlement, stage, entry.resolution);
+  }
+}
+
 export function parseWorkflowRunRecoveryEvidence(
   bytes: string,
   workspaceId: string,
@@ -98,7 +186,13 @@ export function parseWorkflowRunRecoveryEvidence(
   bindingId?: string,
 ): WorkflowRunRecoveryEvidence {
   try {
-    const value: unknown = JSON.parse(bytes);
+    let value: unknown = JSON.parse(bytes);
+    const v2 =
+      value !== null &&
+      typeof value === 'object' &&
+      'schema' in value &&
+      value.schema === 'openslack.workflow_runner_recovery_evidence.v2';
+    if (v2) value = normalizeRecoveryV2(value as Record<string, unknown>);
     exactFields(value, [
       'schema',
       'workspaceId',
@@ -110,15 +204,22 @@ export function parseWorkflowRunRecoveryEvidence(
       'bindings',
       'unfinished',
       'activeAttempts',
+      ...(v2 ? ['settlements', 'recordKeys'] : []),
     ]);
     if (
-      value.schema !== 'openslack.workflow_runner_recovery_evidence.v1' ||
+      (!v2 && value.schema !== 'openslack.workflow_runner_recovery_evidence.v1') ||
       value.workspaceId !== workspaceId ||
       value.runId !== runId ||
       value.complete !== (bindingId === undefined && value.nextCursor === null) ||
       typeof value.snapshot !== 'string' ||
       !/^[0-9a-f]{64}$/u.test(value.snapshot) ||
-      (value.nextCursor !== null && (bindingId !== undefined || !id(value.nextCursor))) ||
+      (value.nextCursor !== null &&
+        (!v2
+          ? bindingId !== undefined || !id(value.nextCursor)
+          : typeof value.nextCursor !== 'string' ||
+            !/^(attempt|binding|diagnostic|settlement)\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(
+              value.nextCursor,
+            ))) ||
       !Array.isArray(value.bindings) ||
       !Array.isArray(value.unfinished) ||
       !Array.isArray(value.activeAttempts) ||
@@ -184,7 +285,8 @@ export function readRecoveryBinding(
     stage.workspaceId !== view.workspaceId ||
     stage.runId !== view.runId ||
     canonical(stage.route) !== canonical(view.route) ||
-    !['checkpoint_commit', 'resume_advance'].includes(stage.operation)
+    (view.schema === 'openslack.workflow_runner_recovery_evidence.v1' &&
+      !['checkpoint_commit', 'resume_advance'].includes(stage.operation))
   )
     recoveryConflict('Recovery stage differs from the selected run or route.');
   if (entry.resolution === null || entry.resolutionReceipt === null) {
@@ -204,8 +306,17 @@ export function readRecoveryBinding(
     stage,
     receipt,
   );
-  if (receipt.status !== 'accepted' || resolved.status !== 'accepted')
-    recoveryConflict('Recovery receipt requires reconciliation.');
+  if (receipt.status !== 'accepted' || resolved.status !== 'accepted') {
+    const settled = view.settlements?.find(
+      (item) => item.bindingId === stage.bindingId && item.outcome === 'committed',
+    );
+    if (!settled) {
+      if (view.schema === 'openslack.workflow_runner_recovery_evidence.v2')
+        return { stage, resolution: null };
+      recoveryConflict('Recovery receipt requires reconciliation.');
+    }
+    validateWorkflowBindingSettlement(settled, stage, entry.resolution);
+  }
   return { stage, resolution };
 }
 
@@ -224,29 +335,102 @@ export function historicalResumeEvidence(
   return resolution.evidence;
 }
 
+export function validateSettledResumeIntent(
+  stage: WorkflowRunnerAuthorityBindingStage,
+  settlement: WorkflowBindingSettlementReceipt,
+  intent: ResumeIntent,
+) {
+  validateWorkflowBindingSettlement(settlement, stage);
+  if (settlement.proofKind !== 'source_receipt')
+    return recoveryConflict('Resume settlement has no exact source receipt.');
+  const receipt = validateWorkflowControlAuthorityReceipt(JSON.parse(settlement.proof));
+  const prepared = prepareWorkflowControlAuthorityMutation({
+    operation: 'transition',
+    record: intent.record,
+    expected: intent.expected,
+    correlationId: intent.correlationId,
+    callerId: 'recovery-proof',
+    expectedBuildHash: stage.route.authorityBuildHash,
+  });
+  if (
+    receipt.status !== 'accepted' ||
+    receipt.requestHash !== prepared.requestHash ||
+    receipt.idempotencyKey !== prepared.idempotencyKey ||
+    receipt.recordHash !== prepared.recordHash ||
+    receipt.expectedRevision !== intent.expected.revision ||
+    receipt.acceptedRevision !== intent.record.revision
+  )
+    return recoveryConflict(
+      'Resume intent does not match the exact committed source request and record.',
+    );
+  return receipt;
+}
+
 /** Rebuild only the local checkpoint cache. Durable Go frames remain untouched. */
 export function recoveryCheckpointState(
   view: WorkflowRunRecoveryEvidence,
   local?: WorkflowCheckpointControlState,
+  exactResumeIntents: ReadonlyMap<string, string> = new Map(),
 ): WorkflowCheckpointControlState | null {
   if (!view.complete)
     return recoveryConflict('A partial recovery query cannot prove the checkpoint frontier.');
-  const committed = view.bindings
-    .map((entry) => readRecoveryBinding(view, entry))
-    .filter((entry) => entry.resolution !== null)
-    .sort(
-      (a, b) =>
-        (a.resolution!.evidence.sourceAuthority.acceptedRevision ?? -1) -
-        (b.resolution!.evidence.sourceAuthority.acceptedRevision ?? -1),
-    );
+  validateWorkflowRunRecoveryEvidence(view);
+  const committed: {
+    evidence: WorkflowRunnerAuthorityBindingResolution['evidence'];
+    sentAt: string;
+  }[] = [];
+  let initial = local;
+  for (const entry of view.bindings) {
+    const { stage, resolution } = readRecoveryBinding(view, entry);
+    if (!['checkpoint_commit', 'resume_advance'].includes(stage.operation)) continue;
+    if (resolution) {
+      committed.push({ evidence: resolution.evidence, sentAt: resolution.sentAt });
+      continue;
+    }
+    const settlement = view.settlements?.find((item) => item.bindingId === entry.bindingId);
+    if (!settlement) continue;
+    const raw = exactResumeIntents.get(entry.bindingId);
+    if (!raw) {
+      if (settlement.outcome === 'committed')
+        return recoveryConflict(
+          'Committed resume has no reconstructable source intent; inspect its exact evidence.',
+        );
+      continue;
+    }
+    const intent = parseWorkflowResumeIntent(raw, stage, JSON.parse(stage.target.body));
+    if (intent.schema !== 'openslack.workflow_runner_resume_source_intent.v2') {
+      if (settlement.outcome === 'committed')
+        return recoveryConflict('Legacy source commit lacks a durable checkpoint resolution.');
+      continue;
+    }
+    if (settlement.outcome === 'committed') {
+      if (settlement.proofKind !== 'source_receipt')
+        return recoveryConflict('Resume settlement has no exact source receipt.');
+      const receipt = validateSettledResumeIntent(stage, settlement, intent);
+      committed.push({ evidence: intent.evidence, sentAt: receipt.committedAt! });
+    }
+    // An original versioned intent retains initial lineage that never emitted a
+    // checkpoint. Later checkpoints still have to match every durable transition.
+    if (
+      !initial &&
+      intent.prior.revision === 1 &&
+      intent.prior.resumeGeneration === 0 &&
+      intent.prior.checkpoints.length === 0
+    )
+      initial = intent.prior;
+  }
+  committed.sort(
+    (a, b) =>
+      (a.evidence.sourceAuthority.acceptedRevision ?? -1) -
+      (b.evidence.sourceAuthority.acceptedRevision ?? -1),
+  );
   let revision = 1,
     generation = 0;
   const checkpoints: WorkflowCheckpointRecord[] = [];
   const seenBindingHashes: string[] = [];
   let activeBinding: WorkflowCheckpointExecutionBinding | undefined;
   let updatedAt: string | undefined;
-  for (const { resolution } of committed) {
-    const evidence = resolution!.evidence;
+  for (const { evidence, sentAt } of committed) {
     if (
       evidence.schema !== 'openslack.workflow_runner_checkpoint_authority_evidence.v1' &&
       evidence.schema !== 'openslack.workflow_runner_resume_authority_evidence.v1'
@@ -280,7 +464,7 @@ export function recoveryCheckpointState(
       return recoveryConflict('Checkpoint binding changed without a resume transition.');
     if (!activeBinding || evidence.envelope.operation === 'resume_advance') {
       if (!activeBinding && evidence.envelope.operation === 'resume_advance') {
-        const initialHash = local?.seenBindingHashes[0];
+        const initialHash = initial?.seenBindingHashes[0];
         if (!initialHash)
           return recoveryConflict(
             'The initial binding lineage is unavailable; this cache cannot be reconstructed.',
@@ -309,13 +493,18 @@ export function recoveryCheckpointState(
         return recoveryConflict(
           'Resume destination differs from the committed checkpoint frontier.',
         );
-      updatedAt = resolution!.sentAt;
+      updatedAt = sentAt;
     }
     activeBinding = binding;
     revision = source.acceptedRevision;
     generation = source.acceptedResumeGeneration;
   }
-  if (!activeBinding) return null;
+  if (!activeBinding)
+    return initial?.revision === 1 &&
+      initial.resumeGeneration === 0 &&
+      initial.checkpoints.length === 0
+      ? initial
+      : null;
   return validateWorkflowCheckpointControlState(
     {
       schema: WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
@@ -340,6 +529,7 @@ export function assertRecoveryFrontier(
   head: WorkflowControlAuthorityRunRead,
   local: WorkflowCheckpointControlState,
   pendingBindingId?: string,
+  exactResumeIntents?: ReadonlyMap<string, string>,
 ): void {
   if (
     !view.complete ||
@@ -354,7 +544,7 @@ export function assertRecoveryFrontier(
     view.unfinished.some((entry) => entry.bindingId !== pendingBindingId)
   )
     recoveryConflict('Recovery requires matching identity and no competing unfinished operation.');
-  const proven = recoveryCheckpointState(view, local);
+  const proven = recoveryCheckpointState(view, local, exactResumeIntents);
   if (
     proven
       ? proven.revision !== local.revision ||

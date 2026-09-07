@@ -1,4 +1,8 @@
 import { WorkflowRunReadError } from './workflow-run-read-errors.js';
+import {
+  workflowAuthorityFailure,
+  isWorkflowAuthorityRetryable,
+} from './internal/workflow-authority-failure.js';
 import type {
   ExecutionMode,
   BudgetState,
@@ -1278,6 +1282,7 @@ export class RunStore {
       }
       return state;
     } catch (error) {
+      if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
       throw workflowCheckpointError(
         'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
         'Workflow checkpoint control is corrupt.',
@@ -1312,6 +1317,7 @@ export class RunStore {
       if (readback === body) return;
       throw new Error('Workflow checkpoint control readback is mismatched.');
     } catch (error) {
+      if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
       if (
         error &&
         typeof error === 'object' &&
@@ -1464,9 +1470,20 @@ export class RunStore {
   ): Promise<T> {
     const guarded = async () => {
       const path = `${this.checkpointControlPath(runId)}.intent`;
-      const raw = this.fs.readOwnerOnlyFile
-        ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES)
-        : await this.fs.readFile(path);
+      let raw: string | null;
+      try {
+        raw = this.fs.readOwnerOnlyFile
+          ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES)
+          : await this.fs.readFile(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
+            'Checkpoint reservation is not valid UTF-8; explicit repair is required.',
+            error,
+          );
+        throw error;
+      }
       if (raw !== null) {
         const pending = parseWorkflowCheckpointReservation(raw);
         if (pending !== null && pending !== reservationId)
@@ -1495,15 +1512,36 @@ export class RunStore {
     else await this.fs.writeFile(path, body);
   }
 
+  /** Caller must first prove this operation is durably fenced and uncommitted. */
+  protected async releaseCheckpointReservation(
+    runId: string,
+    reservationId: string,
+  ): Promise<void> {
+    this.assertMutationAccess();
+    await this.withCheckpointMutation(
+      runId,
+      async () => {
+        const path = `${this.checkpointControlPath(runId)}.intent`;
+        const raw = this.fs.readOwnerOnlyFile
+          ? await this.fs.readOwnerOnlyFile(path, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES)
+          : await this.fs.readFile(path);
+        // A cleared/missing marker or another operation is never claimed by cleanup.
+        if (raw !== null && parseWorkflowCheckpointReservation(raw) === reservationId)
+          await this.writeCheckpointReservation(runId, null);
+      },
+      reservationId,
+    );
+  }
+
   /** Finish a proven CAS after a lost response/cache write; never rewind newer state. */
   protected async finalizeCheckpointResume(
     runId: string,
     reservationId: string,
     prior: WorkflowCheckpointControlState,
     next: WorkflowCheckpointControlState,
-  ): Promise<void> {
+  ): Promise<WorkflowCheckpointControlState> {
     this.assertMutationAccess();
-    await this.withCheckpointMutation(
+    return this.withCheckpointMutation(
       runId,
       async () => {
         const current = await this.requireCheckpointControl(runId);
@@ -1511,7 +1549,10 @@ export class RunStore {
           current.resumeGeneration > next.resumeGeneration ||
           (current.resumeGeneration === next.resumeGeneration && current.revision > next.revision)
         )
-          return;
+          throw workflowCheckpointError(
+            'WORKFLOW_CHECKPOINT_RECONCILIATION_REQUIRED',
+            'A newer checkpoint cache supersedes this resume; historical evidence does not authorize execution.',
+          );
         if (workflowCheckpointHash(current) !== workflowCheckpointHash(next)) {
           if (workflowCheckpointHash(current) !== workflowCheckpointHash(prior))
             throw workflowCheckpointError(
@@ -1521,6 +1562,7 @@ export class RunStore {
           await this.writeCheckpointControl(runId, next);
         }
         await this.writeCheckpointReservation(runId, null);
+        return next;
       },
       reservationId,
     );

@@ -5,6 +5,7 @@ import { RunStore } from '../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { WorkflowRunnerResumeSourceStore } from '../internal/workflow-runner-resume-source.js';
 import { atomicWrite, productionJournalSecurity } from '../workflow-control-shadow.js';
+import { settlementFixture } from './workflow-reconciliation-fixtures.js';
 import { recoveryFrame } from './workflow-recovery-fixtures.js';
 import type { WorkflowRunRecoveryEvidence } from '../workflow-run-recovery-evidence.js';
 import { WORKFLOW_RUNNER_CONTRACT_LIMITS } from '../workflow-runner-contract.js';
@@ -628,6 +629,73 @@ function cancelAfter(
 }
 
 describe('Workflow runner F2b runtime delivery', () => {
+  it('closes a budget source result when the local resolution was lost, without recreating delivery or ACK', async () => {
+    const root = await journalRoot();
+    const original = vectors.positive.semanticVariants.budgetReserveGoAuthority!;
+    const stage = original.stage.value;
+    const result =
+      vectors.positive.controlDelivery.artifacts['kind:budget_authorization']!.budgetSourceResult!;
+    const proof =
+      canonicalWorkflowControlAuthorityJson({
+        schema: 'openslack.workflow_runner_budget_settlement_proof.v1',
+        resolution: original.resolution.canonicalBytes,
+        sourceResult: canonicalWorkflowControlAuthorityJson(result) + '\n',
+      }) + '\n';
+    const receipt = settlementFixture(stage, 'budget_source_result', proof);
+    const journal = new WorkflowRunnerAuthorityBindingJournal(root);
+    await journal.initialize();
+    await journal.putStage(stage);
+    await journal.putSettlement(receipt, original.stageReceipt.value);
+    const entry = await journal.read(stage.bindingId);
+    expect(entry?.settlement).toEqual(receipt);
+    expect(entry?.resolution).toBeUndefined();
+    expect(entry?.controlDeliveries).toEqual([]);
+    expect(await journal.activeForRun(stage.runId)).toEqual([]);
+    await journal.putStage(stage);
+    await expect(
+      journal.putResolution(stage.bindingId, original.resolution.value),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT' });
+    const restarted = new WorkflowRunnerAuthorityBindingJournal(root);
+    await restarted.initialize();
+    await restarted.putSettlement(receipt, original.stageReceipt.value);
+    expect(await restarted.activeForRun(stage.runId)).toEqual([]);
+    expect((await restarted.read(stage.bindingId))?.settlement).toEqual(receipt);
+  });
+
+  it('reuses exact journaled checkpoint evidence after a local cache disappears before resolution retry', async () => {
+    const root = await journalRoot();
+    const port = new ExactPort();
+    const resolve = vi
+      .spyOn(port, 'resolve')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('temporary control I/O'), {
+          code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED',
+        }),
+      );
+    const source = committedSource('checkpoint_commit');
+    const probe = vi.fn(source.probe);
+    const commit = vi.fn(source.commit);
+    const input = inputFor('checkpoint_commit', { probe, commit });
+    const runtime = new WorkflowRunnerAuthorityBindingRuntime({
+      journal: new WorkflowRunnerAuthorityBindingJournal(root),
+      port,
+      now: () => goFixture('checkpoint_commit').resolutionSentAt,
+    });
+    await runtime.initialize();
+    await expect(runtime.commit(input)).rejects.toMatchObject({
+      code: 'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_RESPONSE_UNKNOWN',
+    });
+    expect(probe).toHaveBeenCalledTimes(1);
+    // The mutable cache no longer contains the checkpoint. Immutable journal
+    // evidence must permit completing the original resolution without redoing it.
+    probe.mockResolvedValue({ state: 'not_committed' });
+    const recovered = await runtime.commit(input);
+    expect(recovered.resolution.evidence).toEqual(goFixture('checkpoint_commit').evidence);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(commit).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+
   it('enforces the complete six-operation revision and generation matrix on the Go route', async () => {
     const expected = {
       checkpoint_commit: { revision: 1, generation: 0 },

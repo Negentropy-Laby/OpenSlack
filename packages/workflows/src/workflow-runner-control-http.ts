@@ -58,6 +58,19 @@ export async function cancelWorkflowRunnerResponseBody(response: Response): Prom
   await response.body?.cancel().catch(() => undefined);
 }
 
+export class WorkflowRunnerOperationCancelledError extends Error {
+  readonly code = 'WORKFLOW_RUNNER_OPERATION_CANCELLED';
+
+  constructor(cause?: unknown) {
+    super('Workflow runner operation was cancelled.', { cause });
+    this.name = 'WorkflowRunnerOperationCancelledError';
+  }
+}
+
+export function throwIfWorkflowRunnerAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new WorkflowRunnerOperationCancelledError(signal.reason);
+}
+
 export async function readWorkflowRunnerResponseBytes(
   response: Response,
   options: {
@@ -65,7 +78,10 @@ export async function readWorkflowRunnerResponseBytes(
     readonly signal?: AbortSignal;
     readonly validateContentLength: boolean;
     readonly minimumBytes: number;
-    readonly failure: (message: string, options?: ErrorOptions) => never;
+    readonly failure: (
+      message: string,
+      options: ErrorOptions & { readonly kind: 'invalid' | 'transport' },
+    ) => never;
     readonly messages: {
       readonly contentType: string;
       readonly contentLength: string;
@@ -79,61 +95,68 @@ export async function readWorkflowRunnerResponseBytes(
   },
 ): Promise<Buffer> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const invalid = (message: string): never => options.failure(message, { kind: 'invalid' });
   try {
+    throwIfWorkflowRunnerAborted(options.signal);
     if (response.headers.get('content-type') !== 'application/json') {
-      return options.failure(options.messages.contentType);
+      return invalid(options.messages.contentType);
     }
     const declaredLength = response.headers.get('content-length');
     let expectedLength: number | null = null;
     if (options.validateContentLength && declaredLength !== null) {
       const parsed = Number(declaredLength);
       if (
+        !/^(0|[1-9][0-9]*)$/u.test(declaredLength) ||
         !Number.isSafeInteger(parsed) ||
         parsed < options.minimumBytes ||
         parsed > options.maxBytes
       ) {
-        return options.failure(options.messages.contentLength);
+        return invalid(options.messages.contentLength);
       }
       expectedLength = parsed;
     }
-    reader = response.body?.getReader();
-    if (!reader) return options.failure(options.messages.missingBody);
+    try {
+      reader = response.body?.getReader();
+    } catch (cause) {
+      return options.failure(options.messages.readFailed, { kind: 'transport', cause });
+    }
+    if (!reader) return invalid(options.messages.missingBody);
 
     const chunks: Uint8Array[] = [];
     let size = 0;
     while (true) {
-      if (options.signal?.aborted) {
-        throw options.signal.reason ?? new Error(options.messages.aborted);
-      }
+      throwIfWorkflowRunnerAborted(options.signal);
       let abort: (() => void) | undefined;
       const aborted = new Promise<never>((_resolve, reject) => {
-        abort = () => reject(options.signal?.reason ?? new Error(options.messages.aborted));
+        abort = () => reject(new WorkflowRunnerOperationCancelledError(options.signal?.reason));
         options.signal?.addEventListener('abort', abort, { once: true });
+        if (options.signal?.aborted) abort();
       });
       let next;
       try {
         next = await Promise.race([reader.read(), aborted]);
+      } catch (cause) {
+        throwIfWorkflowRunnerAborted(options.signal);
+        return options.failure(options.messages.readFailed, { kind: 'transport', cause });
       } finally {
         if (abort) options.signal?.removeEventListener('abort', abort);
       }
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > options.maxBytes) return options.failure(options.messages.exceeded);
+      if (size > options.maxBytes) return invalid(options.messages.exceeded);
       chunks.push(next.value);
     }
-    if (size < options.minimumBytes) return options.failure(options.messages.empty);
+    if (size < options.minimumBytes) return invalid(options.messages.empty);
     if (expectedLength !== null && expectedLength !== size) {
-      return options.failure(options.messages.lengthMismatch);
+      return invalid(options.messages.lengthMismatch);
     }
     return Buffer.concat(
       chunks.map((chunk) => Buffer.from(chunk)),
       size,
     );
-  } catch (error) {
-    if (options.signal?.aborted) throw error;
-    return options.failure(options.messages.readFailed, { cause: error });
   } finally {
-    await reader?.cancel().catch(() => undefined);
-    if (!reader) await response.body?.cancel().catch(() => undefined);
+    // Cancelling the underlying stream must not delay a cancelled caller.
+    void reader?.cancel().catch(() => undefined);
+    if (!reader) void response.body?.cancel().catch(() => undefined);
   }
 }

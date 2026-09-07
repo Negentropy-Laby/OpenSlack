@@ -308,7 +308,9 @@ WHERE a.attempt_id=$1`, lease.AttemptID).Scan(&workerSequence, &expectedRunRevis
 		IdempotencyKey: resolution.IdempotencyKey, RequestFingerprint: resolution.RequestFingerprint,
 	})
 	if err != nil {
-		t.Fatal(err)
+		var databaseNow time.Time
+		clockErr := repository.pool.QueryRow(context.Background(), `SELECT clock_timestamp()`).Scan(&databaseNow)
+		t.Fatalf("resolve fixture: %v (sentAt=%v databaseNow=%s clockError=%v)", err, resolutionValue["sentAt"], databaseNow.UTC().Format(time.RFC3339Nano), clockErr)
 	}
 	resolutionReplay, err := repository.ResolveAuthorityBinding(context.Background(), bindingID, runnerstore.V2AuthorityBindingInput{
 		WorkspaceID: lease.WorkspaceID, Prepared: resolution,
@@ -333,6 +335,13 @@ WHERE a.attempt_id=$1`, lease.AttemptID).Scan(&workerSequence, &expectedRunRevis
 		if result.Receipt["acceptedRunRevision"] != budgetCase.expectedSourceAccepted {
 			t.Fatalf("budget source revision drifted: receipt=%+v want=%d", result.Receipt, budgetCase.expectedSourceAccepted)
 		}
+	}
+	if stopState == "source_committed" {
+		view, err := repository.ReadAuthorityBindingForEvent(context.Background(), event.Message.EventID, event.ExactBytes)
+		if err != nil || view.State != "resolved" || len(view.ExactSourceResult) != 0 {
+			t.Fatalf("source crash window: %+v %v", view, err)
+		}
+		return view
 	}
 
 	recorded, err := repository.RecordV2Event(context.Background(), event)
@@ -567,7 +576,11 @@ func bindGS9F2Evidence(
 		evidence["envelopeHash"] = envelopeHash
 		source["requestHash"], source["recordHash"] = envelopeHash, observationHash
 	case runnerbindingcontract.OperationEffectAuthorize:
-		evidence["expiresAt"] = runnerstore.CanonicalTimestamp(time.Now().UTC().Add(time.Hour))
+		if evidence["approvalStatus"] == "expired" {
+			evidence["expiresAt"] = runnerstore.CanonicalTimestamp(time.Now().UTC().Add(-time.Hour))
+		} else {
+			evidence["expiresAt"] = runnerstore.CanonicalTimestamp(time.Now().UTC().Add(time.Hour))
+		}
 	case runnerbindingcontract.OperationEffectComplete:
 	}
 	_ = stageSentAt

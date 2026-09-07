@@ -1,6 +1,7 @@
 import { types as nodeTypes } from 'node:util';
 import {
   parseWorkflowRunRecoveryEvidence,
+  validateWorkflowRunRecoveryEvidence,
   WorkflowRunRecoveryError,
   type WorkflowRunRecoveryEvidencePort,
   type WorkflowRunRecoveryEvidence,
@@ -16,6 +17,8 @@ import {
   cancelWorkflowRunnerResponseBody,
   exactWorkflowRunnerLoopbackOrigin,
   readWorkflowRunnerResponseBytes,
+  WorkflowRunnerOperationCancelledError,
+  throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_STAGE_ROUTE =
@@ -135,8 +138,7 @@ async function boundedReceipt(
     minimumBytes: 1,
     failure: (message, options) =>
       fail(
-        message === 'Authority-binding response read failed.' ||
-          message === 'authority-binding response read aborted'
+        options.kind === 'transport'
           ? 'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED'
           : 'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_RESPONSE_INVALID',
         message,
@@ -200,6 +202,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
     signal?: AbortSignal,
   ): Promise<WorkflowRunnerAuthorityBindingReceipt> => {
     const prepared = preparedRequest(preparedValue);
+    throwIfWorkflowRunnerAborted(signal);
     let response: Response;
     try {
       response = await request(`${origin}${path}`, {
@@ -215,6 +218,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
         signal,
       });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
       return fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED',
         'Authority-binding POST transport failed with an unknown outcome.',
@@ -246,22 +250,26 @@ export function createWorkflowRunnerAuthorityBindingClient(
       let result: WorkflowRunRecoveryEvidence | undefined;
       const seen = new Set<string>();
       for (;;) {
-        const query =
-          selectedBindingId !== undefined
-            ? `?bindingId=${encodeURIComponent(bindingId(selectedBindingId))}`
-            : result?.nextCursor
-              ? `?afterBindingId=${encodeURIComponent(result.nextCursor)}&snapshot=${result.snapshot}`
-              : '';
+        throwIfWorkflowRunnerAborted(signal);
+        const params = new URLSearchParams();
+        if (selectedBindingId !== undefined) params.set('bindingId', bindingId(selectedBindingId));
+        if (result?.nextCursor) {
+          params.set('afterBindingId', result.nextCursor);
+          params.set('snapshot', result.snapshot);
+        }
+        const query = params.size ? `?${params}` : '';
         let response: Response;
         try {
           response = await request(
             `${origin}/v2/runner/runs/${encodeURIComponent(runId)}/recovery-evidence${query}`,
             { method: 'GET', headers: commonHeaders, redirect: 'error', signal },
           );
-        } catch {
+        } catch (cause) {
+          if (signal?.aborted) throw new WorkflowRunnerOperationCancelledError(cause);
           throw new WorkflowRunRecoveryError(
             'WORKFLOW_RUN_RECOVERY_UNKNOWN',
             'Recovery evidence transport failed.',
+            { cause },
           );
         }
         if (response.status !== 200) {
@@ -279,12 +287,13 @@ export function createWorkflowRunnerAuthorityBindingClient(
           validateContentLength: true,
           minimumBytes: 1,
           signal,
-          failure: (message) => {
+          failure: (_message, options) => {
             throw new WorkflowRunRecoveryError(
-              message === 'read failed' || message === 'cancelled'
+              options.kind === 'transport'
                 ? 'WORKFLOW_RUN_RECOVERY_UNKNOWN'
                 : 'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
               'Recovery evidence response could not be read completely.',
+              options,
             );
           },
           messages: {
@@ -298,35 +307,58 @@ export function createWorkflowRunnerAuthorityBindingClient(
             aborted: 'cancelled',
           },
         });
+        let decoded: string;
+        try {
+          decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        } catch (cause) {
+          throw new WorkflowRunRecoveryError(
+            'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
+            'Recovery evidence is not valid UTF-8.',
+            { cause },
+          );
+        }
         const page = parseWorkflowRunRecoveryEvidence(
-          Buffer.from(bytes).toString('utf8'),
+          decoded,
           config.workspaceId,
           runId,
           selectedBindingId,
         );
         if (
           result &&
-          (page.snapshot !== result.snapshot ||
+          (page.schema !== result.schema ||
+            page.snapshot !== result.snapshot ||
             canonical(page.route) !== canonical(result.route) ||
-            canonical(page.unfinished) !== canonical(result.unfinished) ||
-            canonical(page.activeAttempts) !== canonical(result.activeAttempts))
+            (page.schema === 'openslack.workflow_runner_recovery_evidence.v1' &&
+              (canonical(page.unfinished) !== canonical(result.unfinished) ||
+                canonical(page.activeAttempts) !== canonical(result.activeAttempts))))
         )
           throw new WorkflowRunRecoveryError(
             'WORKFLOW_RUN_RECOVERY_UNKNOWN',
             'Recovery snapshot changed between pages.',
           );
-        for (const entry of page.bindings) {
-          if (
-            seen.has(entry.bindingId) ||
-            (result?.nextCursor && entry.bindingId <= result.nextCursor)
-          )
-            throw new WorkflowRunRecoveryError(
-              'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
-              'Recovery pages repeat or reorder bindings.',
-            );
-          seen.add(entry.bindingId);
-        }
+        if (page.schema === 'openslack.workflow_runner_recovery_evidence.v2') {
+          for (const key of page.recordKeys ?? []) {
+            if (seen.has(key) || (result?.nextCursor && key <= result.nextCursor))
+              throw new WorkflowRunRecoveryError(
+                'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
+                'Recovery records repeat or reorder across pages.',
+              );
+            seen.add(key);
+          }
+        } else
+          for (const entry of page.bindings) {
+            if (
+              seen.has(entry.bindingId) ||
+              (result?.nextCursor && entry.bindingId <= result.nextCursor)
+            )
+              throw new WorkflowRunRecoveryError(
+                'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
+                'Recovery pages repeat or reorder bindings.',
+              );
+            seen.add(entry.bindingId);
+          }
         if (
+          page.schema === 'openslack.workflow_runner_recovery_evidence.v1' &&
           page.nextCursor !== null &&
           (page.bindings.length === 0 || page.nextCursor !== page.bindings.at(-1)!.bindingId)
         )
@@ -334,8 +366,22 @@ export function createWorkflowRunnerAuthorityBindingClient(
             'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
             'Recovery page cursor does not advance.',
           );
-        result = { ...page, bindings: [...(result?.bindings ?? []), ...page.bindings] };
-        if (page.nextCursor === null) return result;
+        result = {
+          ...page,
+          bindings: [...(result?.bindings ?? []), ...page.bindings],
+          ...(page.schema === 'openslack.workflow_runner_recovery_evidence.v2'
+            ? {
+                settlements: [...(result?.settlements ?? []), ...(page.settlements ?? [])],
+                unfinished: [...(result?.unfinished ?? []), ...page.unfinished],
+                activeAttempts: [...(result?.activeAttempts ?? []), ...page.activeAttempts],
+                recordKeys: [...(result?.recordKeys ?? []), ...(page.recordKeys ?? [])],
+              }
+            : {}),
+        };
+        if (page.nextCursor === null) {
+          validateWorkflowRunRecoveryEvidence(result);
+          return result;
+        }
       }
     },
     stage: (prepared: WorkflowRunnerAuthorityBindingPrepared<unknown>, signal?: AbortSignal) =>
@@ -361,6 +407,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
         signal,
       ),
     async readReceipt(idempotencyKey: string, signal?: AbortSignal) {
+      throwIfWorkflowRunnerAborted(signal);
       if (!IDEMPOTENCY.test(idempotencyKey)) {
         return fail(
           'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_REQUEST_INVALID',
@@ -374,6 +421,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
           { method: 'GET', headers: commonHeaders, signal },
         );
       } catch (error) {
+        throwIfWorkflowRunnerAborted(signal);
         return fail(
           'WORKFLOW_RUNNER_AUTHORITY_BINDING_CLIENT_TRANSPORT_FAILED',
           'Authority-binding receipt point-read failed.',

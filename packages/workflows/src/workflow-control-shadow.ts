@@ -901,11 +901,11 @@ export async function writeExclusiveBytes(
 
 export async function atomicWrite(
   path: string,
-  body: string,
+  body: string | Uint8Array,
   security: WorkflowControlShadowJournalSecurityDependencies,
 ): Promise<void> {
   const temporary = join(dirname(path), `.${sha256(path)}.${process.pid}.${randomUUID()}.tmp`);
-  await writeExclusive(temporary, body, security);
+  await writeExclusiveWithIdentity(temporary, body, security);
   try {
     await rename(temporary, path);
     await assertOwnerFile(path, security);

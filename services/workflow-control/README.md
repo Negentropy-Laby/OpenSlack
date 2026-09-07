@@ -242,8 +242,10 @@ HTTP wire. `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` rema
 
 ## GS9-F2b runtime-delivery qualification
 
-The `workflow-control-runner-v2-runtime-delivery-v1` profile requires schema 8, the existing v2
-qualification switch, loopback network mode, and the separate runtime-delivery switch. It adds
+At its original F2b gate, `workflow-control-runner-v2-runtime-delivery-v1` required schema 8,
+the v2 qualification switch, loopback mode and the runtime-delivery switch. Its current
+minimum is schema 10 for explicit reconciliation and recovery v2. Other profiles retain
+their existing minimum versions. F2b added
 durable authority-binding stage, resolution, event, receipt, control-delivery ACK, and
 reconciliation records around the frozen runner-v2 and F2a bytes. The sealed TypeScript worker
 remains the JavaScript, RunStore, checkpoint, effect, provider, and source-authority executor; Go

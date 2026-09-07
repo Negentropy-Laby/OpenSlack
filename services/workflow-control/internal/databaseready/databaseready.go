@@ -15,7 +15,7 @@ type Range struct {
 	Maximum int64
 }
 
-const CurrentSchemaVersion int64 = 9
+const CurrentSchemaVersion int64 = 10
 
 var (
 	ShadowProfile                  = Range{Minimum: 1, Maximum: CurrentSchemaVersion}
@@ -25,7 +25,7 @@ var (
 	EffectProfile                  = Range{Minimum: 5, Maximum: CurrentSchemaVersion}
 	BudgetProfile                  = Range{Minimum: 6, Maximum: CurrentSchemaVersion}
 	RunnerV2FoundationProfile      = Range{Minimum: 7, Maximum: CurrentSchemaVersion}
-	RunnerV2RuntimeDeliveryProfile = Range{Minimum: 9, Maximum: CurrentSchemaVersion}
+	RunnerV2RuntimeDeliveryProfile = Range{Minimum: 10, Maximum: CurrentSchemaVersion}
 )
 
 func RunnerRange(checkpointShadow, effectShadow bool) Range {

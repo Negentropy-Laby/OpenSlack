@@ -18,6 +18,7 @@ import {
   prepareWorkflowRunnerAuthorityBindingReceipt,
   prepareWorkflowRunnerAuthorityBindingResolution,
   prepareWorkflowRunnerAuthorityBindingStage,
+  parseWorkflowRunnerAuthorityBindingReceiptBytes,
   validateWorkflowRunnerAuthorityBindingResolutionForStage,
   validateWorkflowRunnerAuthorityBindingResolutionReceipt,
   validateWorkflowRunnerAuthorityBindingStageReceipt,
@@ -40,6 +41,10 @@ import {
 } from './workflow-runner-authority-binding-contract.js';
 import type { WorkflowRunnerAuthorityBindingPort } from './workflow-runner-authority-binding-client.js';
 import { workflowRunnerAuthorityBindingJournalEntryClosed } from './workflow-runner-authority-binding-journal.js';
+import {
+  validateWorkflowRunRecoveryEvidence,
+  type WorkflowRunRecoveryEvidence,
+} from './workflow-run-recovery-evidence.js';
 import type {
   WorkflowRunnerAuthorityBindingJournal,
   WorkflowRunnerAuthorityBindingJournalEntry,
@@ -51,6 +56,10 @@ export type WorkflowRunnerAuthoritySourceProbe =
   | {
       readonly state: 'committed';
       readonly evidence: WorkflowRunnerAuthorityEvidence;
+      /** Historical proof is retained even when a local cache cannot authorize delivery. */
+      readonly readiness?:
+        | { readonly state: 'ready' }
+        | { readonly state: 'blocked'; readonly code: string; readonly message: string };
       /** Exact pre-existing companion resolution, including its original timestamp. */
       readonly durableResolution?: {
         readonly resolution: WorkflowRunnerAuthorityBindingResolution;
@@ -248,6 +257,31 @@ export class WorkflowRunnerAuthorityBindingRuntime {
           !workflowRunnerAuthorityBindingJournalEntryClosed(entry),
       ),
     );
+  }
+
+  async acceptSettlements(view: WorkflowRunRecoveryEvidence): Promise<void> {
+    validateWorkflowRunRecoveryEvidence(view);
+    await this.#journal.runWorkflowExclusive(view.runId, async () => {
+      for (const settlement of view.settlements ?? []) {
+        const binding = view.bindings.find((entry) => entry.bindingId === settlement.bindingId)!;
+        const original = await this.#journal.read(settlement.bindingId);
+        if (!original) continue;
+        if (canonicalWorkflowControlAuthorityJson(original.stage) + '\n' !== binding.stage)
+          return fail(
+            'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_CONFLICT',
+            'Settlement original stage differs from local history.',
+          );
+        const receipt = parseWorkflowRunnerAuthorityBindingReceiptBytes(
+          Buffer.from(binding.stageReceipt),
+        );
+        if (receipt.phase !== 'stage_event')
+          return fail(
+            'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_CONFLICT',
+            'Settlement stage receipt has another phase.',
+          );
+        await this.#journal.putSettlement(settlement, receipt);
+      }
+    });
   }
 
   async outstandingForRun(
@@ -610,7 +644,7 @@ export class WorkflowRunnerAuthorityBindingRuntime {
       }
       await this.#journal.putSourceEvidence(bindingId, entry.stage.operation, evidence);
       entry = (await this.#journal.read(bindingId))!;
-    } else if (!entry.resolution) {
+    } else if (!entry.resolution && entry.stage.operation !== 'checkpoint_commit') {
       const probe = await this.#probeSource(source, entry.stage, signal);
       if (probe.state !== 'committed')
         return fail(

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { throwIfWorkflowRunnerAborted } from './workflow-runner-control-http.js';
 import { readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -17,11 +18,14 @@ import {
   readOwnerFileBytes,
   writeExclusiveBytes,
   productionJournalSecurity,
+  atomicWrite,
 } from './workflow-control-shadow.js';
 import {
   recoveryCheckpointState,
   assertRecoveryFrontier,
   recoveryConflict,
+  readRecoveryBinding,
+  validateWorkflowRunRecoveryEvidence,
   type WorkflowRunRecoveryEvidencePort,
 } from './workflow-run-recovery-evidence.js';
 
@@ -138,7 +142,21 @@ class CheckpointRepairStore extends RunStore {
     });
     // Network I/O remains outside the checkpoint lock. The durable reservation
     // prevents every local checkpoint writer from racing this revalidation.
-    await revalidate();
+    try {
+      await revalidate();
+    } catch (error) {
+      // This repair has made no authority mutation. Undo only our unchanged
+      // reservation, restoring the original bytes (including malformed UTF-8).
+      await locked(async () => {
+        const current = await repairBytes(markerPath);
+        if (!current?.equals(Buffer.from(marker)))
+          return recoveryConflict('Repair reservation changed during authority verification.');
+        const original = snapshot.get(markerPath);
+        if (original) await atomicWrite(markerPath, original, productionJournalSecurity());
+        else await unlink(markerPath);
+      });
+      throw error;
+    }
     const reserved = new Map(snapshot);
     reserved.set(markerPath, Buffer.from(marker));
     await locked(async () => {
@@ -183,6 +201,7 @@ export async function repairWorkflowCheckpoints(
     return report();
   }
   try {
+    throwIfWorkflowRunnerAborted(options.signal);
     const route = await createWorkflowRunRouteJournal(options.rootDir).locateReadOnly(runId);
     if (!route || route.receipt.route.backend !== 'go') {
       diagnostics.push('WORKFLOW_RUN_RECOVERY_ROUTE_REQUIRED');
@@ -201,8 +220,9 @@ export async function repairWorkflowCheckpoints(
     for (const [path, bytes] of snapshot)
       if (bytes && /resume-[0-9a-f]{64}\.json$/u.test(path)) {
         try {
-          const value: unknown = JSON.parse(bytes.toString('utf8'));
-          if (canonical(value) + '\n' !== bytes.toString('utf8')) throw new Error();
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          const value: unknown = JSON.parse(text);
+          if (canonical(value) + '\n' !== text) throw new Error();
         } catch {
           corruptIntents.push(path);
           diagnostics.push('WORKFLOW_RUN_RESUME_INTENT_CORRUPT');
@@ -215,42 +235,44 @@ export async function repairWorkflowCheckpoints(
     const authority = options.authority,
       recovery = options.recovery;
     const proof = await recovery.readRecoveryEvidence(runId, undefined, options.signal);
+    validateWorkflowRunRecoveryEvidence(proof);
     const head = await authority.read(runId, route.receipt.route, options.signal);
-    const unknownOperation = proof.unfinished.some(
-      (entry) =>
-        !proof.bindings.some(
-          (binding) => binding.bindingId === entry.bindingId && binding.resolution !== null,
-        ),
+    // A checkpoint resolution proves a cache transition even if its old ACK was
+    // lost. Prepared budget/effect intent is never blanket-cleared this way.
+    const cacheCommitted = new Set(
+      proof.bindings
+        .filter((entry) => {
+          const { stage, resolution } = readRecoveryBinding(proof, entry);
+          return (
+            ['checkpoint_commit', 'resume_advance'].includes(stage.operation) &&
+            resolution?.evidence.sourceAuthority.evidenceState === 'committed'
+          );
+        })
+        .map((entry) => entry.bindingId),
     );
+    const cacheProof = {
+      ...proof,
+      unfinished: proof.unfinished.filter((entry) => !cacheCommitted.has(entry.bindingId)),
+    };
     if (
       proof.activeAttempts.length ||
-      unknownOperation ||
+      cacheProof.unfinished.length ||
       !['paused', 'paused_waiting_approval', 'resuming', 'running'].includes(head.state)
     )
       return recoveryConflict('Active or unproven authority operations prevent checkpoint repair.');
-    const next = recoveryCheckpointState(proof, local);
-    if (!next)
-      return recoveryConflict(
-        'There is not enough durable checkpoint history to rebuild this cache.',
-      );
-    // Accepted immutable resolutions remain usable after a startup
-    // reconciliation latch. This cache-only repair cannot authorize execution.
-    assertRecoveryFrontier({ ...proof, unfinished: [] }, head, next);
-    if (local && local.resumeGeneration > next.resumeGeneration)
-      return recoveryConflict('Repair cannot rewind the local authority generation.');
+    const exactResumeIntents = new Map<string, string>();
     for (const [path, bytes] of snapshot) {
       if (!bytes || !/resume-[0-9a-f]{64}\.json$/u.test(path)) continue;
       const match = proof.bindings.find((entry) =>
         path.endsWith(`resume-${digest(entry.bindingId)}.json`),
       );
       if (!match) return recoveryConflict('A resume intent has no matching durable operation.');
-      const stage = JSON.parse(match.stage);
+      const { stage } = readRecoveryBinding(proof, match);
+      const settlement = proof.settlements?.find((item) => item.bindingId === match.bindingId);
       try {
-        const intent = parseWorkflowResumeIntent(
-          bytes.toString('utf8'),
-          stage,
-          JSON.parse(stage.target.body),
-        );
+        const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        const intent = parseWorkflowResumeIntent(raw, stage, JSON.parse(stage.target.body));
+        exactResumeIntents.set(match.bindingId, raw);
         if (match.resolution) {
           const resolution = JSON.parse(match.resolution);
           if (
@@ -263,7 +285,8 @@ export async function repairWorkflowCheckpoints(
             throw new Error();
         }
       } catch {
-        if (!match.resolution)
+        exactResumeIntents.delete(match.bindingId);
+        if (!cacheCommitted.has(match.bindingId) && settlement?.outcome !== 'not_committed')
           return recoveryConflict('A corrupt resume intent has no exact durable resolution.');
         if (!corruptIntents.includes(path)) {
           corruptIntents.push(path);
@@ -271,15 +294,36 @@ export async function repairWorkflowCheckpoints(
         }
       }
     }
+    const next = recoveryCheckpointState(proof, local, exactResumeIntents);
+    if (!next)
+      return recoveryConflict(
+        'There is not enough durable checkpoint history to rebuild this cache.',
+      );
+    assertRecoveryFrontier(cacheProof, head, next, undefined, exactResumeIntents);
+    if (local && (local.resumeGeneration > next.resumeGeneration || local.revision > next.revision))
+      return recoveryConflict('Repair cannot rewind the local authority generation or revision.');
     const marker = snapshot.get(`${store.checkpointControlPath(runId)}.intent`);
     let clearMarker = false;
     if (marker) {
+      let pending: string | null | undefined;
       try {
-        clearMarker = parseWorkflowCheckpointReservation(marker.toString('utf8')) !== null;
+        pending = parseWorkflowCheckpointReservation(
+          new TextDecoder('utf-8', { fatal: true }).decode(marker),
+        );
+        clearMarker = pending !== null;
       } catch {
         clearMarker = true;
         diagnostics.push('WORKFLOW_CHECKPOINT_RESERVATION_CORRUPT');
       }
+      if (
+        pending &&
+        !/^repair\.[0-9a-f]{64}$/u.test(pending) &&
+        !cacheCommitted.has(pending) &&
+        !proof.settlements?.some((item) => item.bindingId === pending)
+      )
+        return recoveryConflict(
+          'Checkpoint reservation has no terminal proof; use runs reconcile-bindings.',
+        );
     }
     const matches =
       local &&
@@ -301,8 +345,9 @@ export async function repairWorkflowCheckpoints(
       );
     if (!options.apply) return report(true);
     const backups = await store.apply(runId, snapshot, next, corruptIntents, async () => {
-      options.signal?.throwIfAborted();
+      throwIfWorkflowRunnerAborted(options.signal);
       const fresh = await recovery.readRecoveryEvidence(runId, undefined, options.signal);
+      validateWorkflowRunRecoveryEvidence(fresh);
       const freshHead = await authority.read(runId, route.receipt.route, options.signal);
       if (
         fresh.snapshot !== proof.snapshot ||
@@ -316,8 +361,9 @@ export async function repairWorkflowCheckpoints(
     });
     return report(true, true, backups);
   } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
+    const code = options.signal?.aborted
+      ? 'WORKFLOW_RUNNER_OPERATION_CANCELLED'
+      : error && typeof error === 'object' && 'code' in error
         ? String(error.code)
         : 'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED';
     diagnostics.push(code);

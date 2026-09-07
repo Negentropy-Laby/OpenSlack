@@ -72,6 +72,10 @@ import {
   createWorkflowRunRouteJournal,
   loadWorkflowRunRoutingConfig,
   loadWorkflowRunnerControlConfig,
+  repairWorkflowCheckpoints,
+  createWorkflowRunRecoveryEvidenceClient,
+  reconcileWorkflowBindings,
+  createWorkflowBindingReconciliationClient,
   openWorkflowRunReadOnly,
   WorkflowRunRoutingConfigError,
   WorkflowRunRoutingError,
@@ -1601,10 +1605,17 @@ export function collaborationCommands(): Command {
     .option('--apply', 'Preserve damaged files and apply a proven local cache repair')
     .action(async (runId: string, options: { apply?: boolean }) => {
       const rootDir = findRepoRoot();
-      const authority = resolveWorkflowInspectionAuthority(rootDir);
-      const recovery = authority
-        ? createWorkflowRunRecoveryEvidenceClient(loadWorkflowRunnerControlConfig())
-        : undefined;
+      let authority: WorkflowControlAuthorityPort | undefined;
+      let recovery: ReturnType<typeof createWorkflowRunRecoveryEvidenceClient> | undefined;
+      try {
+        authority = resolveWorkflowInspectionAuthority(rootDir);
+        recovery = authority
+          ? createWorkflowRunRecoveryEvidenceClient(loadWorkflowRunnerControlConfig())
+          : undefined;
+      } catch (error) {
+        if (reportWorkflowConfigurationError(error)) return;
+        throw error;
+      }
       const report = await repairWorkflowCheckpoints(runId, {
         rootDir,
         apply: options.apply,
@@ -1618,6 +1629,44 @@ export function collaborationCommands(): Command {
         !report.diagnostics.includes('WORKFLOW_CHECKPOINT_CACHE_HEALTHY')
       )
         process.exitCode = 1;
+    });
+
+  runs
+    .command('reconcile-bindings <runId>')
+    .description('Diagnose interrupted bindings; explicitly record proven closure before resuming')
+    .option(
+      '--binding-id <id>',
+      'Inspect or settle only this binding; pause still requires the entire run to be closed',
+    )
+    .option(
+      '--apply',
+      'Record immutable closure and pause an eligible orphan; does not start a workflow',
+    )
+    .action(async (runId: string, options: { bindingId?: string; apply?: boolean }) => {
+      const rootDir = findRepoRoot();
+      try {
+        const authority = resolveWorkflowInspectionAuthority(rootDir);
+        if (!authority) {
+          console.error(
+            'WORKFLOW_RUN_RECOVERY_AUTHORITY_REQUIRED: Configure the Go authority before reconciling bindings.',
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const config = loadWorkflowRunnerControlConfig();
+        const report = await reconcileWorkflowBindings(runId, {
+          rootDir,
+          ...options,
+          authority,
+          recovery: createWorkflowRunRecoveryEvidenceClient(config),
+          reconciliation: createWorkflowBindingReconciliationClient(config),
+        });
+        console.log(JSON.stringify(report, null, 2));
+        if (report.diagnostics.length || (options.apply && !report.applied)) process.exitCode = 1;
+      } catch (error) {
+        if (reportWorkflowConfigurationError(error)) return;
+        throw error;
+      }
     });
 
   workflow.addCommand(runs);
@@ -3331,7 +3380,3 @@ function renderProfileSyncPreviewMarkdown(
 
   return lines.join('\n');
 }
-import {
-  repairWorkflowCheckpoints,
-  createWorkflowRunRecoveryEvidenceClient,
-} from '@openslack/workflows';

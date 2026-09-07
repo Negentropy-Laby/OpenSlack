@@ -116,10 +116,11 @@ func (repository *Repository) StageAuthorityBinding(ctx context.Context, input r
 	var protocol, backend, authority, admissionDisposition string
 	var currentFence, workerSequence, currentRunRevision, currentGeneration, routingEpoch int64
 	var build []byte
+	var leaseExpiresAt time.Time
 	err = tx.QueryRow(ctx, `
 SELECT j.workflow_run_id,j.current_attempt_id,j.required_protocol_version,j.authority_backend,j.workflow_authority,
        j.routing_epoch,j.authority_build_hash,a.state,a.fencing_token,a.worker_sequence,
-       l.lease_id,l.state,b.current_run_revision,b.current_resume_generation,b.admission_disposition
+       l.lease_id,l.state,b.current_run_revision,b.current_resume_generation,b.admission_disposition,l.lease_expires_at
 FROM workflow_runner_jobs j
 JOIN workflow_runner_attempts a ON a.attempt_id=j.current_attempt_id
 JOIN workflow_runner_leases l ON l.attempt_id=a.attempt_id
@@ -128,7 +129,7 @@ WHERE j.workspace_id=$1 AND j.job_id=$2
 FOR UPDATE OF j,a,l,b`, workspaceID, bindingString(stage, "jobId")).Scan(
 		&jobRunID, &currentAttemptID, &protocol, &backend, &authority, &routingEpoch, &build,
 		&attemptState, &currentFence, &workerSequence, &currentLeaseID, &leaseState,
-		&currentRunRevision, &currentGeneration, &admissionDisposition,
+		&currentRunRevision, &currentGeneration, &admissionDisposition, &leaseExpiresAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -155,7 +156,7 @@ FOR UPDATE OF j,a,l,b`, workspaceID, bindingString(stage, "jobId")).Scan(
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM workflow_runner_authority_bindings
 WHERE attempt_id=$1 AND state IN ('staged','resolved','runner_committed','reconciliation_required')
-)`, currentAttemptID).Scan(&outstanding); err != nil {
+`+repository.unsettledBindingSQL("workflow_runner_authority_bindings")+`)`, currentAttemptID).Scan(&outstanding); err != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, databaseFailure("read outstanding authority binding", err)
 	}
 	if outstanding {
@@ -164,6 +165,9 @@ WHERE attempt_id=$1 AND state IN ('staged','resolved','runner_committed','reconc
 	now, err := databaseTime(ctx, tx)
 	if err != nil {
 		return runnerstore.V2AuthorityBindingReceipt{}, err
+	}
+	if !now.Before(leaseExpiresAt) {
+		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorLeaseExpired, "authority-binding stage lease has expired", nil)
 	}
 	if sentAt, parseErr := runnerstore.ParseTimestamp(bindingString(stage, "sentAt")); parseErr != nil || now.Before(sentAt) {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorAuthorityBinding, "authority-binding stage time is ahead of the database commit clock", parseErr)
@@ -771,6 +775,17 @@ func validateRecoveredBinding(view runnerstore.V2AuthorityBindingView) error {
 	if err != nil {
 		return runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding stage is invalid", err)
 	}
+	target, head := bindingRecord(stage, "target"), bindingRecord(stage, "runnerAuthority")
+	if bindingString(stage, "bindingId") != view.BindingID || bindingString(stage, "operation") != string(view.Operation) ||
+		bindingString(stage, "workspaceId") != view.WorkspaceID || bindingString(stage, "runId") != view.RunID ||
+		bindingString(stage, "jobId") != view.JobID || bindingString(stage, "runnerAttemptId") != view.AttemptID ||
+		bindingString(stage, "leaseId") != view.LeaseID || bindingInt(stage, "fencingToken") != view.FencingToken ||
+		bindingInt(head, "expectedGlobalRunRevision") != view.ExpectedRunRevision || bindingInt(head, "acceptedGlobalRunRevision") != view.AcceptedRunRevision ||
+		bindingInt(head, "expectedResumeGeneration") != view.ExpectedGeneration || bindingInt(head, "acceptedResumeGeneration") != view.AcceptedGeneration ||
+		bindingString(target, "eventId") != view.TargetEventID || bindingString(target, "kind") != view.TargetKind ||
+		bindingInt(target, "sequence") != view.TargetSequence || !bytes.Equal([]byte(bindingString(target, "body")), view.ExactTargetBytes) {
+		return runnerstore.Failure(runnerstore.ErrorReconciliation, "stored binding identity differs from its exact original stage", nil)
+	}
 	stageReceipt, err := runnerbindingcontract.ParseReceiptBytes(view.ExactStageReceipt)
 	if err != nil {
 		return runnerstore.Failure(runnerstore.ErrorReconciliation, "stored authority-binding stage receipt is invalid", err)
@@ -863,7 +878,7 @@ func (repository *Repository) recoverAuthorityBindingsJoined(ctx context.Context
 	rows, err := repository.pool.Query(ctx, `WITH candidates AS (
  SELECT * FROM workflow_runner_authority_bindings
  WHERE workspace_id=$1 AND state<>'completed' AND updated_at<=$2
- ORDER BY updated_at,binding_id LIMIT $3
+ `+repository.unsettledBindingSQL("workflow_runner_authority_bindings")+` ORDER BY updated_at,binding_id LIMIT $3
 )
 SELECT `+qualifiedAuthorityBindingViewColumns("binding")+`,ack.control_event_id,ack.control_kind,
  ack.control_sequence,ack.companion_sequence,ack.disposition,

@@ -212,7 +212,7 @@ describe('recovery HTTP queries', () => {
     });
     await expect(
       cancelled.readRecoveryEvidence('run.recovery', undefined, controller.signal),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_RECOVERY_UNKNOWN' });
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUNNER_OPERATION_CANCELLED' });
     const entry = recoveryFrame(checkpointState(), 'checkpoint_commit');
     let calls = 0;
     const client = createWorkflowRunRecoveryEvidenceClient({

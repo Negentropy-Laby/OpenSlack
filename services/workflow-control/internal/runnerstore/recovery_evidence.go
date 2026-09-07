@@ -7,6 +7,7 @@ import (
 )
 
 const RecoveryEvidenceSchema = "openslack.workflow_runner_recovery_evidence.v1"
+const RecoveryEvidenceV2Schema = "openslack.workflow_runner_recovery_evidence.v2"
 const RecoveryEvidenceMaxResponseBytes = 2 * 1024 * 1024
 
 // Recovery evidence contains exact companion frames and artifact references,
@@ -41,4 +42,25 @@ type RecoveryEvidence struct {
 
 type RecoveryEvidenceStore interface {
 	ReadRecoveryEvidence(context.Context, string, string, string, string, string) (RecoveryEvidence, error)
+}
+
+// Every potentially unbounded collection participates in the same record
+// stream, so diagnostics and settlements cannot make a page unpageable.
+type RecoveryEvidenceRecord struct {
+	Key   string `json:"key"`
+	Kind  string `json:"kind"`
+	Value any    `json:"value"`
+}
+type RecoveryEvidenceV2 struct {
+	Schema      string                       `json:"schema"`
+	WorkspaceID string                       `json:"workspaceId"`
+	RunID       string                       `json:"runId"`
+	Route       runnerbindingcontract.Record `json:"route"`
+	Complete    bool                         `json:"complete"`
+	Snapshot    string                       `json:"snapshot"`
+	NextCursor  *string                      `json:"nextCursor"`
+	Records     []RecoveryEvidenceRecord     `json:"records"`
+}
+type RecoveryEvidenceV2Store interface {
+	ReadRecoveryEvidenceV2(context.Context, string, string, string, string, string) (RecoveryEvidenceV2, error)
 }

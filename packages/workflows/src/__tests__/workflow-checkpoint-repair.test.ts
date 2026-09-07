@@ -19,6 +19,7 @@ import type { WorkflowControlAuthorityPort } from '../workflow-control-authority
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
 import { atomicWrite, productionJournalSecurity } from '../workflow-control-shadow.js';
 import { workflowCheckpointHash } from '../workflow-checkpoint-shadow-contract.js';
+import { sourceFenceFixture } from './workflow-reconciliation-fixtures.js';
 
 vi.setConfig({ testTimeout: process.platform === 'win32' ? 240_000 : 30_000 });
 const roots: string[] = [];
@@ -141,8 +142,13 @@ it('diagnoses missing routing with zero files created', async () => {
 it('diagnoses and repairs invalid reservation envelopes even when the checkpoint head is healthy', async () => {
   const f = await fixture(),
     marker = f.store.checkpointControlPath(f.runId) + '.intent';
-  for (const value of [{ bindingId: null }, { schema: 'wrong', bindingId: null }]) {
-    await atomicWrite(marker, canonical(value), productionJournalSecurity());
+  for (const value of [
+    { bindingId: null },
+    { schema: 'wrong', bindingId: null },
+    Buffer.from([0xff]),
+  ]) {
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(canonical(value));
+    await atomicWrite(marker, bytes, productionJournalSecurity());
     const before = await tree(f.root);
     expect(await repairWorkflowCheckpoints(f.runId, f.options())).toMatchObject({
       repairable: true,
@@ -150,13 +156,66 @@ it('diagnoses and repairs invalid reservation envelopes even when the checkpoint
       diagnostics: ['WORKFLOW_CHECKPOINT_RESERVATION_CORRUPT'],
     });
     expect(await tree(f.root)).toEqual(before);
-    expect(await repairWorkflowCheckpoints(f.runId, f.options(true))).toMatchObject({
+    const result = await repairWorkflowCheckpoints(f.runId, f.options(true));
+    expect(result).toMatchObject({
       applied: true,
     });
+    expect(await readFile(result.backups.find((path) => path.startsWith(marker))!)).toEqual(bytes);
     await expect(
       f.store.initializeCheckpointControl(f.runId, f.state.activeBinding),
     ).resolves.toMatchObject({ revision: f.state.revision });
   }
+});
+
+it('retains an unknown reservation and removes it only after a durable negative fence', async () => {
+  const f = await fixture();
+  const binding = {
+    ...f.state.activeBinding,
+    jobId: 'job.next',
+    attemptId: 'attempt.next',
+    leaseId: 'lease.next',
+  };
+  const next = {
+    ...f.state,
+    revision: f.state.revision + 1,
+    resumeGeneration: 1,
+    activeBinding: binding,
+    seenBindingHashes: [...f.state.seenBindingHashes, workflowCheckpointHash(binding)],
+  };
+  const frame = recoveryFrame(next, 'resume_advance');
+  const staged = {
+    ...frame,
+    state: 'reconciliation_required',
+    resolution: null,
+    resolutionReceipt: null,
+  };
+  const marker = f.store.checkpointControlPath(f.runId) + '.intent';
+  await atomicWrite(
+    marker,
+    canonical({
+      schema: 'openslack.workflow_checkpoint_reservation.v1',
+      bindingId: frame.bindingId,
+    }),
+    productionJournalSecurity(),
+  );
+  const before = await tree(f.root);
+  expect(await repairWorkflowCheckpoints(f.runId, f.options(true))).toMatchObject({
+    applied: false,
+    repairable: false,
+  });
+  expect(await tree(f.root)).toEqual(before);
+  f.setProof({
+    ...f.proof,
+    schema: 'openslack.workflow_runner_recovery_evidence.v2',
+    bindings: [...f.proof.bindings, staged],
+    settlements: [sourceFenceFixture(JSON.parse(frame.stage))],
+  });
+  const original = await readFile(marker);
+  const result = await repairWorkflowCheckpoints(f.runId, f.options(true));
+  expect(result).toMatchObject({ applied: true });
+  expect(await readFile(result.backups.find((path) => path.startsWith(marker))!)).toEqual(original);
+  expect((await f.store.loadCheckpointControl(f.runId))?.resumeGeneration).toBe(0);
+  expect(f.transition).not.toHaveBeenCalled();
 });
 it('defaults to zero writes and applies a repeatable repair with an exact invalid-UTF8 backup', async () => {
   const f = await fixture(),
@@ -200,7 +259,7 @@ it.each(['insufficient', 'workspace', 'lease', 'phase'] as const)(
     expect(await tree(f.root)).toEqual(before);
   },
 );
-it('revalidates concurrent leases outside the lock and preserves a resumable repair reservation', async () => {
+it('revalidates concurrent leases outside the lock and releases only its failed repair reservation', async () => {
   const f = await fixture(),
     path = f.store.checkpointControlPath(f.runId);
   await writeFile(path, '{');
@@ -211,7 +270,7 @@ it('revalidates concurrent leases outside the lock and preserves a resumable rep
     applied: false,
   });
   expect(await readFile(path, 'utf8')).toBe('{');
-  expect(JSON.parse(await readFile(path + '.intent', 'utf8')).bindingId).toMatch(/^repair\./u);
+  await expect(readFile(path + '.intent')).rejects.toMatchObject({ code: 'ENOENT' });
   expect(await repairWorkflowCheckpoints(f.runId, f.options(true))).toMatchObject({
     applied: true,
   });

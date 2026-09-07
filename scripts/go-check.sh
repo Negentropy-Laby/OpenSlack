@@ -1115,6 +1115,11 @@ detect_capabilities() {
       migrations/000008_deliver_workflow_runner_authority_bindings.down.sql \
       migrations/000009_index_workflow_runner_recovery_evidence.up.sql \
       migrations/000009_index_workflow_runner_recovery_evidence.down.sql \
+      migrations/000010_reconcile_workflow_runner_bindings.up.sql \
+      migrations/000010_reconcile_workflow_runner_bindings.down.sql \
+      internal/runnerstore/postgres/binding_reconciliation.go \
+      internal/runnerstore/postgres/binding_reconciliation_integration_test.go \
+      internal/runnerstore/postgres/reconciliation_restart_integration_test.go \
       internal/runnerstore/postgres/recovery_evidence.go \
       internal/runnerstore/postgres/recovery_evidence_integration_test.go \
       internal/runnerapp/recovery_evidence.go \
@@ -1125,6 +1130,9 @@ detect_capabilities() {
       [[ -f "${module_dir}/${workflow_runner_v2_runtime_evidence}" ]] ||
         fail "Workflow Control runner v2 runtime-delivery profile is missing ${workflow_runner_v2_runtime_evidence}"
     done
+    grep -Eq '^func[[:space:]]+TestBindingReconciliationUpgradeRestart\(' \
+      "${module_dir}/internal/runnerstore/postgres/reconciliation_restart_integration_test.go" ||
+      fail "Workflow Control reconciliation profile is missing the real upgrade/restart test"
     local workflow_runner_v2_runtime_test
     grep -Eq '^func[[:space:]]+TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe\(' \
       "${module_dir}/internal/runnerstore/postgres/recovery_evidence_integration_test.go" ||
@@ -2265,6 +2273,7 @@ run_workflow_runner_v2_runtime_delivery() {
   local restart_token="${run_token,,}"
   local restart_schema="workflow_control_gs9f2_restart_${restart_token//-/}"
   local mixed_restart_schema="workflow_control_gs9f2_mixed_${restart_token//-/}"
+  local reconciliation_restart_schema="wf_reconcile_${restart_token//-/}"
 
   log "qualifying Workflow Control runner lifecycle bounds and cancel acknowledgement stability"
   run_workflow_runner_test_container \
@@ -2293,6 +2302,12 @@ run_workflow_runner_v2_runtime_delivery() {
     ./internal/runnerstore/postgres TestGS9F2RecoveryEvidenceIsReadOnlyScopedAndUpgradeSafe 1 \
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
 
+  log "qualifying schema-10 binding reconciliation and exact source history"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-binding-reconciliation "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestBindingReconciliation 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+
   log "qualifying Workflow Control GS9-F2b worker/control lifecycle composition"
   run_workflow_runner_test_container \
     "${resource_prefix}" runner-v2-runtime-delivery-worker "${network}" "${database_name}" "${resource_owner}" \
@@ -2315,6 +2330,14 @@ run_workflow_runner_v2_runtime_delivery() {
     WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed \
     "WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=${mixed_restart_schema}"
 
+  log "seeding schema-9 to schema-10 reconciliation upgrade and restart qualification"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-reconciliation-restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestBindingReconciliationUpgradeRestart 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
+    WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed \
+    "WORKFLOW_RUNNER_RECONCILIATION_RESTART_SCHEMA=${reconciliation_restart_schema}"
+
   require_resource_owned container "${database_container}" "${resource_owner}"
   docker_cmd_interruptible restart "${database_container}" >/dev/null
   wait_for_healthy_container "${database_container}" "PostgreSQL after GS9-F2b runtime-delivery restart"
@@ -2334,6 +2357,14 @@ run_workflow_runner_v2_runtime_delivery() {
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
     WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify \
     "WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=${mixed_restart_schema}"
+  log "verifying immutable reconciliation and new resume after PostgreSQL and Go restart"
+  run_workflow_runner_test_container \
+    "${resource_prefix}" runner-reconciliation-restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    ./internal/runnerstore/postgres TestBindingReconciliationUpgradeRestart 1 \
+    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1 \
+    WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify \
+    "WORKFLOW_RUNNER_RECONCILIATION_RESTART_SCHEMA=${reconciliation_restart_schema}"
+
 }
 
 run_prometheus_gate() {

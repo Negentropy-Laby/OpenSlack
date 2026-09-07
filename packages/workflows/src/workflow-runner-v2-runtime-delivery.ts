@@ -6,11 +6,15 @@ import {
 import type { WorkflowRunnerV2ExecutionDescriptor } from './workflow-runner-v2-descriptor.js';
 import type { WorkflowRunnerV2RuntimeDeliveryPort } from './workflow-runner-v2-session.js';
 import type { WorkflowRunnerV2RuntimeAdmissionPort } from './workflow-runner-v2-runtime-admission.js';
-import type { WorkflowRunnerAuthorityBindingOperation } from './workflow-runner-authority-binding-contract.js';
+import {
+  hashWorkflowRunnerAuthorityBindingEvidence,
+  type WorkflowRunnerAuthorityBindingOperation,
+} from './workflow-runner-authority-binding-contract.js';
 import type {
   WorkflowRunnerAuthorityBindingRuntime,
   WorkflowRunnerAuthoritySourceAdapter,
 } from './workflow-runner-authority-binding-runtime.js';
+import { WorkflowRunRecoveryError } from './workflow-run-recovery-evidence.js';
 
 export interface WorkflowRunnerV2AuthoritySourceResolver {
   resolve(
@@ -110,7 +114,7 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
       throw new Error('Runtime-delivery target lacks its closed lease identity.');
     }
     const source = sourceOverride ?? (await this.#sources.resolve(operation, message));
-    return this.#runtime.commit({
+    const committed = await this.#runtime.commit({
       operation,
       target,
       source,
@@ -135,6 +139,30 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
         correlationId: message.correlationId,
       },
     });
+    if (operation === 'resume_advance' || operation === 'checkpoint_commit') {
+      const proof = await source.probe(committed.stage, signal);
+      if (
+        proof.state !== 'committed' ||
+        proof.readiness?.state === 'blocked' ||
+        hashWorkflowRunnerAuthorityBindingEvidence(proof.evidence, operation) !==
+          hashWorkflowRunnerAuthorityBindingEvidence(committed.resolution.evidence, operation)
+      ) {
+        throw new WorkflowRunRecoveryError(
+          proof.state === 'unknown'
+            ? 'WORKFLOW_RUN_RECOVERY_UNKNOWN'
+            : proof.state === 'committed' &&
+                proof.readiness?.state === 'blocked' &&
+                (proof.readiness.code === 'WORKFLOW_RUN_RECOVERY_SUPERSEDED' ||
+                  proof.readiness.code === 'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED')
+              ? proof.readiness.code
+              : 'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+          proof.state === 'committed' && proof.readiness?.state === 'blocked'
+            ? proof.readiness.message
+            : 'Committed checkpoint evidence needs an available cache before event delivery; use runs repair-checkpoints.',
+        );
+      }
+    }
+    return committed;
   }
 
   async acknowledgeControl(

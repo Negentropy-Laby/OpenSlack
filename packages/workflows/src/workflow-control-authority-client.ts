@@ -13,6 +13,7 @@ import {
   cancelWorkflowRunnerResponseBody,
   exactWorkflowRunnerLoopbackOrigin,
   readWorkflowRunnerResponseBytes,
+  throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
 import { parseWorkflowEffectJson } from './workflow-effect-json.js';
 import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
@@ -319,6 +320,12 @@ function validateRecord(value: WorkflowControlAuthorityRunRecord) {
   } satisfies WorkflowControlAuthorityRunRecord);
 }
 
+export function validateWorkflowControlAuthorityRunRecord(
+  value: unknown,
+): WorkflowControlAuthorityRunRecord {
+  return validateRecord(value as WorkflowControlAuthorityRunRecord);
+}
+
 export function prepareWorkflowControlAuthorityMutation(input: {
   readonly operation: 'accept' | 'transition';
   readonly record: WorkflowControlAuthorityRunRecord;
@@ -469,8 +476,7 @@ async function readResponse(response: Response, signal?: AbortSignal): Promise<B
     minimumBytes: 2,
     failure: (message, options) =>
       fail(
-        message === 'Workflow authority response read failed.' ||
-          message === 'Workflow authority response read was aborted.'
+        options.kind === 'transport'
           ? 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED'
           : 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
         message,
@@ -888,6 +894,7 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
         },
       });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
       return this.#recoverReceipt(prepared, signal, error);
     }
     if (response.redirected || ![200, 201, 202].includes(response.status)) {
@@ -939,6 +946,7 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
         headers: this.#headers(prepared.value.route),
       });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
       return fail(
         'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED',
         'Workflow authority outcome is unknown after exact receipt recovery.',
@@ -962,9 +970,11 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
   }
 
   async #send(path: string, init: RequestInit): Promise<Response> {
+    throwIfWorkflowRunnerAborted(init.signal ?? undefined);
     try {
       return await this.#fetch(new URL(path, this.#origin), { ...init, redirect: 'error' });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(init.signal ?? undefined);
       return fail(
         'WORKFLOW_CONTROL_AUTHORITY_CLIENT_TRANSPORT_FAILED',
         'Workflow authority transport failed.',

@@ -4,14 +4,15 @@ import { RunStore, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES } from '../run-store.js
 import { createWorkflowRunStoreRecoveryAccess } from './workflow-run-store-recovery-access.js';
 import { resumeEvidence } from './workflow-runner-checkpoint-evidence.js';
 import {
+  isWorkflowAuthorityRetryable,
+  workflowAuthorityFailure,
+} from './workflow-authority-failure.js';
+import { throwIfWorkflowRunnerAborted } from '../workflow-runner-control-http.js';
+import {
   canonicalWorkflowControlAuthorityJson as canonical,
   type WorkflowControlAuthorityMessage,
 } from '../workflow-control-authority-contract.js';
-import type {
-  WorkflowControlResumeAuthorityPort,
-  WorkflowControlAuthorityExpectedHead,
-  WorkflowControlAuthorityRunRecord,
-} from '../workflow-control-authority-client.js';
+import type { WorkflowControlResumeAuthorityPort } from '../workflow-control-authority-client.js';
 import {
   hashWorkflowRunnerAuthorityBindingStage,
   validateWorkflowRunnerAuthorityBindingStageReceipt,
@@ -24,7 +25,6 @@ import {
 } from '../workflow-runner-authority-binding-contract.js';
 import {
   workflowCheckpointHash,
-  validateWorkflowCheckpointControlState,
   type WorkflowCheckpointControlState,
 } from '../workflow-checkpoint-shadow-contract.js';
 import {
@@ -35,125 +35,22 @@ import {
 import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
 import {
   assertRecoveryFrontier,
+  validateSettledResumeIntent,
   historicalResumeEvidence,
   recoveryConflict,
+  WorkflowRunRecoveryError,
   type WorkflowRunRecoveryEvidencePort,
   type WorkflowRunRecoveryEvidence,
 } from '../workflow-run-recovery-evidence.js';
 import type { WorkflowRunnerAuthoritySourceProbe } from '../workflow-runner-authority-binding-runtime.js';
+import { validateWorkflowBindingSettlement } from '../workflow-binding-reconciliation-contract.js';
 
-interface LegacyResumeIntent {
-  schema: 'openslack.workflow_runner_resume_source_intent.v1';
-  stageHash: string;
-  correlationId: string;
-  stageReceipt: WorkflowRunnerAuthorityStageReceipt;
-  priorRevision: number;
-  priorBindingHash: string;
-  phaseCount: number;
-  expected: WorkflowControlAuthorityExpectedHead;
-  record: WorkflowControlAuthorityRunRecord;
-}
-interface ResumeIntent extends Omit<LegacyResumeIntent, 'schema'> {
-  schema: 'openslack.workflow_runner_resume_source_intent.v2';
-  prior: WorkflowCheckpointControlState;
-  next: WorkflowCheckpointControlState;
-  evidence: WorkflowRunnerResumeAuthorityEvidence;
-}
-type Intent = LegacyResumeIntent | ResumeIntent;
-
-export function parseWorkflowResumeIntent(
-  bytes: string,
-  stage: WorkflowRunnerAuthorityBindingStage,
-  target: WorkflowControlAuthorityMessage,
-): Intent {
-  try {
-    const intent = JSON.parse(bytes) as Intent;
-    const v2 = intent.schema === 'openslack.workflow_runner_resume_source_intent.v2';
-    const fields = [
-      'schema',
-      'stageHash',
-      'correlationId',
-      'stageReceipt',
-      'priorRevision',
-      'priorBindingHash',
-      'phaseCount',
-      'expected',
-      'record',
-      ...(v2 ? ['prior', 'next', 'evidence'] : []),
-    ];
-    if (
-      canonical(intent) + '\n' !== bytes ||
-      (!v2 && intent.schema !== 'openslack.workflow_runner_resume_source_intent.v1') ||
-      Object.keys(intent).sort().join(',') !== fields.sort().join(',') ||
-      intent.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-      intent.correlationId !== `resume.${intent.stageHash}` ||
-      !Number.isSafeInteger(intent.priorRevision) ||
-      intent.priorRevision < 1 ||
-      !Number.isSafeInteger(intent.phaseCount) ||
-      intent.phaseCount < 0 ||
-      !/^[0-9a-f]{64}$/u.test(intent.priorBindingHash) ||
-      intent.expected.resumeGeneration !== target.resumeGeneration ||
-      intent.record.resumeGeneration !== target.resumeGeneration! + 1 ||
-      intent.record.revision !== intent.expected.revision + 1 ||
-      intent.record.runId !== stage.runId ||
-      intent.record.workspaceId !== stage.workspaceId ||
-      canonical(intent.record.route) !== canonical(stage.route) ||
-      !['paused', 'paused_waiting_approval'].includes(intent.expected.state ?? '') ||
-      intent.record.state !== 'resuming'
-    )
-      throw new Error();
-    validateWorkflowRunnerAuthorityBindingStageReceipt(intent.stageReceipt, stage);
-    if (v2) {
-      validateWorkflowCheckpointControlState(intent.prior, stage.runId);
-      validateWorkflowCheckpointControlState(intent.next, stage.runId);
-      if (
-        intent.prior.revision !== intent.priorRevision ||
-        workflowCheckpointHash(intent.prior.activeBinding) !== intent.priorBindingHash ||
-        intent.next.revision !== intent.priorRevision + 1 ||
-        intent.next.resumeGeneration !== intent.record.resumeGeneration ||
-        intent.prior.resumeGeneration !== intent.expected.resumeGeneration ||
-        intent.next.activeBinding.workspaceId !== target.workspaceId ||
-        intent.next.activeBinding.jobId !== target.jobId ||
-        intent.next.activeBinding.attemptId !== target.attemptId ||
-        intent.next.activeBinding.leaseId !== target.leaseId ||
-        intent.next.activeBinding.fencingToken !== target.fencingToken ||
-        intent.next.activeBinding.correlationId !== target.correlationId ||
-        intent.next.activeBinding.runnerBuildHash !== intent.prior.activeBinding.runnerBuildHash ||
-        canonical(intent.next.seenBindingHashes) !==
-          canonical([
-            ...intent.prior.seenBindingHashes,
-            workflowCheckpointHash(intent.next.activeBinding),
-          ]) ||
-        intent.next.sourceSequence !== intent.prior.sourceSequence ||
-        intent.next.shadowEnabled !== intent.prior.shadowEnabled ||
-        intent.next.shadowOverflowed !==
-          (intent.prior.shadowOverflowed || intent.prior.shadowEnabled) ||
-        canonical(intent.next.pendingObservations) !==
-          canonical(intent.prior.pendingObservations) ||
-        (['workflowSourceHash', 'manifestHash', 'inputHash'] as const).some(
-          (field) =>
-            intent.record[field] !== intent.prior.activeBinding[field] ||
-            intent.record[field] !== intent.next.activeBinding[field],
-        ) ||
-        canonical(intent.prior.checkpoints) !== canonical(intent.next.checkpoints) ||
-        intent.phaseCount !== intent.next.checkpoints.length ||
-        canonical(intent.evidence) !== canonical(resumeEvidence(intent.next, target)) ||
-        intent.record.currentPhaseId !== intent.evidence.nextPhaseId ||
-        intent.record.currentPhaseIndex !== intent.evidence.nextPhaseIndex
-      )
-        throw new Error();
-    } else if (
-      intent.record.currentPhaseId !== intent.expected.currentPhaseId ||
-      intent.record.currentPhaseIndex !== intent.expected.currentPhaseIndex
-    )
-      throw new Error();
-    return intent;
-  } catch {
-    return recoveryConflict(
-      'Resume intent is torn or conflicts with its operation; explicit repair is required.',
-    );
-  }
-}
+import {
+  parseWorkflowResumeIntent,
+  type Intent,
+  type ResumeIntent,
+} from './workflow-resume-intent.js';
+export { parseWorkflowResumeIntent } from './workflow-resume-intent.js';
 
 /** Durable Go proof is independent of current cache progress and lease authority. */
 export class WorkflowRunnerResumeSourceStore extends RunStore {
@@ -195,6 +92,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
       return recoveryConflict('Resume intent cannot be read safely.');
     }
     return parseWorkflowResumeIntent(bytes, stage, this.target);
@@ -207,21 +105,88 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
       signal,
     );
   }
-  async #finish(intent: ResumeIntent, stage: WorkflowRunnerAuthorityBindingStage): Promise<void> {
+  async #settlement(stage: WorkflowRunnerAuthorityBindingStage, view: WorkflowRunRecoveryEvidence) {
+    const settlement = view.settlements?.find((item) => item.bindingId === stage.bindingId);
+    if (!settlement) return null;
+    const binding = view.bindings.find((item) => item.bindingId === stage.bindingId);
+    if (!binding || canonical(JSON.parse(binding.stage)) !== canonical(stage))
+      return recoveryConflict('Settlement does not match the original resume stage.');
+    validateWorkflowBindingSettlement(settlement, stage, binding.resolution);
+    if (settlement.outcome === 'not_committed') {
+      await this.releaseCheckpointReservation(stage.runId, stage.bindingId);
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+        'This resume operation is durably fenced; use a new execution after reconciliation.',
+      );
+    }
+    return settlement;
+  }
+  async #finish(
+    intent: ResumeIntent,
+    stage: WorkflowRunnerAuthorityBindingStage,
+  ): Promise<WorkflowCheckpointControlState> {
     // Only the exact healthy pre-CAS cache can be completed automatically.
     let current: WorkflowCheckpointControlState | null;
     try {
       current = await this.loadCheckpointControl(stage.runId);
-    } catch {
-      return;
+    } catch (cause) {
+      if (isWorkflowAuthorityRetryable(cause)) throw workflowAuthorityFailure(cause);
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+        'Committed resume has an unreadable cache; use runs repair-checkpoints.',
+        { cause },
+      );
     }
+    if (!current)
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+        'Committed resume has no cache; use runs repair-checkpoints.',
+      );
     if (
-      !current ||
       current.resumeGeneration > intent.next.resumeGeneration ||
       current.revision > intent.next.revision
     )
-      return;
-    await this.finalizeCheckpointResume(stage.runId, stage.bindingId, intent.prior, intent.next);
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+        'A newer checkpoint cache supersedes this resume.',
+      );
+    return this.finalizeCheckpointResume(stage.runId, stage.bindingId, intent.prior, intent.next);
+  }
+
+  async #assertCurrentHead(
+    stage: WorkflowRunnerAuthorityBindingStage,
+    evidence: WorkflowRunnerResumeAuthorityEvidence,
+    state: WorkflowCheckpointControlState,
+    signal?: AbortSignal,
+    intent?: Intent,
+  ): Promise<void> {
+    throwIfWorkflowRunnerAborted(signal);
+    if (
+      typeof this.target.payload.leaseExpiresAt !== 'string' ||
+      Date.parse(this.target.payload.leaseExpiresAt) <= Date.now()
+    )
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+        'The old lease cannot authorize resume execution.',
+      );
+    const head = await this.authority.read(stage.runId, stage.route, signal);
+    if (
+      head.workspaceId !== stage.workspaceId ||
+      head.runId !== stage.runId ||
+      canonical(head.record.route) !== canonical(stage.route) ||
+      head.state !== 'resuming' ||
+      head.resumeGeneration !== evidence.sourceAuthority.acceptedResumeGeneration ||
+      head.currentPhaseId !== evidence.nextPhaseId ||
+      head.currentPhaseIndex !== evidence.nextPhaseIndex ||
+      head.record.workflowSourceHash !== state.activeBinding.workflowSourceHash ||
+      head.record.manifestHash !== state.activeBinding.manifestHash ||
+      head.record.inputHash !== state.activeBinding.inputHash ||
+      (intent && canonical(head.record) !== canonical(intent.record))
+    )
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+        'Current authority no longer matches this committed resume.',
+      );
   }
 
   async probeEvidence(
@@ -241,12 +206,57 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     this.#assertStage(stage);
     // Precise immutable operation lookup precedes any local generation check.
     const view = await this.recovery.readRecoveryEvidence(stage.runId, stage.bindingId, signal);
+    const settlement = await this.#settlement(stage, view);
     const evidence = await this.#readEvidence(stage, view, signal);
-    if (!evidence) return { state: 'not_committed' };
+    if (!evidence) {
+      if (settlement)
+        throw new WorkflowRunRecoveryError(
+          'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+          'Committed resume needs its original source evidence; use runs repair-checkpoints.',
+        );
+      return { state: 'not_committed' };
+    }
+    let readiness: Extract<WorkflowRunnerAuthoritySourceProbe, { state: 'committed' }>['readiness'];
+    try {
+      if (settlement)
+        throw new WorkflowRunRecoveryError(
+          'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+          'This historical commit is closed; its old lease cannot authorize execution.',
+        );
+      const intent = await this.#intent(stage);
+      if (intent?.schema === 'openslack.workflow_runner_resume_source_intent.v2') {
+        if (canonical(intent.evidence) !== canonical(evidence))
+          return recoveryConflict('Local resume intent differs from its durable resolution.');
+        await this.#assertCurrentHead(stage, evidence, intent.next, signal, intent);
+        await this.#finish(intent, stage);
+      } else {
+        const current = await this.loadCheckpointControl(stage.runId);
+        if (!current || canonical(resumeEvidence(current, this.target)) !== canonical(evidence))
+          throw new WorkflowRunRecoveryError(
+            'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+            'Historical resume proof needs its exact healthy cache before delivery.',
+          );
+        await this.#assertCurrentHead(stage, evidence, current, signal, intent ?? undefined);
+      }
+      readiness = { state: 'ready' };
+    } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
+      if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
+      readiness = {
+        state: 'blocked',
+        code:
+          error instanceof WorkflowRunRecoveryError
+            ? error.code
+            : 'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+        message:
+          'Resume history is committed, but current authority or its cache needs reconciliation; use runs inspect and repair-checkpoints.',
+      };
+    }
     const entry = view.bindings.find((entry) => entry.bindingId === stage.bindingId);
     return {
       state: 'committed',
       evidence,
+      readiness,
       ...(entry?.resolution && entry.resolutionReceipt
         ? {
             durableResolution: {
@@ -268,21 +278,19 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     signal?: AbortSignal,
   ): Promise<WorkflowRunnerResumeAuthorityEvidence | null> {
     const historical = historicalResumeEvidence(view, stage);
+    if (historical) return historical;
     const intent = await this.#intent(stage);
-    if (!intent) return historical;
-    if (historical) {
-      if (intent.schema === 'openslack.workflow_runner_resume_source_intent.v2') {
-        if (canonical(intent.evidence) !== canonical(historical))
-          return recoveryConflict('Local resume intent differs from its durable resolution.');
-        // A durable resolution proves the old operation independently of any
-        // later reservation. Cache repair must not turn that proof into a
-        // conflict while another generation is committing outside its lock.
-      }
-      return historical;
+    if (!intent) return null;
+    const settlement = view.settlements?.find((item) => item.bindingId === stage.bindingId);
+    if (
+      settlement?.proofKind === 'source_receipt' &&
+      intent.schema === 'openslack.workflow_runner_resume_source_intent.v2'
+    ) {
+      validateSettledResumeIntent(stage, settlement, intent);
+      return intent.evidence;
     }
     if (!(await this.#receipt(intent, signal))) return null;
     if (intent.schema === 'openslack.workflow_runner_resume_source_intent.v2') {
-      await this.#finish(intent, stage);
       return intent.evidence;
     }
     const state = await this.loadCheckpointControl(stage.runId);
@@ -302,14 +310,37 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     stage: WorkflowRunnerAuthorityBindingStage,
     signal?: AbortSignal,
   ): Promise<WorkflowCheckpointControlState | null> {
+    const view = await this.recovery.readRecoveryEvidence(stage.runId, stage.bindingId, signal);
+    if (await this.#settlement(stage, view))
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_SUPERSEDED',
+        'This closed resume requires a new execution identity.',
+      );
     const intent = await this.#intent(stage);
     if (!intent || !(await this.#receipt(intent, signal))) return null;
     if (intent.schema === 'openslack.workflow_runner_resume_source_intent.v2') {
-      await this.#finish(intent, stage);
-      return intent.next;
+      await this.#assertCurrentHead(stage, intent.evidence, intent.next, signal, intent);
+      return this.#finish(intent, stage);
     }
-    await this.probeEvidence(stage, signal);
-    return this.loadCheckpointControl(stage.runId);
+    const result = await this.probe(stage, signal);
+    if (result.state !== 'committed')
+      return recoveryConflict('Legacy resume has no verified historical commit.');
+    if (result.readiness?.state !== 'ready')
+      throw new WorkflowRunRecoveryError(
+        'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+        'Legacy resume requires a healthy cache and current authority before delivery.',
+      );
+    const current = await this.loadCheckpointControl(stage.runId);
+    if (!current || canonical(resumeEvidence(current, this.target)) !== canonical(result.evidence))
+      return recoveryConflict('Legacy resume cache changed after verification.');
+    await this.#assertCurrentHead(
+      stage,
+      result.evidence as WorkflowRunnerResumeAuthorityEvidence,
+      current,
+      signal,
+      intent,
+    );
+    return current;
   }
 
   async commitResume(
@@ -321,7 +352,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     validateWorkflowRunnerAuthorityBindingStageReceipt(stageReceipt, stage);
     const committed = await this.committed(stage, signal);
     if (committed) return committed;
-    signal?.throwIfAborted();
+    throwIfWorkflowRunnerAborted(signal);
     if (
       typeof this.target.payload.leaseExpiresAt !== 'string' ||
       Date.parse(this.target.payload.leaseExpiresAt) <= Date.now()
@@ -336,7 +367,34 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
       );
     const head = await this.authority.read(stage.runId, stage.route, signal);
     const view = await this.recovery.readRecoveryEvidence(stage.runId, undefined, signal);
-    assertRecoveryFrontier(view, head, prior, stage.bindingId);
+    const exactResumeIntents = new Map<string, string>();
+    for (const entry of view.bindings) {
+      if (
+        entry.resolution ||
+        !view.settlements?.some(
+          (item) => item.bindingId === entry.bindingId && item.proofKind === 'source_receipt',
+        )
+      )
+        continue;
+      const original = JSON.parse(entry.stage) as WorkflowRunnerAuthorityBindingStage;
+      try {
+        const bytes = await readOwnerFile(
+          this.#path(original),
+          this.#security,
+          WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES,
+        );
+        parseWorkflowResumeIntent(bytes, original, JSON.parse(original.target.body));
+        exactResumeIntents.set(entry.bindingId, bytes);
+      } catch (cause) {
+        if (isWorkflowAuthorityRetryable(cause)) throw workflowAuthorityFailure(cause);
+        throw new WorkflowRunRecoveryError(
+          'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
+          'Closed resume history requires its exact source intent; inspect and repair checkpoints.',
+          { cause },
+        );
+      }
+    }
+    assertRecoveryFrontier(view, head, prior, stage.bindingId, exactResumeIntents);
     if (
       head.resumeGeneration !== this.target.resumeGeneration ||
       !['paused', 'paused_waiting_approval'].includes(head.state) ||
@@ -415,9 +473,9 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
         },
         commit: async () => {
           if (!intent) return recoveryConflict('Resume intent was not published.');
-          signal?.throwIfAborted();
+          throwIfWorkflowRunnerAborted(signal);
           if (!(await this.#receipt(intent, signal))) {
-            signal?.throwIfAborted();
+            throwIfWorkflowRunnerAborted(signal);
             if (Date.parse(String(this.target.payload.leaseExpiresAt)) <= Date.now())
               return recoveryConflict('The resume lease expired before its authority transition.');
             await this.authority.transition(
@@ -429,6 +487,8 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
           }
           if (!(await this.#receipt(intent, signal)))
             return recoveryConflict('Resume CAS lacks its exact receipt.');
+          if (intent.schema === 'openslack.workflow_runner_resume_source_intent.v2')
+            await this.#assertCurrentHead(stage, intent.evidence, intent.next, signal, intent);
         },
       },
     );

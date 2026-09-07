@@ -23,6 +23,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/storageproof"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerprotocol"
 )
 
@@ -42,9 +43,11 @@ type Repository struct {
 	v2BudgetResults   interface {
 		ReadMutationResult(context.Context, string, string) (budgetstore.MutationResult, error)
 	}
-	schemaVersion       int64
-	v2RuntimeDelivery   bool
-	v2ControlACKWaiters sync.Map
+	schemaVersion        int64
+	v2RuntimeDelivery    bool
+	v2ControlACKWaiters  sync.Map
+	reconciliationWriter storageproof.ChallengeWriter
+	reconciliationCaller string
 }
 
 func New(pool *pgxpool.Pool) *Repository {
