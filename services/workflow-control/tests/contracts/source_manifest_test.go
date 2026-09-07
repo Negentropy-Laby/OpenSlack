@@ -377,7 +377,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowGoCheckSource": {
 			Path:   "scripts/go-check.sh",
-			SHA256: "22deae54041ee61fc1a37d029464297e157a7564b386e44ee8d99db4df179ad0",
+			SHA256: "d525251447925717442d1170b87f5e469006e979ca3c55c05b76171e749cdeca",
 		},
 		"workflowHostedGateSource": {
 			Path:   ".github/workflows/notification-delivery-service.yml",
@@ -577,7 +577,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
-			SHA256: "9ff877c97ae0f8dd6290e7911a63daa857816023bfe916b1321955e4ed6a06a2",
+			SHA256: "978080071354fdcb8af91873f3f25de5c178ef0565063a71da4c12b239ad980b",
 		},
 		"workflowRunReadErrorsSource": {
 			Path:   "packages/workflows/src/workflow-run-read-errors.ts",

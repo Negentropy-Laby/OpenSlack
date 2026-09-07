@@ -105,6 +105,19 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(containerGateSource).toContain('go test -race ./... -count=5');
     expect(goCheckSource).toContain('go test "${package}" -list "^${test_name}$"');
     expect(goCheckSource).toContain('Workflow Control runner test selector matched no tests:');
+    const namedWorkflowTests = [
+      ...goCheckSource.matchAll(/'([a-zA-Z0-9_./]+_test\.go)[:|](Test[a-zA-Z0-9_]+)'/gu),
+    ];
+    expect(namedWorkflowTests.length).toBeGreaterThan(0);
+    for (const [, testPath, testName] of namedWorkflowTests) {
+      const actualSource = readFileSync(
+        join(repositoryRoot, 'services/workflow-control', testPath),
+        'utf8',
+      );
+      expect(actualSource, `${testPath}:${testName}`).toMatch(
+        new RegExp(`^func\\s+${testName}\\(`, 'mu'),
+      );
+    }
     expect(goCheckSource).toContain('type=volume,source=${MOD_CACHE_VOLUME}');
     expect(goCheckSource).toContain('type=volume,source=${BUILD_CACHE_VOLUME}');
     expect(goCheckSource).not.toContain('go work sync');
@@ -1953,7 +1966,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   writeFileSync(join(moduleRoot, 'cmd/budget-authority-server/main.go'), 'package main\n', 'utf8');
   writeFileSync(
     join(moduleRoot, 'cmd/budget-authority-server/main_test.go'),
-    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughNine(t *testing.T) {}\n',
+    'package main\n\nimport "testing"\n\nfunc TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughTen(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
@@ -2101,7 +2114,7 @@ function addWorkflowBudgetAuthorityEvidence(moduleRoot: string): void {
   );
   writeFileSync(
     join(moduleRoot, 'internal/databaseready/databaseready_test.go'),
-    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationNineAndRecoveryRuntimeMinimum(t *testing.T) {}\n',
+    'package databaseready\n\nimport "testing"\n\nfunc TestSchemaProfilesAcceptMigrationTenAndRecoveryRuntimeMinimum(t *testing.T) {}\n',
     'utf8',
   );
   writeFileSync(
