@@ -149,7 +149,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"goMod": {
 			Path:   "services/workflow-control/go.mod",
-			SHA256: "443b57d7f5516a1cbea8288ddd58cfaaa1640cac9d2c93f6c445e7a094e21852",
+			SHA256: "d7611c1bc73c5b6cceee40770a085c7f4172d885b3ea8f4a7fd8d8694e3fda44",
 		},
 		"goSum": {
 			Path:   "services/workflow-control/go.sum",
