@@ -43,6 +43,275 @@ x-openslack-forbidden-authority-fields:
     resume,
   ]
 paths:
+  /v2/runner/runs/{runId}/recovery-evidence:
+    get:
+      operationId: readWorkflowRunnerRecoveryEvidence
+      description: >-
+        Read exact durable checkpoint and resume frames plus unfinished-operation
+        diagnostics for this workspace and immutable Go route. No artifact bodies
+        are returned. A bindingId selects one historical operation. Full history
+        is paged by afterBindingId and snapshot together; a changed snapshot is
+        retryable and requires restarting the complete query. History never grants
+        a current lease or permits execution. Schema 10 returns explicit v2 pages
+        with bindings, settlements, diagnostics and active-attempt records. Clients
+        may read legacy v1 from schema 9; reconciliation writes require schema 10.
+        In v2, afterBindingId is a record key and may accompany bindingId.
+      security: [{ bearerAuth: [] }]
+      x-openslack-no-store-mutation: true
+      x-openslack-max-response-bytes: 2097152
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - name: runId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Identifier' }
+        - name: bindingId
+          in: query
+          schema: { $ref: '#/components/schemas/RecoveryBindingId' }
+        - name: afterBindingId
+          in: query
+          schema: { type: string, minLength: 1 }
+        - name: snapshot
+          in: query
+          schema: { $ref: '#/components/schemas/Hash' }
+      responses:
+        '200':
+          description: A consistent read-only page with exact original frames.
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      oneOf:
+                        [
+                          { $ref: '#/components/schemas/RecoveryEvidence' },
+                          { $ref: '#/components/schemas/RecoveryEvidenceV2' },
+                        ],
+                    },
+                },
+            }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '202': { $ref: '#/components/responses/Reconciliation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v2/runner/runs/{runId}/binding-reconciliation:
+    {
+      'get':
+        {
+          'operationId': 'previewWorkflowRunnerBindingReconciliation',
+          'description': 'Read-only source proof and per-binding conclusions. Same-writer challenge uses only transient advisory locks; it writes no business data.',
+          'security': [{ 'bearerAuth': [] }],
+          'x-openslack-minimum-schema-version': 10,
+          'x-openslack-max-response-bytes': 2097152,
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/WorkspaceHeader' },
+              {
+                'name': 'runId',
+                'in': 'path',
+                'required': true,
+                'schema': { '$ref': '#/components/schemas/Identifier' },
+              },
+              {
+                'name': 'bindingId',
+                'in': 'query',
+                'schema': { '$ref': '#/components/schemas/RecoveryBindingId' },
+              },
+              {
+                'name': 'afterBindingId',
+                'in': 'query',
+                'schema': { '$ref': '#/components/schemas/RecoveryBindingId' },
+              },
+            ],
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Exact canonical response; committed replay returns original receipt bytes.',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema': { '$ref': '#/components/schemas/BindingReconciliationPreview' },
+                        },
+                    },
+                },
+              '202': { '$ref': '#/components/responses/Reconciliation' },
+              '401': { '$ref': '#/components/responses/Unauthorized' },
+              '404': { '$ref': '#/components/responses/NotFound' },
+              '409': { '$ref': '#/components/responses/Conflict' },
+              '422': { '$ref': '#/components/responses/Unprocessable' },
+              '500': { '$ref': '#/components/responses/Internal' },
+              '503': { '$ref': '#/components/responses/Unavailable' },
+            },
+          'x-openslack-no-store-mutation': true,
+        },
+      'post':
+        {
+          'operationId': 'applyWorkflowRunnerBindingReconciliation',
+          'description': 'Explicitly close one binding using precise committed proof or a durable source fence. Requires one verified writable PostgreSQL and inactive ownership. Never fabricates an event or ACK.',
+          'security': [{ 'bearerAuth': [] }],
+          'x-openslack-minimum-schema-version': 10,
+          'x-openslack-max-response-bytes': 2097152,
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/WorkspaceHeader' },
+              {
+                'name': 'runId',
+                'in': 'path',
+                'required': true,
+                'schema': { '$ref': '#/components/schemas/Identifier' },
+              },
+              {
+                'name': 'Idempotency-Key',
+                'in': 'header',
+                'required': true,
+                'schema':
+                  {
+                    'type': 'string',
+                    'pattern': "^openslack\\.workflow-runner-reconciliation\\.v1\\.[0-9a-f]{64}$",
+                  },
+              },
+            ],
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Exact canonical response; committed replay returns original receipt bytes.',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/BindingSettlementReceipt' } },
+                    },
+                },
+              '202': { '$ref': '#/components/responses/Reconciliation' },
+              '401': { '$ref': '#/components/responses/Unauthorized' },
+              '404': { '$ref': '#/components/responses/NotFound' },
+              '409': { '$ref': '#/components/responses/Conflict' },
+              '422': { '$ref': '#/components/responses/Unprocessable' },
+              '500': { '$ref': '#/components/responses/Internal' },
+              '503': { '$ref': '#/components/responses/Unavailable' },
+              '400': { 'description': 'WORKFLOW_RUNNER_INVALID_MESSAGE: body transport failed.' },
+              '413': { '$ref': '#/components/responses/TooLarge' },
+            },
+          'x-openslack-max-request-bytes': 65536,
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    { 'schema': { '$ref': '#/components/schemas/BindingReconciliationRequest' } },
+                },
+            },
+        },
+    }
+  /v2/runner/runs/{runId}/binding-reconciliation/receipts/{idempotencyKey}:
+    {
+      'get':
+        {
+          'operationId': 'readWorkflowRunnerBindingSettlement',
+          'description': 'Return the immutable original receipt for exactly this workspace, run and request.',
+          'security': [{ 'bearerAuth': [] }],
+          'x-openslack-minimum-schema-version': 10,
+          'x-openslack-max-response-bytes': 2097152,
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/WorkspaceHeader' },
+              {
+                'name': 'runId',
+                'in': 'path',
+                'required': true,
+                'schema': { '$ref': '#/components/schemas/Identifier' },
+              },
+              {
+                'name': 'idempotencyKey',
+                'in': 'path',
+                'required': true,
+                'schema':
+                  {
+                    'type': 'string',
+                    'pattern': "^openslack\\.workflow-runner-reconciliation\\.v1\\.[0-9a-f]{64}$",
+                  },
+              },
+            ],
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Exact canonical response; committed replay returns original receipt bytes.',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/BindingSettlementReceipt' } },
+                    },
+                },
+              '202': { '$ref': '#/components/responses/Reconciliation' },
+              '401': { '$ref': '#/components/responses/Unauthorized' },
+              '404': { '$ref': '#/components/responses/NotFound' },
+              '409': { '$ref': '#/components/responses/Conflict' },
+              '422': { '$ref': '#/components/responses/Unprocessable' },
+              '500': { '$ref': '#/components/responses/Internal' },
+              '503': { '$ref': '#/components/responses/Unavailable' },
+            },
+          'x-openslack-no-store-mutation': true,
+        },
+    }
+  /v2/runner/runs/{runId}/recovery-pause:
+    {
+      'post':
+        {
+          'operationId': 'pauseReconciledWorkflowRunnerRun',
+          'description': 'Independent exact-head CAS after all bindings and effects are closed and no current lease competes. Preserves generation, phase and identity; increments revision only. Replaying the same prior revision/hash returns original bytes.',
+          'security': [{ 'bearerAuth': [] }],
+          'x-openslack-minimum-schema-version': 10,
+          'x-openslack-max-response-bytes': 2097152,
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/WorkspaceHeader' },
+              {
+                'name': 'runId',
+                'in': 'path',
+                'required': true,
+                'schema': { '$ref': '#/components/schemas/Identifier' },
+              },
+            ],
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Exact canonical response; committed replay returns original receipt bytes.',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/RecoveryPauseReceipt' } },
+                    },
+                },
+              '202': { '$ref': '#/components/responses/Reconciliation' },
+              '401': { '$ref': '#/components/responses/Unauthorized' },
+              '404': { '$ref': '#/components/responses/NotFound' },
+              '409': { '$ref': '#/components/responses/Conflict' },
+              '422': { '$ref': '#/components/responses/Unprocessable' },
+              '500': { '$ref': '#/components/responses/Internal' },
+              '503': { '$ref': '#/components/responses/Unavailable' },
+              '400': { 'description': 'WORKFLOW_RUNNER_INVALID_MESSAGE: body transport failed.' },
+              '413': { '$ref': '#/components/responses/TooLarge' },
+            },
+          'x-openslack-max-request-bytes': 65536,
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    { 'schema': { '$ref': '#/components/schemas/RecoveryPauseRequest' } },
+                },
+            },
+        },
+    }
   /v1/workflow-runner/binding:
     get:
       operationId: inspectWorkflowRunnerControlBinding
@@ -499,6 +768,9 @@ components:
         pattern: '^sha256:[0-9a-f]{64}$'
         maxLength: 71
   responses:
+    Reconciliation:
+      description: WORKFLOW_RUNNER_RECONCILIATION_REQUIRED. Evidence remains unresolved; no execution is authorized.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     JobAccepted:
       description: Job and original receipt committed atomically.
       content: { application/json: { schema: { $ref: '#/components/schemas/JobReceipt' } } }
@@ -559,6 +831,686 @@ components:
       description: PostgreSQL or commit-outcome recovery is unavailable.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    # BEGIN GENERATED RECOVERY SCHEMAS
+    BindingReconciliationRequest:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "bindingId",
+          "stageHash",
+          "outcome",
+          "rulesVersion"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_binding_reconciliation.v1"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "bindingId": {
+            "type": "string",
+            "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+          },
+          "stageHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "outcome": {
+            "enum": [
+              "committed",
+              "not_committed"
+            ]
+          },
+          "rulesVersion": {
+            "const": 1
+          }
+        }
+      }
+    BindingSettlementReceipt:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "bindingId",
+          "stageHash",
+          "outcome",
+          "proofKind",
+          "proof",
+          "idempotencyKey",
+          "requestHash",
+          "callerId",
+          "rulesVersion",
+          "committedAt"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_binding_settlement_receipt.v1"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "bindingId": {
+            "type": "string",
+            "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+          },
+          "stageHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "outcome": {
+            "enum": [
+              "committed",
+              "not_committed"
+            ]
+          },
+          "proofKind": {
+            "enum": [
+              "resolution",
+              "source_receipt",
+              "source_fence",
+              "budget_source_result"
+            ]
+          },
+          "proof": {
+            "type": "string",
+            "minLength": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^openslack\\.workflow-runner-reconciliation\\.v1\\.[0-9a-f]{64}$"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "callerId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "rulesVersion": {
+            "const": 1
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "outcome": {
+                "const": "not_committed"
+              },
+              "proofKind": {
+                "const": "source_fence"
+              }
+            }
+          },
+          {
+            "properties": {
+              "outcome": {
+                "const": "committed"
+              },
+              "proofKind": {
+                "enum": [
+                  "resolution",
+                  "source_receipt",
+                  "budget_source_result"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    BindingReconciliationPreview:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_binding_reconciliation_preview.v1"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "unevaluatedProperties": false,
+              "required": [
+                "bindingId",
+                "stageHash",
+                "outcome",
+                "code",
+                "proofKind",
+                "receipt"
+              ],
+              "properties": {
+                "bindingId": {
+                  "type": "string",
+                  "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+                },
+                "stageHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "outcome": {
+                  "enum": [
+                    "committed",
+                    "not_committed",
+                    "unknown"
+                  ]
+                },
+                "code": {
+                  "enum": [
+                    "WORKFLOW_RUNNER_BINDING_SETTLED",
+                    "WORKFLOW_RUNNER_BINDING_RECONCILABLE",
+                    "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"
+                  ]
+                },
+                "proofKind": {
+                  "enum": [
+                    "",
+                    "resolution",
+                    "source_receipt",
+                    "source_fence",
+                    "budget_source_result"
+                  ]
+                },
+                "receipt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+          }
+        }
+      }
+    RecoveryEvidenceV2:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "route",
+          "complete",
+          "snapshot",
+          "nextCursor",
+          "records"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_recovery_evidence.v2"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "route": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": [
+              "backend",
+              "authority",
+              "routingEpoch",
+              "authorityBuildHash"
+            ],
+            "properties": {
+              "backend": {
+                "const": "go"
+              },
+              "authority": {
+                "const": "workflow-control"
+              },
+              "routingEpoch": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "authorityBuildHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "snapshot": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "binding"
+                    },
+                    "value": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "unevaluatedProperties": false,
+                      "required": [
+                        "bindingId",
+                        "state",
+                        "stage",
+                        "stageReceipt",
+                        "resolution",
+                        "resolutionReceipt"
+                      ],
+                      "properties": {
+                        "bindingId": {
+                          "type": "string",
+                          "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+                        },
+                        "state": {
+                          "enum": [
+                            "staged",
+                            "resolved",
+                            "runner_committed",
+                            "completed",
+                            "aborted",
+                            "reconciliation_required"
+                          ]
+                        },
+                        "stage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "stageReceipt": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "resolution": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "resolutionReceipt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "diagnostic"
+                    },
+                    "value": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "unevaluatedProperties": false,
+                      "required": [
+                        "bindingId",
+                        "operation",
+                        "state"
+                      ],
+                      "properties": {
+                        "bindingId": {
+                          "type": "string",
+                          "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+                        },
+                        "operation": {
+                          "enum": [
+                            "checkpoint_commit",
+                            "resume_advance",
+                            "effect_authorize",
+                            "effect_complete",
+                            "budget_reserve",
+                            "budget_settle"
+                          ]
+                        },
+                        "state": {
+                          "enum": [
+                            "staged",
+                            "resolved",
+                            "runner_committed",
+                            "aborted",
+                            "reconciliation_required"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "settlement"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "active_attempt"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    RecoveryPauseRequest:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "expectedRevision",
+          "expectedRecordHash"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_recovery_pause.v1"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "expectedRecordHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    RecoveryPauseReceipt:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "expectedRevision",
+          "acceptedRevision",
+          "resumeGeneration",
+          "priorRecordHash",
+          "record",
+          "recordHash",
+          "committedAt"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_recovery_pause_receipt.v1"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "acceptedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "resumeGeneration": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "priorRecordHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "record": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recordHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+          }
+        }
+      }
+    # END GENERATED RECOVERY SCHEMAS
+    RecoveryBindingId:
+      type: string
+      pattern: '^WFRUNNER-BINDING-[0-9a-f]{64}$'
+    RecoveryEvidence:
+      type: object
+      additionalProperties: false
+      unevaluatedProperties: false
+      required:
+        [
+          schema,
+          workspaceId,
+          runId,
+          route,
+          complete,
+          snapshot,
+          nextCursor,
+          bindings,
+          unfinished,
+          activeAttempts,
+        ]
+      properties:
+        schema: { const: openslack.workflow_runner_recovery_evidence.v1 }
+        workspaceId: { $ref: '#/components/schemas/Identifier' }
+        runId: { $ref: '#/components/schemas/Identifier' }
+        route:
+          type: object
+          additionalProperties: false
+          unevaluatedProperties: false
+          required: [backend, authority, routingEpoch, authorityBuildHash]
+          properties:
+            backend: { const: go }
+            authority: { const: workflow-control }
+            routingEpoch: { $ref: '#/components/schemas/SafePositiveInteger' }
+            authorityBuildHash: { $ref: '#/components/schemas/Hash' }
+        complete: { type: boolean }
+        snapshot: { $ref: '#/components/schemas/Hash' }
+        nextCursor: { type: [string, 'null'], pattern: '^WFRUNNER-BINDING-[0-9a-f]{64}$' }
+        bindings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            unevaluatedProperties: false
+            required: [bindingId, state, stage, stageReceipt, resolution, resolutionReceipt]
+            properties:
+              bindingId: { $ref: '#/components/schemas/RecoveryBindingId' }
+              state:
+                {
+                  enum:
+                    [
+                      staged,
+                      resolved,
+                      runner_committed,
+                      completed,
+                      aborted,
+                      reconciliation_required,
+                    ],
+                }
+              stage:
+                {
+                  type: string,
+                  minLength: 1,
+                  description: Exact canonical stage bytes including the original LF.,
+                }
+              stageReceipt: { type: string, minLength: 1 }
+              resolution: { type: [string, 'null'], minLength: 1 }
+              resolutionReceipt: { type: [string, 'null'], minLength: 1 }
+        unfinished:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            unevaluatedProperties: false
+            required: [bindingId, operation, state]
+            properties:
+              bindingId: { $ref: '#/components/schemas/RecoveryBindingId' }
+              operation:
+                {
+                  enum:
+                    [
+                      checkpoint_commit,
+                      resume_advance,
+                      effect_authorize,
+                      effect_complete,
+                      budget_reserve,
+                      budget_settle,
+                    ],
+                }
+              state: { enum: [staged, resolved, runner_committed, reconciliation_required] }
+        activeAttempts:
+          type: array
+          items: { $ref: '#/components/schemas/Identifier' }
     RunnerBinding:
       type: object
       additionalProperties: false
@@ -8291,7 +9243,7 @@ components:
         schemaVersion:
           type: integer
           minimum: 2
-          maximum: 8
+          maximum: 9
         mode: { const: runner-control-go-authority }
         workflowAuthority: { const: workflow-control }
         routingActivated: { type: boolean }

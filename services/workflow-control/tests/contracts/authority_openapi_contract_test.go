@@ -42,6 +42,7 @@ func TestAuthorityOpenAPIContract(t *testing.T) {
 		"/v1/workflow-control/runs/{runId}/outbox/{revision}:pending",
 		"/v1/workflow-control/runs/{runId}:transition",
 		"/v1/workflow-control/runs:accept",
+		"/v1/workflow-control/storage-proof",
 	}
 	if fmt.Sprint(routes) != fmt.Sprint(expected) {
 		t.Fatalf("authority route inventory drifted: %v", routes)
@@ -62,6 +63,7 @@ func TestAuthorityOpenAPIContract(t *testing.T) {
 	}
 	protected := []*openapi3.Operation{
 		document.Paths.Value("/v1/workflow-control/binding").Get,
+		document.Paths.Value("/v1/workflow-control/storage-proof").Get,
 		document.Paths.Value("/v1/workflow-control/runs:accept").Post,
 		document.Paths.Value("/v1/workflow-control/runs/{runId}:transition").Post,
 		document.Paths.Value("/v1/workflow-control/runs/{runId}").Get,

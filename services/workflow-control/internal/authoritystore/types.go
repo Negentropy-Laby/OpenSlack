@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/storageproof"
 )
 
 const (
@@ -161,6 +162,7 @@ type Statistics struct {
 }
 
 type Repository interface {
+	storageproof.Writer
 	Mutate(context.Context, MutateInput) (Receipt, error)
 	Read(context.Context, string, string) (RunHead, error)
 	ReadReceipt(context.Context, string, string) (Receipt, error)

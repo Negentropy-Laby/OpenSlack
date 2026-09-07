@@ -1,4 +1,11 @@
 import { createHash } from 'node:crypto';
+import {
+  parseWorkflowBindingSettlement,
+  validateWorkflowBindingSettlement,
+  workflowBindingSettlementResolution,
+  type WorkflowBindingSettlementReceipt,
+} from './workflow-binding-reconciliation-contract.js';
+import { workflowAuthorityFailure } from './internal/workflow-authority-failure.js';
 import { lstat, readdir, rename, rmdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -52,6 +59,7 @@ export interface WorkflowRunnerAuthorityControlDeliveryJournalEntry {
 
 export interface WorkflowRunnerAuthorityBindingJournalEntry {
   readonly stage: WorkflowRunnerAuthorityBindingStage;
+  readonly settlement?: WorkflowBindingSettlementReceipt;
   readonly stageReceipt?: WorkflowRunnerAuthorityStageReceipt;
   readonly sourceEvidence?: WorkflowRunnerAuthorityEvidence;
   readonly resolution?: WorkflowRunnerAuthorityBindingResolution;
@@ -77,8 +85,9 @@ export class WorkflowRunnerAuthorityBindingJournalError extends Error {
 
 const SAFE_DIRECTORY = /^[0-9a-f]{64}$/u;
 const CONTROL_FILE = /^(message|budget-source-result|receipt|confirmed)-([0-9]{10})\.json$/u;
-const MAX_SLOT_BYTES = 1_048_576;
+const MAX_SLOT_BYTES = 2 * 1024 * 1024;
 const STATIC_FILES = new Set([
+  'settlement.json',
   'stage.json',
   'stage-receipt.json',
   'source-evidence.json',
@@ -183,6 +192,7 @@ async function present(path: string): Promise<boolean> {
 export function workflowRunnerAuthorityBindingJournalEntryClosed(
   entry: WorkflowRunnerAuthorityBindingJournalEntry,
 ): boolean {
+  if (entry.settlement) return true;
   if (
     !entry.stageReceipt ||
     entry.stageReceipt.status !== 'accepted' ||
@@ -322,6 +332,10 @@ export class WorkflowRunnerAuthorityBindingJournal {
           partition,
         );
         if (workflowRunnerAuthorityBindingJournalEntryClosed(entry) !== expectedClosed) {
+          if (!expectedClosed && entry.settlement) {
+            await this.#archiveClosed(entry);
+            continue;
+          }
           return fail(
             'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CORRUPT',
             'Authority-binding journal partition does not match its closure state.',
@@ -414,6 +428,15 @@ export class WorkflowRunnerAuthorityBindingJournal {
   }
 
   async putStage(stage: WorkflowRunnerAuthorityBindingStage): Promise<void> {
+    const prior = await this.read(stage.bindingId);
+    if (prior) {
+      if (!exactEqual(prior.stage, stage))
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+          'Binding stage differs from its durable history.',
+        );
+      return;
+    }
     const { active } = this.#paths();
     const name = bindingDirectoryName(stage.bindingId);
     const directory = await ensureOwnerDirectory(join(active, name), this.#security, active);
@@ -502,6 +525,40 @@ export class WorkflowRunnerAuthorityBindingJournal {
     }
   }
 
+  async putSettlement(
+    receipt: WorkflowBindingSettlementReceipt,
+    stageReceipt: WorkflowRunnerAuthorityStageReceipt,
+  ): Promise<void> {
+    const entry = await this.read(receipt.bindingId);
+    if (!entry) return; // No local history to close; do not invent journal frames.
+    if (entry.settlement) {
+      if (!exactEqual(entry.settlement, receipt))
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+          'Binding has another terminal settlement.',
+        );
+      return;
+    }
+    if (workflowRunnerAuthorityBindingJournalEntryClosed(entry)) return;
+    validateWorkflowRunnerAuthorityBindingStageReceipt(stageReceipt, entry.stage);
+    const proofResolution = workflowBindingSettlementResolution(receipt);
+    validateWorkflowBindingSettlement(
+      receipt,
+      entry.stage,
+      entry.resolution ? canonical(entry.resolution) : proofResolution,
+    );
+    if (proofResolution)
+      validateWorkflowRunnerAuthorityBindingResolutionForStage(
+        parseWorkflowRunnerAuthorityBindingResolutionBytes(Buffer.from(proofResolution)),
+        entry.stage,
+        entry.stageReceipt ?? stageReceipt,
+      );
+    if (!entry.stageReceipt) await this.putStageReceipt(receipt.bindingId, stageReceipt);
+    await this.#putBindingSlot(receipt.bindingId, 'settlement.json', canonical(receipt));
+    const closed = await this.read(receipt.bindingId);
+    if (closed) await this.#archiveClosed(closed);
+  }
+
   #paths(): { active: string; closed: string; locks: string } {
     if (!this.#active || !this.#closed || !this.#locks) {
       return fail(
@@ -520,6 +577,11 @@ export class WorkflowRunnerAuthorityBindingJournal {
         'Authority-binding stage is missing before a later journal slot.',
       );
     }
+    if (entry.settlement)
+      return fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CONFLICT',
+        'A settled binding cannot accept another journal slot.',
+      );
     const directory = join(this.#paths().active, bindingDirectoryName(bindingId));
     if (!(await present(directory))) {
       return fail(
@@ -537,7 +599,7 @@ export class WorkflowRunnerAuthorityBindingJournal {
       await syncDirectory(resolve(path, '..'));
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw workflowAuthorityFailure(error);
     }
     const existing = await readOwnerFile(path, this.#security, MAX_SLOT_BYTES);
     if (existing !== bytes) {
@@ -826,8 +888,36 @@ export class WorkflowRunnerAuthorityBindingJournal {
         error,
       );
     }
+    let settlement: WorkflowBindingSettlementReceipt | undefined;
+    if (names.has('settlement.json')) {
+      try {
+        settlement = parseWorkflowBindingSettlement(await read('settlement.json'));
+        const proofResolution = workflowBindingSettlementResolution(settlement);
+        validateWorkflowBindingSettlement(
+          settlement,
+          stage,
+          resolution ? canonical(resolution) : proofResolution,
+        );
+        if (proofResolution) {
+          if (!validatedStageReceipt)
+            throw new TypeError('Settlement requires its original stage receipt.');
+          validateWorkflowRunnerAuthorityBindingResolutionForStage(
+            parseWorkflowRunnerAuthorityBindingResolutionBytes(Buffer.from(proofResolution)),
+            stage,
+            validatedStageReceipt,
+          );
+        }
+      } catch (cause) {
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_CORRUPT',
+          'Binding settlement proof is invalid.',
+          cause,
+        );
+      }
+    }
     const entry = Object.freeze({
       stage,
+      ...(settlement ? { settlement } : {}),
       ...(validatedStageReceipt ? { stageReceipt: validatedStageReceipt } : {}),
       ...(sourceEvidence ? { sourceEvidence } : {}),
       ...(validatedResolution ? { resolution: validatedResolution } : {}),

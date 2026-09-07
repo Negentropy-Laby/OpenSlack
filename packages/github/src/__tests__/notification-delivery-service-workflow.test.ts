@@ -833,6 +833,7 @@ describe('notification delivery service workflow', () => {
       'workflow-effect-shadow',
       'workflow-runner',
       'workflow-runner-authority-binding',
+      'workflow-recovery',
     ]);
     expect(rootPackage.scripts['workflow:contract-families']).toBe(
       'bun scripts/workflow-contract-families/index.ts',

@@ -274,6 +274,8 @@ func migrationPaths(t testing.TB) []string {
 		filepath.Join(migrationRoot, "000006_create_workflow_control_budget_authority.up.sql"),
 		filepath.Join(migrationRoot, "000007_integrate_workflow_runner_v2.up.sql"),
 		filepath.Join(migrationRoot, "000008_deliver_workflow_runner_authority_bindings.up.sql"),
+		filepath.Join(migrationRoot, "000009_index_workflow_runner_recovery_evidence.up.sql"),
+		filepath.Join(migrationRoot, "000010_reconcile_workflow_runner_bindings.up.sql"),
 	}
 }
 

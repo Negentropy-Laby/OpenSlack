@@ -1193,6 +1193,68 @@ Checkpoint, runner-binding, and lifecycle revisions remain independent. Fences i
 job; a newly admitted resume job may start at fence 1. With no committed checkpoint, the only valid
 resume destination is `phase-0` with null prior-checkpoint evidence.
 
+Recovery reads `GET /v2/runner/runs/{runId}/recovery-evidence` from the authenticated runner
+service. Schema 9 added the workspace/run index. Schema 10 returns explicit v2 records for
+bindings, immutable settlements, unfinished operations and active attempts, without artifact
+contents. New readers also accept v1. A `bindingId` selects one historical operation; v2 pages
+may still be needed for that operation. `afterBindingId` carries the last record key, and
+`snapshot` fixes the evidence digest across pages. Each response uses the existing 2 MiB limit;
+changed evidence requires restarting the query and an oversized single record fails explicitly.
+Historical bytes and receipt hashes are never rewritten.
+
+Checkpoint source revisions and resume generations must form a contiguous chain. The committed
+checkpoint frontier determines the next phase, and the current Workflow Control head must agree;
+legacy null phase fields require sufficient checkpoint evidence. A source-only resume commit
+also requires its immutable v2 intent to match the exact source request, record hash and receipt.
+Local cache availability never overturns a historical commit.
+
+Version 2 resume intents freeze both checkpoint states and the original source evidence. They use
+the local checkpoint file limit, checked before atomic publication, because two states can exceed
+the old 1 MiB intent reader limit. The checkpoint lock only validates and reserves local state;
+receipt queries and CAS execute outside it, and all writers respect the durable reservation. The
+cache is committed only after rechecking the reserved state. Historical operation proof and its
+original resolution survive later progress and journal reconstruction; they do not grant a current
+lease. Cancellation and lease expiry bound authority calls. Transport failures, 429, and 5xx retain
+the same frozen operation for the existing retry tick; identity and integrity conflicts require
+reconciliation.
+
+`openslack collaboration workflow runs repair-checkpoints <runId>` diagnoses without writing.
+`--apply` revalidates exact Go evidence, route identity, current head, active leases, and local file
+identity under a durable repair reservation. It preserves original bytes, including invalid UTF-8,
+before reconstructing only the provable local checkpoint cache. Torn or inconsistent intents can
+be removed only after a committed cache resolution or a durable not-committed source fence is proven
+and their original bytes are preserved.
+Insufficient history, conflicting leases, or a generation rewind are rejected. Repair never changes
+Go history, starts a workflow, or runs automatically; repeating a completed repair is a no-op.
+
+`openslack collaboration workflow runs reconcile-bindings <runId> [--binding-id <id>]` previews
+explicit binding closure without business writes. `--apply` closes each provable binding and
+reports every committed item even if a later item fails. Exact request keys replay original
+receipts. Committed resolutions, precise source receipts and durable budget results prove
+positive conclusions. Missing receipts or expired leases alone do not prove non-commit: a
+negative resume conclusion also installs a persistent source fence under the source CAS lock
+order. No old event, ACK, binding or resolution is rewritten or invented.
+
+Apply requires one verifiable writable PostgreSQL. A fresh transient advisory-lock challenge
+runs through the actual source writer pool before business locks are taken. The proof compares
+current database OID, actual table OIDs, clean schema 10 and enabled database guards; lock
+observation includes database OID because `pg_locks` is cluster-wide. Separate databases,
+clones, schemas, replicas and unavailable identity proofs cannot authorize reconciliation.
+The migration adds immutable settlements, source fences and recovery-pause receipts. Database
+guards prevent late source writes, old lease revival and late staging after closure.
+
+Only after every related operation is closed, old ownership is inactive and no budget or effect
+remains pending can a separate exact-head CAS converge `running` or `resuming` to `paused`.
+It preserves phase, generation and identity and increments authority revision once. The user
+then resumes normally with a new execution identity. Unknown evidence remains blocked.
+Rollback retains schema 10 and all fence/closure evidence and uses a compatible build; a
+migration downgrade refuses to discard any such record. Neither command runs automatically.
+
+Fatal session termination synchronously rejects new work and waiters, cancels authority calls
+and retry scheduling, then reports and closes once. Every asynchronous continuation checks the
+terminal state. Integrity, identity and unsafe-path failures require reconciliation; ordinary
+local I/O is retryable, and cancellation has its own stable code. Public output excludes causes.
+
 The additive first-phase wire change refreshes upstream budget manifest locks without changing
 budget record schemas. Readers accept only the current manifest and the exact previous
 `662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable

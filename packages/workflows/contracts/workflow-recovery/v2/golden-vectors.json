@@ -1,0 +1,86 @@
+[
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "valid",
+    "valid": true,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"not_committed\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "unknown field",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"not_committed\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"unrelated\":1,\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "null run",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"not_committed\",\"rulesVersion\":1,\"runId\":null,\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "unknown outcome",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"unknown\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "future rules",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"not_committed\",\"rulesVersion\":2,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingReconciliationRequest",
+    "name": "unsafe identity",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"not_committed\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_reconciliation.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"../workspace\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "valid",
+    "valid": true,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "unknown field",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"unrelated\":1,\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "null run",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":null,\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "unknown outcome",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"unknown\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "future rules",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":2,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "unsafe identity",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"../workspace\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "invalid date",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-02-30T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_fence\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "BindingSettlementReceipt",
+    "name": "wrong proof category",
+    "valid": false,
+    "bytes": "{\"bindingId\":\"WFRUNNER-BINDING-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"callerId\":\"caller.test\",\"committedAt\":\"2026-09-07T00:00:00.000Z\",\"idempotencyKey\":\"openslack.workflow-runner-reconciliation.v1.5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"outcome\":\"not_committed\",\"proof\":\"{}\\n\",\"proofKind\":\"source_receipt\",\"requestHash\":\"5433c6d06dfc5dea3d44b54aa4f1eda81f45fc5d8e059882755e7a9c2af082e7\",\"rulesVersion\":1,\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_binding_settlement_receipt.v1\",\"stageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"workspaceId\":\"workspace.test\"}\n"
+  }
+]

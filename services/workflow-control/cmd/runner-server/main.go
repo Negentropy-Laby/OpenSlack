@@ -30,6 +30,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerscheduler"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	runnerpostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/storageproof"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/workerregistry"
 )
 
@@ -96,6 +97,8 @@ func main() {
 		os.Exit(1)
 	}
 	store := runnerpostgres.NewForV2RuntimeDelivery(pool, runnerstore.V2AuthorityPorts{})
+	store.WithReconciliationWriter(storageproof.NewClient(config.V2RunAuthorityOrigin, config.V2RunAuthorityBearerToken,
+		config.WorkspaceID, config.V2RunAuthorityCallerID, config.V2RunAuthorityBuildSHA), config.V2RunAuthorityCallerID)
 	v2Session, err := runnerscheduler.NewV2Session(runnerscheduler.V2SessionConfig{
 		Store: store, Launcher: runnerscheduler.SealedLauncher{Supervisor: supervisor},
 		ControlBuildHash: config.ServiceBuildSHA, ExpectedRunnerBuildHash: registry.RunnerBuildHash(),
@@ -119,8 +122,10 @@ func main() {
 	}
 	service, err := runnerapp.New(runnerapp.Options{
 		Store: store, BuildSHA: config.ServiceBuildSHA, WorkspaceID: config.WorkspaceID,
-		V2Store: store, BindingStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
-		BearerTokenSHA256: config.BearerTokenSHA256, Logger: logger,
+		V2Store: store, BindingStore: store, RecoveryStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
+		ReconciliationStore: store,
+		RecoveryV2Store:     store,
+		BearerTokenSHA256:   config.BearerTokenSHA256, Logger: logger,
 		RunAuthorityOrigin:      config.V2RunAuthorityOrigin,
 		RunAuthorityCallerID:    config.V2RunAuthorityCallerID,
 		RunAuthorityBuildSHA:    config.V2RunAuthorityBuildSHA,

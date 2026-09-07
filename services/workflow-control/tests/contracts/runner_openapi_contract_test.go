@@ -43,6 +43,10 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		"/v2/runner/authority-bindings/{bindingId}:resolve",
 		"/v2/runner/authority-bindings:stage",
 		"/v2/runner/jobs",
+		"/v2/runner/runs/{runId}/binding-reconciliation",
+		"/v2/runner/runs/{runId}/binding-reconciliation/receipts/{idempotencyKey}",
+		"/v2/runner/runs/{runId}/recovery-evidence",
+		"/v2/runner/runs/{runId}/recovery-pause",
 		"/v2/runner/runtime-admissions:seal",
 	}
 	if fmt.Sprint(routes) != fmt.Sprint(expectedRoutes) {
@@ -70,6 +74,11 @@ func TestRunnerOpenAPILocksRoutesSecurityAndDefaultOffAuthority(t *testing.T) {
 		document.Paths.Value("/v1/workflow-runner/binding").Get,
 		document.Paths.Value("/v1/runner/jobs").Post,
 		document.Paths.Value("/v2/runner/jobs").Post,
+		document.Paths.Value("/v2/runner/runs/{runId}/recovery-evidence").Get,
+		document.Paths.Value("/v2/runner/runs/{runId}/binding-reconciliation").Get,
+		document.Paths.Value("/v2/runner/runs/{runId}/binding-reconciliation").Post,
+		document.Paths.Value("/v2/runner/runs/{runId}/binding-reconciliation/receipts/{idempotencyKey}").Get,
+		document.Paths.Value("/v2/runner/runs/{runId}/recovery-pause").Post,
 		document.Paths.Value("/v1/runner/jobs/{jobId}").Get,
 		document.Paths.Value("/v1/runner/jobs/{jobId}/cancellations").Post,
 		document.Paths.Value("/v2/runner/runtime-admissions:seal").Post,
@@ -271,7 +280,7 @@ func TestRunnerOpenAPIAuthorityBindingCompanionIsExactDefaultOffQualificationOnl
 		}
 	}
 	version := document.Components.Schemas["Version"].Value
-	if version.Properties["schemaVersion"].Value.Max == nil || *version.Properties["schemaVersion"].Value.Max != 8 ||
+	if version.Properties["schemaVersion"].Value.Max == nil || *version.Properties["schemaVersion"].Value.Max != 9 ||
 		version.Properties["mode"].Value.Const != "runner-control-go-authority" ||
 		version.Properties["workflowAuthority"].Value.Const != "workflow-control" ||
 		version.Properties["routingActivated"] == nil ||
@@ -279,7 +288,7 @@ func TestRunnerOpenAPIAuthorityBindingCompanionIsExactDefaultOffQualificationOnl
 		version.Properties["newRecordCanary"] == nil ||
 		version.Properties["v2QualificationAdmission"] != nil ||
 		version.Properties["v2RuntimeDeliveryQualification"] != nil {
-		t.Fatalf("schema-8 Go-authority version surface drifted: %+v", version.Properties)
+		t.Fatalf("schema-9 Go-authority version surface drifted: %+v", version.Properties)
 	}
 }
 

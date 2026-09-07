@@ -21,6 +21,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/config"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/storageproof"
 )
 
 const (
@@ -37,6 +38,10 @@ type fakeRepository struct {
 	readOutbox func(context.Context, string, string, int64) (authoritystore.OutboxRecord, error)
 	ready      func(context.Context) error
 	statistics func(context.Context) (authoritystore.Statistics, error)
+}
+
+func (*fakeRepository) ProveStorage(context.Context, storageproof.Challenge) (storageproof.Answer, error) {
+	return storageproof.Answer{}, authoritystore.Failure(authoritystore.ErrorNotFound, "storage proof", nil)
 }
 
 func (repository *fakeRepository) Mutate(ctx context.Context, input authoritystore.MutateInput) (authoritystore.Receipt, error) {

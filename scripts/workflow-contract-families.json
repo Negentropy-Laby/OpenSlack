@@ -10,13 +10,19 @@
       "id": "workflow-authority",
       "generator": "scripts/workflow-authority-contracts/index.ts",
       "tsconfig": "scripts/workflow-authority-contracts/tsconfig.json",
-      "goMirror": { "package": "authoritycontract", "version": "v2" }
+      "goMirror": {
+        "package": "authoritycontract",
+        "version": "v2"
+      }
     },
     {
       "id": "workflow-budget-authority",
       "generator": "scripts/workflow-budget-authority-contracts/index.ts",
       "tsconfig": "scripts/workflow-budget-authority-contracts/tsconfig.json",
-      "goMirror": { "package": "budgetcontract", "version": "v1" }
+      "goMirror": {
+        "package": "budgetcontract",
+        "version": "v1"
+      }
     },
     {
       "id": "workflow-control-shadow",
@@ -47,7 +53,15 @@
       "id": "workflow-runner-authority-binding",
       "generator": "scripts/workflow-runner-authority-binding-contracts/index.ts",
       "tsconfig": "scripts/workflow-runner-authority-binding-contracts/tsconfig.json",
-      "goMirror": { "package": "runnerbindingcontract", "version": "v1" }
+      "goMirror": {
+        "package": "runnerbindingcontract",
+        "version": "v1"
+      }
+    },
+    {
+      "id": "workflow-recovery",
+      "generator": "scripts/workflow-recovery-contracts/index.ts",
+      "tsconfig": "scripts/workflow-recovery-contracts/tsconfig.json"
     }
   ]
 }

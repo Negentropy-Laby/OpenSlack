@@ -32,6 +32,7 @@ const (
 type Repository struct {
 	pool                 *pgxpool.Pool
 	budgetGateEnabled    bool
+	recoveryGateEnabled  bool
 	commitTransaction    func(context.Context, pgx.Tx) error
 	commitReconciliation func(context.Context, pgx.Tx) error
 }
@@ -41,7 +42,7 @@ func New(pool *pgxpool.Pool, schemaVersion ...int64) *Repository {
 	if len(schemaVersion) == 1 {
 		version = schemaVersion[0]
 	}
-	return &Repository{pool: pool, budgetGateEnabled: version == 6}
+	return &Repository{pool: pool, budgetGateEnabled: version == 6, recoveryGateEnabled: version >= 10}
 }
 
 // NewWithCommitter injects the commit boundary so qualification can prove
@@ -118,7 +119,16 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 	}
 
 	var reconciliationOpen bool
-	if err := tx.QueryRow(ctx, openReconciliationSQL, request.WorkspaceID, request.RunID).Scan(&reconciliationOpen); err != nil {
+	reconciliationQuery := openReconciliationSQL
+	if repository.recoveryGateEnabled {
+		reconciliationQuery = `SELECT EXISTS(SELECT 1 FROM workflow_control_reconciliations r
+ JOIN workflow_control_transition_receipts receipt ON receipt.receipt_id=r.receipt_id
+ WHERE r.workspace_id=$1 AND r.run_id=$2 AND r.status='open' AND NOT EXISTS(
+ SELECT 1 FROM workflow_runner_binding_settlements s JOIN workflow_runner_authority_bindings b USING(binding_id)
+ WHERE b.workspace_id=r.workspace_id AND b.run_id=r.run_id AND b.operation='resume_advance'
+ AND receipt.correlation_id='resume.'||encode(b.stage_hash,'hex')))`
+	}
+	if err := tx.QueryRow(ctx, reconciliationQuery, request.WorkspaceID, request.RunID).Scan(&reconciliationOpen); err != nil {
 		return authoritystore.Receipt{}, databaseFailure("read workflow authority reconciliation gate", err)
 	}
 	if reconciliationOpen {

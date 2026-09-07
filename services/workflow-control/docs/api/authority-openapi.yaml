@@ -21,6 +21,41 @@ x-openslack-go-authority: [run-spine, transition-receipt, transactional-outbox]
 x-openslack-excluded-authority: [approval, provider, effect-execution]
 x-openslack-max-request-bytes: 524288
 paths:
+  /v1/workflow-control/storage-proof:
+    get:
+      operationId: proveWorkflowControlSourceWriter
+      description: >-
+        Read a transient challenge through the actual source writer pool. Checks
+        database OID, actual relation OIDs, clean schema 10, writable state and
+        enabled fence triggers. pg_locks is cluster-wide: lock observation also
+        requires the current database OID. No business rows are locked or written.
+      security: [{ bearerAuth: [] }]
+      x-openslack-no-store-mutation: true
+      parameters:
+        - $ref: '#/components/parameters/CallerHeader'
+        - $ref: '#/components/parameters/WorkspaceHeader'
+        - $ref: '#/components/parameters/EpochHeader'
+        - $ref: '#/components/parameters/BuildHeader'
+        - {
+            name: key,
+            in: query,
+            required: true,
+            schema: { type: integer, format: int64, minimum: 1 },
+          }
+        - {
+            name: pid,
+            in: query,
+            required: true,
+            schema: { type: integer, format: int32, minimum: 1 },
+          }
+      responses:
+        '200':
+          description: Canonical source writer challenge answer; this is not an execution lease.
+          content: { application/json: { schema: { $ref: '#/components/schemas/StorageProof' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/workflow-control/binding:
     get:
       operationId: inspectWorkflowControlAuthorityBinding
@@ -289,6 +324,36 @@ components:
       description: PostgreSQL authority repository is unavailable.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    StorageProof:
+      type: object
+      unevaluatedProperties: false
+      additionalProperties: false
+      required:
+        [
+          schema,
+          challenge,
+          databaseOid,
+          relations,
+          schemaVersion,
+          writable,
+          fenceEnabled,
+          lockObserved,
+        ]
+      properties:
+        schema: { const: openslack.workflow_control_storage_proof.v1 }
+        challenge:
+          type: object
+          additionalProperties: false
+          required: [key, pid]
+          properties:
+            key: { type: integer, format: int64, minimum: 1 }
+            pid: { type: integer, format: int32, minimum: 1 }
+        databaseOid: { type: integer, minimum: 1 }
+        relations: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+        schemaVersion: { type: integer, minimum: 0 }
+        writable: { type: boolean }
+        fenceEnabled: { type: boolean }
+        lockObserved: { type: boolean }
     Identifier:
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$'

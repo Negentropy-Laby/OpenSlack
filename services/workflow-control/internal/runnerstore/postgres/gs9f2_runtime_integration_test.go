@@ -426,6 +426,17 @@ func TestGS9F2AuthorityBindingRestartRecovery(t *testing.T) {
 			if view.JobID != "job-f2-restart-staged" && (len(view.ExactResolutionBytes) == 0 || len(view.ExactResolutionReceipt) == 0) {
 				t.Fatalf("post-resolution recovery lost exact evidence: %+v", view)
 			}
+			stage, parseErr := runnerbindingcontract.ParseStageBytes(view.ExactStageBytes)
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			proof, proofErr := repository.ReadRecoveryEvidence(context.Background(), prepared.Value.WorkspaceID, bindingString(stage, "runId"), view.BindingID, "", "")
+			if proofErr != nil || len(proof.Bindings) != 1 || proof.Bindings[0].State != "reconciliation_required" || proof.Bindings[0].Stage != string(view.ExactStageBytes) {
+				t.Fatalf("restarted evidence query lost frozen history: %+v %v", proof, proofErr)
+			}
+			if len(view.ExactResolutionBytes) > 0 && (proof.Bindings[0].Resolution == nil || *proof.Bindings[0].Resolution != string(view.ExactResolutionBytes) || proof.Bindings[0].ResolutionReceipt == nil || *proof.Bindings[0].ResolutionReceipt != string(view.ExactResolutionReceipt)) {
+				t.Fatal("reconciliation state hid accepted pre-restart evidence")
+			}
 		}
 		var reconciledControls int
 		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM workflow_runner_control_messages WHERE delivery_state='reconciliation_required'`).Scan(&reconciledControls); err != nil || reconciledControls != 1 {
@@ -469,6 +480,15 @@ VALUES ('forged-control','forged-binding','event_receipt',3,3,decode(repeat('11'
 
 	t.Run("schema7 exact authority row survives schema8 upgrade", func(t *testing.T) {
 		upgradePool := testsupport.OpenPostgres(t)
+		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
+			raw, err := os.ReadFile(v2MigrationPath(t, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = upgradePool.Exec(context.Background(), string(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		downMigration, err := os.ReadFile(v2MigrationPath(t, "000008_deliver_workflow_runner_authority_bindings.down.sql"))
 		if err != nil {
 			t.Fatal(err)
@@ -517,7 +537,8 @@ FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, event.Message.EventID).S
 			t.Fatalf("schema8 upgrade rewrote exact schema7 authority evidence: before=%s/%s/%x/%q after=%s/%s/%x/%q",
 				beforeState, beforeOperation, beforeHash, beforeExact, afterState, afterOperation, afterHash, afterExact)
 		}
-		schema8Repository := NewWithV2Authorities(upgradePool, runnerstore.V2AuthorityPorts{Budget: adapter})
+		schema8Repository := NewForSchema(upgradePool, 8)
+		schema8Repository.v2Authorities = runnerstore.V2AuthorityPorts{Budget: adapter}
 		replay, err := schema8Repository.RecordV2Event(context.Background(), event)
 		if err != nil || !replay.Duplicate || adapter.applyCalls != 1 ||
 			!bytes.Equal(replay.ReceiptBytes, recorded.ReceiptBytes) || !bytes.Equal(replay.DecisionBytes, recorded.DecisionBytes) {
@@ -527,6 +548,15 @@ FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, event.Message.EventID).S
 
 	t.Run("schema7 authority outcome cross-splice blocks schema8 upgrade", func(t *testing.T) {
 		upgradePool := testsupport.OpenPostgres(t)
+		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
+			raw, err := os.ReadFile(v2MigrationPath(t, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = upgradePool.Exec(context.Background(), string(raw)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		downMigration, err := os.ReadFile(v2MigrationPath(t, "000008_deliver_workflow_runner_authority_bindings.down.sql"))
 		if err != nil {
 			t.Fatal(err)

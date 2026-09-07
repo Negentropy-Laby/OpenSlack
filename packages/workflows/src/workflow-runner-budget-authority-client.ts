@@ -25,6 +25,7 @@ import {
 import {
   cancelWorkflowRunnerResponseBody,
   readWorkflowRunnerResponseBytes,
+  throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -256,7 +257,9 @@ async function exactBody(response: Response, signal?: AbortSignal): Promise<stri
     minimumBytes: 2,
     failure: (message, options) => {
       throw new WorkflowRunnerBudgetAuthorityClientError(
-        'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+        options.kind === 'transport'
+          ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+          : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         message,
         options,
       );
@@ -328,6 +331,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
         ? `${config.origin}${prepared.path}`
         : `${config.origin}/v1/authority/workflow-budgets/receipts/${encodeURIComponent(prepared.idempotencyKey)}`;
     let response: Response;
+    throwIfWorkflowRunnerAborted(signal);
     try {
       response = await send(url, {
         method,
@@ -349,6 +353,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
         signal,
       });
     } catch (error) {
+      throwIfWorkflowRunnerAborted(signal);
       throw new WorkflowRunnerBudgetAuthorityClientError(
         'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED',
         'Budget authority transport failed.',
@@ -362,7 +367,9 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
     if (![200, 201, 202].includes(response.status)) {
       await cancelWorkflowRunnerResponseBody(response);
       throw new WorkflowRunnerBudgetAuthorityClientError(
-        'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+        response.status === 429 || response.status >= 500
+          ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+          : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
         `Budget authority returned HTTP ${response.status}.`,
       );
     }
@@ -375,6 +382,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
     pointRead: (prepared: WorkflowBudgetPreparedRequest, signal?: AbortSignal) =>
       request(prepared, 'GET', signal),
     async readAccount(runId: string, route: WorkflowBudgetRoute, signal?: AbortSignal) {
+      throwIfWorkflowRunnerAborted(signal);
       if (
         !SAFE_ID.test(runId) ||
         route.backend !== 'go' ||
@@ -402,6 +410,7 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
           },
         );
       } catch (error) {
+        throwIfWorkflowRunnerAborted(signal);
         throw new WorkflowRunnerBudgetAuthorityClientError(
           'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED',
           'Budget account point-read transport failed.',
@@ -415,7 +424,9 @@ export function createWorkflowRunnerBudgetAuthorityClient(config: {
       if (response.status !== 200) {
         await cancelWorkflowRunnerResponseBody(response);
         throw new WorkflowRunnerBudgetAuthorityClientError(
-          'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
+          response.status === 429 || response.status >= 500
+            ? 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_TRANSPORT_FAILED'
+            : 'WORKFLOW_RUNNER_BUDGET_AUTHORITY_RESPONSE_INVALID',
           `Budget account point-read returned HTTP ${response.status}.`,
         );
       }

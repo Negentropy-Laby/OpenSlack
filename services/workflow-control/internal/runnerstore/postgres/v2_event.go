@@ -25,6 +25,9 @@ func (repository *Repository) RecordV2Event(ctx context.Context, input runnersto
 		return runnerstore.V2RecordedEvent{}, err
 	}
 	message := input.Message
+	if err := repository.requireUnsettledEvent(ctx, repository.pool, message.EventID); err != nil {
+		return runnerstore.V2RecordedEvent{}, err
+	}
 	if !bytes.Equal([]byte(prepared.Body), input.ExactBytes) || message.Kind == authoritycontract.KindHello {
 		return runnerstore.V2RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorHashMismatch, "v2 event bytes are not exact canonical runner bytes", nil)
 	}
@@ -626,6 +629,9 @@ func (repository *Repository) callV2Authority(ctx context.Context, request runne
 
 func (repository *Repository) stageV2Event(ctx context.Context, input runnerstore.V2RecordEventInput, prepared authoritycontract.PreparedMessage) (stagedV2Event, error) {
 	message := input.Message
+	if err := repository.requireUnsettledEvent(ctx, repository.pool, message.EventID); err != nil {
+		return stagedV2Event{}, err
+	}
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return stagedV2Event{}, databaseFailure("begin v2 event staging", err)

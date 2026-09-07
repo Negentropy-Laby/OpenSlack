@@ -60,16 +60,19 @@ ORDER BY table_name`)
 		"workflow_control_effect_shadow_reconciliations",
 		"workflow_control_outbox",
 		"workflow_control_reconciliations",
+		"workflow_control_recovery_pauses",
 		"workflow_control_runs",
 		"workflow_control_shadow_heads",
 		"workflow_control_shadow_observations",
 		"workflow_control_shadow_receipts",
+		"workflow_control_source_fences",
 		"workflow_control_transition_events",
 		"workflow_control_transition_receipts",
 		"workflow_runner_attempts",
 		"workflow_runner_authority_bindings",
 		"workflow_runner_authority_control_acks",
 		"workflow_runner_authority_reconciliations",
+		"workflow_runner_binding_settlements",
 		"workflow_runner_cancel_controls",
 		"workflow_runner_control_messages",
 		"workflow_runner_effect_boundaries",
@@ -105,6 +108,9 @@ WHERE trigger_schema = current_schema()
 	      'workflow_control_transition_events',
 	      'workflow_control_transition_receipts',
 	      'workflow_control_reconciliations',
+          'workflow_control_source_fences',
+          'workflow_control_recovery_pauses',
+          'workflow_runner_binding_settlements',
 	      'workflow_control_budget_accounts',
 	      'workflow_control_budget_reservations',
 	      'workflow_control_budget_ledger',
@@ -138,8 +144,8 @@ WHERE trigger_schema = current_schema()
   AND event_manipulation IN ('UPDATE','DELETE')`).Scan(&triggerEvents); err != nil {
 		t.Fatalf("count immutable trigger events: %v", err)
 	}
-	if triggerEvents != 62 {
-		t.Fatalf("immutable trigger coverage = %d, want 62 event rows", triggerEvents)
+	if triggerEvents != 69 {
+		t.Fatalf("immutable trigger coverage = %d, want 69 event rows", triggerEvents)
 	}
 }
 
@@ -745,5 +751,13 @@ func workflowRunnerV2DownMigration(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("read GS9-F1 down migration: %v", err)
 	}
-	return string(f2b) + "\n" + string(f1)
+	var recovery string
+	for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
+		raw, err := os.ReadFile(filepath.Join(migrationRoot, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recovery += string(raw) + "\n"
+	}
+	return recovery + string(f2b) + "\n" + string(f1)
 }
