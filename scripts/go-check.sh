@@ -1898,7 +1898,7 @@ run_workflow_runner_test_container() {
     rm -f -- "${selection_file}"
     command+=(-run "^${test_name}$")
   fi
-  if [[ "${test_name}" == TestGS9F2* ]]; then
+  if [[ "${test_name}" == TestGS9F2* || "${test_name}" == TestBindingReconciliation* ]]; then
     local result_file
     result_file="$(mktemp -t openslack-go-check-runner-results.XXXXXX)"
     cleanup_files+=("${result_file}")
@@ -2303,10 +2303,19 @@ run_workflow_runner_v2_runtime_delivery() {
     WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
 
   log "qualifying schema-10 binding reconciliation and exact source history"
-  run_workflow_runner_test_container \
-    "${resource_prefix}" runner-binding-reconciliation "${network}" "${database_name}" "${resource_owner}" \
-    ./internal/runnerstore/postgres TestBindingReconciliation 1 \
-    WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+  local reconciliation_test
+  for reconciliation_test in \
+    TestBindingReconciliationRejectsOtherSchemaWithoutBusinessWrites \
+    TestBindingReconciliationRejectsClonedDatabaseLockDomain \
+    TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying \
+    TestBindingReconciliationEffectFrontier \
+    TestBindingReconciliationBudgetSourceCrashWindow \
+    TestBindingReconciliationSourceCASAndFenceOrder; do
+    run_workflow_runner_test_container \
+      "${resource_prefix}" runner-binding-reconciliation "${network}" "${database_name}" "${resource_owner}" \
+      ./internal/runnerstore/postgres "${reconciliation_test}" 1 \
+      WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1
+  done
 
   log "qualifying Workflow Control GS9-F2b worker/control lifecycle composition"
   run_workflow_runner_test_container \

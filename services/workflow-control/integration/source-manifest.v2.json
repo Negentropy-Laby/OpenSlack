@@ -250,7 +250,7 @@
     },
     "workflowGoCheckSource": {
       "path": "scripts/go-check.sh",
-      "sha256": "a19edd53824ed4ea814627aafd5a316b697c1dacbea08d281ee9fd427edf405b"
+      "sha256": "22deae54041ee61fc1a37d029464297e157a7564b386e44ee8d99db4df179ad0"
     },
     "workflowHostedGateSource": {
       "path": ".github/workflows/notification-delivery-service.yml",
@@ -450,7 +450,7 @@
     },
     "goCheckVerifierRegression": {
       "path": "packages/workspace/src/__tests__/go-check-script.test.ts",
-      "sha256": "f3175a31658d747c21ebed80189c8a5b299297e96aaa4f7fa936b08df4f6fe35"
+      "sha256": "9ff877c97ae0f8dd6290e7911a63daa857816023bfe916b1321955e4ed6a06a2"
     },
     "workflowRunReadErrorsSource": {
       "path": "packages/workflows/src/workflow-run-read-errors.ts",

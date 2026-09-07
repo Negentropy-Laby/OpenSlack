@@ -575,6 +575,29 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     ].map((match) => match[1]);
     expect(mixedSchemas).toHaveLength(4);
     expect(new Set(mixedSchemas).size).toBe(1);
+    for (const testName of [
+      'TestBindingReconciliationRejectsOtherSchemaWithoutBusinessWrites',
+      'TestBindingReconciliationRejectsClonedDatabaseLockDomain',
+      'TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying',
+      'TestBindingReconciliationEffectFrontier',
+      'TestBindingReconciliationBudgetSourceCrashWindow',
+      'TestBindingReconciliationSourceCASAndFenceOrder',
+      'TestBindingReconciliationUpgradeRestart',
+    ]) {
+      expect(log).toContain('OPENSLACK_GO_CHECK_EXPECT_TEST=' + testName);
+    }
+    expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
+    expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify');
+    const reconciliationSchemas = [
+      ...log.matchAll(/WORKFLOW_RUNNER_RECONCILIATION_RESTART_SCHEMA=(wf_reconcile_[a-z0-9]+)/gu),
+    ].map((match) => match[1]);
+    expect(reconciliationSchemas).toHaveLength(4);
+    expect(new Set(reconciliationSchemas).size).toBe(1);
+    const reconciliationSeed = log.indexOf('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
+    const reconciliationRestart = log.indexOf(' restart ', reconciliationSeed);
+    const reconciliationVerify = log.indexOf('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify');
+    expect(reconciliationRestart).toBeGreaterThan(reconciliationSeed);
+    expect(reconciliationVerify).toBeGreaterThan(reconciliationRestart);
     expect(log).not.toContain('TestGS8BRestartQualification');
     expect(log).not.toContain('TestGS8BImageDefaultOff');
     expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRuntimeDelivery\\$');
@@ -625,6 +648,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     for (const phase of [
       'runner-mixed-restart-seed',
       'runner-mixed-restart-verify',
+      'runner-binding-reconciliation',
+      'runner-reconciliation-restart-seed',
+      'runner-reconciliation-restart-verify',
       'runner-v2-runtime-delivery-migration',
       'runner-v2-runtime-delivery-worker',
       'runner-v2-runtime-delivery-restart-seed',
@@ -667,6 +693,18 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     });
     expect(mixedSkip.status).toBe(1);
     expect(mixedSkip.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
+    for (const testName of [
+      'TestBindingReconciliationSourceCASAndFenceOrder',
+      'TestBindingReconciliationUpgradeRestart',
+    ]) {
+      const reconciliationSkip = runGoCheck(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_SKIP_TEST: testName,
+      });
+      expect(reconciliationSkip.status, testName).toBe(1);
+      expect(reconciliationSkip.stderr).toContain(
+        'Workflow Control GS9-F2b qualification test skipped',
+      );
+    }
     const skipped = runGoCheck(failureFixture, ['services/pure'], {
       FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
     });
@@ -1464,7 +1502,39 @@ function addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot: string): void {
       'BEGIN;\nCOMMIT;\n',
       'utf8',
     );
+    writeFileSync(
+      join(moduleRoot, `migrations/000010_reconcile_workflow_runner_bindings.${suffix}.sql`),
+      'BEGIN;\nCOMMIT;\n',
+      'utf8',
+    );
   }
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/binding_reconciliation.go'),
+    'package postgres\n',
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/binding_reconciliation_integration_test.go'),
+    [
+      'package postgres',
+      '',
+      'import "testing"',
+      '',
+      'func TestBindingReconciliationRejectsOtherSchemaWithoutBusinessWrites(t *testing.T) {}',
+      'func TestBindingReconciliationRejectsClonedDatabaseLockDomain(t *testing.T) {}',
+      'func TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying(t *testing.T) {}',
+      'func TestBindingReconciliationEffectFrontier(t *testing.T) {}',
+      'func TestBindingReconciliationBudgetSourceCrashWindow(t *testing.T) {}',
+      'func TestBindingReconciliationSourceCASAndFenceOrder(t *testing.T) {}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    join(moduleRoot, 'internal/runnerstore/postgres/reconciliation_restart_integration_test.go'),
+    'package postgres\n\nimport "testing"\n\nfunc TestBindingReconciliationUpgradeRestart(t *testing.T) {}\n',
+    'utf8',
+  );
   writeFileSync(
     join(moduleRoot, 'internal/runnerstore/postgres/recovery_evidence.go'),
     'package postgres\n',
