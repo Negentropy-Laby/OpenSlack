@@ -63,85 +63,21 @@ export function parseWorkflowResumeIntent(
       'record',
       ...(v2 ? ['prior', 'next', 'evidence'] : []),
     ];
-    const invalid = () => { throw new TypeError('Invalid resume intent fields.'); };
-    closedDataRecord(intent, fields, ' + '\n' !== bytes ||
-      (!v2 && intent.schema !== 'openslack.workflow_runner_resume_source_intent.v1') ||
-      intent.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-      ((!v2 || Object.hasOwn(intent, 'correlationId')) && intent.correlationId !== `resume.${intent.stageHash}`) ||
-      !Number.isSafeInteger(intent.priorRevision) ||
-      intent.priorRevision < 1 ||
-      !Number.isSafeInteger(intent.phaseCount) ||
-      intent.phaseCount < 0 ||
-      !/^[0-9a-f]{64}$/u.test(intent.priorBindingHash) ||
-      intent.expected.resumeGeneration !== target.resumeGeneration ||
-      intent.record.resumeGeneration !== target.resumeGeneration! + 1 ||
-      intent.record.revision !== intent.expected.revision + 1 ||
-      intent.record.runId !== stage.runId ||
-      intent.record.workspaceId !== stage.workspaceId ||
-      canonical(intent.record.route) !== canonical(stage.route) ||
-      !['paused', 'paused_waiting_approval'].includes(intent.expected.state ?? '') ||
-      intent.record.state !== 'resuming'
-    )
-      throw new Error();
-    validateWorkflowRunnerAuthorityBindingStageReceipt(intent.stageReceipt, stage);
-    if (v2) {
-      validateWorkflowCheckpointControlState(intent.prior, stage.runId);
-      validateWorkflowCheckpointControlState(intent.next, stage.runId);
-      if (
-        intent.prior.revision !== intent.priorRevision ||
-        workflowCheckpointHash(intent.prior.activeBinding) !== intent.priorBindingHash ||
-        intent.next.revision !== intent.priorRevision + 1 ||
-        intent.next.resumeGeneration !== intent.record.resumeGeneration ||
-        intent.prior.resumeGeneration !== intent.expected.resumeGeneration ||
-        intent.next.activeBinding.workspaceId !== target.workspaceId ||
-        intent.next.activeBinding.jobId !== target.jobId ||
-        intent.next.activeBinding.attemptId !== target.attemptId ||
-        intent.next.activeBinding.leaseId !== target.leaseId ||
-        intent.next.activeBinding.fencingToken !== target.fencingToken ||
-        intent.next.activeBinding.correlationId !== target.correlationId ||
-        intent.next.activeBinding.runnerBuildHash !== intent.prior.activeBinding.runnerBuildHash ||
-        canonical(intent.next.seenBindingHashes) !==
-          canonical([
-            ...intent.prior.seenBindingHashes,
-            workflowCheckpointHash(intent.next.activeBinding),
-          ]) ||
-        intent.next.sourceSequence !== intent.prior.sourceSequence ||
-        intent.next.shadowEnabled !== intent.prior.shadowEnabled ||
-        intent.next.shadowOverflowed !==
-          (intent.prior.shadowOverflowed || intent.prior.shadowEnabled) ||
-        canonical(intent.next.pendingObservations) !==
-          canonical(intent.prior.pendingObservations) ||
-        (['workflowSourceHash', 'manifestHash', 'inputHash'] as const).some(
-          (field) =>
-            intent.record[field] !== intent.prior.activeBinding[field] ||
-            intent.record[field] !== intent.next.activeBinding[field],
-        ) ||
-        canonical(intent.prior.checkpoints) !== canonical(intent.next.checkpoints) ||
-        intent.phaseCount !== intent.next.checkpoints.length ||
-        canonical(intent.evidence) !== canonical(resumeEvidence(intent.next, target)) ||
-        intent.record.currentPhaseId !== intent.evidence.nextPhaseId ||
-        intent.record.currentPhaseIndex !== intent.evidence.nextPhaseIndex
-      )
-        throw new Error();
-    } else if (
-      intent.record.currentPhaseId !== intent.expected.currentPhaseId ||
-      intent.record.currentPhaseIndex !== intent.expected.currentPhaseIndex
-    )
-      throw new Error();
-    return intent;
-  } catch {
-    return recoveryConflict(
-      'Resume intent is torn or conflicts with its operation; explicit repair is required.',
-    );
-  }
-}
-, { inert: invalid, missing: invalid, unknown: invalid, dataField: invalid });
+    const invalid = () => {
+      throw new TypeError('Invalid resume intent fields.');
+    };
+    closedDataRecord(intent, fields, '$', {
+      inert: invalid,
+      missing: invalid,
+      unknown: invalid,
+      dataField: invalid,
+    });
     if (
       canonical(intent) + '\n' !== bytes ||
       (!v2 && intent.schema !== 'openslack.workflow_runner_resume_source_intent.v1') ||
-      Object.keys(intent).sort().join(',') !== fields.sort().join(',') ||
       intent.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
-      intent.correlationId !== `resume.${intent.stageHash}` ||
+      ((!v2 || Object.hasOwn(intent, 'correlationId')) &&
+        intent.correlationId !== `resume.${intent.stageHash}`) ||
       !Number.isSafeInteger(intent.priorRevision) ||
       intent.priorRevision < 1 ||
       !Number.isSafeInteger(intent.phaseCount) ||

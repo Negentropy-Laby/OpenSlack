@@ -393,7 +393,7 @@ export function validateSettledResumeIntent(
     operation: 'transition',
     record: intent.record,
     expected: intent.expected,
-    correlationId: `resume.${intent.stageHash}`, 
+    correlationId: `resume.${intent.stageHash}`,
     callerId: 'recovery-proof',
     expectedBuildHash: stage.route.authorityBuildHash,
   });

@@ -589,7 +589,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRecoveryEvidence": {
 			Path:   "packages/workflows/src/workflow-run-recovery-evidence.ts",
-			SHA256: "4fa49026775aae63253f90cfe3b52050d2dab1907896508a7466b8c3837248b5",
+			SHA256: "d10c1d8293fd68d2e1b0dbf049a1039d386a436ffd6bd6f422b55bf6fa97e82a",
 		},
 		"workflowCheckpointRepair": {
 			Path:   "packages/workflows/src/workflow-checkpoint-repair.ts",
@@ -665,7 +665,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowResumeIntent": {
 			Path:   "packages/workflows/src/internal/workflow-resume-intent.ts",
-			SHA256: "0fa9d3bfa803763b3d97094de744e1d0450f5b433a1e00dba0d015a0c552b1c4",
+			SHA256: "0cb31910c4b2db5e129d4077dc46810885a8d3290e95ec7ef83735470bfabbfa",
 		},
 		"workflowBindingReconciliationContract": {
 			Path:   "packages/workflows/src/workflow-binding-reconciliation-contract.ts",
