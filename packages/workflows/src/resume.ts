@@ -74,7 +74,18 @@ export async function checkResumable(
   identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeCheckResult> {
   // 1. Check run exists
-  const exists = await runStore.runExists(runId);
+  let exists: boolean;
+  try {
+    exists = await runStore.runExists(runId);
+  } catch (cause) {
+    return {
+      canResume: false,
+      reason: 'Workflow evidence is unavailable; inspect its typed diagnostics before recovery.',
+      status: null,
+      manifestMatch: false,
+      cause,
+    };
+  }
   if (!exists) {
     return {
       canResume: false,

@@ -1137,7 +1137,8 @@ describe('RunStore', () => {
       fs.writeFile('/test/workflows/runs/.index', '');
 
       const result = await store.listRunsByStatus('paused_waiting_approval');
-      expect(result).toEqual([]);
+      expect([...result]).toEqual([]);
+      expect(result.diagnostics).toEqual([]);
     });
 
     it('preserves index order with four run workers and at most eight concurrent reads', async () => {

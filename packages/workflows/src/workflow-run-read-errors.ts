@@ -1,7 +1,10 @@
+import { isWorkflowRunId, isWorkflowRunPathId } from './internal/workflow-run-identity.js';
 import { types as utilTypes } from 'node:util';
 export type WorkflowRunProjectionBackend = 'ts-local' | 'go';
 
 const READ_MESSAGES = {
+  WORKFLOW_RUN_PLATFORM_UNSUPPORTED:
+    'This historical workflow identifier cannot be represented on this platform. Use a compatible platform; checkpoint repair cannot rename workflow evidence.',
   WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID:
     'Workflow progress evidence is malformed or does not match the requested run.',
   WORKFLOW_RUN_PROJECTION_ID_INVALID:
@@ -33,6 +36,7 @@ export type WorkflowRunReadCode = keyof typeof READ_MESSAGES;
 
 /** Disposition and precedence describe the required response, never diagnostic insertion order. */
 export const WORKFLOW_RUN_READ_POLICIES = {
+  WORKFLOW_RUN_PLATFORM_UNSUPPORTED: { status: 'blocked', precedence: 2 },
   WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID: { status: 'blocked', precedence: 3 },
   WORKFLOW_RUN_PROJECTION_ID_INVALID: { status: 'failed', precedence: 0 },
   WORKFLOW_RUN_PROJECTION_MISSING: { status: 'blocked', precedence: 5 },
@@ -235,4 +239,22 @@ export function renderWorkflowRunReadDiagnostics(
       .join(', ');
     return `Runs ${ids}: ${diagnostic.code}. ${READ_MESSAGES[diagnostic.code]}${diagnostic.backend ? ` (backend: ${diagnostic.backend})` : ''}`;
   });
+}
+
+/** Validate before touching files or registering a local execution with Go. */
+export function assertWorkflowRunPathId(
+  runId: string,
+  context: Omit<WorkflowRunReadDiagnostic, 'code' | 'runId'> = { scope: 'run' },
+  platform: NodeJS.Platform = process.platform,
+): void {
+  const code = workflowRunPathErrorCode(runId, platform);
+  if (code) throw new WorkflowRunReadError([{ ...context, runId, code }]);
+}
+export function workflowRunPathErrorCode(
+  runId: unknown,
+  platform: NodeJS.Platform = process.platform,
+): WorkflowRunReadCode | undefined {
+  if (!isWorkflowRunId(runId)) return 'WORKFLOW_RUN_PROJECTION_ID_INVALID';
+  if (!isWorkflowRunPathId(runId, platform)) return 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED';
+  return undefined;
 }

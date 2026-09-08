@@ -1,4 +1,4 @@
-import { isWorkflowRunPathId } from './internal/workflow-run-identity.js';
+import { workflowRunPathErrorCode } from './workflow-run-read-errors.js';
 import { createHash } from 'node:crypto';
 import { throwIfWorkflowRunnerAborted } from './workflow-runner-control-http.js';
 import { readdir, unlink } from 'node:fs/promises';
@@ -194,8 +194,13 @@ export async function repairWorkflowCheckpoints(
     actions,
     backups,
   });
-  if (!isWorkflowRunPathId(runId)) {
-    diagnostics.push('WORKFLOW_RUN_PROJECTION_ID_INVALID');
+  const pathCode = workflowRunPathErrorCode(runId);
+  if (pathCode) {
+    diagnostics.push(pathCode);
+    if (pathCode === 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED')
+      actions.push(
+        'Use a compatible platform to inspect or repair this historical run; do not rename its evidence.',
+      );
     return report();
   }
   try {

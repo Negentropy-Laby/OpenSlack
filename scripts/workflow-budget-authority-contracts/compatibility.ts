@@ -64,25 +64,34 @@ export async function synchronizeBudgetCompatibility(
     'services/workflow-control/budgetcontract/compatibility_generated.go',
   );
   const openAPIPath = resolve(outputRoot, apiRelative);
-  const oldTS = await readFile(resolve(root, tsRelative), 'utf8').catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return '';
-      throw error;
-    },
-  );
-  const oldAccepted =
-    /WORKFLOW_BUDGET_ACCEPTED_MANIFEST_SHA256 = Object\.freeze\(\s*(\[[\s\S]*?\])/u.exec(
-      oldTS,
-    )?.[1];
-  if (oldTS !== '' && !oldAccepted)
-    throw new Error('Existing budget compatibility projection has no readable acceptance set.');
-  const previous = oldAccepted
-    ? (JSON.parse(oldAccepted.replace(/'/g, '"').replace(/,\s*]/g, ']')) as string[])
-    : [];
-  const ledger = validateBudgetManifestCompatibility(
-    JSON.parse(await readFile(ledgerPath, 'utf8')),
-    previous,
-  );
+  const historyRelative =
+    'packages/workflows/contracts/workflow-budget-authority/compatibility-history.json';
+  const historyText = await readFile(resolve(root, historyRelative), 'utf8');
+  const history = validateBudgetManifestCompatibility(JSON.parse(historyText));
+  const ledgerText = await readFile(ledgerPath, 'utf8');
+  const ledger = validateBudgetManifestCompatibility(JSON.parse(ledgerText), history.accepted);
+  if (JSON.stringify(ledger) !== JSON.stringify(history))
+    throw new Error(
+      'Explicitly append the reviewed digest to both the ledger and its historical safety baseline.',
+    );
+  if (resolve(outputRoot) !== resolve(root)) {
+    for (const [relative, expected] of [
+      [historyRelative, historyText],
+      ['packages/workflows/contracts/workflow-budget-authority/compatibility.json', ledgerText],
+    ]) {
+      const existing = await readFile(resolve(outputRoot, relative), 'utf8').catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
+        },
+      );
+      if (
+        existing !== undefined &&
+        JSON.stringify(JSON.parse(existing)) !== JSON.stringify(JSON.parse(expected))
+      )
+        throw new Error('Output tree contains conflicting budget compatibility input.');
+    }
+  }
   if (ledger.current !== currentManifest)
     throw new Error(
       'Budget manifest changed; explicitly append its reviewed digest to compatibility.json before generating.',

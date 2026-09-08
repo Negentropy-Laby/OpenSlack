@@ -208,6 +208,14 @@ function stringRule(key: string, path: readonly string[]): Json {
   if (key === 'code') return { type: 'string', minLength: 1, maxLength: 524_288 };
   if (key === 'idempotencyKey') {
     const parent = path.at(-2);
+    if (
+      ![
+        'target/idempotencyKey',
+        'evidence/preparedRequest/idempotencyKey',
+        'idempotencyKey',
+      ].includes(path.join('/'))
+    )
+      throw new Error(`No explicit authority-binding string rule for ${path.join('/')}.`);
     return {
       type: 'string',
       pattern:

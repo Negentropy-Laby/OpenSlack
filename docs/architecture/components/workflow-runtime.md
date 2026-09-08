@@ -1468,3 +1468,9 @@ export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
   return { status: 'complete', ...previewResult };
 }
 ```
+
+### Maintenance recovery and compatibility guards
+
+Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
+
+The budget compatibility ledger remains the generation input. Its non-generated `compatibility-history.json` safety baseline must be explicitly extended with each reviewed rotation. Generation requires matching complete history and rejects conflicting inputs under a separate output root before emitting projections. The PR check independently verifies the historical prefix against the exact target-base commit, including the original source constant and manifest bytes on the first migration; deleting generated outputs cannot erase compatibility.

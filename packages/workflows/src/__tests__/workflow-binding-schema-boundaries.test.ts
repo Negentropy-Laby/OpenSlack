@@ -117,6 +117,18 @@ describe('shared authority-binding schema boundary corpus', () => {
       ),
     );
     const { authorityBindingFieldSchema } = await import(/* @vite-ignore */ script);
+    for (const path of [
+      ['evidence', 'idempotencyKey'],
+      ['unknown', 'target', 'idempotencyKey'],
+      ['unknown', 'preparedRequest', 'idempotencyKey'],
+    ]) {
+      expect(() =>
+        authorityBindingFieldSchema(
+          'openslack.workflow-control-authority.v2.' + 'a'.repeat(64),
+          path,
+        ),
+      ).toThrow('No explicit');
+    }
     for (const [key, value] of [
       ['newId', null],
       ['newHash', 'a'.repeat(64)],

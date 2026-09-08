@@ -81,6 +81,12 @@ jobs:
       - name: Tests
         run: npx vitest run
 
+      - name: Append-only budget compatibility history
+        if: github.event_name == 'pull_request'
+        env:
+          BUDGET_COMPATIBILITY_BASE: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/verify-budget-compatibility-history.mjs --base "$BUDGET_COMPATIBILITY_BASE"
+
       - name: Collected test-count drift
         run: node scripts/verify-test-counts.mjs
 
