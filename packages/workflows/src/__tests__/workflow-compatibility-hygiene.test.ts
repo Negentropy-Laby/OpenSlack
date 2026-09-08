@@ -44,7 +44,7 @@ describe('portable creation and legacy intent compatibility', () => {
           manifestHash: 'a'.repeat(64),
         } as RunMeta);
         expect((await store.loadMeta(runId))?.runId).toBe(runId);
-        await store.transitionStatus(runId, 'paused');
+        await store.transitionStatus(runId, 'paused_waiting_approval');
         await store.transitionStatus(runId, 'resuming');
         expect((await store.loadStatus(runId))?.status).toBe('resuming');
         expect(store.runDir(runId)).toContain(runId);

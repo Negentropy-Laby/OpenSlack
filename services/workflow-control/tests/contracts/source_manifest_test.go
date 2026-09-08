@@ -497,7 +497,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		"bindingFieldRules":               {Path: "packages/workflows/src/internal/workflow-binding-field-rules.ts", SHA256: "4b8c92bbbb0f6c2ea7dcf9e3e3f8280a922622dab186fd7ee3b172048d3a0e4a"},
 		"resumeCorrelation":               {Path: "packages/workflows/src/internal/workflow-resume-correlation.ts", SHA256: "f49d7f1528da8e92556121cffd46a3a04a8c40296d36b7e3662d07d34bd8cd4c"},
 		"bindingCorpusApplication":        {Path: "packages/workflows/src/__tests__/helpers/binding-corpus.ts", SHA256: "e4e04ceab2ef4a07733bfc948fcf5be61c18a99115b44583df964bf39c86764e"},
-		"compatibilityHygieneRegression":  {Path: "packages/workflows/src/__tests__/workflow-compatibility-hygiene.test.ts", SHA256: "43b4a218ba0705dd8a6f2e01db4d7a107cc7374680583236f00329f3cd4331e0"},
+		"compatibilityHygieneRegression":  {Path: "packages/workflows/src/__tests__/workflow-compatibility-hygiene.test.ts", SHA256: "c1fec15046a9548e716513a9c63d7ff834532d2b1591e6353f1828199dfafa6c"},
 		"budgetMaintenanceRegression":     {Path: "services/workflow-control/internal/budgetstore/postgres/maintenance_regression_test.go", SHA256: "d4913f5b6973774c5b878ee6d6520e7a1ebea9411ab14411ade0d743e357a78c"},
 		"budgetCompatibilityLedger": {
 			Path:   "packages/workflows/contracts/workflow-budget-authority/compatibility.json",
