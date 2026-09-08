@@ -398,6 +398,20 @@ function schemaForValue(value: unknown, path: readonly string[] = []): Json {
     typeof record.phase === 'string'
   ) {
     receiptLifecycleSchema(schema, record);
+    if (record.phase === 'control_delivery') {
+      const properties = asJson(schema.properties, 'control receipt properties');
+      properties.controlKind =
+        record.companionSequence === 3
+          ? { const: 'event_receipt' }
+          : {
+              enum: [
+                'budget_authorization',
+                'effect_authorization',
+                'resume_offer',
+                'cancel_request',
+              ],
+            };
+    }
   }
   if (record.schema === 'openslack.workflow_runner_effect_completion_evidence.v1') {
     asJson(schema.properties, 'effect completion properties').status = { const: record.status };

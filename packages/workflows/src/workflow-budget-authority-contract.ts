@@ -9,7 +9,10 @@ import {
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION = 'v1' as const;
-export { WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256 } from './internal/workflow-budget-compatibility.generated.js';
+export {
+  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+  WORKFLOW_BUDGET_ORIGINAL_MANIFEST_SHA256,
+} from './internal/workflow-budget-compatibility.generated.js';
 export const WORKFLOW_BUDGET_AUTHORITY = 'typescript' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_WRITER = '@openslack/workflows' as const;
 export const WORKFLOW_BUDGET_AUTHORITY_GO_ROLE = 'validator_only' as const;

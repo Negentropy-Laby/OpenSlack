@@ -2609,6 +2609,12 @@ export function validateWorkflowRunnerAuthorityBindingReceipt(
         '$/disposition',
       ),
     } satisfies WorkflowRunnerAuthorityControlDeliveryReceipt);
+    if (result.companionSequence !== (result.controlKind === 'event_receipt' ? 3 : 4))
+      fail(
+        'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
+        '$/companionSequence',
+        'Control kind has an invalid companion sequence.',
+      );
     if (result.processedAt !== result.committedAt) {
       fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',

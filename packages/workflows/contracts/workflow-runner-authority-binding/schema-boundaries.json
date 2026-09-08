@@ -436,5 +436,275 @@
       "/evidenceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "remove": []
+  },
+  {
+    "id": "control-event_receipt-sequence-2",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 2
+    },
+    "remove": []
+  },
+  {
+    "id": "control-event_receipt-sequence-3",
+    "kind": "control:event_receipt",
+    "accepted": true,
+    "set": {
+      "/companionSequence": 3
+    },
+    "remove": []
+  },
+  {
+    "id": "control-event_receipt-sequence-4",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 4
+    },
+    "remove": []
+  },
+  {
+    "id": "control-event_receipt-sequence-5",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-event_receipt-sequence-3.5",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3.5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-event_receipt-missing-sequence",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/companionSequence"
+    ]
+  },
+  {
+    "id": "control-budget_authorization-sequence-2",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 2
+    },
+    "remove": []
+  },
+  {
+    "id": "control-budget_authorization-sequence-3",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3
+    },
+    "remove": []
+  },
+  {
+    "id": "control-budget_authorization-sequence-4",
+    "kind": "control:budget_authorization",
+    "accepted": true,
+    "set": {
+      "/companionSequence": 4
+    },
+    "remove": []
+  },
+  {
+    "id": "control-budget_authorization-sequence-5",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-budget_authorization-sequence-3.5",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3.5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-budget_authorization-missing-sequence",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/companionSequence"
+    ]
+  },
+  {
+    "id": "control-effect_authorization-sequence-2",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 2
+    },
+    "remove": []
+  },
+  {
+    "id": "control-effect_authorization-sequence-3",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3
+    },
+    "remove": []
+  },
+  {
+    "id": "control-effect_authorization-sequence-4",
+    "kind": "control:effect_authorization",
+    "accepted": true,
+    "set": {
+      "/companionSequence": 4
+    },
+    "remove": []
+  },
+  {
+    "id": "control-effect_authorization-sequence-5",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-effect_authorization-sequence-3.5",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3.5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-effect_authorization-missing-sequence",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/companionSequence"
+    ]
+  },
+  {
+    "id": "control-resume_offer-sequence-2",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 2
+    },
+    "remove": []
+  },
+  {
+    "id": "control-resume_offer-sequence-3",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3
+    },
+    "remove": []
+  },
+  {
+    "id": "control-resume_offer-sequence-4",
+    "kind": "control:resume_offer",
+    "accepted": true,
+    "set": {
+      "/companionSequence": 4
+    },
+    "remove": []
+  },
+  {
+    "id": "control-resume_offer-sequence-5",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-resume_offer-sequence-3.5",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3.5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-resume_offer-missing-sequence",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/companionSequence"
+    ]
+  },
+  {
+    "id": "control-cancel_request-sequence-2",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 2
+    },
+    "remove": []
+  },
+  {
+    "id": "control-cancel_request-sequence-3",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3
+    },
+    "remove": []
+  },
+  {
+    "id": "control-cancel_request-sequence-4",
+    "kind": "control:cancel_request",
+    "accepted": true,
+    "set": {
+      "/companionSequence": 4
+    },
+    "remove": []
+  },
+  {
+    "id": "control-cancel_request-sequence-5",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-cancel_request-sequence-3.5",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 3.5
+    },
+    "remove": []
+  },
+  {
+    "id": "control-cancel_request-missing-sequence",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {},
+    "remove": [
+      "/companionSequence"
+    ]
   }
 ]

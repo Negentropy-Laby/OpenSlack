@@ -8,6 +8,7 @@ import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
   validateWorkflowRunnerAuthorityBindingError,
   validateWorkflowRunnerAuthorityBindingReceipt,
+  validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
   validateWorkflowRunnerAuthorityBindingResolution,
   validateWorkflowRunnerAuthorityBindingStage,
 } from '../workflow-runner-authority-binding-contract.js';
@@ -58,6 +59,37 @@ const schemaNames: Record<string, string> = {
   runtimeAdmission: 'workflow-runner-v2-runtime-admission',
   runtimeAdmissionReceipt: 'workflow-runner-v2-runtime-admission-receipt',
 };
+const contextualValidators: Record<string, (value: unknown) => unknown> = {};
+for (const [kind, ref] of Object.entries(golden.positive.controlDelivery.byKind)) {
+  const artifact = golden.positive.controlDelivery.artifacts[ref as string];
+  const context =
+    kind === 'budget_authorization'
+      ? golden.positive.semanticVariants.budgetReserveGoAuthority
+      : golden.positive.operations[artifact.operation];
+  const prior = artifact.priorEventDeliveryRef
+    ? golden.positive.controlDelivery.priorEventDeliveries[artifact.priorEventDeliveryRef]
+    : null;
+  const key = 'control:' + kind;
+  bases[key] = artifact.receipt.value;
+  validators[key] = validateWorkflowRunnerAuthorityBindingReceipt;
+  schemaNames[key] = 'workflow-runner-authority-binding-receipt';
+  contextualValidators[key] = (value) =>
+    validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(value, artifact.message, {
+      stage: context.stage.value,
+      stageReceipt: context.stageReceipt.value,
+      resolution: context.resolution.value,
+      resolutionReceipt: context.resolutionReceipt.value,
+      priorEventDelivery: prior
+        ? { message: prior.message, receipt: prior.receipt.value }
+        : kind === 'event_receipt'
+          ? null
+          : {
+              message: golden.positive.controlDelivery.messages.accepted[artifact.operation],
+              receipt: golden.positive.controlDelivery.accepted[artifact.operation].value,
+            },
+      budgetSourceResult: artifact.budgetSourceResult,
+    });
+}
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 ajv.addFormat('date-time', fullFormats['date-time']);
 for (const [name, format] of Object.entries(WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS))
@@ -102,6 +134,16 @@ describe('shared authority-binding schema boundary corpus', () => {
       /* rejection is part of the corpus */
     }
     expect(accepted, `${item.id}: TypeScript`).toBe(item.accepted);
+    if (contextualValidators[item.kind]) {
+      let contextual = false;
+      try {
+        contextualValidators[item.kind]!(value);
+        contextual = true;
+      } catch {
+        /* expected rejection */
+      }
+      expect(contextual, item.id + ': contextual TypeScript').toBe(item.accepted);
+    }
     const schema = ajv.getSchema(
       `https://openslack.dev/contracts/workflow-runner-authority-binding/v1/schemas/${schemaNames[item.kind]}.v1.schema.json`,
     );

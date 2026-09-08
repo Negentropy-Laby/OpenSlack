@@ -105,6 +105,13 @@ func validateReceiptWithSession(value any, session *bindingValidationSession) (R
 		}, "$/controlKind"); err != nil {
 			return nil, err
 		}
+		expectedSequence := int64(4)
+		if result["controlKind"] == "event_receipt" {
+			expectedSequence = 3
+		}
+		if companionSequence != expectedSequence {
+			return nil, failure(ErrorSequenceConflict, "$/companionSequence", "Control kind has an invalid companion sequence.")
+		}
 		if result["controlSequence"], err = integerValue(closed["controlSequence"], "$/controlSequence", 1); err != nil {
 			return nil, err
 		}

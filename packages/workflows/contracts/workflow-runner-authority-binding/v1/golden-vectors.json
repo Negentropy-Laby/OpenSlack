@@ -14559,9 +14559,9 @@
       },
       "expectedError": {
         "name": "WorkflowRunnerAuthorityBindingContractError",
-        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH",
-        "path": "$",
-        "message": "Control acknowledgement is cross-spliced with another exact control message."
+        "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT",
+        "path": "$/companionSequence",
+        "message": "Control kind has an invalid companion sequence."
       }
     },
     {

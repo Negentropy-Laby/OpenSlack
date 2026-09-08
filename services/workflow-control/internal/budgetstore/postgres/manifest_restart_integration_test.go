@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"testing"
 	"time"
@@ -19,6 +21,19 @@ func TestBudgetManifestPostgresRestart(t *testing.T) {
 		t.Skip("real PostgreSQL budget manifest restart qualification is not enabled")
 	}
 	schema := os.Getenv("WORKFLOW_BUDGET_MANIFEST_RESTART_SCHEMA")
+	if schema == "" {
+		t.Fatal("missing restart schema identity")
+	}
+	for _, manifest := range budgetcontract.AcceptedManifestSHA256() {
+		if manifest == budgetcontract.CurrentManifestSHA256 {
+			continue
+		}
+		digest := sha256.Sum256([]byte(schema + ":" + manifest))
+		child := "budget_history_" + hex.EncodeToString(digest[:24])
+		t.Run(manifest, func(t *testing.T) { verifyBudgetHistoryRestart(t, phase, child, manifest) })
+	}
+}
+func verifyBudgetHistoryRestart(t *testing.T, phase, schema, manifest string) {
 	ctx := t.Context()
 	input := reserveInput(t, testSeed, 0, 4, "1", "600")
 	switch phase {
@@ -31,9 +46,9 @@ func TestBudgetManifestPostgresRestart(t *testing.T) {
 		}
 		pool := testsupport.OpenPersistentSchema(t, schema, true)
 		seedRun(t, pool, 5)
-		importBudgetRecordsWithManifest(t, source, pool, budgetcontract.PreviousManifestSHA256)
-		response := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
-		receipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+		importBudgetRecordsWithManifest(t, source, pool, manifest)
+		response := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(manifest))
+		receipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(manifest))
 		if _, err := pool.Exec(ctx, `CREATE TABLE budget_manifest_restart_proof (postmaster timestamptz NOT NULL, response bytea NOT NULL, receipt bytea NOT NULL); INSERT INTO budget_manifest_restart_proof VALUES (pg_postmaster_start_time(),$1,$2)`, response, receipt); err != nil {
 			t.Fatal(err)
 		}

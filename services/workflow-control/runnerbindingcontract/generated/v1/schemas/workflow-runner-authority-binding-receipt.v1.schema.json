@@ -1220,15 +1220,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1302,15 +1294,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1384,15 +1368,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1466,15 +1442,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1548,15 +1516,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1630,15 +1590,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$",
           "maxLength": 256
         },
-        "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
-        },
+        "controlKind": { "const": "event_receipt" },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "runnerAttemptId": {
@@ -1713,13 +1665,7 @@
           "maxLength": 256
         },
         "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
+          "enum": ["budget_authorization", "effect_authorization", "resume_offer", "cancel_request"]
         },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -1795,13 +1741,7 @@
           "maxLength": 256
         },
         "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
+          "enum": ["budget_authorization", "effect_authorization", "resume_offer", "cancel_request"]
         },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -1877,13 +1817,7 @@
           "maxLength": 256
         },
         "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
+          "enum": ["budget_authorization", "effect_authorization", "resume_offer", "cancel_request"]
         },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -1959,13 +1893,7 @@
           "maxLength": 256
         },
         "controlKind": {
-          "enum": [
-            "event_receipt",
-            "budget_authorization",
-            "effect_authorization",
-            "resume_offer",
-            "cancel_request"
-          ]
+          "enum": ["budget_authorization", "effect_authorization", "resume_offer", "cancel_request"]
         },
         "controlSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
