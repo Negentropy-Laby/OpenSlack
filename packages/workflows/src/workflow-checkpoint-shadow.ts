@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { readdir, unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
@@ -466,7 +467,7 @@ export function createWorkflowCheckpointShadowHttpPublisher(options: {
   if (
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(options.callerId) ||
+    !WORKFLOW_RUN_ID_REGEX.test(options.callerId) ||
     (options.timeoutMs !== undefined &&
       (!Number.isSafeInteger(options.timeoutMs) ||
         options.timeoutMs < 1 ||

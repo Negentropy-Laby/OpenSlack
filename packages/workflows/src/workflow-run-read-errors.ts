@@ -1,4 +1,8 @@
-import { isWorkflowRunId, isWorkflowRunPathId } from './internal/workflow-run-identity.js';
+import {
+  isWorkflowRunId,
+  isWorkflowRunPathId,
+  isPortableWorkflowRunId,
+} from './internal/workflow-run-identity.js';
 import { types as utilTypes } from 'node:util';
 export type WorkflowRunProjectionBackend = 'ts-local' | 'go';
 
@@ -257,4 +261,15 @@ export function workflowRunPathErrorCode(
   if (!isWorkflowRunId(runId)) return 'WORKFLOW_RUN_PROJECTION_ID_INVALID';
   if (!isWorkflowRunPathId(runId, platform)) return 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED';
   return undefined;
+}
+
+export function assertPortableWorkflowRunId(runId: string): void {
+  if (!isPortableWorkflowRunId(runId))
+    throw new WorkflowRunReadError([
+      {
+        code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
+        scope: 'run',
+        runId,
+      },
+    ]);
 }

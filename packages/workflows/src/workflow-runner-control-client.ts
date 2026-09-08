@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
@@ -15,7 +16,7 @@ export const WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA =
   'openslack.workflow_runner_job_receipt.v1' as const;
 export const WORKFLOW_RUNNER_JOB_VIEW_SCHEMA = 'openslack.workflow_runner_job_view.v1' as const;
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;

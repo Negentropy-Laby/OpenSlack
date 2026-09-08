@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { assertWorkflowRunPathId } from './workflow-run-read-errors.js';
 import {
   checkpointEvidence,
@@ -134,7 +135,7 @@ interface PreparedWorkflowSource {
   readonly identity: string;
 }
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const SOURCE_EXTENSIONS = Object.freeze(['.js', '.mjs', '.ts'] as const);

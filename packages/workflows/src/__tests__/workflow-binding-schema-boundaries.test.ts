@@ -1,8 +1,8 @@
+import { applyBindingCorpus } from './helpers/binding-corpus.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { fullFormats } from 'ajv-formats/dist/formats.js';
 import { describe, expect, it } from 'vitest';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
@@ -19,7 +19,7 @@ import {
   validateWorkflowRunnerV2RuntimeAdmission,
   validateWorkflowRunnerV2RuntimeAdmissionReceipt,
 } from '../workflow-runner-runtime-admission-contract.js';
-import { WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS } from '../workflow-runner-authority-binding-schema.js';
+import { registerWorkflowRunnerAuthorityBindingSchemaFormats } from '../workflow-runner-authority-binding-schema.js';
 
 const root = fileURLToPath(
   new URL('../../contracts/workflow-runner-authority-binding/', import.meta.url),
@@ -124,9 +124,7 @@ for (const kind of Object.keys(golden.positive.controlDelivery.byKind)) {
     });
 }
 const ajv = new Ajv2020({ strict: true, allErrors: true });
-ajv.addFormat('date-time', fullFormats['date-time']);
-for (const [name, format] of Object.entries(WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS))
-  ajv.addFormat(name, format);
+registerWorkflowRunnerAuthorityBindingSchemaFormats(ajv);
 for (const path of readdirSync(resolve(root, 'v1/schemas')))
   ajv.addSchema(JSON.parse(readFileSync(resolve(root, 'v1/schemas', path), 'utf8')));
 const cases: Array<{
@@ -160,22 +158,7 @@ describe('shared authority-binding schema boundary corpus', () => {
     const validate = validators[item.kind];
     if (!base || !validate) throw new Error('Unknown boundary fixture kind.');
     const value = structuredClone(base);
-    const parent = (path: string) => {
-      const keys = path.slice(1).split('/');
-      const key = keys.pop();
-      if (!key) throw new Error('Missing fixture field.');
-      let record = value;
-      for (const part of keys) record = record[part] as Record<string, unknown>;
-      return { record, key };
-    };
-    for (const [path, change] of Object.entries(item.set)) {
-      const { record, key } = parent(path);
-      record[key] = change;
-    }
-    for (const path of item.remove) {
-      const { record, key } = parent(path);
-      delete record[key];
-    }
+    applyBindingCorpus(value, item.set, item.remove);
     let accepted = false;
     try {
       validate(value);

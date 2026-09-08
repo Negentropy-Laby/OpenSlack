@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import type { ConfirmationPolicy, WorkflowMeta, WorkflowSource } from './types.js';
 import { closedDataRecord, ownDataField } from './internal/contract-validation.js';
@@ -96,7 +97,7 @@ export class WorkflowRunnerV2DescriptorError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const SEMVER =

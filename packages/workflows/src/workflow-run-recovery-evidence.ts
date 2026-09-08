@@ -1,3 +1,4 @@
+import { resumeCorrelationId } from './internal/workflow-resume-correlation.js';
 import { isWorkflowRunId } from './internal/workflow-run-identity.js';
 import { closedDataRecord } from './internal/contract-validation.js';
 import {
@@ -393,7 +394,7 @@ export function validateSettledResumeIntent(
     operation: 'transition',
     record: intent.record,
     expected: intent.expected,
-    correlationId: `resume.${intent.stageHash}`,
+    correlationId: resumeCorrelationId(intent.stageHash),
     callerId: 'recovery-proof',
     expectedBuildHash: stage.route.authorityBuildHash,
   });

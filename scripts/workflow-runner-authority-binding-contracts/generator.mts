@@ -1,3 +1,4 @@
+import { WORKFLOW_BINDING_HASH_PATTERN as HASH, WORKFLOW_BINDING_REFERENCE_PATTERN as SAFE_REF, WORKFLOW_BINDING_TIME_PATTERN as TIME } from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
 import {
   controlSequenceOutputs,
   controlSequenceSchema,
@@ -269,9 +270,6 @@ const budgetDecisionDelivery = Object.freeze({
   }),
 });
 
-const HASH = '^[0-9a-f]{64}$';
-const SAFE_REF = '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$';
-const TIME = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
 
 const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const h = (character: string): string => character.repeat(64);
@@ -318,23 +316,6 @@ function requiredExchange(values: Readonly<Record<string, Exchange>>, key: strin
 
 function strict(properties: Json, required: readonly string[] = Object.keys(properties)): Json {
   return { type: 'object', additionalProperties: false, properties, required };
-}
-
-function routeSchema(): Json {
-  const common = {
-    routingEpoch: {
-      type: 'integer',
-      minimum: 1,
-      maximum: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxSafeInteger,
-    },
-    authorityBuildHash: { type: 'string', pattern: HASH },
-  };
-  return {
-    oneOf: [
-      strict({ backend: { const: 'ts-local' }, authority: { const: 'typescript' }, ...common }),
-      strict({ backend: { const: 'go' }, authority: { const: 'workflow-control' }, ...common }),
-    ],
-  };
 }
 
 function receiptLifecycleSchema(schema: Json, value: Json): Json {
@@ -385,7 +366,6 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
 }
 
 function schemaForValue(value: unknown, path: readonly string[] = []): Json {
-  if (path.at(-1) === 'route') return routeSchema();
   const field = authorityBindingFieldSchema(value, path);
   if (field) return field;
   const record = value as Json;

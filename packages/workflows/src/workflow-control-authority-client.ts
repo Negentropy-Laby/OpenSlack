@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { closedDataRecord } from './internal/contract-validation.js';
 
@@ -31,7 +32,7 @@ export const WORKFLOW_CONTROL_AUTHORITY_READ_SCHEMA =
 
 const AUTHORITY_KEY_PREFIX = 'openslack.workflow-control-authority.v2.';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 const RUN_RECORD_FIELDS = Object.freeze([
   'schema',

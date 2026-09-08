@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { lstat, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
@@ -813,7 +814,7 @@ export function createWorkflowEffectShadowHttpPublisher(
   if (
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(options.callerId) ||
+    !WORKFLOW_RUN_ID_REGEX.test(options.callerId) ||
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 1 ||
     timeoutMs > WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs ||

@@ -54,6 +54,7 @@ func verifyBudgetHistoryRestart(t *testing.T, phase, schema, manifest string) {
 		}
 		pool.Close()
 	case "verify":
+		defer testsupport.DropSchema(t, schema)
 		pool := testsupport.OpenPersistentSchema(t, schema, false)
 		var seeded, current time.Time
 		var response, receipt []byte
@@ -90,7 +91,6 @@ func verifyBudgetHistoryRestart(t *testing.T, phase, schema, manifest string) {
 		}
 		t.Logf("PostgreSQL restart %s -> %s preserved historical receipt bytes and mixed-manifest rebuild", seeded, current)
 		pool.Close()
-		testsupport.DropSchema(t, schema)
 	default:
 		t.Fatalf("unknown budget restart phase %q", phase)
 	}

@@ -1240,5 +1240,45 @@
       "/companionSequence": 1e999
     },
     "remove": []
-  }
+  },
+{
+  "id": "stage-parent-before-child",
+  "kind": "stage",
+  "accepted": true,
+  "set": {
+    "/target/idempotencyKey": "openslack.workflow-control-authority.v2.9973631f49a379c1154028f823af281ecb6ab2fc910323ae375d845b701427ac",
+    "/target": {
+      "schema": "openslack.workflow_control_authority_prepared_message.v2",
+      "eventId": "binding-resume_advance-21",
+      "kind": "lease_accept",
+      "sequence": 21,
+      "body": "{\"attemptId\":\"attempt.2\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"correlationId\":\"correlation.gs9c.1\",\"eventId\":\"binding-resume_advance-21\",\"fencingToken\":2,\"jobId\":\"job.2\",\"kind\":\"lease_accept\",\"leaseId\":\"lease.2\",\"payload\":{\"acceptedAt\":\"2026-08-20T00:06:00.000Z\",\"leaseExpiresAt\":\"2026-08-20T00:16:00.000Z\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":20,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:06:00.000Z\",\"sequence\":21,\"workflowRunId\":\"run.gs9c.1\",\"workspaceId\":\"workspace.test\"}\n",
+      "messageDigest": "9973631f49a379c1154028f823af281ecb6ab2fc910323ae375d845b701427ac",
+      "idempotencyKey": "invalid",
+      "requestFingerprint": "sha256:4d5e095dd960da60b22a79de55e738032d761cf28dbd64aaa2df7a860ad103a5"
+    }
+  },
+  "remove": []
+},
+{
+  "id": "stage-remove-after-parent-child",
+  "kind": "stage",
+  "accepted": true,
+  "set": {
+    "/target/unexpected": true,
+    "/target": {
+      "schema": "openslack.workflow_control_authority_prepared_message.v2",
+      "eventId": "binding-resume_advance-21",
+      "kind": "lease_accept",
+      "sequence": 21,
+      "body": "{\"attemptId\":\"attempt.2\",\"authority\":\"typescript\",\"authorityBackend\":\"ts-local\",\"authorityBuildHash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"correlationId\":\"correlation.gs9c.1\",\"eventId\":\"binding-resume_advance-21\",\"fencingToken\":2,\"jobId\":\"job.2\",\"kind\":\"lease_accept\",\"leaseId\":\"lease.2\",\"payload\":{\"acceptedAt\":\"2026-08-20T00:06:00.000Z\",\"leaseExpiresAt\":\"2026-08-20T00:16:00.000Z\"},\"protocolVersion\":\"openslack.workflow_runner.v2\",\"resumeGeneration\":0,\"routingEpoch\":1,\"runRevision\":20,\"schema\":\"openslack.workflow_control_authority_message.v2\",\"sentAt\":\"2026-08-20T00:06:00.000Z\",\"sequence\":21,\"workflowRunId\":\"run.gs9c.1\",\"workspaceId\":\"workspace.test\"}\n",
+      "messageDigest": "9973631f49a379c1154028f823af281ecb6ab2fc910323ae375d845b701427ac",
+      "idempotencyKey": "openslack.workflow-control-authority.v2.9973631f49a379c1154028f823af281ecb6ab2fc910323ae375d845b701427ac",
+      "requestFingerprint": "sha256:4d5e095dd960da60b22a79de55e738032d761cf28dbd64aaa2df7a860ad103a5"
+    }
+  },
+  "remove": [
+    "/target/unexpected"
+  ]
+}
 ]

@@ -1,3 +1,5 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
+import { resumeCorrelationId } from './internal/workflow-resume-correlation.js';
 import { createHash } from 'node:crypto';
 import {
   canonicalWorkflowControlAuthorityJson as canonical,
@@ -65,7 +67,7 @@ export function parseWorkflowBindingReconciliation(bytes: string) {
     value.schema !== 'openslack.workflow_runner_binding_reconciliation.v1' ||
     value.rulesVersion !== 1 ||
     ![value.workspaceId, value.runId].every(
-      (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(id),
+      (id) => typeof id === 'string' && WORKFLOW_RUN_ID_REGEX.test(id),
     ) ||
     !/^WFRUNNER-BINDING-[0-9a-f]{64}$/u.test(value.bindingId) ||
     !/^[0-9a-f]{64}$/u.test(value.stageHash) ||
@@ -107,7 +109,7 @@ export function parseWorkflowBindingSettlement(bytes: string): WorkflowBindingSe
         .join(',') ||
     value.schema !== 'openslack.workflow_runner_binding_settlement_receipt.v1' ||
     ![value.workspaceId, value.runId, value.callerId].every(
-      (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(id),
+      (id) => typeof id === 'string' && WORKFLOW_RUN_ID_REGEX.test(id),
     ) ||
     !/^WFRUNNER-BINDING-[0-9a-f]{64}$/u.test(value.bindingId) ||
     !/^[0-9a-f]{64}$/u.test(value.stageHash) ||
@@ -209,7 +211,7 @@ export function validateWorkflowBindingSettlement(
       proof.status !== 'accepted' ||
       proof.workspaceId !== stage.workspaceId ||
       proof.runId !== stage.runId ||
-      proof.correlationId !== `resume.${receipt.stageHash}` ||
+      proof.correlationId !== resumeCorrelationId(receipt.stageHash) ||
       canonical(proof.route) !== canonical(stage.route) ||
       proof.resumeGeneration !== stage.runnerAuthority.acceptedResumeGeneration
     )
@@ -222,7 +224,7 @@ export function validateWorkflowBindingSettlement(
       workspaceId: stage.workspaceId,
       runId: stage.runId,
       stageHash: receipt.stageHash,
-      correlationId: `resume.${receipt.stageHash}`,
+      correlationId: resumeCorrelationId(receipt.stageHash),
       expectedResumeGeneration: stage.runnerAuthority.expectedResumeGeneration,
     };
     if (

@@ -1110,4 +1110,7 @@ export {
   type WorkflowBindingReconciliationReport,
   type WorkflowBindingReconciliationPort,
 } from './workflow-binding-reconciliation.js';
-export { WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS } from './workflow-runner-authority-binding-schema.js';
+export {
+  WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS,
+  registerWorkflowRunnerAuthorityBindingSchemaFormats,
+} from './workflow-runner-authority-binding-schema.js';

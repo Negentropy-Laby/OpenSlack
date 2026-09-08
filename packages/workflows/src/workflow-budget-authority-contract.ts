@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import {
   canonicalUtcTimestamp,
@@ -373,7 +374,7 @@ export interface WorkflowBudgetLegacyApprovalObservation extends WorkflowBudgetA
 
 const HASH = /^[0-9a-f]{64}$/u;
 const PREFIXED_HASH = /^sha256:[0-9a-f]{64}$/u;
-const ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const ID = WORKFLOW_RUN_ID_REGEX;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/u;
 const RATE = /^(?:0|[1-9][0-9]*|(?:0|[1-9][0-9]*)\.([0-9]*[1-9]))$/u;

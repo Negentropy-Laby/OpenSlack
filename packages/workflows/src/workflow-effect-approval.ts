@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
@@ -124,7 +125,7 @@ export class WorkflowEffectApprovalContractError extends Error {
 type DataRecord = Record<string, unknown>;
 
 const HASH = /^[0-9a-f]{64}$/;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const CAPABILITY = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)+$/;
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;

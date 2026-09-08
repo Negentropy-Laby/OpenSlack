@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import {
@@ -294,7 +295,7 @@ export interface WorkflowEffectControlPreparedEnvelope {
 
 type DataRecord = ContractDataRecord;
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const CAPABILITY = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)+$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const OCCURRENCE_ID = /^WFOCCURRENCE-[0-9a-f]{64}$/u;

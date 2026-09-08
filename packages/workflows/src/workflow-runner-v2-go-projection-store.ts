@@ -105,7 +105,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
     // any local RunStore-shaped recovery artifact. A crash after this point is
     // closed by the remote=running/local=missing case above.
     if (remote.state === 'created') await this.#transitionRemote(remote, 'running');
-    if (!projected) await super.initRun(runId, meta);
+    if (!projected) await this.initializeRunProjection(runId, meta);
   }
 
   override async transitionStatus(runId: string, newStatus: RunStatus['status']): Promise<void> {

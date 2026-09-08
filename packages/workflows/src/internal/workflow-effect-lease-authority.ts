@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './workflow-run-identity.js';
 import { types as nodeTypes } from 'node:util';
 import type {
   WorkflowRunnerEffectIntentMessage,
@@ -42,7 +43,7 @@ export interface WorkflowEffectLeaseAuthority {
 
 const AUTHORITIES = new WeakMap<object, WorkflowEffectLeaseBinding>();
 const BOUNDARIES = new WeakMap<object, WorkflowEffectLeaseAuthority>();
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 
 function canonicalTimestamp(value: string): boolean {

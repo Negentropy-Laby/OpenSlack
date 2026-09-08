@@ -1500,6 +1500,22 @@ export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
 
 ### Maintenance recovery and compatibility guards
 
+New run creation requires a portable logical ID on every platform, before registering authority. POSIX historical IDs retain their read and resume semantics; Windows reports a compatible-platform requirement for identities its filesystem cannot represent. Reconstructing an existing Go-owned projection does not create a new logical run.
+
+Resume intent writers retain the derived `correlationId` required by deployed v2 readers. Readers accept v1, complete v2 and previously persisted compact v2. Historical receipt identity is derived by one helper and remains independent of current execution authorization.
+
+External strict Ajv 2020 consumers must call `registerWorkflowRunnerAuthorityBindingSchemaFormats(ajv)` from `@openslack/workflows` before compiling authority-binding schemas. The entrypoint registers canonical UTC timestamps and the UTF-8 error-message limit. Keep format validation enabled: standard `maxLength` counts Unicode code points and cannot enforce a byte ceiling. Omitting a required format intentionally causes strict compilation to fail.
+
+```typescript
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import { registerWorkflowRunnerAuthorityBindingSchemaFormats } from '@openslack/workflows';
+
+const ajv = registerWorkflowRunnerAuthorityBindingSchemaFormats(new Ajv2020({ strict: true }));
+const validate = ajv.compile(authorityBindingSchema);
+```
+
+Budget OpenAPI manifest enums are projected into declared YAML nodes in ledger order; missing or undeclared consumers stop generation. Restart verification removes its qualification schema after success or failure, while successful seed data survives for the restart. Rebuild rejects unsupported manifest identities before encoding and remains a read-only proof; this guard addresses a defensive finding, not evidence of reachable production corruption. Shared corpus writes run in parent-before-child, lexical order before removals.
+
 Control delivery receipts use companion sequence 3 for `event_receipt` and 4 for every other control kind. Standalone TS/Go validators, stage validation and generated schemas enforce the same rule. The shared boundary corpus exercises each kind independently and with its stage evidence.
 
 Budget compatibility is ordered oldest first. `OriginalManifestSHA256` names its first entry and `PreviousManifestSHA256` names the entry immediately preceding the current digest. Rotation preserves every historical digest. PostgreSQL restart qualification replays each historical digest alongside current writes and checks exact response, receipt and rebuilt account bytes.

@@ -1,3 +1,4 @@
+import { resumeCorrelationId } from './workflow-resume-correlation.js';
 import { closedDataRecord } from './contract-validation.js';
 import {
   canonicalWorkflowControlAuthorityJson as canonical,
@@ -35,7 +36,7 @@ interface LegacyResumeIntent {
 }
 export interface ResumeIntent extends Omit<LegacyResumeIntent, 'schema' | 'correlationId'> {
   schema: 'openslack.workflow_runner_resume_source_intent.v2';
-  /** Older v2 writers persisted this derived value; new writers reconstruct it. */
+  /** Writers persist this for rollback compatibility; readers also accept historical compact v2. */
   correlationId?: string;
   prior: WorkflowCheckpointControlState;
   next: WorkflowCheckpointControlState;
@@ -77,7 +78,7 @@ export function parseWorkflowResumeIntent(
       (!v2 && intent.schema !== 'openslack.workflow_runner_resume_source_intent.v1') ||
       intent.stageHash !== hashWorkflowRunnerAuthorityBindingStage(stage) ||
       ((!v2 || Object.hasOwn(intent, 'correlationId')) &&
-        intent.correlationId !== `resume.${intent.stageHash}`) ||
+        intent.correlationId !== resumeCorrelationId(intent.stageHash)) ||
       !Number.isSafeInteger(intent.priorRevision) ||
       intent.priorRevision < 1 ||
       !Number.isSafeInteger(intent.phaseCount) ||
@@ -144,4 +145,11 @@ export function parseWorkflowResumeIntent(
       'Resume intent is torn or conflicts with its operation; explicit repair is required.',
     );
   }
+}
+
+/** Persist the derived field required by deployed v2 readers during rollback. */
+export function createWorkflowResumeIntent(
+  value: Omit<ResumeIntent, 'correlationId'>,
+): ResumeIntent & { correlationId: string } {
+  return { ...value, correlationId: resumeCorrelationId(value.stageHash) };
 }

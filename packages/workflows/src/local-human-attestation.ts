@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -43,8 +44,8 @@ const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 
 const POSIX_TTY_DEVICE = '/dev/tty';
 const WINDOWS_TTY_INPUT = 'CONIN$';
 const WINDOWS_TTY_OUTPUT = 'CONOUT$';
-const SAFE_PRINCIPAL = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
+const SAFE_PRINCIPAL = WORKFLOW_RUN_ID_REGEX;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^sha256:[0-9a-f]{64}$/;
 const CAPABILITY = /^workflow\.effect\.decide$/;
 const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

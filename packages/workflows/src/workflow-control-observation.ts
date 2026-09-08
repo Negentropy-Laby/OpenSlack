@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { lstat, open, opendir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -19,7 +20,7 @@ import {
   type WorkflowEffectApprovalRecord,
 } from './workflow-effect-approval.js';
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const HASH = /^[0-9a-f]{64}$/u;
 const LEGACY_MANIFEST_HASH = /^[0-9a-f]{16}$/u;
 const JSON_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}\.json$/u;

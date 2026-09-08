@@ -1,3 +1,5 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
+import { assertPortableWorkflowRunId } from './workflow-run-read-errors.js';
 import {
   WorkflowRunReadError,
   assertWorkflowRunPathId,
@@ -186,8 +188,7 @@ export function parseWorkflowCheckpointReservation(raw: string): string | null {
       Object.keys(value).sort().join(',') !== 'bindingId,schema' ||
       value.schema !== 'openslack.workflow_checkpoint_reservation.v1' ||
       (value.bindingId !== null &&
-        (typeof value.bindingId !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(value.bindingId))) ||
+        (typeof value.bindingId !== 'string' || !WORKFLOW_RUN_ID_REGEX.test(value.bindingId))) ||
       workflowCheckpointCanonicalJson(value) !== raw
     )
       throw new Error();
@@ -549,6 +550,12 @@ export class RunStore {
    * Initialize a new run: create directory structure and write meta + status.
    */
   async initRun(runId: string, meta: RunMeta): Promise<void> {
+    this.assertMutationAccess();
+    assertPortableWorkflowRunId(runId);
+    return this.initializeRunProjection(runId, meta);
+  }
+
+  protected async initializeRunProjection(runId: string, meta: RunMeta): Promise<void> {
     this.assertMutationAccess();
     const encodedArgs =
       meta.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA

@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { canonicalWorkflowControlAuthorityJson as canonical } from './workflow-control-authority-contract.js';
 import {
   validateWorkflowControlAuthorityRunRecord,
@@ -90,7 +91,7 @@ export function createWorkflowBindingReconciliationClient(
     'X-OpenSlack-Workspace-ID': config.workspaceId,
   };
   const base = (run: string) => {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(run))
+    if (!WORKFLOW_RUN_ID_REGEX.test(run))
       return recoveryConflict('Reconciliation run ID is invalid.');
     return `${config.origin}/v2/runner/runs/${encodeURIComponent(run)}`;
   };

@@ -1651,8 +1651,7 @@ async function outputs(): Promise<Map<string, Buffer>> {
   if (schemas.length !== schemaPaths.length)
     throw new Error('Budget schema inventory differs from paths.');
   for (const [index, schema] of schemas.entries()) {
-    const path = schemaPaths[index];
-    if (path === undefined) throw new Error('Budget schema path is missing.');
+    const path = schemaPaths[index]!; // Inventory lengths were checked above.
     map.set(path, await pretty(schema));
   }
   map.set(

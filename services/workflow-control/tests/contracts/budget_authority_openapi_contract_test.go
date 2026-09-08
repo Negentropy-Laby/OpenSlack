@@ -135,8 +135,8 @@ func assertBudgetDurableBranches(t *testing.T, document *openapi3.T) {
 	t.Helper()
 	accepted := budgetcontract.AcceptedManifestSHA256()
 	wantManifests := make([]any, 0, len(accepted))
-	for index := len(accepted) - 1; index >= 0; index-- {
-		wantManifests = append(wantManifests, accepted[index])
+	for _, manifest := range accepted {
+		wantManifests = append(wantManifests, manifest)
 	}
 	want := map[string]string{
 		"DurableRecordAccountBranch": "account", "DurableRecordReserveDecisionBranch": "reserve_decision",

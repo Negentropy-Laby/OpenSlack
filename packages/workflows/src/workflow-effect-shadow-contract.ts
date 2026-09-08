@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { types as nodeTypes } from 'node:util';
 import {
   WORKFLOW_EFFECT_CONTROL_IDEMPOTENCY_PREFIX,
@@ -91,7 +92,7 @@ export interface WorkflowEffectShadowError {
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const OCCURRENCE = /^WFOCCURRENCE-[0-9a-f]{64}$/u;

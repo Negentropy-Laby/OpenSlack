@@ -1,3 +1,4 @@
+import { assertPortableWorkflowRunId } from './workflow-run-read-errors.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -510,6 +511,7 @@ export async function executeWorkflowThroughRunnerWithRuntime(
   const routing = input.routing;
   const existingEntry = await routing?.journal.locateReadOnly(workflowRunId);
   const existingRoute = existingEntry?.receipt ?? (routing ? null : undefined);
+  if (!existingRoute) assertPortableWorkflowRunId(workflowRunId);
   const selectedGo =
     existingRoute?.route.backend === 'go' ||
     (existingRoute === null &&

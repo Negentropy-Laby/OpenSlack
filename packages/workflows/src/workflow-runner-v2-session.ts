@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { randomUUID } from 'node:crypto';
 import { isWorkflowAuthorityRetryable } from './internal/workflow-authority-failure.js';
 import type { RunResult, WorkflowModule } from './types.js';
@@ -248,7 +249,7 @@ interface OutstandingEvent {
 }
 
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 
 function messagePayload(
   message: WorkflowControlAuthorityMessage,

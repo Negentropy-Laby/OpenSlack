@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
 import { lstat, readFile, realpath, readdir, rename, rm } from 'node:fs/promises';
@@ -73,7 +74,7 @@ const MAX_REPLAY_FILE_BYTES = MAX_REPLAY_BYTES + 4 * 1024;
 const MAX_ENTRIES = 4_096;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const AUTHORITY_FILE = /^[0-9a-f]{64}\.json$/u;
 const AUTHORITY_TEMP = /^\.([0-9a-f]{64})\.[1-9][0-9]*\.[0-9a-f-]{36}\.tmp$/u;

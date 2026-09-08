@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { types as nodeTypes } from 'node:util';
 import {
   parseWorkflowRunRecoveryEvidence,
@@ -73,7 +74,7 @@ export class WorkflowRunnerAuthorityBindingClientError extends Error {
   }
 }
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const IDEMPOTENCY = /^openslack\.workflow-runner-authority-binding\.v1\.[0-9a-f]{64}$/u;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
 const MAX_RESPONSE_BYTES = 65_536;

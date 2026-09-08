@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
@@ -231,7 +232,7 @@ export interface WorkflowControlReadModel {
 
 type DataRecord = Record<string, unknown>;
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const SENSITIVE_RAW_FIELDS = new Set<string>(WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS);
 

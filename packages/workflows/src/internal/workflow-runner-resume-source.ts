@@ -1,3 +1,4 @@
+import { resumeCorrelationId } from './workflow-resume-correlation.js';
 import { WorkflowRunReadError, assertWorkflowRunPathId } from '../workflow-run-read-errors.js';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -48,6 +49,7 @@ import { validateWorkflowBindingSettlement } from '../workflow-binding-reconcili
 
 import {
   parseWorkflowResumeIntent,
+  createWorkflowResumeIntent,
   type Intent,
   type ResumeIntent,
 } from './workflow-resume-intent.js';
@@ -104,7 +106,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     return this.authority.readTransitionReceipt(
       intent.record,
       intent.expected,
-      `resume.${intent.stageHash}`,
+      resumeCorrelationId(intent.stageHash),
       signal,
     );
   }
@@ -446,7 +448,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             );
           intent = await this.#intent(stage);
           if (!intent) {
-            intent = {
+            intent = createWorkflowResumeIntent({
               schema: 'openslack.workflow_runner_resume_source_intent.v2',
               stageHash: hashWorkflowRunnerAuthorityBindingStage(stage),
               stageReceipt,
@@ -471,7 +473,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
               prior: lockedPrior,
               next,
               evidence: resumeEvidence(next, target),
-            };
+            });
             const bytes = canonical(intent) + '\n';
             // Intents contain two checkpoint states. Use the local checkpoint
             // file ceiling, and prove readability before publishing or CAS.
@@ -498,7 +500,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             await this.authority.transition(
               intent.record,
               intent.expected,
-              `resume.${intent.stageHash}`,
+              resumeCorrelationId(intent.stageHash),
               signal,
             );
           }

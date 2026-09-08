@@ -1,4 +1,6 @@
 import { workflowControlCompanionSequence } from './internal/workflow-control-sequences.generated.js';
+import { WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES } from './internal/workflow-binding-field-rules.js';
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import {
   WORKFLOW_BUDGET_CURRENT_MANIFEST_SHA256,
@@ -547,7 +549,7 @@ export interface WorkflowRunnerAuthorityBindingPrepared<T> {
 
 const HASH = /^[0-9a-f]{64}$/u;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$/u;
 const RATE = /^(?:0|[1-9][0-9]*|(?:0|[1-9][0-9]*)\.([0-9]*[1-9]))$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
@@ -3078,7 +3080,12 @@ export function validateWorkflowRunnerAuthorityBindingError(
       '$/schema',
     ),
     code: oneOf(own(record, 'code'), WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES, '$/code'),
-    message: text(own(record, 'message'), '$/message', /^.{1,512}$/u, 512),
+    message: text(
+      own(record, 'message'),
+      '$/message',
+      /^.{1,512}$/u,
+      WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES,
+    ),
     bindingId: nullable(own(record, 'bindingId'), (entry) => id(entry, '$/bindingId')),
     operation: nullable(own(record, 'operation'), (entry) =>
       oneOf(entry, WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS, '$/operation'),

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -85,7 +87,7 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 				t.Fatal(err)
 			}
 			parent := func(path string) (map[string]any, string) {
-				keys := strings.Split(strings.TrimPrefix(path, "/"), "/")
+				keys := corpusPath(t, path)
 				record := value
 				for _, key := range keys[:len(keys)-1] {
 					var ok bool
@@ -96,9 +98,24 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 				}
 				return record, keys[len(keys)-1]
 			}
-			for path, change := range item.Set {
+			paths := make([]string, 0, len(item.Set))
+			for path := range item.Set {
+				corpusPath(t, path)
+				paths = append(paths, path)
+			}
+			for _, path := range item.Remove {
+				corpusPath(t, path)
+			}
+			sort.Slice(paths, func(i, j int) bool {
+				a, b := strings.Count(paths[i], "/"), strings.Count(paths[j], "/")
+				if a != b {
+					return a < b
+				}
+				return paths[i] < paths[j]
+			})
+			for _, path := range paths {
 				record, key := parent(path)
-				record[key] = change
+				record[key] = item.Set[path]
 			}
 			for _, path := range item.Remove {
 				record, key := parent(path)
@@ -127,5 +144,38 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 				t.Fatalf("Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
 			}
 		})
+	}
+}
+
+var corpusPathPattern = regexp.MustCompile(`^/[A-Za-z][A-Za-z0-9]*(/[A-Za-z][A-Za-z0-9]*)*$`)
+
+func corpusPath(t *testing.T, path string) []string {
+	t.Helper()
+	if !validCorpusPath(path) {
+		t.Fatal("invalid corpus path")
+	}
+	return strings.Split(path[1:], "/")
+}
+
+func validCorpusPath(path string) bool {
+	if !corpusPathPattern.MatchString(path) {
+		return false
+	}
+	for _, key := range strings.Split(path[1:], "/") {
+		if key == "constructor" || key == "prototype" || key == "__proto__" {
+			return false
+		}
+	}
+	return true
+}
+
+func TestCorpusPathValidation(t *testing.T) {
+	for _, path := range []string{"/__proto__/x", "/constructor/x", "target/x", "/target//x", "/target/", "/target/~1"} {
+		if validCorpusPath(path) {
+			t.Fatalf("accepted invalid corpus path %s", path)
+		}
+	}
+	if !validCorpusPath("/target/idempotencyKey") {
+		t.Fatal("valid corpus path rejected")
 	}
 }

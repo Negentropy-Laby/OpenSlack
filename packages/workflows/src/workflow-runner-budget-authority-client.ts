@@ -1,3 +1,4 @@
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import {
   canonicalWorkflowBudgetAuthorityJson,
   deriveWorkflowBudgetLedgerEntry,
@@ -29,7 +30,7 @@ import {
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
 const RESPONSE_SCHEMA = 'openslack.workflow_control_budget_mutation_response.v1';
 const DURABLE_SCHEMA = 'openslack.workflow_control_budget_durable_record.v1';
 const DURABLE_WRITER = 'workflow-control/budget-authority-server';
