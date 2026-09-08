@@ -1,3 +1,4 @@
+import { assertWorkflowRunPathId } from './workflow-run-read-errors.js';
 import {
   checkpointEvidence,
   resumeEvidence,
@@ -1169,6 +1170,7 @@ export async function executeWorkflowRunnerV2AuthorityJob(
   ) {
     throw new Error('The v2 worker accepts only Go-owned Workflow Control descriptors.');
   }
+  assertWorkflowRunPathId(descriptor.workflowRunId, { scope: 'run', backend: 'go' });
   const baseDir = resolveWorkflowRunProjectionRoot(workspaceRoot, 'go');
   const store = new WorkflowRunnerV2CheckpointRunStore(baseDir, context, descriptor, runAuthority);
   const exists = await store.runExists(descriptor.workflowRunId);
@@ -1256,6 +1258,7 @@ export async function createWorkflowRunnerV2RuntimeDelivery(
     ),
     projection: {
       async classify(descriptor) {
+        assertWorkflowRunPathId(descriptor.workflowRunId, { scope: 'run', backend: 'go' });
         const store = new WorkflowRunnerV2GoProjectionRunStore({
           baseDir: resolveWorkflowRunProjectionRoot(config.workspaceRoot, 'go'),
           descriptor,

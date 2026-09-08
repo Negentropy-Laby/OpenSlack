@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { synchronizeBudgetCompatibility } from './compatibility.js';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1646,7 +1647,14 @@ async function outputs(): Promise<Map<string, Buffer>> {
     legacyApprovalSchema,
     preparedRequestSchema,
   ];
-  for (const [index, schema] of schemas.entries()) map.set(paths[index]!, await pretty(schema));
+  const schemaPaths = paths.filter((path) => path.startsWith('schemas/'));
+  if (schemas.length !== schemaPaths.length)
+    throw new Error('Budget schema inventory differs from paths.');
+  for (const [index, schema] of schemas.entries()) {
+    const path = schemaPaths[index];
+    if (path === undefined) throw new Error('Budget schema path is missing.');
+    map.set(path, await pretty(schema));
+  }
   map.set(
     'golden-vectors.json',
     await pretty({
@@ -1901,6 +1909,14 @@ async function checkBundle(rootDirectory: string, built: Map<string, Buffer>): P
 }
 
 const built = await outputs();
+const manifestBytes = built.get('manifest.json');
+if (manifestBytes === undefined) throw new Error('Budget contract manifest is missing.');
+await synchronizeBudgetCompatibility(
+  root,
+  sha(manifestBytes),
+  process.argv[2] === '--check',
+  outputRoot,
+);
 if (process.argv[2] === '--check') {
   await checkBundle(contractRoot, built);
   await checkBundle(serviceMirrorRoot, built);

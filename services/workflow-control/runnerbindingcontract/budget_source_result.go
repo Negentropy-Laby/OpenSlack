@@ -242,7 +242,7 @@ func validateBudgetDurableReceipt(value any) (Record, budgetcontract.Record, err
 	if err != nil {
 		return nil, nil, err
 	}
-	manifest, err := enumString(record["contractManifestSha256"], []string{budgetManifestSHA256, budgetcontract.PreviousManifestSHA256}, "$/budgetSourceResult/durableReceipt/contractManifestSha256")
+	manifest, err := enumString(record["contractManifestSha256"], budgetcontract.AcceptedManifestSHA256(), "$/budgetSourceResult/durableReceipt/contractManifestSha256")
 	if err != nil {
 		return nil, nil, err
 	}

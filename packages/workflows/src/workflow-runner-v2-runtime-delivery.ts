@@ -1,4 +1,9 @@
 import {
+  WORKFLOW_RUN_READ_POLICIES,
+  WorkflowRunReadError,
+  type WorkflowRunReadCode,
+} from './workflow-run-read-errors.js';
+import {
   parseWorkflowControlAuthorityMessageBytes,
   type WorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityPreparedMessage,
@@ -147,6 +152,19 @@ export class WorkflowRunnerV2RuntimeDelivery implements WorkflowRunnerV2RuntimeD
         hashWorkflowRunnerAuthorityBindingEvidence(proof.evidence, operation) !==
           hashWorkflowRunnerAuthorityBindingEvidence(committed.resolution.evidence, operation)
       ) {
+        if (
+          proof.state === 'committed' &&
+          proof.readiness?.state === 'blocked' &&
+          Object.hasOwn(WORKFLOW_RUN_READ_POLICIES, proof.readiness.code)
+        )
+          throw new WorkflowRunReadError([
+            {
+              scope: 'run',
+              backend: 'go',
+              runId: committed.stage.runId,
+              code: proof.readiness.code as WorkflowRunReadCode,
+            },
+          ]);
         throw new WorkflowRunRecoveryError(
           proof.state === 'unknown'
             ? 'WORKFLOW_RUN_RECOVERY_UNKNOWN'

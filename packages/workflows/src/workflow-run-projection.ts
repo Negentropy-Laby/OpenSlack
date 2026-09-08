@@ -15,7 +15,6 @@ import {
 } from './internal/workflow-evidence-file.js';
 import { createWorkflowRunRouteJournal, WorkflowRunRoutingError } from './workflow-run-routing.js';
 import {
-  isWorkflowRunProjectionId,
   primaryWorkflowRunReadCode,
   type WorkflowRunReadCode,
   type WorkflowRunReadProvenance,
@@ -25,6 +24,7 @@ import {
   type WorkflowRunReadDiagnostic,
   type WorkflowRunProjectionBackend,
 } from './workflow-run-read-errors.js';
+import { assertWorkflowRunPathId, workflowRunPathErrorCode } from './workflow-run-read-errors.js';
 
 export type { WorkflowRunProjectionBackend } from './workflow-run-read-errors.js';
 
@@ -357,11 +357,12 @@ async function locateProjection(
   routeRevision?: string,
 ): Promise<WorkflowRunProjectionLocation> {
   // RunStore paths are directory names. Reject separators and Windows stream syntax.
-  if (!isWorkflowRunProjectionId(runId)) {
+  const pathCode = workflowRunPathErrorCode(runId);
+  if (pathCode) {
     return {
       state: 'invalid_id',
-      primaryCode: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
-      diagnostics: [{ scope: 'run', runId, code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID' }],
+      primaryCode: pathCode,
+      diagnostics: [{ scope: 'run', runId, code: pathCode }],
     };
   }
   const path = (backend: WorkflowRunProjectionBackend) =>
@@ -597,10 +598,7 @@ export function openWorkflowRunReadOnly(
       (runId: string, ...args: unknown[]) =>
         retryWorkflowRunRead(async () => {
           await context.assertRoot(workspaceRoot);
-          if (!isWorkflowRunProjectionId(runId))
-            throw new WorkflowRunReadError([
-              { scope: 'run', runId, backend, code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID' },
-            ]);
+          assertWorkflowRunPathId(runId, { scope: 'run', backend });
           const key = join(
             resolveWorkflowRunProjectionRoot(context.rootDir, backend),
             'runs',

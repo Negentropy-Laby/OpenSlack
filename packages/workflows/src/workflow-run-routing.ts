@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, realpath, rename } from 'node:fs/promises';
+import { isWorkflowRunId } from './internal/workflow-run-identity.js';
 import { isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import {
@@ -97,7 +98,6 @@ export class WorkflowRunRoutingError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const HASH = /^[0-9a-f]{64}$/u;
@@ -145,7 +145,7 @@ function exactKeys(value: JsonRecord, expected: readonly string[], label: string
 }
 
 function id(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !SAFE_ID.test(value)) {
+  if (!isWorkflowRunId(value)) {
     return fail('WORKFLOW_RUN_ROUTING_POLICY_INVALID', `${label} is invalid.`);
   }
   return value;

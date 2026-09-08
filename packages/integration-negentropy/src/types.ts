@@ -1,3 +1,5 @@
+import type { WorkflowRunReadDiagnostic } from '@openslack/workflows';
+
 export const NEGENTROPY_INTEGRATION_STATES = Object.freeze([
   'UNSIGNED_PREVIEW',
   'SIGNATURE_ATTACHED_UNVERIFIED',
@@ -21,12 +23,7 @@ export interface NegentropyEvidenceProjection {
     readonly totalRuns: number;
     readonly statusCounts: Readonly<Record<string, number>>;
     readonly evidenceSourceCounts?: Readonly<Record<string, number>>;
-    readonly readDiagnostics?: readonly {
-      readonly scope: 'workspace' | 'backend' | 'run';
-      readonly runId?: string;
-      readonly backend?: 'ts-local' | 'go';
-      readonly code: string;
-    }[];
+    readonly readDiagnostics?: readonly WorkflowRunReadDiagnostic[];
     readonly latestUpdatedAt?: string;
   };
   readonly prms: {

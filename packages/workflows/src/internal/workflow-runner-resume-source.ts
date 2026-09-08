@@ -1,3 +1,4 @@
+import { WorkflowRunReadError, assertWorkflowRunPathId } from '../workflow-run-read-errors.js';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { RunStore, WORKFLOW_CHECKPOINT_CONTROL_MAX_BYTES } from '../run-store.js';
@@ -73,6 +74,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     );
   }
   #assertStage(stage: WorkflowRunnerAuthorityBindingStage): void {
+    assertWorkflowRunPathId(stage.runId, { scope: 'run', backend: 'go' });
     hashWorkflowRunnerAuthorityBindingStage(stage);
     if (
       stage.operation !== 'resume_advance' ||
@@ -93,6 +95,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
+      if (error instanceof WorkflowRunReadError) throw error;
       return recoveryConflict('Resume intent cannot be read safely.');
     }
     return parseWorkflowResumeIntent(bytes, stage, this.target);
@@ -101,7 +104,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     return this.authority.readTransitionReceipt(
       intent.record,
       intent.expected,
-      intent.correlationId,
+      `resume.${intent.stageHash}`,
       signal,
     );
   }
@@ -131,6 +134,15 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
       current = await this.loadCheckpointControl(stage.runId);
     } catch (cause) {
       if (isWorkflowAuthorityRetryable(cause)) throw workflowAuthorityFailure(cause);
+      if (cause instanceof WorkflowRunReadError) throw cause;
+      if (
+        cause &&
+        typeof cause === 'object' &&
+        'code' in cause &&
+        cause.code !== 'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT' &&
+        cause.code !== 'WORKFLOW_CHECKPOINT_CONTROL_MISSING'
+      )
+        throw cause;
       throw new WorkflowRunRecoveryError(
         'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
         'Committed resume has an unreadable cache; use runs repair-checkpoints.',
@@ -245,11 +257,16 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
       readiness = {
         state: 'blocked',
         code:
-          error instanceof WorkflowRunRecoveryError
+          error instanceof WorkflowRunRecoveryError || error instanceof WorkflowRunReadError
             ? error.code
             : 'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED',
         message:
-          'Resume history is committed, but current authority or its cache needs reconciliation; use runs inspect and repair-checkpoints.',
+          error instanceof WorkflowRunReadError
+            ? error.message
+            : error instanceof WorkflowRunRecoveryError &&
+                error.code === 'WORKFLOW_RUN_RECOVERY_CACHE_REPAIR_REQUIRED'
+              ? 'Resume history is committed, but its local cache requires runs repair-checkpoints.'
+              : 'Resume history is committed; inspect current authority and evidence before recovery.',
       };
     }
     const entry = view.bindings.find((entry) => entry.bindingId === stage.bindingId);
@@ -310,6 +327,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
     stage: WorkflowRunnerAuthorityBindingStage,
     signal?: AbortSignal,
   ): Promise<WorkflowCheckpointControlState | null> {
+    this.#assertStage(stage);
     const view = await this.recovery.readRecoveryEvidence(stage.runId, stage.bindingId, signal);
     if (await this.#settlement(stage, view))
       throw new WorkflowRunRecoveryError(
@@ -431,7 +449,6 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             intent = {
               schema: 'openslack.workflow_runner_resume_source_intent.v2',
               stageHash: hashWorkflowRunnerAuthorityBindingStage(stage),
-              correlationId: `resume.${hashWorkflowRunnerAuthorityBindingStage(stage)}`,
               stageReceipt,
               priorRevision: prior.revision,
               priorBindingHash: workflowCheckpointHash(prior.activeBinding),
@@ -481,7 +498,7 @@ export class WorkflowRunnerResumeSourceStore extends RunStore {
             await this.authority.transition(
               intent.record,
               intent.expected,
-              intent.correlationId,
+              `resume.${intent.stageHash}`,
               signal,
             );
           }

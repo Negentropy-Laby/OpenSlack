@@ -815,13 +815,20 @@ describe('WatchDaemon', () => {
   });
 
   it('acknowledges a durable enqueue without waiting for a slow notification sink', async () => {
-    let releaseSink: (() => void) | undefined;
-    const sinkSend = vi.fn(
-      () =>
-        new Promise<{ ok: true; outcome: 'delivered' }>((resolve) => {
-          releaseSink = () => resolve({ ok: true, outcome: 'delivered' });
-        }),
-    );
+    let releaseSink!: () => void;
+    let sinkReleased = false;
+    let completedResponses = 0;
+    let responseDeadline: ReturnType<typeof setTimeout> | undefined;
+    const sinkGate = new Promise<void>((resolve) => {
+      releaseSink = () => {
+        sinkReleased = true;
+        resolve();
+      };
+    });
+    const sinkSend = vi.fn(async () => {
+      await sinkGate;
+      return { ok: true as const, outcome: 'delivered' as const };
+    });
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(
       config,
@@ -853,11 +860,30 @@ describe('WatchDaemon', () => {
         'x-github-delivery': 'durable-before-sink',
       };
       const responses = await Promise.race([
-        Promise.all([sendRequest(port, body, headers), sendRequest(port, body, headers)]),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Webhook ACK waited for sink')), 250),
+        Promise.all(
+          [sendRequest(port, body, headers), sendRequest(port, body, headers)].map((response) =>
+            response.then((result) => {
+              completedResponses += 1;
+              return result;
+            }),
+          ),
         ),
+        new Promise<never>((_, reject) => {
+          responseDeadline = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'Webhook responses did not complete within 250ms: ' +
+                    `responses=${completedResponses}/2, sinkStarted=${sinkSend.mock.calls.length > 0}, sinkReleased=${sinkReleased}. ` +
+                    'This deadline includes admission, durable I/O and HTTP scheduling; it does not establish a sink dependency.',
+                ),
+              ),
+            250,
+          );
+        }),
       ]);
+      clearTimeout(responseDeadline);
+      expect(sinkReleased).toBe(false);
       expect(responses.every((response) => response.status === 200)).toBe(true);
       expect(responses).toEqual(
         expect.arrayContaining([
@@ -872,10 +898,11 @@ describe('WatchDaemon', () => {
       expect(dedupe.getStats()).toMatchObject({ count: 1, processing: 1 });
       expect(sinkSend).toHaveBeenCalledTimes(1);
 
-      releaseSink?.();
+      releaseSink();
       await waitFor(() => dedupe.getStats().completed === 1);
     } finally {
-      releaseSink?.();
+      clearTimeout(responseDeadline);
+      releaseSink();
       await daemon.stop();
     }
   });

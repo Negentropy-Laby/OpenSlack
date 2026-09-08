@@ -1,4 +1,8 @@
-import { WorkflowRunReadError } from './workflow-run-read-errors.js';
+import {
+  WorkflowRunReadError,
+  assertWorkflowRunPathId,
+  asWorkflowRunReadError,
+} from './workflow-run-read-errors.js';
 import {
   workflowAuthorityFailure,
   isWorkflowAuthorityRetryable,
@@ -438,6 +442,7 @@ export class RunStore {
 
   /** Path to the run directory. */
   runDir(runId: string): string {
+    assertWorkflowRunPathId(runId);
     return `${this.baseDir}/runs/${runId}`;
   }
 
@@ -1284,6 +1289,7 @@ export class RunStore {
       return state;
     } catch (error) {
       if (isWorkflowAuthorityRetryable(error)) throw workflowAuthorityFailure(error);
+      if (error instanceof WorkflowRunReadError) throw error;
       throw workflowCheckpointError(
         'WORKFLOW_CHECKPOINT_CONTROL_CORRUPT',
         'Workflow checkpoint control is corrupt.',
@@ -1955,7 +1961,11 @@ export class RunStore {
   /**
    * List all runs with a specific status.
    */
-  async listRunsByStatus(status: RunStatusState): Promise<WorkflowRunInfo[]> {
+  async listRunsByStatus(
+    status: RunStatusState,
+  ): Promise<WorkflowRunInfo[] & { diagnostics?: WorkflowRunReadDiagnostic[] }> {
+    const diagnostics: WorkflowRunReadDiagnostic[] = [];
+    const result = (runs: WorkflowRunInfo[]) => Object.assign(runs, { diagnostics });
     const runsDir = `${this.baseDir}/runs`;
     let runIds: string[];
     try {
@@ -1966,10 +1976,12 @@ export class RunStore {
       } else {
         // Fallback: scan directories if no index file
         const { readdir } = await import('node:fs/promises');
-        runIds = await readdir(runsDir).catch(() => []);
+        runIds = await readdir(runsDir);
       }
-    } catch {
-      return [];
+    } catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'))
+        diagnostics.push(...asWorkflowRunReadError(error, { scope: 'backend' }).diagnostics);
+      return result([]);
     }
 
     const results = new Array<WorkflowRunInfo | null>(runIds.length).fill(null);
@@ -1980,23 +1992,34 @@ export class RunStore {
         cursor += 1;
         if (index >= runIds.length) return;
         const runId = runIds[index]!;
-        const [meta, st] = await Promise.all([this.loadMeta(runId), this.loadStatus(runId)]);
-        if (meta && st && st.status === status) {
-          results[index] = {
-            runId: meta.runId,
-            workflowName: meta.workflowName,
-            mode: meta.mode,
-            status: st.status as RunStatusState,
-            startedAt: meta.startedAt,
-            updatedAt: st.updatedAt,
-          };
+        try {
+          const [metaRead, statusRead] = await Promise.allSettled([
+            this.loadMeta(runId),
+            this.loadStatus(runId),
+          ]);
+          if (metaRead.status === 'rejected') throw metaRead.reason;
+          if (statusRead.status === 'rejected') throw statusRead.reason;
+          const meta = metaRead.value,
+            st = statusRead.value;
+          if (meta && st && st.status === status) {
+            results[index] = {
+              runId: meta.runId,
+              workflowName: meta.workflowName,
+              mode: meta.mode,
+              status: st.status as RunStatusState,
+              startedAt: meta.startedAt,
+              updatedAt: st.updatedAt,
+            };
+          }
+        } catch (error) {
+          diagnostics.push(...asWorkflowRunReadError(error, { scope: 'run', runId }).diagnostics);
         }
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(WORKFLOW_RUN_LIST_CONCURRENCY, runIds.length) }, worker),
     );
-    return results.filter((item): item is WorkflowRunInfo => item !== null);
+    return result(results.filter((item): item is WorkflowRunInfo => item !== null));
   }
 }
 
@@ -2041,6 +2064,14 @@ function createNodeFs(): RunStoreFs {
         return await readOwnerFile(resolve(path), productionJournalSecurity(), maxBytes);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        if (
+          error instanceof TypeError &&
+          (error as NodeJS.ErrnoException).code !== 'ERR_ENCODING_INVALID_ENCODED_DATA'
+        )
+          throw new WorkflowRunReadError(
+            [{ scope: 'backend', code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID' }],
+            { cause: error },
+          );
         throw error;
       }
     },

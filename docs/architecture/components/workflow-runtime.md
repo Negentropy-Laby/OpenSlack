@@ -1232,7 +1232,9 @@ legacy null phase fields require sufficient checkpoint evidence. A source-only r
 also requires its immutable v2 intent to match the exact source request, record hash and receipt.
 Local cache availability never overturns a historical commit.
 
-Version 2 resume intents freeze both checkpoint states and the original source evidence. They use
+Version 2 resume intents freeze both checkpoint states and the original source evidence. New writes
+derive the resume correlation from the immutable stage hash; readers still validate the derived field
+when present in older v1/v2 intents. They use
 the local checkpoint file limit, checked before atomic publication, because two states can exceed
 the old 1 MiB intent reader limit. The checkpoint lock only validates and reserves local state;
 receipt queries and CAS execute outside it, and all writers respect the durable reservation. The
@@ -1280,8 +1282,11 @@ terminal state. Integrity, identity and unsafe-path failures require reconciliat
 local I/O is retryable, and cancellation has its own stable code. Public output excludes causes.
 
 The additive first-phase wire change refreshes upstream budget manifest locks without changing
-budget record schemas. Readers accept only the current manifest and the exact previous
-`662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable
+budget record schemas. The append-only
+[`compatibility.json`](../../../packages/workflows/contracts/workflow-budget-authority/compatibility.json)
+ledger is the single acceptance inventory. Its generator produces the TypeScript and Go
+acceptance sets and every durable OpenAPI manifest enum. Rotation appends a reviewed digest;
+the generator refuses removal or reordering of accepted digests. Existing durable
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
 
@@ -1294,6 +1299,20 @@ Healthy runs are filtered before their diagnostics are collected. Runs whose sta
 read, and backend failures, remain diagnostic regardless of the filter. Display grouping retains
 backend and affected runs; machine diagnostics retain individual identity and scope. Query results
 are caller-owned copies. Cost configuration and workflow discovery are shared only within the query.
+Authority-binding schemas use explicit field rules, including nullable IDs, receipt lifecycle
+hashes, positive revisions, and canonical timestamps. Schema consumers must enable format assertions
+and register `WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS` from `@openslack/workflows`,
+alongside the standard `date-time` format. The `openslack-utf8-512` format limits error messages
+to 512 UTF-8 bytes; `maxLength` alone counts Unicode code points. The shared boundary corpus runs
+against the schema and the independent TypeScript and Go validators. Runtime validators also check
+cross-record identity, hashes, and sequence relationships.
+
+Logical run IDs retain the wire contract's ASCII ID alphabet, including colon in historical POSIX
+names. Filesystem entrypoints share the same validator and reject Windows ADS syntax, trailing dots,
+and reserved device basenames (including extensions). POSIX keeps those legal historical names. These
+run-ID rules do not reject verified Windows workspace paths that use equivalent long and 8.3 names.
+TUI projections derive their data fields from the workflow package types while
+retaining explicit support for incomplete historical summaries.
 
 Run list, show, progress, and save-run probe the immutable route's selected local directory before
 reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;
@@ -1449,3 +1468,9 @@ export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
   return { status: 'complete', ...previewResult };
 }
 ```
+
+### Maintenance recovery and compatibility guards
+
+Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
+
+The budget compatibility ledger remains the generation input. Its non-generated `compatibility-history.json` safety baseline must be explicitly extended with each reviewed rotation. Generation requires matching complete history and rejects conflicting inputs under a separate output root before emitting projections. The PR check independently verifies the historical prefix against the exact target-base commit, including the original source constant and manifest bytes on the first migration; deleting generated outputs cannot erase compatibility.
