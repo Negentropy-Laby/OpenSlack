@@ -78,6 +78,11 @@ func bindingContractFailure(message string, err error) error {
 }
 
 func (repository *Repository) StageAuthorityBinding(ctx context.Context, input runnerstore.V2AuthorityBindingInput) (runnerstore.V2AuthorityBindingReceipt, error) {
+	return retryRecoveryTransaction(ctx, repository, func(c context.Context) (string, error) { return recoveryLeaseID(c, repository, input.Prepared.Body) }, func(attempt context.Context) (runnerstore.V2AuthorityBindingReceipt, error) {
+		return repository.stageAuthorityBindingOnce(attempt, input)
+	})
+}
+func (repository *Repository) stageAuthorityBindingOnce(ctx context.Context, input runnerstore.V2AuthorityBindingInput) (runnerstore.V2AuthorityBindingReceipt, error) {
 	if !repository.v2RuntimeDelivery || repository.schemaVersion < 8 {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "schema-8 runtime delivery is disabled", nil)
 	}
@@ -214,6 +219,11 @@ INSERT INTO workflow_runner_authority_bindings (
 }
 
 func (repository *Repository) ResolveAuthorityBinding(ctx context.Context, bindingID string, input runnerstore.V2AuthorityBindingInput) (runnerstore.V2AuthorityBindingReceipt, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.V2AuthorityBindingReceipt, error) {
+		return repository.resolveAuthorityBindingOnce(attempt, bindingID, input)
+	})
+}
+func (repository *Repository) resolveAuthorityBindingOnce(ctx context.Context, bindingID string, input runnerstore.V2AuthorityBindingInput) (runnerstore.V2AuthorityBindingReceipt, error) {
 	if !repository.v2RuntimeDelivery || repository.schemaVersion < 8 {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "schema-8 runtime delivery is disabled", nil)
 	}
@@ -411,6 +421,11 @@ func decodeExactAuthorityMessage(exact []byte) (authoritycontract.Message, error
 }
 
 func (repository *Repository) AcknowledgeV2Control(ctx context.Context, input runnerstore.V2ControlAcknowledgementInput) (runnerstore.V2AuthorityBindingReceipt, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.V2AuthorityBindingReceipt, error) {
+		return repository.acknowledgeV2ControlOnce(attempt, input)
+	})
+}
+func (repository *Repository) acknowledgeV2ControlOnce(ctx context.Context, input runnerstore.V2ControlAcknowledgementInput) (runnerstore.V2AuthorityBindingReceipt, error) {
 	if !repository.v2RuntimeDelivery || repository.schemaVersion < 8 {
 		return runnerstore.V2AuthorityBindingReceipt{}, runnerstore.Failure(runnerstore.ErrorAuthorityUnavailable, "schema-8 runtime delivery is disabled", nil)
 	}
@@ -1018,8 +1033,9 @@ func (repository *Repository) RecoverAuthorityBindingsAtStartup(ctx context.Cont
 	if err != nil {
 		return runnerstore.V2AuthorityRecoverySummary{}, databaseFailure("encode startup authority recovery", err)
 	}
-	var reconciled int
-	err = repository.pool.QueryRow(ctx, `WITH input AS (
+	reconciled, err := retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (int, error) {
+		var count int
+		err := repository.pool.QueryRow(attempt, `WITH input AS (
  SELECT * FROM jsonb_to_recordset($1::jsonb) AS value(
   binding_id text,expected_state text,workspace_id text,job_id text,attempt_id text,
   reconciliation_id text,evidence_hash text)
@@ -1041,7 +1057,9 @@ func (repository *Repository) RecoverAuthorityBindingsAtStartup(ctx context.Cont
      reconciliation_reason='process_crash',updated_at=$2
  FROM inserted WHERE binding.binding_id=inserted.binding_id
  RETURNING binding.binding_id
-) SELECT count(*) FROM updated`, payload, before.UTC()).Scan(&reconciled)
+) SELECT count(*) FROM updated`, payload, before.UTC()).Scan(&count)
+		return count, err
+	})
 	if err != nil {
 		return runnerstore.V2AuthorityRecoverySummary{}, databaseFailure("latch startup authority recovery", err)
 	}
@@ -1053,6 +1071,9 @@ func (repository *Repository) RecoverAuthorityBindingsAtStartup(ctx context.Cont
 }
 
 func (repository *Repository) recoverBindingReceipt(ctx context.Context, workspaceID, key string, fingerprint, request []byte, commitErr error) (runnerstore.V2AuthorityBindingReceipt, error) {
+	if recoveryMetadataAbort(commitErr) != nil {
+		return runnerstore.V2AuthorityBindingReceipt{}, commitErr
+	}
 	recovered, found, err := repository.readBindingReceipt(ctx, workspaceID, key, fingerprint, request)
 	if err == nil && found {
 		recovered.Replay = true

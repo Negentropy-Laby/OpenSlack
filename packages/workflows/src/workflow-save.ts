@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { findWorkflow, loadWorkflow } from './loader.js';
-import { locateWorkflowRunProjection } from './workflow-run-projection.js';
+import {
+  locateWorkflowRunProjection,
+  WorkflowRunReadContext,
+  withWorkflowRunRead,
+  retryWorkflowRunRead,
+} from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
   asWorkflowRunReadError,
@@ -71,36 +76,47 @@ export async function saveWorkflowRunScript(
   options: SaveWorkflowRunOptions,
 ): Promise<SaveWorkflowResult & WorkflowRunScriptSource> {
   const rootDir = options.rootDir ?? process.cwd();
-  const location = await locateWorkflowRunProjection(rootDir, runId, {
-    evidenceSource: options.evidenceSource,
+  const readContext = new WorkflowRunReadContext(rootDir);
+  const { location, meta } = await retryWorkflowRunRead(async () => {
+    const location = await locateWorkflowRunProjection(rootDir, runId, {
+      evidenceSource: options.evidenceSource,
+      readContext,
+    });
+    if (location.state !== 'found')
+      throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
+    const context = { scope: 'run' as const, runId, backend: location.backend };
+    let meta: { workflowName: string };
+    try {
+      const value: unknown = JSON.parse(
+        await withWorkflowRunRead(
+          runId,
+          location,
+          () =>
+            readWorkflowEvidenceText(
+              join(location.runDir, 'meta.json'),
+              WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+              context,
+            ),
+          readContext,
+        ),
+      );
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        !('workflowName' in value) ||
+        typeof value.workflowName !== 'string' ||
+        !/^[a-z][a-z0-9-]*$/.test(value.workflowName) ||
+        Buffer.byteLength(value.workflowName, 'utf8') > 512 ||
+        ('runId' in value && value.runId !== runId)
+      )
+        throw new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' }]);
+      meta = { workflowName: value.workflowName };
+    } catch (error) {
+      throw asWorkflowRunReadError(error, context);
+    }
+    return { location, meta };
   });
-  if (location.state !== 'found')
-    throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
-  const context = { scope: 'run' as const, runId, backend: location.backend };
-  let meta: { workflowName: string };
-  try {
-    const value: unknown = JSON.parse(
-      await readWorkflowEvidenceText(
-        join(location.runDir, 'meta.json'),
-        WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
-        context,
-      ),
-    );
-    if (
-      !value ||
-      typeof value !== 'object' ||
-      Array.isArray(value) ||
-      !('workflowName' in value) ||
-      typeof value.workflowName !== 'string' ||
-      !/^[a-z][a-z0-9-]*$/.test(value.workflowName) ||
-      Buffer.byteLength(value.workflowName, 'utf8') > 512 ||
-      ('runId' in value && value.runId !== runId)
-    )
-      throw new WorkflowRunReadError([{ ...context, code: 'WORKFLOW_RUN_EVIDENCE_INVALID' }]);
-    meta = { workflowName: value.workflowName };
-  } catch (error) {
-    throw asWorkflowRunReadError(error, context);
-  }
   const found = await findWorkflow(meta.workflowName, rootDir);
   if (!found) throw new Error(`Workflow source not found for run ${runId}: ${meta.workflowName}`);
   const result = await saveWorkflow(meta.workflowName, {

@@ -58,9 +58,12 @@ async function fixture(backend: 'ts-local' | 'go' = 'ts-local') {
   };
 }
 function route(backend: 'ts-local' | 'go') {
-  return vi
-    .spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly')
-    .mockResolvedValue({ receipt: { route: { backend } } } as never);
+  const locateReadOnly = vi.fn().mockResolvedValue({ receipt: { route: { backend } } });
+  vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+    revision: async () => 'fixture',
+    locateReadOnly,
+  });
+  return locateReadOnly;
 }
 describe('read correctness across evidence boundaries', () => {
   it('reports a non-directory agent result path with its run identity', async () => {
@@ -139,9 +142,14 @@ describe('read correctness across evidence boundaries', () => {
     await fs.mkdir(join(resolveWorkflowRunProjectionRoot(root, 'go'), 'runs', id), {
       recursive: true,
     });
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockRejectedValue(
-      new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'private cause'),
-    );
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
+      locateReadOnly: vi
+        .fn()
+        .mockRejectedValue(
+          new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'private cause'),
+        ),
+    });
     const location = await locateWorkflowRunProjection(root, id);
     expect(location).toMatchObject({
       state: 'reconciliation_required',
@@ -305,6 +313,14 @@ describe('read correctness across evidence boundaries', () => {
         join(source, 'salvage-test.mjs'),
         'export const meta = {name:"salvage-test",description:"Salvage",phases:[{title:"Read",detail:"Evidence"}]}; export default async function(){}',
       );
+      // A concurrent, unrelated directory entry requires a new selection/read,
+      // while the eventual script write must run only after a stable read.
+      const actual = await vi.importActual<typeof fs>('node:fs/promises');
+      vi.mocked(fs.open).mockImplementationOnce(async (...args) => {
+        const handle = await actual.open(...args);
+        await fs.writeFile(join(store.runDir(id), 'concurrent-entry'), 'retained');
+        return handle;
+      });
       const result = await saveWorkflowRunScript(id, { rootDir: root, to: 'claude-project' });
       expect(result).toMatchObject({
         workflowName: 'salvage-test',

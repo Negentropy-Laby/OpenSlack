@@ -4,6 +4,9 @@ import { join, resolve } from 'node:path';
 import {
   locateWorkflowRunProjection,
   type WorkflowRunProjectionLocation,
+  WorkflowRunReadContext,
+  withWorkflowRunRead,
+  retryWorkflowRunRead,
 } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
@@ -88,6 +91,8 @@ export interface GetWorkflowRunProgressOptions {
   loadWorkflowManifest?: boolean;
   loadCostConfig?: boolean;
   strictRead?: boolean;
+  /** @internal Reuse the location already verified by this read query. */
+  readContext?: WorkflowRunReadContext;
 }
 
 const MAX_JSON_BYTES = WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES;
@@ -827,18 +832,27 @@ function groupPhases(
   });
 }
 
+export async function loadWorkflowReadModule(rootDir: string, workflowName: string) {
+  const { findWorkflow, loadWorkflow } = await import('./loader.js');
+  const found = await findWorkflow(workflowName, rootDir);
+  if (!found) return null;
+  if (!found.path.startsWith('builtin:'))
+    await readWorkflowEvidenceText(found.path, MAX_JSON_BYTES);
+  return { found, module: await loadWorkflow(found.path) };
+}
+
 async function loadWorkflowMeta(
   rootDir: string,
   workflowName?: string,
+  context?: WorkflowRunReadContext,
 ): Promise<WorkflowMeta | null> {
   if (!workflowName) return null;
   try {
-    const { findWorkflow, loadWorkflow } = await import('./loader.js');
-    const found = await findWorkflow(workflowName, rootDir);
-    if (!found) return null;
-    if (!found.path.startsWith('builtin:'))
-      await readWorkflowEvidenceText(found.path, MAX_JSON_BYTES);
-    return (await loadWorkflow(found.path)).meta;
+    const load = () => loadWorkflowReadModule(rootDir, workflowName);
+    return (
+      (await (context ? context.memo(`workflow:${workflowName}`, load) : load()))?.module.meta ??
+      null
+    );
   } catch {
     return null;
   }
@@ -849,12 +863,31 @@ export async function getWorkflowRunProgress(
   options: GetWorkflowRunProgressOptions = {},
 ): Promise<WorkflowRunProgress | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const location = await locateWorkflowRunProjection(rootDir, runId);
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
+  return retryWorkflowRunRead(() =>
+    getWorkflowRunProgressOnce(runId, { ...options, rootDir, readContext }),
+  );
+}
+
+async function getWorkflowRunProgressOnce(
+  runId: string,
+  options: GetWorkflowRunProgressOptions = {},
+): Promise<WorkflowRunProgress | null> {
+  const rootDir = options.rootDir ?? process.cwd();
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
+  const location = await locateWorkflowRunProjection(rootDir, runId, {
+    readContext,
+  });
   if (location.state === 'missing') return null;
   if (location.state !== 'found')
     throw new WorkflowRunReadError(location.diagnostics, { primaryCode: location.primaryCode });
   try {
-    return await readLocatedProgress(runId, rootDir, location, options);
+    return await withWorkflowRunRead(
+      runId,
+      location,
+      () => readLocatedProgress(runId, rootDir, location, { ...options, readContext }),
+      readContext,
+    );
   } catch (error) {
     throw asWorkflowRunReadError(error, { scope: 'run', runId, backend: location.backend });
   }
@@ -975,7 +1008,7 @@ async function readLocatedProgress(
   const workflowMeta =
     options.loadWorkflowManifest === false
       ? null
-      : await loadWorkflowMeta(rootDir, metaRead.value?.workflowName);
+      : await loadWorkflowMeta(rootDir, metaRead.value?.workflowName, options.readContext);
   const agents = await readAgentResults(
     runDir,
     rootDir,
@@ -989,14 +1022,16 @@ async function readLocatedProgress(
   const costConfig =
     options.loadCostConfig === false
       ? null
-      : await (async () => {
-          if (!existsSync(costPath)) return null;
-          const raw = await readWorkflowEvidenceText(costPath, MAX_JSON_BYTES);
-          return parseWorkflowCostConfig(raw);
-        })().catch(() => {
-          warnings.push('workflow cost config could not be loaded safely');
-          return null;
-        });
+      : await options
+          .readContext!.memo('cost-config', async () => {
+            if (!existsSync(costPath)) return null;
+            const raw = await readWorkflowEvidenceText(costPath, MAX_JSON_BYTES);
+            return parseWorkflowCostConfig(raw);
+          })
+          .catch(() => {
+            warnings.push('workflow cost config could not be loaded safely');
+            return null;
+          });
   const budget = buildBudget(workflowMeta, agents, statusRead.value, costConfig);
   let externalArgs = encodeWorkflowArguments({}).envelope;
   if (metaRead.value) {

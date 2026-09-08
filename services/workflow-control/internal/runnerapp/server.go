@@ -60,6 +60,7 @@ type Options struct {
 	BindingStore            runnerstore.V2AuthorityBindingStore
 	RecoveryStore           runnerstore.RecoveryEvidenceStore
 	RecoveryV2Store         runnerstore.RecoveryEvidenceV2Store
+	RecoveryV3Store         runnerstore.RecoveryEvidenceV3Store
 	ReconciliationStore     runnerstore.BindingReconciliationStore
 	AdmissionStore          runnerstore.V2RuntimeAdmissionStore
 	SchemaVersion           int64
@@ -79,6 +80,7 @@ type Service struct {
 	bindingStore            runnerstore.V2AuthorityBindingStore
 	recoveryStore           runnerstore.RecoveryEvidenceStore
 	recoveryV2Store         runnerstore.RecoveryEvidenceV2Store
+	recoveryV3Store         runnerstore.RecoveryEvidenceV3Store
 	reconciliationStore     runnerstore.BindingReconciliationStore
 	admissionStore          runnerstore.V2RuntimeAdmissionStore
 	schemaVersion           int64
@@ -121,8 +123,9 @@ func New(options Options) (*Service, error) {
 		store: options.Store, buildSHA: options.BuildSHA,
 		v2Store: options.V2Store, bindingStore: options.BindingStore, admissionStore: options.AdmissionStore,
 		recoveryStore: options.RecoveryStore, recoveryV2Store: options.RecoveryV2Store, reconciliationStore: options.ReconciliationStore,
-		schemaVersion: options.SchemaVersion,
-		workspaceID:   options.WorkspaceID, logger: options.Logger,
+		recoveryV3Store: options.RecoveryV3Store,
+		schemaVersion:   options.SchemaVersion,
+		workspaceID:     options.WorkspaceID, logger: options.Logger,
 		runAuthorityOrigin: options.RunAuthorityOrigin, runAuthorityCallerID: options.RunAuthorityCallerID,
 		runAuthorityBuildSHA: options.RunAuthorityBuildSHA, runAuthorityTokenSHA256: options.RunAuthorityTokenSHA256,
 	}

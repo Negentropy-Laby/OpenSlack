@@ -14,6 +14,11 @@ import (
 )
 
 func (repository *Repository) RequestCancel(ctx context.Context, input runnerstore.CancelInput) (runnerstore.CancelControl, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.CancelControl, error) {
+		return repository.requestCancelOnce(attempt, input)
+	})
+}
+func (repository *Repository) requestCancelOnce(ctx context.Context, input runnerstore.CancelInput) (runnerstore.CancelControl, error) {
 	if err := runnerstore.ValidateCancelInput(input); err != nil {
 		return runnerstore.CancelControl{}, err
 	}
@@ -163,6 +168,9 @@ WHERE workspace_id=$2 AND job_id=$3 AND revision=$4`, now, input.WorkspaceID, in
 		return runnerstore.CancelControl{}, mapWriteFailure("advance cancelling job", err)
 	}
 	if err := repository.commit(ctx, tx); err != nil {
+		if recoveryMetadataAbort(err) != nil {
+			return runnerstore.CancelControl{}, err
+		}
 		// The control exact bytes are durable or the caller must reconcile by the
 		// same idempotency key; never synthesize a second cancel identity.
 		if recovered, raw, readErr := readCancelControl(repository.pool.QueryRow(context.Background(), cancelByKeySQL, input.IdempotencyKey)); readErr == nil && subtle.ConstantTimeCompare(raw, fingerprint) == 1 {

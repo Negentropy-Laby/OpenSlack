@@ -53,7 +53,10 @@ export function recoveryConflict(message: string): never {
 export interface WorkflowRunRecoveryEvidence {
   readonly schema:
     | 'openslack.workflow_runner_recovery_evidence.v1'
-    | 'openslack.workflow_runner_recovery_evidence.v2';
+    | 'openslack.workflow_runner_recovery_evidence.v2'
+    | 'openslack.workflow_runner_recovery_evidence.v3';
+  readonly recoveryVersion?: string;
+  readonly readAt?: string;
   readonly workspaceId: string;
   readonly runId: string;
   readonly route: WorkflowControlAuthorityRoute;
@@ -77,6 +80,9 @@ export interface WorkflowRunRecoveryEvidence {
   readonly settlements?: readonly WorkflowBindingSettlementReceipt[];
   readonly recordKeys?: readonly string[];
 }
+
+export const WORKFLOW_RECOVERY_V3_MEDIA_TYPE =
+  'application/vnd.openslack.workflow-run-recovery-evidence.v3+json';
 
 export interface WorkflowRunRecoveryEvidencePort {
   readRecoveryEvidence(
@@ -107,6 +113,7 @@ const states = [
 ];
 
 function normalizeRecoveryV2(value: Record<string, unknown>): Record<string, unknown> {
+  const v3 = value.schema === 'openslack.workflow_runner_recovery_evidence.v3';
   exactFields(value, [
     'schema',
     'workspaceId',
@@ -116,7 +123,18 @@ function normalizeRecoveryV2(value: Record<string, unknown>): Record<string, unk
     'snapshot',
     'nextCursor',
     'records',
+    ...(v3 ? ['recoveryVersion', 'readAt'] : []),
   ]);
+  if (
+    v3 &&
+    (typeof value.recoveryVersion !== 'string' ||
+      !/^[1-9][0-9]{0,18}$/u.test(value.recoveryVersion) ||
+      BigInt(value.recoveryVersion) > 9223372036854775807n ||
+      typeof value.readAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value.readAt) ||
+      new Date(value.readAt).toISOString() !== value.readAt)
+  )
+    return recoveryConflict('Recovery v3 snapshot metadata is invalid.');
   if (!Array.isArray(value.records))
     return recoveryConflict('Recovery v2 record stream is invalid.');
   const bindings: unknown[] = [],
@@ -166,6 +184,7 @@ function normalizeRecoveryV2(value: Record<string, unknown>): Record<string, unk
     activeAttempts,
     settlements,
     recordKeys,
+    ...(v3 ? { recoveryVersion: value.recoveryVersion, readAt: value.readAt } : {}),
   };
 }
 
@@ -191,7 +210,8 @@ export function parseWorkflowRunRecoveryEvidence(
       value !== null &&
       typeof value === 'object' &&
       'schema' in value &&
-      value.schema === 'openslack.workflow_runner_recovery_evidence.v2';
+      (value.schema === 'openslack.workflow_runner_recovery_evidence.v2' ||
+        value.schema === 'openslack.workflow_runner_recovery_evidence.v3');
     if (v2) value = normalizeRecoveryV2(value as Record<string, unknown>);
     exactFields(value, [
       'schema',
@@ -205,6 +225,12 @@ export function parseWorkflowRunRecoveryEvidence(
       'unfinished',
       'activeAttempts',
       ...(v2 ? ['settlements', 'recordKeys'] : []),
+      ...(value &&
+      typeof value === 'object' &&
+      'schema' in value &&
+      value.schema === 'openslack.workflow_runner_recovery_evidence.v3'
+        ? ['recoveryVersion', 'readAt']
+        : []),
     ]);
     if (
       (!v2 && value.schema !== 'openslack.workflow_runner_recovery_evidence.v1') ||
@@ -227,6 +253,24 @@ export function parseWorkflowRunRecoveryEvidence(
     )
       recoveryConflict('Recovery response identity or completeness is invalid.');
     validateWorkflowControlAuthorityRoute(value.route, '$/route');
+    if (
+      value.schema === 'openslack.workflow_runner_recovery_evidence.v3' &&
+      value.snapshot !==
+        createHash('sha256')
+          .update(
+            canonical([
+              value.schema,
+              workspaceId,
+              runId,
+              bindingId ?? '',
+              value.route,
+              value.recoveryVersion,
+              value.readAt,
+            ]),
+          )
+          .digest('hex')
+    )
+      recoveryConflict('Recovery v3 snapshot belongs to another query.');
     const seen = new Set<string>();
     for (const entry of value.bindings) {
       exactFields(entry, [
@@ -311,7 +355,7 @@ export function readRecoveryBinding(
       (item) => item.bindingId === stage.bindingId && item.outcome === 'committed',
     );
     if (!settled) {
-      if (view.schema === 'openslack.workflow_runner_recovery_evidence.v2')
+      if (view.schema !== 'openslack.workflow_runner_recovery_evidence.v1')
         return { stage, resolution: null };
       recoveryConflict('Recovery receipt requires reconciliation.');
     }
@@ -568,3 +612,4 @@ export function assertRecoveryFrontier(
       'Authority phase or generation differs from the committed resume destination.',
     );
 }
+import { createHash } from 'node:crypto';

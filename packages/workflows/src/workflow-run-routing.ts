@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, rename } from 'node:fs/promises';
+import { lstat, readdir, realpath, rename } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
+import {
+  WorkflowReadPathContext,
+  withWorkflowReadValidation,
+  workflowReadPathStat,
+} from './internal/workflow-read-path.js';
 
 import {
   acquireOwnerJournalLock,
@@ -538,27 +543,155 @@ export class WorkflowRunRouteJournal {
    * retired TypeScript execution checks must use this path.
    */
   async locateReadOnly(runId: string): Promise<WorkflowRunRouteJournalEntry | null> {
-    if (!(await this.#rootExists())) return null;
-    await assertOwnerDirectory(this.#root, this.#security);
+    return this.createReadOnlyQuery().locateReadOnly(runId);
+  }
+
+  /** A request-local reader. Discard it after the list/inspection finishes. */
+  createReadOnlyQuery() {
+    const paths = new WorkflowReadPathContext();
+    let quarantine: { revision: string; names: Promise<ReadonlySet<string>> } | undefined;
+    const directory = async (path: string, owner = false) => {
+      try {
+        if (owner)
+          return (
+            await paths.directory(path, { scope: 'workspace' }, async () =>
+              assertOwnerDirectory(await realpath(path), this.#security),
+            )
+          ).revision;
+        const stat = await workflowReadPathStat(path);
+        if (!stat.isDirectory() || stat.isSymbolicLink())
+          throw new TypeError('Unsafe route directory.');
+        return [stat.dev, stat.ino, stat.mode, stat.ctimeNs, stat.mtimeNs].join(':');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+        throw error;
+      }
+    };
+    const revision = (runId?: string) =>
+      withWorkflowReadValidation(async () => {
+        const root = await directory(this.#root, true);
+        if (root === 'missing') return root;
+        const parts = [root, await directory(join(this.#root, 'quarantine'))];
+        if (runId !== undefined) {
+          const name = routeFileName(runId);
+          parts.push(await directory(join(this.#root, 'closed')));
+          for (const path of [
+            join(this.#root, name),
+            join(this.#root, 'active', name),
+            join(this.#root, 'closed', name.slice(0, 2), name),
+          ]) {
+            parts.push(await directory(resolve(path, '..')));
+            try {
+              const stat = await workflowReadPathStat(path);
+              parts.push(
+                [stat.dev, stat.ino, stat.mode, stat.ctimeNs, stat.mtimeNs, stat.size].join(':'),
+              );
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+              parts.push('missing');
+            }
+          }
+        }
+        return parts.join('|');
+      });
+    const readQuarantine = async () => {
+      const identity = await directory(join(this.#root, 'quarantine'));
+      if (quarantine?.revision === identity) return quarantine.names;
+      const names =
+        identity === 'missing'
+          ? Promise.resolve(new Set<string>())
+          : this.#readQuarantineNames(paths);
+      const entry = { revision: identity, names };
+      quarantine = entry;
+      try {
+        return await names;
+      } catch (error) {
+        if (quarantine === entry) quarantine = undefined;
+        throw error;
+      }
+    };
+    const readOptional = async (path: string) => {
+      try {
+        const parent = resolve(path, '..');
+        await paths.directory(parent, { scope: 'workspace' }, async () =>
+          assertOwnerDirectory(await realpath(parent), this.#security),
+        );
+        // Missing receipts need no file open; the enclosing read verifies the
+        // route namespace again. Existing receipts keep the strict owner reader.
+        await lstat(path);
+        return this.#readOptional(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      }
+    };
+    return {
+      revision,
+      locateReadOnly: async (runId: string) => {
+        for (let attempt = 0; ; attempt++) {
+          const before = await revision(runId);
+          if (before === 'missing') return null;
+          try {
+            const result = await this.#locateReadOnly(runId, readQuarantine, readOptional);
+            if (before === (await revision(runId))) return result;
+          } catch (error) {
+            if (before === (await revision(runId))) throw error;
+          }
+          quarantine = undefined;
+          if (attempt === 1)
+            return fail(
+              'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+              'Route evidence changed during read; retry the query.',
+            );
+        }
+      },
+    };
+  }
+
+  async #readQuarantineNames(paths: WorkflowReadPathContext): Promise<ReadonlySet<string>> {
+    const directory = join(this.#root, 'quarantine');
+    try {
+      const before = await paths.directory(directory, { scope: 'workspace' });
+      const entries = await readdir(directory);
+      const after = await paths.directory(directory, { scope: 'workspace' });
+      if (before.revision !== after.revision) {
+        throw new TypeError('Route quarantine changed during enumeration.');
+      }
+      // Quarantine suffixes describe the incident; the first 69 bytes identify the route.
+      return new Set(
+        entries
+          .map((entry) => entry.match(/^[0-9a-f]{64}\.json(?=\.|$)/)?.[0])
+          .filter((name): name is string => name !== undefined),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+      throw error;
+    }
+  }
+
+  async #locateReadOnly(
+    runId: string,
+    readQuarantine: () => Promise<ReadonlySet<string>>,
+    readOptional: (path: string) => Promise<WorkflowRunRouteReceipt | null>,
+  ): Promise<WorkflowRunRouteJournalEntry | null> {
     const name = routeFileName(runId);
     try {
-      const quarantine = await readdir(join(this.#root, 'quarantine')).catch(
-        (error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return [];
-          throw error;
-        },
-      );
-      if (quarantine.some((entry) => entry === name || entry.startsWith(`${name}.`))) {
+      const quarantine = await readQuarantine();
+      if (quarantine.has(name)) {
         return fail(
           'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
           'Requested run route receipt is quarantined and requires operator reconciliation.',
         );
       }
-      return await this.#resolveReceipt(runId, {
-        legacyPath: join(this.#root, name),
-        activePath: join(this.#root, 'active', name),
-        closedPath: join(this.#root, 'closed', name.slice(0, 2), name),
-      });
+      return await this.#resolveReceipt(
+        runId,
+        {
+          legacyPath: join(this.#root, name),
+          activePath: join(this.#root, 'active', name),
+          closedPath: join(this.#root, 'closed', name.slice(0, 2), name),
+        },
+        readOptional,
+      );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       if (
@@ -607,11 +740,12 @@ export class WorkflowRunRouteJournal {
       readonly activePath: string;
       readonly closedPath: string;
     },
+    readOptional = (path: string) => this.#readOptional(path),
   ): Promise<WorkflowRunRouteJournalEntry | null> {
     const [legacy, active, closed] = await Promise.all([
-      paths.legacyPath ? this.#readOptional(paths.legacyPath) : Promise.resolve(null),
-      this.#readOptional(paths.activePath),
-      this.#readOptional(paths.closedPath),
+      paths.legacyPath ? readOptional(paths.legacyPath) : Promise.resolve(null),
+      readOptional(paths.activePath),
+      readOptional(paths.closedPath),
     ]);
     if (legacy) {
       return fail(

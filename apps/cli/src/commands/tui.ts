@@ -82,6 +82,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         if (process.cwd() !== root) {
           process.chdir(root);
         }
+        const { createWorkflowRunReadQuery } = await import('@openslack/workflows');
+        const workflowRunQuery = createWorkflowRunReadQuery(root);
 
         // Pre-fetch dashboard data
         try {
@@ -209,9 +211,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
-            const { findWorkflow, listWorkflowRuns, loadWorkflow } =
-              await import('@openslack/workflows');
-            const workflowRuns = await listWorkflowRuns({ rootDir: root });
+            const workflowRuns = await workflowRunQuery.list();
             const lifecycleBase: Record<
               string,
               {
@@ -224,9 +224,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             > = {};
 
             for (const wf of workflows) {
-              const found = await findWorkflow(wf.name, root);
-              if (!found) continue;
-              const mod = await loadWorkflow(found.path);
+              const loaded = await workflowRunQuery.workflow(wf.name);
+              if (!loaded) continue;
+              const { found, module: mod } = loaded;
               const match = selectWorkflowLifecycleCurrentRun(workflowRuns, wf.name);
               const currentRun = match
                 ? { runId: match.runId, status: match.status, startedAt: match.startedAt }
@@ -252,31 +252,34 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         // Pre-fetch workflow run progress data
         try {
           const {
-            listWorkflowRuns,
-            getWorkflowRunProgress,
-            renderWorkflowRunReadDiagnostic,
+            renderWorkflowRunReadDiagnostics,
+            uniqueWorkflowRunReadDiagnostics,
             WorkflowRunReadError,
             workflowRunReadDiagnostic,
           } = await import('@openslack/workflows');
-          const runs = await listWorkflowRuns({ rootDir: root });
+          const runs = await workflowRunQuery.list();
           const progress = [];
-          const readWarnings = runs.diagnostics.map(renderWorkflowRunReadDiagnostic);
+          const readDiagnostics = [...runs.diagnostics];
           for (const run of runs.slice(0, 20)) {
             try {
-              const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
-              if (item) progress.push(item);
+              const item = await workflowRunQuery.progress(run.runId);
+              if (item) {
+                progress.push(item);
+                readDiagnostics.push(...(item.readDiagnostics ?? []));
+              }
             } catch (error) {
-              readWarnings.push(
+              readDiagnostics.push(
                 ...(error instanceof WorkflowRunReadError
                   ? error.diagnostics
-                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]
-                ).map(renderWorkflowRunReadDiagnostic),
+                  : [workflowRunReadDiagnostic(error, { scope: 'run', runId: run.runId })]),
               );
             }
           }
           data.workflowRunProgress = progress;
           data.workflowRuns = mapWorkflowRunsToViewModel(progress);
-          data.workflowRuns.readWarnings = readWarnings;
+          data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(
+            uniqueWorkflowRunReadDiagnostics(readDiagnostics),
+          );
         } catch {
           data.workflowRunProgress = [];
           data.workflowRuns = mapWorkflowRunsToViewModel([]);

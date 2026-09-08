@@ -426,7 +426,7 @@ export async function reconcileWorkflowBindings(
     validateWorkflowRunRecoveryEvidence(proof);
     if (
       !proof.complete ||
-      proof.schema !== 'openslack.workflow_runner_recovery_evidence.v2' ||
+      proof.schema === 'openslack.workflow_runner_recovery_evidence.v1' ||
       proof.runId !== runId ||
       proof.workspaceId !== route.receipt.workspaceId ||
       canonical(proof.route) !== canonical(route.receipt.route)
@@ -475,7 +475,7 @@ export async function reconcileWorkflowBindings(
     validateWorkflowRunRecoveryEvidence(fresh);
     if (
       !fresh.complete ||
-      fresh.schema !== 'openslack.workflow_runner_recovery_evidence.v2' ||
+      fresh.schema === 'openslack.workflow_runner_recovery_evidence.v1' ||
       fresh.runId !== runId ||
       fresh.workspaceId !== proof.workspaceId ||
       canonical(fresh.route) !== canonical(proof.route)

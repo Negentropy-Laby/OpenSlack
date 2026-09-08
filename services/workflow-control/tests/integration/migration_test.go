@@ -82,6 +82,9 @@ ORDER BY table_name`)
 		"workflow_runner_leases",
 		"workflow_runner_process_sessions",
 		"workflow_runner_reconciliations",
+		"workflow_runner_recovery_pending",
+		"workflow_runner_recovery_records",
+		"workflow_runner_recovery_versions",
 		"workflow_runner_v2_attempt_bindings",
 		"workflow_runner_v2_cancel_bindings",
 		"workflow_runner_v2_decision_bindings",
@@ -151,7 +154,7 @@ WHERE trigger_schema = current_schema()
 
 func TestWorkflowRunnerV2DownMigrationIsIsolatedAndRefusesEvidence(t *testing.T) {
 	t.Run("empty v2 namespace is removable without changing v1 evidence", func(t *testing.T) {
-		pool := testsupport.OpenPostgres(t)
+		pool := testsupport.OpenPostgresAtSchema(t, 10)
 		ctx := context.Background()
 		exactV1 := []byte(`{"schema":"v1-preserved"}`)
 		if _, err := pool.Exec(ctx, `INSERT INTO workflow_runner_jobs (
@@ -180,7 +183,7 @@ clock_timestamp()+interval '1 hour','queued',1,clock_timestamp(),clock_timestamp
 	})
 
 	t.Run("v2 admission evidence prevents destructive rollback", func(t *testing.T) {
-		pool := testsupport.OpenPostgres(t)
+		pool := testsupport.OpenPostgresAtSchema(t, 10)
 		ctx := context.Background()
 		if _, err := pool.Exec(ctx, `INSERT INTO workflow_runner_jobs (
 workspace_id,job_id,workflow_run_id,correlation_id,execution_descriptor_ref,execution_descriptor_hash,

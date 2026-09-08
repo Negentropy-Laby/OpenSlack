@@ -52,7 +52,14 @@ func (service *Service) handleBindingReconciliationPreview(w http.ResponseWriter
 		service.writeStoreError(w, err)
 		return
 	}
-	writeCanonical(w, 200, view)
+	if view.Schema != "openslack.workflow_runner_binding_reconciliation_preview.v1" || view.WorkspaceID != service.workspaceID || view.RunID != r.PathValue("runId") || len(view.Encoded) == 0 || len(view.Encoded) > runnerstore.RecoveryEvidenceMaxResponseBytes {
+		writeFailure(w, 500, "WORKFLOW_RUNNER_INTERNAL", "invalid reconciliation preview")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(200)
+	_, _ = w.Write(view.Encoded)
 }
 func readReconciliationBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.URL.RawQuery != "" || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Content-Encoding") != "" {

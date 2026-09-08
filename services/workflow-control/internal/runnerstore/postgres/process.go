@@ -16,6 +16,11 @@ import (
 )
 
 func (repository *Repository) RecordProcessExit(ctx context.Context, input runnerstore.ProcessExitInput) (runnerstore.JobView, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.JobView, error) {
+		return repository.recordProcessExitOnce(attempt, input)
+	})
+}
+func (repository *Repository) recordProcessExitOnce(ctx context.Context, input runnerstore.ProcessExitInput) (runnerstore.JobView, error) {
 	for label, value := range map[string]string{
 		"workspaceId": input.WorkspaceID, "jobId": input.JobID,
 		"attemptId": input.AttemptID, "leaseId": input.LeaseID,
@@ -205,6 +210,11 @@ LIMIT $1`, input.Limit)
 }
 
 func (repository *Repository) recoverExpiredOne(ctx context.Context, workspaceID, jobID, attemptID, leaseID string, fence int64) (runnerstore.RecoveryResult, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.RecoveryResult, error) {
+		return repository.recoverExpiredOneOnce(attempt, workspaceID, jobID, attemptID, leaseID, fence)
+	})
+}
+func (repository *Repository) recoverExpiredOneOnce(ctx context.Context, workspaceID, jobID, attemptID, leaseID string, fence int64) (runnerstore.RecoveryResult, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return runnerstore.RecoveryResult{}, databaseFailure("begin expired lease recovery", err)

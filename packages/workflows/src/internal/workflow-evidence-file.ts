@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, relative, isAbsolute } from 'node:path';
+import { currentWorkflowReadDirectory } from './workflow-read-path.js';
 import {
   WorkflowRunReadError,
   asWorkflowRunReadError,
@@ -26,9 +27,29 @@ export async function assertWorkflowEvidencePath(
   context: ReadContext = { scope: 'workspace' },
 ): Promise<void> {
   const target = resolve(path);
+  const proof = currentWorkflowReadDirectory();
+  const suffix = proof ? relative(proof.path, target) : undefined;
+  const contained =
+    suffix !== undefined &&
+    suffix !== '..' &&
+    !suffix.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) &&
+    !isAbsolute(suffix);
+  // Ancestors were checked at the logical read boundary and are checked again
+  // before publication. Each file still checks the selected directory identity.
+  if (contained) {
+    const root = await lstat(proof!.path, { bigint: true });
+    if (
+      !root.isDirectory() ||
+      root.isSymbolicLink() ||
+      root.dev !== proof!.dev ||
+      root.ino !== proof!.ino
+    )
+      throw failure('WORKFLOW_RUN_EVIDENCE_PATH_INVALID', context);
+  }
   const components = [target];
   let current = target;
   for (;;) {
+    if (contained && current === proof!.path) break;
     const parent = dirname(current);
     if (parent === current) break;
     components.push(parent);

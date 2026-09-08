@@ -75,6 +75,8 @@ export async function readWorkflowRunnerResponseBytes(
   response: Response,
   options: {
     readonly maxBytes: number;
+    /** Opt-in for explicitly negotiated JSON protocols; other callers retain application/json. */
+    readonly acceptedContentTypes?: readonly string[];
     readonly signal?: AbortSignal;
     readonly validateContentLength: boolean;
     readonly minimumBytes: number;
@@ -98,7 +100,11 @@ export async function readWorkflowRunnerResponseBytes(
   const invalid = (message: string): never => options.failure(message, { kind: 'invalid' });
   try {
     throwIfWorkflowRunnerAborted(options.signal);
-    if (response.headers.get('content-type') !== 'application/json') {
+    if (
+      !(options.acceptedContentTypes ?? ['application/json']).includes(
+        response.headers.get('content-type') ?? '',
+      )
+    ) {
       return invalid(options.messages.contentType);
     }
     const declaredLength = response.headers.get('content-length');

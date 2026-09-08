@@ -172,7 +172,10 @@ describe('workflow run evidence selection', () => {
     const receipt = { receipt: { route: { backend: 'go' } } } as Awaited<
       ReturnType<WorkflowRunRouteJournal['locateReadOnly']>
     >;
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockResolvedValue(receipt);
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
+      locateReadOnly: vi.fn().mockResolvedValue(receipt),
+    });
     const result = await showWorkflowRun('run.routed', { rootDir: root });
     expect(result).toMatchObject({
       evidenceSource: 'typescript-historical',
@@ -222,9 +225,12 @@ describe('workflow run evidence selection', () => {
       join(resolveWorkflowRunProjectionRoot(root, 'ts-local'), 'runs'),
       'not a directory',
     );
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockResolvedValue({
-      receipt: { route: { backend: 'go' } },
-    } as never);
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
+      locateReadOnly: vi.fn().mockResolvedValue({
+        receipt: { route: { backend: 'go' } },
+      }),
+    });
     const result = await listWorkflowRuns({ rootDir: root });
     expect(result.map((run) => run.runId)).toEqual(['run.healthy']);
     expect(result.diagnostics).toEqual(
@@ -246,9 +252,14 @@ describe('workflow run evidence selection', () => {
   it('retains single-copy evidence and the journal ownership diagnostic', async () => {
     const { root, seed } = await fixture();
     await seed('ts-local', 'run.backup');
-    vi.spyOn(WorkflowRunRouteJournal.prototype, 'locateReadOnly').mockRejectedValue(
-      new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'unsafe owner'),
-    );
+    vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
+      locateReadOnly: vi
+        .fn()
+        .mockRejectedValue(
+          new WorkflowRunRoutingError('WORKFLOW_RUN_ROUTE_JOURNAL_UNSAFE', 'unsafe owner'),
+        ),
+    });
     const run = await showWorkflowRun('run.backup', { rootDir: root });
     expect(run?.readDiagnostics).toContainEqual({
       scope: 'run',

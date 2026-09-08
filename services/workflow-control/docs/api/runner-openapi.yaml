@@ -55,11 +55,26 @@ paths:
         a current lease or permits execution. Schema 10 returns explicit v2 pages
         with bindings, settlements, diagnostics and active-attempt records. Clients
         may read legacy v1 from schema 9; reconciliation writes require schema 10.
-        In v2, afterBindingId is a record key and may accompany bindingId.
+        In v2 and v3, afterBindingId is a record key and may accompany bindingId.
+        Schema 11 supports opt-in v3 via Accept. Default requests retain v2.
+        A v3 continuation must echo recoveryVersion and the fixed database readAt
+        with snapshot and cursor; changed versions return a retryable 503.
       security: [{ bearerAuth: [] }]
       x-openslack-no-store-mutation: true
       x-openslack-max-response-bytes: 2097152
       parameters:
+        - name: Accept
+          in: header
+          schema: { type: string }
+          description: Opt into application/vnd.openslack.workflow-run-recovery-evidence.v3+json; old servers retain v1/v2.
+        - name: recoveryVersion
+          in: query
+          schema: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+          description: Positive PostgreSQL BIGINT from the first v3 page; required only with a cursor.
+        - name: readAt
+          in: query
+          schema: { type: string, format: date-time }
+          description: Exact UTC millisecond database read point from the first v3 page; required only with a cursor.
         - $ref: '#/components/parameters/WorkspaceHeader'
         - name: runId
           in: path
@@ -78,19 +93,13 @@ paths:
         '200':
           description: A consistent read-only page with exact original frames.
           content:
-            {
-              application/json:
-                {
-                  schema:
-                    {
-                      oneOf:
-                        [
-                          { $ref: '#/components/schemas/RecoveryEvidence' },
-                          { $ref: '#/components/schemas/RecoveryEvidenceV2' },
-                        ],
-                    },
-                },
-            }
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RecoveryEvidence'
+                  - $ref: '#/components/schemas/RecoveryEvidenceV2'
+            application/vnd.openslack.workflow-run-recovery-evidence.v3+json:
+              schema: { $ref: '#/components/schemas/RecoveryEvidenceV3' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '202': { $ref: '#/components/responses/Reconciliation' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1412,6 +1421,265 @@ components:
             "pattern": "^[0-9a-f]{64}$"
           },
           "committedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+          }
+        }
+      }
+    RecoveryEvidenceV3:
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": [
+          "schema",
+          "workspaceId",
+          "runId",
+          "route",
+          "complete",
+          "snapshot",
+          "nextCursor",
+          "records",
+          "recoveryVersion",
+          "readAt"
+        ],
+        "properties": {
+          "schema": {
+            "const": "openslack.workflow_runner_recovery_evidence.v3"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+          },
+          "route": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": [
+              "backend",
+              "authority",
+              "routingEpoch",
+              "authorityBuildHash"
+            ],
+            "properties": {
+              "backend": {
+                "const": "go"
+              },
+              "authority": {
+                "const": "workflow-control"
+              },
+              "routingEpoch": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "authorityBuildHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "snapshot": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "binding"
+                    },
+                    "value": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "unevaluatedProperties": false,
+                      "required": [
+                        "bindingId",
+                        "state",
+                        "stage",
+                        "stageReceipt",
+                        "resolution",
+                        "resolutionReceipt"
+                      ],
+                      "properties": {
+                        "bindingId": {
+                          "type": "string",
+                          "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+                        },
+                        "state": {
+                          "enum": [
+                            "staged",
+                            "resolved",
+                            "runner_committed",
+                            "completed",
+                            "aborted",
+                            "reconciliation_required"
+                          ]
+                        },
+                        "stage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "stageReceipt": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "resolution": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "resolutionReceipt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "diagnostic"
+                    },
+                    "value": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "unevaluatedProperties": false,
+                      "required": [
+                        "bindingId",
+                        "operation",
+                        "state"
+                      ],
+                      "properties": {
+                        "bindingId": {
+                          "type": "string",
+                          "pattern": "^WFRUNNER-BINDING-[0-9a-f]{64}$"
+                        },
+                        "operation": {
+                          "enum": [
+                            "checkpoint_commit",
+                            "resume_advance",
+                            "effect_authorize",
+                            "effect_complete",
+                            "budget_reserve",
+                            "budget_settle"
+                          ]
+                        },
+                        "state": {
+                          "enum": [
+                            "staged",
+                            "resolved",
+                            "runner_committed",
+                            "aborted",
+                            "reconciliation_required"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "settlement"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "unevaluatedProperties": false,
+                  "required": [
+                    "key",
+                    "kind",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(attempt\\.[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}|(binding|diagnostic|settlement)\\.WFRUNNER-BINDING-[0-9a-f]{64})$"
+                    },
+                    "kind": {
+                      "const": "active_attempt"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "recoveryVersion": {
+            "type": "string",
+            "pattern": "^(?:[1-9][0-9]{0,17}|9223372036854775807|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6][0-9]{0})$"
+          },
+          "readAt": {
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"

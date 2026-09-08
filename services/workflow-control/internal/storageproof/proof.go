@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"reflect"
 
 	"github.com/jackc/pgx/v5"
@@ -99,6 +100,7 @@ func Inspect(ctx context.Context, tx pgx.Tx, c Challenge) (Answer, error) {
 func SameWriter(local, source Answer) bool {
 	return local.Schema == Schema && source.Schema == Schema && local.Challenge == source.Challenge &&
 		local.DatabaseOID == source.DatabaseOID && local.DatabaseOID != 0 && len(local.Relations) == 12 &&
-		reflect.DeepEqual(local.Relations, source.Relations) && local.SchemaVersion == 10 && source.SchemaVersion == 10 &&
+		reflect.DeepEqual(local.Relations, source.Relations) && local.SchemaVersion >= 10 &&
+		local.SchemaVersion <= databaseready.CurrentSchemaVersion && source.SchemaVersion == local.SchemaVersion &&
 		local.Writable && source.Writable && local.FenceEnabled && source.FenceEnabled && local.LockObserved && source.LockObserved
 }

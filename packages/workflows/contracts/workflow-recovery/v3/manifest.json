@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.workflow_recovery_contract.v3",
+  "minimumWriteSchemaVersion": 10,
+  "minimumV3ReadSchemaVersion": 11,
+  "accept": "application/vnd.openslack.workflow-run-recovery-evidence.v3+json",
+  "readSchemas": [
+    "openslack.workflow_runner_recovery_evidence.v1",
+    "openslack.workflow_runner_recovery_evidence.v2",
+    "openslack.workflow_runner_recovery_evidence.v3"
+  ],
+  "maxResponseBytes": 2097152,
+  "artifacts": {
+    "schemas.json": "9dea6908ee789e3ad344335dc70e057281fd86d907b36dc6132b788f9abe8da3",
+    "golden-vectors.json": "7a4d4f7140b8950efcf2ccf38701654f69b834a3e4d77ee73cddb10e4341245b"
+  }
+}

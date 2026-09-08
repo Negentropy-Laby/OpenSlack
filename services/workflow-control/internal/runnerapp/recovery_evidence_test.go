@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/runnerbindingcontract"
 )
 
 func TestRecoveryEvidenceStoreFailuresKeepPublicContract(t *testing.T) {
-	for _, version := range []int64{9, 10} {
+	for _, version := range []int64{9, 10, 11} {
 		for _, tc := range []struct {
 			code   runnerstore.ErrorCode
 			status int
@@ -40,10 +41,16 @@ func TestRecoveryEvidenceStoreFailuresKeepPublicContract(t *testing.T) {
 			service.recoveryV2Store = recoveryV2Reader(func(context.Context, string, string, string, string, string) (runnerstore.RecoveryEvidenceV2, error) {
 				return runnerstore.RecoveryEvidenceV2{}, failure
 			})
+			service.recoveryV3Store = recoveryV3Reader(func(context.Context, runnerstore.RecoveryEvidenceV3Query) (runnerstore.RecoveryEvidenceV3Page, error) {
+				return runnerstore.RecoveryEvidenceV3Page{}, failure
+			})
 			service.handler = service.routes()
 			request := httptest.NewRequest(http.MethodGet, "/v2/runner/runs/run.test/recovery-evidence", nil)
 			request.Header.Set("Authorization", "Bearer "+testToken)
 			request.Header.Set(HeaderWorkspaceID, service.workspaceID)
+			if version == 11 {
+				request.Header.Set("Accept", runnerstore.RecoveryEvidenceV3MediaType)
+			}
 			response := httptest.NewRecorder()
 			service.Handler().ServeHTTP(response, request)
 			if response.Code != tc.status || !strings.Contains(response.Body.String(), tc.public) || strings.Contains(response.Body.String(), "private-") {
@@ -183,5 +190,73 @@ func TestRecoveryEvidenceCancellationReachesTheStore(t *testing.T) {
 	service.Handler().ServeHTTP(response, r)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("cancelled read returned %d", response.Code)
+	}
+}
+
+func TestRecoveryV3ExplicitAccept(t *testing.T) {
+	media := runnerstore.RecoveryEvidenceV3MediaType
+	for _, value := range []string{media, media + ";q=1", media + ";q=0.5", media + ", application/json;q=0.9"} {
+		if !acceptsRecoveryV3(value) {
+			t.Fatal("valid opt-in rejected", value)
+		}
+	}
+	for _, value := range []string{"", "*/*", "application/json", media + ";q=0", media + ";q=0.00", media + ";q=0.000", media + ";q=1.001", media + ";q=NaN", media + ";q=0.1, application/json"} {
+		if acceptsRecoveryV3(value) {
+			t.Fatal("unexpected v3 negotiation", value)
+		}
+	}
+}
+
+type recoveryV3Reader func(context.Context, runnerstore.RecoveryEvidenceV3Query) (runnerstore.RecoveryEvidenceV3Page, error)
+
+func (read recoveryV3Reader) ReadRecoveryEvidenceV3(ctx context.Context, q runnerstore.RecoveryEvidenceV3Query) (runnerstore.RecoveryEvidenceV3Page, error) {
+	return read(ctx, q)
+}
+
+func TestRecoveryV3ContinuationAndCurrentProtocol(t *testing.T) {
+	service := &Service{workspaceID: "workspace.test", tokenHash: sha256.Sum256([]byte(testToken)), schemaVersion: 11}
+	v3Calls, legacyCalls := 0, 0
+	service.recoveryV2Store = recoveryV2Reader(func(context.Context, string, string, string, string, string) (runnerstore.RecoveryEvidenceV2, error) {
+		legacyCalls++
+		return runnerstore.RecoveryEvidenceV2{Schema: runnerstore.RecoveryEvidenceV2Schema, WorkspaceID: "workspace.test", RunID: "run.test", Complete: true, Snapshot: strings.Repeat("a", 64), Records: []runnerstore.RecoveryEvidenceRecord{}}, nil
+	})
+	service.recoveryV3Store = recoveryV3Reader(func(ctx context.Context, q runnerstore.RecoveryEvidenceV3Query) (runnerstore.RecoveryEvidenceV3Page, error) {
+		v3Calls++
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("read deadline missing")
+		}
+		if q.After != "attempt.attempt-1" || q.RecoveryVersion != "9007199254740993" || q.ReadAt != "2026-09-08T00:00:00.000Z" {
+			t.Fatal("continuation changed", q)
+		}
+		view := runnerstore.RecoveryEvidenceV3{Schema: runnerstore.RecoveryEvidenceV3Schema, WorkspaceID: q.WorkspaceID, RunID: q.RunID, Complete: true, Snapshot: q.Snapshot, RecoveryVersion: q.RecoveryVersion, ReadAt: q.ReadAt, Records: []runnerstore.RecoveryEvidenceRecord{}}
+		raw, _ := canonicaljson.Encode(view)
+		return runnerstore.RecoveryEvidenceV3Page{Evidence: view, Bytes: append(raw, '\n')}, nil
+	})
+	service.handler = service.routes()
+	request := func(query, accept string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/v2/runner/runs/run.test/recovery-evidence"+query, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set(HeaderWorkspaceID, service.workspaceID)
+		r.Header.Set("Accept", accept)
+		w := httptest.NewRecorder()
+		service.Handler().ServeHTTP(w, r)
+		return w
+	}
+	for _, accept := range []string{"", runnerstore.RecoveryEvidenceV3MediaType + ";q=0.000"} {
+		if w := request("", accept); w.Code != 200 || w.Header().Get("Content-Type") != "application/json" {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	cursor := "?afterBindingId=attempt.attempt-1&snapshot=" + strings.Repeat("b", 64) + "&recoveryVersion=9007199254740993&readAt=2026-09-08T00:00:00.000Z"
+	for _, query := range []string{"?readAt=2026-09-08T00:00:00.000Z", strings.Replace(cursor, "9007199254740993", "9223372036854775808", 1), strings.Replace(cursor, "2026-09-08", "2026-02-30", 1), cursor + "&unknown=1"} {
+		if w := request(query, runnerstore.RecoveryEvidenceV3MediaType); w.Code != 422 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if w := request(cursor, runnerstore.RecoveryEvidenceV3MediaType); w.Code != 200 || w.Header().Get("Content-Type") != runnerstore.RecoveryEvidenceV3MediaType {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if v3Calls != 1 || legacyCalls != 2 {
+		t.Fatal(v3Calls, legacyCalls)
 	}
 }

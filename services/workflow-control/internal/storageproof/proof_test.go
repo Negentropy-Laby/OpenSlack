@@ -14,6 +14,18 @@ func TestSameWriterRequiresDatabaseLockAndRelationIdentity(t *testing.T) {
 	if !SameWriter(local, local) {
 		t.Fatal("same writer rejected")
 	}
+	upgraded := local
+	upgraded.SchemaVersion = 11
+	if !SameWriter(upgraded, upgraded) || SameWriter(local, upgraded) {
+		t.Fatal("upgraded writer capability differs")
+	}
+	for _, version := range []int64{9, 12} {
+		unsupported := local
+		unsupported.SchemaVersion = version
+		if SameWriter(unsupported, unsupported) {
+			t.Fatal("unsupported schema accepted", version)
+		}
+	}
 	for _, tc := range []struct {
 		name   string
 		change func(*Answer)

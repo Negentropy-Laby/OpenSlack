@@ -15,7 +15,7 @@ type Range struct {
 	Maximum int64
 }
 
-const CurrentSchemaVersion int64 = 10
+const CurrentSchemaVersion int64 = 11
 
 var (
 	ShadowProfile                  = Range{Minimum: 1, Maximum: CurrentSchemaVersion}
@@ -70,4 +70,35 @@ func RequireCleanSchemaVersion(ctx context.Context, database Database, supported
 		return 0, fmt.Errorf("database schema version must be one clean row between %d and %d", supported.Minimum, supported.Maximum)
 	}
 	return version, nil
+}
+
+// RequireRecoveryV3 proves the derived index is maintained by the installed
+// source triggers. Only opt-in schema-11 reads depend on this capability.
+func RequireRecoveryV3(ctx context.Context, database Database) error {
+	var ready bool
+	err := database.QueryRow(ctx, `WITH owner AS (
+ SELECT relnamespace AS oid FROM pg_class WHERE oid=to_regclass('workflow_runner_jobs')),
+ expected(table_name,trigger_name,function_name) AS (VALUES
+ ('workflow_runner_jobs','workflow_runner_recovery_jobs','workflow_runner_refresh_recovery_version'),
+ ('workflow_runner_leases','workflow_runner_recovery_leases','workflow_runner_refresh_recovery_version'),
+ ('workflow_runner_authority_bindings','workflow_runner_recovery_bindings','workflow_runner_refresh_recovery_version'),
+ ('workflow_runner_binding_settlements','workflow_runner_recovery_settlements','workflow_runner_refresh_recovery_version'),
+ ('workflow_runner_recovery_pending','workflow_runner_recovery_flush','workflow_runner_flush_recovery_versions'))
+ SELECT (SELECT count(*)=5 FROM expected e JOIN pg_class c ON c.relname=e.table_name AND c.relnamespace=(SELECT oid FROM owner)
+ JOIN pg_trigger t ON t.tgrelid=c.oid AND t.tgname=e.trigger_name AND t.tgenabled='A'
+ JOIN pg_proc p ON p.oid=t.tgfoid AND p.proname=e.function_name AND p.pronamespace=c.relnamespace
+ JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE ('search_path=pg_catalog, '||quote_ident(n.nspname)||', pg_temp')=ANY(p.proconfig)
+ AND (e.table_name<>'workflow_runner_recovery_pending' OR (t.tgdeferrable AND t.tginitdeferred)))
+ AND (SELECT count(*)=4 FROM pg_class c JOIN pg_index i ON i.indexrelid=c.oid
+ WHERE c.relnamespace=(SELECT oid FROM owner) AND i.indisvalid AND i.indisready AND c.relname IN
+ ('workflow_runner_recovery_versions_pkey','workflow_runner_recovery_records_pkey',
+ 'workflow_runner_recovery_binding_page_idx','workflow_runner_binding_keyset_idx'))`).Scan(&ready)
+	if err != nil {
+		return fmt.Errorf("read recovery v3 capabilities: %w", err)
+	}
+	if !ready {
+		return fmt.Errorf("recovery v3 index or maintenance capability is missing")
+	}
+	return nil
 }

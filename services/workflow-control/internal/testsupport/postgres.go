@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	workflowcontrol "github.com/Negentropy-Laby/OpenSlack/services/workflow-control"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/shadowstore"
 )
 
@@ -41,6 +42,14 @@ func OpenPostgres(t testing.TB) *pgxpool.Pool {
 // qualification tests. The tracer observes only the isolated test pool; the
 // administrative connection remains outside the measurement.
 func OpenPostgresWithTracer(t testing.TB, tracer pgx.QueryTracer) *pgxpool.Pool {
+	return openPostgresAtSchema(t, tracer, int(databaseready.CurrentSchemaVersion))
+}
+
+// OpenPostgresAtSchema seeds a real historical schema for forward upgrade tests.
+func OpenPostgresAtSchema(t testing.TB, version int) *pgxpool.Pool {
+	return openPostgresAtSchema(t, nil, version)
+}
+func openPostgresAtSchema(t testing.TB, tracer pgx.QueryTracer, version int) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" {
@@ -79,7 +88,7 @@ func OpenPostgresWithTracer(t testing.TB, tracer pgx.QueryTracer) *pgxpool.Pool 
 		admin.Close()
 	})
 
-	for _, migrationPath := range migrationPaths(t) {
+	for _, migrationPath := range migrationsThrough(t, version) {
 		migration, err := os.ReadFile(migrationPath)
 		if err != nil {
 			t.Fatalf("read migration %s: %v", filepath.Base(migrationPath), err)
@@ -94,6 +103,9 @@ func OpenPostgresWithTracer(t testing.TB, tracer pgx.QueryTracer) *pgxpool.Pool 
 // OpenPersistentSchema creates or reopens a schema that survives between
 // separate seed and verification test processes. The caller must drop it.
 func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Pool {
+	return OpenPersistentSchemaAtVersion(t, schema, migrate, int(databaseready.CurrentSchemaVersion))
+}
+func OpenPersistentSchemaAtVersion(t testing.TB, schema string, migrate bool, version int) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" {
@@ -131,7 +143,7 @@ func OpenPersistentSchema(t testing.TB, schema string, migrate bool) *pgxpool.Po
 	config.ConnConfig.RuntimeParams["search_path"] = schema
 	pool := openReadyPersistentPool(t, config, "persistent PostgreSQL schema")
 	if migrate {
-		for _, migrationPath := range migrationPaths(t) {
+		for _, migrationPath := range migrationsThrough(t, version) {
 			migration, err := os.ReadFile(migrationPath)
 			if err != nil {
 				pool.Close()
@@ -276,6 +288,7 @@ func migrationPaths(t testing.TB) []string {
 		filepath.Join(migrationRoot, "000008_deliver_workflow_runner_authority_bindings.up.sql"),
 		filepath.Join(migrationRoot, "000009_index_workflow_runner_recovery_evidence.up.sql"),
 		filepath.Join(migrationRoot, "000010_reconcile_workflow_runner_bindings.up.sql"),
+		filepath.Join(migrationRoot, "000011_index_workflow_runner_recovery_pages.up.sql"),
 	}
 }
 
@@ -286,4 +299,12 @@ func randomSchema(t testing.TB) string {
 		t.Fatalf("generate isolated PostgreSQL schema: %v", err)
 	}
 	return "workflow_control_shadow_test_" + hex.EncodeToString(raw)
+}
+
+func migrationsThrough(t testing.TB, version int) []string {
+	paths := migrationPaths(t)
+	if version < 1 || version > len(paths) {
+		t.Fatalf("unsupported test schema %d", version)
+	}
+	return paths[:version]
 }

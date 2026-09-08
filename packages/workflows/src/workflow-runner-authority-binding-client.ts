@@ -3,6 +3,7 @@ import {
   parseWorkflowRunRecoveryEvidence,
   validateWorkflowRunRecoveryEvidence,
   WorkflowRunRecoveryError,
+  WORKFLOW_RECOVERY_V3_MEDIA_TYPE,
   type WorkflowRunRecoveryEvidencePort,
   type WorkflowRunRecoveryEvidence,
 } from './workflow-run-recovery-evidence.js';
@@ -248,6 +249,13 @@ export function createWorkflowRunnerAuthorityBindingClient(
           'Recovery run ID is invalid.',
         );
       let result: WorkflowRunRecoveryEvidence | undefined;
+      const collected = {
+        bindings: [] as Array<WorkflowRunRecoveryEvidence['bindings'][number]>,
+        settlements: [] as Array<NonNullable<WorkflowRunRecoveryEvidence['settlements']>[number]>,
+        unfinished: [] as Array<WorkflowRunRecoveryEvidence['unfinished'][number]>,
+        activeAttempts: [] as string[],
+        recordKeys: [] as string[],
+      };
       const seen = new Set<string>();
       for (;;) {
         throwIfWorkflowRunnerAborted(signal);
@@ -256,13 +264,25 @@ export function createWorkflowRunnerAuthorityBindingClient(
         if (result?.nextCursor) {
           params.set('afterBindingId', result.nextCursor);
           params.set('snapshot', result.snapshot);
+          if (result.schema === 'openslack.workflow_runner_recovery_evidence.v3') {
+            params.set('recoveryVersion', result.recoveryVersion!);
+            params.set('readAt', result.readAt!);
+          }
         }
         const query = params.size ? `?${params}` : '';
         let response: Response;
         try {
           response = await request(
             `${origin}/v2/runner/runs/${encodeURIComponent(runId)}/recovery-evidence${query}`,
-            { method: 'GET', headers: commonHeaders, redirect: 'error', signal },
+            {
+              method: 'GET',
+              headers: {
+                ...commonHeaders,
+                Accept: `${WORKFLOW_RECOVERY_V3_MEDIA_TYPE}, application/json;q=0.9`,
+              },
+              redirect: 'error',
+              signal,
+            },
           );
         } catch (cause) {
           if (signal?.aborted) throw new WorkflowRunnerOperationCancelledError(cause);
@@ -284,6 +304,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
         const bytes = await readWorkflowRunnerResponseBytes(response, {
           // Same per-page bound as the runner HTTP response contract.
           maxBytes: 2 * 1024 * 1024,
+          acceptedContentTypes: ['application/json', WORKFLOW_RECOVERY_V3_MEDIA_TYPE],
           validateContentLength: true,
           minimumBytes: 1,
           signal,
@@ -324,9 +345,19 @@ export function createWorkflowRunnerAuthorityBindingClient(
           selectedBindingId,
         );
         if (
+          (response.headers.get('content-type') === WORKFLOW_RECOVERY_V3_MEDIA_TYPE) !==
+          (page.schema === 'openslack.workflow_runner_recovery_evidence.v3')
+        )
+          throw new WorkflowRunRecoveryError(
+            'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
+            'Recovery media type and schema differ.',
+          );
+        if (
           result &&
           (page.schema !== result.schema ||
             page.snapshot !== result.snapshot ||
+            page.recoveryVersion !== result.recoveryVersion ||
+            page.readAt !== result.readAt ||
             canonical(page.route) !== canonical(result.route) ||
             (page.schema === 'openslack.workflow_runner_recovery_evidence.v1' &&
               (canonical(page.unfinished) !== canonical(result.unfinished) ||
@@ -336,7 +367,7 @@ export function createWorkflowRunnerAuthorityBindingClient(
             'WORKFLOW_RUN_RECOVERY_UNKNOWN',
             'Recovery snapshot changed between pages.',
           );
-        if (page.schema === 'openslack.workflow_runner_recovery_evidence.v2') {
+        if (page.schema !== 'openslack.workflow_runner_recovery_evidence.v1') {
           for (const key of page.recordKeys ?? []) {
             if (seen.has(key) || (result?.nextCursor && key <= result.nextCursor))
               throw new WorkflowRunRecoveryError(
@@ -366,15 +397,22 @@ export function createWorkflowRunnerAuthorityBindingClient(
             'WORKFLOW_RUN_RECOVERY_RECONCILIATION_REQUIRED',
             'Recovery page cursor does not advance.',
           );
+        collected.bindings.push(...page.bindings);
+        if (page.schema !== 'openslack.workflow_runner_recovery_evidence.v1') {
+          collected.settlements.push(...(page.settlements ?? []));
+          collected.unfinished.push(...page.unfinished);
+          collected.activeAttempts.push(...page.activeAttempts);
+          collected.recordKeys.push(...(page.recordKeys ?? []));
+        }
         result = {
           ...page,
-          bindings: [...(result?.bindings ?? []), ...page.bindings],
-          ...(page.schema === 'openslack.workflow_runner_recovery_evidence.v2'
+          bindings: collected.bindings,
+          ...(page.schema !== 'openslack.workflow_runner_recovery_evidence.v1'
             ? {
-                settlements: [...(result?.settlements ?? []), ...(page.settlements ?? [])],
-                unfinished: [...(result?.unfinished ?? []), ...page.unfinished],
-                activeAttempts: [...(result?.activeAttempts ?? []), ...page.activeAttempts],
-                recordKeys: [...(result?.recordKeys ?? []), ...(page.recordKeys ?? [])],
+                settlements: collected.settlements,
+                unfinished: collected.unfinished,
+                activeAttempts: collected.activeAttempts,
+                recordKeys: collected.recordKeys,
               }
             : {}),
         };

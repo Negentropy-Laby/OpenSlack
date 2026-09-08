@@ -1231,11 +1231,11 @@ does not fall back to direct in-process execution.
 | `openslack collaboration workflow runs reconcile-bindings <runId> [--binding-id <id>]` | Preview exact binding conclusions without business writes; requires recovery v2 |
 | `openslack collaboration workflow runs reconcile-bindings <runId> --apply` | Save provable closures, report partial results, and pause only a fully reconciled inactive run |
 
-Reconciliation requires schema 10 and the same verified writable PostgreSQL as the source writer.
+Reconciliation requires schema 10 or a compatible newer schema and the same verified writable PostgreSQL as the source writer.
 It never invents historical delivery or ACKs. Unknown outcomes remain blocked. Once the run is
 paused, repair a diagnosed local cache explicitly if needed, then resume normally with a new
 execution identity. `repair-checkpoints --apply` changes only local cache files and preserves
-original bytes; it does not settle Go bindings or start execution. Retain schema 10, fences and
+original bytes; it does not settle Go bindings or start execution. Retain schema 11 read metadata, schema 10 fences and
 settlement evidence when rolling back to a compatible build.
 
 ### Workflow Discovery

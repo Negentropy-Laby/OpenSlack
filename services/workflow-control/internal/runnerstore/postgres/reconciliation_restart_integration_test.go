@@ -11,6 +11,7 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore"
 	authoritypostgres "github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/authoritystore/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/canonicaljson"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/storageproof"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
@@ -18,7 +19,7 @@ import (
 )
 
 // Seed and verify run in separate Go processes around a real PostgreSQL restart.
-// Both fixtures begin at schema 9, then apply migration 10 without rewriting any
+// Both fixtures begin at schema 9, then apply migrations 10 and 11 without rewriting any
 // original stage, resolution, receipt, event or ACK bytes.
 func TestBindingReconciliationUpgradeRestart(t *testing.T) {
 	requireGS9F2(t)
@@ -37,20 +38,13 @@ func TestBindingReconciliationUpgradeRestart(t *testing.T) {
 	for _, outcome := range []string{"committed", "not_committed"} {
 		t.Run(outcome, func(t *testing.T) {
 			schema := base + "_" + outcome
-			pool := testsupport.OpenPersistentSchema(t, schema, phase == "seed")
+			pool := testsupport.OpenPersistentSchemaAtVersion(t, schema, phase == "seed", 9)
 			ctx := context.Background()
 			source := authoritypostgres.New(pool, 10)
 			repo := NewForV2RuntimeDelivery(pool, runnerstore.V2AuthorityPorts{}).WithReconciliationWriter(func(ctx context.Context, c storageproof.Challenge, _ int64) (storageproof.Answer, error) {
 				return source.ProveStorage(ctx, c)
 			}, "recovery-test")
 			if phase == "seed" {
-				down, err := os.ReadFile(v2MigrationPath(t, "000010_reconcile_workflow_runner_bindings.down.sql"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err = pool.Exec(ctx, string(down)); err != nil {
-					t.Fatal(err)
-				}
 				_, writer, v, record := reconciliationFixtureInPool(t, pool, 9, runnerbindingcontract.OperationResumeAdvance, "staged")
 				stage, _ := runnerbindingcontract.ParseStageBytes(v.ExactStageBytes)
 				hash, _ := runnerbindingcontract.HashStage(stage)
@@ -65,6 +59,13 @@ func TestBindingReconciliationUpgradeRestart(t *testing.T) {
 					t.Fatal(err)
 				}
 				if _, err = pool.Exec(ctx, string(up)+"\nUPDATE schema_migrations SET version=10;"); err != nil {
+					t.Fatal(err)
+				}
+				migration11, err := os.ReadFile(v2MigrationPath(t, "000011_index_workflow_runner_recovery_pages.up.sql"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = pool.Exec(ctx, string(migration11)+"\nUPDATE schema_migrations SET version=11;"); err != nil {
 					t.Fatal(err)
 				}
 				original, err := scanAuthorityBindingView(pool.QueryRow(ctx, `SELECT `+authorityBindingViewColumns+` FROM workflow_runner_authority_bindings WHERE binding_id=$1`, v.BindingID))
@@ -87,8 +88,12 @@ func TestBindingReconciliationUpgradeRestart(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if _, err = pool.Exec(ctx, `CREATE TABLE reconciliation_restart_evidence(started_at timestamptz,process text,request bytea,receipt bytea,stage bytea,stage_receipt bytea,pause bytea);
-INSERT INTO reconciliation_restart_evidence VALUES(pg_postmaster_start_time(),$1,$2,$3,$4,$5,$6)`, process, request.ExactBytes, receipt, v.ExactStageBytes, v.ExactStageReceipt, pause); err != nil {
+				page, err := repo.ReadRecoveryEvidenceV3(ctx, runnerstore.RecoveryEvidenceV3Query{WorkspaceID: v.WorkspaceID, RunID: v.RunID})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = pool.Exec(ctx, `CREATE TABLE reconciliation_restart_evidence(started_at timestamptz,process text,request bytea,receipt bytea,stage bytea,stage_receipt bytea,pause bytea,recovery_page bytea);
+INSERT INTO reconciliation_restart_evidence VALUES(pg_postmaster_start_time(),$1,$2,$3,$4,$5,$6,$7)`, process, request.ExactBytes, receipt, v.ExactStageBytes, v.ExactStageReceipt, pause, page.Bytes); err != nil {
 					t.Fatal(err)
 				}
 				return
@@ -96,8 +101,8 @@ INSERT INTO reconciliation_restart_evidence VALUES(pg_postmaster_start_time(),$1
 			defer testsupport.DropSchema(t, schema)
 			var started, now time.Time
 			var previous string
-			var request, receipt, stageBytes, stageReceipt, pause []byte
-			if err = pool.QueryRow(ctx, `SELECT started_at,process,request,receipt,stage,stage_receipt,pause,pg_postmaster_start_time() FROM reconciliation_restart_evidence`).Scan(&started, &previous, &request, &receipt, &stageBytes, &stageReceipt, &pause, &now); err != nil {
+			var request, receipt, stageBytes, stageReceipt, pause, recoveryPage []byte
+			if err = pool.QueryRow(ctx, `SELECT started_at,process,request,receipt,stage,stage_receipt,pause,recovery_page,pg_postmaster_start_time() FROM reconciliation_restart_evidence`).Scan(&started, &previous, &request, &receipt, &stageBytes, &stageReceipt, &pause, &recoveryPage, &now); err != nil {
 				t.Fatal(err)
 			}
 			if started.Equal(now) || previous == process {
@@ -110,6 +115,19 @@ INSERT INTO reconciliation_restart_evidence VALUES(pg_postmaster_start_time(),$1
 			replay, err := repo.ApplyBindingReconciliation(ctx, prepared)
 			if err != nil || !bytes.Equal(replay, receipt) {
 				t.Fatal("restart changed exact settlement", err)
+			}
+			var savedPage runnerstore.RecoveryEvidenceV3
+			if err = json.Unmarshal(recoveryPage, &savedPage); err != nil || len(savedPage.Records) < 2 {
+				t.Fatal("restart v3 evidence missing", err)
+			}
+			continuation, err := repo.ReadRecoveryEvidenceV3(ctx, runnerstore.RecoveryEvidenceV3Query{WorkspaceID: savedPage.WorkspaceID, RunID: savedPage.RunID, After: savedPage.Records[0].Key, Snapshot: savedPage.Snapshot, ReadAt: savedPage.ReadAt, RecoveryVersion: savedPage.RecoveryVersion})
+			if err != nil {
+				t.Fatal("pre-restart v3 cursor failed", err)
+			}
+			expectedRecords, _ := canonicaljson.Encode(savedPage.Records[1:])
+			actualRecords, _ := canonicaljson.Encode(continuation.Evidence.Records)
+			if !bytes.Equal(expectedRecords, actualRecords) {
+				t.Fatal("restart changed paged evidence")
 			}
 			point, err := repo.ReadBindingSettlementReceipt(ctx, prepared.Value.WorkspaceID, prepared.Value.RunID, prepared.IdempotencyKey)
 			if err != nil || !bytes.Equal(point, receipt) {

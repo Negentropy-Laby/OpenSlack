@@ -37,6 +37,17 @@ type activeAttempt struct {
 }
 
 func (repository *Repository) RecordEvent(ctx context.Context, input runnerstore.RecordEventInput) (runnerstore.RecordedEvent, error) {
+	return retryRecoveryTransaction(ctx, repository, func(context.Context) (string, error) {
+		if input.Message.Kind == runnerprotocol.KindTerminal || input.Message.Kind == runnerprotocol.KindCancelAck {
+			return "", nil
+		}
+		return *input.Message.LeaseID, nil
+	}, func(attempt context.Context) (runnerstore.RecordedEvent, error) {
+		return repository.recordEventOnce(attempt, input)
+	})
+}
+
+func (repository *Repository) recordEventOnce(ctx context.Context, input runnerstore.RecordEventInput) (runnerstore.RecordedEvent, error) {
 	prepared, err := runnerstore.ValidateRecordEventInput(input)
 	if err != nil {
 		return runnerstore.RecordedEvent{}, err
@@ -175,6 +186,9 @@ func (repository *Repository) RecordEvent(ctx context.Context, input runnerstore
 		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorConflict, "runner job event CAS lost", nil)
 	}
 	if err := repository.commit(ctx, tx); err != nil {
+		if recoveryMetadataAbort(err) != nil {
+			return runnerstore.RecordedEvent{}, err
+		}
 		return repository.resolveEventCommit(input, prepared, fingerprint, err)
 	}
 	return runnerstore.RecordedEvent{
@@ -469,25 +483,37 @@ func (repository *Repository) resolveEventCommit(input runnerstore.RecordEventIn
 }
 
 func (repository *Repository) persistEventReconciliation(ctx context.Context, input runnerstore.RecordEventInput, prepared runnerprotocol.PreparedMessage, fingerprint []byte, commitErr error) (runnerstore.RecordedEvent, error) {
+	// Only the reconciliation transaction is retried. Preserve the original unknown
+	// cause after classification so it cannot restart the normal execution path.
+	result, err := retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.RecordedEvent, error) {
+		return repository.persistEventReconciliationOnce(attempt, input, prepared, fingerprint)
+	})
+	if err != nil {
+		err = errors.Join(err, commitErr)
+	}
+	return result, err
+}
+
+func (repository *Repository) persistEventReconciliationOnce(ctx context.Context, input runnerstore.RecordEventInput, prepared runnerprotocol.PreparedMessage, fingerprint []byte) (runnerstore.RecordedEvent, error) {
 	message := input.Message
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
-		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "begin event reconciliation", errors.Join(commitErr, err))
+		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "begin event reconciliation", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	if err := lockScopes(ctx, tx, prepared.IdempotencyKey, message.WorkspaceID, *message.JobID); err != nil {
-		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock event reconciliation", errors.Join(commitErr, err))
+		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock event reconciliation", err)
 	}
 	current, err := readActiveAttempt(tx.QueryRow(ctx, activeAttemptForUpdateSQL, message.WorkspaceID, *message.JobID))
 	if err != nil {
-		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "read event reconciliation attempt", errors.Join(commitErr, err))
+		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "read event reconciliation attempt", err)
 	}
 	if current.currentFence != *message.FencingToken || current.currentAttemptID != *message.AttemptID {
-		return runnerstore.RecordedEvent{}, repository.staleFence("event reconciliation found a newer attempt", commitErr)
+		return runnerstore.RecordedEvent{}, repository.staleFence("event reconciliation found a newer attempt", nil)
 	}
 	if result, raw, readErr := readRecordedEvent(tx.QueryRow(ctx, eventReceiptByKeySQL, prepared.IdempotencyKey)); readErr == nil {
 		if subtle.ConstantTimeCompare(raw, fingerprint) != 1 {
-			return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "event reconciliation fingerprint differs", commitErr)
+			return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "event reconciliation fingerprint differs", nil)
 		}
 		return result, nil
 	} else if !errors.Is(readErr, pgx.ErrNoRows) {
@@ -552,7 +578,7 @@ WHERE workspace_id=$3 AND job_id=$4`, reconciliationID, now, message.WorkspaceID
 		return runnerstore.RecordedEvent{}, mapWriteFailure("mark reconciled runner job", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "commit event reconciliation", errors.Join(commitErr, err))
+		return runnerstore.RecordedEvent{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "commit event reconciliation", err)
 	}
 	return runnerstore.RecordedEvent{
 		Receipt: receipt, ReceiptBytes: receiptPrepared.Body,

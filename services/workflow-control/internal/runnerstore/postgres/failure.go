@@ -11,6 +11,11 @@ import (
 )
 
 func (repository *Repository) RecordAttemptFailure(ctx context.Context, input runnerstore.AttemptFailureInput) (runnerstore.JobView, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.JobView, error) {
+		return repository.recordAttemptFailureOnce(attempt, input)
+	})
+}
+func (repository *Repository) recordAttemptFailureOnce(ctx context.Context, input runnerstore.AttemptFailureInput) (runnerstore.JobView, error) {
 	for label, value := range map[string]string{"workspaceId": input.WorkspaceID, "jobId": input.JobID, "attemptId": input.AttemptID, "leaseId": input.LeaseID} {
 		if err := validateID(value, label); err != nil {
 			return runnerstore.JobView{}, err

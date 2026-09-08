@@ -81,8 +81,29 @@ jobs:
       - name: Tests
         run: npx vitest run
 
+      - name: Collected test-count drift
+        run: node scripts/verify-test-counts.mjs
+
       - name: Self eval
         run: bun run openslack self eval --suite golden
 
       - name: Security scan (black zone check)
         run: bun run openslack self classify-pr --paths "$(git diff --name-only HEAD~1 || echo docs/test.md)" --format json
+
+  macos-read-paths:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Native APFS identity and query boundaries
+        run: node node_modules/vitest/vitest.mjs run packages/workflows/src/__tests__/workflow-read-path.test.ts packages/workflows/src/__tests__/workflow-run-read-query.test.ts
