@@ -88,7 +88,8 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 
 	t.Run("ACK deadline is the lease and job hard bound rather than thirty seconds", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
-		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		// send creates a real context deadline; keep its clock in the same domain.
+		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		store.expectedDeadline = lease.LeaseExpiresAt
@@ -119,7 +120,8 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 	t.Run("worker exit interrupts an outstanding control ACK wait", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		store.blockAcknowledgement = true
-		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		// send creates a real context deadline; keep its clock in the same domain.
+		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		close(process.done)
@@ -136,7 +138,8 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 	t.Run("durable ACK wins when process exit and acknowledgement complete together", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		store.acknowledgeAfterCancellation = true
-		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+		// send creates a real context deadline; keep its clock in the same domain.
+		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		close(process.done)

@@ -245,7 +245,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerV2RuntimeDeliverySchedulerTest": {
 			Path:   "services/workflow-control/internal/runnerscheduler/session_v2_runtime_delivery_test.go",
-			SHA256: "4e9d923339de96edf93412fef59f548f1cf47e3986919363f4dd17800a41b8c5",
+			SHA256: "9d66a82fb765873d32a09c7c729cb738371a67fe1e5126808a4256ecb51da916",
 		},
 		"runnerV2RuntimeDeliveryConfigSource": {
 			Path:   "services/workflow-control/internal/runnerconfig/config.go",
