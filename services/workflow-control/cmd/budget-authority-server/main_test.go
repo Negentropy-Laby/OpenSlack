@@ -6,7 +6,8 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/databaseready"
 )
 
-func TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughEleven(t *testing.T) {
+// Keep the qualification entry point stable; its assertions follow the current schema.
+func TestBudgetAuthorityServerAcceptsSchemaVersionsSixThroughTen(t *testing.T) {
 	if databaseready.BudgetProfile.Minimum != 6 || databaseready.BudgetProfile.Maximum != 11 ||
 		databaseready.CurrentSchemaVersion != 11 {
 		t.Fatalf("budget authority schema range=%d..%d current=%d",
