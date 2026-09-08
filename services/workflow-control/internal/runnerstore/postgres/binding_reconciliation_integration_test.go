@@ -95,7 +95,7 @@ func TestBindingReconciliationRejectsClonedDatabaseLockDomain(t *testing.T) {
 	defer pool.Close()
 	// Clone only this test's freshly created database, never the configured database.
 	migrations, err := filepath.Glob(filepath.Join(filepath.Dir(v2MigrationPath(t, "000010_reconcile_workflow_runner_bindings.up.sql")), "*.up.sql"))
-	if err != nil || len(migrations) != 10 {
+	if err != nil || len(migrations) != 11 {
 		pool.Close()
 		t.Fatal("migration inventory changed", err)
 	}

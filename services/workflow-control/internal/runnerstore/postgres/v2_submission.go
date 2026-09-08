@@ -25,6 +25,11 @@ JOIN workflow_runner_jobs j
 WHERE r.idempotency_key=$1`
 
 func (repository *Repository) SubmitV2(ctx context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.V2JobReceipt, error) {
+		return repository.submitV2Once(attempt, input)
+	})
+}
+func (repository *Repository) submitV2Once(ctx context.Context, input runnerstore.V2SubmitInput) (runnerstore.V2JobReceipt, error) {
 	if err := runnerstore.ValidateV2SubmitInputForProfile(input, repository.v2RuntimeDelivery); err != nil {
 		return runnerstore.V2JobReceipt{}, err
 	}
@@ -115,6 +120,9 @@ INSERT INTO workflow_runner_jobs (
 		return runnerstore.V2JobReceipt{}, mapWriteFailure("insert v2 runner job receipt", err)
 	}
 	if err := repository.commit(ctx, tx); err != nil {
+		if recoveryMetadataAbort(err) != nil {
+			return runnerstore.V2JobReceipt{}, err
+		}
 		recovered, raw, readErr := readV2JobReceipt(repository.pool.QueryRow(ctx, v2JobReceiptByKeySQL, input.IdempotencyKey))
 		if readErr == nil && subtle.ConstantTimeCompare(raw, fingerprint) == 1 {
 			if validateErr := runnerstore.ValidateV2JobReceiptForSubmit(recovered, input); validateErr == nil {

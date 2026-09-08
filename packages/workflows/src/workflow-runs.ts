@@ -3,7 +3,8 @@ import {
   openWorkflowRunReadOnly,
   locateWorkflowRunProjection,
   WorkflowRunReadContext,
-  verifyWorkflowRunProjectionLocation,
+  withWorkflowRunRead,
+  retryWorkflowRunRead,
 } from './workflow-run-projection.js';
 import {
   WorkflowRunReadError,
@@ -29,7 +30,7 @@ export async function listWorkflowRuns(
 ): Promise<WorkflowRunList> {
   const rootDir = options.rootDir ?? process.cwd();
   const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
-  readContext.assertRoot(rootDir);
+  await readContext.assertRoot(rootDir);
   const diagnostics: WorkflowRunReadDiagnostic[] = [];
   const roots = await Promise.all([readContext.entries('ts-local'), readContext.entries('go')]);
   diagnostics.push(...roots.flatMap((root) => root.diagnostics));
@@ -62,8 +63,20 @@ export async function showWorkflowRun(
   options: { rootDir?: string; readContext?: WorkflowRunReadContext } = {},
 ): Promise<RunStatus | null> {
   const rootDir = options.rootDir ?? process.cwd();
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
+  return retryWorkflowRunRead(() =>
+    showWorkflowRunOnce(runId, { ...options, rootDir, readContext }),
+  );
+}
+
+async function showWorkflowRunOnce(
+  runId: string,
+  options: { rootDir?: string; readContext?: WorkflowRunReadContext } = {},
+): Promise<RunStatus | null> {
+  const rootDir = options.rootDir ?? process.cwd();
+  const readContext = options.readContext ?? new WorkflowRunReadContext(rootDir);
   const location = await locateWorkflowRunProjection(rootDir, runId, {
-    readContext: options.readContext,
+    readContext,
   });
   if (location.state === 'missing') return null;
   if (location.state !== 'found')
@@ -71,9 +84,12 @@ export async function showWorkflowRun(
   const { backend, diagnostics } = location;
   let run: RunStatus | null;
   try {
-    await verifyWorkflowRunProjectionLocation(runId, location);
-    run = await openWorkflowRunReadOnly(rootDir, backend).getRunStatus(runId);
-    await verifyWorkflowRunProjectionLocation(runId, location);
+    run = await withWorkflowRunRead(
+      runId,
+      location,
+      () => openWorkflowRunReadOnly(rootDir, backend, readContext).getRunStatus(runId),
+      readContext,
+    );
   } catch (error) {
     throw asWorkflowRunReadError(error, { scope: 'run', runId, backend });
   }

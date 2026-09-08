@@ -77,6 +77,12 @@ func NewWithCommitter(pool *pgxpool.Pool, commit func(context.Context, pgx.Tx) e
 }
 
 func (repository *Repository) Submit(ctx context.Context, input runnerstore.SubmitInput) (runnerstore.JobReceipt, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.JobReceipt, error) {
+		return repository.submitOnce(attempt, input)
+	})
+}
+
+func (repository *Repository) submitOnce(ctx context.Context, input runnerstore.SubmitInput) (runnerstore.JobReceipt, error) {
 	if err := runnerstore.ValidateSubmitInput(input); err != nil {
 		return runnerstore.JobReceipt{}, err
 	}
@@ -162,6 +168,9 @@ func (repository *Repository) Submit(ctx context.Context, input runnerstore.Subm
 		return runnerstore.JobReceipt{}, mapWriteFailure("insert runner job receipt", err)
 	}
 	if err := repository.commit(ctx, tx); err != nil {
+		if recoveryMetadataAbort(err) != nil {
+			return runnerstore.JobReceipt{}, err
+		}
 		return repository.resolveSubmitCommit(input, fingerprint, err)
 	}
 	return receipt, nil
@@ -219,32 +228,44 @@ func (repository *Repository) resolveSubmitCommit(input runnerstore.SubmitInput,
 }
 
 func (repository *Repository) persistSubmitReconciliation(ctx context.Context, input runnerstore.SubmitInput, fingerprint []byte, commitErr error) (runnerstore.JobReceipt, error) {
+	// Only the reconciliation transaction is retried. Preserve the original unknown
+	// cause after classification so it cannot restart the normal execution path.
+	result, err := retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.JobReceipt, error) {
+		return repository.persistSubmitReconciliationOnce(attempt, input, fingerprint)
+	})
+	if err != nil {
+		err = errors.Join(err, commitErr)
+	}
+	return result, err
+}
+
+func (repository *Repository) persistSubmitReconciliationOnce(ctx context.Context, input runnerstore.SubmitInput, fingerprint []byte) (runnerstore.JobReceipt, error) {
 	// A PostgreSQL primary has no delayed-visibility commit. Once a fresh
 	// transaction proves the exact receipt absent, create a stable
 	// reconciliation job instead of retrying the possibly accepted execution.
 	spec := input.Prepared.Spec
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "begin job reconciliation", errors.Join(commitErr, err))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "begin job reconciliation", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	if err := lockScopes(ctx, tx, input.IdempotencyKey, spec.WorkspaceID, spec.JobID); err != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock job reconciliation", errors.Join(commitErr, err))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock job reconciliation", err)
 	}
 	if receipt, raw, readErr := readJobReceipt(tx.QueryRow(ctx, jobReceiptByKeySQL, input.IdempotencyKey)); readErr == nil {
 		if subtle.ConstantTimeCompare(raw, fingerprint) != 1 {
-			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "reconciliation found another fingerprint", commitErr)
+			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "reconciliation found another fingerprint", nil)
 		}
 		return receipt, nil
 	} else if !errors.Is(readErr, pgx.ErrNoRows) {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "read job reconciliation state", errors.Join(commitErr, readErr))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "read job reconciliation state", readErr)
 	}
 
 	// If the original job row exists without its receipt, never infer that it
 	// is safe to dispatch. Convert it to reconciliation under the job lock.
 	reconciliationID, tokenErr := randomToken("runner-reconciliation")
 	if tokenErr != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "generate job reconciliation identity", errors.Join(commitErr, tokenErr))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "generate job reconciliation identity", tokenErr)
 	}
 	var jobSpecHash []byte
 	var workflowRunID string
@@ -256,11 +277,11 @@ WHERE workspace_id=$1 AND job_id=$2
 FOR UPDATE`, spec.WorkspaceID, spec.JobID).Scan(&workflowRunID, &jobSpecHash, &revision)
 	jobMissing := errors.Is(rowErr, pgx.ErrNoRows)
 	if rowErr != nil && !jobMissing {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock reconciled job", errors.Join(commitErr, rowErr))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "lock reconciled job", rowErr)
 	}
 	expectedHash, _ := hex.DecodeString(input.Prepared.JobSpecHash)
 	if !jobMissing && (subtle.ConstantTimeCompare(jobSpecHash, expectedHash) != 1 || workflowRunID != spec.WorkflowRunID) {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "reconciled job identity differs", commitErr)
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorIdempotencyConflict, "reconciled job identity differs", nil)
 	}
 	committedAt, timeErr := databaseTime(ctx, tx)
 	if timeErr != nil {
@@ -295,7 +316,7 @@ INSERT INTO workflow_runner_jobs (
 			spec.WorkflowID, spec.WorkflowVersion, sourceHash, manifestHash, inputHash,
 			deadline, reconciliationID, committedAt, committedAt,
 		); err != nil {
-			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert reconciled job tombstone", errors.Join(commitErr, err))
+			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert reconciled job tombstone", err)
 		}
 		revision = 1
 	}
@@ -306,7 +327,7 @@ INSERT INTO workflow_runner_reconciliations (
 ) VALUES ($1,$2,$3,NULL,'WORKFLOW_RUNNER_COMMIT_OUTCOME_UNKNOWN',$4,$5)`,
 		reconciliationID, spec.WorkspaceID, spec.JobID, evidenceHash[:], committedAt,
 	); err != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert job reconciliation", errors.Join(commitErr, err))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert job reconciliation", err)
 	}
 	if !jobMissing {
 		if _, err := tx.Exec(ctx, `
@@ -315,7 +336,7 @@ SET state='reconciliation_required', revision=revision+1,
     terminal_status='reconciliation_required', terminal_reason='commit_outcome_unknown',
     reconciliation_id=$1, updated_at=$2
 WHERE workspace_id=$3 AND job_id=$4`, reconciliationID, committedAt, spec.WorkspaceID, spec.JobID); err != nil {
-			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "mark reconciled job", errors.Join(commitErr, err))
+			return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "mark reconciled job", err)
 		}
 		revision++
 	}
@@ -334,16 +355,16 @@ WHERE workspace_id=$3 AND job_id=$4`, reconciliationID, committedAt, spec.Worksp
 	receipt.ExactBytes = receiptBytes
 	receiptID, idErr := randomToken("runner-job-receipt")
 	if idErr != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "generate reconciliation receipt", errors.Join(commitErr, idErr))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "generate reconciliation receipt", idErr)
 	}
 	if _, err := tx.Exec(ctx, jobReceiptInsertSQL,
 		receiptID, "submit_job", "reconciliation_required", spec.WorkspaceID, spec.JobID,
 		input.IdempotencyKey, fingerprint, expectedHash, receiptBytes, reconciliationID, committedAt,
 	); err != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert reconciliation receipt", errors.Join(commitErr, err))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "insert reconciliation receipt", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "commit reconciliation receipt", errors.Join(commitErr, err))
+		return runnerstore.JobReceipt{}, runnerstore.Failure(runnerstore.ErrorCommitUnknown, "commit reconciliation receipt", err)
 	}
 	return receipt, nil
 }

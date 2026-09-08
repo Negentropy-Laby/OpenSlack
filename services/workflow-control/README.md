@@ -244,7 +244,11 @@ HTTP wire. `WORKFLOW_BUDGET_PRODUCTION_INITIAL_POLICY_SOURCE NOT_DELIVERED` rema
 
 At its original F2b gate, `workflow-control-runner-v2-runtime-delivery-v1` required schema 8,
 the v2 qualification switch, loopback mode and the runtime-delivery switch. Its current
-minimum is schema 10 for explicit reconciliation and recovery v2. Other profiles retain
+minimum is schema 10 for explicit reconciliation and recovery v2. Recovery v3 is opt-in through
+`Accept: application/vnd.openslack.workflow-run-recovery-evidence.v3+json` and requires schema 11.
+Its continuations preserve `recoveryVersion`, `readAt`, `snapshot` and `afterBindingId`; ordinary
+requests keep their previous response version. Rollback retains derived schema 11 metadata and
+schema 10 fence/settlement evidence and uses a compatible build. Other profiles retain
 their existing minimum versions. F2b added
 durable authority-binding stage, resolution, event, receipt, control-delivery ACK, and
 reconciliation records around the frozen runner-v2 and F2a bytes. The sealed TypeScript worker

@@ -29,6 +29,11 @@ type claimRecord struct {
 }
 
 func (repository *Repository) ClaimNext(ctx context.Context, input runnerstore.ClaimInput) (runnerstore.AttemptLease, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (runnerstore.AttemptLease, error) {
+		return repository.claimNextOnce(attempt, input)
+	})
+}
+func (repository *Repository) claimNextOnce(ctx context.Context, input runnerstore.ClaimInput) (runnerstore.AttemptLease, error) {
 	if err := validateID(input.WorkspaceID, "workspaceId"); err != nil {
 		return runnerstore.AttemptLease{}, err
 	}

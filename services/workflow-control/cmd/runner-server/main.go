@@ -60,6 +60,9 @@ func main() {
 	}
 	defer pool.Close()
 	schemaVersion, err := databaseready.RequireCleanSchemaVersion(startup, pool, databaseready.RunnerV2RuntimeDeliveryProfile)
+	if err == nil && schemaVersion >= 11 {
+		err = databaseready.RequireRecoveryV3(startup, pool)
+	}
 	if err != nil {
 		logger.Error("workflow_runner_control_database_not_ready", "code", "DATABASE_OR_SCHEMA_NOT_READY")
 		os.Exit(1)
@@ -125,6 +128,7 @@ func main() {
 		V2Store: store, BindingStore: store, RecoveryStore: store, AdmissionStore: store, SchemaVersion: schemaVersion,
 		ReconciliationStore: store,
 		RecoveryV2Store:     store,
+		RecoveryV3Store:     store,
 		BearerTokenSHA256:   config.BearerTokenSHA256, Logger: logger,
 		RunAuthorityOrigin:      config.V2RunAuthorityOrigin,
 		RunAuthorityCallerID:    config.V2RunAuthorityCallerID,

@@ -203,7 +203,20 @@ export function renderWorkflowRunReadDiagnostic(diagnostic: WorkflowRunReadDiagn
       : diagnostic.backend
         ? `Backend ${diagnostic.backend}`
         : 'Workflow workspace';
-  return `${target}: ${diagnostic.code}. ${READ_MESSAGES[diagnostic.code]}`;
+  return `${target}: ${diagnostic.code}. ${READ_MESSAGES[diagnostic.code]}${diagnostic.scope === 'run' && diagnostic.backend ? ` (backend: ${diagnostic.backend})` : ''}`;
+}
+
+export function uniqueWorkflowRunReadDiagnostics(
+  diagnostics: readonly WorkflowRunReadDiagnostic[],
+): WorkflowRunReadDiagnostic[] {
+  return [
+    ...new Map(
+      diagnostics.map((diagnostic) => [
+        JSON.stringify([diagnostic.scope, diagnostic.backend, diagnostic.runId, diagnostic.code]),
+        diagnostic,
+      ]),
+    ).values(),
+  ];
 }
 
 /** Aggregate presentation only; the machine diagnostics remain individual scoped records. */

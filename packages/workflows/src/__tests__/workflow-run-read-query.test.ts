@@ -9,8 +9,13 @@ import { createWorkflowRunRouteJournal, WorkflowRunRouteJournal } from '../workf
 import {
   resolveWorkflowRunProjectionRoot,
   WorkflowRunReadContext,
+  openWorkflowRunReadOnly,
 } from '../workflow-run-projection.js';
 import { getWorkflowRunProgress } from '../workflow-progress.js';
+import {
+  withWorkflowReadValidation,
+  workflowReadPathStat,
+} from '../internal/workflow-read-path.js';
 import {
   renderWorkflowRunReadDiagnostics,
   type WorkflowRunReadDiagnostic,
@@ -56,7 +61,7 @@ afterEach(async () => {
 });
 
 async function seed(runCount: number, quarantineCount: number) {
-  const root = await fs.mkdtemp(join(tmpdir(), 'workflow-read-query-'));
+  const root = await fs.mkdtemp(join(await fs.realpath(tmpdir()), 'workflow-read-query-'));
   roots.push(root);
   const journal = createWorkflowRunRouteJournal(root);
   await journal.initialize();
@@ -124,6 +129,51 @@ function fileCalls() {
 }
 
 describe('one workflow read query', { timeout: 30_000 }, () => {
+  it('limits shared component probes to one validation pass', async () => {
+    const path = await fs.realpath(tmpdir());
+    vi.mocked(fs.lstat).mockClear();
+    await withWorkflowReadValidation(async () => {
+      await workflowReadPathStat(path);
+      await withWorkflowReadValidation(() => workflowReadPathStat(path));
+    });
+    expect(vi.mocked(fs.lstat)).toHaveBeenCalledTimes(1);
+    await withWorkflowReadValidation(() => workflowReadPathStat(path));
+    expect(vi.mocked(fs.lstat)).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['ENOENT', 'WORKFLOW_RUN_PROJECTION_MISSING'],
+    ['EACCES', 'WORKFLOW_RUN_EVIDENCE_PERMISSION_DENIED'],
+    ['EIO', 'WORKFLOW_RUN_EVIDENCE_IO_FAILED'],
+  ])('normalizes cached directory %s failures and retains healthy results', async (errno, code) => {
+    const { root, workflows } = await seed(2, 0),
+      query = createWorkflowRunReadQuery(root);
+    await query.list();
+    const directory = join(workflows, 'runs', 'run.0');
+    const actual = await vi.importActual<typeof fs>('node:fs/promises');
+    vi.mocked(fs.lstat).mockImplementation((async (...args: Parameters<typeof fs.lstat>) => {
+      if (String(args[0]) === directory)
+        throw Object.assign(new Error(`private ${directory}`), { code: errno });
+      return actual.lstat(...args);
+    }) as typeof fs.lstat);
+    for (const read of [() => query.show('run.0'), () => query.progress('run.0')]) {
+      const error = await read().catch((error) => error);
+      expect(error).toMatchObject({
+        code,
+        diagnostics: [{ scope: 'run', runId: 'run.0', backend: 'ts-local', code }],
+      });
+      expect(error.message).not.toContain(directory);
+    }
+    const list = await query.list();
+    expect(list.map((run) => run.runId)).toEqual(['run.1']);
+    expect(list.diagnostics).toContainEqual({
+      scope: 'run',
+      runId: 'run.0',
+      backend: 'ts-local',
+      code,
+    });
+  });
+
   it('filters readable-run diagnostics while retaining unreadable runs with unknown status', async () => {
     const { root, workflows } = await seed(3, 0);
     const go = resolveWorkflowRunProjectionRoot(root, 'go');
@@ -180,6 +230,7 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
         function (this: WorkflowRunRouteJournal) {
           const reader = original.call(this);
           return {
+            revision: reader.revision,
             locateReadOnly(runId) {
               locate(runId);
               return reader.locateReadOnly(runId);
@@ -188,11 +239,11 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
         },
       );
       vi.clearAllMocks();
-      const start = performance.now();
       const query = createWorkflowRunReadQuery(root);
       const lifecycleRuns = await query.list();
       const progressRuns = await query.list();
-      expect(progressRuns).toBe(lifecycleRuns);
+      expect(progressRuns).not.toBe(lifecycleRuns);
+      expect(progressRuns).toEqual(lifecycleRuns);
       expect(progressRuns).toHaveLength(runCount);
       for (const run of progressRuns) {
         expect(
@@ -205,16 +256,8 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
       expect(enumerated.filter((path) => path.endsWith('quarantine'))).toHaveLength(1);
       // The absent Go root is checked without attempting an enumeration.
       expect(enumerated.filter((path) => path.endsWith('runs'))).toHaveLength(1);
-      console.log(
-        'WORKFLOW_READ_QUERY_MEASUREMENT',
-        JSON.stringify({
-          platform: process.platform,
-          runCount,
-          quarantineCount,
-          milliseconds: Math.round(performance.now() - start),
-          fileApiCalls: metrics,
-        }),
-      );
+      expect(metrics.open).toBe(runCount * 4);
+      expect(metrics.readdir).toBe(2);
     },
   );
 
@@ -234,7 +277,11 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
       code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
     });
     expect(await fs.readFile(quarantine, 'utf8')).toBe('retained incident');
-    expect(await first.list()).toBe(initial);
+    expect((await first.list()).diagnostics).toContainEqual({
+      scope: 'run',
+      runId: 'run.0',
+      code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+    });
   });
 
   it('does not cache progress file contents and rejects a context from another workspace', async () => {
@@ -287,4 +334,136 @@ describe('one workflow read query', { timeout: 30_000 }, () => {
       });
     },
   );
+  it('recovers a failed quarantine scan in the same query and accepts historical directory permissions', async () => {
+    const { root, workflows } = await seed(2, 0);
+    const directory = join(workflows, 'routes', 'quarantine');
+    await fs.chmod(directory, 0o755);
+    const actual = await vi.importActual<typeof fs>('node:fs/promises');
+    let failed = false;
+    vi.mocked(fs.readdir).mockImplementation((async (path: unknown, options: unknown) => {
+      if (String(path) === directory && !failed) {
+        failed = true;
+        throw Object.assign(new Error('private'), { code: 'EACCES' });
+      }
+      return actual.readdir(path as string, options as never);
+    }) as typeof fs.readdir);
+    const query = createWorkflowRunReadQuery(root);
+    const first = await query.list();
+    expect(first).toHaveLength(2);
+    expect(first.diagnostics.length).toBeGreaterThan(0);
+    const next = await query.list();
+    expect(next).toHaveLength(2);
+    expect(next.diagnostics).toEqual([]);
+    expect(await actual.readdir(directory)).toEqual([]);
+  });
+
+  it('retries a quarantine snapshot changed during enumeration', async () => {
+    const { root, workflows } = await seed(1, 0);
+    const directory = join(workflows, 'routes', 'quarantine');
+    const actual = await vi.importActual<typeof fs>('node:fs/promises');
+    let changed = false;
+    vi.mocked(fs.readdir).mockClear();
+    vi.mocked(fs.readdir).mockImplementation((async (path: unknown, options: unknown) => {
+      const result = await actual.readdir(path as string, options as never);
+      if (String(path) === directory && !changed) {
+        changed = true;
+        await fs.writeFile(
+          join(directory, 'a'.repeat(64) + '.json.incident'),
+          'unrelated retained evidence',
+        );
+      }
+      return result;
+    }) as typeof fs.readdir);
+    const rows = await createWorkflowRunReadQuery(root).list();
+    expect(rows).toHaveLength(1);
+    expect(rows.diagnostics).toEqual([]);
+    expect(
+      vi.mocked(fs.readdir).mock.calls.filter(([path]) => String(path) === directory),
+    ).toHaveLength(2);
+  });
+
+  it('invalidates a formerly unique selection when another backend gains a copy', async () => {
+    const { root, workflows } = await seed(1, 0);
+    const query = createWorkflowRunReadQuery(root);
+    await query.list();
+    const other = join(resolveWorkflowRunProjectionRoot(root, 'go'), 'runs', 'run.0');
+    await fs.mkdir(other, { recursive: true });
+    await fs.cp(join(workflows, 'runs', 'run.0'), other, { recursive: true });
+    await expect(query.show('run.0')).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_EVIDENCE_RECONCILIATION_REQUIRED',
+    });
+  });
+
+  it('retains old directory identity when a changed route invalidates the list', async () => {
+    const { root, workflows } = await seed(2, 0);
+    const query = createWorkflowRunReadQuery(root);
+    await query.list();
+    const path = join(workflows, 'runs', 'run.0');
+    await fs.rename(path, path + '.original');
+    await fs.cp(path + '.original', path, { recursive: true });
+    await fs.writeFile(
+      join(workflows, 'routes', 'quarantine', 'a'.repeat(64) + '.json.incident'),
+      'unrelated',
+    );
+    const rows = await query.list();
+    expect(rows.map((row) => row.runId)).toEqual(['run.1']);
+    expect(rows.diagnostics).toContainEqual({
+      scope: 'run',
+      runId: 'run.0',
+      backend: 'ts-local',
+      code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID',
+    });
+  });
+
+  it('returns independent filtered views with one underlying listing', async () => {
+    const { root } = await seed(2, 0);
+    const query = createWorkflowRunReadQuery(root);
+    const first = await query.list({ status: 'paused' });
+    const calls = vi.mocked(fs.readdir).mock.calls.length;
+    first[0]!.workflowName = 'changed';
+    first[0]!.phases.push({ phase: 'changed', status: 'failed', timestamp: 'changed' });
+    first.diagnostics.push({ scope: 'workspace', code: 'WORKFLOW_RUN_EVIDENCE_IO_FAILED' });
+    const next = await query.list({ status: 'paused' });
+    expect(next[0]!.workflowName).toBe('workflow.test');
+    expect(next[0]!.phases).toEqual([]);
+    expect(next.diagnostics).toEqual([]);
+    expect(await query.list({ status: 'completed' })).toHaveLength(0);
+    expect(vi.mocked(fs.readdir).mock.calls.length).toBe(calls);
+  });
+
+  it('keeps the historical indexed order through the protected store facade', async () => {
+    const { root, workflows } = await seed(3, 0);
+    await fs.writeFile(join(workflows, 'runs', '.index'), 'run.2\nrun.0\n');
+    const rows = await openWorkflowRunReadOnly(root, 'ts-local').listRunsByStatus('paused');
+    expect(rows.map((row) => row.runId)).toEqual(['run.2', 'run.0']);
+  });
+
+  it('guards every facade read and keeps its internal credentials immutable and nonpublic', async () => {
+    const { root, workflows } = await seed(1, 0);
+    const context = new WorkflowRunReadContext(root);
+    const location = await context.locate('run.0', 'ts-local');
+    expect(location.state).toBe('found');
+    if (location.state !== 'found') return;
+    expect(Object.isFrozen(location.readIdentity)).toBe(true);
+    expect(Object.isFrozen(location.readSelection.namespaces)).toBe(true);
+    expect(JSON.stringify(location)).not.toMatch(/readIdentity|readSelection|canonicalPath|cause/);
+    const reader = openWorkflowRunReadOnly(root, 'ts-local', context);
+    const path = join(workflows, 'runs', 'run.0');
+    await fs.rename(path, path + '.original');
+    await fs.cp(path + '.original', path, { recursive: true });
+    for (const method of [
+      'getRunStatus',
+      'loadMeta',
+      'loadStatus',
+      'loadBudgetSnapshot',
+      'loadCheckpointControl',
+      'loadPendingApprovals',
+      'readLog',
+      'readAuditRecords',
+      'runExists',
+    ] as const)
+      await expect(reader[method]('run.0')).rejects.toMatchObject({
+        code: 'WORKFLOW_RUN_EVIDENCE_PATH_INVALID',
+      });
+  });
 });

@@ -1194,13 +1194,37 @@ job; a newly admitted resume job may start at fence 1. With no committed checkpo
 resume destination is `phase-0` with null prior-checkpoint evidence.
 
 Recovery reads `GET /v2/runner/runs/{runId}/recovery-evidence` from the authenticated runner
-service. Schema 9 added the workspace/run index. Schema 10 returns explicit v2 records for
-bindings, immutable settlements, unfinished operations and active attempts, without artifact
-contents. New readers also accept v1. A `bindingId` selects one historical operation; v2 pages
-may still be needed for that operation. `afterBindingId` carries the last record key, and
-`snapshot` fixes the evidence digest across pages. Each response uses the existing 2 MiB limit;
-changed evidence requires restarting the query and an oversized single record fails explicitly.
-Historical bytes and receipt hashes are never rewritten.
+service. Default requests keep v1 (schema 9) or v2 (schema 10+). An explicit
+`Accept: application/vnd.openslack.workflow-run-recovery-evidence.v3+json` negotiates v3
+only at schema 11; new clients accept all three versions. Other profile minima stay unchanged.
+A `bindingId` selects one historical operation. V3 continuations send `afterBindingId`,
+`snapshot`, `recoveryVersion` and `readAt` together. Each page uses a read-only repeatable-read
+transaction; the first database read time fixes lease-expiry interpretation. A version change
+discards collected pages and restarts the query. This historical view never authorizes execution.
+
+Schema 11 backfills derived per-run version, route and keyset metadata, with database triggers
+covering existing write paths. Before installing it, upgrade every writer to a compatible build
+with metadata-rollback retries while still on schema 10, or stop all older writers for the
+migration and replace them before allowing writes again. After migration, restart `runner-server`
+on the compatible build and pass startup capability checks before enabling v3; a process started
+on schema 10 retains its v2 read capability until restart. A transaction-free migration window alone does not make a live old binary compatible
+with the new serialization failure. Heartbeat timestamps that do not change evidence leave the version
+unchanged. A busy migration refuses before creating derived objects; retry through the existing
+migration dirty-state procedure. Trigger functions retain their schema binding and deferred
+metadata updates avoid waiting with business locks. A positively identified metadata rollback
+retries only its exact database operation within the caller and commit-recovery deadlines.
+New execution operations also retain their lease deadline; historical evidence persistence and
+expired-owner cleanup remain possible after expiry. In every retry the original state and identity
+checks run again;
+unknown commits keep their existing exact-receipt recovery. Source CAS and message sends are
+outside that retry closure.
+
+Keyset reads decode only returned batches. Attempts with expired but unreconciled leases can
+still require a scan of that attempt range; later binding cursors exclude it. Each record is
+encoded once, and the envelope, cursor, separators and final newline count toward the existing
+2 MiB response limit. A single oversized record fails explicitly. Reconciliation preview shares
+the bounded page builder and joined binding/settlement reads. Historical binding, settlement,
+event, ACK and receipt bytes remain unchanged.
 
 Checkpoint source revisions and resume generations must form a contiguous chain. The committed
 checkpoint frontier determines the next phase, and the current Workflow Control head must agree;
@@ -1237,7 +1261,7 @@ order. No old event, ACK, binding or resolution is rewritten or invented.
 
 Apply requires one verifiable writable PostgreSQL. A fresh transient advisory-lock challenge
 runs through the actual source writer pool before business locks are taken. The proof compares
-current database OID, actual table OIDs, clean schema 10 and enabled database guards; lock
+current database OID, actual table OIDs, the same supported clean schema (10 or 11) and enabled database guards; lock
 observation includes database OID because `pg_locks` is cluster-wide. Separate databases,
 clones, schemas, replicas and unavailable identity proofs cannot authorize reconciliation.
 The migration adds immutable settlements, source fences and recovery-pause receipts. Database
@@ -1247,7 +1271,7 @@ Only after every related operation is closed, old ownership is inactive and no b
 remains pending can a separate exact-head CAS converge `running` or `resuming` to `paused`.
 It preserves phase, generation and identity and increments authority revision once. The user
 then resumes normally with a new execution identity. Unknown evidence remains blocked.
-Rollback retains schema 10 and all fence/closure evidence and uses a compatible build; a
+Rollback retains schema 11 metadata plus schema 10 fence/closure evidence and uses a compatible build; a
 migration downgrade refuses to discard any such record. Neither command runs automatically.
 
 Fatal session termination synchronously rejects new work and waiters, cancels authority calls
@@ -1260,6 +1284,16 @@ budget record schemas. Readers accept only the current manifest and the exact pr
 `662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548` manifest. Existing durable
 envelopes, response bytes, and receipt hashes remain unchanged on read, replay, and F2 acknowledgement;
 new budget records use the current manifest. Unknown manifests remain invalid.
+
+A list query or TUI refresh owns its cache. Root, ancestor and selection proofs are reused only
+while their filesystem identities and namespace revisions remain valid. Logical multi-file reads
+verify directory identity before and after reading; nested reads share that boundary, while file
+no-follow, strict UTF-8 and byte limits remain active. Failed quarantine enumeration is retried,
+and readable historical quarantine directories are accepted without relaxing writer permissions.
+Healthy runs are filtered before their diagnostics are collected. Runs whose status cannot be
+read, and backend failures, remain diagnostic regardless of the filter. Display grouping retains
+backend and affected runs; machine diagnostics retain individual identity and scope. Query results
+are caller-owned copies. Cost configuration and workflow discovery are shared only within the query.
 
 Run list, show, progress, and save-run probe the immutable route's selected local directory before
 reading it. A missing routed directory or unavailable journal may leave a readable comparison copy;

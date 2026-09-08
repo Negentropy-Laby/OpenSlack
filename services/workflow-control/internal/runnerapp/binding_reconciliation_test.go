@@ -22,7 +22,10 @@ type reconciliationStub struct {
 
 func (s *reconciliationStub) PreviewBindingReconciliation(ctx context.Context, workspace, run, binding, after string) (runnerstore.BindingReconciliationPreview, error) {
 	s.previews++
-	return runnerstore.BindingReconciliationPreview{Schema: "openslack.workflow_runner_binding_reconciliation_preview.v1", WorkspaceID: workspace, RunID: run, Items: []runnerstore.BindingReconciliationItem{}}, s.failure
+	value := runnerstore.BindingReconciliationPreview{Schema: "openslack.workflow_runner_binding_reconciliation_preview.v1", WorkspaceID: workspace, RunID: run, Items: []runnerstore.BindingReconciliationItem{}}
+	raw, _ := canonicaljson.Encode(value)
+	value.Encoded = append(raw, '\n')
+	return value, s.failure
 }
 func (s *reconciliationStub) ApplyBindingReconciliation(ctx context.Context, p runnerstore.PreparedBindingReconciliation) ([]byte, error) {
 	s.applies++

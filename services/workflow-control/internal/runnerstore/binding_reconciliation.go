@@ -72,6 +72,7 @@ type BindingReconciliationItem struct {
 	Receipt   *string `json:"receipt"`
 }
 type BindingReconciliationPreview struct {
+	Encoded     []byte                      `json:"-"` // Complete canonical response, including its LF frame.
 	Schema      string                      `json:"schema"`
 	WorkspaceID string                      `json:"workspaceId"`
 	RunID       string                      `json:"runId"`

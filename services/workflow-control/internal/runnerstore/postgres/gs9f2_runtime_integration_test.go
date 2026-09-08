@@ -479,7 +479,7 @@ VALUES ('forged-control','forged-binding','event_receipt',3,3,decode(repeat('11'
 	}
 
 	t.Run("schema7 exact authority row survives schema8 upgrade", func(t *testing.T) {
-		upgradePool := testsupport.OpenPostgres(t)
+		upgradePool := testsupport.OpenPostgresAtSchema(t, 10)
 		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
 			raw, err := os.ReadFile(v2MigrationPath(t, name))
 			if err != nil {
@@ -547,7 +547,7 @@ FROM workflow_runner_v2_event_inbox WHERE event_id=$1`, event.Message.EventID).S
 	})
 
 	t.Run("schema7 authority outcome cross-splice blocks schema8 upgrade", func(t *testing.T) {
-		upgradePool := testsupport.OpenPostgres(t)
+		upgradePool := testsupport.OpenPostgresAtSchema(t, 10)
 		for _, name := range []string{"000010_reconcile_workflow_runner_bindings.down.sql", "000009_index_workflow_runner_recovery_evidence.down.sql"} {
 			raw, err := os.ReadFile(v2MigrationPath(t, name))
 			if err != nil {

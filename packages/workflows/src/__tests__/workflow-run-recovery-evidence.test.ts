@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   checkpointState,
@@ -7,6 +8,7 @@ import {
 } from './workflow-recovery-fixtures.js';
 import {
   assertRecoveryFrontier,
+  WORKFLOW_RECOVERY_V3_MEDIA_TYPE,
   historicalResumeEvidence,
   parseWorkflowRunRecoveryEvidence,
   recoveryCheckpointState,
@@ -230,4 +232,118 @@ describe('recovery HTTP queries', () => {
     });
     expect(calls).toBe(2);
   });
+  it('negotiates v3, echoes the fixed read point, and preserves exact frames across pages', async () => {
+    const bindings = [
+      recoveryFrame(checkpointState(), 'checkpoint_commit'),
+      recoveryFrame(checkpointState(2), 'checkpoint_commit'),
+    ].sort((a, b) => a.bindingId.localeCompare(b.bindingId));
+    const base = recoveryView([]);
+    const schema = 'openslack.workflow_runner_recovery_evidence.v3';
+    const recoveryVersion = '9007199254740993',
+      readAt = '2026-09-08T00:00:00.000Z';
+    const snapshot = createHash('sha256')
+      .update(
+        canonical([
+          schema,
+          config.workspaceId,
+          'run.recovery',
+          '',
+          base.route,
+          recoveryVersion,
+          readAt,
+        ]),
+      )
+      .digest('hex');
+    let calls = 0;
+    const client = createWorkflowRunRecoveryEvidenceClient({
+      ...config,
+      fetch: async (input, init) => {
+        const second = calls++ > 0,
+          url = new URL(String(input));
+        expect(new Headers(init?.headers).get('Accept')).toContain(WORKFLOW_RECOVERY_V3_MEDIA_TYPE);
+        if (second) {
+          expect(url.searchParams.get('recoveryVersion')).toBe(recoveryVersion);
+          expect(url.searchParams.get('readAt')).toBe(readAt);
+          expect(url.searchParams.get('snapshot')).toBe(snapshot);
+        }
+        const entry = bindings[second ? 1 : 0]!;
+        return new Response(
+          JSON.stringify({
+            schema,
+            workspaceId: config.workspaceId,
+            runId: 'run.recovery',
+            route: base.route,
+            complete: second,
+            snapshot,
+            recoveryVersion,
+            readAt,
+            nextCursor: second ? null : 'binding.' + entry.bindingId,
+            records: [{ key: 'binding.' + entry.bindingId, kind: 'binding', value: entry }],
+          }),
+          { headers: { 'Content-Type': WORKFLOW_RECOVERY_V3_MEDIA_TYPE } },
+        );
+      },
+    });
+    const result = await client.readRecoveryEvidence('run.recovery');
+    expect(result.bindings).toEqual(bindings);
+    expect(result.recoveryVersion).toBe(recoveryVersion);
+    expect(calls).toBe(2);
+  });
+
+  it.each(['version', 'readAt', 'schema'] as const)(
+    'discards all accumulated v3 pages after %s drift',
+    async (drift) => {
+      const base = recoveryView([]),
+        schema = 'openslack.workflow_runner_recovery_evidence.v3';
+      let calls = 0;
+      const client = createWorkflowRunRecoveryEvidenceClient({
+        ...config,
+        fetch: async () => {
+          const second = calls++ > 0;
+          const recoveryVersion = second && drift === 'version' ? '2' : '1';
+          const readAt =
+            second && drift === 'readAt' ? '2026-09-08T00:00:01.000Z' : '2026-09-08T00:00:00.000Z';
+          const snapshot = createHash('sha256')
+            .update(
+              canonical([
+                schema,
+                config.workspaceId,
+                'run.recovery',
+                '',
+                base.route,
+                recoveryVersion,
+                readAt,
+              ]),
+            )
+            .digest('hex');
+          const value = {
+            schema,
+            workspaceId: config.workspaceId,
+            runId: 'run.recovery',
+            route: base.route,
+            complete: second,
+            snapshot,
+            recoveryVersion,
+            readAt,
+            nextCursor: second ? null : 'attempt.first',
+            records: [
+              {
+                key: second ? 'attempt.second' : 'attempt.first',
+                kind: 'active_attempt',
+                value: second ? 'second' : 'first',
+              },
+            ],
+          };
+          if (second && drift === 'schema') return response({ ...base, complete: true, snapshot });
+          return new Response(JSON.stringify(value), {
+            headers: { 'Content-Type': WORKFLOW_RECOVERY_V3_MEDIA_TYPE },
+          });
+        },
+      });
+      await expect(client.readRecoveryEvidence('run.recovery')).rejects.toMatchObject({
+        code: 'WORKFLOW_RUN_RECOVERY_UNKNOWN',
+      });
+      expect(calls).toBe(2);
+    },
+  );
 });

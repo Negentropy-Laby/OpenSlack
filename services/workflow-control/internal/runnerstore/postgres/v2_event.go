@@ -233,6 +233,12 @@ func (repository *Repository) readRuntimeBudgetSource(ctx context.Context, bindi
 }
 
 func (repository *Repository) latchRuntimeBindingReconciliation(ctx context.Context, binding runnerstore.V2AuthorityBindingView, reason string) error {
+	_, err := retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) (struct{}, error) {
+		return struct{}{}, repository.latchRuntimeBindingReconciliationOnce(attempt, binding, reason)
+	})
+	return err
+}
+func (repository *Repository) latchRuntimeBindingReconciliationOnce(ctx context.Context, binding runnerstore.V2AuthorityBindingView, reason string) error {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return databaseFailure("begin budget source reconciliation", err)
@@ -705,6 +711,16 @@ idempotency_key,request_fingerprint,message_digest,exact_event_bytes,state,creat
 }
 
 func (repository *Repository) finalizeV2Event(ctx context.Context, input runnerstore.V2RecordEventInput, prepared authoritycontract.PreparedMessage, authority *runnerstore.V2AuthorityOutcome) (runnerstore.V2RecordedEvent, error) {
+	return retryRecoveryTransaction(ctx, repository, func(context.Context) (string, error) {
+		if input.Message.Kind == authoritycontract.KindTerminal || input.Message.Kind == authoritycontract.KindCancelAck {
+			return "", nil
+		}
+		return *input.Message.LeaseID, nil
+	}, func(attempt context.Context) (runnerstore.V2RecordedEvent, error) {
+		return repository.finalizeV2EventOnce(attempt, input, prepared, authority)
+	})
+}
+func (repository *Repository) finalizeV2EventOnce(ctx context.Context, input runnerstore.V2RecordEventInput, prepared authoritycontract.PreparedMessage, authority *runnerstore.V2AuthorityOutcome) (runnerstore.V2RecordedEvent, error) {
 	message := input.Message
 	fingerprint, _ := decodeFingerprint(prepared.RequestFingerprint)
 	tx, err := repository.pool.Begin(ctx)

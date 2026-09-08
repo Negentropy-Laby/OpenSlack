@@ -197,7 +197,8 @@ export function parseWorkflowCheckpointReservation(raw: string): string | null {
 }
 const WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES = 6 * 1024 * 1024;
 const WORKFLOW_CHECKPOINT_HASH = /^[0-9a-f]{64}$/u;
-const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
+/** Existing read concurrency, shared with the guarded historical reader. */
+export const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
 
 function checkpointBinding(value: unknown): WorkflowCheckpointExecutionBinding {
   try {

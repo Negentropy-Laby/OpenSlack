@@ -308,72 +308,89 @@ func (repository *Repository) PreviewBindingReconciliation(ctx context.Context, 
 		return result, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT binding_id FROM workflow_runner_authority_bindings WHERE workspace_id=$1 AND run_id=$2 AND ($3='' OR binding_id=$3) AND binding_id>$4 ORDER BY binding_id`, workspace, run, binding, after)
+	page, err := runnerstore.NewCanonicalArrayPage(canonicaljson.Object{"schema": result.Schema, "workspaceId": workspace, "runId": run}, "items", runnerstore.RecoveryEvidenceMaxResponseBytes)
 	if err != nil {
-		return result, databaseFailure("list reconciliation bindings", err)
+		return result, err
 	}
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			break
-		}
-		ids = append(ids, id)
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	rows.Close()
-	if err != nil {
-		return result, databaseFailure("scan reconciliation identities", err)
-	}
-	for _, id := range ids {
-		v, err := reconciliationBinding(ctx, tx, workspace, run, id, false)
+	more := false
+	for {
+		rows, err := tx.Query(ctx, `SELECT b.binding_id,s.exact_receipt_bytes,`+qualifiedAuthorityBindingViewColumns("b")+`
+   FROM workflow_runner_authority_bindings b LEFT JOIN workflow_runner_binding_settlements s ON s.binding_id=b.binding_id
+   WHERE b.workspace_id=$1 AND b.run_id=$2 AND ($3='' OR b.binding_id=$3) AND b.binding_id>$4 COLLATE "C"
+   ORDER BY b.binding_id COLLATE "C" LIMIT $5`, workspace, run, binding, after, recoveryRecordFetchBatch)
 		if err != nil {
-			return result, err
+			return result, databaseFailure("page reconciliation bindings", err)
 		}
-		stage, _ := runnerbindingcontract.ParseStageBytes(v.ExactStageBytes)
-		hash, _ := runnerbindingcontract.HashStage(stage)
-		item := runnerstore.BindingReconciliationItem{BindingID: id, StageHash: hash, Outcome: "unknown", Code: "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"}
-		var raw []byte
-		err = tx.QueryRow(ctx, `SELECT exact_receipt_bytes FROM workflow_runner_binding_settlements WHERE binding_id=$1`, id).Scan(&raw)
+		type entry struct {
+			view    runnerstore.V2AuthorityBindingView
+			receipt []byte
+		}
+		batch := make([]entry, 0, recoveryRecordFetchBatch)
+		for rows.Next() {
+			var value entry
+			var key string
+			value.view, err = scanAuthorityBindingView(recoveryPageRow{row: rows, key: &key, receipt: &value.receipt})
+			if err != nil {
+				break
+			}
+			batch = append(batch, value)
+		}
 		if err == nil {
-			r, e := validateBindingSettlement(raw, v)
-			if e != nil {
-				return result, e
-			}
-			s := string(raw)
-			item.Receipt = &s
-			item.Outcome = r.Outcome
-			item.ProofKind = r.ProofKind
-			item.Code = "WORKFLOW_RUNNER_BINDING_SETTLED"
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return result, databaseFailure("read existing settlement", err)
-		} else if source, e := repository.reconciliationSourceResult(ctx, v); e == nil {
-			if proof, e := readSettlementProof(ctx, tx, source); e == nil {
-				item.Outcome = proof.outcome
-				item.ProofKind = proof.kind
-				item.Code = "WORKFLOW_RUNNER_BINDING_RECONCILABLE"
-			}
+			err = rows.Err()
 		}
-		candidate := result
-		candidate.Items = append(append([]runnerstore.BindingReconciliationItem(nil), result.Items...), item)
-		cursor := item.BindingID
-		candidate.NextCursor = &cursor
-		encoded, e := canonicaljson.Encode(candidate)
-		if e != nil {
-			return result, e
+		rows.Close()
+		if err != nil {
+			return result, databaseFailure("scan reconciliation page", err)
 		}
-		if len(encoded)+1 > runnerstore.RecoveryEvidenceMaxResponseBytes {
-			if len(result.Items) == 0 {
-				return result, runnerstore.Failure(runnerstore.ErrorLimitExceeded, "one reconciliation item exceeds the response contract", nil)
+		// Close the bounded cursor before source-proof queries on this transaction.
+		for _, value := range batch {
+			v := value.view
+			if err = validateRecoveredBinding(v); err != nil {
+				return result, err
 			}
-			last := result.Items[len(result.Items)-1].BindingID
-			result.NextCursor = &last
+			stage, _ := runnerbindingcontract.ParseStageBytes(v.ExactStageBytes)
+			hash, _ := runnerbindingcontract.HashStage(stage)
+			item := runnerstore.BindingReconciliationItem{BindingID: v.BindingID, StageHash: hash, Outcome: "unknown", Code: "WORKFLOW_RUNNER_RECONCILIATION_REQUIRED"}
+			if len(value.receipt) > 0 {
+				receipt, err := validateBindingSettlement(value.receipt, v)
+				if err != nil {
+					return result, err
+				}
+				raw := string(value.receipt)
+				item.Receipt = &raw
+				item.Outcome, item.ProofKind, item.Code = receipt.Outcome, receipt.ProofKind, "WORKFLOW_RUNNER_BINDING_SETTLED"
+			} else if source, err := repository.reconciliationSourceResult(ctx, v); err == nil {
+				if proof, err := readSettlementProof(ctx, tx, source); err == nil {
+					item.Outcome, item.ProofKind, item.Code = proof.outcome, proof.kind, "WORKFLOW_RUNNER_BINDING_RECONCILABLE"
+				} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return result, recoveryCancelled(err)
+				}
+			} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return result, recoveryCancelled(err)
+			}
+			fits, err := page.Add(item, item.BindingID)
+			if err != nil {
+				return result, err
+			}
+			if !fits {
+				more = true
+				break
+			}
+			result.Items = append(result.Items, item)
+			after = item.BindingID
+		}
+		if more || len(batch) < recoveryRecordFetchBatch {
 			break
 		}
-		result.Items = candidate.Items
 	}
+	if err := ctx.Err(); err != nil {
+		return result, recoveryCancelled(err)
+	}
+	result.Encoded, result.NextCursor, err = page.Finish(more)
+	if err != nil {
+		return result, err
+	}
+	result.Items = result.Items[:page.Count()]
 	if binding != "" && len(result.Items) == 0 {
 		return result, runnerstore.Failure(runnerstore.ErrorNotFound, "binding was not found", nil)
 	}
@@ -407,6 +424,11 @@ func (repository *Repository) ReadBindingSettlementReceipt(ctx context.Context, 
 }
 
 func (repository *Repository) ApplyBindingReconciliation(ctx context.Context, input runnerstore.PreparedBindingReconciliation) ([]byte, error) {
+	return retryRecoveryTransaction(ctx, repository, noRecoveryLease, func(attempt context.Context) ([]byte, error) {
+		return repository.applyBindingReconciliationOnce(attempt, input)
+	})
+}
+func (repository *Repository) applyBindingReconciliationOnce(ctx context.Context, input runnerstore.PreparedBindingReconciliation) ([]byte, error) {
 	prepared, err := runnerstore.ParseBindingReconciliation(input.ExactBytes)
 	if err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ func TestLoadEnvironmentRequiresClosedPrivateConfiguration(t *testing.T) {
 	environment := []string{
 		"DATABASE_URL=postgres://user:pass@127.0.0.1:5432/openslack",
 		"WORKFLOW_CONTROL_SERVICE_BUILD_SHA=" + testBuild,
+		"MIGRATION_SOURCE=" + t.TempDir(),
 	}
 	value, err := LoadEnvironment(environment)
 	if err != nil {
@@ -29,12 +30,13 @@ func TestLoadEnvironmentRequiresClosedPrivateConfiguration(t *testing.T) {
 }
 
 func TestLoadMigrationRequiresPostgresAndAbsoluteSource(t *testing.T) {
-	valid := []string{"DATABASE_URL=postgresql://user:pass@db:5432/openslack", "MIGRATION_SOURCE=/safe/migrations"}
+	source := t.TempDir()
+	valid := []string{"DATABASE_URL=postgresql://user:pass@db:5432/openslack", "MIGRATION_SOURCE=" + source}
 	value, err := LoadMigrationEnvironment(valid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.MigrationDatabaseURL != "pgx5://user:pass@db:5432/openslack" || value.MigrationSource != "/safe/migrations" {
+	if value.MigrationDatabaseURL != "pgx5://user:pass@db:5432/openslack" || value.MigrationSource != source {
 		t.Fatalf("unexpected migration configuration: %+v", value)
 	}
 	for _, invalid := range [][]string{

@@ -211,7 +211,6 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
-            const { findWorkflow, loadWorkflow } = await import('@openslack/workflows');
             const workflowRuns = await workflowRunQuery.list();
             const lifecycleBase: Record<
               string,
@@ -225,9 +224,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             > = {};
 
             for (const wf of workflows) {
-              const found = await findWorkflow(wf.name, root);
-              if (!found) continue;
-              const mod = await loadWorkflow(found.path);
+              const loaded = await workflowRunQuery.workflow(wf.name);
+              if (!loaded) continue;
+              const { found, module: mod } = loaded;
               const match = selectWorkflowLifecycleCurrentRun(workflowRuns, wf.name);
               const currentRun = match
                 ? { runId: match.runId, status: match.status, startedAt: match.startedAt }
@@ -254,6 +253,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         try {
           const {
             renderWorkflowRunReadDiagnostics,
+            uniqueWorkflowRunReadDiagnostics,
             WorkflowRunReadError,
             workflowRunReadDiagnostic,
           } = await import('@openslack/workflows');
@@ -277,7 +277,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           }
           data.workflowRunProgress = progress;
           data.workflowRuns = mapWorkflowRunsToViewModel(progress);
-          data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(readDiagnostics);
+          data.workflowRuns.readWarnings = renderWorkflowRunReadDiagnostics(
+            uniqueWorkflowRunReadDiagnostics(readDiagnostics),
+          );
         } catch {
           data.workflowRunProgress = [];
           data.workflowRuns = mapWorkflowRunsToViewModel([]);

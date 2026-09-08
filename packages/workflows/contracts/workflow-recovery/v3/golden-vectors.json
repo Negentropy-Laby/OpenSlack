@@ -1,0 +1,62 @@
+[
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "positive BIGINT above JS safe integer",
+    "valid": true,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"9007199254740993\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid version 0",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"0\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid version -1",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"-1\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid version 01",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"01\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid version 9223372036854775808",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"9223372036854775808\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid version 1e3",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"1e3\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid read point 2026-02-30T00:00:00.000Z",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-02-30T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"9007199254740993\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid read point 2026-09-08T00:00:00Z",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00Z\",\"records\":[],\"recoveryVersion\":\"9007199254740993\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "invalid read point 2026-09-08T08:00:00.000+08:00",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"nextCursor\":null,\"readAt\":\"2026-09-08T08:00:00.000+08:00\",\"records\":[],\"recoveryVersion\":\"9007199254740993\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  },
+  {
+    "schema": "RecoveryEvidenceV3",
+    "name": "unknown field",
+    "valid": false,
+    "bytes": "{\"complete\":true,\"extra\":1,\"nextCursor\":null,\"readAt\":\"2026-09-08T00:00:00.000Z\",\"records\":[],\"recoveryVersion\":\"9007199254740993\",\"route\":{\"authority\":\"workflow-control\",\"authorityBuildHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"backend\":\"go\",\"routingEpoch\":1},\"runId\":\"run.test\",\"schema\":\"openslack.workflow_runner_recovery_evidence.v3\",\"snapshot\":\"e5a4a5340198dbb15326e8bbf74c6f99766044ac1a74d6ea8f156e6815f83936\",\"workspaceId\":\"workspace.test\"}\n"
+  }
+]

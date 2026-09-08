@@ -173,6 +173,7 @@ describe('workflow run evidence selection', () => {
       ReturnType<WorkflowRunRouteJournal['locateReadOnly']>
     >;
     vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
       locateReadOnly: vi.fn().mockResolvedValue(receipt),
     });
     const result = await showWorkflowRun('run.routed', { rootDir: root });
@@ -225,6 +226,7 @@ describe('workflow run evidence selection', () => {
       'not a directory',
     );
     vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
       locateReadOnly: vi.fn().mockResolvedValue({
         receipt: { route: { backend: 'go' } },
       }),
@@ -251,6 +253,7 @@ describe('workflow run evidence selection', () => {
     const { root, seed } = await fixture();
     await seed('ts-local', 'run.backup');
     vi.spyOn(WorkflowRunRouteJournal.prototype, 'createReadOnlyQuery').mockReturnValue({
+      revision: async () => 'fixture',
       locateReadOnly: vi
         .fn()
         .mockRejectedValue(
