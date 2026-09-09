@@ -118,7 +118,7 @@
     },
     "runnerV2RuntimeDeliverySchedulerTest": {
       "path": "services/workflow-control/internal/runnerscheduler/session_v2_runtime_delivery_test.go",
-      "sha256": "4e9d923339de96edf93412fef59f548f1cf47e3986919363f4dd17800a41b8c5"
+      "sha256": "9d66a82fb765873d32a09c7c729cb738371a67fe1e5126808a4256ecb51da916"
     },
     "runnerV2RuntimeDeliveryConfigSource": {
       "path": "services/workflow-control/internal/runnerconfig/config.go",
@@ -370,19 +370,19 @@
     },
     "budgetCompatibilityGenerator": {
       "path": "scripts/workflow-budget-authority-contracts/compatibility.ts",
-      "sha256": "b5eb62b1af248229d7a5c16dfe9b90c5bf30d6261911c28ba0297c56a2d54a54"
+      "sha256": "18bc867bfaa05810ef66a4761e6b970a46728cf6f30c814cfd64e64c7409ec82"
     },
     "budgetCompatibilityTS": {
       "path": "packages/workflows/src/internal/workflow-budget-compatibility.generated.ts",
-      "sha256": "7438e1a9d3a80ab7a14eebb15d72a74087868739198a4a15cc7f51912fe11475"
+      "sha256": "8055cf7927434818f4f377cd8ec01399175a56f256cce32d63e56cc9e935e374"
     },
     "budgetCompatibilityGo": {
       "path": "services/workflow-control/budgetcontract/compatibility_generated.go",
-      "sha256": "090cfeb87ee86a8396baef33a07c2ddc536005005ca3b036395cccd18ea21434"
+      "sha256": "eda464d1357dc359500983d2de92d9d442a1683486935c31d4d73d6fe8d29446"
     },
     "budgetCompatibilityRegression": {
       "path": "packages/workflows/src/__tests__/workflow-budget-manifest-compatibility.test.ts",
-      "sha256": "f941fe3ce43a6fa192ce3e43253ceaa2eb620e5a99c90d889da45c1ab7aeef4d"
+      "sha256": "5a72a5080a3b622ac677c0bc324b89cc29f06d1261be1a4d3cd295a0f8918a43"
     },
     "bindingSchemaFieldRules": {
       "path": "scripts/workflow-runner-authority-binding-contracts/schema-fields.ts",
@@ -394,15 +394,15 @@
     },
     "bindingSchemaBoundaryFixtures": {
       "path": "packages/workflows/contracts/workflow-runner-authority-binding/schema-boundaries.json",
-      "sha256": "60ffa79d833c63feeb370d85db8304dbc970a312fa730dc57338cd39869bf738"
+      "sha256": "ae7b2347c33b7330b37352916acc95d97c8a11a900efef31bf82bdc7265fac7b"
     },
     "bindingSchemaBoundaryTSRegression": {
       "path": "packages/workflows/src/__tests__/workflow-binding-schema-boundaries.test.ts",
-      "sha256": "7b9a7a1d25a01d095f5280bd1ec7dd17cd1479b492db7d7a03da2ca16397a568"
+      "sha256": "e32dbf4ac0c1a458ba5bb33425d7295adc85aad487a911bb452b4149254f7770"
     },
     "bindingSchemaBoundaryGoRegression": {
       "path": "services/workflow-control/runnerbindingcontract/schema_boundaries_test.go",
-      "sha256": "27505707cec021aac24d9c3c8e13f8b8f76288a065ef6d01b5a7a86217ad5e41"
+      "sha256": "473eac0b1d603f566ebe8dfe1f75077e2cfbf37f244063183d528512f59bb529"
     },
     "runIdentity": {
       "path": "packages/workflows/src/internal/workflow-run-identity.ts",
@@ -414,7 +414,7 @@
     },
     "budgetManifestRestartRegression": {
       "path": "services/workflow-control/internal/budgetstore/postgres/manifest_restart_integration_test.go",
-      "sha256": "c801a2ca52713fb5c21b1af7048821fb692efffe3669c07e5d03867e353b1b59"
+      "sha256": "02a9f73396d7e4ef11d7fb7a20f7964810728122516a096f9a8ca04ed59ee1cb"
     },
     "workflowRunReadQuery": {
       "path": "packages/workflows/src/workflow-run-read-query.ts",
@@ -486,7 +486,7 @@
     },
     "workflowRunnerAuthorityRuntime": {
       "path": "packages/workflows/src/workflow-runner-authority-binding-runtime.ts",
-      "sha256": "853fb0d6c619e7b0d450cbff3867ee47d904882fb182f2a9857955af43eadde3"
+      "sha256": "7d50f0fb4e73573b968b3c6fb2b0b4007d1ad6e9685129851276dd546716abc8"
     },
     "workflowRunnerBudgetClient": {
       "path": "packages/workflows/src/workflow-runner-budget-authority-client.ts",
@@ -686,7 +686,7 @@
     },
     "runnerRecoveryRetry": {
       "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry.go",
-      "sha256": "f4480d0cfeb8db0ed697d80320ac8d40364893c2fa2c2ec1665bb2eb42bda1fa"
+      "sha256": "370235681457fb4b23dc3f7092a38952e1a43cc342598b951170932130abb680"
     },
     "runnerRecoveryRetryTests": {
       "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry_integration_test.go",
@@ -727,6 +727,50 @@
     "runPathBoundaryRegression": {
       "path": "packages/workflows/src/__tests__/workflow-run-path-boundaries.test.ts",
       "sha256": "de7ba9f8c999e0b29809153e9708f3ceb8c6627eb903d5264b9b0cc619f1da35"
+    },
+    "bindingControlSequenceRules": {
+      "path": "packages/workflows/contracts/workflow-runner-authority-binding/control-sequences.json",
+      "sha256": "e9816a8e0ec3f6f227fbcac2df1c53af032d2b1ce6cb4dcc5ec3d7ebf9549620"
+    },
+    "bindingControlSequenceGenerator": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/control-sequences.ts",
+      "sha256": "ad29b67bfbbe1f5aad43ae16d6ee180d42651ebb8ea88e53045f802349d12f63"
+    },
+    "bindingControlSequenceTS": {
+      "path": "packages/workflows/src/internal/workflow-control-sequences.generated.ts",
+      "sha256": "554d15e3112df0257f82a2569d13155dc030b0434a6de51795eedbe6246a48ce"
+    },
+    "bindingControlSequenceGo": {
+      "path": "services/workflow-control/runnerbindingcontract/control_sequences_generated.go",
+      "sha256": "5284e7b38ba03c7effbe793699894a1fa3aab1ff1ae2c0c5dbba64baa7d577ab"
+    },
+    "bindingControlSequenceTSRegression": {
+      "path": "packages/workflows/src/__tests__/workflow-control-sequence-rules.test.ts",
+      "sha256": "607556f8c3fb12883542dc33ebcfd8c0d880ed00fe76a839a6b53299290925b7"
+    },
+    "bindingControlSequenceGoRegression": {
+      "path": "services/workflow-control/runnerbindingcontract/control_sequences_test.go",
+      "sha256": "9541a3402ca23a38389552dbbef6ec12eae0d27366ce7d74babfd6bfe4691330"
+    },
+    "bindingControlGeneratorEntry": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/index.ts",
+      "sha256": "6e5403aa8a2727d496d9588cfeabb5d85842405c6f8ccabf0c2f8c3401c846de"
+    },
+    "bindingControlGeneratorBody": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/generator.mts",
+      "sha256": "6a73c9b05d6b01c5685c44df06a62947b339a19fdb1c671ee1a88a653463beec"
+    },
+    "bindingControlGeneratorBootstrap": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/bootstrap.mjs",
+      "sha256": "b70bf687f0f25f819e678711a82a75dcf108d92f77e0c9c140048ba17eb1e7b0"
+    },
+    "bindingControlGeneratorLoader": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/sequence-loader.mjs",
+      "sha256": "93504ccd489137bd5edd9366f41b57ed3693eaf4f5922a3a1c615f38b87b023f"
+    },
+    "runnerRecoveryRetryCancellationTest": {
+      "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry_test.go",
+      "sha256": "421bb06df309bb90c5bb3d18f0de61546935600a624263623e743d0071dbed61"
     }
   },
   "contractInputs": {
@@ -764,7 +808,7 @@
     },
     "workflowRunnerAuthorityBindingContractManifest": {
       "path": "packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json",
-      "sha256": "1f1f4250fa0586beeb10d99dc95d2afa71947feb40bcc54fdc49be10ff06adb5"
+      "sha256": "b9b6543e7bdd4a14f979230db3b3a269ee3073bd34ce48f6815a6112101a6b22"
     },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",
@@ -772,7 +816,7 @@
     },
     "runnerOpenapi": {
       "path": "services/workflow-control/docs/api/runner-openapi.yaml",
-      "sha256": "c35f5ec17106b08a3faea0d850f9352c14b5c6c127025c1d9889e66fae74f359"
+      "sha256": "8b251a81fa93195c1b25fe531104b4dff8d6c63154a187c89240643e8ce00b57"
     },
     "authorityOpenapi": {
       "path": "services/workflow-control/docs/api/authority-openapi.yaml",

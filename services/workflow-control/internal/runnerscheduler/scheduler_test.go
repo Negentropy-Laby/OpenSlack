@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerprotocols"
@@ -23,19 +24,32 @@ func TestSchedulerSurfacesUnsettledSessionFailure(t *testing.T) {
 }
 
 func TestSchedulerRateLimitsSettledRetryableSessionFailure(t *testing.T) {
-	now := time.Now().UTC()
-	store := &schedulerStore{lease: testLease(now), settledView: runnerstore.JobView{State: runnerstore.JobQueued}}
-	scheduler := testScheduler(t, store, now)
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
-	defer cancel()
-	if err := scheduler.Run(ctx); err != nil {
-		t.Fatalf("settled retryable failure stopped scheduler: %v", err)
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if store.claims > 4 {
-		t.Fatalf("settled failure was hot-looped: claims=%d", store.claims)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Now().UTC()
+		store := &schedulerStore{lease: testLease(now), settledView: runnerstore.JobView{State: runnerstore.JobQueued}}
+		scheduler := testScheduler(t, store, now)
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- scheduler.Run(ctx) }()
+		// Observe the settled failure before virtual time reaches the first poll.
+		// Host scheduling must not extend the cancellation window.
+		synctest.Wait()
+		store.mu.Lock()
+		claims := store.claims
+		store.mu.Unlock()
+		if claims != 1 {
+			t.Fatalf("settled failure retried before the first poll: claims=%d", claims)
+		}
+		if err := <-done; err != nil {
+			t.Fatalf("settled retryable failure stopped scheduler: %v", err)
+		}
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		if store.claims > 4 {
+			t.Fatalf("settled failure was hot-looped: claims=%d", store.claims)
+		}
+	})
 }
 
 func TestSchedulerRequiresAndConsumesV2AuthorityRecovery(t *testing.T) {

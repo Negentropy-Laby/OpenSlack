@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
@@ -1206,9 +1206,34 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
 
   it('detects stale, extra, and missing artifacts in either generated mirror', () => {
     const outputRoot = mkdtempSync(join(tmpdir(), 'openslack-binding-contract-'));
-    const generator = resolve(root, 'scripts/workflow-runner-authority-binding-contracts/index.ts');
-    const runGenerator = (command: '--generate' | '--check') =>
-      spawnSync('bun', [generator, command], {
+    const generator = pathToFileURL(
+      resolve(root, 'scripts/workflow-runner-authority-binding-contracts/bootstrap.mjs'),
+    ).href;
+    // Keep all drift checks in one isolated process; repeated TS loader startups
+    // must not consume the regression's unchanged timeout on Windows.
+    const program = `
+      import assert from 'node:assert/strict';
+      import { readFile, writeFile, unlink } from 'node:fs/promises';
+      import { resolve } from 'node:path';
+      import { generate, check } from ${JSON.stringify(generator)};
+      const outputRoot = process.env.OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT;
+      await generate();
+      await check();
+      const extra = resolve(outputRoot, 'packages/workflows/contracts/workflow-runner-authority-binding/v1/extra.json');
+      await writeFile(extra, '{}');
+      await assert.rejects(check, /Authority-binding typescript bundle inventory drift/);
+      await unlink(extra);
+      const manifest = resolve(outputRoot, 'services/workflow-control/runnerbindingcontract/generated/v1/manifest.json');
+      const bytes = await readFile(manifest);
+      await writeFile(manifest, '{}');
+      await assert.rejects(check, /go:manifest\\.json/);
+      await writeFile(manifest, bytes);
+      const schema = resolve(outputRoot, 'services/workflow-control/runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json');
+      await unlink(schema);
+      await assert.rejects(check, /Authority-binding go bundle inventory drift/);
+    `;
+    try {
+      const result = spawnSync('node', ['--import', 'tsx', '--input-type=module', '-e', program], {
         cwd: root,
         encoding: 'utf8',
         env: {
@@ -1216,42 +1241,8 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
           OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT: outputRoot,
         },
       });
-    const output = (result: ReturnType<typeof runGenerator>) =>
-      `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-
-    try {
-      expect(runGenerator('--generate').status).toBe(0);
-      expect(runGenerator('--check').status).toBe(0);
-
-      const typescriptExtra = resolve(
-        outputRoot,
-        'packages/workflows/contracts/workflow-runner-authority-binding/v1/extra.json',
-      );
-      writeFileSync(typescriptExtra, '{}\n', 'utf8');
-      const extraResult = runGenerator('--check');
-      expect(extraResult.status).not.toBe(0);
-      expect(output(extraResult)).toContain('Authority-binding typescript bundle inventory drift');
-      unlinkSync(typescriptExtra);
-
-      const goManifest = resolve(
-        outputRoot,
-        'services/workflow-control/runnerbindingcontract/generated/v1/manifest.json',
-      );
-      const goManifestBytes = readFileSync(goManifest);
-      writeFileSync(goManifest, '{}\n', 'utf8');
-      const staleResult = runGenerator('--check');
-      expect(staleResult.status).not.toBe(0);
-      expect(output(staleResult)).toContain('go:manifest.json');
-      writeFileSync(goManifest, goManifestBytes);
-
-      const goSchema = resolve(
-        outputRoot,
-        'services/workflow-control/runnerbindingcontract/generated/v1/schemas/workflow-runner-authority-binding-stage.v1.schema.json',
-      );
-      unlinkSync(goSchema);
-      const missingResult = runGenerator('--check');
-      expect(missingResult.status).not.toBe(0);
-      expect(output(missingResult)).toContain('Authority-binding go bundle inventory drift');
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stdout + result.stderr).toBe(0);
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
     }

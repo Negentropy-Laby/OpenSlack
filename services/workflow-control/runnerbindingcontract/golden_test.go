@@ -838,11 +838,19 @@ func normalizeGoldenNumbers(value reflect.Value) error {
 func normalizeGoldenDynamic(value any) (any, error) {
 	switch current := value.(type) {
 	case json.Number:
-		parsed, err := strconv.ParseInt(string(current), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("golden number %q is not an integer: %w", current, err)
+		if !json.Valid([]byte(current)) {
+			return nil, fmt.Errorf("invalid golden number %q", current)
 		}
-		return parsed, nil
+		parsed, err := strconv.ParseInt(string(current), 10, 64)
+		if err == nil {
+			return parsed, nil
+		}
+		floating, err := strconv.ParseFloat(string(current), 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return nil, fmt.Errorf("invalid golden number %q: %w", current, err)
+		}
+		// JSON overflow has the same non-finite value as JSON.parse; validators reject it.
+		return floating, nil
 	case map[string]any:
 		for key, entry := range current {
 			normalized, err := normalizeGoldenDynamic(entry)

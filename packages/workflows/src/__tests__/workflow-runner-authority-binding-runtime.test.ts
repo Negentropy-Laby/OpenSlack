@@ -38,7 +38,7 @@ import {
 } from '../workflow-control-authority-contract.js';
 import {
   canonicalWorkflowBudgetAuthorityJson,
-  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+  WORKFLOW_BUDGET_ORIGINAL_MANIFEST_SHA256,
   hashWorkflowBudgetAuthorityValue,
   parseWorkflowBudgetAuthorityBytes,
   prepareWorkflowBudgetAuthorityRequest,
@@ -1581,7 +1581,7 @@ it('uses an HTTP companion seam to seal headers and point-read a lost POST respo
 
 it.each([
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SOURCE_LOCKS.budgetManifest,
-  WORKFLOW_BUDGET_PREVIOUS_MANIFEST_SHA256,
+  WORKFLOW_BUDGET_ORIGINAL_MANIFEST_SHA256,
 ])(
   'validates the exact E2 reserve response and ledger without rewriting manifest %s',
   async (contractManifestSha256) => {

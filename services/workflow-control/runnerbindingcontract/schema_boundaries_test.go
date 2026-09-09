@@ -27,16 +27,35 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 		"runtimeAdmission":        ValidateRuntimeAdmission,
 		"runtimeAdmissionReceipt": func(v any) (Record, error) { return ValidateRuntimeAdmissionReceipt(v, prepared) },
 	}
+	contextual := map[string]func(*testing.T, any) (Record, error){}
+	for kind, reference := range golden.Positive.ControlDelivery.ByKind {
+		control := goldenControlArtifact(t, golden, reference)
+		exchange := golden.Positive.Operations[string(control.Operation)]
+		if kind == "budget_authorization" {
+			exchange = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+		}
+		key := "control:" + kind
+		bases[key] = control.Receipt.Value
+		validators[key] = ValidateReceipt
+		contextual[key] = func(t *testing.T, value any) (Record, error) {
+			return validateControlGolden(value, control.Message, exchange.Stage.Value, exchange.Resolution.Value, exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, controlPriorForGolden(t, golden, kind, control), control.BudgetSourceResult)
+		}
+	}
 	contents, err := os.ReadFile("../../../packages/workflows/contracts/workflow-runner-authority-binding/schema-boundaries.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var cases []struct {
-		ID       string         `json:"id"`
-		Kind     string         `json:"kind"`
-		Accepted bool           `json:"accepted"`
-		Set      map[string]any `json:"set"`
-		Remove   []string       `json:"remove"`
+		ID            string `json:"id"`
+		Kind          string `json:"kind"`
+		Accepted      bool   `json:"accepted"`
+		ExpectedError *struct {
+			Code    string `json:"code"`
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"expectedError"`
+		Set    map[string]any `json:"set"`
+		Remove []string       `json:"remove"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.UseNumber()
@@ -85,7 +104,25 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 				record, key := parent(path)
 				delete(record, key)
 			}
+			if validate := contextual[item.Kind]; validate != nil {
+				_, err := validate(t, value)
+				if item.ExpectedError != nil {
+					actual, ok := err.(*ContractError)
+					if !ok || string(actual.Code) != item.ExpectedError.Code || actual.Path != item.ExpectedError.Path || actual.Message != item.ExpectedError.Message {
+						t.Fatalf("contextual Go error identity mismatch: %v, want %+v", err, item.ExpectedError)
+					}
+				}
+				if (err == nil) != item.Accepted {
+					t.Fatalf("contextual Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
+				}
+			}
 			_, err = validators[item.Kind](value)
+			if item.ExpectedError != nil {
+				actual, ok := err.(*ContractError)
+				if !ok || string(actual.Code) != item.ExpectedError.Code || actual.Path != item.ExpectedError.Path || actual.Message != item.ExpectedError.Message {
+					t.Fatalf("Go error identity mismatch: %v, want %+v", err, item.ExpectedError)
+				}
+			}
 			if (err == nil) != item.Accepted {
 				t.Fatalf("Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
 			}

@@ -35,8 +35,15 @@ func recoveryLeaseID(ctx context.Context, repository *Repository, body string) (
 // Retry only a positively identified, fully rolled-back metadata transaction.
 // Callers put database work here; source CAS, message sending and receipt-unknown
 // recovery stay outside. The existing commit-recovery budget bounds contention.
-func retryRecoveryTransaction[T any](ctx context.Context, repository *Repository, leaseID func(context.Context) (string, error), operation func(context.Context) (T, error)) (T, error) {
-	result, err := operation(ctx)
+func retryRecoveryTransaction[T any](ctx context.Context, repository *Repository, leaseID func(context.Context) (string, error), operation func(context.Context) (T, error)) (result T, err error) {
+	defer func() {
+		// Drivers may report an I/O timeout when cancellation interrupts a socket.
+		// Preserve both causes without changing a successfully committed result.
+		if err != nil && ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+			err = errors.Join(err, ctx.Err())
+		}
+	}()
+	result, err = operation(ctx)
 	if recoveryMetadataAbort(err) == nil {
 		return result, err
 	}

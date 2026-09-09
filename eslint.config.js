@@ -15,7 +15,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,mts}'],
     extends: [...tseslint.configs.recommended],
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

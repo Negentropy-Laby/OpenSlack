@@ -1,0 +1,7 @@
+{
+  "event_receipt": 3,
+  "budget_authorization": 4,
+  "effect_authorization": 4,
+  "resume_offer": 4,
+  "cancel_request": 4
+}

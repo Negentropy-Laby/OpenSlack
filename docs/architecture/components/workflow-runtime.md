@@ -21,6 +21,35 @@ their JavaScript adapters only inside the sealed Go-authority runner-v2 boundary
 Go Workflow Control owns the durable workflow record. Ordinary TypeScript callers
 have read-only inspection and historical export, not a RunStore mutation capability.
 
+## Control receipt v1 validation
+
+Standalone v1 receipt validation now enforces the control kind's companion
+sequence: `event_receipt` requires `3`; `budget_authorization`,
+`effect_authorization`, `resume_offer`, and `cancel_request` require `4`.
+For example, an otherwise valid `event_receipt` with `companionSequence: 4`
+previously passed standalone validation and now fails with
+`WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT`. The same receipt with
+sequence `3` remains valid. First-party producers and stage-context validation
+already followed this rule.
+
+This narrows the accepted v1 inputs for third-party standalone consumers; it is
+not full backward compatibility. Consumers must update their receipt construction
+and standalone validation together. There is no new wire version or permissive
+mode, and persisted messages and ACKs are not rewritten. The non-generated
+`control-sequences.json` rule table drives the TS, Go, and schema projections;
+independent tests retain the reviewed five-kind matrix.
+
+The original 30-row sequence corpus contains 15 existing boundary rejections,
+five valid controls, and ten kind/sequence rejections. Additional multi-fault
+cases check error precedence. The decision-ordering golden keeps a legal
+sequence and matching message digest so that its revision mismatch reaches the
+cross-record ordering check.
+
+Historical budget golden identifiers retain their original meaning:
+`budget:previous-manifest` fixes the original accepted manifest. `ORIGINAL`
+never changes during rotation; `PREVIOUS` denotes the immediately preceding
+manifest. Historical fixtures use `ORIGINAL` rather than following rotation.
+
 ## Package Structure
 
 ```
@@ -1470,6 +1499,10 @@ export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
 ```
 
 ### Maintenance recovery and compatibility guards
+
+Control delivery receipts use companion sequence 3 for `event_receipt` and 4 for every other control kind. Standalone TS/Go validators, stage validation and generated schemas enforce the same rule. The shared boundary corpus exercises each kind independently and with its stage evidence.
+
+Budget compatibility is ordered oldest first. `OriginalManifestSHA256` names its first entry and `PreviousManifestSHA256` names the entry immediately preceding the current digest. Rotation preserves every historical digest. PostgreSQL restart qualification replays each historical digest alongside current writes and checks exact response, receipt and rebuilt account bytes.
 
 Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
 

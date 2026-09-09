@@ -8610,13 +8610,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -8729,13 +8723,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -8848,13 +8836,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -8967,13 +8949,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -9086,13 +9062,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -9205,13 +9175,7 @@ components:
                 "maxLength": 256
               },
               "controlKind": {
-                "enum": [
-                  "event_receipt",
-                  "budget_authorization",
-                  "effect_authorization",
-                  "resume_offer",
-                  "cancel_request"
-                ]
+                "const": "event_receipt"
               },
               "controlSequence": {
                 "type": "integer",
@@ -9325,7 +9289,6 @@ components:
               },
               "controlKind": {
                 "enum": [
-                  "event_receipt",
                   "budget_authorization",
                   "effect_authorization",
                   "resume_offer",
@@ -9444,7 +9407,6 @@ components:
               },
               "controlKind": {
                 "enum": [
-                  "event_receipt",
                   "budget_authorization",
                   "effect_authorization",
                   "resume_offer",
@@ -9563,7 +9525,6 @@ components:
               },
               "controlKind": {
                 "enum": [
-                  "event_receipt",
                   "budget_authorization",
                   "effect_authorization",
                   "resume_offer",
@@ -9682,7 +9643,6 @@ components:
               },
               "controlKind": {
                 "enum": [
-                  "event_receipt",
                   "budget_authorization",
                   "effect_authorization",
                   "resume_offer",

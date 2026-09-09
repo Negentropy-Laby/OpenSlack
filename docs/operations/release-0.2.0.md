@@ -33,6 +33,21 @@ Related guidance:
 - [GitHub automation](github-automation.md)
 - [Human approval](../security/human-approval.md)
 
+## Compatibility notice: standalone control receipts
+
+The v1 standalone receipt validators now reject a control kind with the wrong
+companion sequence. An otherwise valid `event_receipt` with sequence `4` was
+accepted by the older standalone validator; it must use `3`. The other four
+control kinds require `4`. Third-party consumers that validate receipts without
+a stage context must update their producers and validators to these rules.
+First-party valid production and existing contextual validation are unchanged.
+
+This is a deliberate narrowing of v1 acceptance, not a fully backward-compatible
+change. No protocol version or permissive mode is added. Do not rewrite stored
+messages or ACKs during upgrade. See the
+[runtime contract](../architecture/components/workflow-runtime.md#control-receipt-v1-validation)
+for the rule source, error code, and historical manifest semantics.
+
 ## 0. Scope, roles, and hard boundaries
 
 The run uses four roles. One person may hold more than one operator role, but a

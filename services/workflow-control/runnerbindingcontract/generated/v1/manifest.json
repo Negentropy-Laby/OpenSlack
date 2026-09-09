@@ -233,6 +233,7 @@
     "budget-decision-time-inversion",
     "control-decision-effect-evidence-drift",
     "control-decision-resume-attempt-drift",
+    "control-kind-sequence-conflict",
     "control-decision-ordering-drift",
     "control-route-cross-splice",
     "control-delivery-alien-stage-receipt",
@@ -329,8 +330,8 @@
     },
     "schemas/workflow-runner-authority-binding-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
-      "byteLength": 66824,
-      "sha256": "901762717a31731c046a1e2c1ca114f2f9cfd5d1fe4bfdcb7b79ad492fcae249"
+      "byteLength": 65430,
+      "sha256": "19cd41d26ed7beb1bb6fb3a92469c84a458eec697e82192deb89d243b49a13d1"
     },
     "schemas/workflow-runner-authority-binding-error.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-error.v1.schema.json",
@@ -349,8 +350,8 @@
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",
-      "byteLength": 1738849,
-      "sha256": "d50051ef29dda60003f2f6aa279e3a47b4ab65bedeca2d8498160cc21014c85c"
+      "byteLength": 1753026,
+      "sha256": "ad080550ba9c19f1f156671b7f78d549bad0946738ce2bd48d74263b3ab5ad12"
     }
   }
 }
