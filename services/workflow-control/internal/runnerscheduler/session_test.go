@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
@@ -67,21 +68,26 @@ func TestSessionStopsAfterAcceptedEffectOutcomeRequiresReconciliation(t *testing
 }
 
 func TestSessionDoesNotCancelAfterTerminalReceiptDuringDeadlineWindow(t *testing.T) {
-	now := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
-	store := &sessionStore{now: now}
-	lease := testLease(now)
-	lease.WholeDeadline = now.Add(25 * time.Millisecond)
-	launcher := newFakeLauncherWithExitDelay(t, store, lease, 100*time.Millisecond)
-	session := testSession(t, store, launcher, now)
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Now()
+		store := &sessionStore{now: now}
+		lease := testLease(now)
+		lease.WholeDeadline = now.Add(25 * time.Millisecond)
+		launcher := newFakeLauncherWithExitDelay(t, store, lease, 100*time.Millisecond)
+		session := testSession(t, store, launcher, now)
 
-	if err := session.Run(t.Context(), lease); err != nil {
-		t.Fatal(err)
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if store.cancelRequests != 0 {
-		t.Fatalf("terminal receipt was followed by %d cancellation requests", store.cancelRequests)
-	}
+		if err := session.Run(t.Context(), lease); err != nil {
+			t.Fatal(err)
+		}
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		if time.Since(now) < 100*time.Millisecond || !store.successExitAfterTerminalReceipt {
+			t.Fatal("test did not cross the deadline after a proven terminal receipt")
+		}
+		if store.cancelRequests != 0 {
+			t.Fatalf("terminal receipt was followed by %d cancellation requests", store.cancelRequests)
+		}
+	})
 }
 
 func TestSessionTimersUseDatabaseDurationsDespiteHostClockSkew(t *testing.T) {
