@@ -139,7 +139,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}
 	if len(manifest.ContainerInputs) != 6 || manifest.ContainerInputs["goVersion"] != "1.26.5" ||
-		len(manifest.SourceInputs) != 188 || len(manifest.ContractInputs) != 17 {
+		len(manifest.SourceInputs) != 189 || len(manifest.ContractInputs) != 17 {
 		t.Fatal("source manifest input inventory drifted")
 	}
 	wantSourceInputs := map[string]manifestReference{
@@ -544,16 +544,17 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"bindingControlGeneratorBody": {
 			Path:   "scripts/workflow-runner-authority-binding-contracts/generator.mts",
-			SHA256: "1a9ce8616960d72021d4ced30e5508a84a41a7088a39311ceb67ce09be4bf6ce",
+			SHA256: "6a73c9b05d6b01c5685c44df06a62947b339a19fdb1c671ee1a88a653463beec",
 		},
 		"bindingControlGeneratorBootstrap": {
 			Path:   "scripts/workflow-runner-authority-binding-contracts/bootstrap.mjs",
-			SHA256: "041c43b04f461a85d60470d04dec224f9655aa60ee16de28ff04c76cb63cc9cd",
+			SHA256: "b70bf687f0f25f819e678711a82a75dcf108d92f77e0c9c140048ba17eb1e7b0",
 		},
 		"bindingControlGeneratorLoader": {
 			Path:   "scripts/workflow-runner-authority-binding-contracts/sequence-loader.mjs",
 			SHA256: "93504ccd489137bd5edd9366f41b57ed3693eaf4f5922a3a1c615f38b87b023f",
 		},
+		"runnerRecoveryRetryCancellationTest": {Path: "services/workflow-control/internal/runnerstore/postgres/recovery_retry_test.go", SHA256: "421bb06df309bb90c5bb3d18f0de61546935600a624263623e743d0071dbed61"},
 		"bindingSchemaFieldRules": {
 			Path:   "scripts/workflow-runner-authority-binding-contracts/schema-fields.ts",
 			SHA256: "1c106aec5d567b993e3760b76bb55354043096f8849eba6ce04f0c86c0115d2e",
@@ -856,7 +857,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"runnerRecoveryRetry": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/recovery_retry.go",
-			SHA256: "f4480d0cfeb8db0ed697d80320ac8d40364893c2fa2c2ec1665bb2eb42bda1fa",
+			SHA256: "370235681457fb4b23dc3f7092a38952e1a43cc342598b951170932130abb680",
 		},
 		"runnerRecoveryRetryTests": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/recovery_retry_integration_test.go",

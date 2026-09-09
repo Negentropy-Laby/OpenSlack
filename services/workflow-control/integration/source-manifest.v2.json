@@ -686,7 +686,7 @@
     },
     "runnerRecoveryRetry": {
       "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry.go",
-      "sha256": "f4480d0cfeb8db0ed697d80320ac8d40364893c2fa2c2ec1665bb2eb42bda1fa"
+      "sha256": "370235681457fb4b23dc3f7092a38952e1a43cc342598b951170932130abb680"
     },
     "runnerRecoveryRetryTests": {
       "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry_integration_test.go",
@@ -758,15 +758,19 @@
     },
     "bindingControlGeneratorBody": {
       "path": "scripts/workflow-runner-authority-binding-contracts/generator.mts",
-      "sha256": "1a9ce8616960d72021d4ced30e5508a84a41a7088a39311ceb67ce09be4bf6ce"
+      "sha256": "6a73c9b05d6b01c5685c44df06a62947b339a19fdb1c671ee1a88a653463beec"
     },
     "bindingControlGeneratorBootstrap": {
       "path": "scripts/workflow-runner-authority-binding-contracts/bootstrap.mjs",
-      "sha256": "041c43b04f461a85d60470d04dec224f9655aa60ee16de28ff04c76cb63cc9cd"
+      "sha256": "b70bf687f0f25f819e678711a82a75dcf108d92f77e0c9c140048ba17eb1e7b0"
     },
     "bindingControlGeneratorLoader": {
       "path": "scripts/workflow-runner-authority-binding-contracts/sequence-loader.mjs",
       "sha256": "93504ccd489137bd5edd9366f41b57ed3693eaf4f5922a3a1c615f38b87b023f"
+    },
+    "runnerRecoveryRetryCancellationTest": {
+      "path": "services/workflow-control/internal/runnerstore/postgres/recovery_retry_test.go",
+      "sha256": "421bb06df309bb90c5bb3d18f0de61546935600a624263623e743d0071dbed61"
     }
   },
   "contractInputs": {

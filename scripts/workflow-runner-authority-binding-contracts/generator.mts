@@ -3695,7 +3695,7 @@ async function projectedRunnerOpenAPI(map: ReadonlyMap<string, Buffer>): Promise
   return `${current.slice(0, start)}${openAPIBindingSchemaBlock(map)}${current.slice(after)}`;
 }
 
-async function generate(): Promise<void> {
+export async function generate(): Promise<void> {
   const sequenceFiles = await controlSequenceOutputs(
     resolve(fileURLToPath(new URL('../../', import.meta.url))),
   );
@@ -3717,7 +3717,7 @@ async function generate(): Promise<void> {
   await writeFile(runnerOpenAPIPath, openAPI, 'utf8');
 }
 
-async function check(): Promise<void> {
+export async function check(): Promise<void> {
   const sequenceFiles = await controlSequenceOutputs(
     resolve(fileURLToPath(new URL('../../', import.meta.url))),
   );
@@ -3749,8 +3749,3 @@ async function check(): Promise<void> {
     );
   }
 }
-
-const command = process.argv[2] ?? '--generate';
-if (command === '--generate' || command === 'generate') await generate();
-else if (command === '--check' || command === 'check') await check();
-else throw new Error('Usage: index.ts [--generate|--check]');
