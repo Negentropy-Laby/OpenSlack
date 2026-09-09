@@ -150,6 +150,9 @@ func (repository *Repository) Mutate(ctx context.Context, input authoritystore.M
 		if current.exists {
 			return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorConflict, "workflow run already exists", nil)
 		}
+		if !authoritystore.IsPortableRunID(request.RunID) {
+			return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorPlatformUnsupported, "new workflow identifier is not portable", nil)
+		}
 		if err := ensureEpoch(ctx, tx, request.WorkspaceID, request.Route); err != nil {
 			return authoritystore.Receipt{}, err
 		}

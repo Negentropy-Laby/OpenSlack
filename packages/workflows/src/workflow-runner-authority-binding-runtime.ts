@@ -1,3 +1,4 @@
+import { WORKFLOW_BINDING_TIME_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   WORKFLOW_CONTROL_SEQUENCES,
   workflowControlCompanionSequence,
@@ -189,7 +190,7 @@ function exactEqual(left: unknown, right: unknown): boolean {
 
 function canonicalTimestamp(value: string): string {
   if (
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) ||
+    !WORKFLOW_BINDING_TIME_REGEX.test(value) ||
     !Number.isFinite(Date.parse(value)) ||
     new Date(Date.parse(value)).toISOString() !== value
   ) {

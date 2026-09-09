@@ -1,44 +1,44 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RunStore } from '../run-store.js';
-import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import {
   executeWorkflowThroughRunner as executePublicWorkflowThroughRunner,
   type ExecuteWorkflowThroughRunnerInput,
 } from '../index.js';
-import {
-  hashWorkflowRunnerV2Input,
-  hashWorkflowRunnerV2Manifest,
-  hashWorkflowRunnerV2Result,
-  hashWorkflowRunnerV2Source,
-} from '../workflow-runner-v2-descriptor.js';
-import { executeWorkflowThroughRunnerWithRuntime } from '../workflow-runner-execution-client.js';
-import type {
-  WorkflowRunnerControlConfig,
-  WorkflowRunnerJobView,
-  WorkflowRunnerStatusPort,
-} from '../workflow-runner-control-client.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
+import { RunStore } from '../run-store.js';
 import type { RunResult, WorkflowMeta } from '../types.js';
-import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
-import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import {
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
   type WorkflowControlAuthorityRunRecord,
 } from '../workflow-control-authority-client.js';
+import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
+import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import {
   WorkflowRunRouteJournal,
   WorkflowRunRouter,
   type WorkflowRunRouteReceipt,
 } from '../workflow-run-routing.js';
 import type {
+  WorkflowRunnerControlConfig,
+  WorkflowRunnerJobView,
+  WorkflowRunnerStatusPort,
+} from '../workflow-runner-control-client.js';
+import { executeWorkflowThroughRunnerWithRuntime } from '../workflow-runner-execution-client.js';
+import type {
   PreparedWorkflowRunnerV2JobSpec,
   WorkflowRunnerV2ControlPort,
 } from '../workflow-runner-v2-control-client.js';
+import {
+  hashWorkflowRunnerV2Input,
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Result,
+  hashWorkflowRunnerV2Source,
+} from '../workflow-runner-v2-descriptor.js';
 
 const roots: string[] = [];
 const NOW = '2026-08-13T00:00:00.000Z';
@@ -169,6 +169,8 @@ describe('Workflow Runner public execution client', () => {
     'existing-resuming',
     'existing-terminal',
     'existing-identity-drift',
+    'lost-route-authority',
+    'new-nonportable',
   ] as const)('establishes the initial Go authority boundary for %s', async (scenario) => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-go-route-'));
     roots.push(workspaceRoot);
@@ -185,7 +187,7 @@ describe('Workflow Runner public execution client', () => {
     let preparedV2: PreparedWorkflowRunnerV2JobSpec | undefined;
     const output: RunResult = { status: 'completed', value: 'go-owned' };
     let record: WorkflowControlAuthorityRunRecord | undefined;
-    const runId = 'run.public.go-canary';
+    const runId = scenario === 'new-nonportable' ? 'run:nonportable' : 'run.public.go-canary';
     const workflowSourceBytes = Buffer.from('export async function run() {}', 'utf8');
     const router = new WorkflowRunRouter({
       schema: 'openslack.workflow_run_routing_policy.v1',
@@ -199,7 +201,8 @@ describe('Workflow Runner public execution client', () => {
       expiresAt: '2026-08-14T00:00:00.000Z',
     });
     const existing = scenario.startsWith('existing-');
-    const existingRoute = existing
+    const historical = existing || scenario === 'lost-route-authority';
+    const existingRoute = historical
       ? router.select({
           workspaceId: config.workspaceId,
           runId,
@@ -361,13 +364,17 @@ describe('Workflow Runner public execution client', () => {
         record: record!,
         updatedAt: NOW,
       })),
-      readIfExists: vi.fn(async () => ({
-        ...record!,
-        schema: 'openslack.workflow_control_authority_read.v2' as const,
-        recordHash: authorityRecordHash(record!),
-        record: record!,
-        updatedAt: NOW,
-      })),
+      readIfExists: vi.fn(async () =>
+        record
+          ? {
+              ...record!,
+              schema: 'openslack.workflow_control_authority_read.v2' as const,
+              recordHash: authorityRecordHash(record!),
+              record: record!,
+              updatedAt: NOW,
+            }
+          : null,
+      ),
     };
 
     const execution = executeWorkflowThroughRunnerWithRuntime({
@@ -393,10 +400,10 @@ describe('Workflow Runner public execution client', () => {
             return existingRoute ?? null;
           },
           async locate() {
-            return existingRoute ? { receipt: existingRoute, state: 'active' as const } : null;
+            return existing ? { receipt: existingRoute!, state: 'active' as const } : null;
           },
           async locateReadOnly() {
-            return existingRoute ? { receipt: existingRoute, state: 'active' as const } : null;
+            return existing ? { receipt: existingRoute!, state: 'active' as const } : null;
           },
           async commit(route) {
             return route as WorkflowRunRouteReceipt;
@@ -444,6 +451,18 @@ describe('Workflow Runner public execution client', () => {
       },
     });
 
+    if (scenario === 'new-nonportable' || scenario === 'lost-route-authority') {
+      await expect(execution).rejects.toMatchObject({
+        code:
+          scenario === 'new-nonportable'
+            ? 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED'
+            : 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+      });
+      expect(authority.accept).not.toHaveBeenCalled();
+      expect(authority.transition).not.toHaveBeenCalled();
+      expect(v2Submit).not.toHaveBeenCalled();
+      return;
+    }
     if (scenario === 'transition-uncommitted') {
       await expect(execution).rejects.toMatchObject({
         code: 'WORKFLOW_RUNNER_CONTROL_RECONCILIATION_REQUIRED',
@@ -451,7 +470,7 @@ describe('Workflow Runner public execution client', () => {
       });
       expect(authority.accept).toHaveBeenCalledTimes(1);
       expect(authority.transition).toHaveBeenCalledTimes(1);
-      expect(authority.readIfExists).toHaveBeenCalledTimes(1);
+      expect(authority.readIfExists).toHaveBeenCalledTimes(2);
       expect(v2Submit).not.toHaveBeenCalled();
       return;
     }
@@ -476,7 +495,7 @@ describe('Workflow Runner public execution client', () => {
     expect(authority.accept).toHaveBeenCalledTimes(existing ? 0 : 1);
     expect(authority.transition).toHaveBeenCalledTimes(existing ? 0 : 1);
     expect(authority.readIfExists).toHaveBeenCalledTimes(
-      existing || scenario !== 'nominal' ? 1 : 0,
+      existing ? 1 : scenario !== 'nominal' ? 2 : 1,
     );
     expect(authority.read).toHaveBeenCalledTimes(1);
     expect(v2Submit).toHaveBeenCalledTimes(1);

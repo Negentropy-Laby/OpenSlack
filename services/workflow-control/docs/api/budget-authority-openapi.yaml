@@ -3,17 +3,16 @@ info:
   title: OpenSlack Workflow Budget Authority Qualification API
   version: 1.0.0-gs9e2
   description: >-
-    Private, loopback-only GS9-E2 qualification surface. The process is
-    health-only by default. local-qualification-v1 writes Go-owned durable
-    companion envelopes around the frozen TypeScript-owned GS9-E1 operational
-    projections; it does not activate production budget authority, runner v2,
-    production routing, canary traffic, or cutover.
+    Private, loopback-only GS9-E2 qualification surface. The process is health-only by default.
+    local-qualification-v1 writes Go-owned durable companion envelopes around the frozen
+    TypeScript-owned GS9-E1 operational projections; it does not activate production budget
+    authority, runner v2, production routing, canary traffic, or cutover.
 servers:
   - url: http://127.0.0.1:8085
 security: []
 x-openslack-default-off: true
 x-openslack-mode: local-qualification-v1
-x-openslack-network-modes: [loopback]
+x-openslack-network-modes: [ loopback ]
 x-openslack-schema-version: 6
 x-openslack-workflow-authority: typescript
 x-openslack-budget-authority: qualification-only
@@ -32,7 +31,7 @@ paths:
     post:
       operationId: reserveQualificationWorkflowBudget
       description: Reserve one provider-call budget against the exact qualification route.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         - $ref: '#/components/parameters/CallerHeader'
         - $ref: '#/components/parameters/WorkspaceHeader'
@@ -57,13 +56,13 @@ paths:
           '415': { $ref: '#/components/responses/UnsupportedMediaType' },
           '422': { $ref: '#/components/responses/Unprocessable' },
           '500': { $ref: '#/components/responses/Internal' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
   /v1/authority/workflow-budgets:settle:
     post:
       operationId: settleQualificationWorkflowBudget
       description: Settle one open provider-call reservation against the exact qualification route.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         - $ref: '#/components/parameters/CallerHeader'
         - $ref: '#/components/parameters/WorkspaceHeader'
@@ -88,41 +87,37 @@ paths:
           '415': { $ref: '#/components/responses/UnsupportedMediaType' },
           '422': { $ref: '#/components/responses/Unprocessable' },
           '500': { $ref: '#/components/responses/Internal' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
   /v1/authority/workflow-budgets/runs/{runId}/account:
     get:
       operationId: readQualificationWorkflowBudgetAccount
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         [
           { $ref: '#/components/parameters/RunID' },
           { $ref: '#/components/parameters/CallerHeader' },
           { $ref: '#/components/parameters/WorkspaceHeader' },
           { $ref: '#/components/parameters/EpochHeader' },
-          { $ref: '#/components/parameters/BuildHeader' },
+          { $ref: '#/components/parameters/BuildHeader' }
         ]
       responses:
         {
           '200':
             {
               description: Exact Go durable account companion envelope.,
-              content:
-                {
-                  application/json:
-                    { schema: { $ref: '#/components/schemas/DurableAccountRecord' } },
-                },
+              content: { application/json: { schema: { $ref: '#/components/schemas/DurableAccountRecord' } } }
             },
           '401': { $ref: '#/components/responses/Unauthorized' },
           '404': { $ref: '#/components/responses/NotFound' },
           '422': { $ref: '#/components/responses/Unprocessable' },
           '500': { $ref: '#/components/responses/Internal' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
   /v1/authority/workflow-budgets/runs/{runId}/reservations/{reservationId}:
     get:
       operationId: readQualificationWorkflowBudgetReservation
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         [
           { $ref: '#/components/parameters/RunID' },
@@ -130,34 +125,33 @@ paths:
           { $ref: '#/components/parameters/CallerHeader' },
           { $ref: '#/components/parameters/WorkspaceHeader' },
           { $ref: '#/components/parameters/EpochHeader' },
-          { $ref: '#/components/parameters/BuildHeader' },
+          { $ref: '#/components/parameters/BuildHeader' }
         ]
       responses:
         {
           '200':
             {
               description: Closed read state around the immutable reservation companion envelope.,
-              content:
-                { application/json: { schema: { $ref: '#/components/schemas/ReservationRead' } } },
+              content: { application/json: { schema: { $ref: '#/components/schemas/ReservationRead' } } }
             },
           '401': { $ref: '#/components/responses/Unauthorized' },
           '404': { $ref: '#/components/responses/NotFound' },
           '422': { $ref: '#/components/responses/Unprocessable' },
           '500': { $ref: '#/components/responses/Internal' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
   /v1/authority/workflow-budgets/receipts/{idempotencyKey}:
     get:
       operationId: readQualificationWorkflowBudgetReceipt
       description: Return the byte-identical original persisted mutation response.
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         [
           { $ref: '#/components/parameters/ReceiptKey' },
           { $ref: '#/components/parameters/CallerHeader' },
           { $ref: '#/components/parameters/WorkspaceHeader' },
           { $ref: '#/components/parameters/EpochHeader' },
-          { $ref: '#/components/parameters/BuildHeader' },
+          { $ref: '#/components/parameters/BuildHeader' }
         ]
       responses:
         {
@@ -166,7 +160,7 @@ paths:
           '404': { $ref: '#/components/responses/NotFound' },
           '422': { $ref: '#/components/responses/Unprocessable' },
           '500': { $ref: '#/components/responses/Internal' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
   /health/live:
     get:
@@ -180,7 +174,7 @@ paths:
       responses:
         {
           '200': { $ref: '#/components/responses/Health' },
-          '503': { $ref: '#/components/responses/Health' },
+          '503': { $ref: '#/components/responses/Health' }
         }
   /health/version:
     get:
@@ -191,29 +185,29 @@ paths:
           '200':
             {
               description: Qualification and negative production-authority declaration.,
-              content: { application/json: { schema: { $ref: '#/components/schemas/Version' } } },
-            },
+              content: { application/json: { schema: { $ref: '#/components/schemas/Version' } } }
+            }
         }
   /metrics:
     get:
       operationId: workflowBudgetAuthorityMetrics
-      security: [{ bearerAuth: [] }]
+      security: [ { bearerAuth: [] } ]
       parameters:
         [
           { $ref: '#/components/parameters/CallerHeader' },
           { $ref: '#/components/parameters/WorkspaceHeader' },
           { $ref: '#/components/parameters/EpochHeader' },
-          { $ref: '#/components/parameters/BuildHeader' },
+          { $ref: '#/components/parameters/BuildHeader' }
         ]
       responses:
         {
           '200':
             {
               description: Low-cardinality qualification metrics.,
-              content: { text/plain: { schema: { type: string } } },
+              content: { text/plain: { schema: { type: string } } }
             },
           '401': { $ref: '#/components/responses/Unauthorized' },
-          '503': { $ref: '#/components/responses/Unavailable' },
+          '503': { $ref: '#/components/responses/Unavailable' }
         }
 components:
   securitySchemes:
@@ -224,65 +218,69 @@ components:
         name: X-OpenSlack-Workflow-Budget-Caller-ID,
         in: header,
         required: true,
-        schema: { $ref: '#/components/schemas/Identifier' },
+        schema: { $ref: '#/components/schemas/Identifier' }
       }
     WorkspaceHeader:
       {
         name: X-OpenSlack-Workflow-Budget-Workspace-ID,
         in: header,
         required: true,
-        schema: { $ref: '#/components/schemas/Identifier' },
+        schema: { $ref: '#/components/schemas/Identifier' }
       }
     EpochHeader:
       {
         name: X-OpenSlack-Workflow-Budget-Routing-Epoch,
         in: header,
         required: true,
-        schema: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 },
+        schema: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
       }
     BuildHeader:
       {
         name: X-OpenSlack-Workflow-Budget-Expected-Build-SHA,
         in: header,
         required: true,
-        schema: { $ref: '#/components/schemas/Hash' },
+        schema: { $ref: '#/components/schemas/Hash' }
       }
     IdempotencyKey:
       {
         name: Idempotency-Key,
         in: header,
         required: true,
-        schema: { $ref: '#/components/schemas/IdempotencyKey' },
+        schema: { $ref: '#/components/schemas/IdempotencyKey' }
       }
     RequestFingerprint:
       {
         name: X-OpenSlack-Request-Fingerprint,
         in: header,
         required: true,
-        schema: { $ref: '#/components/schemas/Fingerprint' },
+        schema: { $ref: '#/components/schemas/Fingerprint' }
       }
     RunID:
-      { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/Identifier' } }
+      {
+        name: runId,
+        in: path,
+        required: true,
+        schema: { $ref: '#/components/schemas/Identifier' }
+      }
     ReservationID:
       {
         name: reservationId,
         in: path,
         required: true,
-        schema: { $ref: '#/components/schemas/Identifier' },
+        schema: { $ref: '#/components/schemas/Identifier' }
       }
     ReceiptKey:
       {
         name: idempotencyKey,
         in: path,
         required: true,
-        schema: { $ref: '#/components/schemas/IdempotencyKey' },
+        schema: { $ref: '#/components/schemas/IdempotencyKey' }
       }
   responses:
     Created:
       {
         description: 'Fresh durable accepted, rejected, or settled mutation response.',
-        content:
-          { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } }
       }
     Replay:
       description: Byte-identical original response for the exact idempotency replay.
@@ -291,67 +289,65 @@ components:
     Reconciliation:
       {
         description: Closed provider or database reconciliation response.,
-        content:
-          { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } }
       }
     OriginalResponse:
       {
         description: Byte-identical original persisted mutation response.,
-        content:
-          { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/MutationResponse' } } }
       }
     Health:
       {
         description: Process or lightweight repository health.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } }
       }
     Unauthorized:
       {
         description: Exact bearer or qualification identity is invalid.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     NotFound:
       {
         description: Bound budget authority record was not found.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     Conflict:
       {
-        description: 'Immutable identity, expected revision, idempotency, or reconciliation precondition conflicted.',
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        description: 'Immutable identity, expected revision, idempotency, or reconciliation precondition
+          conflicted.',
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     TooLarge:
       {
         description: Request body exceeds the frozen maximum.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     UnsupportedMediaType:
       {
         description: Content-Type is not exactly application/json.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     Unprocessable:
       {
         description: Request or canonical content is invalid.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     Internal:
       {
         description: Permanent integrity or internal failure.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
     Unavailable:
       {
         description: PostgreSQL is unavailable.,
-        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } },
+        content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
       }
   schemas:
     Identifier: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$', maxLength: 256 }
     Hash: { type: string, pattern: '^[0-9a-f]{64}$' }
     Fingerprint: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
     Decimal: { type: string, pattern: '^(?:0|[1-9][0-9]{0,18})$', maxLength: 19 }
-    IdempotencyKey:
-      { type: string, pattern: '^openslack\.workflow-budget-authority\.v1\.[0-9a-f]{64}$' }
+    IdempotencyKey: { type: string, pattern: '^openslack\.workflow-budget-authority\.v1\.[0-9a-f]{64}$' }
     Route:
       type: object
       additionalProperties: false
@@ -361,7 +357,7 @@ components:
         authority: { const: workflow-control }
         routingEpoch: { type: integer, minimum: 1, maximum: 9007199254740991 }
         authorityBuildHash: { $ref: '#/components/schemas/Hash' }
-      required: [backend, authority, routingEpoch, authorityBuildHash]
+      required: [ backend, authority, routingEpoch, authorityBuildHash ]
     Quantities:
       type: object
       additionalProperties: false
@@ -370,9 +366,9 @@ components:
         {
           tokens: { $ref: '#/components/schemas/Decimal' },
           nanoUsd: { $ref: '#/components/schemas/Decimal' },
-          calls: { $ref: '#/components/schemas/Decimal' },
+          calls: { $ref: '#/components/schemas/Decimal' }
         }
-      required: [tokens, nanoUsd, calls]
+      required: [ tokens, nanoUsd, calls ]
     ReserveRequestProjection:
       allOf:
         - $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-reserve-request.v1.schema.json'
@@ -400,7 +396,7 @@ components:
           properties:
             {
               request: { $ref: '#/components/schemas/ReserveRequestProjection' },
-              afterAccount: { $ref: '#/components/schemas/QualificationAccountProjection' },
+              afterAccount: { $ref: '#/components/schemas/QualificationAccountProjection' }
             }
     QualificationSettlementProjection:
       allOf:
@@ -410,7 +406,7 @@ components:
             {
               request: { $ref: '#/components/schemas/SettlementRequestProjection' },
               reservation: { $ref: '#/components/schemas/QualificationReservationProjection' },
-              afterAccount: { $ref: '#/components/schemas/QualificationAccountProjection' },
+              afterAccount: { $ref: '#/components/schemas/QualificationAccountProjection' }
             }
     DurableRecord:
       oneOf:
@@ -448,11 +444,17 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: account },
           operationalProjection: { $ref: '#/components/schemas/QualificationAccountProjection' },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
       required:
         [
@@ -465,7 +467,7 @@ components:
           authorityBuildHash,
           recordKind,
           operationalProjection,
-          operationalProjectionHash,
+          operationalProjectionHash
         ]
     DurableRecordReserveDecisionBranch:
       <<: *DurableAccount
@@ -477,12 +479,17 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reserve_decision },
-          operationalProjection:
-            { $ref: '#/components/schemas/QualificationReserveDecisionProjection' },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjection: { $ref: '#/components/schemas/QualificationReserveDecisionProjection' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     DurableRecordReservationBranch:
       <<: *DurableAccount
@@ -494,12 +501,17 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reservation },
-          operationalProjection:
-            { $ref: '#/components/schemas/QualificationReservationProjection' },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjection: { $ref: '#/components/schemas/QualificationReservationProjection' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     DurableRecordSettlementBranch:
       <<: *DurableAccount
@@ -511,11 +523,17 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: settlement },
           operationalProjection: { $ref: '#/components/schemas/QualificationSettlementProjection' },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     DurableRecordLedgerEntryBranch:
       <<: *DurableAccount
@@ -527,14 +545,20 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: ledger_entry },
           operationalProjection:
             {
-              $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-ledger-entry.v1.schema.json',
+              $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-ledger-entry.v1.schema.json'
             },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     DurableRecordReceiptBranch:
       <<: *DurableAccount
@@ -546,14 +570,17 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: receipt },
-          operationalProjection:
-            {
-              $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-receipt.v1.schema.json',
-            },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjection: { $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-receipt.v1.schema.json' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     DurableRecordReconciliationBranch:
       <<: *DurableAccount
@@ -565,14 +592,20 @@ components:
           authorityMode: { const: local-qualification-v1 },
           productionAuthority: { const: false },
           contractManifestSha256:
-            { enum: [83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b, 662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548] },
+            {
+              enum:
+                [
+                  83e5f88e01cbeb5e301004c34ed7cad446b98a59812771a9bf3be562a0509b3b,
+                  662fdb7237d9225593f1988fc2069e15230482da26c46fac5db73e4ee2604548
+                ]
+            },
           authorityBuildHash: { $ref: '#/components/schemas/Hash' },
           recordKind: { const: reconciliation },
           operationalProjection:
             {
-              $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-reconciliation.v1.schema.json',
+              $ref: '../../budgetcontract/generated/v1/schemas/workflow-budget-reconciliation.v1.schema.json'
             },
-          operationalProjectionHash: { $ref: '#/components/schemas/Hash' },
+          operationalProjectionHash: { $ref: '#/components/schemas/Hash' }
         }
     MutationResponse:
       oneOf:
@@ -590,13 +623,9 @@ components:
           operation: { const: reserve },
           record: { $ref: '#/components/schemas/DurableReserveDecisionRecord' },
           receipt: { $ref: '#/components/schemas/DurableReceiptRecord' },
-          reconciliation:
-            {
-              oneOf:
-                [{ type: 'null' }, { $ref: '#/components/schemas/DurableReconciliationRecord' }],
-            },
+          reconciliation: { oneOf: [ { type: 'null' }, { $ref: '#/components/schemas/DurableReconciliationRecord' } ] }
         }
-      required: [schema, operation, record, receipt, reconciliation]
+      required: [ schema, operation, record, receipt, reconciliation ]
     KnownSettlementResponse:
       type: object
       additionalProperties: false
@@ -607,13 +636,9 @@ components:
           operation: { const: settle },
           record: { $ref: '#/components/schemas/DurableSettlementRecord' },
           receipt: { $ref: '#/components/schemas/DurableReceiptRecord' },
-          reconciliation:
-            {
-              oneOf:
-                [{ type: 'null' }, { $ref: '#/components/schemas/DurableReconciliationRecord' }],
-            },
+          reconciliation: { oneOf: [ { type: 'null' }, { $ref: '#/components/schemas/DurableReconciliationRecord' } ] }
         }
-      required: [schema, operation, record, receipt, reconciliation]
+      required: [ schema, operation, record, receipt, reconciliation ]
     DatabaseReconciliationResponse:
       type: object
       additionalProperties: false
@@ -621,12 +646,12 @@ components:
       properties:
         {
           schema: { const: openslack.workflow_control_budget_mutation_response.v1 },
-          operation: { enum: [reserve, settle] },
+          operation: { enum: [ reserve, settle ] },
           record: { type: 'null' },
           receipt: { $ref: '#/components/schemas/DurableReceiptRecord' },
-          reconciliation: { $ref: '#/components/schemas/DurableReconciliationRecord' },
+          reconciliation: { $ref: '#/components/schemas/DurableReconciliationRecord' }
         }
-      required: [schema, operation, record, receipt, reconciliation]
+      required: [ schema, operation, record, receipt, reconciliation ]
     ReservationRead:
       oneOf:
         - $ref: '#/components/schemas/OpenReservationRead'
@@ -641,9 +666,9 @@ components:
           reservation: { $ref: '#/components/schemas/DurableReservationRecord' },
           status: { const: open },
           terminalLedgerEntryId: { type: 'null' },
-          closedAt: { type: 'null' },
+          closedAt: { type: 'null' }
         }
-      required: [schema, reservation, status, terminalLedgerEntryId, closedAt]
+      required: [ schema, reservation, status, terminalLedgerEntryId, closedAt ]
     SettledReservationRead:
       type: object
       additionalProperties: false
@@ -654,20 +679,15 @@ components:
           reservation: { $ref: '#/components/schemas/DurableReservationRecord' },
           status: { const: settled },
           terminalLedgerEntryId: { $ref: '#/components/schemas/Identifier' },
-          closedAt:
-            {
-              type: string,
-              format: date-time,
-              pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$',
-            },
+          closedAt: { type: string, format: date-time, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$' }
         }
-      required: [schema, reservation, status, terminalLedgerEntryId, closedAt]
+      required: [ schema, reservation, status, terminalLedgerEntryId, closedAt ]
     Health:
       type: object
       additionalProperties: false
       unevaluatedProperties: false
-      properties: { status: { enum: [live, ready, not_ready] } }
-      required: [status]
+      properties: { status: { enum: [ live, ready, not_ready ] } }
+      required: [ status ]
     Version:
       type: object
       additionalProperties: false
@@ -676,7 +696,7 @@ components:
         schema: { const: openslack.workflow_control_budget_authority_service_version.v1 }
         contractVersion: { const: v1 }
         buildSha: { $ref: '#/components/schemas/Hash' }
-        mode: { enum: [disabled, local-qualification-v1] }
+        mode: { enum: [ disabled, local-qualification-v1 ] }
         qualificationMode: { type: boolean }
         typescriptProductionWorkflowAuthority: { const: true }
         goBudgetAuthority: { const: qualification-only }
@@ -702,7 +722,7 @@ components:
           runnerProtocolV2Delivered,
           routingActivated,
           canaryActivated,
-          cutoverActivated,
+          cutoverActivated
         ]
     Error:
       type: object
@@ -740,8 +760,8 @@ components:
                 WORKFLOW_BUDGET_AUTHORITY_ROUTE_DRIFT,
                 WORKFLOW_BUDGET_AUTHORITY_STALE_REVISION,
                 WORKFLOW_BUDGET_AUTHORITY_RECONCILIATION_REQUIRED,
-                WORKFLOW_BUDGET_AUTHORITY_LEGACY_APPROVAL_NO_AUTHORITY,
-              ],
+                WORKFLOW_BUDGET_AUTHORITY_LEGACY_APPROVAL_NO_AUTHORITY
+              ]
           }
         message: { type: string, minLength: 1, maxLength: 256 }
-      required: [schema, code, message]
+      required: [ schema, code, message ]

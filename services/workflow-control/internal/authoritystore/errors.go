@@ -8,6 +8,7 @@ import (
 type ErrorCode string
 
 const (
+	ErrorPlatformUnsupported ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_PLATFORM_UNSUPPORTED"
 	ErrorInputInvalid        ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_INPUT_INVALID"
 	ErrorContentInvalid      ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_CONTENT_INVALID"
 	ErrorConflict            ErrorCode = "WORKFLOW_CONTROL_AUTHORITY_CONFLICT"

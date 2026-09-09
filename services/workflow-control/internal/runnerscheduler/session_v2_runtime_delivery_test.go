@@ -8,12 +8,18 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/authoritycontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/processsupervisor"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/runnerstore"
 )
+
+func runControlClockCase(t *testing.T, name string, body func(*testing.T)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) { synctest.Test(t, body) })
+}
 
 func TestV2AuthorityControlOrdering(t *testing.T) {
 	for _, test := range []struct {
@@ -24,7 +30,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		{name: "budget reserve", decisionKind: authoritycontract.KindBudgetAuthorization},
 		{name: "resume advance", decisionKind: authoritycontract.KindResumeOffer},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		runControlClockCase(t, test.name, func(t *testing.T) {
 			store, process, lease, recorded := authorityControlFixture(test.decisionKind, true, 12)
 			session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 			sent, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, true)
@@ -40,7 +46,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		})
 	}
 
-	t.Run("no decision uses exact optional companion", func(t *testing.T) {
+	runControlClockCase(t, "no decision uses exact optional companion", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 		sent, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, true)
@@ -52,7 +58,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("pre-event cancel is reconciliation not reverse delivery", func(t *testing.T) {
+	runControlClockCase(t, "pre-event cancel is reconciliation not reverse delivery", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture(authoritycontract.KindEffectAuthorization, true, 9)
 		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 		sent, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, true)
@@ -61,7 +67,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("decision response loss stops before cancel", func(t *testing.T) {
+	runControlClockCase(t, "decision response loss stops before cancel", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture(authoritycontract.KindResumeOffer, true, 12)
 		store.failAcknowledgement = recorded.Decision.EventID
 		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
@@ -74,7 +80,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("durable reconciliation ACK stops before decision and cancel", func(t *testing.T) {
+	runControlClockCase(t, "durable reconciliation ACK stops before decision and cancel", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture(authoritycontract.KindBudgetAuthorization, true, 12)
 		store.reconciliationAcknowledgement = recorded.Receipt.EventID
 		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
@@ -86,14 +92,14 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("ACK deadline is the lease and job hard bound rather than thirty seconds", func(t *testing.T) {
+	runControlClockCase(t, "ACK deadline is the lease and job hard bound rather than thirty seconds", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
-		// send creates a real context deadline; keep its clock in the same domain.
+		// Fixture, injected clock and context timers share the synctest clock.
 		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		store.expectedDeadline = lease.LeaseExpiresAt
-		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 		if _, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false); err != nil {
 			t.Fatalf("deliver control before hard deadline: %v", err)
 		}
@@ -102,7 +108,7 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("process-exit ACK retry uses grace unless a nonzero hard bound is earlier", func(t *testing.T) {
+	runControlClockCase(t, "process-exit ACK retry uses grace unless a nonzero hard bound is earlier", func(t *testing.T) {
 		now := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
 		if got, want := v2ControlRetryDeadline(now, time.Time{}), now.Add(time.Second); !got.Equal(want) {
 			t.Fatalf("zero hard deadline retry = %s, want grace %s", got, want)
@@ -117,15 +123,15 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("worker exit interrupts an outstanding control ACK wait", func(t *testing.T) {
+	runControlClockCase(t, "worker exit interrupts an outstanding control ACK wait", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		store.blockAcknowledgement = true
-		// send creates a real context deadline; keep its clock in the same domain.
+		// Fixture, injected clock and context timers share the synctest clock.
 		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		close(process.done)
-		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 		_, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false)
 		if err == nil || !strings.Contains(err.Error(), "exited before acknowledging event_receipt control") {
 			t.Fatalf("worker exit did not interrupt ACK wait: %v", err)
@@ -135,15 +141,15 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 		}
 	})
 
-	t.Run("durable ACK wins when process exit and acknowledgement complete together", func(t *testing.T) {
+	runControlClockCase(t, "durable ACK wins when process exit and acknowledgement complete together", func(t *testing.T) {
 		store, process, lease, recorded := authorityControlFixture("", false, 11)
 		store.acknowledgeAfterCancellation = true
-		// send creates a real context deadline; keep its clock in the same domain.
+		// Fixture, injected clock and context timers share the synctest clock.
 		now := time.Now().UTC()
 		lease.LeaseExpiresAt = now.Add(2 * time.Minute)
 		lease.WholeDeadline = now.Add(5 * time.Minute)
 		close(process.done)
-		session := &V2Session{config: V2SessionConfig{Store: store, Now: func() time.Time { return now }}}
+		session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
 		_, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false)
 		if err != nil {
 			t.Fatalf("durable ACK lost to process exit: %v", err)
@@ -152,6 +158,34 @@ func TestV2AuthorityControlOrdering(t *testing.T) {
 			t.Fatalf("durably acknowledged control was marked for reconciliation: %v", store.reconciled)
 		}
 	})
+}
+
+func TestV2ControlACKLeaseBoundary(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		delay    time.Duration
+		accepted bool
+	}{
+		{"before expiry", 2*time.Minute - time.Nanosecond, true},
+		{"after expiry", 2*time.Minute + time.Nanosecond, false},
+	} {
+		runControlClockCase(t, test.name, func(t *testing.T) {
+			store, process, lease, recorded := authorityControlFixture("", false, 11)
+			now := time.Now().UTC()
+			lease.LeaseExpiresAt = now.Add(2 * time.Minute)
+			lease.WholeDeadline = now.Add(5 * time.Minute)
+			store.acknowledgementDelay = test.delay
+			session := &V2Session{config: V2SessionConfig{Store: store, Now: time.Now}}
+			_, err := session.sendRecordedV2Controls(t.Context(), process, lease, recorded, false)
+			if test.accepted {
+				if err != nil || len(store.reconciled) != 0 || !time.Now().Before(lease.LeaseExpiresAt) {
+					t.Fatalf("pre-expiry ACK rejected: %v", err)
+				}
+			} else if err == nil || len(store.reconciled) == 0 || time.Now().Before(lease.LeaseExpiresAt) {
+				t.Fatalf("post-expiry ACK escaped reconciliation: %v", err)
+			}
+		})
+	}
 }
 
 type v2ControlOrderStore struct {
@@ -171,6 +205,7 @@ type v2ControlOrderStore struct {
 	expectedDeadline              time.Time
 	observedDeadline              time.Time
 	authorityACK                  map[string]bool
+	acknowledgementDelay          time.Duration
 }
 
 func (store *v2ControlOrderStore) PendingCancel(context.Context, string, string, string) (*runnerstore.CancelControl, error) {
@@ -200,6 +235,15 @@ func (store *v2ControlOrderStore) MarkV2ControlDeliveryReconciliation(_ context.
 }
 
 func (store *v2ControlOrderStore) WaitV2ControlAcknowledged(ctx context.Context, _ string, eventID string) (runnerstore.V2ControlDeliveryDisposition, error) {
+	if store.acknowledgementDelay != 0 {
+		timer := time.NewTimer(store.acknowledgementDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
 	store.mu.Lock()
 	store.acknowledgementCalls++
 	acknowledgementCall := store.acknowledgementCalls

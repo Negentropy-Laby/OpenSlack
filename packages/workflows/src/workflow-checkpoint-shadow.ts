@@ -1,6 +1,8 @@
 import { readdir, unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
+import { validateWorkflowLocalShadowEndpoint } from './internal/workflow-local-shadow-config.js';
 import {
   WORKFLOW_CHECKPOINT_SHADOW_ENVELOPE_SCHEMA,
   WORKFLOW_CHECKPOINT_SHADOW_IDEMPOTENCY_PREFIX,
@@ -27,7 +29,6 @@ import {
   WORKFLOW_CONTROL_SHADOW_POLICY,
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
-import { validateWorkflowLocalShadowEndpoint } from './internal/workflow-local-shadow-config.js';
 
 export interface WorkflowCheckpointShadowPublisherPort {
   publish(envelope: WorkflowCheckpointShadowEnvelope): Promise<WorkflowCheckpointShadowReceipt>;
@@ -466,7 +467,7 @@ export function createWorkflowCheckpointShadowHttpPublisher(options: {
   if (
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(options.callerId) ||
+    !SAFE_IDENTIFIER_REGEX.test(options.callerId) ||
     (options.timeoutMs !== undefined &&
       (!Number.isSafeInteger(options.timeoutMs) ||
         options.timeoutMs < 1 ||

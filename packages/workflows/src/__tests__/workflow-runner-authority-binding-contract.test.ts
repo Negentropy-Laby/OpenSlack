@@ -1,13 +1,22 @@
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-
+import {
+  withWorkflowRunnerAuthorityBindingEncodingObserver,
+  withWorkflowRunnerAuthorityBindingValidationObserver,
+} from '../internal/workflow-runner-authority-binding-instrumentation.js';
+import {
+  canonicalWorkflowBudgetAuthorityJson,
+  parseWorkflowBudgetAuthorityBytes,
+  prepareWorkflowBudgetAuthorityRequest,
+  validateWorkflowBudgetReserveRequest,
+  validateWorkflowBudgetSettlementRequest,
+} from '../workflow-budget-authority-contract.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
   prepareWorkflowControlAuthorityMessage,
@@ -47,19 +56,13 @@ import {
   validateWorkflowRunnerBudgetSourceResult,
   workflowRunnerAuthorityBindingExpectedKind,
   workflowRunnerAuthorityBindingRunnerDelta,
-  type WorkflowRunnerAuthorityBindingOperation,
 } from '../workflow-runner-authority-binding-contract.js';
-import {
-  canonicalWorkflowBudgetAuthorityJson,
-  parseWorkflowBudgetAuthorityBytes,
-  prepareWorkflowBudgetAuthorityRequest,
-  validateWorkflowBudgetReserveRequest,
-  validateWorkflowBudgetSettlementRequest,
-} from '../workflow-budget-authority-contract.js';
-import {
-  withWorkflowRunnerAuthorityBindingEncodingObserver,
-  withWorkflowRunnerAuthorityBindingValidationObserver,
-} from '../internal/workflow-runner-authority-binding-instrumentation.js';
+import { bindingGoldenContext } from './helpers/binding-golden-context.js';
+import type {
+  Golden,
+  ExactVector,
+  ControlDeliveryArtifact,
+} from './helpers/binding-golden-types.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const bundleRoot = resolve(
@@ -75,26 +78,6 @@ const sha = (path: string) =>
 
 type Json = Record<string, unknown>;
 
-function validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
-  receipt: unknown,
-  message: unknown,
-  stage: unknown,
-  resolution: unknown,
-  resolutionReceipt: unknown,
-  stageReceipt: unknown,
-  priorEventDelivery: unknown,
-  budgetSourceResult: unknown = null,
-) {
-  return validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(receipt, message, {
-    stage,
-    resolution,
-    resolutionReceipt,
-    stageReceipt,
-    priorEventDelivery,
-    budgetSourceResult,
-  });
-}
-
 function asJson(value: unknown, label: string): Json {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${label} must be an object.`);
@@ -105,93 +88,6 @@ function asJson(value: unknown, label: string): Json {
 function asSafeInteger(value: unknown, label: string): number {
   if (!Number.isSafeInteger(value)) throw new Error(`${label} must be a safe integer.`);
   return value as number;
-}
-
-interface ExactVector {
-  readonly value: unknown;
-  readonly canonicalBytes: string;
-  readonly byteLength: number;
-  readonly sha256: string;
-  readonly prepared: {
-    readonly schema: string;
-    readonly bodyHash: string;
-    readonly idempotencyKey: string;
-    readonly requestFingerprint: string;
-  };
-}
-
-interface ExchangeVectors {
-  readonly stage: ExactVector;
-  readonly stageReceipt: ExactVector;
-  readonly resolution: ExactVector;
-  readonly resolutionReceipt: ExactVector;
-}
-
-interface ControlDeliveryArtifact {
-  readonly operation: WorkflowRunnerAuthorityBindingOperation;
-  readonly message: unknown;
-  readonly receipt: ExactVector;
-  readonly budgetSourceResult: unknown | null;
-  readonly priorEventDeliveryRef: string | null;
-}
-
-interface Golden {
-  readonly sourceLocks: Record<string, string>;
-  readonly operationMatrix: Array<{
-    operation: WorkflowRunnerAuthorityBindingOperation;
-    targetKind: string;
-    runnerDelta: { revision: number; generation: number };
-    sourceEvidenceState: 'prepared' | 'committed';
-    sourcePlane: 'checkpoint_control' | 'effect_v2_sibling' | 'budget_account' | 'resume_control';
-    sourceRevisionDelta: number;
-    sourceGenerationDelta: number;
-    sourceReceiptSchema: string | null;
-    authorityReceiptHashAlgorithm:
-      | 'binding_receipt_domain_sha256'
-      | 'canonical_durable_receipt_sha256'
-      | null;
-  }>;
-  readonly positive: {
-    readonly operations: Record<WorkflowRunnerAuthorityBindingOperation, ExchangeVectors>;
-    readonly semanticVariants: Record<string, ExchangeVectors>;
-    readonly controlDelivery: {
-      readonly accepted: Record<WorkflowRunnerAuthorityBindingOperation, ExactVector>;
-      readonly reconciliationRequired: ExactVector;
-      readonly artifacts: Record<string, ControlDeliveryArtifact>;
-      readonly priorEventDeliveries: Record<
-        string,
-        { readonly message: unknown; readonly receipt: ExactVector }
-      >;
-      readonly byKind: Record<
-        | 'event_receipt'
-        | 'budget_authorization'
-        | 'effect_authorization'
-        | 'resume_offer'
-        | 'cancel_request',
-        string
-      >;
-      readonly budgetAuthorization: Record<'reserved' | 'rejected', string>;
-      readonly budgetDatabaseReconciliation: {
-        readonly message: unknown;
-        readonly receipt: ExactVector;
-        readonly decision: null;
-      };
-      readonly messages: {
-        readonly accepted: Record<WorkflowRunnerAuthorityBindingOperation, unknown>;
-        readonly reconciliationRequired: unknown;
-      };
-    };
-    readonly runtimeAdmission: {
-      readonly request: { readonly value: unknown };
-      readonly receipt: { readonly value: unknown };
-    };
-  };
-  readonly negative: Array<{
-    readonly id: string;
-    readonly operation: string;
-    readonly input: Json;
-    readonly expectedError: { readonly code: string; readonly path: string };
-  }>;
 }
 
 const golden = load<Golden>('golden-vectors.json');
@@ -254,15 +150,17 @@ function executeNegative(operation: string, input: Json): unknown {
         input.stageReceipt,
       );
     case 'validate_control_delivery':
-      return validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+      return validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
         input.receipt,
         input.message,
-        input.stage,
-        input.resolution,
-        input.resolutionReceipt,
-        input.stageReceipt,
-        input.priorEventDelivery,
-        input.budgetSourceResult ?? null,
+        {
+          stage: input.stage,
+          resolution: input.resolution,
+          resolutionReceipt: input.resolutionReceipt,
+          stageReceipt: input.stageReceipt,
+          priorEventDelivery: input.priorEventDelivery,
+          budgetSourceResult: input.budgetSourceResult ?? null,
+        },
       );
     case 'validate_budget_source_result':
       return validateWorkflowRunnerBudgetSourceResult(input.sourceResult, input.preparedRequest);
@@ -542,18 +440,16 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       );
       const receipt = exact(item.receipt, 'receipt');
       expect(
-        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
-          receipt,
-          item.message,
-          exchange.stage.value,
-          exchange.resolution.value,
-          exchange.resolutionReceipt.value,
-          exchange.stageReceipt.value,
-          {
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(receipt, item.message, {
+          stage: exchange.stage.value,
+          resolution: exchange.resolution.value,
+          resolutionReceipt: exchange.resolutionReceipt.value,
+          stageReceipt: exchange.stageReceipt.value,
+          priorEventDelivery: {
             ...(namedPriorDelivery(item.priorEventDeliveryRef) as Json),
           },
-          item.budgetSourceResult,
-        ),
+          budgetSourceResult: item.budgetSourceResult,
+        }),
         status,
       ).toEqual(receipt);
       const message = asJson(item.message, 'message');
@@ -617,16 +513,14 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       receipt.messageDigest = prepareWorkflowControlAuthorityMessage(message).messageDigest;
 
       expect(
-        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
-          receipt,
-          message,
-          item.exchange.stage.value,
-          item.exchange.resolution.value,
-          item.exchange.resolutionReceipt.value,
-          item.exchange.stageReceipt.value,
-          prior,
-          item.artifact.budgetSourceResult,
-        ),
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(receipt, message, {
+          stage: item.exchange.stage.value,
+          resolution: item.exchange.resolution.value,
+          resolutionReceipt: item.exchange.resolutionReceipt.value,
+          stageReceipt: item.exchange.stageReceipt.value,
+          priorEventDelivery: prior,
+          budgetSourceResult: item.artifact.budgetSourceResult,
+        }),
       ).toEqual(receipt);
     }
   });
@@ -637,14 +531,17 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
       const receipt = exact(deliveries.accepted[operation], 'receipt');
       const exchange = golden.positive.operations[operation];
       expect(
-        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
           receipt,
           deliveries.messages.accepted[operation],
-          exchange.stage.value,
-          exchange.resolution.value,
-          exchange.resolutionReceipt.value,
-          exchange.stageReceipt.value,
-          null,
+          {
+            stage: exchange.stage.value,
+            resolution: exchange.resolution.value,
+            resolutionReceipt: exchange.resolutionReceipt.value,
+            stageReceipt: exchange.stageReceipt.value,
+            priorEventDelivery: null,
+            budgetSourceResult: null,
+          },
         ),
       ).toEqual(receipt);
       expect((receipt as { companionSequence: number }).companionSequence).toBe(3);
@@ -658,28 +555,13 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     ]);
     for (const [kind, reference] of Object.entries(deliveries.byKind)) {
       const item = controlArtifact(reference);
-      const exchange =
-        kind === 'budget_authorization'
-          ? golden.positive.semanticVariants.budgetReserveGoAuthority
-          : golden.positive.operations[item.operation];
+      const { context } = bindingGoldenContext(golden, kind);
       const receipt = exact(item.receipt, 'receipt');
       expect(
-        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
           receipt,
           item.message,
-          exchange.stage.value,
-          exchange.resolution.value,
-          exchange.resolutionReceipt.value,
-          exchange.stageReceipt.value,
-          kind === 'event_receipt'
-            ? null
-            : kind === 'budget_authorization'
-              ? namedPriorDelivery(item.priorEventDeliveryRef)
-              : {
-                  message: deliveries.messages.accepted[item.operation],
-                  receipt: deliveries.accepted[item.operation].value,
-                },
-          item.budgetSourceResult,
+          context,
         ),
         kind,
       ).toEqual(receipt);
@@ -694,36 +576,34 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     const cancel = controlArtifact(deliveries.byKind.cancel_request);
     const exchange = golden.positive.operations[cancel.operation];
     expect(
-      validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+      validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
         reconciliation,
         deliveries.messages.reconciliationRequired,
-        exchange.stage.value,
-        exchange.resolution.value,
-        exchange.resolutionReceipt.value,
-        exchange.stageReceipt.value,
         {
-          message: deliveries.messages.accepted[cancel.operation],
-          receipt: deliveries.accepted[cancel.operation].value,
+          stage: exchange.stage.value,
+          resolution: exchange.resolution.value,
+          resolutionReceipt: exchange.resolutionReceipt.value,
+          stageReceipt: exchange.stageReceipt.value,
+          priorEventDelivery: {
+            message: deliveries.messages.accepted[cancel.operation],
+            receipt: deliveries.accepted[cancel.operation].value,
+          },
+          budgetSourceResult: null,
         },
       ),
     ).toEqual(reconciliation);
 
     const databaseUnknown = deliveries.budgetDatabaseReconciliation;
-    const budgetExchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
+    const { context: budgetContext } = bindingGoldenContext(golden, 'budget_authorization');
     const databaseReceipt = exact(databaseUnknown.receipt, 'receipt') as {
       disposition: string;
       companionSequence: number;
     };
     expect(
-      validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+      validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
         databaseReceipt,
         databaseUnknown.message,
-        budgetExchange.stage.value,
-        budgetExchange.resolution.value,
-        budgetExchange.resolutionReceipt.value,
-        budgetExchange.stageReceipt.value,
-        null,
-        null,
+        { ...budgetContext, priorEventDelivery: null, budgetSourceResult: null },
       ),
     ).toEqual(databaseReceipt);
     expect(databaseReceipt).toMatchObject({
@@ -1152,14 +1032,17 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     withWorkflowRunnerAuthorityBindingEncodingObserver(
       (value) => encodedObjects.push(value),
       () =>
-        validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
+        validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
           delivery.value,
           golden.positive.controlDelivery.messages.accepted.checkpoint_commit,
-          vectors.stage.value,
-          vectors.resolution.value,
-          vectors.resolutionReceipt.value,
-          vectors.stageReceipt.value,
-          null,
+          {
+            stage: vectors.stage.value,
+            resolution: vectors.resolution.value,
+            resolutionReceipt: vectors.resolutionReceipt.value,
+            stageReceipt: vectors.stageReceipt.value,
+            priorEventDelivery: null,
+            budgetSourceResult: null,
+          },
         ),
     );
     expect(encodedObjects).toHaveLength(6);
@@ -1181,8 +1064,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
   });
 
   it('parses each budget prepared request and durable receipt once per delivery validation', () => {
-    const artifact = controlArtifact(golden.positive.controlDelivery.budgetAuthorization.reserved);
-    const exchange = golden.positive.semanticVariants.budgetReserveGoAuthority;
+    const { artifact, context } = bindingGoldenContext(golden, 'budget_authorization');
     const events: string[] = [];
     const receipt = withWorkflowRunnerAuthorityBindingValidationObserver(
       (event) => events.push(event),
@@ -1190,14 +1072,7 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
         validateWorkflowRunnerAuthorityControlDeliveryReceiptWithContext(
           artifact.receipt.value,
           artifact.message,
-          {
-            stage: exchange.stage.value,
-            resolution: exchange.resolution.value,
-            resolutionReceipt: exchange.resolutionReceipt.value,
-            stageReceipt: exchange.stageReceipt.value,
-            priorEventDelivery: namedPriorDelivery(artifact.priorEventDeliveryRef),
-            budgetSourceResult: artifact.budgetSourceResult,
-          },
+          context,
         ),
     );
     expect(receipt).toEqual(artifact.receipt.value);

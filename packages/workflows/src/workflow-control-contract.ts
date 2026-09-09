@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_CONTROL_OBSERVATION_SCHEMA =
@@ -230,9 +235,9 @@ export interface WorkflowControlReadModel {
 }
 
 type DataRecord = Record<string, unknown>;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
-const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const CANONICAL_TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const SENSITIVE_RAW_FIELDS = new Set<string>(WORKFLOW_CONTROL_FORBIDDEN_RAW_FIELDS);
 
 function fail(code: WorkflowControlContractErrorCode, path: string, message: string): never {

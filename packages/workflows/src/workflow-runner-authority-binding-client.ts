@@ -1,4 +1,6 @@
 import { types as nodeTypes } from 'node:util';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
+import { canonicalWorkflowControlAuthorityJson as canonical } from './workflow-control-authority-contract.js';
 import {
   parseWorkflowRunRecoveryEvidence,
   validateWorkflowRunRecoveryEvidence,
@@ -7,8 +9,6 @@ import {
   type WorkflowRunRecoveryEvidencePort,
   type WorkflowRunRecoveryEvidence,
 } from './workflow-run-recovery-evidence.js';
-import { canonicalWorkflowControlAuthorityJson as canonical } from './workflow-control-authority-contract.js';
-
 import {
   parseWorkflowRunnerAuthorityBindingReceiptBytes,
   type WorkflowRunnerAuthorityBindingPrepared,
@@ -73,7 +73,7 @@ export class WorkflowRunnerAuthorityBindingClientError extends Error {
   }
 }
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const IDEMPOTENCY = /^openslack\.workflow-runner-authority-binding\.v1\.[0-9a-f]{64}$/u;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
 const MAX_RESPONSE_BYTES = 65_536;

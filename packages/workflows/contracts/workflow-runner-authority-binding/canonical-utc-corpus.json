@@ -1,0 +1,66 @@
+[
+  {
+    "value": "0000-02-29T00:00:00.000Z",
+    "accepted": true
+  },
+  {
+    "value": "0001-01-01T00:00:00.000Z",
+    "accepted": true
+  },
+  {
+    "value": "9999-12-31T23:59:59.999Z",
+    "accepted": true
+  },
+  {
+    "value": "2000-02-29T12:30:20.123Z",
+    "accepted": true
+  },
+  {
+    "value": "2024-02-29T12:30:20.123Z",
+    "accepted": true
+  },
+  {
+    "value": "1900-02-29T00:00:00.000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-02-30T00:00:00.000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-04-31T00:00:00.000Z",
+    "accepted": false
+  },
+  {
+    "value": "+010000-01-01T00:00:00.000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T00:00:00Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T00:00:00.00Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T00:00:00.0000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T00:00:00.000+00:00",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T24:00:00.000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01T23:59:60.000Z",
+    "accepted": false
+  },
+  {
+    "value": "2026-01-01t00:00:00.000z",
+    "accepted": false
+  }
+]

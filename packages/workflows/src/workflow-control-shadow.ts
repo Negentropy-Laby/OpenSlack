@@ -14,6 +14,12 @@ import {
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
+import { enqueueByKey } from './internal/keyed-serial-queue.js';
+import { safeInteger } from './internal/strict-data.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   canonicalWorkflowControlJson,
   hashWorkflowControlValue,
@@ -26,8 +32,6 @@ import {
   WorkflowControlObservationError,
   type BuildWorkflowControlObservationOptions,
 } from './workflow-control-observation.js';
-import { enqueueByKey } from './internal/keyed-serial-queue.js';
-import { safeInteger } from './internal/strict-data.js';
 
 export const WORKFLOW_CONTROL_SHADOW_OBSERVATION_SCHEMA =
   'openslack.workflow_control_shadow_observation.v1' as const;
@@ -168,8 +172,8 @@ interface JournalState {
   readonly incomplete: boolean;
 }
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
-const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const RECEIPT_CODE = /^[a-z0-9][a-z0-9._:-]{0,255}$/u;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u;
 const STATE_NAME = /^([0-9a-f]{64})\.json$/u;

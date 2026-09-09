@@ -7,6 +7,17 @@ import {
   ownDataField,
   type ContractDataRecord,
 } from './internal/contract-validation.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import {
+  validateWorkflowEffectApproval,
+  workflowEffectApprovalAuditEventId,
+  workflowEffectApprovalBytes,
+  type WorkflowEffectApprovalRecord,
+} from './workflow-effect-approval.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   WorkflowRunnerContractError,
@@ -18,12 +29,6 @@ import {
   type WorkflowRunnerPreparedMessage,
 } from './workflow-runner-contract.js';
 import { hashWorkflowRunnerDomain } from './workflow-runner-descriptor.js';
-import {
-  validateWorkflowEffectApproval,
-  workflowEffectApprovalAuditEventId,
-  workflowEffectApprovalBytes,
-  type WorkflowEffectApprovalRecord,
-} from './workflow-effect-approval.js';
 
 export const WORKFLOW_EFFECT_CONTROL_CONTRACT_VERSION = 'v1' as const;
 export const WORKFLOW_EFFECT_CONTROL_ARTIFACT_SCHEMA =
@@ -293,10 +298,10 @@ export interface WorkflowEffectControlPreparedEnvelope {
 }
 
 type DataRecord = ContractDataRecord;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const CAPABILITY = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)+$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const OCCURRENCE_ID = /^WFOCCURRENCE-[0-9a-f]{64}$/u;
 const EXECUTION_ID = /^WFEXECUTION-[0-9a-f]{64}$/u;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;

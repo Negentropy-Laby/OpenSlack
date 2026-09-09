@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { format } from 'prettier';
+import { parseDocument, isMap, isScalar, visit } from 'yaml';
 
 export interface BudgetManifestCompatibility {
   readonly schema: 'openslack.workflow_budget_manifest_compatibility.v1';
@@ -102,13 +103,7 @@ export async function synchronizeBudgetCompatibility(
   );
   const go = `// Code generated from workflow-budget-authority/compatibility.json; DO NOT EDIT.\npackage budgetcontract\n\nconst CurrentManifestSHA256 = ${JSON.stringify(ledger.current)}\nconst OriginalManifestSHA256 = ${JSON.stringify(ledger.accepted[0])}\nconst PreviousManifestSHA256 = ${JSON.stringify(ledger.accepted.at(-2))}\n\nfunc AcceptedManifestSHA256() []string {\n\treturn []string{${ledger.accepted.map((hash) => JSON.stringify(hash)).join(', ')}}\n}\n\nfunc AcceptsManifestSHA256(value string) bool {\n\tswitch value {\n\tcase ${ledger.accepted.map((hash) => JSON.stringify(hash)).join(', ')}:\n\t\treturn true\n\tdefault:\n\t\treturn false\n\t}\n}\n`;
   const openAPI = await readFile(resolve(root, apiRelative), 'utf8');
-  const enumPattern = /contractManifestSha256:\s*\{\s*enum:\s*\[[^\]]*\]\s*\}/gu;
-  if ([...openAPI.matchAll(enumPattern)].length !== 7)
-    throw new Error('Budget durable OpenAPI manifest inventory changed.');
-  const projected = openAPI.replace(
-    enumPattern,
-    `contractManifestSha256:\n            { enum: [${[...ledger.accepted].reverse().join(', ')}] }`,
-  );
+  const projected = projectBudgetManifestEnums(openAPI, ledger.accepted);
   for (const [path, expected] of [
     [tsPath, ts],
     [goPath, go],
@@ -122,4 +117,46 @@ export async function synchronizeBudgetCompatibility(
       await writeFile(path, expected, 'utf8');
     }
   }
+}
+
+export const BUDGET_MANIFEST_ENUM_SCHEMAS = Object.freeze([
+  'DurableRecordAccountBranch',
+  'DurableRecordReserveDecisionBranch',
+  'DurableRecordReservationBranch',
+  'DurableRecordSettlementBranch',
+  'DurableRecordLedgerEntryBranch',
+  'DurableRecordReceiptBranch',
+  'DurableRecordReconciliationBranch',
+]);
+
+/** Project declared YAML nodes; reject undeclared consumers before producing output. */
+export function projectBudgetManifestEnums(source: string, accepted: readonly string[]): string {
+  const document = parseDocument(source);
+  if (document.errors.length) throw new Error('Budget OpenAPI YAML is invalid.');
+  const expected = new Set<unknown>();
+  for (const name of BUDGET_MANIFEST_ENUM_SCHEMAS) {
+    const path = ['components', 'schemas', name, 'properties', 'contractManifestSha256'];
+    const node = document.getIn(path, true);
+    if (!isMap(node) || !node.has('enum'))
+      throw new Error(`Missing budget manifest enum: ${name}.`);
+    expected.add(node);
+  }
+  visit(document, {
+    Pair(_, pair) {
+      if (
+        isScalar(pair.key) &&
+        pair.key.value === 'contractManifestSha256' &&
+        isMap(pair.value) &&
+        pair.value.has('enum') &&
+        !expected.has(pair.value)
+      )
+        throw new Error('Undeclared budget manifest enum projection.');
+    },
+  });
+  for (const name of BUDGET_MANIFEST_ENUM_SCHEMAS)
+    document.setIn(
+      ['components', 'schemas', name, 'properties', 'contractManifestSha256', 'enum'],
+      [...accepted].reverse(),
+    );
+  return document.toString({ lineWidth: 96 });
 }

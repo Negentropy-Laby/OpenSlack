@@ -1,23 +1,48 @@
-import {
-  controlSequenceOutputs,
-  controlSequenceSchema,
-  validateControlSequences,
-  sequenceSource,
-} from './control-sequences.js';
-import { workflowControlCompanionSequence } from '../../packages/workflows/src/internal/workflow-control-sequences.generated.js';
 import { createHash } from 'node:crypto';
-import { authorityBindingFieldSchema } from './schema-fields.js';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
 import { format } from 'prettier';
-
+import {
+  WORKFLOW_BINDING_HASH_PATTERN as HASH,
+  WORKFLOW_BINDING_REFERENCE_PATTERN as SAFE_REF,
+  WORKFLOW_BINDING_TIME_PATTERN as TIME,
+} from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
+import { workflowControlCompanionSequence } from '../../packages/workflows/src/internal/workflow-control-sequences.generated.js';
+import {
+  WORKFLOW_BUDGET_RECEIPT_SCHEMA,
+  WORKFLOW_BUDGET_ORIGINAL_MANIFEST_SHA256,
+  canonicalWorkflowBudgetAuthorityJson,
+  evaluateWorkflowBudgetReserve,
+  hashWorkflowBudgetAuthorityValue,
+  parseWorkflowBudgetAuthorityBytes,
+  prepareWorkflowBudgetAuthorityRequest,
+  validateWorkflowBudgetAccount,
+  validateWorkflowBudgetReceipt,
+  validateWorkflowBudgetReceiptForResult,
+  validateWorkflowBudgetReserveRequest,
+  workflowBudgetAuthorityChargeNanoUsd,
+  type WorkflowBudgetLedgerEntry,
+  type WorkflowBudgetReceipt,
+  type WorkflowBudgetReserveDecision,
+  validateWorkflowBudgetSettlementRequest,
+} from '../../packages/workflows/src/workflow-budget-authority-contract.js';
+import {
+  WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
+  WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
+  WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
+  canonicalWorkflowControlAuthorityJson,
+  parseWorkflowControlAuthorityMessageBytes,
+  prepareWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityMessage,
+  type WorkflowControlAuthorityMessage,
+} from '../../packages/workflows/src/workflow-control-authority-contract.js';
+import { canonicalWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_SCHEMA,
-  WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATION_FACTS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_OPERATIONS,
   WORKFLOW_RUNNER_AUTHORITY_BINDING_PROFILE,
@@ -56,36 +81,6 @@ import {
   type WorkflowRunnerBudgetSourceResult,
 } from '../../packages/workflows/src/workflow-runner-authority-binding-contract.js';
 import {
-  WORKFLOW_BUDGET_RECEIPT_SCHEMA,
-  WORKFLOW_BUDGET_ORIGINAL_MANIFEST_SHA256,
-  canonicalWorkflowBudgetAuthorityJson,
-  evaluateWorkflowBudgetReserve,
-  hashWorkflowBudgetAuthorityValue,
-  parseWorkflowBudgetAuthorityBytes,
-  prepareWorkflowBudgetAuthorityRequest,
-  validateWorkflowBudgetAccount,
-  validateWorkflowBudgetReceipt,
-  validateWorkflowBudgetReceiptForResult,
-  validateWorkflowBudgetReserveRequest,
-  workflowBudgetAuthorityChargeNanoUsd,
-  type WorkflowBudgetLedgerEntry,
-  type WorkflowBudgetReceipt,
-  type WorkflowBudgetReserveDecision,
-  validateWorkflowBudgetSettlementRequest,
-} from '../../packages/workflows/src/workflow-budget-authority-contract.js';
-import {
-  WORKFLOW_CONTROL_AUTHORITY_MESSAGE_SCHEMA,
-  WORKFLOW_CONTROL_AUTHORITY_BUDGET_REVISION_PLANES,
-  WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
-  WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
-  canonicalWorkflowControlAuthorityJson,
-  parseWorkflowControlAuthorityMessageBytes,
-  prepareWorkflowControlAuthorityMessage,
-  validateWorkflowControlAuthorityMessage,
-  type WorkflowControlAuthorityMessage,
-} from '../../packages/workflows/src/workflow-control-authority-contract.js';
-import { canonicalWorkflowEffectJson } from '../../packages/workflows/src/workflow-effect-json.js';
-import {
   WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_DOMAINS,
   WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX,
   WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS,
@@ -96,6 +91,13 @@ import {
   type WorkflowRunnerV2RuntimeAdmission,
   type WorkflowRunnerV2RuntimeAdmissionReceipt,
 } from '../../packages/workflows/src/workflow-runner-runtime-admission-contract.js';
+import {
+  controlSequenceOutputs,
+  controlSequenceSchema,
+  validateControlSequences,
+  sequenceSource,
+} from './control-sequences.js';
+import { authorityBindingFieldSchema } from './schema-fields.js';
 
 type Json = Record<string, unknown>;
 const controlSequenceRules = validateControlSequences(
@@ -269,10 +271,6 @@ const budgetDecisionDelivery = Object.freeze({
   }),
 });
 
-const HASH = '^[0-9a-f]{64}$';
-const SAFE_REF = '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$';
-const TIME = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
-
 const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const h = (character: string): string => character.repeat(64);
 
@@ -320,29 +318,12 @@ function strict(properties: Json, required: readonly string[] = Object.keys(prop
   return { type: 'object', additionalProperties: false, properties, required };
 }
 
-function routeSchema(): Json {
-  const common = {
-    routingEpoch: {
-      type: 'integer',
-      minimum: 1,
-      maximum: WORKFLOW_RUNNER_AUTHORITY_BINDING_LIMITS.maxSafeInteger,
-    },
-    authorityBuildHash: { type: 'string', pattern: HASH },
-  };
-  return {
-    oneOf: [
-      strict({ backend: { const: 'ts-local' }, authority: { const: 'typescript' }, ...common }),
-      strict({ backend: { const: 'go' }, authority: { const: 'workflow-control' }, ...common }),
-    ],
-  };
-}
-
 function receiptLifecycleSchema(schema: Json, value: Json): Json {
   const properties = asJson(schema.properties, 'receipt properties');
   const phase = value.phase;
   if (phase === 'control_delivery') {
     properties.status = { const: 'accepted' };
-    properties.committedAt = { type: 'string', pattern: TIME, format: 'date-time' };
+    properties.committedAt = { type: 'string', pattern: TIME, format: 'openslack-canonical-utc' };
     properties.reconciliationToken = { type: 'null' };
     properties.disposition = { enum: ['accepted', 'reconciliation_required'] };
     return schema;
@@ -352,7 +333,10 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
       phase === 'stage_event' ? { type: 'null' } : { type: 'string', pattern: HASH };
     properties.status = { enum: ['accepted', 'reconciliation_required'] };
     properties.committedAt = {
-      oneOf: [{ type: 'string', pattern: TIME, format: 'date-time' }, { type: 'null' }],
+      oneOf: [
+        { type: 'string', pattern: TIME, format: 'openslack-canonical-utc' },
+        { type: 'null' },
+      ],
     };
     properties.reconciliationToken = {
       oneOf: [{ type: 'string', pattern: SAFE_REF, maxLength: 512 }, { type: 'null' }],
@@ -362,7 +346,7 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
         if: { properties: { status: { const: 'accepted' } }, required: ['status'] },
         then: {
           properties: {
-            committedAt: { type: 'string', pattern: TIME, format: 'date-time' },
+            committedAt: { type: 'string', pattern: TIME, format: 'openslack-canonical-utc' },
             reconciliationToken: { type: 'null' },
           },
         },
@@ -385,7 +369,6 @@ function receiptLifecycleSchema(schema: Json, value: Json): Json {
 }
 
 function schemaForValue(value: unknown, path: readonly string[] = []): Json {
-  if (path.at(-1) === 'route') return routeSchema();
   const field = authorityBindingFieldSchema(value, path);
   if (field) return field;
   const record = value as Json;

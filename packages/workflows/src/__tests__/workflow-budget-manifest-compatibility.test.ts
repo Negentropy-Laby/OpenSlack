@@ -77,9 +77,6 @@ describe('append-only budget manifest compatibility', () => {
         );
         expect(rotateBudgetManifestCompatibility(rotated, rotated.current)).toBe(rotated);
       }
-      await writeFile(resolve(temporary, ledgerPath), JSON.stringify(rotated));
-      await writeFile(resolve(temporary, historyPath), JSON.stringify(rotated));
-      await synchronizeBudgetCompatibility(temporary, rotated.current, false);
       const first = await Promise.all(
         [tsPath, goPath, apiPath].map((path) => readFile(resolve(temporary, path), 'utf8')),
       );

@@ -1,5 +1,10 @@
 import { types as nodeTypes } from 'node:util';
 import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import {
   WORKFLOW_EFFECT_CONTROL_IDEMPOTENCY_PREFIX,
   WORKFLOW_EFFECT_CONTROL_OBSERVER_OPERATIONS,
   WORKFLOW_EFFECT_CONTROL_ROUTE,
@@ -90,10 +95,10 @@ export interface WorkflowEffectShadowError {
 }
 
 type JsonRecord = Readonly<Record<string, unknown>>;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const OCCURRENCE = /^WFOCCURRENCE-[0-9a-f]{64}$/u;
 const IDEMPOTENCY = /^openslack\.workflow-effect-control-shadow\.v1\.[0-9a-f]{64}$/u;
 

@@ -1,24 +1,3 @@
-import {
-  WorkflowRunReadError,
-  assertWorkflowRunPathId,
-  asWorkflowRunReadError,
-} from './workflow-run-read-errors.js';
-import {
-  workflowAuthorityFailure,
-  isWorkflowAuthorityRetryable,
-} from './internal/workflow-authority-failure.js';
-import type {
-  ExecutionMode,
-  BudgetState,
-  PhaseCheckpoint,
-  RunStatus,
-  RunStatusState,
-  PendingApproval,
-  WorkflowBudgetPolicy,
-  WorkflowRunInfo,
-  WorkflowRunControlAction,
-  WorkflowRunControlTarget,
-} from './types.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   mkdir,
@@ -32,28 +11,18 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
-import {
-  atomicWrite,
-  acquireOwnerJournalLock,
-  isWorkflowControlObservationPort,
-  productionJournalSecurity,
-  ensureOwnerDirectory,
-  readOwnerFile,
-  type WorkflowControlObservationPort,
-} from './workflow-control-shadow.js';
+import { canonicalJsonRoundTrip } from './internal/canonical-json.js';
 import { enqueueByKey } from './internal/keyed-serial-queue.js';
-import {
-  readWorkflowEvidenceText,
-  WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
-} from './internal/workflow-evidence-file.js';
-import type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
 import {
   canonicalTimestamp,
   closedDataRecord,
   finiteNumber,
   safeInteger,
 } from './internal/strict-data.js';
-import { canonicalJsonRoundTrip } from './internal/canonical-json.js';
+import {
+  consumeAcceptedWorkflowRunProof,
+  type AcceptedWorkflowRunProof,
+} from './internal/workflow-accepted-run-proof.js';
 import {
   WORKFLOW_ARGUMENTS_SCHEMA,
   decodeWorkflowArguments,
@@ -62,7 +31,34 @@ import {
   validateWorkflowArgumentsEnvelope,
   type WorkflowArgumentsEnvelope,
 } from './internal/workflow-arguments.js';
-import { WORKFLOW_CONTROL_CONTRACT_LIMITS } from './workflow-control-contract.js';
+import {
+  workflowAuthorityFailure,
+  isWorkflowAuthorityRetryable,
+} from './internal/workflow-authority-failure.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
+import {
+  readWorkflowEvidenceText,
+  WORKFLOW_LOCAL_EVIDENCE_MAX_BYTES,
+} from './internal/workflow-evidence-file.js';
+import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
+import {
+  isWorkflowRunStoreRecoveryAccess,
+  type WorkflowRunStoreRecoveryAccess,
+} from './internal/workflow-run-store-recovery-access.js';
+import type {
+  ExecutionMode,
+  BudgetState,
+  PhaseCheckpoint,
+  RunStatus,
+  RunStatusState,
+  PendingApproval,
+  WorkflowBudgetPolicy,
+  WorkflowRunInfo,
+  WorkflowRunControlAction,
+  WorkflowRunControlTarget,
+  WorkflowCheckpointCommitInput,
+  WorkflowCheckpointCommitResult,
+} from './types.js';
 import {
   WORKFLOW_CHECKPOINT_CONTROL_SCHEMA,
   WORKFLOW_CHECKPOINT_SHADOW_SCHEMA,
@@ -81,11 +77,24 @@ import {
   isWorkflowCheckpointObservationPort,
   type WorkflowCheckpointObservationPort,
 } from './workflow-checkpoint-shadow.js';
+import { WORKFLOW_CONTROL_CONTRACT_LIMITS } from './workflow-control-contract.js';
 import {
-  isWorkflowRunStoreRecoveryAccess,
-  type WorkflowRunStoreRecoveryAccess,
-} from './internal/workflow-run-store-recovery-access.js';
-import type { WorkflowCheckpointCommitInput, WorkflowCheckpointCommitResult } from './types.js';
+  atomicWrite,
+  acquireOwnerJournalLock,
+  isWorkflowControlObservationPort,
+  productionJournalSecurity,
+  ensureOwnerDirectory,
+  readOwnerFile,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
+import {
+  assertPortableWorkflowRunId,
+  WorkflowRunReadError,
+  assertWorkflowRunPathId,
+  asWorkflowRunReadError,
+} from './workflow-run-read-errors.js';
+import type { WorkflowRunReadDiagnostic } from './workflow-run-read-errors.js';
+import { hashWorkflowRunnerV2Input } from './workflow-runner-v2-descriptor.js';
 
 // ── Directory layout ──────────────────────────────────────────────────────────
 //
@@ -186,8 +195,7 @@ export function parseWorkflowCheckpointReservation(raw: string): string | null {
       Object.keys(value).sort().join(',') !== 'bindingId,schema' ||
       value.schema !== 'openslack.workflow_checkpoint_reservation.v1' ||
       (value.bindingId !== null &&
-        (typeof value.bindingId !== 'string' ||
-          !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(value.bindingId))) ||
+        (typeof value.bindingId !== 'string' || !WORKFLOW_RUN_ID_REGEX.test(value.bindingId))) ||
       workflowCheckpointCanonicalJson(value) !== raw
     )
       throw new Error();
@@ -200,7 +208,7 @@ export function parseWorkflowCheckpointReservation(raw: string): string | null {
   }
 }
 const WORKFLOW_CHECKPOINT_ARTIFACT_FILE_MAX_BYTES = 6 * 1024 * 1024;
-const WORKFLOW_CHECKPOINT_HASH = /^[0-9a-f]{64}$/u;
+const WORKFLOW_CHECKPOINT_HASH = WORKFLOW_BINDING_HASH_REGEX;
 /** Existing read concurrency, shared with the guarded historical reader. */
 export const WORKFLOW_RUN_LIST_CONCURRENCY = 4;
 
@@ -550,6 +558,27 @@ export class RunStore {
    */
   async initRun(runId: string, meta: RunMeta): Promise<void> {
     this.assertMutationAccess();
+    assertPortableWorkflowRunId(runId);
+    return this.#initializeRunProjection(runId, meta);
+  }
+
+  protected async restoreAcceptedRun(
+    runId: string,
+    meta: RunMeta,
+    proof: AcceptedWorkflowRunProof,
+  ): Promise<void> {
+    this.assertMutationAccess();
+    consumeAcceptedWorkflowRunProof(
+      proof,
+      runId,
+      meta.workflowName,
+      meta.manifestHash,
+      hashWorkflowRunnerV2Input(decodeRunMetaArguments(meta)),
+    );
+    return this.#initializeRunProjection(runId, meta);
+  }
+
+  async #initializeRunProjection(runId: string, meta: RunMeta): Promise<void> {
     const encodedArgs =
       meta.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA
         ? inspectWorkflowArgumentsEnvelope(meta.args)
@@ -562,7 +591,7 @@ export class RunStore {
       },
       runId,
     );
-    if (!/^[0-9a-f]{64}$/u.test(normalizedMeta.manifestHash)) {
+    if (!WORKFLOW_BINDING_HASH_REGEX.test(normalizedMeta.manifestHash)) {
       throw new Error('New workflow runs require a full SHA-256 workflow identity.');
     }
     const normalizedBudget =
@@ -2290,7 +2319,10 @@ function validateAuditRecord(
   ) {
     throw new Error('Workflow audit record operation is invalid.');
   }
-  if (typeof record.detailHash !== 'string' || !/^[0-9a-f]{64}$/u.test(record.detailHash)) {
+  if (
+    typeof record.detailHash !== 'string' ||
+    !WORKFLOW_BINDING_HASH_REGEX.test(record.detailHash)
+  ) {
     throw new Error('Workflow audit record detail hash is invalid.');
   }
   return {

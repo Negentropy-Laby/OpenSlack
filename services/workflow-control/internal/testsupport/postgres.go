@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -119,6 +120,7 @@ func OpenPersistentSchemaAtVersion(t testing.TB, schema string, migrate bool, ve
 	if err != nil {
 		t.Fatalf("open PostgreSQL admin pool: %v", err)
 	}
+	defer admin.Close()
 	if migrate {
 		if _, err := admin.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
 			admin.Close()
@@ -142,6 +144,7 @@ func OpenPersistentSchemaAtVersion(t testing.TB, schema string, migrate bool, ve
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	config.ConnConfig.RuntimeParams["search_path"] = schema
 	pool := openReadyPersistentPool(t, config, "persistent PostgreSQL schema")
+	t.Cleanup(pool.Close)
 	if migrate {
 		for _, migrationPath := range migrationsThrough(t, version) {
 			migration, err := os.ReadFile(migrationPath)
@@ -166,12 +169,39 @@ func OpenPersistentSchemaAtVersion(t testing.TB, schema string, migrate bool, ve
 
 func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string) *pgxpool.Pool {
 	t.Helper()
+	pool, err := readyPersistentPool(config, label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pool
+}
+
+// OpenExistingPersistentSchema returns setup failures to the verification entrypoint.
+// It never creates, migrates, or reuses an unnamed namespace.
+func OpenExistingPersistentSchema(schema string) (*pgxpool.Pool, error) {
+	if !schemaPattern.MatchString(schema) {
+		return nil, fmt.Errorf("unsafe persistent PostgreSQL schema")
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is not set")
+	}
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	return readyPersistentPool(config, "persistent PostgreSQL schema")
+}
+
+func readyPersistentPool(config *pgxpool.Config, label string) (*pgxpool.Pool, error) {
 	deadline := time.Now().Add(persistentSchemaReadinessTimeout)
 	var lastErr error
 	for attempt := 1; ; attempt++ {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt-1, lastErr)
+			return nil, fmt.Errorf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt-1, lastErr)
 		}
 		pingTimeout := persistentSchemaPingTimeout
 		if pingTimeout > remaining {
@@ -184,7 +214,7 @@ func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string)
 		}
 		cancel()
 		if err == nil {
-			return pool
+			return pool, nil
 		}
 		lastErr = err
 		if pool != nil {
@@ -192,7 +222,7 @@ func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string)
 		}
 		remaining = time.Until(deadline)
 		if remaining <= 0 {
-			t.Fatalf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt, lastErr)
+			return nil, fmt.Errorf("%s was not ready within %s after %d attempts: %v", label, persistentSchemaReadinessTimeout, attempt, lastErr)
 		}
 		delay := persistentSchemaReadinessInterval
 		if delay > remaining {
@@ -205,17 +235,27 @@ func openReadyPersistentPool(t testing.TB, config *pgxpool.Config, label string)
 
 func DropSchema(t testing.TB, schema string) {
 	t.Helper()
-	if !schemaPattern.MatchString(schema) {
-		t.Fatalf("unsafe persistent PostgreSQL schema %q", schema)
-	}
-	admin, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
-	if err != nil {
+	if err := DropSchemaError(schema); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// DropSchemaError removes only the caller's explicitly owned, validated schema.
+func DropSchemaError(schema string) error {
+	if !schemaPattern.MatchString(schema) {
+		return fmt.Errorf("unsafe persistent PostgreSQL schema")
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return fmt.Errorf("DATABASE_URL is not set")
+	}
+	admin, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		return err
 	}
 	defer admin.Close()
-	if _, err := admin.Exec(context.Background(), "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
-		t.Fatal(err)
-	}
+	_, err = admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
+	return err
 }
 
 func Envelope(t testing.TB, sequence int64, status workflowcontrol.RunState) workflowcontrol.ShadowEnvelope {

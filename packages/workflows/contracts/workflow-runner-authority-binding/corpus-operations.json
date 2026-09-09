@@ -1,0 +1,45 @@
+[
+  {
+    "id": "parent-before-child-and-remove-last",
+    "base": {
+      "target": {
+        "old": 1
+      }
+    },
+    "set": {
+      "/target/z": 4,
+      "/target": {
+        "z": 1,
+        "a": 0
+      },
+      "/target/a": 3
+    },
+    "remove": [
+      "/target/z"
+    ],
+    "expected": {
+      "target": {
+        "a": 3
+      }
+    }
+  },
+  {
+    "id": "ASCII-case-order",
+    "base": {
+      "target": {}
+    },
+    "set": {
+      "/target/a": 1,
+      "/target/Z": 2,
+      "/target/A": 3
+    },
+    "remove": [],
+    "expected": {
+      "target": {
+        "A": 3,
+        "Z": 2,
+        "a": 1
+      }
+    }
+  }
+]

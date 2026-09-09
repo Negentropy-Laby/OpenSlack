@@ -7,6 +7,12 @@ import {
   ownDataField,
   type ContractDataRecord,
 } from './internal/contract-validation.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_REFERENCE_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 
 export const WORKFLOW_CHECKPOINT_SHADOW_SCHEMA =
   'openslack.workflow_checkpoint_shadow_observation.v1' as const;
@@ -173,10 +179,10 @@ export class WorkflowCheckpointContractError extends WorkflowCheckpointError {
 }
 
 type DataRecord = ContractDataRecord;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u;
-const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$/u;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const SAFE_REF = WORKFLOW_BINDING_REFERENCE_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const IDEMPOTENCY = /^openslack\.workflow-checkpoint-shadow\.v1\.[0-9a-f]{64}$/u;
 
 function fail(path: string, message: string): never {

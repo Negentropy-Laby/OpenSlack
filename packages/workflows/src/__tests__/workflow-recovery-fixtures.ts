@@ -1,12 +1,22 @@
-import type { WorkflowControlAuthorityRunRead } from '../workflow-control-authority-client.js';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { WORKFLOW_RUNNER_CONTRACT_LIMITS } from '../workflow-runner-contract.js';
+import { readFileSync } from 'node:fs';
+import { resumeCorrelationId } from '../internal/workflow-resume-correlation.js';
+import {
+  checkpointEvidence,
+  resumeEvidence,
+} from '../internal/workflow-runner-checkpoint-evidence.js';
+import {
+  workflowCheckpointHash,
+  validateWorkflowCheckpointControlState,
+  type WorkflowCheckpointControlState,
+} from '../workflow-checkpoint-shadow-contract.js';
+import type { WorkflowControlAuthorityRunRead } from '../workflow-control-authority-client.js';
 import {
   canonicalWorkflowControlAuthorityJson as canonical,
   prepareWorkflowControlAuthorityMessage,
   type WorkflowControlAuthorityPreparedMessage,
 } from '../workflow-control-authority-contract.js';
+import type { WorkflowRunRecoveryEvidence } from '../workflow-run-recovery-evidence.js';
 import {
   deriveWorkflowRunnerAuthorityBindingId,
   prepareWorkflowRunnerAuthorityBindingStage,
@@ -20,16 +30,7 @@ import {
   type WorkflowRunnerAuthorityStageReceipt,
   type WorkflowRunnerAuthorityResolutionReceipt,
 } from '../workflow-runner-authority-binding-contract.js';
-import {
-  checkpointEvidence,
-  resumeEvidence,
-} from '../internal/workflow-runner-checkpoint-evidence.js';
-import {
-  workflowCheckpointHash,
-  validateWorkflowCheckpointControlState,
-  type WorkflowCheckpointControlState,
-} from '../workflow-checkpoint-shadow-contract.js';
-import type { WorkflowRunRecoveryEvidence } from '../workflow-run-recovery-evidence.js';
+import { WORKFLOW_RUNNER_CONTRACT_LIMITS } from '../workflow-runner-contract.js';
 
 type Exchange = {
   stage: { value: WorkflowRunnerAuthorityBindingStage };
@@ -149,7 +150,7 @@ export function resumeIntentFixture(checkpoints = 1) {
     intent: {
       schema: 'openslack.workflow_runner_resume_source_intent.v2' as const,
       stageHash,
-      correlationId: `resume.${stageHash}`,
+      correlationId: resumeCorrelationId(stageHash),
       stageReceipt: JSON.parse(frame.stageReceipt),
       priorRevision: prior.revision,
       priorBindingHash: workflowCheckpointHash(prior.activeBinding),

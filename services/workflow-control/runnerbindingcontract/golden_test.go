@@ -17,15 +17,6 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 )
 
-func validateControlGolden(
-	value, message, stage, resolution, resolutionReceipt, stageReceipt, prior, budgetSource any,
-) (Record, error) {
-	return ValidateControlDeliveryReceiptForMessage(value, message, ControlDeliveryValidationContext{
-		Stage: stage, Resolution: resolution, ResolutionReceipt: resolutionReceipt,
-		StageReceipt: stageReceipt, PriorEventDelivery: prior, BudgetSourceResult: budgetSource,
-	})
-}
-
 type exactGoldenVector struct {
 	Value          any    `json:"value"`
 	CanonicalBytes string `json:"canonicalBytes"`
@@ -300,15 +291,9 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			}
 			receipt := assertGoldenPrepared(t, vector, "receipt")
 			exchange := golden.Positive.Operations[string(operation)]
-			validated, err := validateControlGolden(
+			validated, err := ValidateControlDeliveryReceiptForMessage(
 				receipt,
-				message,
-				exchange.Stage.Value,
-				exchange.Resolution.Value,
-				exchange.ResolutionReceipt.Value,
-				exchange.StageReceipt.Value,
-				nil,
-				nil,
+				message, ControlDeliveryValidationContext{Stage: exchange.Stage.Value, Resolution: exchange.Resolution.Value, ResolutionReceipt: exchange.ResolutionReceipt.Value, StageReceipt: exchange.StageReceipt.Value},
 			)
 			if err != nil {
 				t.Fatalf("control delivery contextual replay: %v", err)
@@ -326,15 +311,9 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 			t.Fatal("missing reconciliation-required control message")
 		}
 		exchange := golden.Positive.Operations[string(OperationEffectComplete)]
-		validated, err := validateControlGolden(
+		validated, err := ValidateControlDeliveryReceiptForMessage(
 			receipt,
-			message,
-			exchange.Stage.Value,
-			exchange.Resolution.Value,
-			exchange.ResolutionReceipt.Value,
-			exchange.StageReceipt.Value,
-			goldenPriorEventDelivery(t, golden, OperationEffectComplete),
-			nil,
+			message, ControlDeliveryValidationContext{Stage: exchange.Stage.Value, Resolution: exchange.Resolution.Value, ResolutionReceipt: exchange.ResolutionReceipt.Value, StageReceipt: exchange.StageReceipt.Value, PriorEventDelivery: goldenPriorEventDelivery(t, golden, OperationEffectComplete), BudgetSourceResult: nil},
 		)
 		if err != nil {
 			t.Fatalf("control delivery contextual replay: %v", err)
@@ -350,24 +329,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		kind, control := kind, goldenControlArtifact(t, golden, reference)
 		t.Run("kind/"+kind, func(t *testing.T) {
 			t.Parallel()
-			exchange, ok := golden.Positive.Operations[string(control.Operation)]
-			if kind == string(authoritycontract.KindBudgetAuthorization) {
-				exchange, ok = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
-			}
-			if !ok {
-				t.Fatalf("missing operation context for control kind %s", kind)
-			}
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-			validated, err := validateControlGolden(
-				receipt,
-				control.Message,
-				exchange.Stage.Value,
-				exchange.Resolution.Value,
-				exchange.ResolutionReceipt.Value,
-				exchange.StageReceipt.Value,
-				controlPriorForGolden(t, golden, kind, control),
-				control.BudgetSourceResult,
-			)
+			validated, err := ValidateControlDeliveryReceiptForMessage(receipt, control.Message, goldenControlContext(t, golden, kind, control))
 			if err != nil {
 				t.Fatalf("control kind contextual replay: %v", err)
 			}
@@ -390,10 +353,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		t.Run("budgetAuthorization/"+status, func(t *testing.T) {
 			t.Parallel()
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-			validated, err := validateControlGolden(
-				receipt, control.Message, budgetExchange.Stage.Value, budgetExchange.Resolution.Value,
-				budgetExchange.ResolutionReceipt.Value, budgetExchange.StageReceipt.Value,
-				goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef), control.BudgetSourceResult,
+			validated, err := ValidateControlDeliveryReceiptForMessage(
+				receipt, control.Message, goldenControlContext(t, golden, "budget_authorization", control),
 			)
 			if err != nil {
 				t.Fatalf("budget %s contextual replay: %v", status, err)
@@ -471,10 +432,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 				}
 				receipt := cloneRecord(receiptSource)
 				receipt["messageDigest"] = prepared.MessageDigest
-				if _, err := validateControlGolden(
-					receipt, message, testCase.exchange.Stage.Value, testCase.exchange.Resolution.Value,
-					testCase.exchange.ResolutionReceipt.Value, testCase.exchange.StageReceipt.Value,
-					prior, control.BudgetSourceResult,
+				if _, err := ValidateControlDeliveryReceiptForMessage(
+					receipt, message, ControlDeliveryValidationContext{Stage: testCase.exchange.Stage.Value, Resolution: testCase.exchange.Resolution.Value, ResolutionReceipt: testCase.exchange.ResolutionReceipt.Value, StageReceipt: testCase.exchange.StageReceipt.Value, PriorEventDelivery: prior, BudgetSourceResult: control.BudgetSourceResult},
 				); err != nil {
 					t.Fatalf("decision in event-receipt message epoch was rejected: %v", err)
 				}
@@ -484,11 +443,11 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	t.Run("budgetDatabaseReconciliation/eventReceiptOnly", func(t *testing.T) {
 		t.Parallel()
 		control := golden.Positive.ControlDelivery.BudgetDatabaseReconciliation
-		exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
+		context := goldenControlContext(t, golden, "budget_authorization", goldenControlArtifact(t, golden, golden.Positive.ControlDelivery.ByKind["budget_authorization"]))
+		context.PriorEventDelivery, context.BudgetSourceResult = nil, nil
 		receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-		validated, err := validateControlGolden(
-			receipt, control.Message, exchange.Stage.Value, exchange.Resolution.Value,
-			exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, nil, nil,
+		validated, err := ValidateControlDeliveryReceiptForMessage(
+			receipt, control.Message, context,
 		)
 		if err != nil {
 			t.Fatalf("database-unknown event receipt replay: %v", err)
@@ -528,17 +487,11 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 	})
 	t.Run("singleBudgetValidationPasses", func(t *testing.T) {
 		control := goldenControlArtifact(t, golden, golden.Positive.ControlDelivery.BudgetAuthorization["reserved"])
-		exchange := golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
 		var events []string
 		_, err := validateControlDeliveryReceiptForMessageWithObserver(
 			control.Receipt.Value,
 			control.Message,
-			ControlDeliveryValidationContext{
-				Stage: exchange.Stage.Value, Resolution: exchange.Resolution.Value,
-				ResolutionReceipt: exchange.ResolutionReceipt.Value, StageReceipt: exchange.StageReceipt.Value,
-				PriorEventDelivery: goldenNamedPriorDelivery(t, golden, control.PriorEventDeliveryRef),
-				BudgetSourceResult: control.BudgetSourceResult,
-			},
+			goldenControlContext(t, golden, "budget_authorization", control),
 			nil,
 			func(event string) { events = append(events, event) },
 		)
@@ -941,9 +894,8 @@ func replayGoldenNegative(operation string, input any) error {
 		if err != nil {
 			return err
 		}
-		_, err = validateControlGolden(
-			record["receipt"], record["message"], record["stage"], record["resolution"], record["resolutionReceipt"],
-			record["stageReceipt"], record["priorEventDelivery"], record["budgetSourceResult"],
+		_, err = ValidateControlDeliveryReceiptForMessage(
+			record["receipt"], record["message"], ControlDeliveryValidationContext{Stage: record["stage"], Resolution: record["resolution"], ResolutionReceipt: record["resolutionReceipt"], StageReceipt: record["stageReceipt"], PriorEventDelivery: record["priorEventDelivery"], BudgetSourceResult: record["budgetSourceResult"]},
 		)
 		return err
 	case "validate_budget_source_result":

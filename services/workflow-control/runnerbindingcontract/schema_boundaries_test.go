@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -30,15 +32,11 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 	contextual := map[string]func(*testing.T, any) (Record, error){}
 	for kind, reference := range golden.Positive.ControlDelivery.ByKind {
 		control := goldenControlArtifact(t, golden, reference)
-		exchange := golden.Positive.Operations[string(control.Operation)]
-		if kind == "budget_authorization" {
-			exchange = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
-		}
 		key := "control:" + kind
 		bases[key] = control.Receipt.Value
 		validators[key] = ValidateReceipt
 		contextual[key] = func(t *testing.T, value any) (Record, error) {
-			return validateControlGolden(value, control.Message, exchange.Stage.Value, exchange.Resolution.Value, exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, controlPriorForGolden(t, golden, kind, control), control.BudgetSourceResult)
+			return ValidateControlDeliveryReceiptForMessage(value, control.Message, goldenControlContext(t, golden, kind, control))
 		}
 	}
 	contents, err := os.ReadFile("../../../packages/workflows/contracts/workflow-runner-authority-binding/schema-boundaries.json")
@@ -84,26 +82,7 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 			if err := normalizeGoldenNumbers(reflect.ValueOf(&value)); err != nil {
 				t.Fatal(err)
 			}
-			parent := func(path string) (map[string]any, string) {
-				keys := strings.Split(strings.TrimPrefix(path, "/"), "/")
-				record := value
-				for _, key := range keys[:len(keys)-1] {
-					var ok bool
-					record, ok = record[key].(map[string]any)
-					if !ok {
-						t.Fatalf("unknown fixture path %s", path)
-					}
-				}
-				return record, keys[len(keys)-1]
-			}
-			for path, change := range item.Set {
-				record, key := parent(path)
-				record[key] = change
-			}
-			for _, path := range item.Remove {
-				record, key := parent(path)
-				delete(record, key)
-			}
+			applyCorpusMutation(t, value, item.Set, item.Remove)
 			if validate := contextual[item.Kind]; validate != nil {
 				_, err := validate(t, value)
 				if item.ExpectedError != nil {
@@ -125,6 +104,101 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 			}
 			if (err == nil) != item.Accepted {
 				t.Fatalf("Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
+			}
+		})
+	}
+}
+
+var corpusPathPattern = regexp.MustCompile(`^/[A-Za-z][A-Za-z0-9]*(/[A-Za-z][A-Za-z0-9]*)*$`)
+
+func corpusPath(t *testing.T, path string) []string {
+	t.Helper()
+	if !validCorpusPath(path) {
+		t.Fatal("invalid corpus path")
+	}
+	return strings.Split(path[1:], "/")
+}
+
+func validCorpusPath(path string) bool {
+	if !corpusPathPattern.MatchString(path) {
+		return false
+	}
+	for _, key := range strings.Split(path[1:], "/") {
+		if key == "constructor" || key == "prototype" || key == "__proto__" {
+			return false
+		}
+	}
+	return true
+}
+
+func TestCorpusPathValidation(t *testing.T) {
+	for _, path := range []string{"/__proto__/x", "/constructor/x", "target/x", "/target//x", "/target/", "/target/~1"} {
+		if validCorpusPath(path) {
+			t.Fatalf("accepted invalid corpus path %s", path)
+		}
+	}
+	if !validCorpusPath("/target/idempotencyKey") {
+		t.Fatal("valid corpus path rejected")
+	}
+}
+
+func applyCorpusMutation(t *testing.T, value map[string]any, set map[string]any, remove []string) {
+	t.Helper()
+	parent := func(path string) (map[string]any, string) {
+		keys := corpusPath(t, path)
+		record := value
+		for _, key := range keys[:len(keys)-1] {
+			var ok bool
+			record, ok = record[key].(map[string]any)
+			if !ok {
+				t.Fatalf("unknown fixture path %s", path)
+			}
+		}
+		return record, keys[len(keys)-1]
+	}
+	paths := make([]string, 0, len(set))
+	for path := range set {
+		corpusPath(t, path)
+		paths = append(paths, path)
+	}
+	for _, path := range remove {
+		corpusPath(t, path)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		a, b := strings.Count(paths[i], "/"), strings.Count(paths[j], "/")
+		if a != b {
+			return a < b
+		}
+		return paths[i] < paths[j]
+	})
+	for _, path := range paths {
+		record, key := parent(path)
+		record[key] = set[path]
+	}
+	for _, path := range remove {
+		record, key := parent(path)
+		delete(record, key)
+	}
+}
+
+func TestSharedCorpusMutationResults(t *testing.T) {
+	data, err := os.ReadFile("../../../packages/workflows/contracts/workflow-runner-authority-binding/corpus-operations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		ID                  string
+		Base, Set, Expected map[string]any
+		Remove              []string
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range cases {
+		t.Run(row.ID, func(t *testing.T) {
+			applyCorpusMutation(t, row.Base, row.Set, row.Remove)
+			if !reflect.DeepEqual(row.Base, row.Expected) {
+				t.Fatalf("mutation result: %#v; expected %#v", row.Base, row.Expected)
 			}
 		})
 	}

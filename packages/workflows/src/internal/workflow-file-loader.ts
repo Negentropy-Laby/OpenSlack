@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { parseManifest, validateManifest } from '../manifest.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule } from '../types.js';
 import { canonicalJson } from './canonical-json.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
 import { hashWorkflowSource } from './workflow-identity.js';
 
 export interface WorkflowLoadOptions {
@@ -23,7 +24,10 @@ export async function loadWorkflowFile(
   filePath: string,
   options: WorkflowLoadOptions = {},
 ): Promise<WorkflowModule> {
-  if (options.moduleCacheKey !== undefined && !/^[0-9a-f]{64}$/u.test(options.moduleCacheKey)) {
+  if (
+    options.moduleCacheKey !== undefined &&
+    !WORKFLOW_BINDING_HASH_REGEX.test(options.moduleCacheKey)
+  ) {
     throw new Error('Workflow module cache key must be a full lowercase SHA-256.');
   }
   // Step 1: Read file and compute hash

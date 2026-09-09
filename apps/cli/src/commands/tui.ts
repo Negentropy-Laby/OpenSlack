@@ -252,11 +252,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
         // Pre-fetch workflow run progress data
         try {
-          const {
-            uniqueWorkflowRunReadDiagnostics,
-            WorkflowRunReadError,
-            workflowRunReadDiagnostic,
-          } = await import('@openslack/workflows');
+          const { uniqueWorkflowRunReadDiagnostics } = await import('@openslack/workflows');
           const runs = await workflowRunQuery.list();
           const progress = [];
           const readDiagnostics = [...runs.diagnostics];

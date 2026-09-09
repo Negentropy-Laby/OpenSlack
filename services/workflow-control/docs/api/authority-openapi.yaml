@@ -76,7 +76,7 @@ paths:
   /v1/workflow-control/runs:accept:
     post:
       operationId: acceptWorkflowRun
-      description: Atomically accept revision one of an explicitly Go-routed run on the active accepting epoch.
+      description: Atomically accept revision one of an explicitly Go-routed run on the active accepting epoch. Exact historical replay remains valid. After replay and existing-run checks, new IDs must be portable across Linux, macOS and Windows; legal nonportable IDs return HTTP 422 with WORKFLOW_CONTROL_AUTHORITY_PLATFORM_UNSUPPORTED.
       x-openslack-canonical-json: exact-plus-lf
       x-openslack-replay-response: exact-original
       security: [{ bearerAuth: [] }]

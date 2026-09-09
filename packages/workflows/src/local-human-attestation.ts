@@ -23,6 +23,7 @@ import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { types as nodeTypes } from 'node:util';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   createWorkflowEffectDecisionAuthority,
   type HumanWorkflowEffectDecisionBinding,
@@ -43,8 +44,8 @@ const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 
 const POSIX_TTY_DEVICE = '/dev/tty';
 const WINDOWS_TTY_INPUT = 'CONIN$';
 const WINDOWS_TTY_OUTPUT = 'CONOUT$';
-const SAFE_PRINCIPAL = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
+const SAFE_PRINCIPAL = SAFE_IDENTIFIER_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const HASH = /^sha256:[0-9a-f]{64}$/;
 const CAPABILITY = /^workflow\.effect\.decide$/;
 const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

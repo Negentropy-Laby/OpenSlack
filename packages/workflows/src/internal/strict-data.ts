@@ -1,22 +1,28 @@
+import { closedDataRecord as contractRecord } from './contract-validation.js';
+import { isCanonicalIsoTimestamp } from './workflow-binding-field-rules.js';
+
 export function closedDataRecord(
   value: unknown,
   fields: readonly string[],
   label: string,
 ): Record<string, unknown> {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
-  ) {
-    throw new TypeError(`${label} must be an object.`);
-  }
-  const actual = Object.keys(value).sort();
-  const expected = [...fields].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    throw new TypeError(`${label} has unexpected or missing fields.`);
-  }
-  return value as Record<string, unknown>;
+  const shape = (path: string): never => {
+    throw new TypeError(`${path} has unexpected or missing fields.`);
+  };
+  return contractRecord(
+    value,
+    fields,
+    label,
+    {
+      inert: () => {
+        throw new TypeError(`${label} must be an object.`);
+      },
+      missing: shape,
+      unknown: shape,
+      dataField: shape,
+    },
+    { allowNullPrototype: false },
+  );
 }
 
 export function safeInteger(value: unknown, label: string, minimum = 0): number {
@@ -35,8 +41,7 @@ export function finiteNumber(value: unknown, label: string, minimum = 0): number
 
 export function canonicalTimestamp(value: unknown, label: string): string {
   if (typeof value !== 'string') throw new TypeError(`${label} must be a timestamp.`);
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+  if (!isCanonicalIsoTimestamp(value)) {
     throw new TypeError(`${label} must be a canonical ISO timestamp.`);
   }
   return value;

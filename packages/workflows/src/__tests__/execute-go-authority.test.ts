@@ -2,25 +2,25 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { executeGoAuthorityResume, executeGoAuthorityRun } from '../execute.js';
 import { computeAgentCacheKey } from '../agent-shim.js';
 import type { AgentConversationEvent } from '../agent-shim.js';
+import { executeGoAuthorityResume, executeGoAuthorityRun } from '../execute.js';
 import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-checkpoint-lease-authority.js';
 import {
   registerWorkflowEffectAuthorizationPort,
   type WorkflowEffectAuthorizationPort,
 } from '../internal/workflow-effect-authorization-contract.js';
 import { RunStore } from '../run-store.js';
-import { WorkflowRunRouter } from '../workflow-run-routing.js';
+import type { WorkflowMeta, WorkflowModule } from '../types.js';
 import {
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
 } from '../workflow-control-authority-client.js';
+import { WorkflowRunRouter } from '../workflow-run-routing.js';
 import {
   WorkflowRunnerGoProjectionError,
   WorkflowRunnerV2GoProjectionRunStore,
 } from '../workflow-runner-v2-go-projection-store.js';
-import type { WorkflowMeta, WorkflowModule } from '../types.js';
 import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 
 const roots: string[] = [];
@@ -38,11 +38,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function execution(mode: 'run' | 'resume', meta = manifest) {
+async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunId?: string) {
   const rootDir = await mkdtemp(join(tmpdir(), 'openslack-go-execute-'));
   roots.push(rootDir);
   const descriptor = workflowRunnerV2DescriptorFixture({
     manifest: meta,
+    ...(historicalRunId ? { workflowRunId: historicalRunId } : {}),
     authorityRoute: {
       backend: 'go',
       authority: 'workflow-control',
@@ -149,6 +150,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest) {
   const options = { runId, manifest: meta, rootDir, budget, allowUnattended: true };
   return {
     store,
+    descriptor,
     authority,
     runId,
     options,
@@ -168,6 +170,62 @@ async function execution(mode: 'run' | 'resume', meta = manifest) {
 
 // Real recovery files include Windows owner-only ACL checks on each write.
 describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
+  it.runIf(process.platform !== 'win32')(
+    'reconstructs an accepted historical POSIX run without registering authority',
+    async () => {
+      const fixture = await execution('run', manifest, 'run:accepted-history');
+      await fixture.store.initRun(fixture.runId, {
+        runId: fixture.runId,
+        workflowName: fixture.descriptor.workflowId,
+        mode: 'execute',
+        startedAt: fixture.descriptor.createdAt,
+        manifestHash: fixture.descriptor.workflowSourceHash,
+        args: {},
+      });
+      expect(fixture.authority.accept).not.toHaveBeenCalled();
+      await expect(fixture.reader.loadMeta(fixture.runId)).resolves.toMatchObject({
+        runId: fixture.runId,
+      });
+    },
+  );
+  it.each(['descriptor', 'input'] as const)(
+    'rejects mismatched %s before authority or file writes',
+    async (mismatch) => {
+      const fixture = await execution('run');
+      const transition = vi.spyOn(fixture.authority, 'transition');
+      const descriptor =
+        mismatch === 'descriptor'
+          ? { ...fixture.descriptor, workflowId: 'other-workflow' }
+          : fixture.descriptor;
+      const store = new WorkflowRunnerV2GoProjectionRunStore({
+        baseDir: join(
+          fixture.options.rootDir,
+          '.openslack.local',
+          'workflows',
+          'go-recovery-projections',
+        ),
+        descriptor,
+        authority: fixture.authority,
+      });
+      await expect(
+        store.initRun(fixture.runId, {
+          runId: fixture.runId,
+          workflowName: descriptor.workflowId,
+          mode: 'execute',
+          startedAt: fixture.descriptor.createdAt,
+          manifestHash: fixture.descriptor.workflowSourceHash,
+          args: mismatch === 'input' ? { changed: true } : {},
+        }),
+      ).rejects.toMatchObject({
+        code:
+          mismatch === 'descriptor'
+            ? 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED'
+            : 'WORKFLOW_RUN_EVIDENCE_INVALID',
+      });
+      expect(transition).not.toHaveBeenCalled();
+      await expect(fixture.reader.runExists(fixture.runId)).resolves.toBe(false);
+    },
+  );
   it.each(['run', 'resume'] as const)(
     'keeps durable output recoverable when the %s terminal transition fails',
     async (mode) => {

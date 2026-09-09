@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -394,4 +395,131 @@ func tamperAuthorityRow(t *testing.T, pool *pgxpool.Pool, disableTrigger, update
 func openAuthorityPostgres(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	return testsupport.OpenPostgres(t)
+}
+
+func TestNewNonportableAuthorityHasZeroBusinessWrites(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	repository := New(pool)
+	for _, id := range []string{"run:historical", "CON", "aux.txt", "run."} {
+		t.Run(id, func(t *testing.T) {
+			input := mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0)
+			envelope := input.Prepared.Envelope
+			envelope.RunID, envelope.Record.RunID = id, id
+			body, err := canonicaljson.Encode(envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body = append(body, '\n')
+			prepared, err := authoritystore.PrepareRequest(body, "caller-test", envelope.WorkspaceID, strconv.FormatInt(envelope.Route.RoutingEpoch, 10), input.ServiceBuildHash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.Prepared = prepared
+			input.IdempotencyKey = authoritystore.ExpectedIdempotencyKey(body)
+			input.RequestFingerprint = authoritystore.RequestFingerprint("POST", authoritystore.RequestPath(envelope.Operation, id), prepared)
+			if _, err := repository.Mutate(t.Context(), input); !authoritystore.IsCode(err, authoritystore.ErrorPlatformUnsupported) {
+				t.Fatalf("expected platform rejection: %v", err)
+			}
+			stats, err := repository.Statistics(t.Context())
+			if err != nil || stats.Runs != 0 || stats.Receipts != 0 || stats.TransitionEvents != 0 || stats.OutboxPending != 0 {
+				t.Fatalf("business writes: %#v, %v", stats, err)
+			}
+		})
+	}
+}
+
+// Seed accepted historical bytes directly, as an older writer could before the
+// portable-new-run policy. The production creation API remains closed.
+func TestHistoricalNonportableAuthorityReplaysAndTransitions(t *testing.T) {
+	pool := openAuthorityPostgres(t)
+	repository := New(pool)
+	input := mutationForHistoricalRun(t, mutationInput(t, authoritystore.OperationAccept, nil, authoritycontract.RunCreated, 0), "run:historical")
+	request := input.Prepared.Envelope
+	ctx := t.Context()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if err := ensureEpoch(ctx, tx, request.WorkspaceID, request.Route); err != nil {
+		t.Fatal(err)
+	}
+	var committedAt time.Time
+	if err := tx.QueryRow(ctx, `SELECT date_trunc('milliseconds', clock_timestamp())`).Scan(&committedAt); err != nil {
+		t.Fatal(err)
+	}
+	committed := canonicalTimestamp(committedAt)
+	revision, recordHash := request.Record.Revision, input.Prepared.RecordHash
+	value := authoritycontract.Receipt{
+		Schema: authoritycontract.ReceiptSchema, Operation: authoritycontract.ReceiptRunTransition,
+		Status: authoritycontract.ReceiptAccepted, WorkspaceID: request.WorkspaceID, RunID: request.RunID,
+		ExpectedRevision: 0, AcceptedRevision: &revision, ResumeGeneration: 0, Route: request.Route,
+		IdempotencyKey: input.IdempotencyKey, RequestFingerprint: input.RequestFingerprint,
+		RequestHash: input.Prepared.RequestHash, RecordHash: &recordHash,
+		CorrelationID: request.CorrelationID, ServiceBuildHash: input.ServiceBuildHash, CommittedAt: &committed,
+	}
+	exact, err := exactReceiptBytes(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := mustDecodeHash(input.ServiceBuildHash)
+	fingerprint, err := authoritystore.ParseFingerprint(input.RequestFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recorded time.Time
+	if err := tx.QueryRow(ctx, receiptAcceptedInsertSQL, "wca-receipt-historical", input.IdempotencyKey, fingerprint[:], mustDecodeHash(input.Prepared.RequestHash), request.WorkspaceID,
+		request.RunID, 0, revision, 0, request.Route.Backend, request.Route.Authority, request.Route.RoutingEpoch, build,
+		mustDecodeHash(recordHash), request.CorrelationID, build, committedAt, exact).Scan(&recorded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, eventInsertSQL, "wca-event-historical", "wca-receipt-historical", request.WorkspaceID, request.RunID, 0, revision, nil,
+		string(request.Record.State), nil, nil, nil, nil, 0, 0, request.Route.Backend, request.Route.Authority, request.Route.RoutingEpoch, build,
+		mustDecodeHash(input.Prepared.RequestHash), mustDecodeHash(recordHash), request.CorrelationID, input.Prepared.RecordBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, runInsertSQL, request.WorkspaceID, request.RunID, request.Record.WorkflowID, request.Record.WorkflowVersion,
+		mustDecodeHash(request.Record.WorkflowSourceHash), mustDecodeHash(request.Record.ManifestHash), mustDecodeHash(request.Record.InputHash),
+		request.Route.Backend, request.Route.Authority, request.Route.RoutingEpoch, build, string(request.Record.State), revision, nil, nil, 0,
+		mustDecodeHash(recordHash), input.Prepared.RecordBytes, committedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := repository.Mutate(ctx, input)
+	if err != nil || !replay.Replay || !bytes.Equal(exact, replay.ExactBytes) {
+		t.Fatalf("historical replay changed: %v", err)
+	}
+	head, err := repository.Read(ctx, request.WorkspaceID, request.RunID)
+	if err != nil || head.RunID != request.RunID {
+		t.Fatalf("historical read: %v", err)
+	}
+	state := authoritycontract.RunCreated
+	transition := mutationForHistoricalRun(t, mutationInput(t, authoritystore.OperationTransition, &state, authoritycontract.RunRunning, 1), request.RunID)
+	if _, err := repository.Mutate(ctx, transition); err != nil {
+		t.Fatalf("historical transition: %v", err)
+	}
+	after, err := repository.Mutate(ctx, input)
+	if err != nil || !after.Replay || !bytes.Equal(exact, after.ExactBytes) {
+		t.Fatalf("historical replay after advancement changed: %v", err)
+	}
+}
+
+func mutationForHistoricalRun(t testing.TB, input authoritystore.MutateInput, id string) authoritystore.MutateInput {
+	t.Helper()
+	envelope := input.Prepared.Envelope
+	envelope.RunID, envelope.Record.RunID = id, id
+	body, err := canonicaljson.Encode(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = append(body, '\n')
+	input.Prepared, err = authoritystore.PrepareRequest(body, "caller-test", envelope.WorkspaceID, strconv.FormatInt(envelope.Route.RoutingEpoch, 10), input.ServiceBuildHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.IdempotencyKey = authoritystore.ExpectedIdempotencyKey(body)
+	input.RequestFingerprint = authoritystore.RequestFingerprint("POST", authoritystore.RequestPath(envelope.Operation, id), input.Prepared)
+	return input
 }

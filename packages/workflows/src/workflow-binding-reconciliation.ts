@@ -1,19 +1,7 @@
-import { canonicalWorkflowControlAuthorityJson as canonical } from './workflow-control-authority-contract.js';
 import {
-  validateWorkflowControlAuthorityRunRecord,
-  type WorkflowControlAuthorityPort,
-} from './workflow-control-authority-client.js';
-import {
-  createWorkflowRunRecoveryEvidenceClient,
-  type WorkflowRunnerAuthorityBindingClientConfig,
-} from './workflow-runner-authority-binding-client.js';
-import {
-  readRecoveryBinding,
-  recoveryConflict,
-  WorkflowRunRecoveryError,
-  validateWorkflowRunRecoveryEvidence,
-  type WorkflowRunRecoveryEvidencePort,
-} from './workflow-run-recovery-evidence.js';
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   prepareWorkflowBindingReconciliation,
   parseWorkflowBindingReconciliation,
@@ -23,11 +11,27 @@ import {
   type WorkflowBindingSettlementReceipt,
 } from './workflow-binding-reconciliation-contract.js';
 import {
+  validateWorkflowControlAuthorityRunRecord,
+  type WorkflowControlAuthorityPort,
+} from './workflow-control-authority-client.js';
+import { canonicalWorkflowControlAuthorityJson as canonical } from './workflow-control-authority-contract.js';
+import {
+  readRecoveryBinding,
+  recoveryConflict,
+  WorkflowRunRecoveryError,
+  validateWorkflowRunRecoveryEvidence,
+  type WorkflowRunRecoveryEvidencePort,
+} from './workflow-run-recovery-evidence.js';
+import { createWorkflowRunRouteJournal } from './workflow-run-routing.js';
+import {
+  createWorkflowRunRecoveryEvidenceClient,
+  type WorkflowRunnerAuthorityBindingClientConfig,
+} from './workflow-runner-authority-binding-client.js';
+import {
   cancelWorkflowRunnerResponseBody,
   readWorkflowRunnerResponseBytes,
   throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
-import { createWorkflowRunRouteJournal } from './workflow-run-routing.js';
 
 export interface WorkflowBindingReconciliationPreview {
   schema: 'openslack.workflow_runner_binding_reconciliation_preview.v1';
@@ -90,7 +94,7 @@ export function createWorkflowBindingReconciliationClient(
     'X-OpenSlack-Workspace-ID': config.workspaceId,
   };
   const base = (run: string) => {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/u.test(run))
+    if (!SAFE_IDENTIFIER_REGEX.test(run))
       return recoveryConflict('Reconciliation run ID is invalid.');
     return `${config.origin}/v2/runner/runs/${encodeURIComponent(run)}`;
   };
@@ -210,7 +214,7 @@ export function createWorkflowBindingReconciliationClient(
                   .sort()
                   .join(',') ||
               !/^WFRUNNER-BINDING-[0-9a-f]{64}$/u.test(item.bindingId) ||
-              !/^[0-9a-f]{64}$/u.test(item.stageHash) ||
+              !WORKFLOW_BINDING_HASH_REGEX.test(item.stageHash) ||
               !['committed', 'not_committed', 'unknown'].includes(item.outcome) ||
               ![
                 'WORKFLOW_RUNNER_BINDING_SETTLED',
@@ -321,7 +325,7 @@ export function createWorkflowBindingReconciliationClient(
         !Number.isSafeInteger(expectedRevision) ||
         expectedRevision < 1 ||
         expectedRevision >= Number.MAX_SAFE_INTEGER ||
-        !/^[0-9a-f]{64}$/u.test(expectedRecordHash)
+        !WORKFLOW_BINDING_HASH_REGEX.test(expectedRecordHash)
       )
         return recoveryConflict('Recovery pause expected head is invalid.');
       const body =
