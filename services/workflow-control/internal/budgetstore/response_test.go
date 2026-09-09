@@ -51,7 +51,7 @@ func TestMutationResponseExactEnvelopeAndCrossSpliceRejection(t *testing.T) {
 		t.Fatalf("tampered exact response err=%v, want %s", err, ErrorIntegrity)
 	}
 	// The prior manifest changed only source pins. Retain its immutable response bytes on replay.
-	previousExact := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+	previousExact := bytes.ReplaceAll(exact, []byte(ContractManifestSHA256), []byte(budgetcontract.OriginalManifestSHA256))
 	previous, err := DecodeMutationResponse(previousExact)
 	if err != nil {
 		t.Fatal(err)

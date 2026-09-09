@@ -6,6 +6,7 @@ import { fullFormats } from 'ajv-formats/dist/formats.js';
 import { describe, expect, it } from 'vitest';
 import {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_ERROR_CODES,
+  WorkflowRunnerAuthorityBindingContractError,
   validateWorkflowRunnerAuthorityBindingError,
   validateWorkflowRunnerAuthorityBindingReceipt,
   validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage,
@@ -13,6 +14,7 @@ import {
   validateWorkflowRunnerAuthorityBindingStage,
 } from '../workflow-runner-authority-binding-contract.js';
 import {
+  WorkflowRunnerV2RuntimeAdmissionError,
   prepareWorkflowRunnerV2RuntimeAdmission,
   validateWorkflowRunnerV2RuntimeAdmission,
   validateWorkflowRunnerV2RuntimeAdmissionReceipt,
@@ -60,15 +62,46 @@ const schemaNames: Record<string, string> = {
   runtimeAdmissionReceipt: 'workflow-runner-v2-runtime-admission-receipt',
 };
 const contextualValidators: Record<string, (value: unknown) => unknown> = {};
-for (const [kind, ref] of Object.entries(golden.positive.controlDelivery.byKind)) {
-  const artifact = golden.positive.controlDelivery.artifacts[ref as string];
+function boundaryContext(fixture: typeof golden, kind: string) {
+  const ref = fixture.positive.controlDelivery.byKind[kind];
+  const artifact = fixture.positive.controlDelivery.artifacts[ref];
+  if (!artifact) throw new Error('Missing boundary control artifact.');
   const context =
     kind === 'budget_authorization'
-      ? golden.positive.semanticVariants.budgetReserveGoAuthority
-      : golden.positive.operations[artifact.operation];
+      ? fixture.positive.semanticVariants.budgetReserveGoAuthority
+      : fixture.positive.operations[artifact.operation];
+  if (
+    !context ||
+    !context.stage ||
+    !context.stageReceipt ||
+    !context.resolution ||
+    !context.resolutionReceipt
+  )
+    throw new Error('Missing boundary operation context.');
   const prior = artifact.priorEventDeliveryRef
-    ? golden.positive.controlDelivery.priorEventDeliveries[artifact.priorEventDeliveryRef]
+    ? fixture.positive.controlDelivery.priorEventDeliveries[artifact.priorEventDeliveryRef]
     : null;
+  if (artifact.priorEventDeliveryRef && !prior) throw new Error('Missing boundary prior delivery.');
+  if (
+    !artifact.priorEventDeliveryRef &&
+    kind !== 'event_receipt' &&
+    (!fixture.positive.controlDelivery.messages.accepted[artifact.operation] ||
+      !fixture.positive.controlDelivery.accepted[artifact.operation])
+  )
+    throw new Error('Missing boundary accepted prior delivery.');
+  return { artifact, context, prior };
+}
+
+function expectedContractRejection(error: unknown, kind: string): boolean {
+  const expected = kind.startsWith('runtimeAdmission')
+    ? error instanceof WorkflowRunnerV2RuntimeAdmissionError
+    : error instanceof WorkflowRunnerAuthorityBindingContractError;
+  if (!expected) throw error;
+  return false;
+}
+
+for (const kind of Object.keys(golden.positive.controlDelivery.byKind)) {
+  const { artifact, context, prior } = boundaryContext(golden, kind);
   const key = 'control:' + kind;
   bases[key] = artifact.receipt.value;
   validators[key] = validateWorkflowRunnerAuthorityBindingReceipt;
@@ -100,11 +133,28 @@ const cases: Array<{
   id: string;
   kind: string;
   accepted: boolean;
+  expectedError?: { code: string; path: string; message: string };
   set: Record<string, unknown>;
   remove: string[];
 }> = JSON.parse(readFileSync(resolve(root, 'schema-boundaries.json'), 'utf8'));
 
 describe('shared authority-binding schema boundary corpus', () => {
+  it('exposes broken fixture wiring and unexpected exceptions', () => {
+    for (const fault of ['operation', 'artifact', 'prior', 'kind']) {
+      const fixture = structuredClone(golden);
+      const kind = fault === 'kind' ? 'unknown' : 'effect_authorization';
+      const reference = fixture.positive.controlDelivery.byKind.effect_authorization;
+      const artifact = fixture.positive.controlDelivery.artifacts[reference];
+      if (fault === 'operation') delete fixture.positive.operations[artifact.operation];
+      if (fault === 'artifact') delete fixture.positive.controlDelivery.artifacts[reference];
+      if (fault === 'prior') artifact.priorEventDeliveryRef = 'missing';
+      expect(() => boundaryContext(fixture, kind)).toThrow();
+    }
+    const wiring = new TypeError('broken fixture');
+    expect(() => expectedContractRejection(wiring, 'control:effect_authorization')).toThrow(wiring);
+    expect(() => expectedContractRejection(wiring, 'runtimeAdmission')).toThrow(wiring);
+  });
+
   it.each(cases)('$id agrees between TypeScript and the schema', (item) => {
     const base = bases[item.kind];
     const validate = validators[item.kind];
@@ -130,8 +180,9 @@ describe('shared authority-binding schema boundary corpus', () => {
     try {
       validate(value);
       accepted = true;
-    } catch {
-      /* rejection is part of the corpus */
+    } catch (error) {
+      accepted = expectedContractRejection(error, item.kind);
+      if (item.expectedError) expect(error).toMatchObject(item.expectedError);
     }
     expect(accepted, `${item.id}: TypeScript`).toBe(item.accepted);
     if (contextualValidators[item.kind]) {
@@ -139,8 +190,9 @@ describe('shared authority-binding schema boundary corpus', () => {
       try {
         contextualValidators[item.kind]!(value);
         contextual = true;
-      } catch {
-        /* expected rejection */
+      } catch (error) {
+        contextual = expectedContractRejection(error, item.kind);
+        if (item.expectedError) expect(error).toMatchObject(item.expectedError);
       }
       expect(contextual, item.id + ': contextual TypeScript').toBe(item.accepted);
     }

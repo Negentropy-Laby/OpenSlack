@@ -1,4 +1,8 @@
 import {
+  WORKFLOW_CONTROL_SEQUENCES,
+  workflowControlCompanionSequence,
+} from './internal/workflow-control-sequences.generated.js';
+import {
   canonicalWorkflowControlAuthorityJson,
   parseWorkflowControlAuthorityMessageBytes,
   prepareWorkflowControlAuthorityMessage,
@@ -390,7 +394,15 @@ export class WorkflowRunnerAuthorityBindingRuntime {
         input.message.kind === 'budget_authorization'
           ? (input.budgetSourceResult ?? current.budgetSourceResult)
           : undefined;
-      const companionSequence = input.message.kind === 'event_receipt' ? 3 : 4;
+      if (!Object.hasOwn(WORKFLOW_CONTROL_SEQUENCES, input.message.kind)) {
+        return fail(
+          'WORKFLOW_RUNNER_AUTHORITY_BINDING_RUNTIME_INPUT_INVALID',
+          'Control acknowledgement kind is invalid.',
+        );
+      }
+      const companionSequence = workflowControlCompanionSequence(
+        input.message.kind as keyof typeof WORKFLOW_CONTROL_SEQUENCES,
+      );
       const sameSequence = current.controlDeliveries.find(
         (delivery) => delivery.companionSequence === companionSequence,
       );

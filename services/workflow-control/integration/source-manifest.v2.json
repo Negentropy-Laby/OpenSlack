@@ -382,7 +382,7 @@
     },
     "budgetCompatibilityRegression": {
       "path": "packages/workflows/src/__tests__/workflow-budget-manifest-compatibility.test.ts",
-      "sha256": "1be420ae0fd97510bd410924413280bc0c6489aaa8938b94cfea19b19405dbed"
+      "sha256": "5a72a5080a3b622ac677c0bc324b89cc29f06d1261be1a4d3cd295a0f8918a43"
     },
     "bindingSchemaFieldRules": {
       "path": "scripts/workflow-runner-authority-binding-contracts/schema-fields.ts",
@@ -394,15 +394,15 @@
     },
     "bindingSchemaBoundaryFixtures": {
       "path": "packages/workflows/contracts/workflow-runner-authority-binding/schema-boundaries.json",
-      "sha256": "8fe96a9127abd5b5a34454fecee25ffea910851abc940a1bfc94c06505a2cd99"
+      "sha256": "ae7b2347c33b7330b37352916acc95d97c8a11a900efef31bf82bdc7265fac7b"
     },
     "bindingSchemaBoundaryTSRegression": {
       "path": "packages/workflows/src/__tests__/workflow-binding-schema-boundaries.test.ts",
-      "sha256": "940e82e043e75671949eb6f556ac8362b53135b2d4b64494997552238b16b027"
+      "sha256": "e32dbf4ac0c1a458ba5bb33425d7295adc85aad487a911bb452b4149254f7770"
     },
     "bindingSchemaBoundaryGoRegression": {
       "path": "services/workflow-control/runnerbindingcontract/schema_boundaries_test.go",
-      "sha256": "38d30084f76b8231ca3b1157233f303f7bd852bc8ff36449b88bce9e1e8323d7"
+      "sha256": "473eac0b1d603f566ebe8dfe1f75077e2cfbf37f244063183d528512f59bb529"
     },
     "runIdentity": {
       "path": "packages/workflows/src/internal/workflow-run-identity.ts",
@@ -486,7 +486,7 @@
     },
     "workflowRunnerAuthorityRuntime": {
       "path": "packages/workflows/src/workflow-runner-authority-binding-runtime.ts",
-      "sha256": "853fb0d6c619e7b0d450cbff3867ee47d904882fb182f2a9857955af43eadde3"
+      "sha256": "7d50f0fb4e73573b968b3c6fb2b0b4007d1ad6e9685129851276dd546716abc8"
     },
     "workflowRunnerBudgetClient": {
       "path": "packages/workflows/src/workflow-runner-budget-authority-client.ts",
@@ -727,6 +727,46 @@
     "runPathBoundaryRegression": {
       "path": "packages/workflows/src/__tests__/workflow-run-path-boundaries.test.ts",
       "sha256": "de7ba9f8c999e0b29809153e9708f3ceb8c6627eb903d5264b9b0cc619f1da35"
+    },
+    "bindingControlSequenceRules": {
+      "path": "packages/workflows/contracts/workflow-runner-authority-binding/control-sequences.json",
+      "sha256": "e9816a8e0ec3f6f227fbcac2df1c53af032d2b1ce6cb4dcc5ec3d7ebf9549620"
+    },
+    "bindingControlSequenceGenerator": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/control-sequences.ts",
+      "sha256": "ad29b67bfbbe1f5aad43ae16d6ee180d42651ebb8ea88e53045f802349d12f63"
+    },
+    "bindingControlSequenceTS": {
+      "path": "packages/workflows/src/internal/workflow-control-sequences.generated.ts",
+      "sha256": "554d15e3112df0257f82a2569d13155dc030b0434a6de51795eedbe6246a48ce"
+    },
+    "bindingControlSequenceGo": {
+      "path": "services/workflow-control/runnerbindingcontract/control_sequences_generated.go",
+      "sha256": "5284e7b38ba03c7effbe793699894a1fa3aab1ff1ae2c0c5dbba64baa7d577ab"
+    },
+    "bindingControlSequenceTSRegression": {
+      "path": "packages/workflows/src/__tests__/workflow-control-sequence-rules.test.ts",
+      "sha256": "607556f8c3fb12883542dc33ebcfd8c0d880ed00fe76a839a6b53299290925b7"
+    },
+    "bindingControlSequenceGoRegression": {
+      "path": "services/workflow-control/runnerbindingcontract/control_sequences_test.go",
+      "sha256": "9541a3402ca23a38389552dbbef6ec12eae0d27366ce7d74babfd6bfe4691330"
+    },
+    "bindingControlGeneratorEntry": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/index.ts",
+      "sha256": "6e5403aa8a2727d496d9588cfeabb5d85842405c6f8ccabf0c2f8c3401c846de"
+    },
+    "bindingControlGeneratorBody": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/generator.mts",
+      "sha256": "1a9ce8616960d72021d4ced30e5508a84a41a7088a39311ceb67ce09be4bf6ce"
+    },
+    "bindingControlGeneratorBootstrap": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/bootstrap.mjs",
+      "sha256": "041c43b04f461a85d60470d04dec224f9655aa60ee16de28ff04c76cb63cc9cd"
+    },
+    "bindingControlGeneratorLoader": {
+      "path": "scripts/workflow-runner-authority-binding-contracts/sequence-loader.mjs",
+      "sha256": "93504ccd489137bd5edd9366f41b57ed3693eaf4f5922a3a1c615f38b87b023f"
     }
   },
   "contractInputs": {
@@ -764,7 +804,7 @@
     },
     "workflowRunnerAuthorityBindingContractManifest": {
       "path": "packages/workflows/contracts/workflow-runner-authority-binding/v1/manifest.json",
-      "sha256": "440c3210b101367d95cdde238cb16326ea3aec02086ef845e7a4087f4f9f0b9b"
+      "sha256": "b9b6543e7bdd4a14f979230db3b3a269ee3073bd34ce48f6815a6112101a6b22"
     },
     "openapi": {
       "path": "services/workflow-control/docs/api/openapi.yaml",

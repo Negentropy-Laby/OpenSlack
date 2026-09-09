@@ -706,5 +706,539 @@
     "remove": [
       "/companionSequence"
     ]
+  },
+  {
+    "id": "control-event_receipt-sequence-and-controlSequence",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/controlSequence": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/controlSequence",
+      "message": "$/controlSequence is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-messageDigest",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/messageDigest": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/messageDigest",
+      "message": "$/messageDigest is invalid."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-runnerAttemptId",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/runnerAttemptId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/runnerAttemptId",
+      "message": "$/runnerAttemptId is invalid."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-leaseId",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/leaseId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/leaseId",
+      "message": "$/leaseId is invalid."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-fencingToken",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/fencingToken": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/fencingToken",
+      "message": "$/fencingToken is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-processedAt",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/processedAt": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/processedAt",
+      "message": "$/processedAt is invalid."
+    }
+  },
+  {
+    "id": "control-event_receipt-sequence-and-disposition",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/disposition": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/disposition",
+      "message": "$/disposition is invalid."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-controlSequence",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/controlSequence": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/controlSequence",
+      "message": "$/controlSequence is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-messageDigest",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/messageDigest": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/messageDigest",
+      "message": "$/messageDigest is invalid."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-runnerAttemptId",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/runnerAttemptId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/runnerAttemptId",
+      "message": "$/runnerAttemptId is invalid."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-leaseId",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/leaseId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/leaseId",
+      "message": "$/leaseId is invalid."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-fencingToken",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/fencingToken": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/fencingToken",
+      "message": "$/fencingToken is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-processedAt",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/processedAt": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/processedAt",
+      "message": "$/processedAt is invalid."
+    }
+  },
+  {
+    "id": "control-budget_authorization-sequence-and-disposition",
+    "kind": "control:budget_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/disposition": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/disposition",
+      "message": "$/disposition is invalid."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-controlSequence",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/controlSequence": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/controlSequence",
+      "message": "$/controlSequence is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-messageDigest",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/messageDigest": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/messageDigest",
+      "message": "$/messageDigest is invalid."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-runnerAttemptId",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/runnerAttemptId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/runnerAttemptId",
+      "message": "$/runnerAttemptId is invalid."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-leaseId",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/leaseId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/leaseId",
+      "message": "$/leaseId is invalid."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-fencingToken",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/fencingToken": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/fencingToken",
+      "message": "$/fencingToken is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-processedAt",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/processedAt": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/processedAt",
+      "message": "$/processedAt is invalid."
+    }
+  },
+  {
+    "id": "control-effect_authorization-sequence-and-disposition",
+    "kind": "control:effect_authorization",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/disposition": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/disposition",
+      "message": "$/disposition is invalid."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-controlSequence",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/controlSequence": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/controlSequence",
+      "message": "$/controlSequence is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-messageDigest",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/messageDigest": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/messageDigest",
+      "message": "$/messageDigest is invalid."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-runnerAttemptId",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/runnerAttemptId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/runnerAttemptId",
+      "message": "$/runnerAttemptId is invalid."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-leaseId",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/leaseId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/leaseId",
+      "message": "$/leaseId is invalid."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-fencingToken",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/fencingToken": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/fencingToken",
+      "message": "$/fencingToken is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-processedAt",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/processedAt": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/processedAt",
+      "message": "$/processedAt is invalid."
+    }
+  },
+  {
+    "id": "control-resume_offer-sequence-and-disposition",
+    "kind": "control:resume_offer",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/disposition": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/disposition",
+      "message": "$/disposition is invalid."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-controlSequence",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/controlSequence": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/controlSequence",
+      "message": "$/controlSequence is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-messageDigest",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/messageDigest": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/messageDigest",
+      "message": "$/messageDigest is invalid."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-runnerAttemptId",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/runnerAttemptId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/runnerAttemptId",
+      "message": "$/runnerAttemptId is invalid."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-leaseId",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/leaseId": ""
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/leaseId",
+      "message": "$/leaseId is invalid."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-fencingToken",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/fencingToken": 0
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/fencingToken",
+      "message": "$/fencingToken is not a bounded safe integer."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-processedAt",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/processedAt": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/processedAt",
+      "message": "$/processedAt is invalid."
+    }
+  },
+  {
+    "id": "control-cancel_request-sequence-and-disposition",
+    "kind": "control:cancel_request",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 5,
+      "/disposition": "invalid"
+    },
+    "remove": [],
+    "expectedError": {
+      "code": "WORKFLOW_RUNNER_AUTHORITY_BINDING_INVALID",
+      "path": "$/disposition",
+      "message": "$/disposition is invalid."
+    }
+  },
+  {
+    "id": "control-event_receipt-overflow-sequence",
+    "kind": "control:event_receipt",
+    "accepted": false,
+    "set": {
+      "/companionSequence": 1e999
+    },
+    "remove": []
   }
 ]

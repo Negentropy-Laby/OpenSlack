@@ -134,12 +134,12 @@ func TestBudgetStorePreviousManifestReadReplayAndSettlement(t *testing.T) {
 	// source rows immutable and every database constraint active during the import.
 	upgradedPool := openBudgetPostgres(t)
 	seedRun(t, upgradedPool, 5)
-	importBudgetRecordsWithManifest(t, pool, upgradedPool, budgetcontract.PreviousManifestSHA256)
+	importBudgetRecordsWithManifest(t, pool, upgradedPool, budgetcontract.OriginalManifestSHA256)
 	repository = New(upgradedPool)
-	previousResponse := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
-	previousReceipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.PreviousManifestSHA256))
+	previousResponse := bytes.ReplaceAll(first.ExactResponseBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.OriginalManifestSHA256))
+	previousReceipt := bytes.ReplaceAll(first.ExactReceiptBytes, []byte(budgetstore.ContractManifestSHA256), []byte(budgetcontract.OriginalManifestSHA256))
 	account, err := repository.ReadAccount(ctx, testWorkspace, testRun)
-	if err != nil || account.Durable.ContractManifestSHA256 != budgetcontract.PreviousManifestSHA256 {
+	if err != nil || account.Durable.ContractManifestSHA256 != budgetcontract.OriginalManifestSHA256 {
 		t.Fatalf("previous account read: %v", err)
 	}
 	if _, err := repository.RebuildAccount(ctx, testWorkspace, testRun); err != nil {

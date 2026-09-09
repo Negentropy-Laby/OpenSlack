@@ -105,13 +105,6 @@ func validateReceiptWithSession(value any, session *bindingValidationSession) (R
 		}, "$/controlKind"); err != nil {
 			return nil, err
 		}
-		expectedSequence := int64(4)
-		if result["controlKind"] == "event_receipt" {
-			expectedSequence = 3
-		}
-		if companionSequence != expectedSequence {
-			return nil, failure(ErrorSequenceConflict, "$/companionSequence", "Control kind has an invalid companion sequence.")
-		}
 		if result["controlSequence"], err = integerValue(closed["controlSequence"], "$/controlSequence", 1); err != nil {
 			return nil, err
 		}
@@ -135,6 +128,9 @@ func validateReceiptWithSession(value any, session *bindingValidationSession) (R
 			"$/disposition",
 		); err != nil {
 			return nil, err
+		}
+		if companionSequence != controlCompanionSequence(result["controlKind"].(string)) {
+			return nil, failure(ErrorSequenceConflict, "$/companionSequence", "Control kind has an invalid companion sequence.")
 		}
 		if result["processedAt"] != result["committedAt"] {
 			return nil, failure(ErrorIdentityMismatch, "$/processedAt", "Control processing time must equal its durable acknowledgement time.")
@@ -383,10 +379,6 @@ func validateControlDeliveryForValidatedContext(
 		expectedRevision = runnerHead["expectedGlobalRunRevision"].(int64)
 		expectedGeneration = runnerHead["expectedResumeGeneration"].(int64)
 	}
-	expectedCompanionSequence := int64(4)
-	if message.Kind == authoritycontract.KindEventReceipt {
-		expectedCompanionSequence = 3
-	}
 	resolutionCommittedAt, resolutionCommitted := resolutionReceipt["committedAt"].(string)
 	receiptCommittedAt, receiptCommitted := receipt["committedAt"].(string)
 	if prepared.Direction != authoritycontract.DirectionControlToRunner ||
@@ -408,8 +400,7 @@ func validateControlDeliveryForValidatedContext(
 		*message.AuthorityBuildHash != route["authorityBuildHash"] || *message.RunRevision != expectedRevision ||
 		*message.ResumeGeneration != expectedGeneration || *message.Sequence <= target["sequence"].(int64) ||
 		(message.Kind == authoritycontract.KindEventReceipt && message.SentAt < resolutionCommittedAt) ||
-		!receiptCommitted || receiptCommittedAt < message.SentAt ||
-		receipt["companionSequence"] != expectedCompanionSequence {
+		!receiptCommitted || receiptCommittedAt < message.SentAt {
 		return nil, failure(ErrorIdentityMismatch, "$", "Control acknowledgement is cross-spliced with another exact control message.")
 	}
 	authorityReceiptHash := ""

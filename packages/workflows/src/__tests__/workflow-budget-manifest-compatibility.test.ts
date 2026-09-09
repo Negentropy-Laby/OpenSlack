@@ -72,6 +72,9 @@ describe('append-only budget manifest compatibility', () => {
         expect(await readFile(resolve(temporary, goPath), 'utf8')).toContain(
           'PreviousManifestSHA256 = "' + previous + '"',
         );
+        expect(await readFile(resolve(temporary, tsPath), 'utf8')).toContain(
+          "ORIGINAL_MANIFEST_SHA256 =\n  '" + original.accepted[0] + "'",
+        );
         expect(rotateBudgetManifestCompatibility(rotated, rotated.current)).toBe(rotated);
       }
       await writeFile(resolve(temporary, ledgerPath), JSON.stringify(rotated));
@@ -80,7 +83,13 @@ describe('append-only budget manifest compatibility', () => {
       const first = await Promise.all(
         [tsPath, goPath, apiPath].map((path) => readFile(resolve(temporary, path), 'utf8')),
       );
-      expect(first[0]).toMatch(new RegExp("PREVIOUS_MANIFEST_SHA256 =\\s*'" + 'b'.repeat(64)));
+      const previousProjection = new RegExp(
+        "PREVIOUS_MANIFEST_SHA256 =\\s*'" + 'b'.repeat(64) + "' as const;(?:\\r?\\n|$)",
+      );
+      expect(first[0]).toMatch(previousProjection);
+      expect(first[0].replace('b'.repeat(64), 'b'.repeat(64) + 'e')).not.toMatch(
+        previousProjection,
+      );
       expect(first[1]).toContain('PreviousManifestSHA256 = "' + 'b'.repeat(64) + '"');
       expect(first[1]).toContain('OriginalManifestSHA256 = "' + original.accepted[0] + '"');
       for (const hash of rotated.accepted)

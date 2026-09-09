@@ -1,3 +1,4 @@
+import { workflowControlCompanionSequence } from './internal/workflow-control-sequences.generated.js';
 import { createHash } from 'node:crypto';
 import {
   WORKFLOW_BUDGET_CURRENT_MANIFEST_SHA256,
@@ -2609,7 +2610,7 @@ export function validateWorkflowRunnerAuthorityBindingReceipt(
         '$/disposition',
       ),
     } satisfies WorkflowRunnerAuthorityControlDeliveryReceipt);
-    if (result.companionSequence !== (result.controlKind === 'event_receipt' ? 3 : 4))
+    if (result.companionSequence !== workflowControlCompanionSequence(result.controlKind))
       fail(
         'WORKFLOW_RUNNER_AUTHORITY_BINDING_SEQUENCE_CONFLICT',
         '$/companionSequence',
@@ -2834,8 +2835,7 @@ function validateControlDeliveryForValidatedContext(
     (control.kind === 'event_receipt' &&
       resolutionReceipt.committedAt !== null &&
       control.sentAt < resolutionReceipt.committedAt) ||
-    receipt.committedAt! < control.sentAt ||
-    receipt.companionSequence !== (control.kind === 'event_receipt' ? 3 : 4)
+    receipt.committedAt! < control.sentAt
   ) {
     fail(
       'WORKFLOW_RUNNER_AUTHORITY_BINDING_IDENTITY_MISMATCH',

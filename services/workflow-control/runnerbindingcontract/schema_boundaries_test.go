@@ -27,7 +27,7 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 		"runtimeAdmission":        ValidateRuntimeAdmission,
 		"runtimeAdmissionReceipt": func(v any) (Record, error) { return ValidateRuntimeAdmissionReceipt(v, prepared) },
 	}
-	contextual := map[string]func(any) (Record, error){}
+	contextual := map[string]func(*testing.T, any) (Record, error){}
 	for kind, reference := range golden.Positive.ControlDelivery.ByKind {
 		control := goldenControlArtifact(t, golden, reference)
 		exchange := golden.Positive.Operations[string(control.Operation)]
@@ -37,7 +37,7 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 		key := "control:" + kind
 		bases[key] = control.Receipt.Value
 		validators[key] = ValidateReceipt
-		contextual[key] = func(value any) (Record, error) {
+		contextual[key] = func(t *testing.T, value any) (Record, error) {
 			return validateControlGolden(value, control.Message, exchange.Stage.Value, exchange.Resolution.Value, exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, controlPriorForGolden(t, golden, kind, control), control.BudgetSourceResult)
 		}
 	}
@@ -46,27 +46,21 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cases []struct {
-		ID       string         `json:"id"`
-		Kind     string         `json:"kind"`
-		Accepted bool           `json:"accepted"`
-		Set      map[string]any `json:"set"`
-		Remove   []string       `json:"remove"`
+		ID            string `json:"id"`
+		Kind          string `json:"kind"`
+		Accepted      bool   `json:"accepted"`
+		ExpectedError *struct {
+			Code    string `json:"code"`
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"expectedError"`
+		Set    map[string]any `json:"set"`
+		Remove []string       `json:"remove"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.UseNumber()
 	if err := decoder.Decode(&cases); err != nil {
 		t.Fatal(err)
-	}
-	for _, item := range cases {
-		for path, value := range item.Set {
-			if number, ok := value.(json.Number); ok && strings.ContainsAny(string(number), ".eE") {
-				parsed, err := number.Float64()
-				if err != nil {
-					t.Fatal(err)
-				}
-				item.Set[path] = parsed
-			}
-		}
 	}
 	if err := normalizeGoldenNumbers(reflect.ValueOf(&cases)); err != nil {
 		t.Fatal(err)
@@ -111,12 +105,24 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 				delete(record, key)
 			}
 			if validate := contextual[item.Kind]; validate != nil {
-				_, err := validate(value)
+				_, err := validate(t, value)
+				if item.ExpectedError != nil {
+					actual, ok := err.(*ContractError)
+					if !ok || string(actual.Code) != item.ExpectedError.Code || actual.Path != item.ExpectedError.Path || actual.Message != item.ExpectedError.Message {
+						t.Fatalf("contextual Go error identity mismatch: %v, want %+v", err, item.ExpectedError)
+					}
+				}
 				if (err == nil) != item.Accepted {
 					t.Fatalf("contextual Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
 				}
 			}
 			_, err = validators[item.Kind](value)
+			if item.ExpectedError != nil {
+				actual, ok := err.(*ContractError)
+				if !ok || string(actual.Code) != item.ExpectedError.Code || actual.Path != item.ExpectedError.Path || actual.Message != item.ExpectedError.Message {
+					t.Fatalf("Go error identity mismatch: %v, want %+v", err, item.ExpectedError)
+				}
+			}
 			if (err == nil) != item.Accepted {
 				t.Fatalf("Go accepted=%t want=%t: %v", err == nil, item.Accepted, err)
 			}
