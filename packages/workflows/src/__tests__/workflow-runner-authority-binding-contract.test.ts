@@ -1,3 +1,4 @@
+import { bindingGoldenContext } from './helpers/binding-golden-context.js';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -658,28 +659,18 @@ describe('Workflow Runner GS9-F2a authority-binding contract', () => {
     ]);
     for (const [kind, reference] of Object.entries(deliveries.byKind)) {
       const item = controlArtifact(reference);
-      const exchange =
-        kind === 'budget_authorization'
-          ? golden.positive.semanticVariants.budgetReserveGoAuthority
-          : golden.positive.operations[item.operation];
+      const { context } = bindingGoldenContext(golden, kind);
       const receipt = exact(item.receipt, 'receipt');
       expect(
         validateWorkflowRunnerAuthorityControlDeliveryReceiptForMessage(
           receipt,
           item.message,
-          exchange.stage.value,
-          exchange.resolution.value,
-          exchange.resolutionReceipt.value,
-          exchange.stageReceipt.value,
-          kind === 'event_receipt'
-            ? null
-            : kind === 'budget_authorization'
-              ? namedPriorDelivery(item.priorEventDeliveryRef)
-              : {
-                  message: deliveries.messages.accepted[item.operation],
-                  receipt: deliveries.accepted[item.operation].value,
-                },
-          item.budgetSourceResult,
+          context.stage,
+          context.resolution,
+          context.resolutionReceipt,
+          context.stageReceipt,
+          context.priorEventDelivery,
+          context.budgetSourceResult,
         ),
         kind,
       ).toEqual(receipt);

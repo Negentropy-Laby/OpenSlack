@@ -350,24 +350,8 @@ func TestGoldenControlDeliveryReceipts(t *testing.T) {
 		kind, control := kind, goldenControlArtifact(t, golden, reference)
 		t.Run("kind/"+kind, func(t *testing.T) {
 			t.Parallel()
-			exchange, ok := golden.Positive.Operations[string(control.Operation)]
-			if kind == string(authoritycontract.KindBudgetAuthorization) {
-				exchange, ok = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
-			}
-			if !ok {
-				t.Fatalf("missing operation context for control kind %s", kind)
-			}
 			receipt := assertGoldenPrepared(t, control.Receipt, "receipt")
-			validated, err := validateControlGolden(
-				receipt,
-				control.Message,
-				exchange.Stage.Value,
-				exchange.Resolution.Value,
-				exchange.ResolutionReceipt.Value,
-				exchange.StageReceipt.Value,
-				controlPriorForGolden(t, golden, kind, control),
-				control.BudgetSourceResult,
-			)
+			validated, err := ValidateControlDeliveryReceiptForMessage(receipt, control.Message, goldenControlContext(t, golden, kind, control))
 			if err != nil {
 				t.Fatalf("control kind contextual replay: %v", err)
 			}

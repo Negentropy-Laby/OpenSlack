@@ -1520,6 +1520,20 @@ Control delivery receipts use companion sequence 3 for `event_receipt` and 4 for
 
 Budget compatibility is ordered oldest first. `OriginalManifestSHA256` names its first entry and `PreviousManifestSHA256` names the entry immediately preceding the current digest. Rotation preserves every historical digest. PostgreSQL restart qualification replays each historical digest alongside current writes and checks exact response, receipt and rebuilt account bytes.
 
+Restart qualification initializes one source schema, run and reserve during seed,
+then reads that source for each independent historical target schema. Verification
+does not create a source schema and cleans its target even on failure; successful
+seed targets remain available across the required PostgreSQL process restart.
+Shared TS and Go golden-context helpers resolve the same budget special case and
+prior delivery, with fixture errors owned by the active test. Corpus mutation
+order applies parent paths before child paths, with lexical order at equal depth,
+followed by removes.
+
+ACK timing tests use Go's virtual clock for fixtures, injected time and timers,
+including just-before/after lease expiry and simultaneous process-exit/ACK
+completion. This addresses a PLAUSIBLE test clock-domain concern; it is not a
+confirmed production defect. Production waits retain absolute lease deadlines.
+
 Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
 
 The budget compatibility ledger remains the generation input. Its non-generated `compatibility-history.json` safety baseline must be explicitly extended with each reviewed rotation. Generation requires matching complete history and rejects conflicting inputs under a separate output root before emitting projections. The PR check independently verifies the historical prefix against the exact target-base commit, including the original source constant and manifest bytes on the first migration; deleting generated outputs cannot erase compatibility.

@@ -1,4 +1,8 @@
-import { WORKFLOW_BINDING_HASH_PATTERN as HASH, WORKFLOW_BINDING_REFERENCE_PATTERN as SAFE_REF, WORKFLOW_BINDING_TIME_PATTERN as TIME } from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
+import {
+  WORKFLOW_BINDING_HASH_PATTERN as HASH,
+  WORKFLOW_BINDING_REFERENCE_PATTERN as SAFE_REF,
+  WORKFLOW_BINDING_TIME_PATTERN as TIME,
+} from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
 import {
   controlSequenceOutputs,
   controlSequenceSchema,
@@ -269,7 +273,6 @@ const budgetDecisionDelivery = Object.freeze({
     reason: 'accepted_run_revision_null',
   }),
 });
-
 
 const H = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const h = (character: string): string => character.repeat(64);

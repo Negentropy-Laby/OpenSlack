@@ -51,7 +51,7 @@ func TestUnsupportedManifestRebuildHasZeroBusinessWrites(t *testing.T) {
 // A subprocess must fail through the real verify path; the parent still checks cleanup.
 func TestBudgetManifestVerifyFailureCleansSchema(t *testing.T) {
 	if schema := os.Getenv("OPENSLACK_TEST_BUDGET_VERIFY_FAILURE_SCHEMA"); schema != "" {
-		verifyBudgetHistoryRestart(t, "verify", schema, "unused-before-proof-read")
+		verifyBudgetHistoryRestart(t, "verify", schema, "unused-before-proof-read", nil, budgetstore.MutationResult{})
 		t.Fatal("empty proof unexpectedly passed")
 	}
 	seed := openBudgetPostgres(t)

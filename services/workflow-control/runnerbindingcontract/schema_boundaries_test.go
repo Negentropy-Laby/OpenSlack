@@ -32,15 +32,11 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 	contextual := map[string]func(*testing.T, any) (Record, error){}
 	for kind, reference := range golden.Positive.ControlDelivery.ByKind {
 		control := goldenControlArtifact(t, golden, reference)
-		exchange := golden.Positive.Operations[string(control.Operation)]
-		if kind == "budget_authorization" {
-			exchange = golden.Positive.SemanticVariants["budgetReserveGoAuthority"]
-		}
 		key := "control:" + kind
 		bases[key] = control.Receipt.Value
 		validators[key] = ValidateReceipt
 		contextual[key] = func(t *testing.T, value any) (Record, error) {
-			return validateControlGolden(value, control.Message, exchange.Stage.Value, exchange.Resolution.Value, exchange.ResolutionReceipt.Value, exchange.StageReceipt.Value, controlPriorForGolden(t, golden, kind, control), control.BudgetSourceResult)
+			return ValidateControlDeliveryReceiptForMessage(value, control.Message, goldenControlContext(t, golden, kind, control))
 		}
 	}
 	contents, err := os.ReadFile("../../../packages/workflows/contracts/workflow-runner-authority-binding/schema-boundaries.json")

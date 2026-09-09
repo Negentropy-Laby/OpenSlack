@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/budgetcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/budgetstore"
 	"github.com/Negentropy-Laby/OpenSlack/services/workflow-control/internal/testsupport"
@@ -24,26 +26,31 @@ func TestBudgetManifestPostgresRestart(t *testing.T) {
 	if schema == "" {
 		t.Fatal("missing restart schema identity")
 	}
+	var source *pgxpool.Pool
+	var first budgetstore.MutationResult
+	if phase == "seed" {
+		source = openBudgetPostgres(t)
+		seedRun(t, source, 4)
+		var err error
+		first, err = New(source).Reserve(t.Context(), reserveInput(t, testSeed, 0, 4, "1", "600"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, manifest := range budgetcontract.AcceptedManifestSHA256() {
 		if manifest == budgetcontract.CurrentManifestSHA256 {
 			continue
 		}
 		digest := sha256.Sum256([]byte(schema + ":" + manifest))
 		child := "budget_history_" + hex.EncodeToString(digest[:24])
-		t.Run(manifest, func(t *testing.T) { verifyBudgetHistoryRestart(t, phase, child, manifest) })
+		t.Run(manifest, func(t *testing.T) { verifyBudgetHistoryRestart(t, phase, child, manifest, source, first) })
 	}
 }
-func verifyBudgetHistoryRestart(t *testing.T, phase, schema, manifest string) {
+func verifyBudgetHistoryRestart(t *testing.T, phase, schema, manifest string, source *pgxpool.Pool, first budgetstore.MutationResult) {
 	ctx := t.Context()
 	input := reserveInput(t, testSeed, 0, 4, "1", "600")
 	switch phase {
 	case "seed":
-		source := openBudgetPostgres(t)
-		seedRun(t, source, 4)
-		first, err := New(source).Reserve(ctx, input)
-		if err != nil {
-			t.Fatal(err)
-		}
 		pool := testsupport.OpenPersistentSchema(t, schema, true)
 		seedRun(t, pool, 5)
 		importBudgetRecordsWithManifest(t, source, pool, manifest)
