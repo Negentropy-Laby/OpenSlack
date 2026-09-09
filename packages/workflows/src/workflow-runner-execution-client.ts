@@ -1,36 +1,23 @@
-import { assertPortableWorkflowRunId } from './workflow-run-read-errors.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ConfirmationPolicy, RunResult, WorkflowMeta, WorkflowSource } from './types.js';
-import { openWorkflowRunReadOnly } from './workflow-run-projection.js';
 import {
   isWorkflowControlAuthorityHeadBoundToRoute,
   workflowControlAuthorityInitialRecord,
   type WorkflowControlAuthorityPort,
   type WorkflowControlAuthorityRunRead,
 } from './workflow-control-authority-client.js';
-import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
+import { openWorkflowRunReadOnly, locateWorkflowRunProjection } from './workflow-run-projection.js';
+import { assertPortableWorkflowRunId, WorkflowRunReadError } from './workflow-run-read-errors.js';
 import {
   createWorkflowRunRoutingExecutionContext,
   loadWorkflowRunRoutingConfig,
   type WorkflowRunRoutingExecutionContext,
 } from './workflow-run-routing-config.js';
+import { type WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import type { WorkflowRunRouteJournalEntry } from './workflow-run-routing.js';
-import {
-  createWorkflowRunnerV2ExecutionDescriptor,
-  hashWorkflowRunnerV2Input,
-  hashWorkflowRunnerV2Manifest,
-  hashWorkflowRunnerV2Result,
-  hashWorkflowRunnerV2Source,
-  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
-} from './workflow-runner-v2-descriptor.js';
-import {
-  prepareWorkflowRunnerV2JobSpec,
-  WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
-} from './workflow-runner-v2-control-client.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from './workflow-runner-contract.js';
-import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
 import {
   loadWorkflowRunnerControlConfig,
   WorkflowRunnerStatusClient,
@@ -39,6 +26,19 @@ import {
   type WorkflowRunnerStatusPort,
   type WorkflowRunnerJobView,
 } from './workflow-runner-control-client.js';
+import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
+import {
+  prepareWorkflowRunnerV2JobSpec,
+  WORKFLOW_RUNNER_V2_JOB_SPEC_SCHEMA,
+} from './workflow-runner-v2-control-client.js';
+import {
+  createWorkflowRunnerV2ExecutionDescriptor,
+  hashWorkflowRunnerV2Input,
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Result,
+  hashWorkflowRunnerV2Source,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+} from './workflow-runner-v2-descriptor.js';
 
 export interface ExecuteWorkflowThroughRunnerInput {
   readonly workspaceRoot: string;
@@ -258,6 +258,7 @@ async function establishInitialGoAuthority(input: {
     try {
       await authority.accept(route, input.signal);
     } catch (acceptError) {
+      if (acceptError instanceof WorkflowRunReadError) throw acceptError;
       try {
         recoveredHead = await authority.readIfExists(route.runId, route.route, input.signal);
       } catch (readError) {
@@ -511,7 +512,6 @@ export async function executeWorkflowThroughRunnerWithRuntime(
   const routing = input.routing;
   const existingEntry = await routing?.journal.locateReadOnly(workflowRunId);
   const existingRoute = existingEntry?.receipt ?? (routing ? null : undefined);
-  if (!existingRoute) assertPortableWorkflowRunId(workflowRunId);
   const selectedGo =
     existingRoute?.route.backend === 'go' ||
     (existingRoute === null &&
@@ -561,6 +561,40 @@ export async function executeWorkflowThroughRunnerWithRuntime(
       fresh: existingRoute === null,
       ...(input.signal ? { signal: input.signal } : {}),
     });
+  }
+  if (existingRoute === null) {
+    const location = await locateWorkflowRunProjection(input.workspaceRoot, workflowRunId);
+    if (location.state !== 'missing') {
+      if (location.state !== 'found') throw new WorkflowRunReadError(location.diagnostics);
+      throw new WorkflowRunReadError([
+        { code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED', scope: 'run', runId: workflowRunId },
+      ]);
+    }
+    const selected = {
+      backend: 'go' as const,
+      authority: 'workflow-control' as const,
+      routingEpoch: routing!.router!.policy.routingEpoch,
+      authorityBuildHash: routing!.router!.policy.authorityBuildHash,
+    };
+    let prior;
+    try {
+      prior = await authority.readIfExists(workflowRunId, selected, input.signal);
+    } catch (cause) {
+      throw initialAuthorityReconciliation(
+        'Cannot establish whether this run already has an authority.',
+        cause,
+      );
+    }
+    if (prior)
+      throw new WorkflowRunReadError([
+        {
+          code: 'WORKFLOW_RUN_ROUTE_RECONCILIATION_REQUIRED',
+          scope: 'run',
+          backend: 'go',
+          runId: workflowRunId,
+        },
+      ]);
+    assertPortableWorkflowRunId(workflowRunId);
   }
   const route = await resolveRunRoute({
     execution: input,

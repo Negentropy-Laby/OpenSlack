@@ -1,23 +1,27 @@
-import { workflowControlCompanionSequence } from './internal/workflow-control-sequences.generated.js';
-import { WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES } from './internal/workflow-binding-field-rules.js';
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
+import {
+  canonicalUtcTimestamp,
+  closedDataRecord,
+  immutableContractValue,
+  ownDataField,
+  type ContractDataRecord,
+} from './internal/contract-validation.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_REFERENCE_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   WORKFLOW_BUDGET_CURRENT_MANIFEST_SHA256,
   WORKFLOW_BUDGET_ACCEPTED_MANIFEST_SHA256,
 } from './internal/workflow-budget-compatibility.generated.js';
-
+import { workflowControlCompanionSequence } from './internal/workflow-control-sequences.generated.js';
 import {
-  WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
-  WorkflowControlAuthorityContractError,
-  canonicalWorkflowControlAuthorityJson,
-  parseWorkflowControlAuthorityMessageBytes,
-  prepareWorkflowControlAuthorityMessage,
-  validateWorkflowControlAuthorityMessage,
-  validateWorkflowControlAuthorityRoute,
-  type WorkflowControlAuthorityMessage,
-  type WorkflowControlAuthorityMessageKind,
-} from './workflow-control-authority-contract.js';
+  observeWorkflowRunnerAuthorityBindingEncoding,
+  observeWorkflowRunnerAuthorityBindingValidation,
+} from './internal/workflow-runner-authority-binding-instrumentation.js';
 import {
   WorkflowBudgetAuthorityContractError,
   WORKFLOW_BUDGET_RESERVE_DECISION_SCHEMA,
@@ -43,16 +47,16 @@ import {
   type WorkflowCheckpointShadowEnvelope,
 } from './workflow-checkpoint-shadow-contract.js';
 import {
-  canonicalUtcTimestamp,
-  closedDataRecord,
-  immutableContractValue,
-  ownDataField,
-  type ContractDataRecord,
-} from './internal/contract-validation.js';
-import {
-  observeWorkflowRunnerAuthorityBindingEncoding,
-  observeWorkflowRunnerAuthorityBindingValidation,
-} from './internal/workflow-runner-authority-binding-instrumentation.js';
+  WORKFLOW_CONTROL_AUTHORITY_PREPARED_SCHEMA,
+  WorkflowControlAuthorityContractError,
+  canonicalWorkflowControlAuthorityJson,
+  parseWorkflowControlAuthorityMessageBytes,
+  prepareWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityMessage,
+  validateWorkflowControlAuthorityRoute,
+  type WorkflowControlAuthorityMessage,
+  type WorkflowControlAuthorityMessageKind,
+} from './workflow-control-authority-contract.js';
 import { parseWorkflowEffectJson, WorkflowEffectJsonError } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_CONTRACT_VERSION =
@@ -547,12 +551,12 @@ export interface WorkflowRunnerAuthorityBindingPrepared<T> {
   readonly value: T;
 }
 
-const HASH = /^[0-9a-f]{64}$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const SAFE_REF = WORKFLOW_BINDING_REFERENCE_REGEX;
 const RATE = /^(?:0|[1-9][0-9]*|(?:0|[1-9][0-9]*)\.([0-9]*[1-9]))$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const FORBIDDEN_KEYS = new Set([
   'provider',
   'prompt',

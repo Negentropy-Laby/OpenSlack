@@ -320,18 +320,18 @@
   "artifacts": {
     "schemas/workflow-runner-authority-binding-stage.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-stage.v1.schema.json",
-      "byteLength": 34025,
-      "sha256": "a320756415ec6e9c4feb23a78a3852b9112da82e9f7e50088f78db9c74075cef"
+      "byteLength": 34109,
+      "sha256": "57612ecac8d72805863eea826e5f65b07a4b644d761245012a42e43a147722a3"
     },
     "schemas/workflow-runner-authority-binding-resolution.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-resolution.v1.schema.json",
-      "byteLength": 81143,
-      "sha256": "b62da9bfbfcea433f8ec2ae758b796ffe038d61e6e60775544565d7d8b4239c6"
+      "byteLength": 81395,
+      "sha256": "930fe67addcf07200f6ed52fe2a1f55486c8e96c10dc19bae93d8c83264ca4b3"
     },
     "schemas/workflow-runner-authority-binding-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-receipt.v1.schema.json",
-      "byteLength": 65430,
-      "sha256": "19cd41d26ed7beb1bb6fb3a92469c84a458eec697e82192deb89d243b49a13d1"
+      "byteLength": 66046,
+      "sha256": "e5f92a7a83d7ec1ea208ff1af7d38149f0a0dda3b2917d7dcbe59f25e17a3da3"
     },
     "schemas/workflow-runner-authority-binding-error.v1.schema.json": {
       "path": "schemas/workflow-runner-authority-binding-error.v1.schema.json",
@@ -345,8 +345,8 @@
     },
     "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json": {
       "path": "schemas/workflow-runner-v2-runtime-admission-receipt.v1.schema.json",
-      "byteLength": 2019,
-      "sha256": "2aaec6183e4bf39e553c2fafad6360d851ed82e414cb5368d7f7262712216de6"
+      "byteLength": 2033,
+      "sha256": "f717697de67e3067607ed451074c1cd6577902edd4723282aa168eee9f4d2c48"
     },
     "golden-vectors.json": {
       "path": "golden-vectors.json",

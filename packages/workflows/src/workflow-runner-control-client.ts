@@ -1,24 +1,28 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
+import { WORKFLOW_RUNNER_TERMINAL_STATES } from './workflow-runner-contract.js';
 import {
   exactWorkflowRunnerLoopbackOrigin,
   isWorkflowRunnerTransportConfigShape,
   readWorkflowRunnerResponseBytes,
 } from './workflow-runner-control-http.js';
-import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
-import { WORKFLOW_RUNNER_TERMINAL_STATES } from './workflow-runner-contract.js';
 
 export const WORKFLOW_RUNNER_JOB_SPEC_SCHEMA = 'openslack.workflow_runner_job_spec.v1' as const;
 export const WORKFLOW_RUNNER_JOB_RECEIPT_SCHEMA =
   'openslack.workflow_runner_job_receipt.v1' as const;
 export const WORKFLOW_RUNNER_JOB_VIEW_SCHEMA = 'openslack.workflow_runner_job_view.v1' as const;
 
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MIN_WHOLE_TIMEOUT_MS = 1_000;
 const MAX_WHOLE_TIMEOUT_MS = 24 * 60 * 60_000;

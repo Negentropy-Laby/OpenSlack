@@ -462,6 +462,8 @@ func (service *Service) writeStoreError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch failure.Code {
+	case authoritystore.ErrorPlatformUnsupported:
+		writeFailure(w, http.StatusUnprocessableEntity, string(failure.Code), "new workflow identifier is not portable across supported platforms")
 	case authoritystore.ErrorInputInvalid, authoritystore.ErrorContentInvalid:
 		writeFailure(w, http.StatusUnprocessableEntity, string(failure.Code), "authority request is invalid")
 	case authoritystore.ErrorConflict, authoritystore.ErrorIdempotencyConflict:

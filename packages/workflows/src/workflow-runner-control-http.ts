@@ -1,8 +1,8 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { isAbsolute, resolve } from 'node:path';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
 import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 
 export interface WorkflowRunnerTransportConfigShape {
   readonly origin: string;

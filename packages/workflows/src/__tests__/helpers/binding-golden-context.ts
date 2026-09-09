@@ -1,41 +1,11 @@
 import type { WorkflowRunnerAuthorityControlDeliveryValidationContext } from '../../workflow-runner-authority-binding-contract.js';
-
-interface Value {
-  readonly value: unknown;
-}
-interface Exchange {
-  readonly stage: Value;
-  readonly stageReceipt: Value;
-  readonly resolution: Value;
-  readonly resolutionReceipt: Value;
-}
-interface Artifact {
-  readonly operation: string;
-  readonly message: unknown;
-  readonly receipt: Value;
-  readonly priorEventDeliveryRef: string | null;
-  readonly budgetSourceResult: unknown;
-}
-interface Fixture {
-  readonly positive: {
-    readonly operations: Readonly<Record<string, Exchange>>;
-    readonly semanticVariants: Readonly<Record<string, Exchange>>;
-    readonly controlDelivery: {
-      readonly byKind: Readonly<Record<string, string>>;
-      readonly artifacts: Readonly<Record<string, Artifact>>;
-      readonly priorEventDeliveries: Readonly<
-        Record<string, { readonly message: unknown; readonly receipt: Value }>
-      >;
-      readonly messages: { readonly accepted: Readonly<Record<string, unknown>> };
-      readonly accepted: Readonly<Record<string, Value>>;
-    };
-  };
-}
+import type { Golden } from './binding-golden-types.js';
 
 /** Fixture wiring failures are configuration errors, never expected contract rejections. */
-export function bindingGoldenContext(fixture: Fixture, kind: string) {
+export function bindingGoldenContext(fixture: Golden, kind: string) {
   const deliveries = fixture.positive.controlDelivery;
-  const artifact = deliveries.artifacts[deliveries.byKind[kind]];
+  if (!Object.hasOwn(deliveries.byKind, kind)) throw new Error('Unknown boundary control kind.');
+  const artifact = deliveries.artifacts[deliveries.byKind[kind as keyof typeof deliveries.byKind]];
   if (!artifact) throw new Error('Missing boundary control artifact.');
   const exchange =
     kind === 'budget_authorization'

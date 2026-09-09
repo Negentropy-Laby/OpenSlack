@@ -1,19 +1,30 @@
 import { createHash } from 'node:crypto';
+import { lstat, readdir, rename, rmdir } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { workflowAuthorityFailure } from './internal/workflow-authority-failure.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   parseWorkflowBindingSettlement,
   validateWorkflowBindingSettlement,
   workflowBindingSettlementResolution,
   type WorkflowBindingSettlementReceipt,
 } from './workflow-binding-reconciliation-contract.js';
-import { workflowAuthorityFailure } from './internal/workflow-authority-failure.js';
-import { lstat, readdir, rename, rmdir } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-
 import {
   canonicalWorkflowControlAuthorityJson,
   parseWorkflowControlAuthorityMessageBytes,
   type WorkflowControlAuthorityMessage,
 } from './workflow-control-authority-contract.js';
+import {
+  acquireOwnerJournalLock,
+  assertOwnerDirectory,
+  assertOwnerFile,
+  ensureOwnerDirectory,
+  productionJournalSecurity,
+  readOwnerFile,
+  syncDirectory,
+  writeExclusive,
+  type WorkflowControlShadowJournalSecurityDependencies,
+} from './workflow-control-shadow.js';
 import {
   hashWorkflowRunnerAuthorityBindingEvidence,
   workflowRunnerAuthorityBindingCompletionControlKind,
@@ -34,17 +45,6 @@ import {
   type WorkflowRunnerAuthorityStageReceipt,
   type WorkflowRunnerBudgetSourceResult,
 } from './workflow-runner-authority-binding-contract.js';
-import {
-  acquireOwnerJournalLock,
-  assertOwnerDirectory,
-  assertOwnerFile,
-  ensureOwnerDirectory,
-  productionJournalSecurity,
-  readOwnerFile,
-  syncDirectory,
-  writeExclusive,
-  type WorkflowControlShadowJournalSecurityDependencies,
-} from './workflow-control-shadow.js';
 
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_JOURNAL_SCHEMA =
   'openslack.workflow_runner_authority_binding_journal.v1' as const;
@@ -83,7 +83,7 @@ export class WorkflowRunnerAuthorityBindingJournalError extends Error {
   }
 }
 
-const SAFE_DIRECTORY = /^[0-9a-f]{64}$/u;
+const SAFE_DIRECTORY = WORKFLOW_BINDING_HASH_REGEX;
 const CONTROL_FILE = /^(message|budget-source-result|receipt|confirmed)-([0-9]{10})\.json$/u;
 const MAX_SLOT_BYTES = 2 * 1024 * 1024;
 const STATIC_FILES = new Set([

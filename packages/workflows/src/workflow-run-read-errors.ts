@@ -1,14 +1,14 @@
+import { types as utilTypes } from 'node:util';
 import {
   isWorkflowRunId,
   isWorkflowRunPathId,
   isPortableWorkflowRunId,
 } from './internal/workflow-run-identity.js';
-import { types as utilTypes } from 'node:util';
 export type WorkflowRunProjectionBackend = 'ts-local' | 'go';
 
 const READ_MESSAGES = {
   WORKFLOW_RUN_PLATFORM_UNSUPPORTED:
-    'This historical workflow identifier cannot be represented on this platform. Use a compatible platform; checkpoint repair cannot rename workflow evidence.',
+    'This workflow identifier is unsupported by the platform policy. New runs require portable identifiers; historical evidence requires a compatible platform. Checkpoint repair cannot rename evidence.',
   WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID:
     'Workflow progress evidence is malformed or does not match the requested run.',
   WORKFLOW_RUN_PROJECTION_ID_INVALID:
@@ -267,7 +267,9 @@ export function assertPortableWorkflowRunId(runId: string): void {
   if (!isPortableWorkflowRunId(runId))
     throw new WorkflowRunReadError([
       {
-        code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
+        code: isWorkflowRunId(runId)
+          ? 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED'
+          : 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
         scope: 'run',
         runId,
       },

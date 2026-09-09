@@ -1,28 +1,8 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
-import { assertWorkflowRunPathId } from './workflow-run-read-errors.js';
-import {
-  checkpointEvidence,
-  resumeEvidence,
-} from './internal/workflow-runner-checkpoint-evidence.js';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
-import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
-import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
-import type { RunStore } from './run-store.js';
-import { WorkflowRunnerResumeSourceStore } from './internal/workflow-runner-resume-source.js';
-import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
-import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
-import {
-  workflowCheckpointBytesHash,
-  workflowCheckpointHash,
-  type WorkflowCheckpointControlState,
-} from './workflow-checkpoint-shadow-contract.js';
-import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
-import { loadWorkflowFile } from './internal/workflow-file-loader.js';
 import type {
   ProviderAttemptPort,
   ProviderAttemptReservation,
@@ -30,6 +10,18 @@ import type {
   ProviderUsageReceipt,
 } from '@openslack/agent-runtime';
 import { buildProviderUsageIdentityHashes } from '@openslack/agent-runtime';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import { loadWorkflowFile } from './internal/workflow-file-loader.js';
+import {
+  checkpointEvidence,
+  resumeEvidence,
+} from './internal/workflow-runner-checkpoint-evidence.js';
+import { WorkflowRunnerResumeSourceStore } from './internal/workflow-runner-resume-source.js';
+import type { RunStore } from './run-store.js';
+import type { RunResult, WorkflowMeta, WorkflowModule } from './types.js';
 import {
   WORKFLOW_BUDGET_AUTHORITY,
   WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION,
@@ -48,25 +40,32 @@ import {
   type WorkflowBudgetSettlementRequest,
 } from './workflow-budget-authority-contract.js';
 import {
-  decodeWorkflowRunnerV2Frame,
-  WorkflowRunnerV2JsonlDecoder,
-} from './workflow-runner-v2-framing.js';
+  workflowCheckpointBytesHash,
+  workflowCheckpointHash,
+  type WorkflowCheckpointControlState,
+} from './workflow-checkpoint-shadow-contract.js';
 import {
-  hashWorkflowRunnerV2Manifest,
-  hashWorkflowRunnerV2Source,
-  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
-  type WorkflowRunnerV2ExecutionDescriptor,
-} from './workflow-runner-v2-descriptor.js';
-import {
-  WorkflowRunnerV2Session,
-  workflowRunnerV2BudgetDecisionMatchesRequest,
-  type WorkflowRunnerV2ExecutionContext,
-  type WorkflowRunnerV2RuntimeDeliveryPort,
-  type WorkflowRunnerV2SourceLoader,
-} from './workflow-runner-v2-session.js';
+  WorkflowControlAuthorityHttpClient,
+  type WorkflowControlAuthorityPort,
+  type WorkflowControlResumeAuthorityPort,
+  type WorkflowControlAuthorityRunRead,
+} from './workflow-control-authority-client.js';
+import { canonicalWorkflowControlAuthorityJson } from './workflow-control-authority-contract.js';
+import type { WorkflowControlAuthorityMessage } from './workflow-control-authority-contract.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
+import { resolveWorkflowRunProjectionRoot } from './workflow-run-projection.js';
+import { assertWorkflowRunPathId } from './workflow-run-read-errors.js';
 import { createWorkflowRunnerAuthorityBindingClient } from './workflow-runner-authority-binding-client.js';
+import type {} from './workflow-runner-authority-binding-contract.js';
 import { WorkflowRunnerAuthorityBindingJournal } from './workflow-runner-authority-binding-journal.js';
 import { WorkflowRunnerAuthorityBindingRuntime } from './workflow-runner-authority-binding-runtime.js';
+import {
+  createWorkflowRunnerBudgetAuthorityClient,
+  type WorkflowRunnerBudgetAuthorityClient,
+} from './workflow-runner-budget-authority-client.js';
+import { exactWorkflowRunnerLoopbackOrigin } from './workflow-runner-control-http.js';
+import { WorkflowRunnerDescriptorStore } from './workflow-runner-descriptor-store.js';
+import { classifyWorkflowRunnerRunState } from './workflow-runner-run-state.js';
 import {
   createWorkflowRunnerCheckpointSourceAdapter,
   createWorkflowRunnerPreparedBudgetSourceAdapter,
@@ -74,24 +73,28 @@ import {
   WorkflowRunnerV2AuthoritySources,
   type WorkflowRunnerV2AuthoritySourceFactories,
 } from './workflow-runner-runtime-authorities.js';
-import { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
-import { createWorkflowRunnerV2RuntimeAdmissionClient } from './workflow-runner-v2-runtime-admission.js';
+import { assertWorkflowRunnerSourceIsSelfContained } from './workflow-runner-source-policy.js';
+import {
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Source,
+  WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
+  type WorkflowRunnerV2ExecutionDescriptor,
+} from './workflow-runner-v2-descriptor.js';
 import { createWorkflowRunnerV2EffectAuthorizationPort } from './workflow-runner-v2-effect-authorization.js';
+import {
+  decodeWorkflowRunnerV2Frame,
+  WorkflowRunnerV2JsonlDecoder,
+} from './workflow-runner-v2-framing.js';
 import { WorkflowRunnerV2GoProjectionRunStore } from './workflow-runner-v2-go-projection-store.js';
+import { createWorkflowRunnerV2RuntimeAdmissionClient } from './workflow-runner-v2-runtime-admission.js';
+import { WorkflowRunnerV2RuntimeDelivery } from './workflow-runner-v2-runtime-delivery.js';
 import {
-  WorkflowControlAuthorityHttpClient,
-  type WorkflowControlAuthorityPort,
-  type WorkflowControlResumeAuthorityPort,
-  type WorkflowControlAuthorityRunRead,
-} from './workflow-control-authority-client.js';
-import {
-  createWorkflowRunnerBudgetAuthorityClient,
-  type WorkflowRunnerBudgetAuthorityClient,
-} from './workflow-runner-budget-authority-client.js';
-import { canonicalWorkflowControlAuthorityJson } from './workflow-control-authority-contract.js';
-import { exactWorkflowRunnerLoopbackOrigin } from './workflow-runner-control-http.js';
-import type { WorkflowControlAuthorityMessage } from './workflow-control-authority-contract.js';
-import type {} from './workflow-runner-authority-binding-contract.js';
+  WorkflowRunnerV2Session,
+  workflowRunnerV2BudgetDecisionMatchesRequest,
+  type WorkflowRunnerV2ExecutionContext,
+  type WorkflowRunnerV2RuntimeDeliveryPort,
+  type WorkflowRunnerV2SourceLoader,
+} from './workflow-runner-v2-session.js';
 
 export const WORKFLOW_RUNNER_V2_RUNTIME_DELIVERY_ENABLED_ENV =
   'WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED' as const;
@@ -135,8 +138,8 @@ interface PreparedWorkflowSource {
   readonly identity: string;
 }
 
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const SOURCE_EXTENSIONS = Object.freeze(['.js', '.mjs', '.ts'] as const);
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);

@@ -1,4 +1,3 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, type Stats } from 'node:fs';
 import {
@@ -15,6 +14,15 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { threadId } from 'node:worker_threads';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
+import {
+  assertOwnerDirectory,
+  assertOwnerFile,
+  ensureOwnerDirectory,
+  isWorkflowControlObservationPort,
+  productionJournalSecurity,
+  type WorkflowControlObservationPort,
+} from './workflow-control-shadow.js';
 import {
   applyWorkflowEffectApprovalDecision,
   createPendingWorkflowEffectApproval,
@@ -29,21 +37,13 @@ import {
   type WorkflowEffectApprovalRecord,
 } from './workflow-effect-approval.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
-import {
-  assertOwnerDirectory,
-  assertOwnerFile,
-  ensureOwnerDirectory,
-  isWorkflowControlObservationPort,
-  productionJournalSecurity,
-  type WorkflowControlObservationPort,
-} from './workflow-control-shadow.js';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 const MAX_FILE_BYTES = 64 * 1024;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_ENTRIES = 4_096;
 const LOCK_MAX_BYTES = 512;
-const SAFE_SCOPE = WORKFLOW_RUN_ID_REGEX;
+const SAFE_SCOPE = SAFE_IDENTIFIER_REGEX;
 const RECORD_NAME = /^[0-9a-f]{64}\.json$/;
 const RECORD_TEMP =
   /^\.[0-9a-f]{64}\.[1-9][0-9]{0,9}\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/;

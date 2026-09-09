@@ -468,3 +468,15 @@ func perform(t *testing.T, handler http.Handler, method, path string, body []byt
 	handler.ServeHTTP(response, request)
 	return response
 }
+
+func TestServiceMapsNewNonportableRunTo422(t *testing.T) {
+	repository := &fakeRepository{mutate: func(context.Context, authoritystore.MutateInput) (authoritystore.Receipt, error) {
+		return authoritystore.Receipt{}, authoritystore.Failure(authoritystore.ErrorPlatformUnsupported, "private diagnostic", nil)
+	}}
+	service := newQualificationService(t, repository)
+	body := acceptBody(t)
+	response := perform(t, service.Handler(), http.MethodPost, RouteAccept, body, qualificationHeaders(t, body, true))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), string(authoritystore.ErrorPlatformUnsupported)) || strings.Contains(response.Body.String(), "private diagnostic") {
+		t.Fatalf("platform mapping drifted: %d %s", response.Code, response.Body.String())
+	}
+}

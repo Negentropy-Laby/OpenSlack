@@ -1,7 +1,10 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { closedDataRecord } from './internal/contract-validation.js';
-
+import {
+  isCanonicalIsoTimestamp,
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   canonicalWorkflowControlAuthorityJson,
   validateWorkflowControlAuthorityReceipt,
@@ -11,15 +14,16 @@ import {
   type WorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRunState,
 } from './workflow-control-authority-contract.js';
+import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
+import { parseWorkflowEffectJson } from './workflow-effect-json.js';
+import { WorkflowRunReadError } from './workflow-run-read-errors.js';
+import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import {
   cancelWorkflowRunnerResponseBody,
   exactWorkflowRunnerLoopbackOrigin,
   readWorkflowRunnerResponseBytes,
   throwIfWorkflowRunnerAborted,
 } from './workflow-runner-control-http.js';
-import { parseWorkflowEffectJson } from './workflow-effect-json.js';
-import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
-import { isWorkflowControlBearerToken } from './workflow-control-routing-identity.js';
 
 export const WORKFLOW_CONTROL_AUTHORITY_ACCEPT_SCHEMA =
   'openslack.workflow_control_authority_accept.v2' as const;
@@ -32,8 +36,8 @@ export const WORKFLOW_CONTROL_AUTHORITY_READ_SCHEMA =
 
 const AUTHORITY_KEY_PREFIX = 'openslack.workflow-control-authority.v2.';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const RUN_RECORD_FIELDS = Object.freeze([
   'schema',
   'workspaceId',
@@ -230,11 +234,7 @@ function hasExactKeys(value: Record<string, unknown>, fields: readonly string[])
   }
 }
 
-function isCanonicalTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
-}
+const isCanonicalTimestamp = isCanonicalIsoTimestamp;
 
 function validateId(value: unknown, label: string): string {
   if (typeof value !== 'string' || !SAFE_ID.test(value)) {
@@ -911,7 +911,39 @@ export class WorkflowControlAuthorityHttpClient implements WorkflowControlAuthor
     }
     if (response.redirected || ![200, 201, 202].includes(response.status)) {
       const status = response.status;
-      await cancelWorkflowRunnerResponseBody(response);
+      if (!response.redirected && status === 422) {
+        const bytes = await readResponse(response, signal);
+        let body: unknown;
+        try {
+          body = JSON.parse(bytes.toString('utf8'));
+        } catch (cause) {
+          return fail(
+            'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+            'Workflow authority error response is invalid.',
+            { cause },
+          );
+        }
+        if (!body || typeof body !== 'object' || Array.isArray(body))
+          return fail(
+            'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID',
+            'Workflow authority error response is invalid.',
+          );
+        const errorBody = body as Record<string, unknown>;
+        if (
+          Object.keys(errorBody).length === 3 &&
+          typeof errorBody.message === 'string' &&
+          errorBody.schema === 'openslack.workflow_control_authority_error.v1' &&
+          errorBody.code === 'WORKFLOW_CONTROL_AUTHORITY_PLATFORM_UNSUPPORTED'
+        )
+          throw new WorkflowRunReadError([
+            {
+              code: 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED',
+              scope: 'run',
+              backend: 'go',
+              runId: prepared.value.runId,
+            },
+          ]);
+      } else await cancelWorkflowRunnerResponseBody(response);
       if (!response.redirected && (status >= 500 || status === 429))
         return this.#recoverReceipt(prepared, signal);
       return fail(

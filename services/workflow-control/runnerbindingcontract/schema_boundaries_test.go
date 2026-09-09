@@ -82,41 +82,7 @@ func TestSharedSchemaBoundaryCorpus(t *testing.T) {
 			if err := normalizeGoldenNumbers(reflect.ValueOf(&value)); err != nil {
 				t.Fatal(err)
 			}
-			parent := func(path string) (map[string]any, string) {
-				keys := corpusPath(t, path)
-				record := value
-				for _, key := range keys[:len(keys)-1] {
-					var ok bool
-					record, ok = record[key].(map[string]any)
-					if !ok {
-						t.Fatalf("unknown fixture path %s", path)
-					}
-				}
-				return record, keys[len(keys)-1]
-			}
-			paths := make([]string, 0, len(item.Set))
-			for path := range item.Set {
-				corpusPath(t, path)
-				paths = append(paths, path)
-			}
-			for _, path := range item.Remove {
-				corpusPath(t, path)
-			}
-			sort.Slice(paths, func(i, j int) bool {
-				a, b := strings.Count(paths[i], "/"), strings.Count(paths[j], "/")
-				if a != b {
-					return a < b
-				}
-				return paths[i] < paths[j]
-			})
-			for _, path := range paths {
-				record, key := parent(path)
-				record[key] = item.Set[path]
-			}
-			for _, path := range item.Remove {
-				record, key := parent(path)
-				delete(record, key)
-			}
+			applyCorpusMutation(t, value, item.Set, item.Remove)
 			if validate := contextual[item.Kind]; validate != nil {
 				_, err := validate(t, value)
 				if item.ExpectedError != nil {
@@ -173,5 +139,67 @@ func TestCorpusPathValidation(t *testing.T) {
 	}
 	if !validCorpusPath("/target/idempotencyKey") {
 		t.Fatal("valid corpus path rejected")
+	}
+}
+
+func applyCorpusMutation(t *testing.T, value map[string]any, set map[string]any, remove []string) {
+	t.Helper()
+	parent := func(path string) (map[string]any, string) {
+		keys := corpusPath(t, path)
+		record := value
+		for _, key := range keys[:len(keys)-1] {
+			var ok bool
+			record, ok = record[key].(map[string]any)
+			if !ok {
+				t.Fatalf("unknown fixture path %s", path)
+			}
+		}
+		return record, keys[len(keys)-1]
+	}
+	paths := make([]string, 0, len(set))
+	for path := range set {
+		corpusPath(t, path)
+		paths = append(paths, path)
+	}
+	for _, path := range remove {
+		corpusPath(t, path)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		a, b := strings.Count(paths[i], "/"), strings.Count(paths[j], "/")
+		if a != b {
+			return a < b
+		}
+		return paths[i] < paths[j]
+	})
+	for _, path := range paths {
+		record, key := parent(path)
+		record[key] = set[path]
+	}
+	for _, path := range remove {
+		record, key := parent(path)
+		delete(record, key)
+	}
+}
+
+func TestSharedCorpusMutationResults(t *testing.T) {
+	data, err := os.ReadFile("../../../packages/workflows/contracts/workflow-runner-authority-binding/corpus-operations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		ID                  string
+		Base, Set, Expected map[string]any
+		Remove              []string
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range cases {
+		t.Run(row.ID, func(t *testing.T) {
+			applyCorpusMutation(t, row.Base, row.Set, row.Remove)
+			if !reflect.DeepEqual(row.Base, row.Expected) {
+				t.Fatalf("mutation result: %#v; expected %#v", row.Base, row.Expected)
+			}
+		})
 	}
 }

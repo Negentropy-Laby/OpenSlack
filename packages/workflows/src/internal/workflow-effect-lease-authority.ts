@@ -1,4 +1,3 @@
-import { WORKFLOW_RUN_ID_REGEX } from './workflow-run-identity.js';
 import { types as nodeTypes } from 'node:util';
 import type {
   WorkflowRunnerEffectIntentMessage,
@@ -9,6 +8,11 @@ import type {
   WorkflowEffectBoundary,
   WorkflowEffectBoundaryHandle,
 } from '../workflow-runner-effect-boundary.js';
+import {
+  isCanonicalIsoTimestamp,
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './workflow-binding-field-rules.js';
 
 export interface WorkflowEffectIntentPreparation {
   readonly message: WorkflowRunnerEffectIntentMessage;
@@ -43,13 +47,10 @@ export interface WorkflowEffectLeaseAuthority {
 
 const AUTHORITIES = new WeakMap<object, WorkflowEffectLeaseBinding>();
 const BOUNDARIES = new WeakMap<object, WorkflowEffectLeaseAuthority>();
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 
-function canonicalTimestamp(value: string): boolean {
-  const milliseconds = Date.parse(value);
-  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
-}
+const canonicalTimestamp = isCanonicalIsoTimestamp;
 
 function validateBinding(value: WorkflowEffectLeaseBinding): WorkflowEffectLeaseBinding {
   if (

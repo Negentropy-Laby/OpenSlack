@@ -1330,9 +1330,7 @@ backend and affected runs; machine diagnostics retain individual identity and sc
 are caller-owned copies. Cost configuration and workflow discovery are shared only within the query.
 Authority-binding schemas use explicit field rules, including nullable IDs, receipt lifecycle
 hashes, positive revisions, and canonical timestamps. Schema consumers must enable format assertions
-and register `WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS` from `@openslack/workflows`,
-alongside the standard `date-time` format. The `openslack-utf8-512` format limits error messages
-to 512 UTF-8 bytes; `maxLength` alone counts Unicode code points. The shared boundary corpus runs
+and register the dedicated formats described under Maintenance recovery and compatibility guards. The shared boundary corpus runs
 against the schema and the independent TypeScript and Go validators. Runtime validators also check
 cross-record identity, hashes, and sequence relationships.
 
@@ -1500,11 +1498,11 @@ export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
 
 ### Maintenance recovery and compatibility guards
 
-New run creation requires a portable logical ID on every platform, before registering authority. POSIX historical IDs retain their read and resume semantics; Windows reports a compatible-platform requirement for identities its filesystem cannot represent. Reconstructing an existing Go-owned projection does not create a new logical run.
+New run creation requires a logical ID portable across Linux, macOS and Windows. The Go authority checks exact replay and existing-run identity under its transaction locks before applying this policy to a new acceptance. Invalid logical IDs retain their input error; legal nonportable new IDs return `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` (Go: `WORKFLOW_CONTROL_AUTHORITY_PLATFORM_UNSUPPORTED`, HTTP 422). POSIX historical IDs retain read, exact replay and resume semantics; Windows requires a compatible platform for unsupported historical paths. Projection reconstruction requires verified authority identity, route, source and input evidence; a descriptor alone cannot authorize it. Missing journal data is not proof of a new run: historical authority or local evidence without a valid route requires explicit reconciliation and does not recreate routing evidence.
 
 Resume intent writers retain the derived `correlationId` required by deployed v2 readers. Readers accept v1, complete v2 and previously persisted compact v2. Historical receipt identity is derived by one helper and remains independent of current execution authorization.
 
-External strict Ajv 2020 consumers must call `registerWorkflowRunnerAuthorityBindingSchemaFormats(ajv)` from `@openslack/workflows` before compiling authority-binding schemas. The entrypoint registers canonical UTC timestamps and the UTF-8 error-message limit. Keep format validation enabled: standard `maxLength` counts Unicode code points and cannot enforce a byte ceiling. Omitting a required format intentionally causes strict compilation to fail.
+External strict Ajv 2020 consumers must call `registerWorkflowRunnerAuthorityBindingSchemaFormats(ajv)` from `@openslack/workflows` before compiling authority-binding schemas. The entrypoint registers `openslack-canonical-utc` and the existing `openslack-utf8-512` format (512 UTF-8 bytes). It never overwrites Ajv standard `date-time`, regardless of registration order. Canonical UTC uses a valid Gregorian date with a four-digit year, UTC `Z` and exactly three millisecond digits. Extended years, offsets, missing milliseconds, hour 24, leap seconds and invalid dates are rejected. Keep format validation enabled: standard `maxLength` counts Unicode code points and cannot enforce a byte ceiling. Omitting a required format intentionally causes strict compilation to fail.
 
 ```typescript
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -1514,25 +1512,30 @@ const ajv = registerWorkflowRunnerAuthorityBindingSchemaFormats(new Ajv2020({ st
 const validate = ajv.compile(authorityBindingSchema);
 ```
 
-Budget OpenAPI manifest enums are projected into declared YAML nodes in ledger order; missing or undeclared consumers stop generation. Restart verification removes its qualification schema after success or failure, while successful seed data survives for the restart. Rebuild rejects unsupported manifest identities before encoding and remains a read-only proof; this guard addresses a defensive finding, not evidence of reachable production corruption. Shared corpus writes run in parent-before-child, lexical order before removals.
+Budget OpenAPI manifest enums are projected into declared YAML nodes with the current digest first, followed by history in reverse order; missing or undeclared consumers stop generation. Durable decoding rejects unsupported manifest identities before reconstruction writes, leaving business records unchanged.
 
 Control delivery receipts use companion sequence 3 for `event_receipt` and 4 for every other control kind. Standalone TS/Go validators, stage validation and generated schemas enforce the same rule. The shared boundary corpus exercises each kind independently and with its stage evidence.
 
 Budget compatibility is ordered oldest first. `OriginalManifestSHA256` names its first entry and `PreviousManifestSHA256` names the entry immediately preceding the current digest. Rotation preserves every historical digest. PostgreSQL restart qualification replays each historical digest alongside current writes and checks exact response, receipt and rebuilt account bytes.
 
 Restart qualification initializes one source schema, run and reserve during seed,
-then reads that source for each independent historical target schema. Verification
-does not create a source schema and cleans its target even on failure; successful
-seed targets remain available across the required PostgreSQL process restart.
+then reads that source for each uniquely named historical target schema. Verification
+returns stage-specific errors to its test entrypoint, creates no source schema and
+closes its pool before dropping its target on success or failure. Successful seed
+targets remain across the required PostgreSQL process restart. Schema creation
+never reuses an unknown namespace. Cleanup is idempotent for explicitly owned
+namespaces; process termination such as SIGKILL cannot execute Go defers, so the
+qualification runner also cleans its dedicated database resources. It must not
+scan or delete unrelated schemas.
 Shared TS and Go golden-context helpers resolve the same budget special case and
 prior delivery, with fixture errors owned by the active test. Corpus mutation
-order applies parent paths before child paths, with lexical order at equal depth,
-followed by removes.
+order applies `set` paths by ascending depth, then ASCII lexical order, followed
+by `remove`. Both implementations reject non-ASCII and dangerous path segments
+before mutation. Any future Unicode extension requires a new ordering agreement.
 
 ACK timing tests use Go's virtual clock for fixtures, injected time and timers,
 including just-before/after lease expiry and simultaneous process-exit/ACK
-completion. This addresses a PLAUSIBLE test clock-domain concern; it is not a
-confirmed production defect. Production waits retain absolute lease deadlines.
+completion. Production waits retain absolute lease deadlines.
 
 Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
 

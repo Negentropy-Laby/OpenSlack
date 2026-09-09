@@ -1,4 +1,3 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import {
   canonicalUtcTimestamp,
@@ -7,6 +6,11 @@ import {
   ownDataField,
   type ContractDataRecord,
 } from './internal/contract-validation.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION = 'v1' as const;
@@ -372,10 +376,10 @@ export interface WorkflowBudgetLegacyApprovalObservation extends WorkflowBudgetA
   readonly observedAt: string;
 }
 
-const HASH = /^[0-9a-f]{64}$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const PREFIXED_HASH = /^sha256:[0-9a-f]{64}$/u;
-const ID = WORKFLOW_RUN_ID_REGEX;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const ID = SAFE_IDENTIFIER_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/u;
 const RATE = /^(?:0|[1-9][0-9]*|(?:0|[1-9][0-9]*)\.([0-9]*[1-9]))$/u;
 const IDEMPOTENCY = /^openslack\.workflow-budget-authority\.v1\.[0-9a-f]{64}$/u;

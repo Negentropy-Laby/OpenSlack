@@ -1,9 +1,36 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
 import { lstat, readFile, realpath, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { threadId } from 'node:worker_threads';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import type {
+  WorkflowEffectIntentEvidence,
+  WorkflowEffectIntentPreparation,
+  WorkflowEffectLeaseBinding,
+} from './internal/workflow-effect-lease-authority.js';
+import {
+  acquireOwnerJournalLock,
+  assertOwnerDirectory,
+  assertOwnerFile,
+  atomicWrite as atomicWriteOwnerFile,
+  ensureOwnerDirectory,
+  productionJournalSecurity,
+  readOwnerFile,
+  syncDirectory,
+  writeExclusive,
+} from './workflow-control-shadow.js';
+import { readWorkflowEffectApprovalRecordExact } from './workflow-effect-approval-store.js';
+import {
+  createPendingWorkflowEffectApproval,
+  validateWorkflowEffectApproval,
+  workflowEffectApprovalBytes,
+  type HumanWorkflowEffectDecisionBinding,
+  type WorkflowEffectApprovalRecord,
+} from './workflow-effect-approval.js';
 import {
   WORKFLOW_EFFECT_CONTROL_ARTIFACT_SCHEMA,
   WORKFLOW_EFFECT_CONTROL_CONTRACT_VERSION,
@@ -27,37 +54,13 @@ import {
   type WorkflowEffectExecutionClaimArtifact,
   type WorkflowEffectIntentArtifact,
 } from './workflow-effect-control-contract.js';
-import {
-  createPendingWorkflowEffectApproval,
-  validateWorkflowEffectApproval,
-  workflowEffectApprovalBytes,
-  type HumanWorkflowEffectDecisionBinding,
-  type WorkflowEffectApprovalRecord,
-} from './workflow-effect-approval.js';
-import { readWorkflowEffectApprovalRecordExact } from './workflow-effect-approval-store.js';
 import { parseWorkflowEffectJson } from './workflow-effect-json.js';
-import {
-  acquireOwnerJournalLock,
-  assertOwnerDirectory,
-  assertOwnerFile,
-  atomicWrite as atomicWriteOwnerFile,
-  ensureOwnerDirectory,
-  productionJournalSecurity,
-  readOwnerFile,
-  syncDirectory,
-  writeExclusive,
-} from './workflow-control-shadow.js';
 import {
   prepareWorkflowRunnerMessage,
   validateWorkflowRunnerMessage,
   type WorkflowRunnerEffectIntentMessage,
   type WorkflowRunnerPreparedMessage,
 } from './workflow-runner-contract.js';
-import type {
-  WorkflowEffectIntentEvidence,
-  WorkflowEffectIntentPreparation,
-  WorkflowEffectLeaseBinding,
-} from './internal/workflow-effect-lease-authority.js';
 
 const AUTHORITY_RECORD_SCHEMA = 'openslack.workflow_effect_authority_record.v1' as const;
 const EXECUTION_RECORD_SCHEMA = 'openslack.workflow_effect_execution_record.v1' as const;
@@ -73,8 +76,8 @@ const MAX_REPLAY_BYTES = 256 * 1024;
 const MAX_REPLAY_FILE_BYTES = MAX_REPLAY_BYTES + 4 * 1024;
 const MAX_ENTRIES = 4_096;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const AUTHORITY_FILE = /^[0-9a-f]{64}\.json$/u;
 const AUTHORITY_TEMP = /^\.([0-9a-f]{64})\.[1-9][0-9]*\.[0-9a-f-]{36}\.tmp$/u;

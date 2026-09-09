@@ -1,6 +1,10 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import type {
   ConfirmationPolicy,
   WorkflowApprovalManifest,
@@ -84,9 +88,9 @@ export class WorkflowRunnerDescriptorError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const SEMVER =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 

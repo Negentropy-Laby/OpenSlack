@@ -1,13 +1,17 @@
-import { resumeCorrelationId } from './workflow-resume-correlation.js';
-import { closedDataRecord } from './contract-validation.js';
 import {
-  canonicalWorkflowControlAuthorityJson as canonical,
-  type WorkflowControlAuthorityMessage,
-} from '../workflow-control-authority-contract.js';
+  workflowCheckpointHash,
+  validateWorkflowCheckpointControlState,
+  type WorkflowCheckpointControlState,
+} from '../workflow-checkpoint-shadow-contract.js';
 import type {
   WorkflowControlAuthorityExpectedHead,
   WorkflowControlAuthorityRunRecord,
 } from '../workflow-control-authority-client.js';
+import {
+  canonicalWorkflowControlAuthorityJson as canonical,
+  type WorkflowControlAuthorityMessage,
+} from '../workflow-control-authority-contract.js';
+import { recoveryConflict } from '../workflow-run-recovery-evidence.js';
 import {
   hashWorkflowRunnerAuthorityBindingStage,
   validateWorkflowRunnerAuthorityBindingStageReceipt,
@@ -15,13 +19,10 @@ import {
   type WorkflowRunnerAuthorityStageReceipt,
   type WorkflowRunnerResumeAuthorityEvidence,
 } from '../workflow-runner-authority-binding-contract.js';
-import {
-  workflowCheckpointHash,
-  validateWorkflowCheckpointControlState,
-  type WorkflowCheckpointControlState,
-} from '../workflow-checkpoint-shadow-contract.js';
+import { closedDataRecord } from './contract-validation.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
+import { resumeCorrelationId } from './workflow-resume-correlation.js';
 import { resumeEvidence } from './workflow-runner-checkpoint-evidence.js';
-import { recoveryConflict } from '../workflow-run-recovery-evidence.js';
 
 interface LegacyResumeIntent {
   schema: 'openslack.workflow_runner_resume_source_intent.v1';
@@ -83,7 +84,7 @@ export function parseWorkflowResumeIntent(
       intent.priorRevision < 1 ||
       !Number.isSafeInteger(intent.phaseCount) ||
       intent.phaseCount < 0 ||
-      !/^[0-9a-f]{64}$/u.test(intent.priorBindingHash) ||
+      !WORKFLOW_BINDING_HASH_REGEX.test(intent.priorBindingHash) ||
       intent.expected.resumeGeneration !== target.resumeGeneration ||
       intent.record.resumeGeneration !== target.resumeGeneration! + 1 ||
       intent.record.revision !== intent.expected.revision + 1 ||

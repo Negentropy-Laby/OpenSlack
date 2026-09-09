@@ -1,35 +1,8 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { lstat, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
-import {
-  WORKFLOW_EFFECT_CONTROL_ENVELOPE_SCHEMA,
-  WORKFLOW_EFFECT_CONTROL_LIMITS,
-  WORKFLOW_EFFECT_CONTROL_ROUTE,
-  hashWorkflowEffectControlDomain,
-  hashWorkflowEffectControlObservation,
-  parseWorkflowEffectControlEnvelopeBytes,
-  prepareWorkflowEffectControlEnvelope,
-  validateWorkflowEffectControlEnvelope,
-  type WorkflowEffectControlEnvelope,
-  type WorkflowEffectControlObservation,
-} from './workflow-effect-control-contract.js';
-import {
-  recoverWorkflowEffectAuthorityObservationPrefix,
-  scanWorkflowEffectAuthorityObservationPrefixes,
-  workflowEffectAuthorityObservationRevisionToken,
-  type WorkflowEffectAuthorityObservationRecordIdentity,
-} from './workflow-effect-authority-store.js';
-import {
-  WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES,
-  WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
-  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX,
-  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX,
-  validateWorkflowEffectShadowReceipt,
-  validateWorkflowEffectShadowError,
-  type WorkflowEffectShadowReceipt,
-} from './workflow-effect-shadow-contract.js';
+import { SAFE_IDENTIFIER_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   isWorkflowEffectShadowObservationPort,
   registerWorkflowEffectShadowObservationPort,
@@ -51,6 +24,33 @@ import {
   WORKFLOW_CONTROL_SHADOW_POLICY,
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
+import {
+  recoverWorkflowEffectAuthorityObservationPrefix,
+  scanWorkflowEffectAuthorityObservationPrefixes,
+  workflowEffectAuthorityObservationRevisionToken,
+  type WorkflowEffectAuthorityObservationRecordIdentity,
+} from './workflow-effect-authority-store.js';
+import {
+  WORKFLOW_EFFECT_CONTROL_ENVELOPE_SCHEMA,
+  WORKFLOW_EFFECT_CONTROL_LIMITS,
+  WORKFLOW_EFFECT_CONTROL_ROUTE,
+  hashWorkflowEffectControlDomain,
+  hashWorkflowEffectControlObservation,
+  parseWorkflowEffectControlEnvelopeBytes,
+  prepareWorkflowEffectControlEnvelope,
+  validateWorkflowEffectControlEnvelope,
+  type WorkflowEffectControlEnvelope,
+  type WorkflowEffectControlObservation,
+} from './workflow-effect-control-contract.js';
+import {
+  WORKFLOW_EFFECT_SHADOW_MAX_RECEIPT_BYTES,
+  WORKFLOW_EFFECT_SHADOW_MAX_ERROR_BYTES,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_PREFIX,
+  WORKFLOW_EFFECT_SHADOW_RECONCILIATION_RESOLVE_ROUTE_SUFFIX,
+  validateWorkflowEffectShadowReceipt,
+  validateWorkflowEffectShadowError,
+  type WorkflowEffectShadowReceipt,
+} from './workflow-effect-shadow-contract.js';
 
 export interface WorkflowEffectShadowPublisherPort {
   publish(
@@ -814,7 +814,7 @@ export function createWorkflowEffectShadowHttpPublisher(
   if (
     typeof options.bearerToken !== 'string' ||
     options.bearerToken.length < 32 ||
-    !WORKFLOW_RUN_ID_REGEX.test(options.callerId) ||
+    !SAFE_IDENTIFIER_REGEX.test(options.callerId) ||
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 1 ||
     timeoutMs > WORKFLOW_CONTROL_SHADOW_POLICY.maxTimeoutMs ||

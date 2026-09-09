@@ -1,4 +1,3 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 import {
@@ -8,6 +7,11 @@ import {
   ownDataField,
   type ContractDataRecord,
 } from './internal/contract-validation.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_PROTOCOL_VERSION = 'openslack.workflow_runner.v1' as const;
@@ -430,10 +434,10 @@ export interface CreateWorkflowRunnerEventReceiptInput {
 }
 
 type DataRecord = ContractDataRecord;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const CODE = /^[a-z0-9][a-z0-9._:-]{0,127}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const IDEMPOTENCY_KEY = /^openslack\.workflow-runner\.v1\.[0-9a-f]{64}$/u;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER = new RegExp(WORKFLOW_RUNNER_RUNTIME_VERSION_PATTERN, 'u');

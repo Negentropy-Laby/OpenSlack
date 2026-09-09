@@ -1,13 +1,14 @@
-import {
-  canonicalWorkflowControlAuthorityJson as canonical,
-  validateWorkflowControlAuthorityReceipt,
-} from '../workflow-control-authority-contract.js';
-import { prepareWorkflowControlAuthorityMutation } from '../workflow-control-authority-client.js';
+import { resumeCorrelationId } from '../internal/workflow-resume-correlation.js';
 import {
   parseWorkflowBindingSettlement,
   prepareWorkflowBindingReconciliation,
   type WorkflowBindingSettlementReceipt,
 } from '../workflow-binding-reconciliation-contract.js';
+import { prepareWorkflowControlAuthorityMutation } from '../workflow-control-authority-client.js';
+import {
+  canonicalWorkflowControlAuthorityJson as canonical,
+  validateWorkflowControlAuthorityReceipt,
+} from '../workflow-control-authority-contract.js';
 import type { WorkflowRunnerAuthorityBindingStage } from '../workflow-runner-authority-binding-contract.js';
 import type { resumeIntentFixture } from './workflow-recovery-fixtures.js';
 
@@ -47,7 +48,7 @@ export function sourceFenceFixture(stage: WorkflowRunnerAuthorityBindingStage) {
       stageHash: prepared.value.stageHash,
       workspaceId: stage.workspaceId,
       runId: stage.runId,
-      correlationId: `resume.${prepared.value.stageHash}`,
+      correlationId: resumeCorrelationId(prepared.value.stageHash),
       expectedResumeGeneration: stage.runnerAuthority.expectedResumeGeneration,
     }) + '\n',
   );

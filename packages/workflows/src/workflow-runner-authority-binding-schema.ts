@@ -1,11 +1,11 @@
-import { WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES } from './internal/workflow-binding-field-rules.js';
+import {
+  WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES,
+  isCanonicalUtcTimestamp,
+} from './internal/workflow-binding-field-rules.js';
 
 /** Register before compiling strict Ajv 2020 schemas. maxLength counts code points, not bytes. */
 export const WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS = Object.freeze({
-  'date-time': (value: string): boolean => {
-    const time = Date.parse(value);
-    return Number.isFinite(time) && new Date(time).toISOString() === value;
-  },
+  'openslack-canonical-utc': isCanonicalUtcTimestamp,
   'openslack-utf8-512': (value: string): boolean =>
     Buffer.byteLength(value, 'utf8') <= WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES,
 });

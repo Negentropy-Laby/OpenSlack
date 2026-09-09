@@ -24,7 +24,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -76,7 +76,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -121,7 +121,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -177,7 +177,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -222,7 +222,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -274,7 +274,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -319,7 +319,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -375,7 +375,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -420,7 +420,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -472,7 +472,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -517,7 +517,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -573,7 +573,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -618,7 +618,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -670,7 +670,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -715,7 +715,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -771,7 +771,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -816,7 +816,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -868,7 +868,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -913,7 +913,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -969,7 +969,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -1014,7 +1014,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -1066,7 +1066,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -1111,7 +1111,7 @@
             {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             },
             { "type": "null" }
           ]
@@ -1167,7 +1167,7 @@
               "committedAt": {
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                "format": "date-time"
+                "format": "openslack-canonical-utc"
               },
               "reconciliationToken": { "type": "null" }
             }
@@ -1212,7 +1212,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1237,7 +1237,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1286,7 +1286,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1311,7 +1311,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1360,7 +1360,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1385,7 +1385,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1434,7 +1434,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1459,7 +1459,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1508,7 +1508,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1533,7 +1533,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1582,7 +1582,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1607,7 +1607,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1656,7 +1656,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1683,7 +1683,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1732,7 +1732,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1759,7 +1759,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1808,7 +1808,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1835,7 +1835,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },
@@ -1884,7 +1884,7 @@
         "committedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "reconciliationToken": { "type": "null" },
         "controlEventId": {
@@ -1911,7 +1911,7 @@
         "processedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         },
         "disposition": { "enum": ["accepted", "reconciliation_required"] }
       },

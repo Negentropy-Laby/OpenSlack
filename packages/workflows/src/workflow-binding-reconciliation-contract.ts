@@ -1,6 +1,10 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
-import { resumeCorrelationId } from './internal/workflow-resume-correlation.js';
 import { createHash } from 'node:crypto';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import { resumeCorrelationId } from './internal/workflow-resume-correlation.js';
+import { validateWorkflowBudgetReceiptForRequest } from './workflow-budget-authority-contract.js';
 import {
   canonicalWorkflowControlAuthorityJson as canonical,
   validateWorkflowControlAuthorityReceipt,
@@ -12,7 +16,6 @@ import {
   validateWorkflowRunnerBudgetSourceResult,
   type WorkflowRunnerAuthorityBindingStage,
 } from './workflow-runner-authority-binding-contract.js';
-import { validateWorkflowBudgetReceiptForRequest } from './workflow-budget-authority-contract.js';
 
 export interface WorkflowBindingSettlementReceipt {
   schema: 'openslack.workflow_runner_binding_settlement_receipt.v1';
@@ -67,10 +70,10 @@ export function parseWorkflowBindingReconciliation(bytes: string) {
     value.schema !== 'openslack.workflow_runner_binding_reconciliation.v1' ||
     value.rulesVersion !== 1 ||
     ![value.workspaceId, value.runId].every(
-      (id) => typeof id === 'string' && WORKFLOW_RUN_ID_REGEX.test(id),
+      (id) => typeof id === 'string' && SAFE_IDENTIFIER_REGEX.test(id),
     ) ||
     !/^WFRUNNER-BINDING-[0-9a-f]{64}$/u.test(value.bindingId) ||
-    !/^[0-9a-f]{64}$/u.test(value.stageHash) ||
+    !WORKFLOW_BINDING_HASH_REGEX.test(value.stageHash) ||
     !['committed', 'not_committed'].includes(value.outcome)
   )
     throw new TypeError('Binding reconciliation request is invalid.');
@@ -109,11 +112,11 @@ export function parseWorkflowBindingSettlement(bytes: string): WorkflowBindingSe
         .join(',') ||
     value.schema !== 'openslack.workflow_runner_binding_settlement_receipt.v1' ||
     ![value.workspaceId, value.runId, value.callerId].every(
-      (id) => typeof id === 'string' && WORKFLOW_RUN_ID_REGEX.test(id),
+      (id) => typeof id === 'string' && SAFE_IDENTIFIER_REGEX.test(id),
     ) ||
     !/^WFRUNNER-BINDING-[0-9a-f]{64}$/u.test(value.bindingId) ||
-    !/^[0-9a-f]{64}$/u.test(value.stageHash) ||
-    !/^[0-9a-f]{64}$/u.test(value.requestHash) ||
+    !WORKFLOW_BINDING_HASH_REGEX.test(value.stageHash) ||
+    !WORKFLOW_BINDING_HASH_REGEX.test(value.requestHash) ||
     value.idempotencyKey !== `openslack.workflow-runner-reconciliation.v1.${value.requestHash}` ||
     !['committed', 'not_committed'].includes(value.outcome) ||
     !['resolution', 'source_receipt', 'source_fence', 'budget_source_result'].includes(

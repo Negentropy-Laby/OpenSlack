@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
+import { RunStore } from '../run-store.js';
 import {
   prepareWorkflowControlAuthorityMutation,
   workflowControlAuthorityInitialRecord,
@@ -13,27 +13,25 @@ import {
 } from '../workflow-control-authority-client.js';
 import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import {
+  isWorkflowControlBearerToken,
+  parseWorkflowControlRoutingEpoch,
+} from '../workflow-control-routing-identity.js';
+import type { WorkflowControlShadowJournalSecurityDependencies } from '../workflow-control-shadow.js';
+import {
+  loadWorkflowRunRoutingConfig,
+  WORKFLOW_RUN_ROUTING_MODE_GO,
+} from '../workflow-run-routing-config.js';
+import {
   hashWorkflowRunRoutingPolicy,
   WorkflowRunRouteJournal,
   WorkflowRunRouter,
   type WorkflowRunRouteReceipt,
   type WorkflowRunRoutingPolicy,
 } from '../workflow-run-routing.js';
-import { RunStore } from '../run-store.js';
-import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
-import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
-import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
-import {
-  loadWorkflowRunRoutingConfig,
-  WORKFLOW_RUN_ROUTING_MODE_GO,
-} from '../workflow-run-routing-config.js';
 import type { WorkflowRunnerControlConfig } from '../workflow-runner-control-client.js';
-import type { WorkflowControlShadowJournalSecurityDependencies } from '../workflow-control-shadow.js';
-import {
-  isWorkflowControlBearerToken,
-  parseWorkflowControlRoutingEpoch,
-} from '../workflow-control-routing-identity.js';
+import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
+import { workflowRunnerV2DescriptorFixture } from './workflow-runner-v2-test-fixture.js';
 
 const roots: string[] = [];
 const NOW = '2026-08-29T00:00:00.000Z';
@@ -522,6 +520,35 @@ describe('Process routing configuration', () => {
 });
 
 describe('Workflow Control authority accept client', () => {
+  it.each([
+    [
+      JSON.stringify({
+        schema: 'openslack.workflow_control_authority_error.v1',
+        code: 'WORKFLOW_CONTROL_AUTHORITY_PLATFORM_UNSUPPORTED',
+        message: 'private server detail',
+      }),
+      'WORKFLOW_RUN_PLATFORM_UNSUPPORTED',
+    ],
+    ['{', 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID'],
+    ['null', 'WORKFLOW_CONTROL_AUTHORITY_CLIENT_RESPONSE_INVALID'],
+  ])('maps the authority 422 response to %s / %s', async (body, code) => {
+    const send = vi.fn<typeof fetch>(
+      async () =>
+        new Response(body, { status: 422, headers: { 'Content-Type': 'application/json' } }),
+    );
+    const client = new WorkflowControlAuthorityHttpClient({
+      origin: 'http://127.0.0.1:18082',
+      workspaceId: WORKSPACE,
+      callerId: CALLER,
+      bearerToken: TOKEN,
+      expectedBuildHash: BUILD,
+      fetch: send,
+    });
+    const failure = await client.accept(select()).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code });
+    expect(String(failure)).not.toContain('private server detail');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it('binds an exact Go accept before returning the durable receipt', async () => {
     const route = select();
     const { prepared, exact, value } = acceptedReceipt(route);
@@ -751,7 +778,7 @@ describe('Go-owned worker recovery projection', () => {
       runId: route.runId,
       workflowName: route.workflowId,
       mode: 'execute',
-      manifestHash: descriptor.manifestHash,
+      manifestHash: descriptor.workflowSourceHash,
       args: {},
       startedAt: NOW,
       budget: { tokens: 100, costUsd: 1 },

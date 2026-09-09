@@ -1,7 +1,7 @@
-import { parseDocument, isMap, isScalar, visit } from 'yaml';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { format } from 'prettier';
+import { parseDocument, isMap, isScalar, visit } from 'yaml';
 
 export interface BudgetManifestCompatibility {
   readonly schema: 'openslack.workflow_budget_manifest_compatibility.v1';
@@ -156,7 +156,7 @@ export function projectBudgetManifestEnums(source: string, accepted: readonly st
   for (const name of BUDGET_MANIFEST_ENUM_SCHEMAS)
     document.setIn(
       ['components', 'schemas', name, 'properties', 'contractManifestSha256', 'enum'],
-      [...accepted],
+      [...accepted].reverse(),
     );
   return document.toString({ lineWidth: 96 });
 }

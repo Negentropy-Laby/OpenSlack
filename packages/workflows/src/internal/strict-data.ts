@@ -1,12 +1,13 @@
 import { closedDataRecord as contractRecord } from './contract-validation.js';
+import { isCanonicalIsoTimestamp } from './workflow-binding-field-rules.js';
 
 export function closedDataRecord(
   value: unknown,
   fields: readonly string[],
   label: string,
 ): Record<string, unknown> {
-  const shape = (): never => {
-    throw new TypeError(`${label} has unexpected or missing fields.`);
+  const shape = (path: string): never => {
+    throw new TypeError(`${path} has unexpected or missing fields.`);
   };
   return contractRecord(
     value,
@@ -20,7 +21,7 @@ export function closedDataRecord(
       unknown: shape,
       dataField: shape,
     },
-    { allowNullPrototype: false, keyOrder: 'utf16' },
+    { allowNullPrototype: false },
   );
 }
 
@@ -40,8 +41,7 @@ export function finiteNumber(value: unknown, label: string, minimum = 0): number
 
 export function canonicalTimestamp(value: unknown, label: string): string {
   if (typeof value !== 'string') throw new TypeError(`${label} must be a timestamp.`);
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+  if (!isCanonicalIsoTimestamp(value)) {
     throw new TypeError(`${label} must be a canonical ISO timestamp.`);
   }
   return value;

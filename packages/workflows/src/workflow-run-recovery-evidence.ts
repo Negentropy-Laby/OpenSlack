@@ -1,3 +1,7 @@
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import { resumeCorrelationId } from './internal/workflow-resume-correlation.js';
 import { isWorkflowRunId } from './internal/workflow-run-identity.js';
 import { closedDataRecord } from './internal/contract-validation.js';
@@ -133,7 +137,7 @@ function normalizeRecoveryV2(value: Record<string, unknown>): Record<string, unk
       !/^[1-9][0-9]{0,18}$/u.test(value.recoveryVersion) ||
       BigInt(value.recoveryVersion) > 9223372036854775807n ||
       typeof value.readAt !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value.readAt) ||
+      !WORKFLOW_BINDING_TIME_REGEX.test(value.readAt) ||
       new Date(value.readAt).toISOString() !== value.readAt)
   )
     return recoveryConflict('Recovery v3 snapshot metadata is invalid.');
@@ -240,7 +244,7 @@ export function parseWorkflowRunRecoveryEvidence(
       value.runId !== runId ||
       value.complete !== (bindingId === undefined && value.nextCursor === null) ||
       typeof value.snapshot !== 'string' ||
-      !/^[0-9a-f]{64}$/u.test(value.snapshot) ||
+      !WORKFLOW_BINDING_HASH_REGEX.test(value.snapshot) ||
       (value.nextCursor !== null &&
         (!v2
           ? bindingId !== undefined || !id(value.nextCursor)

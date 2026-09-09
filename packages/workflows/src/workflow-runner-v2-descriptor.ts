@@ -1,18 +1,22 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
-import type { ConfirmationPolicy, WorkflowMeta, WorkflowSource } from './types.js';
 import { closedDataRecord, ownDataField } from './internal/contract-validation.js';
-import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
-import type { WorkflowRunnerDescriptorCodec } from './workflow-runner-descriptor-store.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import type { ConfirmationPolicy, WorkflowMeta, WorkflowSource } from './types.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
   validateWorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRoute,
 } from './workflow-control-authority-contract.js';
+import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   isWorkflowRunnerCapabilitySet,
   WORKFLOW_RUNNER_CAPABILITIES,
 } from './workflow-runner-contract.js';
+import type { WorkflowRunnerDescriptorCodec } from './workflow-runner-descriptor-store.js';
 
 export type WorkflowRunnerV2Capability = (typeof WORKFLOW_RUNNER_CAPABILITIES)[number];
 
@@ -97,9 +101,9 @@ export class WorkflowRunnerV2DescriptorError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const DECIMAL_INTEGER = /^(?:0|[1-9][0-9]*)$/u;

@@ -1,4 +1,8 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import { isAcceptedWorkflowBudgetManifest } from './internal/workflow-budget-compatibility.generated.js';
 import {
   canonicalWorkflowBudgetAuthorityJson,
   deriveWorkflowBudgetLedgerEntry,
@@ -21,7 +25,6 @@ import {
   validateWorkflowRunnerBudgetSourceResult,
   type WorkflowRunnerBudgetSourceResult,
 } from './workflow-runner-authority-binding-contract.js';
-import { isAcceptedWorkflowBudgetManifest } from './internal/workflow-budget-compatibility.generated.js';
 import {
   cancelWorkflowRunnerResponseBody,
   readWorkflowRunnerResponseBytes,
@@ -29,8 +32,8 @@ import {
 } from './workflow-runner-control-http.js';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 const RESPONSE_SCHEMA = 'openslack.workflow_control_budget_mutation_response.v1';
 const DURABLE_SCHEMA = 'openslack.workflow_control_budget_durable_record.v1';
 const DURABLE_WRITER = 'workflow-control/budget-authority-server';

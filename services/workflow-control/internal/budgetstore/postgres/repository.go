@@ -306,9 +306,6 @@ func exactDurableRecord(kind string, value budgetcontract.Record, authorityBuild
 }
 
 func exactDurableRecordWithManifest(kind string, value budgetcontract.Record, authorityBuildHash, manifest string) (budgetstore.DurableRecord, []byte, string, error) {
-	if !budgetcontract.AcceptsManifestSHA256(manifest) {
-		return budgetstore.DurableRecord{}, nil, "", budgetstore.Failure(budgetstore.ErrorIntegrity, "rebuild_manifest", nil)
-	}
 	outer, err := budgetstore.NewDurableRecord(kind, value, authorityBuildHash)
 	if err != nil {
 		return budgetstore.DurableRecord{}, nil, "", err

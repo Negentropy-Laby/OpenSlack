@@ -1,17 +1,21 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
-import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
-import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   WORKFLOW_CONTROL_AUTHORITY_PROTOCOL_VERSION,
   validateWorkflowControlAuthorityRoute,
   type WorkflowControlAuthorityRoute,
 } from './workflow-control-authority-contract.js';
+import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   isWorkflowRunnerCapabilitySet,
   WORKFLOW_RUNNER_CAPABILITIES,
 } from './workflow-runner-contract.js';
+import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
 import {
   cancelWorkflowRunnerResponseBody,
   exactWorkflowRunnerLoopbackOrigin,
@@ -111,9 +115,9 @@ export class WorkflowRunnerV2ControlError extends Error {
 }
 
 type JsonRecord = Record<string, unknown>;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const IDEMPOTENCY = /^openslack\.workflow-runner-job\.v2\.[0-9a-f]{64}$/u;
 const FINGERPRINT = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER =

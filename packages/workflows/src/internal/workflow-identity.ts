@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { RunResult, WorkflowFormat, WorkflowMeta, WorkflowRuntime } from '../types.js';
 import { canonicalJson } from './canonical-json.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
 
 export interface WorkflowIdentitySource {
   readonly meta: WorkflowMeta;
@@ -11,7 +12,7 @@ export interface WorkflowIdentitySource {
   readonly run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
 }
 
-const SHA256 = /^[0-9a-f]{64}$/u;
+const SHA256 = WORKFLOW_BINDING_HASH_REGEX;
 
 /** Resolve the same strong executable identity for initialize, CLI, and worker resume paths. */
 export function resolveWorkflowIdentityHash(

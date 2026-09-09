@@ -1,15 +1,15 @@
-import { WORKFLOW_CONTROL_AUTHORITY_IDEMPOTENCY_PREFIX } from '../../packages/workflows/src/workflow-control-authority-contract.js';
-import { WORKFLOW_BUDGET_AUTHORITY_IDEMPOTENCY_PREFIX } from '../../packages/workflows/src/workflow-budget-authority-contract.js';
-import { WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX } from '../../packages/workflows/src/workflow-runner-runtime-admission-contract.js';
-const hashKeyPattern = (prefix: string) =>
-  '^' + prefix.replaceAll('.', String.raw`\.`) + '[0-9a-f]{64}$';
 import {
+  SAFE_IDENTIFIER_PATTERN as ID,
   WORKFLOW_BINDING_HASH_PATTERN as HASH,
   WORKFLOW_BINDING_REFERENCE_PATTERN as REF,
   WORKFLOW_BINDING_TIME_PATTERN as TIME,
   WORKFLOW_BINDING_ERROR_MESSAGE_MAX_BYTES,
 } from '../../packages/workflows/src/internal/workflow-binding-field-rules.js';
-import { WORKFLOW_RUN_ID_PATTERN as ID } from '../../packages/workflows/src/internal/workflow-run-identity.js';
+import { WORKFLOW_BUDGET_AUTHORITY_IDEMPOTENCY_PREFIX } from '../../packages/workflows/src/workflow-budget-authority-contract.js';
+import { WORKFLOW_CONTROL_AUTHORITY_IDEMPOTENCY_PREFIX } from '../../packages/workflows/src/workflow-control-authority-contract.js';
+import { WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_KEY_PREFIX } from '../../packages/workflows/src/workflow-runner-runtime-admission-contract.js';
+const hashKeyPattern = (prefix: string) =>
+  '^' + prefix.replaceAll('.', String.raw`\.`) + '[0-9a-f]{64}$';
 type Json = Record<string, unknown>;
 
 const PREFIXED_HASH = '^sha256:[0-9a-f]{64}$';
@@ -179,7 +179,7 @@ function stringRule(key: string, path: readonly string[]): Json {
   if (hashes.has(key)) return { type: 'string', pattern: HASH };
   if (prefixedHashes.has(key)) return { type: 'string', pattern: PREFIXED_HASH };
   if (ids.has(key)) return { type: 'string', pattern: ID, maxLength: 256 };
-  if (times.has(key)) return { type: 'string', pattern: TIME, format: 'date-time' };
+  if (times.has(key)) return { type: 'string', pattern: TIME, format: 'openslack-canonical-utc' };
   if (key === 'artifactRef' || key === 'receiptSchema' || key === 'reconciliationToken')
     return { type: 'string', pattern: REF, maxLength: 512 };
   if (key === 'providerAttempt') return { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 19 };
@@ -251,12 +251,19 @@ export function authorityBindingFieldSchema(value: unknown, path: readonly strin
       oneOf: [
         ['ts-local', 'typescript'],
         ['go', 'workflow-control'],
-      ].map(([backend, authority]) => ({
-        type: 'object',
-        additionalProperties: false,
-        properties: { backend: { const: backend }, authority: { const: authority }, ...common },
-        required: ['backend', 'authority', 'routingEpoch', 'authorityBuildHash'],
-      })),
+      ].map(([backend, authority]) => {
+        const properties = {
+          backend: { const: backend },
+          authority: { const: authority },
+          ...common,
+        };
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties,
+          required: Object.keys(properties),
+        };
+      }),
     };
   }
   if (value === null) {

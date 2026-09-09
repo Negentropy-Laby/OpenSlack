@@ -1,12 +1,20 @@
-import type { RunStatus } from './types.js';
-import { isRunStatusTransitionAllowed, RunStore, type RunMeta } from './run-store.js';
+import { verifyAcceptedWorkflowRun } from './internal/workflow-accepted-run-proof.js';
 import { createWorkflowRunStoreRecoveryAccess } from './internal/workflow-run-store-recovery-access.js';
+import {
+  isRunStatusTransitionAllowed,
+  RunStore,
+  decodeRunMetaArguments,
+  type RunMeta,
+} from './run-store.js';
+import type { RunStatus } from './types.js';
 import type {
   WorkflowControlAuthorityExpectedHead,
   WorkflowControlAuthorityPort,
   WorkflowControlAuthorityRunRead,
   WorkflowControlAuthorityRunRecord,
 } from './workflow-control-authority-client.js';
+import { assertWorkflowRunPathId, WorkflowRunReadError } from './workflow-run-read-errors.js';
+import { hashWorkflowRunnerV2Input } from './workflow-runner-v2-descriptor.js';
 import type { WorkflowRunnerV2ExecutionDescriptor } from './workflow-runner-v2-descriptor.js';
 
 /**
@@ -73,6 +81,16 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
 
   override async initRun(runId: string, meta: RunMeta): Promise<void> {
     this.#assertRun(runId);
+    assertWorkflowRunPathId(runId, { scope: 'run', backend: 'go' });
+    if (
+      meta.runId !== runId ||
+      meta.workflowName !== this.#descriptor.workflowId ||
+      meta.manifestHash !== this.#descriptor.workflowSourceHash ||
+      hashWorkflowRunnerV2Input(decodeRunMetaArguments(meta)) !== this.#descriptor.inputHash
+    )
+      throw new WorkflowRunReadError([
+        { code: 'WORKFLOW_RUN_EVIDENCE_INVALID', scope: 'run', backend: 'go', runId },
+      ]);
     const remote = await this.#read(runId);
     if (
       (remote.state !== 'created' && remote.state !== 'running') ||
@@ -84,6 +102,8 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
         'Go-owned run is not at its durable accepted initial head.',
       );
     }
+    // Validate the accepted identity before any remote transition, including hand-written descriptors.
+    await verifyAcceptedWorkflowRun(this.#authority, this.#descriptor);
     const projected = await super.runExists(runId);
     if (projected) {
       const [existingMeta, status] = await Promise.all([
@@ -105,7 +125,10 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
     // any local RunStore-shaped recovery artifact. A crash after this point is
     // closed by the remote=running/local=missing case above.
     if (remote.state === 'created') await this.#transitionRemote(remote, 'running');
-    if (!projected) await this.initializeRunProjection(runId, meta);
+    if (!projected) {
+      const proof = await verifyAcceptedWorkflowRun(this.#authority, this.#descriptor);
+      await this.restoreAcceptedRun(runId, meta, proof);
+    }
   }
 
   override async transitionStatus(runId: string, newStatus: RunStatus['status']): Promise<void> {

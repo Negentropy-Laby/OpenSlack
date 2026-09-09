@@ -1,7 +1,11 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { lstat, open, opendir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   WORKFLOW_CONTROL_APPROVAL_STATES,
   WORKFLOW_CONTROL_AUTHORITY,
@@ -14,14 +18,14 @@ import {
   type WorkflowControlApprovalCounts,
   type WorkflowControlObservation,
 } from './workflow-control-contract.js';
-import { parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   validateWorkflowEffectApproval,
   type WorkflowEffectApprovalRecord,
 } from './workflow-effect-approval.js';
+import { parseWorkflowEffectJson } from './workflow-effect-json.js';
 
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const LEGACY_MANIFEST_HASH = /^[0-9a-f]{16}$/u;
 const JSON_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}\.json$/u;
 const MAX_FILE_BYTES = 256 * 1024;
@@ -126,7 +130,7 @@ function boundedText(value: unknown, label: string, maximumBytes: number): strin
 function canonicalTimestamp(value: unknown, label: string): string {
   if (
     typeof value !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) ||
+    !WORKFLOW_BINDING_TIME_REGEX.test(value) ||
     !Number.isFinite(Date.parse(value)) ||
     new Date(Date.parse(value)).toISOString() !== value
   ) {

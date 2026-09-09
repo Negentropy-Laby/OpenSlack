@@ -142,7 +142,7 @@
                         "committedAt": {
                           "type": "string",
                           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                          "format": "date-time"
+                          "format": "openslack-canonical-utc"
                         }
                       },
                       "required": [
@@ -257,7 +257,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -383,7 +383,7 @@
             "expiresAt": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             }
           },
           "required": [
@@ -411,7 +411,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -550,7 +550,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -722,7 +722,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -889,7 +889,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -1049,7 +1049,7 @@
                         "committedAt": {
                           "type": "string",
                           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-                          "format": "date-time"
+                          "format": "openslack-canonical-utc"
                         }
                       },
                       "required": [
@@ -1175,7 +1175,7 @@
             "expiresAt": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             }
           },
           "required": [
@@ -1195,7 +1195,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -1330,7 +1330,7 @@
             "expiresAt": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             }
           },
           "required": [
@@ -1358,7 +1358,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -1501,7 +1501,7 @@
             "expiresAt": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             }
           },
           "required": [
@@ -1529,7 +1529,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -1668,7 +1668,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -1802,7 +1802,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [
@@ -2038,7 +2038,7 @@
             "expiresAt": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-              "format": "date-time"
+              "format": "openslack-canonical-utc"
             }
           },
           "required": [
@@ -2058,7 +2058,7 @@
         "sentAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
-          "format": "date-time"
+          "format": "openslack-canonical-utc"
         }
       },
       "required": [

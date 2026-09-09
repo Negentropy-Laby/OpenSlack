@@ -1,14 +1,21 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, realpath, rename } from 'node:fs/promises';
-import { isWorkflowRunId } from './internal/workflow-run-identity.js';
 import { isAbsolute, join, resolve } from 'node:path';
 import { types as nodeTypes } from 'node:util';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import {
   WorkflowReadPathContext,
   withWorkflowReadValidation,
   workflowReadPathStat,
 } from './internal/workflow-read-path.js';
-
+import { isWorkflowRunId } from './internal/workflow-run-identity.js';
+import {
+  validateWorkflowControlAuthorityRoute,
+  type WorkflowControlAuthorityRoute,
+} from './workflow-control-authority-contract.js';
 import {
   acquireOwnerJournalLock,
   assertOwnerDirectory,
@@ -21,10 +28,6 @@ import {
   type WorkflowControlShadowJournalSecurityDependencies,
 } from './workflow-control-shadow.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
-import {
-  validateWorkflowControlAuthorityRoute,
-  type WorkflowControlAuthorityRoute,
-} from './workflow-control-authority-contract.js';
 
 export const WORKFLOW_RUN_ROUTING_POLICY_SCHEMA =
   'openslack.workflow_run_routing_policy.v1' as const;
@@ -100,8 +103,8 @@ export class WorkflowRunRoutingError extends Error {
 type JsonRecord = Record<string, unknown>;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const ROUTE_FILE = /^[0-9a-f]{64}\.json$/u;
 
 function fail(

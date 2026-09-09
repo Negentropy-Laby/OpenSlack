@@ -1,6 +1,13 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { randomUUID } from 'node:crypto';
 import { isWorkflowAuthorityRetryable } from './internal/workflow-authority-failure.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import {
+  createWorkflowCheckpointLeaseAuthority,
+  type WorkflowCheckpointLeaseAuthority,
+} from './internal/workflow-checkpoint-lease-authority.js';
 import type { RunResult, WorkflowModule } from './types.js';
 import {
   prepareWorkflowControlAuthorityMessage,
@@ -12,16 +19,6 @@ import {
   type WorkflowControlAuthorityPreparedMessage,
 } from './workflow-control-authority-contract.js';
 import {
-  WORKFLOW_RUNNER_CAPABILITIES,
-  WORKFLOW_RUNNER_PROTOCOL_VERSION,
-  WORKFLOW_RUNNER_RUNTIME_NAME,
-} from './workflow-runner-contract.js';
-import {
-  assertWorkflowRunnerV2AdmissionBinding,
-  hashWorkflowRunnerV2Result,
-  type WorkflowRunnerV2ExecutionDescriptor,
-} from './workflow-runner-v2-descriptor.js';
-import {
   workflowRunnerAuthorityBindingOperationForKind,
   workflowRunnerAuthorityBindingRunnerDelta,
   type WorkflowRunnerAuthorityBindingOperation,
@@ -32,9 +29,15 @@ import type {
   WorkflowRunnerAuthoritySourceAdapter,
 } from './workflow-runner-authority-binding-runtime.js';
 import {
-  createWorkflowCheckpointLeaseAuthority,
-  type WorkflowCheckpointLeaseAuthority,
-} from './internal/workflow-checkpoint-lease-authority.js';
+  WORKFLOW_RUNNER_CAPABILITIES,
+  WORKFLOW_RUNNER_PROTOCOL_VERSION,
+  WORKFLOW_RUNNER_RUNTIME_NAME,
+} from './workflow-runner-contract.js';
+import {
+  assertWorkflowRunnerV2AdmissionBinding,
+  hashWorkflowRunnerV2Result,
+  type WorkflowRunnerV2ExecutionDescriptor,
+} from './workflow-runner-v2-descriptor.js';
 
 export type WorkflowRunnerV2SessionState =
   | 'created'
@@ -248,8 +251,8 @@ interface OutstandingEvent {
   receiptAccepted: boolean;
 }
 
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
 
 function messagePayload(
   message: WorkflowControlAuthorityMessage,

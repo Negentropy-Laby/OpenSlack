@@ -1,48 +1,53 @@
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, rename, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fullFormats } from 'ajv-formats/dist/formats.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { registerWorkflowRunnerAuthorityBindingSchemaFormats } from '../workflow-runner-authority-binding-schema.js';
-import { isPortableWorkflowRunId, isWorkflowRunPathId } from '../internal/workflow-run-identity.js';
-import { RunStore, type RunMeta } from '../run-store.js';
-import { executeWorkflowThroughRunnerWithRuntime } from '../workflow-runner-execution-client.js';
-import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
-import { resumeIntentFixture } from './workflow-recovery-fixtures.js';
+import { isCanonicalUtcTimestamp } from '../internal/workflow-binding-field-rules.js';
+import { resumeCorrelationId } from '../internal/workflow-resume-correlation.js';
 import {
   parseWorkflowResumeIntent,
   createWorkflowResumeIntent,
 } from '../internal/workflow-resume-intent.js';
-import { resumeCorrelationId } from '../internal/workflow-resume-correlation.js';
+import { isPortableWorkflowRunId, isWorkflowRunPathId } from '../internal/workflow-run-identity.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
+import { RunStore, type RunMeta } from '../run-store.js';
 import { canonicalWorkflowControlAuthorityJson as canonical } from '../workflow-control-authority-contract.js';
+import { registerWorkflowRunnerAuthorityBindingSchemaFormats } from '../workflow-runner-authority-binding-schema.js';
+import { executeWorkflowThroughRunnerWithRuntime } from '../workflow-runner-execution-client.js';
 import { applyBindingCorpus } from './helpers/binding-corpus.js';
+import { resumeIntentFixture } from './workflow-recovery-fixtures.js';
 
 describe('portable creation and legacy intent compatibility', () => {
   it.runIf(process.platform !== 'win32')(
     'retains real POSIX historical directories through resume transitions',
     async () => {
-      class HistoricalProjection extends RunStore {
-        restore(id: string, meta: RunMeta) {
-          return this.initializeRunProjection(id, meta);
-        }
-      }
       const root = await mkdtemp(join(tmpdir(), 'openslack-posix-history-'));
       try {
-        const store = new HistoricalProjection({
+        const store = new RunStore({
           baseDir: root,
           access: createWorkflowRunStoreRecoveryAccess(),
         });
         const runId = 'run:historical';
-        await store.restore(runId, {
-          runId,
+        await store.initRun('portable-fixture', {
+          runId: 'portable-fixture',
           workflowName: 'fixture',
           mode: 'execute',
           startedAt: '2026-01-01T00:00:00.000Z',
           args: {},
           manifestHash: 'a'.repeat(64),
         } as RunMeta);
+        // Seed historical bytes explicitly; the production restore seam requires authority proof.
+        await rename(join(root, 'runs', 'portable-fixture'), join(root, 'runs', runId));
+        for (const name of ['meta.json', 'status.json']) {
+          const file = join(root, 'runs', runId, name);
+          const value = JSON.parse(await readFile(file, 'utf8'));
+          value.runId = runId;
+          await writeFile(file, JSON.stringify(value));
+        }
         expect((await store.loadMeta(runId))?.runId).toBe(runId);
         await store.transitionStatus(runId, 'paused_waiting_approval');
         await store.transitionStatus(runId, 'resuming');
@@ -53,7 +58,7 @@ describe('portable creation and legacy intent compatibility', () => {
       }
     },
   );
-  it('rejects a nonportable new run before contacting the authority', async () => {
+  it('rejects missing Go routing configuration before contacting the authority', async () => {
     let calls = 0;
     const authority = new Proxy(
       {},
@@ -73,7 +78,7 @@ describe('portable creation and legacy intent compatibility', () => {
         client: { descriptorRoot: '/unused' },
         routing: { journal: { locateReadOnly: async () => null }, authority },
       } as never),
-    ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID' });
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RUNNER_CONTROL_TS_MUTATION_RETIRED' });
     expect(calls).toBe(0);
   });
   it.each(['con', 'aux.txt', 'run:x', 'run.'])(
@@ -87,7 +92,7 @@ describe('portable creation and legacy intent compatibility', () => {
         access: createWorkflowRunStoreRecoveryAccess(),
       });
       await expect(store.initRun(id, {} as never)).rejects.toMatchObject({
-        code: 'WORKFLOW_RUN_PROJECTION_ID_INVALID',
+        code: 'WORKFLOW_RUN_PLATFORM_UNSUPPORTED',
       });
     },
   );
@@ -111,6 +116,9 @@ describe('portable creation and legacy intent compatibility', () => {
     };
     const written = createWorkflowResumeIntent(compact);
     expect(written.correlationId).toBe(intent.correlationId);
+    expect(
+      resumeCorrelationId('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
+    ).toBe('resume.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
     // The deployed reader requires exactly this v2 key set, including correlationId.
     expect(Object.keys(written).sort()).toEqual(Object.keys(intent).sort());
     for (const record of [written, intent, compact, v1]) {
@@ -136,7 +144,7 @@ describe('strict external schema use', () => {
     const message = ajv.compile({ type: 'string', format: 'openslack-utf8-512' });
     expect(message('€'.repeat(170) + 'xx')).toBe(true);
     expect(message('€'.repeat(171))).toBe(false);
-    const timestamp = ajv.compile({ type: 'string', format: 'date-time' });
+    const timestamp = ajv.compile({ type: 'string', format: 'openslack-canonical-utc' });
     expect(timestamp('2026-01-01T00:00:00.000Z')).toBe(true);
     expect(timestamp('2026-02-30T00:00:00.000Z')).toBe(false);
     expect(() => ajv.compile(schema)).not.toThrow();
@@ -152,7 +160,9 @@ describe('strict external schema use', () => {
   it('projects enums by YAML structure and rejects undeclared consumers', async () => {
     const root = fileURLToPath(new URL('../../../../', import.meta.url));
     const { projectBudgetManifestEnums } = await import(
-      /* @vite-ignore */ root + 'scripts/workflow-budget-authority-contracts/compatibility.ts'
+      /* @vite-ignore */ pathToFileURL(
+        resolve(root, 'scripts/workflow-budget-authority-contracts/compatibility.ts'),
+      ).href
     );
     const source = readFileSync(
       root + 'services/workflow-control/docs/api/budget-authority-openapi.yaml',
@@ -174,4 +184,72 @@ describe('strict external schema use', () => {
       ),
     ).toThrow(/Undeclared/);
   });
+});
+
+describe('canonical UTC shared corpus and isolated Ajv registration', () => {
+  const corpus: { value: string; accepted: boolean }[] = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../contracts/workflow-runner-authority-binding/canonical-utc-corpus.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+  it.each(corpus)('validates $value as $accepted', ({ value, accepted }) => {
+    const ajv = registerWorkflowRunnerAuthorityBindingSchemaFormats(new Ajv2020({ strict: true }));
+    expect(isCanonicalUtcTimestamp(value)).toBe(accepted);
+    expect(ajv.compile({ type: 'string', format: 'openslack-canonical-utc' })(value)).toBe(
+      accepted,
+    );
+  });
+  it.each([true, false])('preserves standard date-time when registered first=%s', (first) => {
+    const ajv = new Ajv2020({ strict: true });
+    if (first) ajv.addFormat('date-time', fullFormats['date-time']);
+    registerWorkflowRunnerAuthorityBindingSchemaFormats(ajv);
+    if (!first) ajv.addFormat('date-time', fullFormats['date-time']);
+    const offset = '2026-01-01T00:00:00+01:00';
+    expect(ajv.compile({ type: 'string', format: 'date-time' })(offset)).toBe(true);
+    expect(ajv.compile({ type: 'string', format: 'openslack-canonical-utc' })(offset)).toBe(false);
+  });
+});
+
+it('matches shared TS/Go corpus mutation results', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../contracts/workflow-runner-authority-binding/corpus-operations.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+  for (const row of cases) {
+    const value = structuredClone(row.base);
+    applyBindingCorpus(value, row.set, row.remove);
+    expect(value, row.id).toEqual(row.expected);
+  }
+});
+
+it('rejects a caller-forged historical projection proof before writing', async () => {
+  class AttemptedRestore extends RunStore {
+    attempt() {
+      return this.restoreAcceptedRun(
+        'history',
+        {
+          runId: 'history',
+          workflowName: 'fixture',
+          manifestHash: 'a'.repeat(64),
+          args: {},
+        } as RunMeta,
+        { kind: 'accepted-workflow-run' },
+      );
+    }
+  }
+  await expect(
+    new AttemptedRestore({
+      baseDir: '/unused',
+      access: createWorkflowRunStoreRecoveryAccess(),
+    }).attempt(),
+  ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_INVALID' });
 });

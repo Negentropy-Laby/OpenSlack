@@ -1,8 +1,10 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
-
-import { canonicalWorkflowEffectJson } from './workflow-effect-json.js';
-import { parseWorkflowEffectJson } from './workflow-effect-json.js';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
+import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 
 export const WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_SCHEMA =
   'openslack.workflow_runner_v2_runtime_admission.v1' as const;
@@ -21,9 +23,9 @@ export const WORKFLOW_RUNNER_V2_RUNTIME_ADMISSION_LIMITS = Object.freeze({
   maxNodes: 8_192,
   maxStringBytes: 524_288,
 });
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const HASH = /^[0-9a-f]{64}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const ADMISSION_KEYS = Object.freeze([
   'schema',
   'workspaceId',

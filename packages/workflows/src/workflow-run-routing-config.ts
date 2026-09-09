@@ -1,30 +1,30 @@
 import { createHash } from 'node:crypto';
-
+import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   WorkflowControlAuthorityHttpClient,
   type WorkflowControlAuthorityPort,
 } from './workflow-control-authority-client.js';
-import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
+import {
+  isWorkflowControlBearerToken,
+  parseWorkflowControlRoutingEpoch,
+} from './workflow-control-routing-identity.js';
 import {
   createWorkflowRunRouteJournal,
   WorkflowRunRouter,
   type WorkflowRunRouteJournal,
 } from './workflow-run-routing.js';
+import type { WorkflowRunnerControlConfig } from './workflow-runner-control-client.js';
 import {
   WorkflowRunnerV2ControlClient,
   type WorkflowRunnerV2ControlPort,
 } from './workflow-runner-v2-control-client.js';
 import type { WorkflowRunnerV2BudgetPolicyBinding } from './workflow-runner-v2-descriptor.js';
-import {
-  isWorkflowControlBearerToken,
-  parseWorkflowControlRoutingEpoch,
-} from './workflow-control-routing-identity.js';
 
 export const WORKFLOW_RUN_ROUTING_MODE_ENV = 'OPENSLACK_WORKFLOW_RUN_ROUTING_MODE' as const;
 export const WORKFLOW_RUN_ROUTING_MODE_GO = 'go-new-record-canary-v1' as const;
 
 const PREFIX = 'OPENSLACK_WORKFLOW_RUN_ROUTING_';
-const HASH = /^[0-9a-f]{64}$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
 const POSITIVE_INTEGER = /^[1-9][0-9]*$/u;
 const DECIMAL = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{0,17}[1-9])?$/u;
 const COMMON = [

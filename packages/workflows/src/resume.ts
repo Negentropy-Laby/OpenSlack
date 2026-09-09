@@ -1,8 +1,9 @@
-import type { PhaseCheckpoint, RunStatus, WorkflowMeta, WorkflowModule } from './types.js';
-import type { RunMeta } from './run-store.js';
-import type { WorkflowRunReadOnlyStore } from './workflow-run-projection.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
 import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
+import type { RunMeta } from './run-store.js';
+import type { PhaseCheckpoint, RunStatus, WorkflowMeta, WorkflowModule } from './types.js';
+import type { WorkflowRunReadOnlyStore } from './workflow-run-projection.js';
 
 export type WorkflowResumeIdentity = Pick<
   WorkflowModule,
@@ -165,7 +166,7 @@ export async function checkResumable(
       storedManifestHash: storedHash,
     };
   }
-  if (storedHash === undefined || !/^[0-9a-f]{64}$/u.test(storedHash)) {
+  if (storedHash === undefined || !WORKFLOW_BINDING_HASH_REGEX.test(storedHash)) {
     return {
       canResume: false,
       reason: `Run ${runId} uses a legacy weak workflow identity and requires recovery.`,

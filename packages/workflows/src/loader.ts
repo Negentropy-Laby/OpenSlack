@@ -1,11 +1,9 @@
-import { readdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { validateManifest } from './manifest.js';
 import { getEmbeddedBuiltin, listEmbeddedBuiltins } from './embedded-builtins.js';
-import type { WorkflowMeta, WorkflowFormat, WorkflowModule, WorkflowSource } from './types.js';
-import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
 import {
   analyzeStaticMeta,
   detectFormat,
@@ -13,6 +11,9 @@ import {
   loadWorkflowFile,
   type WorkflowLoadOptions,
 } from './internal/workflow-file-loader.js';
+import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { validateManifest } from './manifest.js';
+import type { WorkflowMeta, WorkflowFormat, WorkflowModule, WorkflowSource } from './types.js';
 
 export { analyzeStaticMeta, detectFormat, detectFormatFromSource };
 export type { WorkflowLoadOptions };
@@ -158,7 +159,10 @@ export async function loadWorkflow(
   filePath: string,
   options: WorkflowLoadOptions = {},
 ): Promise<WorkflowModule> {
-  if (options.moduleCacheKey !== undefined && !/^[0-9a-f]{64}$/u.test(options.moduleCacheKey)) {
+  if (
+    options.moduleCacheKey !== undefined &&
+    !WORKFLOW_BINDING_HASH_REGEX.test(options.moduleCacheKey)
+  ) {
     throw new Error('Workflow module cache key must be a full lowercase SHA-256.');
   }
   const embedded = getEmbeddedBuiltin(filePath);

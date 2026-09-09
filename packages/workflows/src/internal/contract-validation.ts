@@ -1,4 +1,5 @@
 import { types as nodeTypes } from 'node:util';
+import { isCanonicalIsoTimestamp } from './workflow-binding-field-rules.js';
 
 export type ContractDataRecord = Record<string, unknown>;
 
@@ -67,10 +68,7 @@ export function canonicalUtcTimestamp(
   invalid: (path: string) => never,
 ): string {
   const result = validateText(value, path);
-  if (
-    !Number.isFinite(Date.parse(result)) ||
-    new Date(Date.parse(result)).toISOString() !== result
-  ) {
+  if (!isCanonicalIsoTimestamp(result)) {
     return invalid(path);
   }
   return result;

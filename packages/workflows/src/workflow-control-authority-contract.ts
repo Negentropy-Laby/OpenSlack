@@ -1,6 +1,11 @@
-import { WORKFLOW_RUN_ID_REGEX } from './internal/workflow-run-identity.js';
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
+import {
+  WORKFLOW_BINDING_HASH_REGEX,
+  WORKFLOW_BINDING_REFERENCE_REGEX,
+  WORKFLOW_BINDING_TIME_REGEX,
+  SAFE_IDENTIFIER_REGEX,
+} from './internal/workflow-binding-field-rules.js';
 import { canonicalWorkflowEffectJson, parseWorkflowEffectJson } from './workflow-effect-json.js';
 import {
   WORKFLOW_RUNNER_CONTRACT_LIMITS,
@@ -335,10 +340,10 @@ export interface WorkflowControlAuthorityReceipt {
 }
 
 type DataRecord = Record<string, unknown>;
-const HASH = /^[0-9a-f]{64}$/u;
-const SAFE_ID = WORKFLOW_RUN_ID_REGEX;
-const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,511}$/u;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const HASH = WORKFLOW_BINDING_HASH_REGEX;
+const SAFE_ID = SAFE_IDENTIFIER_REGEX;
+const SAFE_REF = WORKFLOW_BINDING_REFERENCE_REGEX;
+const TIMESTAMP = WORKFLOW_BINDING_TIME_REGEX;
 const DECIMAL_INTEGER = /^(?:0|[1-9][0-9]*)$/u;
 const DECIMAL_USD = /^(?:0|[1-9][0-9]*)(?:\.([0-9]+))?$/u;
 const IDEMPOTENCY = /^openslack\.workflow-control-authority\.v2\.[0-9a-f]{64}$/u;
