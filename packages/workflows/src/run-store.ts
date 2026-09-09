@@ -557,6 +557,7 @@ export class RunStore {
    * Initialize a new run: create directory structure and write meta + status.
    */
   async initRun(runId: string, meta: RunMeta): Promise<void> {
+    this.assertMutationAccess();
     assertPortableWorkflowRunId(runId);
     return this.#initializeRunProjection(runId, meta);
   }
@@ -566,6 +567,7 @@ export class RunStore {
     meta: RunMeta,
     proof: AcceptedWorkflowRunProof,
   ): Promise<void> {
+    this.assertMutationAccess();
     consumeAcceptedWorkflowRunProof(
       proof,
       runId,
@@ -577,7 +579,6 @@ export class RunStore {
   }
 
   async #initializeRunProjection(runId: string, meta: RunMeta): Promise<void> {
-    this.assertMutationAccess();
     const encodedArgs =
       meta.argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA
         ? inspectWorkflowArgumentsEnvelope(meta.args)

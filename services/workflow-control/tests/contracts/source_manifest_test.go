@@ -293,7 +293,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunStoreSource": {
 			Path:   "packages/workflows/src/run-store.ts",
-			SHA256: "78e9ccd924198a9dff3b56cd4d24a9a5c084bf159d8e08df6cce47f0884df67d",
+			SHA256: "b7f96d03e3498b07b3a50dd8a6f3cea78be0c1c8f1b7129fae8428e4411471df",
 		},
 		"workflowRunStoreRecoveryAccessSource": {
 			Path:   "packages/workflows/src/internal/workflow-run-store-recovery-access.ts",
