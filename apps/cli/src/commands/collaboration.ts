@@ -85,6 +85,7 @@ import {
   WorkflowBudgetPausedError,
   WorkflowPausedError,
   decodeRunMetaArguments,
+  bindGoWorkflowResumeIdentity,
   checkResumable,
   prepareResume,
   renderRunHtml,
@@ -2268,7 +2269,13 @@ export function collaborationCommands(): Command {
       }
 
       try {
-        const mod = await loadWorkflow(found.path);
+        const loaded = await loadWorkflow(found.path);
+        const workflowSourceBytes = await readWorkflowRunnerSourceBytes({
+          workflowName: loaded.meta.name,
+          discoveredPath: found.path,
+          source: found.source,
+        });
+        const mod = bindGoWorkflowResumeIdentity(runId, loaded, workflowSourceBytes, route);
 
         if (!mod.run && mod.format !== 'claude-ambient') {
           console.log(`Workflow "${meta.workflowName}" has no run function.`);
@@ -2336,11 +2343,7 @@ export function collaborationCommands(): Command {
           workspaceRoot: root,
           workflowRunId: runId,
           workflowSource: found.source,
-          workflowSourceBytes: await readWorkflowRunnerSourceBytes({
-            workflowName: mod.meta.name,
-            discoveredPath: found.path,
-            source: found.source,
-          }),
+          workflowSourceBytes,
           manifest: mod.meta,
           args: decodeRunMetaArguments(meta),
           confirmationPolicy: {

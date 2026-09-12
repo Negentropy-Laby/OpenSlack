@@ -489,7 +489,10 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       ) {
         throw new Error(policy.messages.loadedIdentity);
       }
-      return workflow;
+      // The ordinary loader uses raw file SHA-256. The sealed Go execution
+      // and recovery projection must use the verified v2 domain-separated
+      // identity, without changing either loader or descriptor hash contracts.
+      return { ...workflow, hash: descriptor.workflowSourceHash };
     },
   });
 }

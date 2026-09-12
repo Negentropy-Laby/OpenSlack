@@ -305,7 +305,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowResumeReadOnlySource": {
 			Path:   "packages/workflows/src/resume.ts",
-			SHA256: "411a65ccc000c3f0a8428cc8240a420c85ded883d700dc848ae1bee53f0c84d6",
+			SHA256: "e067a3fdf111af79eda3850f451196d9ffb2a0768662b30b2a8991f52fcd9d14",
 		},
 		"workflowRunnerWorkerBinSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker-bin.ts",
@@ -317,7 +317,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "d564f425f67a435bbca472a9dcac13d8018940ff5f631bc29ad67e723bfa0938",
+			SHA256: "12d5c3de55179f3a73e64e74c7120de72afc5213f88d240856d16cfe26ac3570",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
@@ -353,7 +353,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
-			SHA256: "27c7ac369eeecbabb01dae350516410ed3bc58deced26bcbefac4ad3f42aedc8",
+			SHA256: "326894c1f67ae776edb6b0e9bea7537f69f1dd9c5c76cad3779c264f42d6d0c0",
 		},
 		"workflowTUIExecutorsSource": {
 			Path:   "apps/cli/src/commands/tui-executors.ts",
@@ -417,7 +417,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker.ts",
-			SHA256: "2b152b6f7fcb537eb9e46469efc679194553ace0f91bb80b380e3a9a46d7342c",
+			SHA256: "ab2c9af134aaa3db8eb0b6492c98f956678b9f7a0ce4762f2b853fdef48e6a0c",
 		},
 		"workflowRunRoutingTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-routing.test.ts",
@@ -433,7 +433,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerWorkerTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-worker.test.ts",
-			SHA256: "12a1a169b5af5e82578d17294723ad27cb0e6bde4d9cec9689fffae518bc2ba2",
+			SHA256: "681247c710140829be05d6c54ae7c1402d715e91e497b0d920b8ebe368ef181f",
 		},
 		"workflowControlAuthorityConfigSource": {
 			Path:   "services/workflow-control/internal/config/authority.go",

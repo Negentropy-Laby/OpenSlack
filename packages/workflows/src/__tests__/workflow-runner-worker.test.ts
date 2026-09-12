@@ -45,6 +45,10 @@ import {
 } from '../workflow-control-authority-client.js';
 import type { WorkflowControlAuthorityMessage } from '../workflow-control-authority-contract.js';
 import { buildProviderUsageReceipt } from '@openslack/agent-runtime';
+import { loadWorkflowFile } from '../internal/workflow-file-loader.js';
+import { bindGoWorkflowResumeIdentity, checkResumable, prepareResume } from '../resume.js';
+import type { WorkflowRunRouteReceipt } from '../workflow-run-routing.js';
+import { WorkflowRunnerV2GoProjectionRunStore } from '../workflow-runner-v2-go-projection-store.js';
 
 const roots: string[] = [];
 const sourceBytes = Buffer.from('this is deliberately not valid JavaScript', 'utf8');
@@ -1048,6 +1052,153 @@ describe('GS8-B workflow runner worker', () => {
       'changed after lease acceptance',
     );
   });
+
+  it('initializes a Go-owned run from the real sealed loader identity', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-identity-'));
+    roots.push(workspaceRoot);
+    const sourceDirectory = join(workspaceRoot, '.openslack', 'workflows');
+    await mkdir(sourceDirectory, { recursive: true });
+    const source = workflowSource(1);
+    await writeFile(join(sourceDirectory, 'sealed-test.mjs'), source);
+    const descriptor = v2Descriptor(0, source);
+    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+    const workflow = await loader.load(await loader.prepare(descriptor), descriptor);
+
+    expect(workflow.hash).not.toBe(createHash('sha256').update(source).digest('hex'));
+    expect(workflow.hash).toBe(descriptor.workflowSourceHash);
+    const unexpected = async (): Promise<never> => {
+      throw new Error('This local identity test must not call providers or effects.');
+    };
+    const context: WorkflowRunnerV2ExecutionContext = {
+      signal: new AbortController().signal,
+      resumeOffer: null,
+      resumeGeneration: 0,
+      checkpointAuthority: createWorkflowCheckpointLeaseAuthority({
+        workspaceId: descriptor.workspaceId,
+        jobId: 'job.identity',
+        workflowRunId: descriptor.workflowRunId,
+        attemptId: 'attempt.identity',
+        leaseId: 'lease.identity',
+        fencingToken: 1,
+        correlationId: descriptor.correlationId,
+        runnerBuildHash: 'c'.repeat(64),
+        workflowSourceHash: descriptor.workflowSourceHash,
+        manifestHash: descriptor.manifestHash,
+        inputHash: descriptor.inputHash,
+      }),
+      checkpointCommit: unexpected,
+      reserveBudget: unexpected,
+      reportBudgetUsage: unexpected,
+      authorizeEffect: unexpected,
+      reportEffectOutcome: unexpected,
+    };
+    const authority = mutableRunAuthority(descriptor);
+    await expect(
+      executeWorkflowRunnerV2AuthorityJob(
+        workflow,
+        descriptor,
+        context,
+        workspaceRoot,
+        { callerId: 'workflow-runner-v2', client: {} as never },
+        authority,
+      ),
+    ).resolves.toMatchObject({ status: 'completed', runId: descriptor.workflowRunId });
+    const reader = new RunStore({
+      access: 'read-only',
+      baseDir: join(workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections'),
+    });
+    expect(await reader.loadMeta(descriptor.workflowRunId)).toMatchObject({
+      manifestHash: descriptor.workflowSourceHash,
+    });
+    expect(await authority.read(descriptor.workflowRunId, descriptor.authorityRoute)).toMatchObject(
+      {
+        state: 'completed',
+        workflowSourceHash: descriptor.workflowSourceHash,
+      },
+    );
+  }, 30_000);
+
+  it('binds the ordinary CLI loader to a paused Go identity without accepting source drift', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-resume-identity-'));
+    roots.push(workspaceRoot);
+    const source = workflowSource(1);
+    const path = join(workspaceRoot, 'sealed-test.mjs');
+    await writeFile(path, source);
+    const descriptor = v2Descriptor(0, source);
+    const loaded = await loadWorkflowFile(path);
+    const rawHash = createHash('sha256').update(source).digest('hex');
+    expect(loaded.hash).toBe(rawHash);
+    const route: WorkflowRunRouteReceipt = {
+      schema: 'openslack.workflow_run_route_receipt.v1',
+      workspaceId: descriptor.workspaceId,
+      runId: descriptor.workflowRunId,
+      workflowId: descriptor.workflowId,
+      workflowVersion: descriptor.workflowVersion,
+      workflowSourceHash: descriptor.workflowSourceHash,
+      manifestHash: descriptor.manifestHash,
+      inputHash: descriptor.inputHash,
+      route: descriptor.authorityRoute,
+      policyHash: 'd'.repeat(64),
+      correlationId: descriptor.correlationId,
+      qualificationEnvironmentId: 'local.identity',
+      selectedAt: descriptor.createdAt,
+      expiresAt: descriptor.expiresAt,
+    };
+    const bound = bindGoWorkflowResumeIdentity(descriptor.workflowRunId, loaded, source, route);
+    expect(loaded.hash).toBe(rawHash);
+    const baseDir = join(workspaceRoot, '.openslack.local', 'workflows', 'go-recovery-projections');
+    const store = new WorkflowRunnerV2GoProjectionRunStore({
+      baseDir,
+      descriptor,
+      authority: mutableRunAuthority(descriptor),
+    });
+    await store.initRun(descriptor.workflowRunId, {
+      runId: descriptor.workflowRunId,
+      workflowName: descriptor.workflowId,
+      mode: 'execute',
+      manifestHash: descriptor.workflowSourceHash,
+      args: {},
+      startedAt: descriptor.createdAt,
+    });
+    await store.transitionStatus(descriptor.workflowRunId, 'paused');
+    const reader = new RunStore({ access: 'read-only', baseDir });
+    expect(await checkResumable(reader, descriptor.workflowRunId, loaded)).toMatchObject({
+      canResume: false,
+      manifestMatch: false,
+    });
+    expect(await checkResumable(reader, descriptor.workflowRunId, bound)).toMatchObject({
+      canResume: true,
+      manifestMatch: true,
+    });
+    expect(await prepareResume(reader, descriptor.workflowRunId, bound)).toMatchObject({
+      runId: descriptor.workflowRunId,
+      nextPhaseIndex: 0,
+    });
+    for (const changed of [
+      { ...route, runId: 'run.other' },
+      { ...route, workflowSourceHash: rawHash },
+      { ...route, manifestHash: 'e'.repeat(64) },
+      {
+        ...route,
+        route: { ...route.route, backend: 'ts-local' as const, authority: 'typescript' as const },
+      },
+    ]) {
+      expect(() =>
+        bindGoWorkflowResumeIdentity(descriptor.workflowRunId, loaded, source, changed),
+      ).toThrow(/requires operator recovery/);
+    }
+    expect(() =>
+      bindGoWorkflowResumeIdentity(descriptor.workflowRunId, loaded, workflowSource(2), route),
+    ).toThrow(/requires operator recovery/);
+    expect(() =>
+      bindGoWorkflowResumeIdentity(
+        descriptor.workflowRunId,
+        { ...loaded, meta: { ...loaded.meta, description: 'drift' } },
+        source,
+        route,
+      ),
+    ).toThrow(/requires operator recovery/);
+  }, 30_000);
 
   it('cache-busts ESM by full source hash across sequential source revisions', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-runner-worker-'));

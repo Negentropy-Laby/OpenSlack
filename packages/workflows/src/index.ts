@@ -450,6 +450,7 @@ export type { CacheStore, CacheEntry } from './cache.js';
 
 // ── Resume ────────────────────────────────────────────────────────────────────
 export {
+  bindGoWorkflowResumeIdentity,
   checkResumable,
   prepareResume,
   replayCachedPhases,
