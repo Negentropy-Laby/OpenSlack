@@ -950,20 +950,6 @@ describe('OpenAI-compatible agent runtime', () => {
   it('persists distinct terminal failure evidence for provider, tool, and token failures', async () => {
     const configDir = join(root, '.openslack.local');
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, 'agent-runtime.json'),
-      JSON.stringify({
-        providers: {
-          'openai-compatible': {
-            baseUrl: 'https://example.test/v1',
-            model: 'test-model',
-            credentialRef: 'env:TEST_RUNTIME_KEY',
-            timeoutMs: 100,
-          },
-        },
-      }),
-      'utf-8',
-    );
     const cases: Array<{ code: string; budget?: number; fetchImpl: typeof fetch }> = [
       {
         code: 'PROVIDER_UNAVAILABLE',
@@ -1048,6 +1034,22 @@ describe('OpenAI-compatible agent runtime', () => {
       },
     ];
     for (const failureCase of cases) {
+      // Only the hanging-provider case tests the short deadline. Classification
+      // and durable recording must not race a 100ms CI scheduling window.
+      writeFileSync(
+        join(configDir, 'agent-runtime.json'),
+        JSON.stringify({
+          providers: {
+            'openai-compatible': {
+              baseUrl: 'https://example.test/v1',
+              model: 'test-model',
+              credentialRef: 'env:TEST_RUNTIME_KEY',
+              timeoutMs: failureCase.code === 'PROVIDER_TIMEOUT' ? 100 : 10_000,
+            },
+          },
+        }),
+        'utf-8',
+      );
       const store = createRunStore(root);
       const launcher = createOpenSlackAgentLauncher({
         runStore: store,
