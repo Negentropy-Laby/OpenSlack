@@ -1,9 +1,14 @@
 import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
-import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import { hashWorkflowSource, resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 import type { RunMeta } from './run-store.js';
 import type { PhaseCheckpoint, RunStatus, WorkflowMeta, WorkflowModule } from './types.js';
 import type { WorkflowRunReadOnlyStore } from './workflow-run-projection.js';
+import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
+import {
+  hashWorkflowRunnerV2Manifest,
+  hashWorkflowRunnerV2Source,
+} from './workflow-runner-v2-descriptor.js';
 
 export type WorkflowResumeIdentity = Pick<
   WorkflowModule,
@@ -21,6 +26,32 @@ export class WorkflowResumeRecoveryRequiredError extends Error {
     super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
     this.name = 'WorkflowResumeRecoveryRequiredError';
   }
+}
+
+/** Bind a generic loaded module to verified Go-route bytes for read-only resume checks. */
+export function bindGoWorkflowResumeIdentity(
+  runId: string,
+  workflow: WorkflowModule,
+  sourceBytes: Uint8Array,
+  route: WorkflowRunRouteReceipt,
+): WorkflowModule {
+  const hash = hashWorkflowRunnerV2Source(sourceBytes);
+  if (
+    route.runId !== runId ||
+    route.route.backend !== 'go' ||
+    route.route.authority !== 'workflow-control' ||
+    workflow.hash !== hashWorkflowSource(sourceBytes) ||
+    workflow.meta.name !== route.workflowId ||
+    (workflow.meta.version ?? '0.0.0') !== route.workflowVersion ||
+    hash !== route.workflowSourceHash ||
+    hashWorkflowRunnerV2Manifest(workflow.meta) !== route.manifestHash
+  ) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'loaded workflow source or manifest does not match the Go route identity',
+    );
+  }
+  return { ...workflow, hash };
 }
 
 /**
