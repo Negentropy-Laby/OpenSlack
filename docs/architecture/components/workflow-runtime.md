@@ -626,9 +626,11 @@ remain inspectable and exportable but cannot execute.
 
 ### Resume Flow
 
-1. Resolve and validate the route, then read metadata and resumable status before loading code.
+1. Resolve the route and check resumable state. Validate receipt, Go ownership, run and workspace
+   once into an opaque context before loading code; the context retains its own canonical receipt.
 2. Load the workflow and retain an owned source snapshot. Reject modules without an execution function.
-3. Compare run, workspace, workflow name/version, source and manifest against the route.
+3. Consume that context to compare workflow name/version before hashing, then source and manifest.
+   A copied or fabricated context cannot authorize binding.
 4. Verify the persisted executable identity and load the completed checkpoint prefix.
 5. After confirmation, read source again. Any change rejects submission before authority or descriptor writes.
 6. The execution client revalidates the immutable route and authenticated head and submits v2.

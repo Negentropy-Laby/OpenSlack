@@ -157,7 +157,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowExecutableIdentitySource": {
 			Path:   "packages/workflows/src/internal/workflow-identity.ts",
-			SHA256: "ef6b537b947170598a88194fb3e932820a6b1b545d4ee8c8619e2c2d6b37dc05",
+			SHA256: "c5a53819716d7d76ab551b47ce35279f06a0b73267461bb8d45c1131e2be5e8d",
 		},
 		"workflowFileLoaderSource": {
 			Path:   "packages/workflows/src/internal/workflow-file-loader.ts",
@@ -325,7 +325,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowResumeReadOnlySource": {
 			Path:   "packages/workflows/src/resume.ts",
-			SHA256: "2785fba9b7b9fef588716db26d50834f3f6d3133cb8ad6895dcefbde133c0264",
+			SHA256: "b2db521af43b54b44ad3d658fb1d01eddc54c00181d59a28e151e0807ad1cadf",
 		},
 		"workflowRunnerWorkerBinSource": {
 			Path:   "packages/workflows/src/workflow-runner-worker-bin.ts",
@@ -337,7 +337,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunRoutingPublicSurface": {
 			Path:   "packages/workflows/src/index.ts",
-			SHA256: "4cbb72217030faeaa7155df60bff94d37877c667e46e385a0521627ffdf5ae66",
+			SHA256: "c77e37ad2a92537be64505accebff16917f52a99e8fefad62943c0ba4542f127",
 		},
 		"workflowRunRoutingSource": {
 			Path:   "packages/workflows/src/workflow-run-routing.ts",
@@ -373,7 +373,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
-			SHA256: "62bca2f0b141c183ace447b1e33edf47085aeee80069c7c7892ec8d8c8dfd71e",
+			SHA256: "3e3a87d7458a3073bf9a1e2d424e58e47a59701cbb3b078ebd4c3025f42f31ee",
 		},
 		"workflowTUIExecutorsSource": {
 			Path:   "apps/cli/src/commands/tui-executors.ts",
@@ -501,7 +501,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",
-			SHA256: "2c7445143e6b040c728819dc05c65ece3561c1386807c269323c2356c992004c",
+			SHA256: "105dbbc33e3b9e2e4ea4140bdd7a312544904f203fc686e10a08d2fa56584ee6",
 		},
 		"runnerMixedOrphanRestartTest": {
 			Path:   "services/workflow-control/internal/runnerstore/postgres/runner_recovery_restart_integration_test.go",

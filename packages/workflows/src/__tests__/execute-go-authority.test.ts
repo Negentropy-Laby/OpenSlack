@@ -1,5 +1,5 @@
 import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
-import { bindGoWorkflowResumeIdentity } from '../resume.js';
+import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
 import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -167,11 +167,9 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
     execute(run: NonNullable<WorkflowModule['run']>, extra = {}) {
       return (mode === 'run' ? executeGoAuthorityRun : executeGoAuthorityResume)(
         bindGoWorkflowResumeIdentity(
-          runId,
+          validateGoWorkflowResumeContext(runId, route, descriptor.workspaceId),
           { meta, hash: sourceSnapshot.rawHash, sourceSnapshot, run, format: 'openslack-native' },
           sourceBytes,
-          route,
-          descriptor.workspaceId,
         ),
         { ...options, ...extra },
         store,

@@ -139,8 +139,8 @@ export interface WorkflowBindingIdentity {
 }
 /** Cheap ownership checks precede content checks; callers retain boundary-specific errors. */
 export function compareWorkflowBinding(
-  expected: WorkflowBindingIdentity,
-  actual: WorkflowBindingIdentity,
+  expected: Partial<WorkflowBindingIdentity>,
+  actual: Partial<WorkflowBindingIdentity>,
 ): WorkflowBindingReason | undefined {
   const checks = [
     ['runId', 'RUN_MISMATCH'],

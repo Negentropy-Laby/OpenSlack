@@ -1,4 +1,8 @@
-import { bindGoWorkflowResumeIdentity, checkResumeEligibility } from '../resume.js';
+import {
+  bindGoWorkflowResumeIdentity,
+  validateGoWorkflowResumeContext,
+  checkResumeEligibility,
+} from '../resume.js';
 import {
   createWorkflowSourceSnapshot,
   workflowSourceSnapshotBytes,
@@ -367,7 +371,11 @@ describe('verified Go source identities', () => {
       await store.initRun('run-001', makeMeta(TEST_MANIFEST, { manifestHash: hash }));
       await store.transitionStatus('run-001', 'paused');
       const before = new Map(fs.files);
-      const bound = bindGoWorkflowResumeIdentity('run-001', loaded, bytes, route, 'workspace.test');
+      const bound = bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        loaded,
+        bytes,
+      );
       expect(loaded.hash).toBe(sourceSnapshot.rawHash);
       expect(bound.hash).toBe(sourceSnapshot.rawHash);
       expect(resolveWorkflowIdentityHash(bound)).toBe(route.workflowSourceHash);
@@ -394,23 +402,21 @@ describe('verified Go source identities', () => {
     const { bytes, loaded, route } = fixture();
     const changed = validateWorkflowRunRouteReceipt({ ...route, [field]: value });
     expect(() =>
-      bindGoWorkflowResumeIdentity('run-001', loaded, bytes, changed, 'workspace.test'),
+      bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', changed, 'workspace.test'),
+        loaded,
+        bytes,
+      ),
     ).toThrow(expect.objectContaining({ reasonCode }));
   });
   it('rejects invalid authority pairing and receipt time ordering at the receipt boundary', () => {
-    const { bytes, loaded, route } = fixture();
+    const { route } = fixture();
     for (const changed of [
       { ...route, route: { ...route.route, authority: 'typescript' } },
       { ...route, expiresAt: route.selectedAt },
     ]) {
       expect(() =>
-        bindGoWorkflowResumeIdentity(
-          'run-001',
-          loaded,
-          bytes,
-          changed as typeof route,
-          'workspace.test',
-        ),
+        validateGoWorkflowResumeContext('run-001', changed as typeof route, 'workspace.test'),
       ).toThrow(expect.objectContaining({ reasonCode: 'ROUTE_INVALID' }));
     }
   });
@@ -418,25 +424,30 @@ describe('verified Go source identities', () => {
     const { bytes, loaded, route } = fixture();
     expect(() =>
       bindGoWorkflowResumeIdentity(
-        'run-001',
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
         { ...loaded, hash: 'f'.repeat(64) },
         bytes,
-        route,
-        'workspace.test',
       ),
     ).toThrow(expect.objectContaining({ reasonCode: 'LOADER_SOURCE_MISMATCH' }));
     expect(() =>
       bindGoWorkflowResumeIdentity(
-        'run-001',
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
         loaded,
         Buffer.from('changed'),
-        route,
-        'workspace.test',
       ),
     ).toThrow(expect.objectContaining({ reasonCode: 'LOADER_SOURCE_MISMATCH' }));
   });
   it('owns snapshot bytes and rejects forged or modified snapshots', () => {
-    const { bytes, loaded, sourceSnapshot } = fixture();
+    const { bytes, loaded, route, sourceSnapshot } = fixture();
+    const mutableRoute = { ...route };
+    const context = validateGoWorkflowResumeContext('run-001', mutableRoute, 'workspace.test');
+    mutableRoute.workflowSourceHash = 'f'.repeat(64);
+    expect(resolveWorkflowIdentityHash(bindGoWorkflowResumeIdentity(context, loaded, bytes))).toBe(
+      sourceSnapshot.workflowSourceHash,
+    );
+    expect(() => bindGoWorkflowResumeIdentity({ ...context }, loaded, bytes)).toThrow(
+      expect.objectContaining({ reasonCode: 'ROUTE_INVALID' }),
+    );
     const copy = workflowSourceSnapshotBytes(sourceSnapshot);
     copy[0] ^= 1;
     expect(workflowSourceSnapshotBytes(sourceSnapshot)).toEqual(bytes);
@@ -459,7 +470,11 @@ describe('verified Go source identities', () => {
     const { store } = makeStore();
     await store.initRun('run-001', makeMeta(TEST_MANIFEST));
     await store.transitionStatus('run-001', 'paused');
-    const bound = bindGoWorkflowResumeIdentity('run-001', loaded, bytes, route, 'workspace.test');
+    const bound = bindGoWorkflowResumeIdentity(
+      validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+      loaded,
+      bytes,
+    );
     expect(await checkResumable(store, 'run-001', bound)).toMatchObject({
       canResume: false,
       reasonCode: 'IDENTITY_UNVERIFIED',

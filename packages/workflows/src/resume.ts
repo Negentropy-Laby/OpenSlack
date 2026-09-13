@@ -48,19 +48,21 @@ export class WorkflowResumeRecoveryRequiredError extends Error {
   }
 }
 
-/** Validate receipt ownership and source evidence, without treating policy expiry as a run lease. */
-export function bindGoWorkflowResumeIdentity(
+/** Opaque receipt proof. Callers cannot supply or mutate its validated route. */
+export interface GoWorkflowResumeContext {
+  readonly runId: string;
+}
+const resumeContexts = new WeakMap<GoWorkflowResumeContext, WorkflowRunRouteReceipt>();
+
+/** Validate ownership once at entry; policy expiry is not an existing run's lease. */
+export function validateGoWorkflowResumeContext(
   runId: string,
-  workflow: WorkflowModule,
-  sourceBytes: Uint8Array,
   route: WorkflowRunRouteReceipt,
   workspaceId: string,
-): WorkflowModule {
-  const reject = (reasonCode: string, reason: string): never => {
-    throw new WorkflowResumeRecoveryRequiredError(runId, reason, undefined, reasonCode);
-  };
+): GoWorkflowResumeContext {
+  let validated: WorkflowRunRouteReceipt;
   try {
-    validateWorkflowRunRouteReceipt(route);
+    validated = validateWorkflowRunRouteReceipt(route);
   } catch (cause) {
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
@@ -69,21 +71,51 @@ export function bindGoWorkflowResumeIdentity(
       'ROUTE_INVALID',
     );
   }
-  if (route.route.backend !== 'go') reject('ROUTE_INVALID', 'route is not Go-owned');
-  // Ownership is checked before hashing; existing receipts keep their original selection time.
-  const cheap = compareWorkflowBinding(
-    { ...route, workflowSourceHash: '', manifestHash: '' },
-    {
+  if (validated.route.backend !== 'go') {
+    throw new WorkflowResumeRecoveryRequiredError(
       runId,
-      workspaceId,
-      workflowId: workflow.meta.name,
-      workflowVersion: workflow.meta.version ?? '0.0.0',
-      workflowSourceHash: '',
-      manifestHash: '',
-      inputHash: route.inputHash,
-    },
+      'route is not Go-owned',
+      undefined,
+      'ROUTE_INVALID',
+    );
+  }
+  const ownership = compareWorkflowBinding(
+    { runId: validated.runId, workspaceId: validated.workspaceId },
+    { runId, workspaceId },
   );
-  if (cheap) reject(cheap, 'run, workspace or workflow identity does not match the route');
+  if (ownership) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'run or workspace does not match the route',
+      undefined,
+      ownership,
+    );
+  }
+  const context = Object.freeze({ runId });
+  // The validator returns a canonical copy, never the caller's mutable receipt.
+  resumeContexts.set(context, validated);
+  return context;
+}
+
+/** Bind source evidence only after the entry boundary has validated Go ownership. */
+export function bindGoWorkflowResumeIdentity(
+  context: GoWorkflowResumeContext,
+  workflow: WorkflowModule,
+  sourceBytes: Uint8Array,
+): WorkflowModule {
+  const route = resumeContexts.get(context);
+  const runId = context.runId;
+  const reject = (reasonCode: string, reason: string): never => {
+    throw new WorkflowResumeRecoveryRequiredError(runId, reason, undefined, reasonCode);
+  };
+  if (!route) {
+    return reject('ROUTE_INVALID', 'resume context requires validated route evidence');
+  }
+  const cheap = compareWorkflowBinding(
+    { workflowId: route.workflowId, workflowVersion: route.workflowVersion },
+    { workflowId: workflow.meta.name, workflowVersion: workflow.meta.version ?? '0.0.0' },
+  );
+  if (cheap) reject(cheap, 'workflow identity does not match the route');
   const snapshot =
     workflow.sourceSnapshot ?? createWorkflowSourceSnapshot(sourceBytes, workflow.meta);
   try {
@@ -100,10 +132,8 @@ export function bindGoWorkflowResumeIdentity(
   if (workflow.hash !== snapshot.rawHash)
     reject('LOADER_SOURCE_MISMATCH', 'loaded module differs from the source bytes');
   const drift = compareWorkflowBinding(
-    { ...route, runId: undefined, workspaceId: undefined, inputHash: undefined },
+    { workflowSourceHash: route.workflowSourceHash, manifestHash: route.manifestHash },
     {
-      workflowId: workflow.meta.name,
-      workflowVersion: workflow.meta.version ?? '0.0.0',
       workflowSourceHash: snapshot.workflowSourceHash,
       manifestHash: snapshot.manifestHash,
     },

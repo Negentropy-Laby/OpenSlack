@@ -451,13 +451,19 @@ export type { CacheStore, CacheEntry } from './cache.js';
 // ── Resume ────────────────────────────────────────────────────────────────────
 export {
   bindGoWorkflowResumeIdentity,
+  validateGoWorkflowResumeContext,
   checkResumeEligibility,
   checkResumable,
   prepareResume,
   replayCachedPhases,
   WorkflowResumeRecoveryRequiredError,
 } from './resume.js';
-export type { ResumeCheckResult, ResumeState, WorkflowResumeIdentity } from './resume.js';
+export type {
+  GoWorkflowResumeContext,
+  ResumeCheckResult,
+  ResumeState,
+  WorkflowResumeIdentity,
+} from './resume.js';
 
 // ── Workflow Arguments and Identity ──────────────────────────────────────────
 export {

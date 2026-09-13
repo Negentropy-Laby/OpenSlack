@@ -86,6 +86,7 @@ import {
   WorkflowPausedError,
   decodeRunMetaArguments,
   bindGoWorkflowResumeIdentity,
+  validateGoWorkflowResumeContext,
   checkResumeEligibility,
   WorkflowResumeRecoveryRequiredError,
   workflowSourceSnapshotBytes,
@@ -2275,6 +2276,11 @@ export function collaborationCommands(): Command {
             eligibility.reasonCode,
           );
         }
+        const resumeContext = validateGoWorkflowResumeContext(
+          runId,
+          route,
+          composition.config.workspaceId,
+        );
         // Load run metadata
         const meta = await store.loadMeta(runId);
         if (!meta) {
@@ -2305,13 +2311,7 @@ export function collaborationCommands(): Command {
               discoveredPath: found.path,
               source: found.source,
             });
-        const mod = bindGoWorkflowResumeIdentity(
-          runId,
-          loaded,
-          workflowSourceBytes,
-          route,
-          composition.config.workspaceId,
-        );
+        const mod = bindGoWorkflowResumeIdentity(resumeContext, loaded, workflowSourceBytes);
         // Check resumability
         const check = await checkResumable(store, runId, mod);
         if (!check.canResume) {
