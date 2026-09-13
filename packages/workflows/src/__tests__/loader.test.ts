@@ -611,3 +611,22 @@ export const meta = { name: 'good', description: 'Good', phases: [{ title: 'A', 
     expect(result[0].name).toBe('good');
   });
 });
+
+it('loads the current executable revision at the same path when the manifest is unchanged', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openslack-loader-revision-'));
+  try {
+    const path = join(root, 'revision.mjs');
+    const source = (revision: number) =>
+      `export const meta = { name: 'revision', description: 'Revision test', phases: [{title:'Run', detail:'Run'}] };\nexport async function run() { return {status:'completed', revision:${revision}}; }\n`;
+    writeFileSync(path, source(1));
+    const first = await loadWorkflow(path);
+    writeFileSync(path, source(2));
+    const second = await loadWorkflow(path);
+    expect(first.meta).toEqual(second.meta);
+    expect(first.hash).not.toBe(second.hash);
+    expect(await first.run!({} as never, {})).toMatchObject({ revision: 1 });
+    expect(await second.run!({} as never, {})).toMatchObject({ revision: 2 });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

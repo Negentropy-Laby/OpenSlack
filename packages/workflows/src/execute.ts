@@ -32,7 +32,10 @@ import {
   type EncodedWorkflowArguments,
   type WorkflowArgumentsEnvelope,
 } from './internal/workflow-arguments.js';
-import { resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import {
+  matchStoredWorkflowIdentity,
+  resolveWorkflowIdentityHash,
+} from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 import { WorkflowResumeRecoveryRequiredError } from './resume.js';
 import {
@@ -632,9 +635,8 @@ export async function executeGoAuthorityResume(
       'legacy pending agent controls are read-only evidence and cannot authorize Go execution',
     );
   }
-  let currentWorkflowHash: string;
   try {
-    currentWorkflowHash = resolveWorkflowIdentityHash(workflow, manifest);
+    resolveWorkflowIdentityHash(workflow, manifest);
   } catch (error) {
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
@@ -648,7 +650,7 @@ export async function executeGoAuthorityResume(
     meta.runId !== runId ||
     meta.workflowName !== manifest.name ||
     meta.mode !== 'execute' ||
-    meta.manifestHash !== currentWorkflowHash
+    !matchStoredWorkflowIdentity(meta.manifestHash, workflow)
   ) {
     throw new WorkflowResumeRecoveryRequiredError(runId, 'identity or workflow hash has drifted');
   }

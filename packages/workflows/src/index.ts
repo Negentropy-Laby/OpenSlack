@@ -451,6 +451,7 @@ export type { CacheStore, CacheEntry } from './cache.js';
 // ── Resume ────────────────────────────────────────────────────────────────────
 export {
   bindGoWorkflowResumeIdentity,
+  checkResumeEligibility,
   checkResumable,
   prepareResume,
   replayCachedPhases,
@@ -1115,3 +1116,12 @@ export {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS,
   registerWorkflowRunnerAuthorityBindingSchemaFormats,
 } from './workflow-runner-authority-binding-schema.js';
+
+export {
+  workflowSourceSnapshotBytes,
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceSnapshot,
+} from './internal/workflow-source-snapshot.js';
+export type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
+
+export type { WorkflowIdentity } from './types.js';

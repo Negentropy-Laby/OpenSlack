@@ -1,18 +1,32 @@
 import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
-import { hashWorkflowSource, resolveWorkflowIdentityHash } from './internal/workflow-identity.js';
+import {
+  bindWorkflowSourceIdentity,
+  compareWorkflowBinding,
+  matchStoredWorkflowIdentity,
+  resolveWorkflowIdentityHash,
+} from './internal/workflow-identity.js';
+import {
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceSnapshot,
+} from './internal/workflow-source-snapshot.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
 import type { RunMeta } from './run-store.js';
-import type { PhaseCheckpoint, RunStatus, WorkflowMeta, WorkflowModule } from './types.js';
+import type {
+  PhaseCheckpoint,
+  RunStatus,
+  WorkflowMeta,
+  WorkflowModule,
+  WorkflowIdentity,
+} from './types.js';
 import type { WorkflowRunReadOnlyStore } from './workflow-run-projection.js';
-import type { WorkflowRunRouteReceipt } from './workflow-run-routing.js';
 import {
-  hashWorkflowRunnerV2Manifest,
-  hashWorkflowRunnerV2Source,
-} from './workflow-runner-v2-descriptor.js';
+  validateWorkflowRunRouteReceipt,
+  type WorkflowRunRouteReceipt,
+} from './workflow-run-routing.js';
 
 export type WorkflowResumeIdentity = Pick<
   WorkflowModule,
-  'meta' | 'hash' | 'format' | 'sourceBody' | 'preview' | 'run'
+  'meta' | 'hash' | 'workflowIdentity' | 'format' | 'sourceBody' | 'preview' | 'run'
 >;
 
 export class WorkflowResumeRecoveryRequiredError extends Error {
@@ -22,36 +36,93 @@ export class WorkflowResumeRecoveryRequiredError extends Error {
     readonly runId: string,
     reason: string,
     options?: ErrorOptions,
+    readonly reasonCode = 'EVIDENCE_INVALID',
+    readonly identities?: {
+      stored?: string;
+      current?: string;
+      domain?: 'runner-v2-source' | 'runner-v2-manifest';
+    },
   ) {
     super(`Workflow run ${runId} requires operator recovery: ${reason}`, options);
     this.name = 'WorkflowResumeRecoveryRequiredError';
   }
 }
 
-/** Bind a generic loaded module to verified Go-route bytes for read-only resume checks. */
+/** Validate receipt ownership and source evidence, without treating policy expiry as a run lease. */
 export function bindGoWorkflowResumeIdentity(
   runId: string,
   workflow: WorkflowModule,
   sourceBytes: Uint8Array,
   route: WorkflowRunRouteReceipt,
+  workspaceId: string,
 ): WorkflowModule {
-  const hash = hashWorkflowRunnerV2Source(sourceBytes);
-  if (
-    route.runId !== runId ||
-    route.route.backend !== 'go' ||
-    route.route.authority !== 'workflow-control' ||
-    workflow.hash !== hashWorkflowSource(sourceBytes) ||
-    workflow.meta.name !== route.workflowId ||
-    (workflow.meta.version ?? '0.0.0') !== route.workflowVersion ||
-    hash !== route.workflowSourceHash ||
-    hashWorkflowRunnerV2Manifest(workflow.meta) !== route.manifestHash
-  ) {
+  const reject = (reasonCode: string, reason: string): never => {
+    throw new WorkflowResumeRecoveryRequiredError(runId, reason, undefined, reasonCode);
+  };
+  try {
+    validateWorkflowRunRouteReceipt(route);
+  } catch (cause) {
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
-      'loaded workflow source or manifest does not match the Go route identity',
+      'route receipt is invalid',
+      { cause },
+      'ROUTE_INVALID',
     );
   }
-  return { ...workflow, hash };
+  if (route.route.backend !== 'go') reject('ROUTE_INVALID', 'route is not Go-owned');
+  // Ownership is checked before hashing; existing receipts keep their original selection time.
+  const cheap = compareWorkflowBinding(
+    { ...route, workflowSourceHash: '', manifestHash: '' },
+    {
+      runId,
+      workspaceId,
+      workflowId: workflow.meta.name,
+      workflowVersion: workflow.meta.version ?? '0.0.0',
+      workflowSourceHash: '',
+      manifestHash: '',
+      inputHash: route.inputHash,
+    },
+  );
+  if (cheap) reject(cheap, 'run, workspace or workflow identity does not match the route');
+  const snapshot =
+    workflow.sourceSnapshot ?? createWorkflowSourceSnapshot(sourceBytes, workflow.meta);
+  try {
+    verifyWorkflowSourceSnapshot(snapshot, sourceBytes, workflow.meta);
+  } catch (cause) {
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'source or manifest changed since loading',
+      { cause },
+      'LOADER_SOURCE_MISMATCH',
+    );
+  }
+  // This detects the loader-read versus subsequent source-read TOCTOU window.
+  if (workflow.hash !== snapshot.rawHash)
+    reject('LOADER_SOURCE_MISMATCH', 'loaded module differs from the source bytes');
+  const drift = compareWorkflowBinding(
+    { ...route, runId: undefined, workspaceId: undefined, inputHash: undefined },
+    {
+      workflowId: workflow.meta.name,
+      workflowVersion: workflow.meta.version ?? '0.0.0',
+      workflowSourceHash: snapshot.workflowSourceHash,
+      manifestHash: snapshot.manifestHash,
+    },
+  );
+  if (drift) {
+    const manifestDrift = drift === 'MANIFEST_DRIFT';
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'workflow source or manifest differs from the immutable route',
+      undefined,
+      drift,
+      {
+        domain: manifestDrift ? 'runner-v2-manifest' : 'runner-v2-source',
+        stored: manifestDrift ? route.manifestHash : route.workflowSourceHash,
+        current: manifestDrift ? snapshot.manifestHash : snapshot.workflowSourceHash,
+      },
+    );
+  }
+  return bindWorkflowSourceIdentity(workflow, sourceBytes, snapshot);
 }
 
 /**
@@ -63,6 +134,9 @@ export interface ResumeCheckResult {
   canResume: boolean;
   /** Reason if canResume is false. */
   reason?: string;
+  reasonCode?: string;
+  storedIdentity?: WorkflowIdentity;
+  currentIdentity?: WorkflowIdentity;
   /** Current run status. */
   status: RunStatus | null;
   /** Whether the manifest hash matches the stored one. */
@@ -92,18 +166,10 @@ export interface ResumeState {
   meta: RunMeta;
 }
 
-/**
- * Check whether a run can be resumed.
- *
- * A run is resumable if:
- * 1. It exists on disk
- * 2. Its status is one of the strict replay states
- * 3. Its full executable SHA-256 identity matches
- */
-export async function checkResumable(
+/** Read-only state gate; run before importing or hashing a workflow. */
+export async function checkResumeEligibility(
   runStore: WorkflowRunReadOnlyStore,
   runId: string,
-  identity: WorkflowResumeIdentity | WorkflowMeta,
 ): Promise<ResumeCheckResult> {
   // 1. Check run exists
   let exists: boolean;
@@ -112,6 +178,7 @@ export async function checkResumable(
   } catch (cause) {
     return {
       canResume: false,
+      reasonCode: 'EVIDENCE_INVALID',
       reason: 'Workflow evidence is unavailable; inspect its typed diagnostics before recovery.',
       status: null,
       manifestMatch: false,
@@ -121,6 +188,7 @@ export async function checkResumable(
   if (!exists) {
     return {
       canResume: false,
+      reasonCode: 'RUN_NOT_FOUND',
       reason: `Run ${runId} not found`,
       status: null,
       manifestMatch: false,
@@ -134,6 +202,7 @@ export async function checkResumable(
   } catch (error) {
     return {
       canResume: false,
+      reasonCode: 'EVIDENCE_INVALID',
       reason: `Run ${runId} durable state is invalid.`,
       status: null,
       manifestMatch: false,
@@ -143,6 +212,7 @@ export async function checkResumable(
   if (status === null) {
     return {
       canResume: false,
+      reasonCode: 'EVIDENCE_INVALID',
       reason: `Run ${runId} status not found`,
       status: null,
       manifestMatch: false,
@@ -153,11 +223,32 @@ export async function checkResumable(
   if (!isWorkflowResumeStatus(status.status)) {
     return {
       canResume: false,
+      reasonCode: 'STATUS_NOT_RESUMABLE',
       reason: `Run ${runId} has status "${status.status}", expected a resumable state`,
       status,
       manifestMatch: false,
     };
   }
+
+  return { canResume: true, status, manifestMatch: false };
+}
+
+/**
+ * Check whether a run can be resumed.
+ *
+ * A run is resumable if:
+ * 1. It exists on disk
+ * 2. Its status is one of the strict replay states
+ * 3. Its full executable SHA-256 identity matches
+ */
+export async function checkResumable(
+  runStore: WorkflowRunReadOnlyStore,
+  runId: string,
+  identity: WorkflowResumeIdentity | WorkflowMeta,
+): Promise<ResumeCheckResult> {
+  const eligibility = await checkResumeEligibility(runStore, runId);
+  if (!eligibility.canResume) return eligibility;
+  const status = eligibility.status;
 
   // 4. Check full executable identity. Manifest-only callers remain source
   // compatible but cannot establish a strong identity and therefore fail closed.
@@ -167,6 +258,7 @@ export async function checkResumable(
   } catch (error) {
     return {
       canResume: false,
+      reasonCode: 'EVIDENCE_INVALID',
       reason: `Run ${runId} durable metadata is invalid.`,
       status,
       manifestMatch: false,
@@ -177,6 +269,7 @@ export async function checkResumable(
   if (!isResumeIdentity(identity)) {
     return {
       canResume: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
       reason: `Run ${runId} requires a loaded workflow with a full executable SHA-256 identity.`,
       status,
       manifestMatch: false,
@@ -189,6 +282,7 @@ export async function checkResumable(
   } catch (error) {
     return {
       canResume: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
       reason: `Run ${runId} has no usable strong workflow identity: ${
         error instanceof Error ? error.message : String(error)
       }`,
@@ -203,18 +297,23 @@ export async function checkResumable(
       reason: `Run ${runId} uses a legacy weak workflow identity and requires recovery.`,
       status,
       manifestMatch: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
       storedManifestHash: storedHash,
       currentManifestHash: currentHash,
     };
   }
-  const manifestMatch = storedHash === currentHash;
+  const storedIdentity = matchStoredWorkflowIdentity(storedHash, identity);
+  const manifestMatch = storedIdentity !== undefined;
 
   return {
     canResume: manifestMatch,
+    reasonCode: manifestMatch ? undefined : 'IDENTITY_UNVERIFIED',
+    storedIdentity,
+    currentIdentity: identity.workflowIdentity ?? { domain: 'raw-sha256', digest: currentHash },
     reason: manifestMatch
       ? undefined
       : `Manifest hash mismatch: stored="${storedHash}", current="${currentHash}". ` +
-        'Workflow source has changed since the run was paused.',
+        'Stored workflow identity cannot be verified against the loaded source and route.',
     status,
     manifestMatch,
     storedManifestHash: storedHash,
@@ -242,6 +341,8 @@ export async function prepareResume(
       runId,
       check.reason ?? `run cannot be resumed automatically`,
       check.cause === undefined ? undefined : { cause: check.cause },
+      check.reasonCode,
+      { stored: check.storedManifestHash, current: check.currentManifestHash },
     );
   }
 
