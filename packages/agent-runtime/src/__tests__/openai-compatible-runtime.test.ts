@@ -107,6 +107,98 @@ function adapter(
   });
 }
 
+function terminalFailureCases(): Array<{
+  code: string;
+  budget?: number;
+  timeoutMs?: number;
+  fetchImpl: typeof fetch;
+}> {
+  return [
+    {
+      code: 'PROVIDER_UNAVAILABLE',
+      fetchImpl: vi.fn(async () => {
+        throw new Error('raw transport detail');
+      }) as unknown as typeof fetch,
+    },
+    {
+      code: 'PROVIDER_INVALID_RESPONSE',
+      fetchImpl: vi.fn(async () => new Response('not-json')) as unknown as typeof fetch,
+    },
+    {
+      code: 'TOOL_ARGUMENT_INVALID',
+      fetchImpl: vi.fn(async () =>
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'invalid',
+                    type: 'function',
+                    function: {
+                      name: 'repo_read',
+                      arguments: '{"path":"README.md","extra":true}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { total_tokens: 1 },
+        }),
+      ) as unknown as typeof fetch,
+    },
+    {
+      code: 'TOOL_DENIED',
+      fetchImpl: vi.fn(async () =>
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'denied',
+                    type: 'function',
+                    function: {
+                      name: 'repo_apply_patch',
+                      arguments: '{"path":"blocked.txt","oldText":"","newText":"x"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { total_tokens: 1 },
+        }),
+      ) as unknown as typeof fetch,
+    },
+    {
+      code: 'BUDGET_EXCEEDED',
+      budget: 2,
+      fetchImpl: vi.fn(async () =>
+        jsonResponse({
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { total_tokens: 3 },
+        }),
+      ) as unknown as typeof fetch,
+    },
+    {
+      code: 'PROVIDER_TIMEOUT',
+      timeoutMs: 100,
+      fetchImpl: vi.fn(
+        async (_input: string | URL | Request, init?: RequestInit) =>
+          await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+              once: true,
+            });
+          }),
+      ) as unknown as typeof fetch,
+    },
+  ];
+}
+
 describe('OpenAI-compatible agent runtime', () => {
   let root: string;
 
@@ -950,106 +1042,29 @@ describe('OpenAI-compatible agent runtime', () => {
   it('persists distinct terminal failure evidence for provider, tool, and token failures', async () => {
     const configDir = join(root, '.openslack.local');
     mkdirSync(configDir, { recursive: true });
-    const cases: Array<{ code: string; budget?: number; fetchImpl: typeof fetch }> = [
-      {
-        code: 'PROVIDER_UNAVAILABLE',
-        fetchImpl: vi.fn(async () => {
-          throw new Error('raw transport detail');
-        }) as unknown as typeof fetch,
-      },
-      {
-        code: 'PROVIDER_INVALID_RESPONSE',
-        fetchImpl: vi.fn(async () => new Response('not-json')) as unknown as typeof fetch,
-      },
-      {
-        code: 'TOOL_ARGUMENT_INVALID',
-        fetchImpl: vi.fn(async () =>
-          jsonResponse({
-            choices: [
-              {
-                message: {
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: 'invalid',
-                      type: 'function',
-                      function: {
-                        name: 'repo_read',
-                        arguments: '{"path":"README.md","extra":true}',
-                      },
-                    },
-                  ],
-                },
-              },
-            ],
-            usage: { total_tokens: 1 },
-          }),
-        ) as unknown as typeof fetch,
-      },
-      {
-        code: 'TOOL_DENIED',
-        fetchImpl: vi.fn(async () =>
-          jsonResponse({
-            choices: [
-              {
-                message: {
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: 'denied',
-                      type: 'function',
-                      function: {
-                        name: 'repo_apply_patch',
-                        arguments: '{"path":"blocked.txt","oldText":"","newText":"x"}',
-                      },
-                    },
-                  ],
-                },
-              },
-            ],
-            usage: { total_tokens: 1 },
-          }),
-        ) as unknown as typeof fetch,
-      },
-      {
-        code: 'BUDGET_EXCEEDED',
-        budget: 2,
-        fetchImpl: vi.fn(async () =>
-          jsonResponse({
-            choices: [{ message: { content: '{"ok":true}' } }],
-            usage: { total_tokens: 3 },
-          }),
-        ) as unknown as typeof fetch,
-      },
-      {
-        code: 'PROVIDER_TIMEOUT',
-        fetchImpl: vi.fn(
-          async (_input: string | URL | Request, init?: RequestInit) =>
-            await new Promise<Response>((_resolve, reject) => {
-              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-                once: true,
-              });
-            }),
-        ) as unknown as typeof fetch,
-      },
-    ];
-    for (const failureCase of cases) {
+
+    let configuredTimeout: number | undefined;
+    for (const failureCase of terminalFailureCases()) {
       // Only the hanging-provider case tests the short deadline. Classification
       // and durable recording must not race a 100ms CI scheduling window.
-      writeFileSync(
-        join(configDir, 'agent-runtime.json'),
-        JSON.stringify({
-          providers: {
-            'openai-compatible': {
-              baseUrl: 'https://example.test/v1',
-              model: 'test-model',
-              credentialRef: 'env:TEST_RUNTIME_KEY',
-              timeoutMs: failureCase.code === 'PROVIDER_TIMEOUT' ? 100 : 10_000,
+      const timeoutMs = failureCase.timeoutMs ?? 10_000;
+      if (configuredTimeout !== timeoutMs) {
+        writeFileSync(
+          join(configDir, 'agent-runtime.json'),
+          JSON.stringify({
+            providers: {
+              'openai-compatible': {
+                baseUrl: 'https://example.test/v1',
+                model: 'test-model',
+                credentialRef: 'env:TEST_RUNTIME_KEY',
+                timeoutMs,
+              },
             },
-          },
-        }),
-        'utf-8',
-      );
+          }),
+          'utf-8',
+        );
+        configuredTimeout = timeoutMs;
+      }
       const store = createRunStore(root);
       const launcher = createOpenSlackAgentLauncher({
         runStore: store,
@@ -1077,6 +1092,63 @@ describe('OpenAI-compatible agent runtime', () => {
       expect(JSON.stringify(readTranscript(run.runId, root))).not.toContain('raw transport detail');
     }
   });
+
+  it.each(terminalFailureCases().filter((item) => item.timeoutMs === undefined))(
+    'preserves $code with one millisecond left on the provider deadline',
+    async (failureCase) => {
+      const { context } = createContext(root, { tokens: failureCase.budget ?? 20 });
+      vi.useFakeTimers();
+      try {
+        const delayed = (async (...args: Parameters<typeof fetch>) => {
+          await new Promise<void>((resolve) => setTimeout(resolve, 99));
+          return failureCase.fetchImpl(...args);
+        }) as typeof fetch;
+        const pending = adapter(delayed, { timeoutMs: 100 })
+          .execute(context)
+          .catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(99);
+        const failure = await pending;
+        expect(failure).toBeInstanceOf(Error);
+        expect(failure).not.toBeInstanceOf(ProviderTimeoutError);
+        const classes: Record<string, unknown> = {
+          PROVIDER_UNAVAILABLE: ProviderUnavailableError,
+          PROVIDER_INVALID_RESPONSE: ProviderInvalidResponseError,
+          TOOL_ARGUMENT_INVALID: ToolArgumentInvalidError,
+          TOOL_DENIED: PermissionDeniedError,
+          BUDGET_EXCEEDED: AgentBudgetExceededError,
+        };
+        expect(failure).toBeInstanceOf(classes[failureCase.code]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each(['timeout', 'cancel'] as const)(
+    'classifies a blocked response stream as %s at its deadline',
+    async (mode) => {
+      const { context } = createContext(root);
+      const controller = new AbortController();
+      vi.useFakeTimers();
+      try {
+        const response = new Response(new ReadableStream<Uint8Array>({ start() {}, cancel() {} }));
+        const pending = adapter(vi.fn(async () => response) as typeof fetch, { timeoutMs: 100 })
+          .execute({ ...context, signal: controller.signal })
+          .catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(99);
+        if (mode === 'cancel') controller.abort(new Error('explicit caller cancellation'));
+        await vi.advanceTimersByTimeAsync(1);
+        const error = await pending;
+        if (mode === 'timeout') expect(error).toBeInstanceOf(ProviderTimeoutError);
+        else {
+          expect(error).not.toBeInstanceOf(ProviderTimeoutError);
+          expect(error).toBeInstanceOf(Error);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('records outer cancellation as cancelled rather than a provider timeout', async () => {
     const configDir = join(root, '.openslack.local');
