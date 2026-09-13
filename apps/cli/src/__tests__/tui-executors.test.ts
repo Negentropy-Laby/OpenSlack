@@ -701,6 +701,10 @@ describe('executeWorkflowRun', () => {
     expect(result.success).toBe(true);
     expect(executeDryRun).toHaveBeenCalled();
     expect(buildApprovalManifest).toHaveBeenCalled();
+    const submitted = vi.mocked(executeWorkflowThroughRunner).mock.calls.at(-1)![0];
+    expect(vi.mocked(buildApprovalManifest).mock.calls.at(-1)![3]).toBe(
+      submitted.sourceSnapshot!.workflowSourceHash,
+    );
     expect(executeWorkflowThroughRunner).toHaveBeenCalledWith(
       expect.objectContaining({
         confirmationPolicy: expect.objectContaining({
@@ -709,6 +713,51 @@ describe('executeWorkflowRun', () => {
         }),
       }),
     );
+  });
+
+  it('rejects source changed during dry-run before building approval evidence or submitting', async () => {
+    const {
+      findWorkflow,
+      loadWorkflow,
+      executeDryRun,
+      executeWorkflowThroughRunner,
+      buildApprovalManifest,
+      readWorkflowRunnerSourceBytes,
+      createWorkflowSourceSnapshot,
+    } = await import('@openslack/workflows');
+    const meta = {
+      name: 'test-wf',
+      description: 'Test',
+      phases: [{ title: 'Scan', detail: 'Scan' }],
+      risk: 'low' as const,
+    };
+    const sourceSnapshot = createWorkflowSourceSnapshot(new Uint8Array([1, 2, 3]), meta);
+    vi.mocked(findWorkflow).mockResolvedValue({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
+    vi.mocked(loadWorkflow).mockResolvedValue({
+      meta,
+      format: 'openslack-native',
+      hash: sourceSnapshot.rawHash,
+      sourceSnapshot,
+    });
+    vi.mocked(executeDryRun).mockImplementation(async () => {
+      vi.mocked(readWorkflowRunnerSourceBytes).mockResolvedValueOnce(new Uint8Array([4, 5, 6]));
+      return {
+        dryRun: true,
+        runId: 'dryrun-drift',
+        workflowName: meta.name,
+        simulatedEffects: [],
+        errors: [],
+      };
+    });
+    const result = await executeWorkflowRun('test-wf', 'run', ROOT);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('changed since its snapshot');
+    expect(buildApprovalManifest).not.toHaveBeenCalled();
+    expect(executeWorkflowThroughRunner).not.toHaveBeenCalled();
   });
 
   it('run mode rejects untrusted high-risk workflow', async () => {

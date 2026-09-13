@@ -86,6 +86,11 @@ import {
   WorkflowPausedError,
   decodeRunMetaArguments,
   bindGoWorkflowResumeIdentity,
+  checkResumeEligibility,
+  WorkflowResumeRecoveryRequiredError,
+  workflowSourceSnapshotBytes,
+  verifyWorkflowSourceSnapshot,
+  createWorkflowSourceSnapshot,
   checkResumable,
   prepareResume,
   renderRunHtml,
@@ -2152,15 +2157,20 @@ export function collaborationCommands(): Command {
           if (!admitted) throw new Error('Workflow runner submission was not admitted.');
           const root = findRepoRoot();
           const runId = `run.${randomUUID()}`;
+          const sourceBytes = await readWorkflowRunnerSourceBytes({
+            workflowName: mod.meta.name,
+            discoveredPath: found.path,
+            source: found.source,
+          });
+          const sourceSnapshot = mod.sourceSnapshot
+            ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
+            : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
             workflowRunId: runId,
             workflowSource: found.source,
-            workflowSourceBytes: await readWorkflowRunnerSourceBytes({
-              workflowName: mod.meta.name,
-              discoveredPath: found.path,
-              source: found.source,
-            }),
+            workflowSourceBytes: sourceBytes,
+            sourceSnapshot,
             manifest: mod.meta,
             args,
             budget: {
@@ -2185,7 +2195,7 @@ export function collaborationCommands(): Command {
                 {
                   runId: ((result as Record<string, unknown>).runId as string) ?? 'unknown',
                   workflowName: mod.meta.name,
-                  workflowHash: mod.hash,
+                  workflowHash: sourceSnapshot.workflowSourceHash,
                   mode: 'execute',
                   status: result.status,
                   startedAt: new Date().toISOString(),
@@ -2250,54 +2260,82 @@ export function collaborationCommands(): Command {
         console.error(
           `Run ${runId} is TypeScript-owned historical evidence and cannot be resumed after GS9-H.`,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const store = openWorkflowRunReadOnly(root, 'go');
 
-      // Load run metadata
-      const meta = await store.loadMeta(runId);
-      if (!meta) {
-        console.log(`Run ${runId} not found.`);
-        process.exit(1);
-      }
-
-      // Find the workflow module
-      const found = await findJsWorkflow(meta.workflowName);
-      if (!found) {
-        console.log(`Workflow module "${meta.workflowName}" not found for run ${runId}.`);
-        process.exit(1);
-      }
-
       try {
-        const loaded = await loadWorkflow(found.path);
-        const workflowSourceBytes = await readWorkflowRunnerSourceBytes({
-          workflowName: loaded.meta.name,
-          discoveredPath: found.path,
-          source: found.source,
-        });
-        const mod = bindGoWorkflowResumeIdentity(runId, loaded, workflowSourceBytes, route);
-
-        if (!mod.run && mod.format !== 'claude-ambient') {
-          console.log(`Workflow "${meta.workflowName}" has no run function.`);
-          process.exit(1);
+        const eligibility = await checkResumeEligibility(store, runId);
+        if (!eligibility.canResume) {
+          throw new WorkflowResumeRecoveryRequiredError(
+            runId,
+            eligibility.reason ?? 'run cannot be resumed',
+            eligibility.cause === undefined ? undefined : { cause: eligibility.cause },
+            eligibility.reasonCode,
+          );
+        }
+        // Load run metadata
+        const meta = await store.loadMeta(runId);
+        if (!meta) {
+          console.log(`Run ${runId} not found.`);
+          process.exitCode = 1;
+          return;
         }
 
+        // Find the workflow module
+        const found = await findJsWorkflow(meta.workflowName);
+        if (!found) {
+          console.log(`Workflow module "${meta.workflowName}" not found for run ${runId}.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const loaded = await loadWorkflow(found.path);
+        if (!loaded.run && loaded.format !== 'claude-ambient') {
+          console.log(`Workflow "${meta.workflowName}" has no run function.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const workflowSourceBytes = loaded.sourceSnapshot
+          ? workflowSourceSnapshotBytes(loaded.sourceSnapshot)
+          : await readWorkflowRunnerSourceBytes({
+              workflowName: loaded.meta.name,
+              discoveredPath: found.path,
+              source: found.source,
+            });
+        const mod = bindGoWorkflowResumeIdentity(
+          runId,
+          loaded,
+          workflowSourceBytes,
+          route,
+          composition.config.workspaceId,
+        );
         // Check resumability
         const check = await checkResumable(store, runId, mod);
         if (!check.canResume) {
-          console.log(`Cannot resume run ${runId}: ${check.reason}`);
+          console.error(
+            `${check.reasonCode ?? 'WORKFLOW_RESUME_RECOVERY_REQUIRED'}: Cannot resume run ${runId}: ${check.reason}`,
+          );
+          console.error(historicalExportGuidance(runId));
           if (
             check.manifestMatch === false &&
             check.storedManifestHash &&
             check.currentManifestHash
           ) {
-            console.log(`  Stored hash: ${check.storedManifestHash}`);
-            console.log(`  Current hash: ${check.currentManifestHash}`);
+            console.log(
+              `  Stored hash (${check.storedIdentity?.domain ?? 'unverified legacy domain'}): ${check.storedManifestHash}`,
+            );
+            console.log(
+              `  Current hash (${check.currentIdentity?.domain ?? 'unknown domain'}): ${check.currentManifestHash}`,
+            );
             console.log(
               '  Automatic resume is fail-closed; inspect or repair the durable run state.',
             );
           }
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
 
         // Prepare resume state
@@ -2339,11 +2377,28 @@ export function collaborationCommands(): Command {
           `Submit resume for ${mod.meta.name} to the authenticated Workflow Runner`,
         );
         if (!admitted) throw new Error('Workflow runner resume was not admitted.');
+        // A confirmation wait is unbounded. Re-read before any authority or descriptor mutation.
+        const confirmedBytes = await readWorkflowRunnerSourceBytes({
+          workflowName: mod.meta.name,
+          discoveredPath: found.path,
+          source: found.source,
+        });
+        try {
+          verifyWorkflowSourceSnapshot(mod.sourceSnapshot!, confirmedBytes, mod.meta);
+        } catch (cause) {
+          throw new WorkflowResumeRecoveryRequiredError(
+            runId,
+            'workflow source changed during confirmation',
+            { cause },
+            'SOURCE_DRIFT',
+          );
+        }
         const result = await executeWorkflowThroughRunner({
           workspaceRoot: root,
           workflowRunId: runId,
           workflowSource: found.source,
-          workflowSourceBytes,
+          workflowSourceBytes: confirmedBytes,
+          sourceSnapshot: mod.sourceSnapshot,
           manifest: mod.meta,
           args: decodeRunMetaArguments(meta),
           confirmationPolicy: {
@@ -2357,21 +2412,38 @@ export function collaborationCommands(): Command {
         console.log('Resume Result:');
         console.log(JSON.stringify(result, null, 2));
       } catch (err) {
+        if (err instanceof WorkflowResumeRecoveryRequiredError) {
+          console.error(`${err.code} [${err.reasonCode}]: ${err.message}`);
+          if (err.identities?.stored)
+            console.error(
+              `  Stored hash (${err.identities.domain ?? 'persisted executable identity'}): ${err.identities.stored}`,
+            );
+          if (err.identities?.current)
+            console.error(
+              `  Current hash (${err.identities.domain ?? 'loaded executable identity'}): ${err.identities.current}`,
+            );
+          console.error(historicalExportGuidance(runId));
+          process.exitCode = 1;
+          return;
+        }
         if (err instanceof WorkflowPausedError) {
           console.log(`Workflow paused for approval: ${err.operation}`);
           console.log(`  Run ID: ${err.runId}`);
           console.log(`  Detail: ${err.detail}`);
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
         if (err instanceof WorkflowBudgetPausedError) {
           console.log('Workflow paused for budget approval.');
           console.log(`  Run ID: ${err.runId}`);
           console.log(`  Detail: ${err.detail}`);
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
         console.log(`Resume failed for run ${runId}:`);
         console.log(`  ${(err as Error).message}`);
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
     });
 
@@ -3229,15 +3301,20 @@ export function collaborationCommands(): Command {
           if (!admitted) throw new Error('Workflow runner submission was not admitted.');
           const root = findRepoRoot();
           const runId = `run.${randomUUID()}`;
+          const sourceBytes = await readWorkflowRunnerSourceBytes({
+            workflowName: mod.meta.name,
+            discoveredPath: found.path,
+            source: found.source,
+          });
+          const sourceSnapshot = mod.sourceSnapshot
+            ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
+            : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
             workflowRunId: runId,
             workflowSource: found.source,
-            workflowSourceBytes: await readWorkflowRunnerSourceBytes({
-              workflowName: mod.meta.name,
-              discoveredPath: found.path,
-              source: found.source,
-            }),
+            workflowSourceBytes: sourceBytes,
+            sourceSnapshot,
             manifest: mod.meta,
             args: {
               sourceRepo: config.source.repo,
