@@ -1157,6 +1157,22 @@ The `preview` command also accepts `--format <format>` (`diff`, `json`, or `mark
 
 The workflow engine loads, validates, executes, checkpoints, and resumes OpenSlack workflow modules. Workflows are TypeScript/JavaScript files that declare metadata, permissions, and phases, and can run in preview, dry-run, or execute mode.
 
+`workflow resume` first checks run ownership and resumable state, then verifies the exact
+workflow source and manifest against the original Go route. A verified older Go run using
+raw source SHA-256 remains resumable when its source, route and authority evidence agree;
+its historical metadata is not rewritten. Missing, weak or unmatched identity evidence
+requires recovery. TypeScript-owned historical runs remain read-only.
+
+Failures distinguish `RUN_NOT_FOUND`, `STATUS_NOT_RESUMABLE`, `EVIDENCE_INVALID`,
+`ROUTE_INVALID`, `RUN_MISMATCH`, `WORKSPACE_MISMATCH`, `WORKFLOW_MISMATCH`,
+`VERSION_MISMATCH`, `LOADER_SOURCE_MISMATCH`, `SOURCE_DRIFT`, `MANIFEST_DRIFT` and
+`IDENTITY_UNVERIFIED`. Use `openslack collaboration workflow runs inspect <runId>`
+for evidence and recovery diagnosis. Source edited during confirmation is rejected before
+submission, including with `--yes`; that option does not bypass identity or effect checks.
+Restore the exact original source or use governed recovery/export; changed source cannot
+be force-resumed. Expired initial routing policy does not invalidate an existing run's
+ownership, while current descriptor and execution lease expiry remain enforced.
+
 Real execution is available only through the authenticated loopback Workflow Runner. Configure all
 four values together: `OPENSLACK_WORKFLOW_RUNNER_CONTROL_ORIGIN`,
 `OPENSLACK_WORKFLOW_RUNNER_CONTROL_WORKSPACE_ID`,
