@@ -1,3 +1,4 @@
+import { createWorkflowSourceSnapshot } from './workflow-source-snapshot.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -5,12 +6,11 @@ import { parseManifest, validateManifest } from '../manifest.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule } from '../types.js';
 import { canonicalJson } from './canonical-json.js';
 import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
-import { hashWorkflowSource } from './workflow-identity.js';
 
 export interface WorkflowLoadOptions {
   /**
    * Optional full source identity used only to separate ESM module-cache
-   * entries. Existing callers keep the historical path-only behavior.
+   * entries. By default the exact raw source digest separates revisions.
    */
   moduleCacheKey?: string;
 }
@@ -32,7 +32,6 @@ export async function loadWorkflowFile(
   }
   // Step 1: Read file and compute hash
   const sourceBytes = await readFile(filePath);
-  const hash = hashWorkflowSource(sourceBytes);
   const source = sourceBytes.toString('utf-8');
 
   // Step 2: Static analysis — extract meta without executing module code
@@ -44,19 +43,20 @@ export async function loadWorkflowFile(
     throw new Error(`Invalid workflow manifest in ${filePath}:\n${errors.join('\n')}`);
   }
 
+  const sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
+  const hash = sourceSnapshot.rawHash;
+
   // Step 4: Detect format from source text BEFORE importing
   const sourceFormat = detectFormatFromSource(source);
 
   if (sourceFormat === 'claude-ambient') {
-    return { meta, format: 'claude-ambient', hash, sourceBody: source };
+    return { meta, format: 'claude-ambient', hash, sourceSnapshot, sourceBody: source };
   }
 
   // Step 5: Dynamic import (only after static analysis passes, and not claude-ambient)
   const resolvedPath = resolve(filePath);
   const moduleUrl = pathToFileURL(resolvedPath);
-  if (options.moduleCacheKey !== undefined) {
-    moduleUrl.searchParams.set('openslackSourceHash', options.moduleCacheKey);
-  }
+  moduleUrl.searchParams.set('openslackSourceHash', options.moduleCacheKey ?? hash);
   const mod = (await import(moduleUrl.href)) as Record<string, unknown>;
 
   // Step 6: Detect format from module exports
@@ -93,6 +93,7 @@ export async function loadWorkflowFile(
     run: typeof mod.run === 'function' ? (mod.run as WorkflowModule['run']) : undefined,
     format,
     hash,
+    sourceSnapshot,
   };
 }
 

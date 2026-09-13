@@ -450,12 +450,20 @@ export type { CacheStore, CacheEntry } from './cache.js';
 
 // ── Resume ────────────────────────────────────────────────────────────────────
 export {
+  bindGoWorkflowResumeIdentity,
+  validateGoWorkflowResumeContext,
+  checkResumeEligibility,
   checkResumable,
   prepareResume,
   replayCachedPhases,
   WorkflowResumeRecoveryRequiredError,
 } from './resume.js';
-export type { ResumeCheckResult, ResumeState, WorkflowResumeIdentity } from './resume.js';
+export type {
+  GoWorkflowResumeContext,
+  ResumeCheckResult,
+  ResumeState,
+  WorkflowResumeIdentity,
+} from './resume.js';
 
 // ── Workflow Arguments and Identity ──────────────────────────────────────────
 export {
@@ -1114,3 +1122,12 @@ export {
   WORKFLOW_RUNNER_AUTHORITY_BINDING_SCHEMA_FORMATS,
   registerWorkflowRunnerAuthorityBindingSchemaFormats,
 } from './workflow-runner-authority-binding-schema.js';
+
+export {
+  workflowSourceSnapshotBytes,
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceSnapshot,
+} from './internal/workflow-source-snapshot.js';
+export type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
+
+export type { WorkflowIdentity } from './types.js';

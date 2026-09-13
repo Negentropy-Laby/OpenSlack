@@ -1,3 +1,16 @@
+import {
+  bindGoWorkflowResumeIdentity,
+  validateGoWorkflowResumeContext,
+  checkResumeEligibility,
+} from '../resume.js';
+import {
+  createWorkflowSourceSnapshot,
+  workflowSourceSnapshotBytes,
+  verifyWorkflowSourceSnapshot,
+} from '../internal/workflow-source-snapshot.js';
+import { resolveWorkflowIdentityHash } from '../internal/workflow-identity.js';
+import { validateWorkflowRunRouteReceipt } from '../workflow-run-routing.js';
+import type { WorkflowModule } from '../types.js';
 import { describe, it, expect } from 'vitest';
 import { checkResumable, prepareResume, replayCachedPhases } from '../resume.js';
 import type { ResumeState, WorkflowResumeIdentity } from '../resume.js';
@@ -315,5 +328,167 @@ describe('replayCachedPhases', () => {
     ];
     const result = replayCachedPhases(TEST_MANIFEST, checkpoints);
     expect(result).toHaveLength(3);
+  });
+});
+
+describe('verified Go source identities', () => {
+  function fixture() {
+    const bytes = Buffer.from('exact workflow source');
+    const sourceSnapshot = createWorkflowSourceSnapshot(bytes, TEST_MANIFEST);
+    const loaded: WorkflowModule = {
+      ...identity(TEST_MANIFEST, sourceSnapshot.rawHash),
+      sourceSnapshot,
+    } as WorkflowModule;
+    const route = validateWorkflowRunRouteReceipt({
+      schema: 'openslack.workflow_run_route_receipt.v1',
+      workspaceId: 'workspace.test',
+      runId: 'run-001',
+      workflowId: TEST_MANIFEST.name,
+      workflowVersion: '0.0.0',
+      workflowSourceHash: sourceSnapshot.workflowSourceHash,
+      manifestHash: sourceSnapshot.manifestHash,
+      inputHash: 'a'.repeat(64),
+      route: {
+        backend: 'go',
+        authority: 'workflow-control',
+        routingEpoch: 1,
+        authorityBuildHash: 'b'.repeat(64),
+      },
+      policyHash: 'c'.repeat(64),
+      correlationId: 'correlation.test',
+      qualificationEnvironmentId: 'test',
+      selectedAt: '2020-01-01T00:00:00.000Z',
+      expiresAt: '2020-01-02T00:00:00.000Z',
+    });
+    return { bytes, loaded, route, sourceSnapshot };
+  }
+  it.each(['raw', 'v2'] as const)(
+    'prepares %s metadata without rewriting historical identity or expiring the original route',
+    async (domain) => {
+      const { bytes, loaded, route, sourceSnapshot } = fixture();
+      const { store, fs } = makeStore();
+      const hash = domain === 'raw' ? sourceSnapshot.rawHash : sourceSnapshot.workflowSourceHash;
+      await store.initRun('run-001', makeMeta(TEST_MANIFEST, { manifestHash: hash }));
+      await store.transitionStatus('run-001', 'paused');
+      const before = new Map(fs.files);
+      const bound = bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        loaded,
+        bytes,
+      );
+      expect(loaded.hash).toBe(sourceSnapshot.rawHash);
+      expect(bound.hash).toBe(sourceSnapshot.rawHash);
+      expect(resolveWorkflowIdentityHash(bound)).toBe(route.workflowSourceHash);
+      expect(await checkResumable(store, 'run-001', bound)).toMatchObject({
+        canResume: true,
+        storedIdentity: {
+          domain: domain === 'raw' ? 'raw-sha256' : 'openslack.workflow-runner.workflow-source.v2',
+        },
+      });
+      expect(await prepareResume(store, 'run-001', bound)).toMatchObject({
+        meta: { manifestHash: hash },
+      });
+      expect(fs.files).toEqual(before);
+    },
+  );
+  it.each([
+    ['runId', 'run.other', 'RUN_MISMATCH'],
+    ['workspaceId', 'workspace.other', 'WORKSPACE_MISMATCH'],
+    ['workflowId', 'workflow.other', 'WORKFLOW_MISMATCH'],
+    ['workflowVersion', '2.0.0', 'VERSION_MISMATCH'],
+    ['workflowSourceHash', 'd'.repeat(64), 'SOURCE_DRIFT'],
+    ['manifestHash', 'e'.repeat(64), 'MANIFEST_DRIFT'],
+  ])('diagnoses only the changed %s binding', (field, value, reasonCode) => {
+    const { bytes, loaded, route } = fixture();
+    const changed = validateWorkflowRunRouteReceipt({ ...route, [field]: value });
+    expect(() =>
+      bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', changed, 'workspace.test'),
+        loaded,
+        bytes,
+      ),
+    ).toThrow(expect.objectContaining({ reasonCode }));
+  });
+  it('rejects invalid authority pairing and receipt time ordering at the receipt boundary', () => {
+    const { route } = fixture();
+    for (const changed of [
+      { ...route, route: { ...route.route, authority: 'typescript' } },
+      { ...route, expiresAt: route.selectedAt },
+    ]) {
+      expect(() =>
+        validateGoWorkflowResumeContext('run-001', changed as typeof route, 'workspace.test'),
+      ).toThrow(expect.objectContaining({ reasonCode: 'ROUTE_INVALID' }));
+    }
+  });
+  it('detects loader/source TOCTOU independently of route drift', () => {
+    const { bytes, loaded, route } = fixture();
+    expect(() =>
+      bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        { ...loaded, hash: 'f'.repeat(64) },
+        bytes,
+      ),
+    ).toThrow(expect.objectContaining({ reasonCode: 'LOADER_SOURCE_MISMATCH' }));
+    expect(() =>
+      bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        loaded,
+        Buffer.from('changed'),
+      ),
+    ).toThrow(expect.objectContaining({ reasonCode: 'LOADER_SOURCE_MISMATCH' }));
+  });
+  it('owns snapshot bytes and rejects forged or modified snapshots', () => {
+    const { bytes, loaded, route, sourceSnapshot } = fixture();
+    const mutableRoute = { ...route };
+    const context = validateGoWorkflowResumeContext('run-001', mutableRoute, 'workspace.test');
+    mutableRoute.workflowSourceHash = 'f'.repeat(64);
+    expect(resolveWorkflowIdentityHash(bindGoWorkflowResumeIdentity(context, loaded, bytes))).toBe(
+      sourceSnapshot.workflowSourceHash,
+    );
+    expect(() => bindGoWorkflowResumeIdentity({ ...context }, loaded, bytes)).toThrow(
+      expect.objectContaining({ reasonCode: 'ROUTE_INVALID' }),
+    );
+    const copy = workflowSourceSnapshotBytes(sourceSnapshot);
+    copy[0] ^= 1;
+    expect(workflowSourceSnapshotBytes(sourceSnapshot)).toEqual(bytes);
+    expect(() => verifyWorkflowSourceSnapshot(sourceSnapshot, copy, loaded.meta)).toThrow(
+      'changed',
+    );
+    expect(() => workflowSourceSnapshotBytes({ ...sourceSnapshot })).toThrow('Unrecognized');
+    expect(() =>
+      resolveWorkflowIdentityHash({
+        ...loaded,
+        workflowIdentity: {
+          domain: 'openslack.workflow-runner.workflow-source.v2',
+          digest: sourceSnapshot.workflowSourceHash,
+        },
+      }),
+    ).toThrow('verified source evidence');
+  });
+  it('rejects an unrelated historical hash without claiming actual source drift', async () => {
+    const { bytes, loaded, route } = fixture();
+    const { store } = makeStore();
+    await store.initRun('run-001', makeMeta(TEST_MANIFEST));
+    await store.transitionStatus('run-001', 'paused');
+    const bound = bindGoWorkflowResumeIdentity(
+      validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+      loaded,
+      bytes,
+    );
+    expect(await checkResumable(store, 'run-001', bound)).toMatchObject({
+      canResume: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
+    });
+  });
+  it('checks missing and terminal state before a workflow is loaded', async () => {
+    const { store } = makeStore();
+    expect(await checkResumeEligibility(store, 'run-001')).toMatchObject({
+      reasonCode: 'RUN_NOT_FOUND',
+    });
+    await store.initRun('run-001', makeMeta(TEST_MANIFEST));
+    await store.transitionStatus('run-001', 'completed');
+    expect(await checkResumeEligibility(store, 'run-001')).toMatchObject({
+      reasonCode: 'STATUS_NOT_RESUMABLE',
+    });
   });
 });

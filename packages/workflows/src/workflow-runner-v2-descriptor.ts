@@ -1,3 +1,8 @@
+import {
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceSnapshot,
+  type WorkflowSourceSnapshot,
+} from './internal/workflow-source-snapshot.js';
 import { createHash } from 'node:crypto';
 import { closedDataRecord, ownDataField } from './internal/contract-validation.js';
 import {
@@ -72,6 +77,7 @@ export interface CreateWorkflowRunnerV2ExecutionDescriptorInput {
   readonly workflowVersion: string;
   readonly workflowSource: WorkflowSource;
   readonly workflowSourceBytes: Uint8Array;
+  readonly sourceSnapshot?: WorkflowSourceSnapshot;
   readonly manifest: WorkflowMeta;
   readonly input: Readonly<Record<string, unknown>>;
   readonly confirmationPolicy: ConfirmationPolicy;
@@ -471,6 +477,9 @@ export function validateWorkflowRunnerV2ExecutionDescriptor(
 export function createWorkflowRunnerV2ExecutionDescriptor(
   input: CreateWorkflowRunnerV2ExecutionDescriptorInput,
 ): WorkflowRunnerV2ExecutionDescriptor {
+  const snapshot = input.sourceSnapshot
+    ? verifyWorkflowSourceSnapshot(input.sourceSnapshot, input.workflowSourceBytes, input.manifest)
+    : createWorkflowSourceSnapshot(input.workflowSourceBytes, input.manifest);
   return validateWorkflowRunnerV2ExecutionDescriptor({
     schema: WORKFLOW_RUNNER_V2_DESCRIPTOR_SCHEMA,
     descriptorRef: input.descriptorRef,
@@ -480,8 +489,8 @@ export function createWorkflowRunnerV2ExecutionDescriptor(
     workflowId: input.workflowId,
     workflowVersion: input.workflowVersion,
     workflowSource: input.workflowSource,
-    workflowSourceHash: hashWorkflowRunnerV2Source(input.workflowSourceBytes),
-    manifestHash: hashWorkflowRunnerV2Manifest(input.manifest),
+    workflowSourceHash: snapshot.workflowSourceHash,
+    manifestHash: snapshot.manifestHash,
     inputHash: hashWorkflowRunnerV2Input(input.input),
     input: input.input,
     confirmationPolicy: input.confirmationPolicy,

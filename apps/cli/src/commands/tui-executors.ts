@@ -1,3 +1,4 @@
+import { createWorkflowSourceSnapshot, verifyWorkflowSourceSnapshot } from '@openslack/workflows';
 import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui';
 import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import {
@@ -363,13 +364,21 @@ export async function executeWorkflowRun(
     // Step 1: Dry-run to discover side effects
     const dryResult = await executeDryRun(mod, { manifest: mod.meta, args: {} });
 
+    const sourceBytes = await readWorkflowRunnerSourceBytes({
+      workflowName: mod.meta.name,
+      discoveredPath: found.path,
+      source: found.source,
+    });
+    const sourceSnapshot = mod.sourceSnapshot
+      ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
+      : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
     // Step 2: Build approval manifest from dry-run simulated effects
     const inputHash = hashString(JSON.stringify({}));
     const approvalManifest = buildApprovalManifest(
       mod.meta.name,
       dryResult.runId,
       actorId,
-      mod.hash,
+      sourceSnapshot.workflowSourceHash,
       inputHash,
       mod.meta.risk ?? 'medium',
       dryResult.simulatedEffects,
@@ -380,11 +389,8 @@ export async function executeWorkflowRun(
       workspaceRoot: root,
       workflowRunId: dryResult.runId,
       workflowSource: found.source,
-      workflowSourceBytes: await readWorkflowRunnerSourceBytes({
-        workflowName: mod.meta.name,
-        discoveredPath: found.path,
-        source: found.source,
-      }),
+      workflowSourceBytes: sourceBytes,
+      sourceSnapshot,
       manifest: mod.meta,
       args: {},
       confirmationPolicy: {

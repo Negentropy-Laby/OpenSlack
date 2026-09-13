@@ -1,3 +1,6 @@
+import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
+import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
+import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,7 +44,10 @@ afterEach(async () => {
 async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunId?: string) {
   const rootDir = await mkdtemp(join(tmpdir(), 'openslack-go-execute-'));
   roots.push(rootDir);
+  const sourceBytes = Buffer.from('export const workflow = true;', 'utf8');
+  const sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
   const descriptor = workflowRunnerV2DescriptorFixture({
+    workflowSourceBytes: sourceBytes,
     manifest: meta,
     ...(historicalRunId ? { workflowRunId: historicalRunId } : {}),
     authorityRoute: {
@@ -96,7 +102,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
       return {} as never;
     },
   };
-  const baseDir = join(rootDir, '.openslack.local', 'workflows', 'go-recovery-projections');
+  const baseDir = resolveWorkflowRunProjectionRoot(rootDir, 'go');
   const store = new WorkflowRunnerV2GoProjectionRunStore({ baseDir, descriptor, authority });
   const binding = {
     workspaceId: descriptor.workspaceId,
@@ -150,6 +156,8 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
   const options = { runId, manifest: meta, rootDir, budget, allowUnattended: true };
   return {
     store,
+    baseDir,
+    sourceSnapshot,
     descriptor,
     authority,
     runId,
@@ -158,7 +166,11 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
     reader: new RunStore({ baseDir, access: 'read-only' }),
     execute(run: NonNullable<WorkflowModule['run']>, extra = {}) {
       return (mode === 'run' ? executeGoAuthorityRun : executeGoAuthorityResume)(
-        { meta, hash: descriptor.workflowSourceHash, run },
+        bindGoWorkflowResumeIdentity(
+          validateGoWorkflowResumeContext(runId, route, descriptor.workspaceId),
+          { meta, hash: sourceSnapshot.rawHash, sourceSnapshot, run, format: 'openslack-native' },
+          sourceBytes,
+        ),
         { ...options, ...extra },
         store,
         checkpointAuthority,
@@ -170,6 +182,23 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
 
 // Real recovery files include Windows owner-only ACL checks on each write.
 describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
+  it('actually resumes a historical raw Go projection without rewriting its metadata', async () => {
+    const fixture = await execution('resume');
+    const oldMeta = (await fixture.reader.loadMeta(fixture.runId))!;
+    const historicalMeta = { ...oldMeta, manifestHash: fixture.sourceSnapshot.rawHash };
+    await writeFile(fixture.reader.metaPath(fixture.runId), JSON.stringify(historicalMeta));
+    await expect(
+      fixture.execute(async () => ({ status: 'completed', resumed: true })),
+    ).resolves.toMatchObject({ status: 'completed' });
+    expect(await fixture.reader.loadMeta(fixture.runId)).toEqual(historicalMeta);
+    expect(
+      await fixture.authority.read(fixture.runId, fixture.descriptor.authorityRoute),
+    ).toMatchObject({
+      state: 'completed',
+      workflowSourceHash: fixture.descriptor.workflowSourceHash,
+    });
+  });
+
   it.runIf(process.platform !== 'win32')(
     'reconstructs an accepted historical POSIX run without registering authority',
     async () => {

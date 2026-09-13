@@ -1,3 +1,8 @@
+import {
+  bindWorkflowSourceIdentity,
+  compareWorkflowBinding,
+} from './internal/workflow-identity.js';
+import { createWorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
@@ -482,14 +487,28 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       if (
         sourceIdentity(afterImport.stat) !== prepared.identity ||
         !afterImport.bytes.equals(prepared.bytes) ||
-        workflow.meta.name !== descriptor.workflowId ||
-        (workflow.meta.version ?? '0.0.0') !== descriptor.workflowVersion ||
-        policy.hashManifest(workflow.meta) !== descriptor.manifestHash ||
-        policy.hashSource(afterImport.bytes) !== descriptor.workflowSourceHash
+        compareWorkflowBinding(
+          {
+            workflowId: descriptor.workflowId,
+            workflowVersion: descriptor.workflowVersion,
+            manifestHash: descriptor.manifestHash,
+            workflowSourceHash: descriptor.workflowSourceHash,
+          },
+          {
+            workflowId: workflow.meta.name,
+            workflowVersion: workflow.meta.version ?? '0.0.0',
+            manifestHash: policy.hashManifest(workflow.meta),
+            workflowSourceHash: policy.hashSource(afterImport.bytes),
+          },
+        ) !== undefined
       ) {
         throw new Error(policy.messages.loadedIdentity);
       }
-      return workflow;
+      return bindWorkflowSourceIdentity(
+        workflow,
+        afterImport.bytes,
+        workflow.sourceSnapshot ?? createWorkflowSourceSnapshot(afterImport.bytes, workflow.meta),
+      );
     },
   });
 }

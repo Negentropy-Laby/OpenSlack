@@ -620,34 +620,45 @@ Each log entry is a JSONL line:
 
 ## Resume Logic (`resume.ts`)
 
-The steps below are the historical v1 resume model. Current resume composition first resolves a
-durable Go route and authority head, then submits a sealed runner-v2 descriptor. A TypeScript-owned
-or unrouted historical record can be inspected or exported but cannot enter this execution flow.
+Current resume uses the immutable Go route and authenticated Workflow Control authority,
+then submits a sealed runner-v2 descriptor. TypeScript-owned or unrouted historical records
+remain inspectable and exportable but cannot execute.
 
 ### Resume Flow
 
-```
-1. Load status.json from run directory
-2. Verify status is "paused" (not "completed" or "failed")
-3. Verify manifest hash matches (workflow source unchanged)
-4. Load cached phase results up to current phase
-5. Create new runtime with same runId
-6. Inject cached results into runtime
-7. Resume from next phase
-8. For pipeline items: skip completed items via cache lookup
-```
+1. Resolve the route and check resumable state. Validate receipt, Go ownership, run and workspace
+   once into an opaque context before loading code; the context retains its own canonical receipt.
+2. Load the workflow and retain an owned source snapshot. Reject modules without an execution function.
+3. Consume that context to compare workflow name/version before hashing, then source and manifest.
+   A copied or fabricated context cannot authorize binding.
+4. Verify the persisted executable identity and load the completed checkpoint prefix.
+5. After confirmation, read source again. Any change rejects submission before authority or descriptor writes.
+6. The execution client revalidates the immutable route and authenticated head and submits v2.
+7. The sealed worker independently verifies source before and after import, then validates
+   persisted arguments, budget and checkpoint bindings before resuming execution.
 
-### Manifest Hash Mismatch
+### Source Identity And Recovery
 
-If the workflow source file has changed since the run was paused:
+Raw file SHA-256, domain-separated runner-v2 source SHA-256 and manifest SHA-256 are
+three distinct identities. A loaded module retains its raw `hash`; Go execution carries
+an explicit verified v2 identity. The historical on-disk `manifestHash` field stores an
+executable identity, not the runner descriptor's separate manifest digest.
 
-```
-1. Warn the user: "Workflow source has changed since run was paused"
-2. Offer options:
-   a. Re-validate the new manifest
-   b. Start a fresh run
-   c. Force resume with old manifest (not recommended)
-```
+An older Go projection containing raw SHA-256 can resume only when it matches the exact
+source snapshot and that snapshot's v2 source and manifest match the original route.
+Authority, input, budget and checkpoint checks still apply. This compatibility read does
+not rewrite metadata, convert ownership or migrate records. Weak, missing or unmatched
+identity evidence cannot authorize automatic recovery.
+
+Recovery reports distinguish missing or terminal runs, invalid evidence, run/workspace/
+workflow/version mismatches, loader/source disagreement, source drift, manifest drift and
+unverified historical identity. Use `openslack collaboration workflow runs inspect <runId>`
+to inspect evidence. Restore the exact original workflow or follow the applicable governed
+recovery/export procedure; there is no force-resume override for changed source.
+
+The routing policy expiry limits initial route selection. An existing immutable route
+retains its selection-time evidence after that policy expires; each new execution descriptor
+and lease must still satisfy its own expiry checks.
 
 ## Anthropic Compatibility Shim (`anthropic-compat.ts`)
 

@@ -1,3 +1,9 @@
+import { compareWorkflowBinding } from './internal/workflow-identity.js';
+import {
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceSnapshot,
+  type WorkflowSourceSnapshot,
+} from './internal/workflow-source-snapshot.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -34,9 +40,7 @@ import {
 import {
   createWorkflowRunnerV2ExecutionDescriptor,
   hashWorkflowRunnerV2Input,
-  hashWorkflowRunnerV2Manifest,
   hashWorkflowRunnerV2Result,
-  hashWorkflowRunnerV2Source,
   WORKFLOW_RUNNER_V2_DESCRIPTOR_CODEC,
 } from './workflow-runner-v2-descriptor.js';
 
@@ -46,6 +50,7 @@ export interface ExecuteWorkflowThroughRunnerInput {
   readonly correlationId?: string;
   readonly workflowSource: WorkflowSource;
   readonly workflowSourceBytes: Uint8Array;
+  readonly sourceSnapshot?: WorkflowSourceSnapshot;
   readonly manifest: WorkflowMeta;
   readonly args?: Readonly<Record<string, unknown>>;
   readonly budget?: { readonly tokens: number; readonly costUsd: number };
@@ -123,12 +128,11 @@ async function resolveRunRoute(input: {
       : input.existing;
   if (existing) {
     if (
-      existing.workspaceId !== input.workspaceId ||
-      existing.workflowId !== input.identity.workflowId ||
-      existing.workflowVersion !== input.identity.workflowVersion ||
-      existing.workflowSourceHash !== input.identity.workflowSourceHash ||
-      existing.manifestHash !== input.identity.manifestHash ||
-      existing.inputHash !== input.identity.inputHash ||
+      compareWorkflowBinding(existing, {
+        ...input.identity,
+        workspaceId: input.workspaceId,
+        runId: input.workflowRunId,
+      }) !== undefined ||
       (input.execution.correlationId !== undefined &&
         input.execution.correlationId !== existing.correlationId)
     ) {
@@ -477,6 +481,15 @@ export async function executeWorkflowThroughRunnerWithRuntime(
 ): Promise<RunResult | WorkflowRunnerPausedResult> {
   const now = input.now;
   const created = now();
+  // Own caller data before the first await, but defer identity work until the
+  // route is eligible. Missing source data must not mask a retired TS route.
+  input = {
+    ...input,
+    workflowSourceBytes: input.workflowSourceBytes === undefined
+      ? input.workflowSourceBytes
+      : Buffer.from(input.workflowSourceBytes),
+    manifest: structuredClone(input.manifest),
+  };
   const wholeTimeoutMs = input.wholeTimeoutMs ?? 60 * 60_000;
   const descriptorLifetimeMs = input.descriptorLifetimeMs ?? wholeTimeoutMs;
   const workflowRunId = input.workflowRunId ?? safeGeneratedId('run');
@@ -525,6 +538,9 @@ export async function executeWorkflowThroughRunnerWithRuntime(
         : 'New workflow execution requires an explicit Go authority route.',
     );
   }
+  const sourceSnapshot = input.sourceSnapshot
+    ? verifyWorkflowSourceSnapshot(input.sourceSnapshot, input.workflowSourceBytes, input.manifest)
+    : createWorkflowSourceSnapshot(input.workflowSourceBytes, input.manifest);
   const correlationId =
     existingRoute?.correlationId ?? input.correlationId ?? safeGeneratedId('correlation');
   const selectedAt = existingRoute?.selectedAt ?? created.toISOString();
@@ -606,8 +622,8 @@ export async function executeWorkflowThroughRunnerWithRuntime(
     identity: {
       workflowId: input.manifest.name,
       workflowVersion: input.manifest.version ?? '0.0.0',
-      workflowSourceHash: hashWorkflowRunnerV2Source(input.workflowSourceBytes),
-      manifestHash: hashWorkflowRunnerV2Manifest(input.manifest),
+      workflowSourceHash: sourceSnapshot.workflowSourceHash,
+      manifestHash: sourceSnapshot.manifestHash,
       inputHash: hashWorkflowRunnerV2Input(args),
     },
     selectedAt,
@@ -641,6 +657,7 @@ export async function executeWorkflowThroughRunnerWithRuntime(
     workflowVersion: input.manifest.version ?? '0.0.0',
     workflowSource: input.workflowSource,
     workflowSourceBytes: input.workflowSourceBytes,
+    sourceSnapshot,
     manifest: input.manifest,
     input: args,
     confirmationPolicy: input.confirmationPolicy,

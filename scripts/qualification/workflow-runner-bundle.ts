@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { removeTemporaryDirectory } from './remove-temporary-directory.js';
 import { createWorkflowRunnerDescriptorPathSecurity } from '../../packages/workflows/src/workflow-runner-descriptor-store.js';
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
@@ -214,7 +215,7 @@ async function verifyLocal(nodeExecutable: string): Promise<void> {
     const bytes = await readFile(entrypoint);
     assertNoCheckoutPaths(bytes, [REPOSITORY_ROOT, ancestor]);
   } finally {
-    await rm(ancestor, { recursive: true, force: true });
+    await removeTemporaryDirectory(ancestor);
   }
 }
 

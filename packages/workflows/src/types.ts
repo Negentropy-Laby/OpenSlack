@@ -1,3 +1,4 @@
+import type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 import type { WorkflowArgumentsEnvelope } from './internal/workflow-arguments.js';
 import type {
   WorkflowRunReadDiagnostic,
@@ -488,12 +489,20 @@ export type WorkflowFormat =
   | 'claude-ambient'
   | 'invalid';
 
+export interface WorkflowIdentity {
+  readonly domain: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2';
+  readonly digest: string;
+}
+
 export interface WorkflowModule {
   meta: WorkflowMeta;
   preview?: OpenSlackWorkflow['preview'];
   run?: OpenSlackWorkflow['run'];
   format: WorkflowFormat;
+  /** Raw loader identity; never stamped with a runner-domain hash. */
   hash: string;
+  workflowIdentity?: WorkflowIdentity;
+  sourceSnapshot?: WorkflowSourceSnapshot;
   sourceBody?: string; // Raw source for claude-ambient workflows (no import needed)
   source?: WorkflowSource; // Where the workflow was discovered
 }
