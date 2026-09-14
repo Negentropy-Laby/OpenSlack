@@ -1,3 +1,5 @@
+import type * as MockModule1 from '../../../../packages/operator/src/llm-config.js';
+import type * as MockModule0 from '@openslack/github';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setupCommands } from '../commands/setup.js';
 import { execFileSync as actualExecFileSync, execSync as actualExecSync } from 'node:child_process';
@@ -91,7 +93,7 @@ vi.mock('@openslack/runtime', () => ({
 }));
 
 vi.mock('@openslack/github', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@openslack/github')>();
+  const actual = await importOriginal<typeof MockModule0>();
   return {
     ...actual,
     getClient: vi.fn(async () => ({ isDryRun: true, authMode: 'dry_run' })),
@@ -99,9 +101,9 @@ vi.mock('@openslack/github', async (importOriginal) => {
 });
 
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../../../packages/operator/src/llm-config.js')
-  >('../../../../packages/operator/src/llm-config.js');
+  const actual = await vi.importActual<typeof MockModule1>(
+    '../../../../packages/operator/src/llm-config.js',
+  );
   return {
     describeLLMRoutingConfig: actual.describeLLMRoutingConfig,
   };

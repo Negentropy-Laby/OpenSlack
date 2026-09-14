@@ -1,9 +1,10 @@
+import type * as MockModule0 from '@openslack/runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { productionTickAgent } = vi.hoisted(() => ({ productionTickAgent: vi.fn() }));
 
 vi.mock('@openslack/runtime', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@openslack/runtime')>();
+  const actual = await importOriginal<typeof MockModule0>();
   return { ...actual, tickAgent: productionTickAgent };
 });
 

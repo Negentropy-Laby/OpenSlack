@@ -1,3 +1,4 @@
+import type * as MockModule0 from '@openslack/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -7,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@openslack/github', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@openslack/github')>()),
+  ...(await importOriginal<typeof MockModule0>()),
   completeClaim: mocks.completeClaim,
   heartbeatClaim: mocks.heartbeatClaim,
   reviewClaim: mocks.reviewClaim,
