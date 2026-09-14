@@ -1,6 +1,12 @@
 const { resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+const { require: tsxRequire } = require('tsx/cjs/api');
+const { createGhEnvironment, validateGhGoDebug } = tsxRequire(
+  resolve(__dirname, '../packages/github/src/gh-environment.ts'),
+  __filename,
+);
+
 const repoRoot = resolve(__dirname, '..');
 const openSlackEntry = resolve(repoRoot, 'apps', 'cli', 'src', 'index.ts');
 const tsxLoader = pathToFileURL(require.resolve('tsx')).href;
@@ -23,7 +29,13 @@ const managedChildKeys = [
 ];
 
 function createOpenSlackEnvironment(context, parentEnvironment = process.env) {
+  const value = validateGhGoDebug(parentEnvironment);
   const env = { ...parentEnvironment };
+  for (const key of Object.keys(env)) {
+    if (key.toUpperCase() === 'GODEBUG' || key.toUpperCase() === 'OPENSLACK_BOT_GH_GODEBUG')
+      delete env[key];
+  }
+  if (value) env.OPENSLACK_BOT_GH_GODEBUG = value;
   for (const key of managedChildKeys) delete env[key];
   if (context.forwardPrivateKey !== false) {
     env.OPENSLACK_GITHUB_AUTH_MODE = 'app';
@@ -46,55 +58,6 @@ function createOpenSlackEnvironment(context, parentEnvironment = process.env) {
     env.GITHUB_OWNER = parentEnvironment.GITHUB_OWNER;
     env.GITHUB_REPO = parentEnvironment.GITHUB_REPO;
   }
-  return env;
-}
-
-function validateGhGoDebug(parentEnvironment = process.env) {
-  const value = parentEnvironment.OPENSLACK_BOT_GH_GODEBUG;
-  if (value === undefined || (typeof value === 'string' && value.trim() === '')) return undefined;
-  if (typeof value === 'string' && value.trim() === 'tlsmlkem=0') return 'tlsmlkem=0';
-  const error = new Error('BOT_GH_GODEBUG_INVALID: only tlsmlkem=0 is supported.');
-  error.code = 'BOT_GH_GODEBUG_INVALID';
-  throw error;
-}
-
-function createGhEnvironment(credentials, parentEnvironment = process.env) {
-  const env = {};
-  for (const key of [
-    'PATH',
-    'Path',
-    'PATHEXT',
-    'SystemRoot',
-    'WINDIR',
-    'COMSPEC',
-    'TEMP',
-    'TMP',
-    'TMPDIR',
-    'HOME',
-    'USERPROFILE',
-    'LANG',
-    'LC_ALL',
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'NO_PROXY',
-    'http_proxy',
-    'https_proxy',
-    'no_proxy',
-    'SSL_CERT_FILE',
-    'SSL_CERT_DIR',
-  ]) {
-    if (parentEnvironment[key] !== undefined) env[key] = parentEnvironment[key];
-  }
-  const childGoDebug = validateGhGoDebug(parentEnvironment);
-  if (childGoDebug) env.GODEBUG = childGoDebug;
-  env.GH_TOKEN = credentials.value;
-  env.GH_REPO = credentials.repository;
-  env.GH_PAGER = 'cat';
-  env.PAGER = 'cat';
-  env.GH_PROMPT_DISABLED = '1';
-  env.GH_EDITOR = 'false';
-  env.GH_BROWSER = 'false';
-  env.NO_COLOR = '1';
   return env;
 }
 

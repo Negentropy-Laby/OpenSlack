@@ -4,9 +4,19 @@
 
 const { spawnSync } = require('node:child_process');
 const { formatBotAuthError, withConfiguredBotLaunchIdentity } = require('./bot-gh-token.js');
-const { createOpenSlackEnvironment, openSlackInvocation } = require('./bot-launch-environment.js');
+const {
+  createOpenSlackEnvironment,
+  openSlackInvocation,
+  validateGhGoDebug,
+} = require('./bot-launch-environment.js');
 
 async function main(args = process.argv.slice(2), dependencies = {}) {
+  try {
+    validateGhGoDebug(dependencies.env ?? process.env);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    return 2;
+  }
   try {
     return await (dependencies.withIdentity ?? withConfiguredBotLaunchIdentity)(
       {

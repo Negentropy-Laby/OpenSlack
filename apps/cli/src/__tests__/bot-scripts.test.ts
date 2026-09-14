@@ -603,3 +603,48 @@ describe('bot-auth wrapper scripts', () => {
     );
   });
 });
+
+describe('bot entry configuration preflight', () => {
+  it.each(['bot-gh-command.js', 'bot-openslack-command.js', 'bot-delivery-compat.js'])(
+    '%s rejects invalid configuration before identity or launch',
+    async (name) => {
+      const require = createRequire(import.meta.url);
+      const entry = require(scriptPath(name));
+      const identity = vi.fn();
+      const spawn = vi.fn();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const args = name === 'bot-gh-command.js' ? ['pr', 'edit', '414'] : [];
+        const status = await entry.main(args, {
+          env: { OPENSLACK_BOT_GH_GODEBUG: 'invalid-private-canary' },
+          acquire: identity,
+          withIdentity: identity,
+          withInstallation: identity,
+          spawn,
+        });
+        expect(status).toBe(2);
+        expect(identity).not.toHaveBeenCalled();
+        expect(spawn).not.toHaveBeenCalled();
+        expect(stderr.mock.calls.flat().join('')).toContain('BOT_GH_GODEBUG_INVALID');
+        expect(stderr.mock.calls.flat().join('')).not.toContain('invalid-private-canary');
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
+  it('defers the validated Go opt-in until gh itself is launched', () => {
+    const require = createRequire(import.meta.url);
+    const { createOpenSlackEnvironment } = require(scriptPath('bot-launch-environment.js'));
+    const child = createOpenSlackEnvironment(
+      { forwardPrivateKey: false },
+      {
+        GODEBUG: 'ambient-canary',
+        godebug: 'alias-canary',
+        OPENSLACK_BOT_GH_GODEBUG: ' tlsmlkem=0 ',
+      },
+    );
+    expect(child.GODEBUG).toBeUndefined();
+    expect(child.godebug).toBeUndefined();
+    expect(child.OPENSLACK_BOT_GH_GODEBUG).toBe('tlsmlkem=0');
+  });
+});

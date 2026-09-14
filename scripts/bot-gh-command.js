@@ -17,8 +17,8 @@ async function main(args = process.argv.slice(2), dependencies = {}) {
   }
   try {
     validateGhGoDebug(dependencies.env ?? process.env);
-  } catch {
-    process.stderr.write('BOT_GH_GODEBUG_INVALID: only tlsmlkem=0 is supported.\n');
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
     return 2;
   }
   let credentials;
