@@ -462,6 +462,48 @@ describe('bot-auth wrapper scripts', () => {
     expect(wrapper.isAllowedCommand(['auth', 'token'])).toBe(false);
   });
 
+  it('forwards a named Go runtime opt-in to the gh child without inheriting ambient GODEBUG', () => {
+    const require = createRequire(import.meta.url);
+    const wrapper = require(scriptPath('bot-gh-command.js')) as {
+      createGhEnvironment(
+        credentials: Record<string, unknown>,
+        parent?: Record<string, string>,
+      ): Record<string, string>;
+    };
+    const credentials = {
+      value: 'installation-token-canary',
+      repository: 'Negentropy-Laby/OpenSlack',
+    };
+
+    // The gh child environment is closed by construction, so an ambient GODEBUG
+    // never reaches it. It also carries settings that weaken certificate
+    // verification, which is why it is not inherited wholesale.
+    const ambient = wrapper.createGhEnvironment(credentials, {
+      PATH: 'path-canary',
+      GODEBUG: 'x509ignoreCN=0',
+    });
+    expect(ambient).toMatchObject({ PATH: 'path-canary', GH_TOKEN: 'installation-token-canary' });
+    expect(ambient).not.toHaveProperty('GODEBUG');
+    expect(ambient).not.toHaveProperty('GITHUB_TOKEN');
+
+    // The named opt-in is the only route, and it maps onto GODEBUG for the child.
+    const optedIn = wrapper.createGhEnvironment(credentials, {
+      PATH: 'path-canary',
+      OPENSLACK_BOT_GH_GODEBUG: 'tlsmlkem=0',
+    });
+    expect(optedIn).toMatchObject({ GODEBUG: 'tlsmlkem=0' });
+    expect(optedIn).not.toHaveProperty('OPENSLACK_BOT_GH_GODEBUG');
+
+    // A blank value does not create the variable.
+    for (const blank of ['', '   ']) {
+      const child = wrapper.createGhEnvironment(credentials, {
+        PATH: 'path-canary',
+        OPENSLACK_BOT_GH_GODEBUG: blank,
+      });
+      expect(child).not.toHaveProperty('GODEBUG');
+    }
+  });
+
   it('completes merged task Issues from structured claim evidence without a human token fallback', () => {
     const workflow = readFileSync(
       resolve(repoRoot, '.github', 'workflows', 'openslack-issue-done.yml'),
