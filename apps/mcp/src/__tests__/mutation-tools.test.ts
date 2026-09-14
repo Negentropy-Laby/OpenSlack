@@ -38,6 +38,7 @@ const roots: string[] = [];
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -51,13 +52,20 @@ function operator(): OperatorApplicationContextPort {
   return Object.freeze({}) as unknown as OperatorApplicationContextPort;
 }
 
-function harness(workspaceRoot: string, definitions?: readonly GovernedActionExecutorDefinition[]) {
-  const execute = vi.fn(async () => ({
-    status: 'succeeded' as const,
-    summary: 'Created the governed object.',
-    data: { objectId: 'scenario-instance-1' },
-    evidenceRefs: ['artifact:scenario-instance-1'],
-  }));
+function harness(
+  workspaceRoot: string,
+  definitions?: readonly GovernedActionExecutorDefinition[],
+  options: { beforeExecute?: () => Promise<void>; timeoutMs?: number } = {},
+) {
+  const execute = vi.fn(async () => {
+    await options.beforeExecute?.();
+    return {
+      status: 'succeeded' as const,
+      summary: 'Created the governed object.',
+      data: { objectId: 'scenario-instance-1' },
+      evidenceRefs: ['artifact:scenario-instance-1'],
+    };
+  });
   const registry = createGovernedActionExecutionRegistry(
     definitions ?? [
       {
@@ -85,7 +93,7 @@ function harness(workspaceRoot: string, definitions?: readonly GovernedActionExe
       buildNonce: 'qg5-test-build-nonce-0123456789',
     }),
     audit: async () => undefined,
-    executionTimeoutMs: 10_000,
+    executionTimeoutMs: options.timeoutMs ?? 10_000,
   });
   const mutations = createOpenSlackGovernedMutationPort({
     service,
@@ -155,7 +163,7 @@ function harness(workspaceRoot: string, definitions?: readonly GovernedActionExe
     correlationIdFactory: () => 'mcp:transport-call',
   });
   return {
-    core: new OpenSlackMcpCore(context),
+    core: new OpenSlackMcpCore(context, { timeoutMs: options.timeoutMs ?? 10_000 }),
     execute,
     mutations,
   };
@@ -379,7 +387,21 @@ describe('governed MCP mutation profile', () => {
 
   it('allows only one executor invocation across one hundred concurrent confirmations', async () => {
     const workspaceRoot = root();
-    const { core, execute } = harness(workspaceRoot);
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { core, execute, mutations } = harness(workspaceRoot, undefined, {
+      timeoutMs: 30_000,
+      beforeExecute: async () => {
+        entered();
+        await barrier;
+      },
+    });
     const preview = await core.callTool('openslack_preview_scenario', {
       scenarioId: 'software-delivery',
       input: {},
@@ -388,10 +410,60 @@ describe('governed MCP mutation profile', () => {
       planId: String(preview.structuredContent.planId),
       confirmationToken: String(preview.structuredContent.confirmationToken),
     };
-    const results = await Promise.all(
-      Array.from({ length: 100 }, () => core.callTool('openslack_confirm_plan', request)),
+    let settled = 0;
+    let contendersDone!: () => void;
+    const contenders = new Promise<void>((resolve) => {
+      contendersDone = resolve;
+    });
+    const calls = Array.from({ length: 100 }, () =>
+      core.callTool('openslack_confirm_plan', request).finally(() => {
+        settled += 1;
+        if (settled === 99) contendersDone();
+      }),
     );
+    let watchdog!: ReturnType<typeof setTimeout>;
+    const competitionDeadline = new Promise<never>((_, reject) => {
+      watchdog = setTimeout(
+        () =>
+          reject(new Error(`Confirmation barrier incomplete: ${settled}/99 contenders settled.`)),
+        25_000,
+      );
+    });
+    let results: Awaited<ReturnType<typeof core.callTool>>[];
+    try {
+      await Promise.race([
+        started,
+        competitionDeadline,
+        Promise.all(calls).then(() => {
+          throw new Error('No executor acquired the claim.');
+        }),
+      ]);
+      expect(execute).toHaveBeenCalledOnce();
+      await Promise.race([contenders, competitionDeadline]);
+      release();
+      results = await Promise.all(calls);
+    } finally {
+      clearTimeout(watchdog);
+      release();
+      await Promise.allSettled(calls);
+    }
     expect(execute).toHaveBeenCalledOnce();
+    const finalRecord = await mutations.get(request.planId);
+    expect(finalRecord?.state, JSON.stringify(finalRecord?.execution?.failure)).toBe('succeeded');
+    for (const result of results) {
+      if (result.structuredContent.status === 'completed') continue;
+      expect(
+        result.structuredContent.status,
+        JSON.stringify(result.structuredContent.governance),
+      ).toBe('blocked');
+      expect([
+        'GOVERNED_PLAN_STORE_BUSY',
+        'GOVERNED_PLAN_EXECUTION_ACTIVE',
+        'GOVERNED_PLAN_STORE_CAS_MISMATCH',
+        'GOVERNED_PLAN_STATE_INVALID',
+        'GOVERNED_PLAN_STORE_FILE_CHANGED',
+      ]).toContain((result.structuredContent.governance as { blocker?: string }).blocker);
+    }
     expect(
       results.filter((result) => result.structuredContent.status === 'completed'),
     ).toHaveLength(1);
@@ -400,7 +472,7 @@ describe('governed MCP mutation profile', () => {
         (result) => JSON.parse(result.content[0]!.text).schema === 'openslack.mcp_result.v2',
       ),
     ).toBe(true);
-  });
+  }, 40_000);
 
   it('returns reconciliation_required on a claimed execution deadline and ignores late success', async () => {
     const workspaceRoot = root();

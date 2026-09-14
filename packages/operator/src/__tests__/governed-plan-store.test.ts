@@ -1,7 +1,8 @@
+import type * as FsPromises from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   canonicalGovernedJson,
@@ -12,6 +13,65 @@ import {
   type GovernedPlanRecord,
 } from '../governed-plan.js';
 import { LocalGovernedPlanStore, GovernedPlanStoreError } from '../governed-plan-store.js';
+
+const renameFault = vi.hoisted(() => ({
+  remaining: 0,
+  calls: 0,
+  corruptTemporary: false,
+  corruptTarget: false,
+  removeAfterScan: '',
+  releaseAfterCollision: false,
+  lockReadFault: '' as '' | 'changed' | 'ENOENT' | 'EPERM' | 'EPERM-present',
+}));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof FsPromises>();
+  return {
+    ...actual,
+    realpath: async (...args: Parameters<typeof actual.realpath>) => {
+      if (renameFault.lockReadFault && String(args[0]).endsWith('.lock')) {
+        const fault = renameFault.lockReadFault;
+        renameFault.lockReadFault = '';
+        if (fault === 'changed') {
+          await actual.utimes(args[0], new Date(0), new Date(0));
+        } else {
+          if (fault !== 'EPERM-present') await actual.rm(args[0]);
+          throw Object.assign(new Error('Synthetic lock read failure'), {
+            code: fault === 'EPERM-present' ? 'EPERM' : fault,
+          });
+        }
+      }
+      return actual.realpath(...args);
+    },
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      const entries = await actual.readdir(...args);
+      if (renameFault.removeAfterScan && String(args[0]) === dirname(renameFault.removeAfterScan)) {
+        const path = renameFault.removeAfterScan;
+        renameFault.removeAfterScan = '';
+        await actual.rm(path);
+      }
+      return entries;
+    },
+    link: async (...args: Parameters<typeof actual.link>) => {
+      if (renameFault.releaseAfterCollision && String(args[1]).endsWith('.lock')) {
+        renameFault.releaseAfterCollision = false;
+        await actual.link(...args);
+        await actual.rm(args[1]);
+        throw Object.assign(new Error('Synthetic released contender'), { code: 'EEXIST' });
+      }
+      return actual.link(...args);
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      renameFault.calls += 1;
+      if (renameFault.remaining > 0) {
+        renameFault.remaining -= 1;
+        if (renameFault.corruptTarget) await actual.writeFile(args[1], 'external-change');
+        if (renameFault.corruptTemporary) await actual.writeFile(args[0], 'corrupt');
+        throw Object.assign(new Error('Synthetic sharing violation'), { code: 'EPERM' });
+      }
+      return actual.rename(...args);
+    },
+  };
+});
 
 const roots: string[] = [];
 
@@ -84,6 +144,13 @@ function lockOwner(pid: number) {
 }
 
 afterEach(() => {
+  renameFault.remaining = 0;
+  renameFault.calls = 0;
+  renameFault.corruptTemporary = false;
+  renameFault.corruptTarget = false;
+  renameFault.removeAfterScan = '';
+  renameFault.releaseAfterCollision = false;
+  renameFault.lockReadFault = '';
   vi.restoreAllMocks();
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
 });
@@ -130,6 +197,136 @@ describe('local governed plan store', () => {
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
     expect((await store.load(created.planId))?.state).toBe('executing');
   });
+
+  it.each(['transient', 'persistent', 'changed-temporary', 'changed-target'] as const)(
+    'preserves atomic replacement through %s sharing faults',
+    async (scenario) => {
+      const root = makeRoot();
+      const store = new LocalGovernedPlanStore(root);
+      const created = await store.create(makeRecord());
+      const original = readFileSync(paths(root, created.planId).record, 'utf8');
+      renameFault.calls = 0;
+      renameFault.remaining = scenario === 'persistent' ? 100 : 1;
+      renameFault.corruptTemporary = scenario === 'changed-temporary';
+      renameFault.corruptTarget = scenario === 'changed-target';
+      const result = store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      });
+      if (process.platform === 'win32' && scenario === 'transient') {
+        await expect(result).resolves.toMatchObject({ state: 'cancelled', revision: 2 });
+        expect(renameFault.calls).toBe(2);
+      } else {
+        await expect(result).rejects.toMatchObject({
+          code:
+            process.platform === 'win32' && scenario.startsWith('changed-')
+              ? 'GOVERNED_PLAN_STORE_FILE_CHANGED'
+              : 'EPERM',
+        });
+        expect(readFileSync(paths(root, created.planId).record, 'utf8')).toBe(
+          scenario === 'changed-target' ? 'external-change' : original,
+        );
+        expect(readdirSync(join(root, 'locks'))).toEqual([]);
+        expect(readdirSync(join(root, 'records'))).toHaveLength(1);
+        expect(renameFault.calls).toBe(
+          process.platform === 'win32' && scenario === 'persistent' ? 20 : 1,
+        );
+        if (scenario === 'persistent') {
+          renameFault.remaining = 0;
+          await expect(
+            store.cancel({
+              planId: created.planId,
+              expectedRevision: 1,
+              updatedAt: '2026-07-27T00:01:00.000Z',
+            }),
+          ).resolves.toMatchObject({ state: 'cancelled' });
+        }
+      }
+    },
+  );
+
+  it('retries a lock released before the first collision read', async () => {
+    const store = new LocalGovernedPlanStore(makeRoot());
+    const created = await store.create(makeRecord());
+    renameFault.releaseAfterCollision = true;
+    await expect(
+      store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      }),
+    ).resolves.toMatchObject({ state: 'cancelled' });
+    expect(renameFault.releaseAfterCollision).toBe(false);
+  });
+
+  it.each(['changed', 'ENOENT', 'EPERM', 'EPERM-present'] as const)(
+    'handles %s during incumbent lock verification without deleting a live lock',
+    async (fault) => {
+      const root = makeRoot();
+      const store = new LocalGovernedPlanStore(root);
+      const created = await store.create(makeRecord());
+      const lockPath = paths(root, created.planId).lock;
+      const owner = `${canonicalGovernedJson(lockOwner(process.pid))}\n`;
+      writeFileSync(lockPath, owner);
+      renameFault.lockReadFault = fault;
+      const operation = store.cancel({
+        planId: created.planId,
+        expectedRevision: 1,
+        updatedAt: '2026-07-27T00:01:00.000Z',
+      });
+      if (fault === 'changed' || fault === 'EPERM-present') {
+        await expect(operation).rejects.toMatchObject({
+          code: fault === 'changed' ? 'GOVERNED_PLAN_STORE_BUSY' : 'EPERM',
+        });
+        expect(readFileSync(lockPath, 'utf8')).toBe(owner);
+        expect((await store.load(created.planId))?.state).toBe('pending');
+      } else if (fault === 'EPERM' && process.platform !== 'win32') {
+        await expect(operation).rejects.toMatchObject({ code: 'EPERM' });
+      } else {
+        await expect(operation).resolves.toMatchObject({ state: 'cancelled' });
+      }
+    },
+  );
+
+  it.each(['record-temp', 'lock-temp', 'lock', 'record', 'unknown', 'symlink'] as const)(
+    'handles a disappeared %s directory entry without weakening validation',
+    async (kind) => {
+      const root = makeRoot();
+      const store = new LocalGovernedPlanStore(root);
+      const created = await store.create(makeRecord());
+      const id = hash(created.planId);
+      const uuid = '123e4567-e89b-42d3-a456-426614174000';
+      const path =
+        kind === 'record'
+          ? paths(root, created.planId).record
+          : join(
+              root,
+              kind === 'record-temp' ? 'records' : 'locks',
+              kind === 'record-temp'
+                ? `.${id}.${uuid}.tmp`
+                : kind === 'lock-temp'
+                  ? `.lock.${id}.1.${uuid}.0.${uuid}.tmp`
+                  : kind === 'lock' || kind === 'symlink'
+                    ? `${id}.lock`
+                    : 'unknown',
+            );
+      if (kind === 'symlink') symlinkSync(paths(root, created.planId).record, path, 'file');
+      else if (kind !== 'record') writeFileSync(path, 'temporary');
+      renameFault.removeAfterScan = path;
+      if (['record-temp', 'lock-temp', 'lock'].includes(kind)) {
+        await expect(store.load(created.planId)).resolves.toMatchObject({ state: 'pending' });
+      } else {
+        await expect(store.load(created.planId)).rejects.toMatchObject({
+          code:
+            kind === 'record'
+              ? 'GOVERNED_PLAN_STORE_FILE_CHANGED'
+              : 'GOVERNED_PLAN_STORE_FILE_UNSAFE',
+        });
+      }
+      expect(renameFault.removeAfterScan).toBe('');
+    },
+  );
 
   it('rejects duplicate-key/noncanonical persisted JSON', async () => {
     const root = makeRoot();

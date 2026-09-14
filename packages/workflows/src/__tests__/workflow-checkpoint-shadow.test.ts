@@ -398,107 +398,111 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
     });
   });
 
-  it('commits ordered hash-only checkpoints and advances each runner generation once', async () => {
-    const workspace = await root();
-    const baseDir = join(workspace, 'workflows');
-    await mkdir(join(baseDir, 'runs', 'run.checkpoint.1'), { recursive: true });
-    const bodies: string[] = [];
-    const fetcher = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const body = String(init?.body);
-      bodies.push(body);
-      const envelope = JSON.parse(body) as {
-        observationHash: string;
-        sourceSequence: number;
-        operation: 'checkpoint_commit' | 'resume_advance';
-        observation: { runId: string; runner: { workspaceId: string } };
-      };
-      return new Response(
-        workflowCheckpointCanonicalJson({
-          schema: 'openslack.workflow_checkpoint_shadow_receipt.v1',
-          status: 'accepted',
-          idempotencyKey: `openslack.workflow-checkpoint-shadow.v1.${envelope.observationHash}`,
-          receiptId: `receipt.${envelope.sourceSequence}`,
-          observationId: `observation.${envelope.sourceSequence}`,
-          workspaceId: envelope.observation.runner.workspaceId,
-          runId: envelope.observation.runId,
-          sourceSequence: envelope.sourceSequence,
-          operation: envelope.operation,
-          parity: 'matched',
-          mismatchCode: null,
-          reconciliationToken: null,
-          envelopeHash: workflowCheckpointHash(envelope),
-          observationHash: envelope.observationHash,
-          serviceBuildHash: 'e'.repeat(64),
-          committedAt: '2026-08-12T00:00:00.000Z',
-        }),
-        { status: 201, headers: { 'content-type': 'application/json' } },
+  it(
+    'commits ordered hash-only checkpoints and advances each runner generation once',
+    async () => {
+      const workspace = await root();
+      const baseDir = join(workspace, 'workflows');
+      await mkdir(join(baseDir, 'runs', 'run.checkpoint.1'), { recursive: true });
+      const bodies: string[] = [];
+      const fetcher = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const body = String(init?.body);
+        bodies.push(body);
+        const envelope = JSON.parse(body) as {
+          observationHash: string;
+          sourceSequence: number;
+          operation: 'checkpoint_commit' | 'resume_advance';
+          observation: { runId: string; runner: { workspaceId: string } };
+        };
+        return new Response(
+          workflowCheckpointCanonicalJson({
+            schema: 'openslack.workflow_checkpoint_shadow_receipt.v1',
+            status: 'accepted',
+            idempotencyKey: `openslack.workflow-checkpoint-shadow.v1.${envelope.observationHash}`,
+            receiptId: `receipt.${envelope.sourceSequence}`,
+            observationId: `observation.${envelope.sourceSequence}`,
+            workspaceId: envelope.observation.runner.workspaceId,
+            runId: envelope.observation.runId,
+            sourceSequence: envelope.sourceSequence,
+            operation: envelope.operation,
+            parity: 'matched',
+            mismatchCode: null,
+            reconciliationToken: null,
+            envelopeHash: workflowCheckpointHash(envelope),
+            observationHash: envelope.observationHash,
+            serviceBuildHash: 'e'.repeat(64),
+            committedAt: '2026-08-12T00:00:00.000Z',
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        );
+      });
+      const publisher = createWorkflowCheckpointShadowHttpPublisher({
+        endpoint: 'http://127.0.0.1:8082',
+        bearerToken: 'qualification-bearer-token-value',
+        callerId: 'workflow-runner',
+        fetch: fetcher as typeof globalThis.fetch,
+      });
+      const observer = await createWorkflowCheckpointObservationPort({
+        enabled: true,
+        journalRoot: join(workspace, 'journal'),
+        publisher,
+      });
+      const store = new RunStore({
+        access: createWorkflowRunStoreRecoveryAccess(),
+        baseDir,
+        checkpointObservationPort: observer,
+      });
+
+      expect(
+        (await store.initializeCheckpointControl('run.checkpoint.1', binding())).revision,
+      ).toBe(1);
+      const first = await store.commitWorkflowCheckpoint(
+        'run.checkpoint.1',
+        binding(),
+        'phase-0',
+        0,
+        {
+          artifact: Buffer.from('SECRET-ARTIFACT-BYTES'),
+          resultHash: '2'.repeat(64),
+          cacheKeyHash: '3'.repeat(64),
+        },
       );
-    });
-    const publisher = createWorkflowCheckpointShadowHttpPublisher({
-      endpoint: 'http://127.0.0.1:8082',
-      bearerToken: 'qualification-bearer-token-value',
-      callerId: 'workflow-runner',
-      fetch: fetcher as typeof globalThis.fetch,
-    });
-    const observer = await createWorkflowCheckpointObservationPort({
-      enabled: true,
-      journalRoot: join(workspace, 'journal'),
-      publisher,
-    });
-    const store = new RunStore({
-      access: createWorkflowRunStoreRecoveryAccess(),
-      baseDir,
-      checkpointObservationPort: observer,
-    });
+      expect(first).toMatchObject({ revision: 2, resumeGeneration: 0, duplicate: false });
+      await expect(
+        store.commitWorkflowCheckpoint('run.checkpoint.1', binding(), 'phase-0', 0, {
+          artifact: Buffer.from('SECRET-ARTIFACT-BYTES'),
+          resultHash: '2'.repeat(64),
+          cacheKeyHash: '3'.repeat(64),
+        }),
+      ).resolves.toMatchObject({ revision: 2, duplicate: true });
 
-    expect((await store.initializeCheckpointControl('run.checkpoint.1', binding())).revision).toBe(
-      1,
-    );
-    const first = await store.commitWorkflowCheckpoint(
-      'run.checkpoint.1',
-      binding(),
-      'phase-0',
-      0,
-      {
-        artifact: Buffer.from('SECRET-ARTIFACT-BYTES'),
-        resultHash: '2'.repeat(64),
-        cacheKeyHash: '3'.repeat(64),
-      },
-    );
-    expect(first).toMatchObject({ revision: 2, resumeGeneration: 0, duplicate: false });
-    await expect(
-      store.commitWorkflowCheckpoint('run.checkpoint.1', binding(), 'phase-0', 0, {
-        artifact: Buffer.from('SECRET-ARTIFACT-BYTES'),
-        resultHash: '2'.repeat(64),
-        cacheKeyHash: '3'.repeat(64),
-      }),
-    ).resolves.toMatchObject({ revision: 2, duplicate: true });
+      expect(
+        (await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1))
+          .resumeGeneration,
+      ).toBe(1);
+      expect(
+        (await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1))
+          .revision,
+      ).toBe(3);
+      await expect(
+        store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(), 'phase-1', 1),
+      ).rejects.toThrow('stale');
+      await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(2), 'phase-1', 1, {
+        artifact: Buffer.from('SECOND-SECRET'),
+      });
+      await observer.flush();
 
-    expect(
-      (await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1))
-        .resumeGeneration,
-    ).toBe(1);
-    expect(
-      (await store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(2), 'phase-1', 1))
-        .revision,
-    ).toBe(3);
-    await expect(
-      store.beginCheckpointResumeGeneration('run.checkpoint.1', binding(), 'phase-1', 1),
-    ).rejects.toThrow('stale');
-    await store.commitWorkflowCheckpoint('run.checkpoint.1', binding(2), 'phase-1', 1, {
-      artifact: Buffer.from('SECOND-SECRET'),
-    });
-    await observer.flush();
-
-    const state = await store.loadCheckpointControl('run.checkpoint.1');
-    expect(state).toMatchObject({ revision: 4, resumeGeneration: 1 });
-    expect(state?.checkpoints).toHaveLength(2);
-    expect(bodies).toHaveLength(3);
-    expect(bodies.map((body) => JSON.parse(body).sourceSequence)).toEqual([1, 2, 3]);
-    expect(bodies.join('\n')).not.toContain('SECRET');
-    expect(bodies.join('\n')).not.toContain('raw-key');
-    expect(await readdir(join(workspace, 'journal', 'entries'))).toEqual([]);
-  }, 30_000);
+      const state = await store.loadCheckpointControl('run.checkpoint.1');
+      expect(state).toMatchObject({ revision: 4, resumeGeneration: 1 });
+      expect(state?.checkpoints).toHaveLength(2);
+      expect(bodies).toHaveLength(3);
+      expect(bodies.map((body) => JSON.parse(body).sourceSequence)).toEqual([1, 2, 3]);
+      expect(bodies.join('\n')).not.toContain('SECRET');
+      expect(bodies.join('\n')).not.toContain('raw-key');
+      expect(await readdir(join(workspace, 'journal', 'entries'))).toEqual([]);
+    },
+    process.platform === 'win32' ? 120_000 : 30_000,
+  );
 
   it('keeps the TS commit durable when the post-commit publisher fails', async () => {
     const workspace = await root();

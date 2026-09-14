@@ -265,6 +265,7 @@ async function scan(
   directory: string,
   pattern: RegExp,
   allowedTemporary?: RegExp,
+  removableEntries = false,
 ): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true });
   if (entries.length > MAX_RECORDS * 2) {
@@ -277,17 +278,26 @@ async function scan(
   let bytes = 0;
   for (const entry of entries) {
     const path = join(directory, entry.name);
-    const stat = await lstat(path);
-    if (
-      entry.isSymbolicLink() ||
-      stat.isSymbolicLink() ||
-      !entry.isFile() ||
-      !stat.isFile() ||
-      (!pattern.test(entry.name) && !(allowedTemporary && allowedTemporary.test(entry.name)))
-    ) {
+    const temporary = Boolean(allowedTemporary?.test(entry.name));
+    if (entry.isSymbolicLink() || !entry.isFile() || (!pattern.test(entry.name) && !temporary)) {
       return fail(
         'GOVERNED_PLAN_STORE_FILE_UNSAFE',
         'Governed plan store contains an unknown or unsafe entry.',
+        path,
+      );
+    }
+    const stat = await lstatIfPresent(path);
+    if (!stat && (temporary || removableEntries)) continue;
+    if (!stat)
+      return fail(
+        'GOVERNED_PLAN_STORE_FILE_CHANGED',
+        'Governed plan record disappeared during scan.',
+        path,
+      );
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      return fail(
+        'GOVERNED_PLAN_STORE_FILE_UNSAFE',
+        'Governed plan store contains an unsafe entry.',
         path,
       );
     }
@@ -345,7 +355,7 @@ async function prepare(configuredRoot: string): Promise<PreparedStore> {
     );
   }
   await scan(recordsReal, RECORD_NAME, TEMP_NAME);
-  await scan(locksReal, LOCK_NAME, LOCK_TEMP_NAME);
+  await scan(locksReal, LOCK_NAME, LOCK_TEMP_NAME, true);
   return {
     root: configuredRoot,
     rootReal,
@@ -575,8 +585,9 @@ async function readLock(
   path: string,
 ): Promise<{ readonly owner: LockOwner; readonly stat: Stats }> {
   const initial = await lstatIfPresent(path);
+  if (!initial)
+    throw Object.assign(new Error('Governed plan lock disappeared.'), { code: 'ENOENT' });
   if (
-    !initial ||
     !initial.isFile() ||
     initial.isSymbolicLink() ||
     initial.size < 1 ||
@@ -714,7 +725,26 @@ async function acquireLock(prepared: PreparedStore, planId: string): Promise<Hel
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         await handle.close();
         await rm(temporary);
-        await removeProvablyStaleLock(prepared, path, await readLock(prepared, path));
+        try {
+          await removeProvablyStaleLock(prepared, path, await readLock(prepared, path));
+        } catch (error) {
+          // A released/replaced lock cannot establish a stale owner. Retry only
+          // via exclusive publication, without deleting an unverified incumbent.
+          // Exhaustion is contention, never permission to execute without a lock.
+          if (
+            (error instanceof GovernedPlanStoreError &&
+              error.code === 'GOVERNED_PLAN_STORE_FILE_CHANGED') ||
+            (error as NodeJS.ErrnoException).code === 'ENOENT'
+          )
+            continue;
+          if (
+            process.platform === 'win32' &&
+            (error as NodeJS.ErrnoException).code === 'EPERM' &&
+            !(await lstatIfPresent(path))
+          )
+            continue;
+          throw error;
+        }
         continue;
       }
       await syncDirectory(prepared.locksReal);
@@ -879,7 +909,33 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
       }
       const temporary = await writeTemporary(prepared, planId, `${canonicalGovernedJson(next)}\n`);
       try {
-        await rename(temporary, loaded.path);
+        const temporaryStat = await lstat(temporary);
+        for (let attempt = 0; ; attempt += 1) {
+          if (
+            !stableIdentity(loaded.stat, await lstat(loaded.path)) ||
+            !stableIdentity(temporaryStat, await lstat(temporary))
+          ) {
+            return fail(
+              'GOVERNED_PLAN_STORE_FILE_CHANGED',
+              'Governed plan changed during replacement retry.',
+            );
+          }
+          try {
+            await rename(temporary, loaded.path);
+            break;
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            // Windows readers can temporarily prevent replace-by-rename. Keep the
+            // original record, fsynced temporary, and exclusive claim lock intact.
+            if (
+              process.platform !== 'win32' ||
+              !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '') ||
+              attempt >= 19
+            )
+              throw error;
+            await new Promise<void>((resolveRetry) => setTimeout(resolveRetry, 5));
+          }
+        }
         await syncDirectory(prepared.recordsReal);
       } finally {
         await rm(temporary, { force: true });
