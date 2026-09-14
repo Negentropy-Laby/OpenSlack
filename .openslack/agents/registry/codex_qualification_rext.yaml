@@ -36,9 +36,9 @@ permissions:
       - .openslack/outbox/**
     deny:
       - .env
-      - "**/.env"
-      - "**/*.pem"
-      - "**/*.key"
+      - '**/.env'
+      - '**/*.pem'
+      - '**/*.key'
       - secrets/**
       - credentials/**
       - .github/**
@@ -66,8 +66,6 @@ repositories:
     default_branch: main
 execution:
   max_parallel_tasks: 1
-  lease_ttl_minutes: 120
-  heartbeat_interval_minutes: 15
   max_task_runtime_minutes: 240
 output_contract:
   must_create:
