@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { constants as fsConstants, type Stats } from 'node:fs';
+import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import { lstat, open, realpath, rename, rm, type FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
@@ -526,16 +526,19 @@ async function safeLockDirectory(workspaceRoot: string): Promise<{
   return { root, directory, realDirectory };
 }
 
-async function lstatIfPresent(path: string): Promise<Stats | undefined> {
+async function lstatIfPresent(path: string): Promise<BigIntStats | undefined> {
   try {
-    return await lstat(path);
+    return await lstat(path, { bigint: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
 }
 
-async function assertSafeExistingLockFile(path: string, realDirectory: string): Promise<Stats> {
+async function assertSafeExistingLockFile(
+  path: string,
+  realDirectory: string,
+): Promise<BigIntStats> {
   const pathStat = await lstatIfPresent(path);
   if (!pathStat) {
     return fail('PLUGIN_LOCK_FILE_UNSAFE', path, 'Plugin lock file does not exist.');
@@ -554,17 +557,18 @@ async function assertSafeExistingLockFile(path: string, realDirectory: string): 
   return pathStat;
 }
 
-function statIdentityMatches(left: Stats, right: Stats): boolean {
+// NTFS file identities can exceed Number.MAX_SAFE_INTEGER. Never round them.
+function statIdentityMatches(left: BigIntStats, right: BigIntStats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-function stableFileStatMatches(before: Stats, after: Stats): boolean {
+function stableFileStatMatches(before: BigIntStats, after: BigIntStats): boolean {
   return (
     before.dev === after.dev &&
     before.ino === after.ino &&
     before.size === after.size &&
-    before.mtimeMs === after.mtimeMs &&
-    before.ctimeMs === after.ctimeMs
+    before.mtimeNs === after.mtimeNs &&
+    before.ctimeNs === after.ctimeNs
   );
 }
 
@@ -583,7 +587,7 @@ const NO_PLUGIN_LOCK_IO_TEST_HOOKS: PluginLockIoTestHooks = Object.freeze({});
 
 interface SafePluginLockRead {
   readonly bytes: Buffer;
-  readonly identity: Stats;
+  readonly identity: BigIntStats;
 }
 
 async function readPluginLockBytes(
@@ -596,7 +600,7 @@ async function readPluginLockBytes(
   const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
   const handle = await open(path, fsConstants.O_RDONLY | noFollow);
   try {
-    const before = await handle.stat();
+    const before = await handle.stat({ bigint: true });
     if (!before.isFile() || !statIdentityMatches(pathStat, before)) {
       return fail(
         'PLUGIN_LOCK_FILE_UNSAFE',
@@ -604,7 +608,7 @@ async function readPluginLockBytes(
         'Plugin lock changed identity before it could be read.',
       );
     }
-    if (before.size > MAX_PLUGIN_LOCK_BYTES) {
+    if (before.size > BigInt(MAX_PLUGIN_LOCK_BYTES)) {
       return fail(
         'PLUGIN_LOCK_TOO_LARGE',
         path,
@@ -627,8 +631,8 @@ async function readPluginLockBytes(
       );
     }
 
-    const after = await handle.stat();
-    if (!stableFileStatMatches(before, after) || after.size !== length) {
+    const after = await handle.stat({ bigint: true });
+    if (!stableFileStatMatches(before, after) || after.size !== BigInt(length)) {
       return fail('PLUGIN_LOCK_FILE_UNSAFE', path, 'Plugin lock changed while it was being read.');
     }
     await testHooks.afterBoundedRead?.(path);
