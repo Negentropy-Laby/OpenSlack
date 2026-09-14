@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseAgentRegistry } from '@openslack/workspace';
 import { authorizeAgentAction, resolvePermissionSnapshot, pathGlobCovers } from '@openslack/kernel';
-import { filterByCapability, type IssueTaskManifest } from '@openslack/github';
+import { filterByCapability, runAutoClaimGates, type IssueTaskManifest } from '@openslack/github';
 
 const root = process.cwd();
 const agentId = 'codex_qualification_rext';
@@ -26,13 +26,32 @@ const snapshot = resolvePermissionSnapshot({
 const capabilities = ['go', 'typescript', 'postgresql', 'test_writing'];
 const manifest: IssueTaskManifest = {
   schema: 'openslack.github_issue_task.v1',
-  task_id: 'TASK-FIXTURE',
+  task_id: 'TASK-2026-000411',
   title: 'Qualification scope fixture',
   status: 'blocked',
   agent_type: 'codex',
   risk_level: 'medium',
   required_capabilities: capabilities,
 };
+function taskGate(path: string, forbiddenPaths: string[] = []) {
+  return runAutoClaimGates({
+    candidate: {
+      state: 'open',
+      labels: ['openslack:task', 'openslack:ready', 'agent-type:codex'],
+      body:
+        '```openslack-task\n' +
+        JSON.stringify({
+          ...manifest,
+          status: 'ready',
+          allowed_paths: [path],
+          forbidden_paths: forbiddenPaths,
+        }) +
+        '\n```',
+    },
+    agentCapabilities: registry.capabilities!,
+    agentMaxRiskLevel: 'medium',
+  });
+}
 describe('manual R-EXT onboarding package', () => {
   it('keeps the administrator capability set complete', () => {
     expect(filterByCapability(manifest, registry.capabilities!).allowed).toBe(true);
@@ -47,13 +66,16 @@ describe('manual R-EXT onboarding package', () => {
     '.openslack/workflows/r-ext-go-qualification.mjs',
     'scripts/r-ext-go-qualification/new-fixture.ts',
     'packages/workflows/src/__tests__/r-ext-go-qualification.test.ts',
-  ])('authorizes planned creation within both grants: %s', (path) => {
+  ])('authorizes planned creation through task and registry gates: %s', (path) => {
+    const gate = taskGate(path);
+    expect(gate.allowed).toBe(true);
+    expect(gate.declaredScope).toEqual([path]);
     expect(
       authorizeAgentAction({
         snapshot,
-        action: 'task.sync',
-        riskZone: 'yellow',
-        changedPaths: [path],
+        action: 'task.claim',
+        riskZone: gate.riskZone,
+        declaredScope: gate.declaredScope,
       }).decision,
     ).toBe('allow');
   });
@@ -68,10 +90,16 @@ describe('manual R-EXT onboarding package', () => {
       authorizeAgentAction({ snapshot, action: 'task.sync', changedPaths: [path] }).decision,
     ).toBe('deny');
   });
-  it('denies a registry-authorized path outside the task and forbids approval', () => {
-    expect(pathGlobCovers('.openslack/tasks/**', 'scripts/r-ext-go-qualification/other.ts')).toBe(
-      false,
-    );
+  it('honors a task prohibition on a registry-authorized path and forbids approval', () => {
+    const path = 'scripts/r-ext-go-qualification/other.ts';
+    expect(
+      authorizeAgentAction({ snapshot, action: 'task.claim', declaredScope: [path] }).decision,
+    ).toBe('allow');
+    expect(taskGate(path, ['scripts/r-ext-go-qualification/**'])).toMatchObject({
+      allowed: false,
+      code: 'MANIFEST_INVALID',
+      reason: expect.stringContaining('Path conflict'),
+    });
     expect(authorizeAgentAction({ snapshot, action: 'github.approve' }).decision).toBe('deny');
   });
   it('ships only manual guidance with resolvable tracked references', () => {
