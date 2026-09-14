@@ -78,3 +78,41 @@ extend the lease. There is no separately consumed onboarding lease policy.
 Keep bootstrap, task readiness, claim, source validation, hosted CI, human approval and
 external qualification as separate evidence. Preserve blocked/unknown outcomes and use
 the documented claim recovery flow. No local success implies release or live readiness.
+
+## Generation validation and recovery
+
+Agent IDs are case-preserving portable names of 1–128 characters: start with a letter
+or digit, then use letters, digits, dot, underscore or hyphen. Trailing dots, path
+separators and Windows device names (including extensions) are rejected. Existing
+identities are not renamed. Runtime must be `claude_code`, `codex` or `custom_runner`;
+the latter uses provider `unconfigured` until an administrator configures it.
+Missing values use documented defaults; an empty display name derives from the ID.
+Other explicit empty fields are rejected with the field name before any publication.
+
+Generation requires the complete source workspace's reviewed Markdown template inventory.
+Packaged installations without those templates receive `AGENT_HIRE_TEMPLATES_UNAVAILABLE`;
+run hire from a complete source checkout. Unknown templates are rejected, not silently omitted.
+The generator creates the required prompts directory but writes no local identity or secrets.
+
+Generation stages complete files on the destination filesystem and publishes the registry
+last as its commit marker. It never overwrites an existing identity. An interrupted original
+writer can be recovered by repeating the same command on the same host after that process
+exits, provided its journal, staged files and any published files still match their hashes.
+This is recoverable publication, not a cross-directory atomic transaction.
+
+`AGENT_HIRE_BUSY` means an owner may still be running or belongs to another host. `AGENT_HIRE_RECOVERY_REQUIRED`
+means evidence is missing, changed, or a recovery itself was interrupted.
+An administrator must inspect `.openslack/agents/onboarding/.hire-<agent-id>`, preserve
+its evidence, and remove only verified incomplete generation artifacts before retrying.
+Do not delete a deployed registry or manually changed onboarding documents to force a retry.
+`AGENT_HIRE_IO_FAILED` reports storage failure without printing machine-specific paths.
+
+Task manifests control requested claim TTL and heartbeat; returned receipts control actual
+expiry. Legacy registry lease fields remain readable but do not control GitHub Issues claims.
+New identities explicitly declare Yellow authorization and Medium candidate-selection ceilings;
+these are independent gates, not interchangeable risk labels. Default workflow denial remains
+in force even when a task declares a workflow path.
+
+`AGENT_HIRE_CLEANUP_REQUIRED` preserves a failed cleanup for administrator inspection.
+If its message says registry publication completed, the identity already exists: do not
+recreate it. Clean only the verified transaction evidence after inspecting the deployed files.
