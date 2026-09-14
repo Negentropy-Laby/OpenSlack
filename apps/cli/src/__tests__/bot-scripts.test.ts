@@ -25,6 +25,16 @@ function scriptPath(name: string): string {
   return resolve(repoRoot, 'scripts', name);
 }
 
+function shimEnvironment(root: string, parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...Object.fromEntries(
+      Object.entries(parent).filter(([key]) => !['path', 'pathext'].includes(key.toLowerCase())),
+    ),
+    PATH: root + ';' + (parent.Path ?? parent.PATH ?? ''),
+    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+  };
+}
+
 describe('bot-auth wrapper scripts', () => {
   it.each(['bot-gh.sh', 'bot-gh-pr-create.sh', 'bot-gh.ps1', 'bot-gh-pr-create.ps1'])(
     '%s exists',
@@ -393,6 +403,12 @@ describe('bot-auth wrapper scripts', () => {
   it.runIf(process.platform === 'win32')(
     'renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7',
     () => {
+      const contaminated = shimEnvironment('fixture', { Path: 'base', PATH: 'duplicate' });
+      expect(Object.keys(contaminated).filter((key) => key.toLowerCase() === 'path')).toEqual([
+        'PATH',
+      ]);
+      expect(contaminated.PATH).toBe('fixture;base');
+      expect(contaminated.PATHEXT).toContain('.CMD');
       const shells = ['powershell'];
       if (spawnSync('where.exe', ['pwsh'], { encoding: 'utf8' }).status === 0) shells.push('pwsh');
       for (const shell of shells) {
@@ -412,7 +428,7 @@ describe('bot-auth wrapper scripts', () => {
             });
             writeFileSync(
               join(root, 'node.cmd'),
-              '@echo off\r\necho ' + envelope + '\r\nexit /b 0\r\n',
+              '@echo off\r\necho shim-executed 1>&2\r\necho ' + envelope + '\r\nexit /b 0\r\n',
             );
             const result = spawnSync(
               shell,
@@ -426,10 +442,16 @@ describe('bot-auth wrapper scripts', () => {
               ],
               {
                 encoding: 'utf8',
-                env: { ...process.env, PATH: root + ';' + (process.env.PATH ?? '') },
+                env: shimEnvironment(root, {
+                  ...process.env,
+                  Path: process.env.Path ?? process.env.PATH ?? '',
+                  PATH: 'unusable-duplicate-path',
+                  PATHEXT: undefined,
+                }),
               },
             );
             expect(result.status, result.stderr).toBe(0);
+            expect(result.stderr).toContain('shim-executed');
             expect(result.stdout.split(/\r?\n/u).filter(Boolean)).toHaveLength(
               installations.length,
             );
@@ -489,7 +511,7 @@ describe('bot-auth wrapper scripts', () => {
     // The named opt-in is the only route, and it maps onto GODEBUG for the child.
     const optedIn = wrapper.createGhEnvironment(credentials, {
       PATH: 'path-canary',
-      OPENSLACK_BOT_GH_GODEBUG: 'tlsmlkem=0',
+      OPENSLACK_BOT_GH_GODEBUG: '  tlsmlkem=0  ',
     });
     expect(optedIn).toMatchObject({ GODEBUG: 'tlsmlkem=0' });
     expect(optedIn).not.toHaveProperty('OPENSLACK_BOT_GH_GODEBUG');
@@ -503,6 +525,31 @@ describe('bot-auth wrapper scripts', () => {
       expect(child).not.toHaveProperty('GODEBUG');
     }
   });
+
+  it.each(['unknown', 'tlsmlkem=1', 'tlsmlkem=0,other=1', 'tlsmlkem=0,tlsmlkem=0'])(
+    'rejects unsupported Go configuration %s before credentials or launch',
+    async (value) => {
+      const require = createRequire(import.meta.url);
+      const wrapper = require(scriptPath('bot-gh-command.js'));
+      const acquire = vi.fn();
+      const spawn = vi.fn();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const env = { OPENSLACK_BOT_GH_GODEBUG: value };
+        expect(wrapper.createGhEnvironment.bind(null, { value: 'secret-canary' }, env)).toThrow(
+          'BOT_GH_GODEBUG_INVALID',
+        );
+        expect(await wrapper.main(['pr', 'edit', '414'], { env, acquire, spawn })).toBe(2);
+        expect(acquire).not.toHaveBeenCalled();
+        expect(spawn).not.toHaveBeenCalled();
+        expect(stderr.mock.calls.flat().join('')).toBe(
+          'BOT_GH_GODEBUG_INVALID: only tlsmlkem=0 is supported.\n',
+        );
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
 
   it('completes merged task Issues from structured claim evidence without a human token fallback', () => {
     const workflow = readFileSync(
