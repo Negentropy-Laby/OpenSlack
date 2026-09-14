@@ -1,0 +1,6 @@
+# Local Cron Example — codex_qualification_rext
+# Add to crontab: crontab -e
+# Runs every 15 minutes, off-peak minutes
+
+# OpenSlack Agent Tick — codex_qualification_rext
+*/15 * * * * cd D:\Users\WSMAN\Desktop\Coding Task\OpenSlack && openslack workspace validate && openslack agent tick --agent-id codex_qualification_rext --source local-cron >> .openslack/audit/tick.log 2>&1

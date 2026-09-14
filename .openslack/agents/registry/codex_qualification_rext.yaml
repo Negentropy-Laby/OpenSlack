@@ -1,0 +1,92 @@
+schema: openslack.agent_registry.v2
+agent_id: codex_qualification_rext
+display_name: R-EXT Qualification
+employee_type: ai_agent
+identity:
+  uid: codex_qualification_rext
+  principal_id: principal:codex_qualification_rext
+  status: active
+vendor:
+  provider: openai
+  runtime: codex
+  model: default
+employment:
+  status: active
+  hired_at: 2026-09-14T00:22:00.050Z
+  hired_by: human:founder
+  department: engineering
+  role: developer
+  manager: human:founder
+capabilities:
+  primary:
+    - go
+    - typescript
+    - postgresql
+    - test_writing
+  secondary:
+    - git
+    - documentation
+permissions:
+  paths:
+    allow:
+      - .openslack/workflows/r-ext-go-qualification.mjs
+      - scripts/r-ext-go-qualification/**
+      - packages/workflows/src/__tests__/r-ext-go-qualification.test.ts
+      - .openslack/tasks/**
+      - .openslack/outbox/**
+    deny:
+      - .env
+      - "**/.env"
+      - "**/*.pem"
+      - "**/*.key"
+      - secrets/**
+      - credentials/**
+      - .github/**
+      - .openslack/agents/**
+      - .openslack/policies/**
+      - .openslack/self/constitution.md
+      - .openslack/self/invariants.yaml
+      - packages/kernel/src/**
+  actions:
+    task.claim: allow
+    task.sync: allow
+    pr.propose: allow
+    pr.comment: allow
+    github.comment: allow
+  github:
+    can_create_pr: true
+    can_comment: true
+    can_approve: false
+    can_merge: false
+  max_risk_zone: yellow
+repositories:
+  workspace_repo:
+    owner: Negentropy-Laby
+    repo: OpenSlack
+    default_branch: main
+execution:
+  max_parallel_tasks: 1
+  lease_ttl_minutes: 120
+  heartbeat_interval_minutes: 15
+  max_task_runtime_minutes: 240
+output_contract:
+  must_create:
+    - workspace_run_record
+  may_create:
+    - workspace_pr
+    - review_comment
+  must_not_create:
+    - direct_main_push
+    - production_deploy
+approval_rules:
+  require_human_approval_for:
+    - merge_to_main
+    - policy_change
+    - permission_change
+    - agent_registry_change
+task_matching:
+  github_owner: Negentropy-Laby
+  max_risk_level: medium
+scheduler:
+  preferred_mode: manual
+  cadence_minutes: 0
