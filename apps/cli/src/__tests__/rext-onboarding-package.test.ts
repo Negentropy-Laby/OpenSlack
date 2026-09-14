@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseAgentRegistry } from '@openslack/workspace';
-import { authorizeAgentAction, resolvePermissionSnapshot, pathGlobCovers } from '@openslack/kernel';
+import { authorizeAgentAction, resolvePermissionSnapshot } from '@openslack/kernel';
 import { filterByCapability, runAutoClaimGates, type IssueTaskManifest } from '@openslack/github';
 
 const root = process.cwd();
