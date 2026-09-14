@@ -1,3 +1,5 @@
+export { hireAgent, AGENT_ONBOARDING_DOCUMENTS } from './agent-onboarding.js';
+export type { HireAgentOptions } from './agent-onboarding.js';
 // Re-exports from agent-runtime (backward compat)
 export { bootstrapAgent } from './bootstrap.js';
 export type { BootstrapCheck, BootstrapResult } from './bootstrap.js';

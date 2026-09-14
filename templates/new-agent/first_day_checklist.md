@@ -1,29 +1,12 @@
-# First Day Checklist for {{AGENT_ID}}
+# First Day Checklist — {{AGENT_ID}}
 
-## Read
-
-- [ ] `workspace.yaml` (or `openslack.yaml`)
-- [ ] `agents/registry/{{AGENT_ID}}.yaml`
-- [ ] `agents/prompts/{{AGENT_ID}}.md`
-- [ ] `agents/onboarding/{{AGENT_ID}}/START_HERE.md`
-- [ ] `policies/risk.yaml`
-- [ ] `policies/workspace_write_permissions.yaml`
-- [ ] `policies/claim_policy.yaml`
-- [ ] `.openslack.local/agents/{{AGENT_ID}}/identity.yaml`
-
-## Verify
-
-- [ ] Can query GitHub Project #{{PROJECT_NUMBER}}
-- [ ] Can see Ready tasks
-- [ ] Can call Claim Broker (dry-run)
-- [ ] Can create heartbeat (dry-run)
-- [ ] Can create workspace worktree
-- [ ] Can create draft PR (dry-run)
-- [ ] Can stop cleanly when idle
-
-## Do Not
-
-- [ ] Claim a real task until bootstrap passes
-- [ ] Modify policy files
-- [ ] Modify your own registry or prompt
-- [ ] Push to main
+- [ ] Read `openslack.yaml`, `AGENTS.md`, `.openslack/policies/self_evolution.yaml`, and `docs/contributor/github-issues-loop.md`.
+- [ ] Read `.openslack/agents/registry/{{AGENT_ID}}.yaml`, `.openslack/agents/onboarding/{{AGENT_ID}}/START_HERE.md`, and `{{ENTRYPOINT}}`.
+- [ ] Have an administrator review the generated registration and provision local identity/authentication through supported setup.
+- [ ] Run workspace validation and bootstrap from the repository root; missing local identity must fail.
+- [ ] Confirm manual execution, correct repository, all required capabilities, risk and task/registry path intersection.
+- [ ] Verify task readiness before making a real claim; no claim or heartbeat command is a dry-run probe.
+- [ ] After a granted claim, record actual ownership, expiry, next heartbeat, branch, worktree, task ID and run ID.
+- [ ] Validate allowed changes and use `task sync` with recorded IDs and exact paths.
+- [ ] Keep human approval and live qualification separate from local structural checks.
+- [ ] Never edit your own registry/prompts, expose credentials, push to main or fabricate completion evidence.

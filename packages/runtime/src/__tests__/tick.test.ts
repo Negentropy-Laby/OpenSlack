@@ -173,7 +173,7 @@ describe('tickAgent targeted GitHub issue claims', () => {
     });
     expect(mocks.queryReady).not.toHaveBeenCalled();
     expect(mocks.claim).toHaveBeenCalledWith(
-      expect.objectContaining({ issueNumber: 42, ttlMinutes: 120 }),
+      expect.objectContaining({ issueNumber: 42, ttlMinutes: 120, heartbeatMinutes: 15 }),
     );
     expect(mocks.authorize).toHaveBeenLastCalledWith({
       snapshot,
@@ -523,7 +523,9 @@ describe('tickAgent unscoped GitHub issue claims', () => {
     mocks.runGates.mockReturnValue(allowedGate(null));
 
     await runTick({ source: 'github-issues' });
-    expect(mocks.claim).toHaveBeenCalledWith(expect.objectContaining({ ttlMinutes: 60 }));
+    expect(mocks.claim).toHaveBeenCalledWith(
+      expect.objectContaining({ ttlMinutes: 60, heartbeatMinutes: 15 }),
+    );
   });
 
   it('fails closed after a claim API error instead of selecting another issue', async () => {

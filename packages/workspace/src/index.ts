@@ -83,3 +83,5 @@ export type {
   WorkspaceAttachResult,
   WorkspaceAttachRollbackData,
 } from './attach.js';
+
+export { isSafeAgentId } from './agent-id.js';

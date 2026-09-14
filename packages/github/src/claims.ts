@@ -1,3 +1,4 @@
+import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from './claim-defaults.js';
 import { randomUUID } from 'node:crypto';
 import { isRiskZone, type AgentPrincipal, type RiskZone } from '@openslack/kernel';
 import { getClient, type GitHubClient } from './client.js';
@@ -406,8 +407,9 @@ export async function claimIssueTask(
   ) {
     throw new Error('Claim requires a matching canonical task snapshot and task ID.');
   }
-  const ttlMinutes = args.ttlMinutes ?? 60;
-  const heartbeatMinutes = args.heartbeatMinutes ?? Math.min(15, ttlMinutes);
+  const ttlMinutes = args.ttlMinutes ?? DEFAULT_CLAIM_TTL_MINUTES;
+  const heartbeatMinutes =
+    args.heartbeatMinutes ?? Math.min(DEFAULT_CLAIM_HEARTBEAT_MINUTES, ttlMinutes);
   if (!Number.isInteger(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 480) {
     throw new Error('Claim TTL must be an integer between 1 and 480 minutes.');
   }

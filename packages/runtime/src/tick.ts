@@ -1,3 +1,4 @@
+import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from '@openslack/github';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FileClaimBroker } from '@openslack/core';
@@ -77,7 +78,7 @@ export interface TickOptions {
 }
 
 export interface TickTargetOptionsInput {
-  source?: TickOptions['source'];
+  source?: string;
   issueNumber?: string | number;
 }
 
@@ -88,6 +89,12 @@ export type TickTargetOptionsValidation =
 export function validateTickTargetOptions(
   input: TickTargetOptionsInput,
 ): TickTargetOptionsValidation {
+  if (input.source !== undefined && input.source !== 'local' && input.source !== 'github-issues') {
+    return {
+      valid: false,
+      message: 'AGENT_TASK_SOURCE_INVALID: --source must be local or github-issues',
+    };
+  }
   if (input.issueNumber === undefined) return { valid: true };
 
   let issueNumber: number;
@@ -148,7 +155,7 @@ export async function tickAgent(
   dependencies: TickDependencies = {},
 ): Promise<TickResult> {
   const root = findRepoRoot();
-  const source = options.source || 'local';
+  const source = options.source ?? 'local';
   const targetOptions = validateTickTargetOptions({ source, issueNumber: options.issueNumber });
   if (!targetOptions.valid) {
     return {
@@ -317,8 +324,9 @@ export async function tickAgent(
           taskId: gate.manifest.task_id,
           taskSnapshot: task.snapshot,
           riskZone: gate.riskZone,
-          ttlMinutes: gate.manifest.lease?.ttl_minutes ?? 60,
-          heartbeatMinutes: gate.manifest.lease?.heartbeat_minutes ?? 15,
+          ttlMinutes: gate.manifest.lease?.ttl_minutes ?? DEFAULT_CLAIM_TTL_MINUTES,
+          heartbeatMinutes:
+            gate.manifest.lease?.heartbeat_minutes ?? DEFAULT_CLAIM_HEARTBEAT_MINUTES,
           capabilities: typedCapabilities,
           principal,
         });

@@ -147,3 +147,50 @@ describe('agent tick --issue-number', () => {
     expect(process.exitCode).toBeUndefined();
   });
 });
+
+describe('agent tick source boundary', () => {
+  it.each(['github-project', 'local-cron', '', 'LOCAL'])(
+    'rejects unsupported source %j before runtime',
+    async (source) => {
+      await run(['tick', '--agent-id', 'test-agent', '--source', source]);
+      expect(tickAgent).not.toHaveBeenCalled();
+      await runProduction(['tick', '--agent-id', 'test-agent', '--source', source]);
+      expect(productionTickAgent).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('AGENT_TASK_SOURCE_INVALID'),
+      );
+    },
+  );
+  it.each([{ source: [] }, { source: ['--source', 'local'] }])(
+    'preserves local behavior for %j',
+    async ({ source }) => {
+      await run(['tick', '--agent-id', 'test-agent', ...source]);
+      expect(tickAgent).toHaveBeenCalledWith('test-agent', {
+        source: 'local',
+        issueNumber: undefined,
+      });
+    },
+  );
+  it.each([false, true])(
+    'rejects unsupported claim-one before runtime (injected=%s)',
+    async (injected) => {
+      const command = agentCommands(injected ? { tickAgent } : {})
+        .exitOverride()
+        .configureOutput({ writeErr: () => {} });
+      for (const child of command.commands)
+        child.exitOverride().configureOutput({ writeErr: () => {} });
+      await expect(
+        command.parseAsync([
+          'node',
+          'openslack',
+          'tick',
+          '--agent-id',
+          'test-agent',
+          '--claim-one',
+        ]),
+      ).rejects.toThrow('unknown option');
+      expect(injected ? tickAgent : productionTickAgent).not.toHaveBeenCalled();
+    },
+  );
+});

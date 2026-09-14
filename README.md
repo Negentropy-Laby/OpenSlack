@@ -152,7 +152,7 @@ OpenSlack/
 │   └── mcp/                 # Local MCP stdio frontend; read-only stock, governed opt-in profiles
 ├── integrations/qoder-work/ # Qoder Work Skill and installation guidance
 ├── scenarios/               # Exact-byte locked declarative Scenario Packs
-├── templates/new-agent/     # 9 onboarding template files
+├── templates/new-agent/     # manual onboarding document templates
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # User, contributor, architecture, security, operations, and evidence docs
 ```
