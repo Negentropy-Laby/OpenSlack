@@ -27,7 +27,8 @@ vi.mock('@openslack/collaboration', () => ({
   recordEvent: mocks.recordEvent,
 }));
 
-vi.mock('@openslack/github', () => ({
+vi.mock('@openslack/github', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@openslack/github')>()),
   claimIssueTask: mocks.claimIssueTask,
   createIssueTaskSnapshot: mocks.createIssueTaskSnapshot,
   normalizeErrorMessage: mocks.normalizeErrorMessage,

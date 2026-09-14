@@ -1,3 +1,4 @@
+import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from '@openslack/github';
 import type { AutoClaimFn, NormalizedIssueEvent } from '@openslack/github';
 
 function recordBlockedEvent(
@@ -120,8 +121,9 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
           riskZone: gateResult.riskZone,
           owner: event.owner,
           repo: event.repo,
-          ttlMinutes: gateResult.manifest.lease?.ttl_minutes ?? 60,
-          heartbeatMinutes: gateResult.manifest.lease?.heartbeat_minutes ?? 15,
+          ttlMinutes: gateResult.manifest.lease?.ttl_minutes ?? DEFAULT_CLAIM_TTL_MINUTES,
+          heartbeatMinutes:
+            gateResult.manifest.lease?.heartbeat_minutes ?? DEFAULT_CLAIM_HEARTBEAT_MINUTES,
           principal: resolved.principal,
         });
         if (claimResult.claimStatus === 'granted') {

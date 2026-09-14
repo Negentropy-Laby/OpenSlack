@@ -94,6 +94,16 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
   // 6. Permissions section is valid (v1 or v2)
   try {
     const registry = parseAgentRegistry(root, agentId);
+    if (registry?.vendor?.runtime === 'custom_runner') {
+      checks.push({
+        name: 'runtime_configuration',
+        passed: Boolean(registry.vendor.provider && registry.vendor.provider !== 'unconfigured'),
+        detail:
+          registry.vendor.provider && registry.vendor.provider !== 'unconfigured'
+            ? 'Custom runner provider configured; live qualification remains separate'
+            : 'CUSTOM_RUNTIME_UNCONFIGURED: administrator must configure the custom runner provider',
+      });
+    }
     if (registry && registry.permissions && registry.permissions.paths) {
       const source = (registry as ParsedAgentRegistryEntry)._source_schema;
       checks.push({

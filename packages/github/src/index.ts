@@ -615,3 +615,5 @@ export {
   publishProfileSyncImprovement,
   bootstrapProfileSyncLabels,
 } from './profile-sync-issue-publisher.js';
+
+export { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from './claim-defaults.js';

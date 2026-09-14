@@ -1,3 +1,4 @@
+import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from '@openslack/github';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FileClaimBroker } from '@openslack/core';
@@ -323,8 +324,9 @@ export async function tickAgent(
           taskId: gate.manifest.task_id,
           taskSnapshot: task.snapshot,
           riskZone: gate.riskZone,
-          ttlMinutes: gate.manifest.lease?.ttl_minutes ?? 60,
-          heartbeatMinutes: gate.manifest.lease?.heartbeat_minutes ?? 15,
+          ttlMinutes: gate.manifest.lease?.ttl_minutes ?? DEFAULT_CLAIM_TTL_MINUTES,
+          heartbeatMinutes:
+            gate.manifest.lease?.heartbeat_minutes ?? DEFAULT_CLAIM_HEARTBEAT_MINUTES,
           capabilities: typedCapabilities,
           principal,
         });

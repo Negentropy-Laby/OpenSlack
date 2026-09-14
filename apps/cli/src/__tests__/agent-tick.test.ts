@@ -154,6 +154,7 @@ describe('agent tick source boundary', () => {
     async (source) => {
       await run(['tick', '--agent-id', 'test-agent', '--source', source]);
       expect(tickAgent).not.toHaveBeenCalled();
+      await runProduction(['tick', '--agent-id', 'test-agent', '--source', source]);
       expect(productionTickAgent).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(1);
       expect(console.error).toHaveBeenCalledWith(
@@ -171,16 +172,25 @@ describe('agent tick source boundary', () => {
       });
     },
   );
-  it('rejects unsupported claim-one before runtime', async () => {
-    const command = agentCommands({ tickAgent })
-      .exitOverride()
-      .configureOutput({ writeErr: () => {} });
-    for (const child of command.commands)
-      child.exitOverride().configureOutput({ writeErr: () => {} });
-    await expect(
-      command.parseAsync(['node', 'openslack', 'tick', '--agent-id', 'test-agent', '--claim-one']),
-    ).rejects.toThrow('unknown option');
-    expect(tickAgent).not.toHaveBeenCalled();
-    expect(productionTickAgent).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'rejects unsupported claim-one before runtime (injected=%s)',
+    async (injected) => {
+      const command = agentCommands(injected ? { tickAgent } : {})
+        .exitOverride()
+        .configureOutput({ writeErr: () => {} });
+      for (const child of command.commands)
+        child.exitOverride().configureOutput({ writeErr: () => {} });
+      await expect(
+        command.parseAsync([
+          'node',
+          'openslack',
+          'tick',
+          '--agent-id',
+          'test-agent',
+          '--claim-one',
+        ]),
+      ).rejects.toThrow('unknown option');
+      expect(injected ? tickAgent : productionTickAgent).not.toHaveBeenCalled();
+    },
+  );
 });

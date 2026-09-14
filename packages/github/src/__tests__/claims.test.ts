@@ -261,6 +261,13 @@ describe('claimIssueTask owner/repo override', () => {
     expect(result.issueNumber).toBe(99);
   });
 
+  it('caps the default heartbeat for a short direct claim TTL', async () => {
+    const result = await claimIssueTask({ ...claimInput(101), ttlMinutes: 5 });
+    expect(result.claimStatus).toBe('granted');
+    if (result.claimStatus === 'granted')
+      expect(result.lease).toMatchObject({ ttlMinutes: 5, heartbeatMinutes: 5 });
+  });
+
   it('accepts claim without owner/repo in dry-run mode', async () => {
     const { claimIssueTask } = await import('../claims.js');
     const result = await claimIssueTask({
