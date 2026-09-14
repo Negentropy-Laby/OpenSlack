@@ -1,5 +1,5 @@
 import {
-  testExecutable,
+  createTestProcessResolver,
   testProcessEnvironment,
 } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
@@ -332,9 +332,10 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
   });
 
   it('builds and starts the path-free CJS artifact under a type-module ancestor', () => {
-    const nodeExecutable = realpathSync(testExecutable('node'));
+    const processes = createTestProcessResolver();
+    const nodeExecutable = realpathSync(processes.executable('node'));
     const output = execFileSync(
-      testExecutable('bun'),
+      processes.executable('bun'),
       [
         resolve(process.cwd(), 'scripts/qualification/workflow-runner-bundle.ts'),
         'verify-local',

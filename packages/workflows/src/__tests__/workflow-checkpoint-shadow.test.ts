@@ -1,3 +1,4 @@
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   mkdtemp,
   mkdir,
@@ -501,7 +502,7 @@ describe('GS9-C TS checkpoint authority and credential-free observation', () => 
       expect(bodies.join('\n')).not.toContain('raw-key');
       expect(await readdir(join(workspace, 'journal', 'entries'))).toEqual([]);
     },
-    process.platform === 'win32' ? 120_000 : 30_000,
+    platformTestTimeout(30_000),
   );
 
   it('keeps the TS commit durable when the post-commit publisher fails', async () => {

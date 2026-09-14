@@ -1,6 +1,6 @@
+import { executableCandidates } from '../../packages/core/src/process-discovery.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 export type ReleaseTarget = 'windows-x64' | 'linux-x64';
@@ -67,13 +67,8 @@ export function writeJson(path: string, value: unknown): void {
 }
 
 export function findExecutable(name: string): string {
-  const suffixes = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
-  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    if (!directory) continue;
-    for (const suffix of suffixes) {
-      const candidate = join(directory, `${name}${suffix}`);
-      if (existsSync(candidate)) return candidate;
-    }
+  for (const candidate of executableCandidates(name)) {
+    if (existsSync(candidate)) return candidate;
   }
   throw new Error(`${name} is required for release verification.`);
 }

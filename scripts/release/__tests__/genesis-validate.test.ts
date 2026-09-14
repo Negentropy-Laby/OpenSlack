@@ -1,3 +1,4 @@
+import { executableCandidates } from '../../../packages/core/src/process-discovery.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -10,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -141,8 +142,7 @@ function runGenesis(fixture: ReturnType<typeof createFixture>) {
 }
 
 function resolveExecutable(name: string): string {
-  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    const candidate = join(directory, name);
+  for (const candidate of executableCandidates(name)) {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error(`${name} is required for the genesis validation fixture.`);

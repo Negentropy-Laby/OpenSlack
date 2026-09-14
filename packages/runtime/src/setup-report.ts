@@ -1,3 +1,4 @@
+import { bashCandidates, normalizeProcessEnvironment, probeBash } from '@openslack/core';
 import { execFileSync, execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -69,8 +70,11 @@ export function detectGenesisShell(root = findRepoRoot()): SetupFinding {
   }
 
   if (process.platform === 'win32') {
-    const gitBash = 'C:\\Program Files\\Git\\bin\\bash.exe';
-    if (existsSync(gitBash)) {
+    const env = normalizeProcessEnvironment();
+    const gitBash = bashCandidates(env).find(
+      (candidate) => existsSync(candidate) && probeBash(candidate, env),
+    );
+    if (gitBash) {
       return {
         id: 'genesis-shell',
         title: 'Genesis validation shell',
@@ -97,12 +101,13 @@ export function detectGenesisShell(root = findRepoRoot()): SetupFinding {
     };
   }
 
+  const bashAvailable = hasExecutable('bash');
   return {
     id: 'genesis-shell',
     title: 'Genesis validation shell',
-    status: hasExecutable('bash') ? 'ok' : 'fixable_by_command',
-    detail: hasExecutable('bash') ? 'bash detected.' : 'bash was not found on PATH.',
-    command: hasExecutable('bash') ? 'bash scripts/genesis-validate.sh' : undefined,
+    status: bashAvailable ? 'ok' : 'fixable_by_command',
+    detail: bashAvailable ? 'bash detected.' : 'bash was not found on PATH.',
+    command: bashAvailable ? 'bash scripts/genesis-validate.sh' : undefined,
   };
 }
 
