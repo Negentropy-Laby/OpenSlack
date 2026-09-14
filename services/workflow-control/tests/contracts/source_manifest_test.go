@@ -369,7 +369,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerSourceInvariantTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-			SHA256: "1fcacef1596f43099e6b1e961d26810605fe584d6100eb1f27aa301369107884",
+			SHA256: "61a31a90210687a21634fc76a3ba58f076bb52df4db6936d7491f348a1a02eb3",
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",

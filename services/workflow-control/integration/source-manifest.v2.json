@@ -222,7 +222,7 @@
     },
     "workflowRunnerSourceInvariantTest": {
       "path": "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-      "sha256": "1fcacef1596f43099e6b1e961d26810605fe584d6100eb1f27aa301369107884"
+      "sha256": "61a31a90210687a21634fc76a3ba58f076bb52df4db6936d7491f348a1a02eb3"
     },
     "workflowCLICompositionSource": {
       "path": "apps/cli/src/commands/collaboration.ts",

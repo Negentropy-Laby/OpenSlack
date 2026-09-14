@@ -535,3 +535,9 @@ forwarded. Other nonempty values, including combined options, fail with
 `BOT_GH_GODEBUG_INVALID` and exit code 2 before credential acquisition or gh
 launch. The diagnostic never echoes the supplied value. This setting does not
 disable certificate verification or change the bot command allowlist.
+
+The gh command, OpenSlack command, and PR-create compatibility wrappers all validate
+this setting before acquiring credentials. The OpenSlack child receives only the
+validated named setting, never ambient `GODEBUG`. The setting becomes `GODEBUG`
+only when gh is launched, including the status dashboard's gh reads; other Go
+children retain their defaults. Invalid values are never echoed in diagnostics.
