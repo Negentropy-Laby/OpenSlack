@@ -1,3 +1,4 @@
+import { testProcessEnvironment } from '../../../../scripts/testing/process-fixture.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -26,13 +27,8 @@ function scriptPath(name: string): string {
 }
 
 function shimEnvironment(root: string, parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return {
-    ...Object.fromEntries(
-      Object.entries(parent).filter(([key]) => !['path', 'pathext'].includes(key.toLowerCase())),
-    ),
-    PATH: root + ';' + (parent.Path ?? parent.PATH ?? ''),
-    PATHEXT: '.COM;.EXE;.BAT;.CMD',
-  };
+  const env = testProcessEnvironment(parent);
+  return { ...env, PATH: root + ';' + env.PATH };
 }
 
 describe('bot-auth wrapper scripts', () => {
