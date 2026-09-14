@@ -524,3 +524,14 @@ data.
 2. Add 14 standard fields (see `.openslack/integrations/github.yaml`)
 3. Run `openslack github project-sync-fields --write` to populate field IDs
 4. Verify: `openslack github doctor --strict`
+
+### Optional gh TLS compatibility setting
+
+For networks that cannot handle the default ML-KEM TLS key share, set
+`OPENSLACK_BOT_GH_GODEBUG=tlsmlkem=0` when invoking the bot gh wrapper. This is
+the only supported value; surrounding whitespace is ignored. Unset the variable
+or set it to whitespace to use the default gh behavior. Ambient `GODEBUG` is not
+forwarded. Other nonempty values, including combined options, fail with
+`BOT_GH_GODEBUG_INVALID` and exit code 2 before credential acquisition or gh
+launch. The diagnostic never echoes the supplied value. This setting does not
+disable certificate verification or change the bot command allowlist.
