@@ -1,9 +1,9 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { findExecutable, parseArg, run, type ReleaseTarget, TARGETS } from './lib.js';
 import { extractReleaseArchive } from './archive.js';
+import { withReleaseTemporaryDirectory } from './temporary-directory.js';
 
 export interface ArtifactSmokeResult {
   target: ReleaseTarget;
@@ -43,9 +43,8 @@ export function smokeBundle(
     }
   }
   const git = findExecutable('git');
-  const workspace = mkdtempSync(join(tmpdir(), 'OpenSlack Artifact Smoke 空格-'));
   const checks: string[] = [];
-  try {
+  return withReleaseTemporaryDirectory('OpenSlack Artifact Smoke 空格-', (workspace) => {
     const { root: workspaceRoot, env } = initializeSmokeRepository(workspace, git);
     const version = run(executable, ['version', '--format', 'json'], {
       cwd: workspaceRoot,
@@ -141,9 +140,7 @@ export function smokeBundle(
     }
     checks.push('source-independence');
     return { target, version: actual.version, commit: actual.commit, checks };
-  } finally {
-    rmSync(workspace, { recursive: true, force: true });
-  }
+  });
 }
 
 export function initializeSmokeRepository(
@@ -169,8 +166,7 @@ export function initializeSmokeRepository(
 export function smokeReleaseVerifierFromArchive(
   input: ReleaseVerifierSmokeInput,
 ): 'trusted-signature-verified' | 'unsigned-release-rejected' {
-  const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-verifier-smoke-'));
-  try {
+  return withReleaseTemporaryDirectory('openslack-verifier-smoke-', (extractionRoot) => {
     if (input.expectedSigned && !input.trustedPublicKey) {
       throw new Error('Signed release verifier smoke requires the trusted public key.');
     }
@@ -249,9 +245,7 @@ export function smokeReleaseVerifierFromArchive(
       throw new Error('Packaged release verifier returned invalid structured evidence.');
     }
     return 'trusted-signature-verified';
-  } finally {
-    rmSync(extractionRoot, { recursive: true, force: true });
-  }
+  });
 }
 
 function createDisposablePublicKey(): string {
