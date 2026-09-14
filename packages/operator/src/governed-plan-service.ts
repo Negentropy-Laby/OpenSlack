@@ -945,17 +945,35 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
       currentBindings,
     );
     try {
-      record = await this.#store.claimExecution({
-        planId: record.planId,
-        expectedRevision: record.revision,
-        executionId,
-        ownerPid: process.pid,
-        startedAt: nowIso(this.#clock),
-      });
+      record = await this.#store.claimExecution(
+        {
+          planId: record.planId,
+          expectedRevision: record.revision,
+          executionId,
+          ownerPid: process.pid,
+          startedAt: nowIso(this.#clock),
+        },
+        control,
+      );
     } catch (error) {
+      let ownsClaim = false;
+      let classified = false;
       try {
         const current = await this.#store.load(record.planId);
-        if (current) {
+        ownsClaim = current?.execution?.executionId === executionId;
+        classified = true;
+        if (current?.state === 'executing' && ownsClaim) {
+          await this.#store.completeExecution({
+            planId: current.planId,
+            expectedRevision: current.revision,
+            executionId,
+            state: 'reconciliation_required',
+            completedAt: nowIso(this.#clock),
+            outcomes: [],
+            failure: 'Claim publication did not finish cleanly; execution was not started.',
+          });
+        }
+        if (current)
           this.#observeConfirmation(
             current,
             request,
@@ -963,10 +981,19 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
             attemptedAt,
             current.state === 'executing' ? 'execution_active' : 'state_invalid',
           );
-        }
       } catch {
-        // Preserve the authoritative claim error exactly.
+        /* Retain durable evidence if reconciliation cannot be persisted. */
       }
+      if (
+        ownsClaim ||
+        (!classified &&
+          error instanceof GovernedPlanStoreError &&
+          error.code === 'GOVERNED_PLAN_STORE_BUSY')
+      )
+        return fail(
+          'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+          'Claim publication requires reconciliation; execution was not started.',
+        );
       throw error;
     }
     this.#activePlans.add(record.planId);
@@ -1003,16 +1030,21 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         );
       }
       const last = outcomes.at(-1);
-      record = await this.#store.completeExecution({
-        planId: record.planId,
-        expectedRevision: record.revision,
-        executionId,
-        state: terminal,
-        completedAt: nowIso(this.#clock),
-        outcomes,
-        ...(terminal === 'blocked' ? { blocker: last?.summary ?? 'Governed action blocked.' } : {}),
-        ...(terminal === 'failed' ? { failure: last?.summary ?? 'Governed action failed.' } : {}),
-      });
+      record = await this.#store.completeExecution(
+        {
+          planId: record.planId,
+          expectedRevision: record.revision,
+          executionId,
+          state: terminal,
+          completedAt: nowIso(this.#clock),
+          outcomes,
+          ...(terminal === 'blocked'
+            ? { blocker: last?.summary ?? 'Governed action blocked.' }
+            : {}),
+          ...(terminal === 'failed' ? { failure: last?.summary ?? 'Governed action failed.' } : {}),
+        },
+        control,
+      );
       const eventType =
         terminal === 'succeeded'
           ? 'plan.execution_completed'
@@ -1050,6 +1082,12 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         }
       } catch {
         // An executing durable record is itself the fail-closed reconciliation marker.
+      }
+      if (error instanceof GovernedPlanStoreError && error.code === 'GOVERNED_PLAN_STORE_BUSY') {
+        return fail(
+          'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+          'Execution publication requires inspection of its durable result.',
+        );
       }
       throw error;
     } finally {

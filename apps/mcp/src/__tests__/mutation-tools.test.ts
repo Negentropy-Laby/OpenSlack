@@ -1,3 +1,5 @@
+import { callGovernedMutationTool } from '../tools/mutations.js';
+import { safeToolError } from '../errors.js';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +11,8 @@ import {
   createGovernedActionExecutionRegistry,
   createGovernedPlanService,
   LocalGovernedPlanStore,
+  GovernedPlanStoreError,
+  GovernedPlanServiceError,
   type GovernedActionExecutorDefinition,
 } from '@openslack/operator';
 import {
@@ -57,6 +61,7 @@ function harness(
   definitions?: readonly GovernedActionExecutorDefinition[],
   options: { beforeExecute?: () => Promise<void>; timeoutMs?: number } = {},
 ) {
+  const { timeoutMs = 10_000 } = options;
   const execute = vi.fn(async () => {
     await options.beforeExecute?.();
     return {
@@ -93,7 +98,7 @@ function harness(
       buildNonce: 'qg5-test-build-nonce-0123456789',
     }),
     audit: async () => undefined,
-    executionTimeoutMs: options.timeoutMs ?? 10_000,
+    executionTimeoutMs: timeoutMs,
   });
   const mutations = createOpenSlackGovernedMutationPort({
     service,
@@ -163,7 +168,7 @@ function harness(
     correlationIdFactory: () => 'mcp:transport-call',
   });
   return {
-    core: new OpenSlackMcpCore(context, { timeoutMs: options.timeoutMs ?? 10_000 }),
+    core: new OpenSlackMcpCore(context, { timeoutMs: timeoutMs }),
     execute,
     mutations,
   };
@@ -306,7 +311,7 @@ describe('governed MCP mutation profile', () => {
 
   it('previews without side effects and returns one root-only confirmation capability', async () => {
     const workspaceRoot = root();
-    const { core, execute, mutations } = harness(workspaceRoot);
+    const { core, execute } = harness(workspaceRoot);
     const preview = await core.callTool('openslack_preview_scenario', {
       scenarioId: 'software-delivery',
       input: { objective: 'Explain delivery state.' },
@@ -415,27 +420,30 @@ describe('governed MCP mutation profile', () => {
     const contenders = new Promise<void>((resolve) => {
       contendersDone = resolve;
     });
+    let watchdog!: ReturnType<typeof setTimeout>;
+    const competitionDeadline = new Promise<never>((_, reject) => {
+      watchdog = setTimeout(
+        () =>
+          reject(new Error(`Confirmation barrier incomplete: ${settled}/99 contenders settled.`)),
+        20_000,
+      );
+    });
     const calls = Array.from({ length: 100 }, () =>
       core.callTool('openslack_confirm_plan', request).finally(() => {
         settled += 1;
         if (settled === 99) contendersDone();
       }),
     );
-    let watchdog!: ReturnType<typeof setTimeout>;
-    const competitionDeadline = new Promise<never>((_, reject) => {
-      watchdog = setTimeout(
-        () =>
-          reject(new Error(`Confirmation barrier incomplete: ${settled}/99 contenders settled.`)),
-        25_000,
-      );
-    });
     let results: Awaited<ReturnType<typeof core.callTool>>[];
     try {
       await Promise.race([
         started,
         competitionDeadline,
-        Promise.all(calls).then(() => {
-          throw new Error('No executor acquired the claim.');
+        Promise.allSettled(calls).then((outcomes) => {
+          const rejected = outcomes.filter((outcome) => outcome.status === 'rejected').length;
+          throw new Error(
+            `No executor acquired the claim: ${outcomes.length} settled, ${rejected} rejected.`,
+          );
         }),
       ]);
       expect(execute).toHaveBeenCalledOnce();
@@ -456,13 +464,9 @@ describe('governed MCP mutation profile', () => {
         result.structuredContent.status,
         JSON.stringify(result.structuredContent.governance),
       ).toBe('blocked');
-      expect([
-        'GOVERNED_PLAN_STORE_BUSY',
+      expect((result.structuredContent.governance as { blocker?: string }).blocker).toBe(
         'GOVERNED_PLAN_EXECUTION_ACTIVE',
-        'GOVERNED_PLAN_STORE_CAS_MISMATCH',
-        'GOVERNED_PLAN_STATE_INVALID',
-        'GOVERNED_PLAN_STORE_FILE_CHANGED',
-      ]).toContain((result.structuredContent.governance as { blocker?: string }).blocker);
+      );
     }
     expect(
       results.filter((result) => result.structuredContent.status === 'completed'),
@@ -824,4 +828,96 @@ describe('governed MCP mutation profile', () => {
       revision: 0,
     });
   });
+});
+
+describe('governed mutation failure classification', () => {
+  it.each([
+    'GOVERNED_PLAN_STORE_BUSY',
+    'GOVERNED_PLAN_STORE_CAS_MISMATCH',
+    'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
+  ] as const)('%s is mapped to execution contention', (code) => {
+    expect(safeToolError(new GovernedPlanStoreError(code, 'private detail'))).toMatchObject({
+      safeCode: 'GOVERNED_PLAN_EXECUTION_ACTIVE',
+      safeStatus: 'blocked',
+    });
+  });
+  it('keeps changed files out of the accepted contention class', () => {
+    expect(
+      safeToolError(
+        new GovernedPlanStoreError('GOVERNED_PLAN_STORE_FILE_CHANGED', 'private detail'),
+      ),
+    ).toMatchObject({ safeCode: 'READ_PROJECTION_FAILED', safeStatus: 'failed' });
+  });
+  it('preserves terminal rejection and execution uncertainty as distinct codes', () => {
+    for (const code of [
+      'GOVERNED_PLAN_STATE_INVALID',
+      'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+    ] as const) {
+      expect(safeToolError(new GovernedPlanServiceError(code, 'private detail'))).toMatchObject({
+        safeCode: code,
+        safeStatus: 'blocked',
+      });
+    }
+  });
+});
+
+it.each(['executing', 'reconciliation_required', 'succeeded'] as const)(
+  'projects durable %s after an uncertain publication',
+  async (state) => {
+    const { core, mutations } = harness(root());
+    const preview = await core.callTool('openslack_preview_scenario', {
+      scenarioId: 'software-delivery',
+      input: {},
+    });
+    const planId = String(preview.structuredContent.planId);
+    const pending = (await mutations.get(planId))!;
+    const result = await callGovernedMutationTool(
+      {
+        ...mutations,
+        confirm: async () => {
+          throw new GovernedPlanServiceError(
+            'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+            'fixture failure',
+          );
+        },
+        get: async () => ({ ...pending, state, revision: 2 }),
+      },
+      'openslack_confirm_plan',
+      { planId },
+      {
+        signal: new AbortController().signal,
+        deadlineAt: new Date(Date.now() + 10_000).toISOString(),
+      },
+    );
+    expect(result.result.status).toBe(state === 'succeeded' ? 'completed' : 'blocked');
+    expect(result.result.data).toMatchObject({ state });
+    expect(JSON.stringify(result)).not.toContain('fixture failure');
+  },
+);
+
+it('preserves uncertainty when its diagnostic durable inspection is also busy', async () => {
+  const { mutations } = harness(root());
+  const original = new GovernedPlanServiceError(
+    'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+    'fixture uncertainty',
+  );
+  await expect(
+    callGovernedMutationTool(
+      {
+        ...mutations,
+        confirm: async () => {
+          throw original;
+        },
+        get: async () => {
+          throw new GovernedPlanStoreError('GOVERNED_PLAN_STORE_BUSY', 'fixture inspection busy');
+        },
+      },
+      'openslack_confirm_plan',
+      { planId: 'fixture-plan' },
+      {
+        signal: new AbortController().signal,
+        deadlineAt: new Date(Date.now() + 10_000).toISOString(),
+      },
+    ),
+  ).rejects.toBe(original);
 });

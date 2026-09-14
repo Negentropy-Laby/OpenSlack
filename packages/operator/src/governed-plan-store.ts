@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants as fsConstants, type Stats } from 'node:fs';
+import { constants as fsConstants, type BigIntStats } from 'node:fs';
 import {
   link,
-  lstat,
+  lstat as fsLstat,
   mkdir,
   open,
   readdir,
@@ -26,6 +26,36 @@ import {
   type GovernedPlanShadowObservationPort,
 } from './governed-plan-shadow.js';
 import type { GovernedPlanAuditEvent, GovernedPlanAuditSink } from './governed-plan-service.js';
+
+// NTFS inode numbers can exceed Number.MAX_SAFE_INTEGER. Compare exact identities.
+interface Stats {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly size: number;
+  readonly mtimeNs: bigint;
+  readonly ctimeNs: bigint;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+}
+function exactStat(value: BigIntStats): Stats {
+  return {
+    dev: value.dev,
+    ino: value.ino,
+    size: Number(value.size),
+    mtimeNs: value.mtimeNs,
+    ctimeNs: value.ctimeNs,
+    isFile: () => value.isFile(),
+    isDirectory: () => value.isDirectory(),
+    isSymbolicLink: () => value.isSymbolicLink(),
+  };
+}
+async function lstat(path: string): Promise<Stats> {
+  return exactStat(await fsLstat(path, { bigint: true }));
+}
+async function handleStat(handle: FileHandle): Promise<Stats> {
+  return exactStat(await handle.stat({ bigint: true }));
+}
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 export const GOVERNED_PLAN_STORE_LIMITS = Object.freeze({
@@ -108,27 +138,85 @@ export class GovernedPlanStoreError extends Error {
   }
 }
 
+/** In-process write controls, deliberately separate from serialized store parameters. */
+export interface GovernedPlanStoreWriteControl {
+  readonly signal?: AbortSignal;
+  readonly deadline?: number;
+}
+
+async function retryPublication(
+  operation: (assertBudget: () => void) => Promise<void>,
+  control?: GovernedPlanStoreWriteControl,
+): Promise<void> {
+  const end = Math.min(Date.now() + 1_000, control?.deadline ?? Infinity);
+  const assertBudget = () => {
+    if (control?.signal?.aborted || Date.now() >= end) {
+      return fail('GOVERNED_PLAN_STORE_BUSY', 'Governed plan publication budget was exhausted.');
+    }
+  };
+  let delay = 5;
+  for (;;) {
+    assertBudget();
+    try {
+      await operation(assertBudget);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? ''))
+        throw error;
+      const remaining = end - Date.now();
+      if (remaining <= 0)
+        return fail('GOVERNED_PLAN_STORE_BUSY', 'Governed plan publication remained busy.');
+      await new Promise<void>((done) => setTimeout(done, Math.min(delay, remaining)));
+      delay = Math.min(delay * 2, 100);
+    }
+  }
+}
+
+/** Only this invocation's inode may be cleaned; replacement evidence is retained. */
+async function removeOwned(path: string, trusted: Stats): Promise<void> {
+  await retryPublication(async (assertBudget) => {
+    const current = await lstatIfPresent(path);
+    if (!current) return;
+    if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(trusted, current)) {
+      return fail(
+        'GOVERNED_PLAN_STORE_FILE_CHANGED',
+        'Governed plan owned file changed before cleanup.',
+        path,
+      );
+    }
+    assertBudget();
+    await rm(path);
+  });
+}
+
 export interface GovernedPlanStore {
   create(record: GovernedPlanRecord): Promise<GovernedPlanRecord>;
   load(planId: string): Promise<GovernedPlanRecord | null>;
   list(): Promise<readonly GovernedPlanRecord[]>;
-  claimExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly ownerPid: number;
-    readonly startedAt: string;
-  }): Promise<GovernedPlanRecord>;
-  completeExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
-    readonly completedAt: string;
-    readonly outcomes: GovernedPlanExecution['outcomes'];
-    readonly blocker?: string;
-    readonly failure?: string;
-  }): Promise<GovernedPlanRecord>;
+  claimExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly ownerPid: number;
+      readonly startedAt: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord>;
+  completeExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
+      readonly completedAt: string;
+      readonly outcomes: GovernedPlanExecution['outcomes'];
+      readonly blocker?: string;
+      readonly failure?: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord>;
   cancel(params: {
     readonly planId: string;
     readonly expectedRevision: number;
@@ -212,8 +300,8 @@ function stableIdentity(left: Stats, right: Stats): boolean {
   return (
     sameIdentity(left, right) &&
     left.size === right.size &&
-    left.mtimeMs === right.mtimeMs &&
-    left.ctimeMs === right.ctimeMs
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
   );
 }
 
@@ -265,7 +353,7 @@ async function scan(
   directory: string,
   pattern: RegExp,
   allowedTemporary?: RegExp,
-  removableEntries = false,
+  options: { removableEntries?: boolean } = {},
 ): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true });
   if (entries.length > MAX_RECORDS * 2) {
@@ -287,7 +375,7 @@ async function scan(
       );
     }
     const stat = await lstatIfPresent(path);
-    if (!stat && (temporary || removableEntries)) continue;
+    if (!stat && (temporary || options.removableEntries)) continue;
     if (!stat)
       return fail(
         'GOVERNED_PLAN_STORE_FILE_CHANGED',
@@ -355,7 +443,7 @@ async function prepare(configuredRoot: string): Promise<PreparedStore> {
     );
   }
   await scan(recordsReal, RECORD_NAME, TEMP_NAME);
-  await scan(locksReal, LOCK_NAME, LOCK_TEMP_NAME, true);
+  await scan(locksReal, LOCK_NAME, LOCK_TEMP_NAME, { removableEntries: true });
   return {
     root: configuredRoot,
     rootReal,
@@ -376,7 +464,7 @@ async function readBounded(path: string): Promise<{ bytes: Buffer; stat: Stats }
   }
   const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
   try {
-    const opened = await handle.stat();
+    const opened = await handleStat(handle);
     if (!stableIdentity(before, opened)) {
       return fail(
         'GOVERNED_PLAN_STORE_FILE_CHANGED',
@@ -398,7 +486,7 @@ async function readBounded(path: string): Promise<{ bytes: Buffer; stat: Stats }
         path,
       );
     }
-    const after = await handle.stat();
+    const after = await handleStat(handle);
     if (!stableIdentity(opened, after)) {
       return fail(
         'GOVERNED_PLAN_STORE_FILE_CHANGED',
@@ -499,15 +587,19 @@ async function writeTemporary(
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
     0o600,
   );
+  let trusted: Stats | undefined;
   try {
-    await handle.writeFile(bytes, 'utf8');
-    await handle.sync();
+    try {
+      trusted = await handleStat(handle);
+      await handle.writeFile(bytes, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
   } catch (error) {
-    await handle.close();
-    await rm(path, { force: true });
+    if (trusted) await removeOwned(path, trusted);
     throw error;
   }
-  await handle.close();
   return path;
 }
 
@@ -605,7 +697,7 @@ async function readLock(
   }
   const handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
   try {
-    const opened = await handle.stat();
+    const opened = await handleStat(handle);
     if (!stableIdentity(initial, opened)) {
       return fail(
         'GOVERNED_PLAN_STORE_FILE_CHANGED',
@@ -615,7 +707,7 @@ async function readLock(
     }
     const buffer = Buffer.alloc(opened.size);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    const after = await handle.stat();
+    const after = await handleStat(handle);
     const final = await lstat(path);
     if (
       bytesRead !== buffer.length ||
@@ -687,7 +779,11 @@ async function removeProvablyStaleLock(
   await syncDirectory(prepared.locksReal);
 }
 
-async function acquireLock(prepared: PreparedStore, planId: string): Promise<HeldLock> {
+async function acquireLock(
+  prepared: PreparedStore,
+  planId: string,
+  control?: GovernedPlanStoreWriteControl,
+): Promise<HeldLock> {
   const path = join(prepared.locksReal, `${key(planId)}.lock`);
   for (let attempt = 0; attempt < GOVERNED_PLAN_STORE_LIMITS.lockAcquireAttempts; attempt += 1) {
     const owner: LockOwner = Object.freeze({
@@ -707,10 +803,13 @@ async function acquireLock(prepared: PreparedStore, planId: string): Promise<Hel
       fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
       0o600,
     );
+    let trusted: Stats | undefined;
+    let linked = false;
     try {
+      trusted = await handleStat(handle);
       await handle.writeFile(lockOwnerBytes(owner), 'utf8');
       await handle.sync();
-      const trusted = await handle.stat();
+      trusted = await handleStat(handle);
       const temporaryStat = await lstat(temporary);
       if (!stableIdentity(trusted, temporaryStat)) {
         return fail(
@@ -720,11 +819,21 @@ async function acquireLock(prepared: PreparedStore, planId: string): Promise<Hel
         );
       }
       try {
-        await link(temporary, path);
+        await retryPublication(async (assertBudget) => {
+          if (!stableIdentity(trusted!, await lstat(temporary))) {
+            return fail(
+              'GOVERNED_PLAN_STORE_FILE_CHANGED',
+              'Lock temporary changed before publication.',
+            );
+          }
+          assertBudget();
+          await link(temporary, path);
+          linked = true;
+        }, control);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         await handle.close();
-        await rm(temporary);
+        await removeOwned(temporary, trusted);
         try {
           await removeProvablyStaleLock(prepared, path, await readLock(prepared, path));
         } catch (error) {
@@ -756,12 +865,18 @@ async function acquireLock(prepared: PreparedStore, planId: string): Promise<Hel
           path,
         );
       }
-      await rm(temporary);
+      await removeOwned(temporary, trusted);
       await syncDirectory(prepared.locksReal);
       return { path, handle, stat: await lstat(path), owner };
     } catch (error) {
       await handle.close().catch(() => undefined);
-      await rm(temporary, { force: true }).catch(() => undefined);
+      if (trusted) {
+        try {
+          if (linked) await removeOwned(path, trusted);
+        } finally {
+          await removeOwned(temporary, trusted);
+        }
+      }
       throw error;
     }
   }
@@ -778,7 +893,7 @@ async function releaseLock(lock: HeldLock): Promise<void> {
       lock.path,
     );
   }
-  await rm(lock.path);
+  await removeOwned(lock.path, lock.stat);
   await syncDirectory(resolve(lock.path, '..'));
 }
 
@@ -830,9 +945,18 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
       record.planId,
       `${canonicalGovernedJson(record)}\n`,
     );
+    const trusted = await lstat(temporary);
     try {
       try {
-        await link(temporary, finalPath);
+        await retryPublication(async (assertBudget) => {
+          if (!stableIdentity(trusted, await lstat(temporary)))
+            return fail(
+              'GOVERNED_PLAN_STORE_FILE_CHANGED',
+              'Record temporary changed before publication.',
+            );
+          assertBudget();
+          await link(temporary, finalPath);
+        });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
           return fail(
@@ -845,7 +969,7 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
       }
       await syncDirectory(prepared.recordsReal);
     } finally {
-      await rm(temporary, { force: true });
+      await removeOwned(temporary, trusted);
     }
     const published = (await this.load(record.planId))!;
     this.#observe(published);
@@ -883,9 +1007,10 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     planId: string,
     expectedRevision: number,
     transition: (record: GovernedPlanRecord) => GovernedPlanRecord,
+    control?: GovernedPlanStoreWriteControl,
   ): Promise<GovernedPlanRecord> {
     const prepared = await prepare(this.#root);
-    const lock = await acquireLock(prepared, planId);
+    const lock = await acquireLock(prepared, planId, control);
     let released = false;
     try {
       const loaded = await loadPrepared(prepared, planId);
@@ -908,9 +1033,9 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
         );
       }
       const temporary = await writeTemporary(prepared, planId, `${canonicalGovernedJson(next)}\n`);
+      const temporaryStat = await lstat(temporary);
       try {
-        const temporaryStat = await lstat(temporary);
-        for (let attempt = 0; ; attempt += 1) {
+        await retryPublication(async (assertBudget) => {
           if (
             !stableIdentity(loaded.stat, await lstat(loaded.path)) ||
             !stableIdentity(temporaryStat, await lstat(temporary))
@@ -920,25 +1045,12 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
               'Governed plan changed during replacement retry.',
             );
           }
-          try {
-            await rename(temporary, loaded.path);
-            break;
-          } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            // Windows readers can temporarily prevent replace-by-rename. Keep the
-            // original record, fsynced temporary, and exclusive claim lock intact.
-            if (
-              process.platform !== 'win32' ||
-              !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '') ||
-              attempt >= 19
-            )
-              throw error;
-            await new Promise<void>((resolveRetry) => setTimeout(resolveRetry, 5));
-          }
-        }
+          assertBudget();
+          await rename(temporary, loaded.path);
+        }, control);
         await syncDirectory(prepared.recordsReal);
       } finally {
-        await rm(temporary, { force: true });
+        await removeOwned(temporary, temporaryStat);
       }
       await releaseLock(lock);
       released = true;
@@ -962,65 +1074,81 @@ export class LocalGovernedPlanStore implements GovernedPlanStore {
     }
   }
 
-  async claimExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly ownerPid: number;
-    readonly startedAt: string;
-  }): Promise<GovernedPlanRecord> {
-    return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (!canGovernedPlanStateTransition(record.state, 'executing')) {
-        return fail(
-          'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
-          `Cannot claim governed plan from ${record.state}.`,
-        );
-      }
-      return nextRecord(record, {
-        state: 'executing',
-        updatedAt: params.startedAt,
-        execution: {
-          executionId: params.executionId,
-          ownerPid: params.ownerPid,
-          startedAt: params.startedAt,
-          outcomes: [],
-        },
-      });
-    });
+  async claimExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly ownerPid: number;
+      readonly startedAt: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord> {
+    return this.#mutate(
+      params.planId,
+      params.expectedRevision,
+      (record) => {
+        if (!canGovernedPlanStateTransition(record.state, 'executing')) {
+          return fail(
+            'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
+            `Cannot claim governed plan from ${record.state}.`,
+          );
+        }
+        return nextRecord(record, {
+          state: 'executing',
+          updatedAt: params.startedAt,
+          execution: {
+            executionId: params.executionId,
+            ownerPid: params.ownerPid,
+            startedAt: params.startedAt,
+            outcomes: [],
+          },
+        });
+      },
+      control,
+    );
   }
 
-  async completeExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
-    readonly completedAt: string;
-    readonly outcomes: GovernedPlanExecution['outcomes'];
-    readonly blocker?: string;
-    readonly failure?: string;
-  }): Promise<GovernedPlanRecord> {
-    return this.#mutate(params.planId, params.expectedRevision, (record) => {
-      if (
-        !canGovernedPlanStateTransition(record.state, params.state) ||
-        record.execution?.executionId !== params.executionId
-      ) {
-        return fail(
-          'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
-          'Only the claimed execution may complete a governed plan.',
-        );
-      }
-      return nextRecord(record, {
-        state: params.state,
-        updatedAt: params.completedAt,
-        execution: {
-          ...record.execution,
-          completedAt: params.completedAt,
-          outcomes: params.outcomes,
-          ...(params.blocker === undefined ? {} : { blocker: params.blocker }),
-          ...(params.failure === undefined ? {} : { failure: params.failure }),
-        },
-      });
-    });
+  async completeExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
+      readonly completedAt: string;
+      readonly outcomes: GovernedPlanExecution['outcomes'];
+      readonly blocker?: string;
+      readonly failure?: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord> {
+    return this.#mutate(
+      params.planId,
+      params.expectedRevision,
+      (record) => {
+        if (
+          !canGovernedPlanStateTransition(record.state, params.state) ||
+          record.execution?.executionId !== params.executionId
+        ) {
+          return fail(
+            'GOVERNED_PLAN_STORE_TRANSITION_INVALID',
+            'Only the claimed execution may complete a governed plan.',
+          );
+        }
+        return nextRecord(record, {
+          state: params.state,
+          updatedAt: params.completedAt,
+          execution: {
+            ...record.execution,
+            completedAt: params.completedAt,
+            outcomes: params.outcomes,
+            ...(params.blocker === undefined ? {} : { blocker: params.blocker }),
+            ...(params.failure === undefined ? {} : { failure: params.failure }),
+          },
+        });
+      },
+      control,
+    );
   }
 
   async cancel(params: {

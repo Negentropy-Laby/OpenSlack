@@ -172,12 +172,16 @@ export async function callGovernedMutationTool(
     if (
       error &&
       typeof error === 'object' &&
-      (error as { readonly code?: unknown }).code === 'GOVERNED_PLAN_EXECUTION_ABORTED' &&
+      ['GOVERNED_PLAN_EXECUTION_ABORTED', 'GOVERNED_PLAN_EXECUTION_UNCERTAIN'].includes(
+        String((error as { readonly code?: unknown }).code),
+      ) &&
       typeof input.planId === 'string'
     ) {
-      const durable = await port.get(input.planId);
-      if (durable?.state === 'reconciliation_required' || durable?.state === 'executing') {
-        return governedMutationRecordResult(durable);
+      try {
+        const durable = await port.get(input.planId);
+        if (durable && durable.state !== 'pending') return governedMutationRecordResult(durable);
+      } catch {
+        // Inspection must not replace execution uncertainty with a contention error.
       }
     }
     throw error;
