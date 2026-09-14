@@ -15,7 +15,7 @@ manifest supplies requested lease parameters; the returned receipt controls vali
 Stop on expiry, missing approval or ambiguous ownership. Never infer a lease from local
 files or bootstrap success. Report idle or blocked rather than inventing work.
 
-Work only within both task and registry permissions. Explicitly scoped workflow edits
-are permitted; unrelated workflow edits are not. Never self-edit registry/prompts, edit
+Work only within both task and registry permissions. The default registry denies
+`.github/**`, including workflow edits; a task cannot override that deny. Never self-edit registry/prompts, edit
 policies, access credentials, push to main, deploy, or originate approval decisions.
 Preserve run records and submit through the governed task/PR lifecycle.

@@ -170,7 +170,7 @@ describe('migrateV1ToV2', () => {
   });
 
   it('rejects agent ids that cannot satisfy v2 schema', () => {
-    expect(() => migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'legacy')).toThrow(
+    expect(() => migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'NUL')).toThrow(
       'Invalid v2 agent_id',
     );
   });
@@ -268,7 +268,7 @@ describe('migrateRegistry', () => {
   });
 
   it('does not write invalid v2 ids in apply mode', () => {
-    writeRegistry('legacy', `schema: openslack.agent_registry.v1\n`);
+    writeRegistry('legacy', `schema: openslack.agent_registry.v1\nagent_id: NUL\n`);
     const results = migrateRegistry(fixtureRoot, { apply: true });
     expect(results[0].status).toBe('error');
     expect(results[0].error).toContain('Invalid v2 agent_id');

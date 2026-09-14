@@ -9,7 +9,7 @@ export interface MigrationResult {
   error?: string;
 }
 
-const V2_AGENT_ID_PATTERN = /^[a-z][a-z0-9]*_[a-z][a-z0-9]*_[a-z][a-z0-9-]*$/;
+import { isSafeAgentId } from './agent-id.js';
 const RISK_ZONES = new Set<RiskZone>(['green', 'yellow', 'red', 'black']);
 const EMPLOYMENT_STATUSES = new Set(['active', 'paused', 'onboarding', 'retired']);
 
@@ -51,13 +51,10 @@ export function migrateV1ToV2(data: Record<string, unknown>, agentId: string): A
   if (rawDisplayName !== undefined && typeof rawDisplayName !== 'string') {
     throw new Error(`Invalid display_name for "${canonicalId}": value must be a string`);
   }
-  const displayName = rawDisplayName ?? canonicalId.replace(/_/g, ' ').replace(/-/g, ' ');
-
-  if (!V2_AGENT_ID_PATTERN.test(canonicalId)) {
-    throw new Error(
-      `Invalid v2 agent_id "${canonicalId}". Expected pattern ${V2_AGENT_ID_PATTERN.source}`,
-    );
+  if (!isSafeAgentId(canonicalId)) {
+    throw new Error(`Invalid v2 agent_id: expected a portable name of 1–128 characters`);
   }
+  const displayName = rawDisplayName ?? canonicalId.replace(/_/g, ' ').replace(/-/g, ' ');
   if (!displayName.trim()) {
     throw new Error(`Invalid display_name for "${canonicalId}": value is empty`);
   }
@@ -164,6 +161,12 @@ export function migrateRegistry(
       const data = parseYaml(raw) as Record<string, unknown>;
       const schema = data.schema as string;
 
+      if (
+        !isSafeAgentId(agentId) ||
+        (data.agent_id !== undefined && !isSafeAgentId(data.agent_id))
+      ) {
+        throw new Error('Invalid v2 agent_id: expected a portable name of 1–128 characters');
+      }
       if (schema === 'openslack.agent_registry.v2') {
         results.push({ agentId, status: 'already_v2' });
         continue;

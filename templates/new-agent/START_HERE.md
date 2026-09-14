@@ -19,6 +19,10 @@ The runtime entrypoint is `{{ENTRYPOINT}}`; this package is under
 The administrator must review the generated identity, capabilities, repository
 `{{GITHUB_OWNER}}/{{GITHUB_REPO}}`, path permissions and execution limits before use.
 A generated registry is not an approval or a grant to work on arbitrary source files.
+The Yellow permission ceiling controls authorization; the Medium task risk ceiling
+controls candidate selection. Both gates apply independently. For `custom_runner`,
+provider `unconfigured` is a placeholder: an administrator must configure the actual
+provider and execution environment before bootstrap can pass.
 Do not edit your own registry or prompts to resolve a denied operation.
 
 Have the administrator provision local identity under
@@ -57,7 +61,8 @@ An existing claim must be verified before continuing; do not acquire duplicate w
 The task manifest's lease supplies requested TTL and heartbeat values. If omitted,
 GitHub Issues claiming currently defaults to 60 minutes TTL and 15 minutes heartbeat.
 The returned claim receipt supplies effective expiry and next heartbeat; registry
-execution limits never extend that lease. There is no separate onboarding lease policy.
+execution limits never extend that lease. Legacy registry TTL and heartbeat fields
+are parsed for compatibility but do not control GitHub Issues claims. There is no separate onboarding lease policy.
 
 After a real claim is granted:
 
@@ -86,6 +91,6 @@ before governed lifecycle completion.
 Work only in the intersection of task and registry grants. Authorized creation targets
 may not exist yet; their absence does not grant any additional path. Never modify your
 registry, prompts, policies, credentials or protected paths; never push to main, deploy
-to production, or originate approval decisions. Workflow edits require explicit task
-and registry scope. Report missing prerequisites as blocked; preserve evidence. When
+to production, or originate approval decisions. The default registry denies `.github/**`, including workflows; task scope cannot
+override registry deny rules. Report missing prerequisites as blocked; preserve evidence. When
 idle, report idle and exit without inventing work.

@@ -25,7 +25,7 @@
     },
     "agent_id": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9]*_[a-z][a-z0-9]*_[a-z][a-z0-9-]*$"
+      "pattern": "^(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|$))(?!.*\\.$)[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?![\\s\\S])"
     },
     "display_name": { "type": "string" },
     "employee_type": { "type": "string", "const": "ai_agent" },

@@ -1,12 +1,5 @@
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-} from 'node:fs';
+import { onboardingFixture, obsoleteOnboarding } from './onboarding-fixture.js';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
@@ -18,13 +11,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'onboarding with spaces '));
-  roots.push(root);
-  const destination = join(root, 'templates', 'new-agent');
-  mkdirSync(destination, { recursive: true });
-  for (const name of AGENT_ONBOARDING_DOCUMENTS)
-    copyFileSync(join(process.cwd(), 'templates', 'new-agent', name), join(destination, name));
-  return root;
+  return onboardingFixture(roots);
 }
 describe('new-agent template format safety', () => {
   it('generates executable Codex guidance and a typed manual registry in a path with spaces', () => {
@@ -50,9 +37,7 @@ describe('new-agent template format safety', () => {
     expect(readdirSync(folder).sort()).toEqual([...AGENT_ONBOARDING_DOCUMENTS].sort());
     for (const file of readdirSync(folder)) {
       const content = readFileSync(join(folder, file), 'utf8');
-      expect(content).not.toMatch(
-        /\{\{[A-Z_]+\}\}|\/v1\/claims|--claim-one|--source (?:github-project|local-cron)|schedule.github-actions|local_cron/,
-      );
+      expect(content).not.toMatch(obsoleteOnboarding);
       expect(content).not.toContain(rootDir);
       expect(content).not.toMatch(/agents\/prompts\/[^\s`]+\.md/);
     }
@@ -71,7 +56,7 @@ describe('new-agent template format safety', () => {
   it.each(['../escape', 'a/b', 'C:escape', ''])(
     'rejects an unsafe agent ID %j before writing',
     (agentId) => {
-      const rootDir = fixture();
+      const rootDir = join(tmpdir(), 'nonexistent-hire-validation-fixture');
       expect(() => hireAgent({ rootDir, agentId })).toThrow('Agent ID');
       expect(existsSync(join(rootDir, '.openslack'))).toBe(false);
     },

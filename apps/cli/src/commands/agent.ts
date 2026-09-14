@@ -37,6 +37,7 @@ export function agentCommands(dependencies: AgentCommandDependencies = {}): Comm
     .option('--github-repo <repo>', 'GitHub repo', 'OpenSlack')
     .option('--project-number <n>', 'GitHub Project number', '1')
     .action((options) => {
+      process.exitCode = undefined;
       try {
         const result = hireAgent({ rootDir: findRepoRoot(), ...options });
         console.log(`Agent ${result.agentId} hired successfully.`);

@@ -3,19 +3,27 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import {
   isTaskRiskLevel,
+  isRiskZone,
   type AgentRegistryEntry,
   type AgentPermissions,
   type RiskZone,
 } from '@openslack/kernel';
 
-const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+import { isSafeAgentId } from './agent-id.js';
+
+const DEFAULT_AGENT_RISK_ZONE: RiskZone = 'yellow';
+function parseRiskZone(value: unknown): RiskZone {
+  if (value === undefined || value === '') return DEFAULT_AGENT_RISK_ZONE;
+  if (!isRiskZone(value)) throw new Error('AGENT_RISK_ZONE_INVALID: permissions.max_risk_zone');
+  return value;
+}
 
 export interface ParsedAgentRegistryEntry extends AgentRegistryEntry {
   _source_schema: 'openslack.agent_registry.v1' | 'openslack.agent_registry.v2';
 }
 
 export function parseAgentRegistry(root: string, agentId: string): ParsedAgentRegistryEntry | null {
-  if (!SAFE_AGENT_ID.test(agentId)) return null;
+  if (!isSafeAgentId(agentId)) return null;
   const regPath = join(root, '.openslack', 'agents', 'registry', `${agentId}.yaml`);
   if (!existsSync(regPath)) return null;
 
@@ -30,12 +38,14 @@ export function parseAgentRegistryText(
   if (
     typeof raw !== 'string' ||
     Buffer.byteLength(raw, 'utf8') > 2 * 1024 * 1024 ||
-    !SAFE_AGENT_ID.test(agentId)
+    !isSafeAgentId(agentId)
   ) {
     return null;
   }
   const data = parseYaml(raw) as Record<string, unknown> | null;
   if (!data || typeof data !== 'object') return null;
+
+  if (data.agent_id !== undefined && !isSafeAgentId(data.agent_id)) return null;
 
   const schema = data.schema as string | undefined;
   if (!schema) {
@@ -134,7 +144,7 @@ function parseV2(data: Record<string, unknown>, agentId: string): AgentRegistryE
         can_approve: false,
         can_merge: false,
       },
-      max_risk_zone: (perms.max_risk_zone as RiskZone) || 'red',
+      max_risk_zone: parseRiskZone(perms.max_risk_zone),
     },
     execution: {
       max_parallel_tasks: execution.max_parallel_tasks as number | undefined,
@@ -227,7 +237,7 @@ function normalizeV1toV2(data: Record<string, unknown>, agentId: string): AgentR
         can_approve: false,
         can_merge: false,
       },
-      max_risk_zone: 'yellow' as RiskZone,
+      max_risk_zone: DEFAULT_AGENT_RISK_ZONE,
     },
     execution: {
       max_parallel_tasks: execution.max_parallel_tasks as number | undefined,

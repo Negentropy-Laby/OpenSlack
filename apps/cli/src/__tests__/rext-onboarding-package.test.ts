@@ -1,3 +1,4 @@
+import { obsoleteOnboarding } from './onboarding-fixture.js';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -112,9 +113,7 @@ describe('manual R-EXT onboarding package', () => {
     ]);
     for (const file of readdirSync(folder)) {
       const text = readFileSync(join(folder, file), 'utf8');
-      expect(text).not.toMatch(
-        /\/v1\/claims|--claim-one|--source (?:github-project|local-cron)|schedule.github-actions|local_cron|[A-Z]:[\\/]/,
-      );
+      expect(text).not.toMatch(obsoleteOnboarding);
       for (const [, path] of text.matchAll(
         /`((?:\.openslack\/(?:agents|policies)\/|docs\/)[^`]+)`/g,
       )) {
