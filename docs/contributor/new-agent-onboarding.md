@@ -6,60 +6,75 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-09-14
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
 
 # New Agent Onboarding Guide
 
-## Hiring a New Agent
+## Administrator Registration
+
+Run from a feature branch in the repository:
 
 ```bash
-openslack agent hire --agent-id codex_developer_ci-bot \
-  --display-name "CI Bot" \
-  --department engineering \
-  --role developer \
-  --runtime codex
+bun run openslack agent hire --agent-id codex_developer_ci-bot \
+  --display-name "CI Bot" --department engineering --role developer \
+  --runtime codex --github-owner Negentropy-Laby --github-repo OpenSlack
 ```
 
-This creates:
+The command creates `.openslack/agents/registry/<agent_id>.yaml` and four Markdown
+onboarding documents under `.openslack/agents/onboarding/<agent_id>/`: START_HERE,
+first-day checklist, Codex prompt and Claude routine reference. The reported entrypoint
+is the existing prompt for Codex/Claude, or START_HERE for a custom runtime. Codex
+registrations use provider `openai`; other runtime defaults remain compatible and
+must be reviewed for the intended provider. YAML values are serialized, not interpolated.
+An existing registry or onboarding directory is rejected; hiring cannot rewrite an identity.
 
-- `agents/registry/<agent_id>.yaml` — Registry entry
-- `agents/onboarding/<agent_id>/` — 8 tracked onboarding files
+New packages are manual-only. No cron/Actions example or separate claim-policy/task-board
+configuration is generated. The old `--project-number` option remains accepted for CLI
+compatibility but is not an authority for GitHub Issues discovery or claiming. Existing
+registries are not migrated or automatically regenerated.
 
-`identity.yaml` is intentionally not copied into the tracked onboarding directory. It remains
-operator-local state and must be created under `.openslack.local/` as described below.
+## Before First Use
 
-## Manual Steps After Hiring
+The administrator reviews provider, employment, capabilities, repository, allowed/denied
+paths and execution limits through a governed PR. Agents cannot edit their own registry
+or prompts. Nonexistent paths may be legitimate reviewed creation targets; validate
+scope against the task, not merely whether a file already exists.
 
-1. Create local identity:
-   ```
-   .openslack.local/agents/<agent_id>/identity.yaml
-   ```
-2. Set credentials:
-   ```yaml
-   credentials:
-     api_key_env: 'ANTHROPIC_API_KEY'
-     github_token_env: 'GITHUB_TOKEN'
-     openslack_token_env: 'OPENSLACK_AGENT_TOKEN'
-   ```
-3. Bootstrap:
-   ```bash
-   openslack agent bootstrap --agent-id <agent_id>
-   ```
-4. When bootstrap passes, agent is ready to work.
+Local identity belongs under `.openslack.local/agents/<agent_id>/identity.yaml`, outside
+the tracked package. Have the administrator provision it and configure runtime and bot
+authentication through supported setup. Never copy credential material into onboarding
+or repository evidence. Then run:
 
-## Agent Files
+```bash
+bun run openslack workspace validate
+bun run openslack agent bootstrap --agent-id <agent_id>
+```
 
-| File                          | Purpose                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| `START_HERE.md`               | Entry point: identity, where tasks live, boundaries                        |
-| `identity.yaml`               | Operator-local credentials created in `.openslack.local/`; never committed |
-| `github_task_contract.yaml`   | Project number, field mappings                                             |
-| `claim_policy.yaml`           | Lease TTL, heartbeat interval, concurrency                                 |
-| `schedule.github-actions.yml` | GitHub Actions tick schedule                                               |
-| `codex_automation_prompt.md`  | Codex-native automation prompt                                             |
-| `claude_routine_prompt.md`    | Claude Code routine prompt                                                 |
-| `local_cron.example`          | Local cron schedule                                                        |
-| `first_day_checklist.md`      | Bootstrap verification                                                     |
+Missing local identity is a failure on a fresh checkout, including CI. Bootstrap success
+means structural checks passed, not that task authorization, human approval or external
+qualification passed. Scheduled deployment requires separate configuration and review.
+
+## Manual GitHub Issues Work
+
+Follow the generated START_HERE and [GitHub Issues loop](github-issues-loop.md). Use
+`agent tick --agent-id <id> --source github-issues --issue-number <n>` only after task
+readiness and all required capabilities, risk and path checks pass. `--source` accepts
+only `local` and `github-issues`; omission defaults to `local`, and invalid values fail
+before runtime invocation. `--claim-one` is not supported.
+
+Claims use `refs/heads/openslack/claims/issue-<n>` plus verified owner evidence. Only then
+use `task checkout`, retain the returned worktree/task/run IDs, heartbeat before its due
+time, and submit exact allowed paths through `task sync`. Do not fabricate claim history.
+
+The Issue manifest supplies requested lease parameters. If omitted, the current GitHub
+claim defaults remain 60 minutes TTL and 15 minutes heartbeat. The actual claim receipt
+controls expiry and renewal. Legacy registry TTL/heartbeat fields remain parse-compatible
+but do not override these values; new registrations omit them. Runtime limits do not
+extend the lease. There is no separately consumed onboarding lease policy.
+
+Keep bootstrap, task readiness, claim, source validation, hosted CI, human approval and
+external qualification as separate evidence. Preserve blocked/unknown outcomes and use
+the documented claim recovery flow. No local success implies release or live readiness.

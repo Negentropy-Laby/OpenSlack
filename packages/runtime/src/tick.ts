@@ -77,7 +77,7 @@ export interface TickOptions {
 }
 
 export interface TickTargetOptionsInput {
-  source?: TickOptions['source'];
+  source?: string;
   issueNumber?: string | number;
 }
 
@@ -88,6 +88,12 @@ export type TickTargetOptionsValidation =
 export function validateTickTargetOptions(
   input: TickTargetOptionsInput,
 ): TickTargetOptionsValidation {
+  if (input.source !== undefined && input.source !== 'local' && input.source !== 'github-issues') {
+    return {
+      valid: false,
+      message: 'AGENT_TASK_SOURCE_INVALID: --source must be local or github-issues',
+    };
+  }
   if (input.issueNumber === undefined) return { valid: true };
 
   let issueNumber: number;
@@ -148,7 +154,7 @@ export async function tickAgent(
   dependencies: TickDependencies = {},
 ): Promise<TickResult> {
   const root = findRepoRoot();
-  const source = options.source || 'local';
+  const source = options.source ?? 'local';
   const targetOptions = validateTickTargetOptions({ source, issueNumber: options.issueNumber });
   if (!targetOptions.valid) {
     return {

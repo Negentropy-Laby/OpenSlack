@@ -1,5 +1,5 @@
 import {
-  cpSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -29,9 +29,18 @@ describe('agent hire', () => {
 
     writeFileSync(join(root, 'openslack.yaml'), 'schema: openslack.workspace.v1\n');
     mkdirSync(join(root, 'templates'), { recursive: true });
-    cpSync(join(sourceRoot, 'templates', 'new-agent'), join(root, 'templates', 'new-agent'), {
-      recursive: true,
-    });
+    mkdirSync(join(root, 'templates', 'new-agent'));
+    for (const name of [
+      'START_HERE.md',
+      'first_day_checklist.md',
+      'codex_automation_prompt.md',
+      'claude_routine_prompt.md',
+    ]) {
+      copyFileSync(
+        join(sourceRoot, 'templates', 'new-agent', name),
+        join(root, 'templates', 'new-agent', name),
+      );
+    }
 
     const previousCwd = process.cwd();
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -46,12 +55,14 @@ describe('agent hire', () => {
     }
 
     const onboardingDir = join(root, '.openslack', 'agents', 'onboarding', 'fixture-agent');
-    expect(readdirSync(onboardingDir)).toHaveLength(8);
+    expect(readdirSync(onboardingDir)).toEqual(
+      expect.arrayContaining(['START_HERE.md', 'codex_automation_prompt.md']),
+    );
     expect(existsSync(join(onboardingDir, 'identity.yaml'))).toBe(false);
     expect(existsSync(join(root, '.openslack', 'agents', 'registry', 'fixture-agent.yaml'))).toBe(
       true,
     );
-    expect(existsSync(join(root, '.openslack', 'agents', 'prompts'))).toBe(true);
+    expect(existsSync(join(root, '.openslack', 'agents', 'prompts'))).toBe(false);
     expect(log).toHaveBeenCalledWith(
       '  1. Create local identity in .openslack.local/agents/fixture-agent/identity.yaml',
     );

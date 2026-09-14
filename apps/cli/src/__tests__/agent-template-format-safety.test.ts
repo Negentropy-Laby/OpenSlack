@@ -1,107 +1,79 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parse } from 'yaml';
+import { afterEach, describe, expect, it } from 'vitest';
+import { hireAgent, AGENT_ONBOARDING_DOCUMENTS } from '@openslack/runtime';
 
-const repoRoot = resolve(process.cwd());
-const ignoredTemplates = [
-  'templates/new-agent/claim_policy.yaml',
-  'templates/new-agent/github_task_contract.yaml',
-] as const;
-
-interface ClaimPolicy {
-  lease: {
-    ttl_minutes: number;
-    heartbeat_interval_minutes: number;
-  };
-  concurrency: {
-    max_parallel_tasks: number;
-  };
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'onboarding with spaces '));
+  roots.push(root);
+  const destination = join(root, 'templates', 'new-agent');
+  mkdirSync(destination, { recursive: true });
+  for (const name of AGENT_ONBOARDING_DOCUMENTS)
+    copyFileSync(join(process.cwd(), 'templates', 'new-agent', name), join(destination, name));
+  return root;
 }
-
-interface GithubTaskContract {
-  github: {
-    project_number: number;
-  };
-  claim: {
-    lease_ttl_minutes: number;
-    heartbeat_interval_minutes: number;
-    max_parallel_tasks: number;
-  };
-}
-
-function readRepoFile(path: string): string {
-  return readFileSync(resolve(repoRoot, path), 'utf8');
-}
-
-function renderTemplate(template: string): string {
-  const replacements: Record<string, string> = {
-    AGENT_ID: 'fixture-agent',
-    GITHUB_OWNER: 'Negentropy-Laby',
-    GITHUB_REPO: 'OpenSlack',
-    PROJECT_NUMBER: '42',
-    MAX_RISK_LEVEL: 'medium',
-    LEASE_TTL_MINUTES: '60',
-    HEARTBEAT_INTERVAL: '10',
-    MAX_PARALLEL_TASKS: '1',
-  };
-
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (placeholder, name: string) => {
-    const replacement = replacements[name];
-    if (replacement === undefined) {
-      throw new Error(`Missing fixture replacement for ${placeholder}`);
-    }
-    return replacement;
-  });
-}
-
 describe('new-agent template format safety', () => {
-  it('ignores exactly the two Mustache YAML templates', () => {
-    const ignoredPaths = readRepoFile('.prettierignore')
-      .split(/\r?\n/)
-      .filter((line) => line.length > 0);
-
-    expect(ignoredPaths).toEqual(ignoredTemplates);
-  });
-
-  it('preserves seven unquoted numeric placeholders', () => {
-    const templates = ignoredTemplates.map(readRepoFile);
-    const numericPlaceholders = templates.flatMap((template) =>
-      [
-        ...template.matchAll(
-          /:\s*(\{\{(?:PROJECT_NUMBER|LEASE_TTL_MINUTES|HEARTBEAT_INTERVAL|MAX_PARALLEL_TASKS)\}\})\s*$/gm,
-        ),
-      ].map(([, placeholder]) => placeholder),
+  it('generates executable Codex guidance and a typed manual registry in a path with spaces', () => {
+    const rootDir = fixture();
+    const result = hireAgent({
+      rootDir,
+      agentId: 'fixture-agent',
+      runtime: 'codex',
+      displayName: 'Quoted "name": C:\\fixtures',
+      githubOwner: 'owner',
+      githubRepo: 'repo',
+    });
+    const registry = parse(
+      readFileSync(join(rootDir, '.openslack/agents/registry/fixture-agent.yaml'), 'utf8'),
     );
-
-    expect(numericPlaceholders).toHaveLength(7);
-    expect(numericPlaceholders).toEqual([
-      '{{LEASE_TTL_MINUTES}}',
-      '{{HEARTBEAT_INTERVAL}}',
-      '{{MAX_PARALLEL_TASKS}}',
-      '{{PROJECT_NUMBER}}',
-      '{{LEASE_TTL_MINUTES}}',
-      '{{HEARTBEAT_INTERVAL}}',
-      '{{MAX_PARALLEL_TASKS}}',
-    ]);
+    expect(registry.display_name).toBe('Quoted "name": C:\\fixtures');
+    expect(registry.vendor).toMatchObject({ provider: 'openai', runtime: 'codex' });
+    expect(registry.scheduler).toEqual({ preferred_mode: 'manual', cadence_minutes: 0 });
+    expect(registry.execution).toEqual({ max_parallel_tasks: 1, max_task_runtime_minutes: 120 });
+    expect(registry.permissions.github).toMatchObject({ can_approve: false, can_merge: false });
+    expect(existsSync(join(rootDir, result.entrypoint))).toBe(true);
+    const folder = join(rootDir, '.openslack/agents/onboarding/fixture-agent');
+    expect(readdirSync(folder).sort()).toEqual([...AGENT_ONBOARDING_DOCUMENTS].sort());
+    for (const file of readdirSync(folder)) {
+      const content = readFileSync(join(folder, file), 'utf8');
+      expect(content).not.toMatch(
+        /\{\{[A-Z_]+\}\}|\/v1\/claims|--claim-one|--source (?:github-project|local-cron)|schedule.github-actions|local_cron/,
+      );
+      expect(content).not.toContain(rootDir);
+      expect(content).not.toMatch(/agents\/prompts\/[^\s`]+\.md/);
+    }
+    expect(readFileSync(join(rootDir, result.entrypoint), 'utf8')).toContain('claim receipt');
   });
-
-  it('renders the unquoted placeholders as YAML numbers', () => {
-    const claimPolicy = parseYaml(renderTemplate(readRepoFile(ignoredTemplates[0]))) as ClaimPolicy;
-    const githubTaskContract = parseYaml(
-      renderTemplate(readRepoFile(ignoredTemplates[1])),
-    ) as GithubTaskContract;
-
-    expect(claimPolicy.lease).toEqual({
-      ttl_minutes: 60,
-      heartbeat_interval_minutes: 10,
-    });
-    expect(claimPolicy.concurrency).toEqual({ max_parallel_tasks: 1 });
-    expect(githubTaskContract.github.project_number).toBe(42);
-    expect(githubTaskContract.claim).toEqual({
-      lease_ttl_minutes: 60,
-      heartbeat_interval_minutes: 10,
-      max_parallel_tasks: 1,
-    });
+  it('does not overwrite a deployed identity', () => {
+    const rootDir = fixture();
+    hireAgent({ rootDir, agentId: 'fixture-agent' });
+    const registry = join(rootDir, '.openslack/agents/registry/fixture-agent.yaml');
+    const before = readFileSync(registry, 'utf8');
+    expect(() => hireAgent({ rootDir, agentId: 'fixture-agent', runtime: 'codex' })).toThrow(
+      'already exists',
+    );
+    expect(readFileSync(registry, 'utf8')).toBe(before);
   });
+  it.each(['../escape', 'a/b', 'C:escape', ''])(
+    'rejects an unsafe agent ID %j before writing',
+    (agentId) => {
+      const rootDir = fixture();
+      expect(() => hireAgent({ rootDir, agentId })).toThrow('Agent ID');
+      expect(existsSync(join(rootDir, '.openslack'))).toBe(false);
+    },
+  );
 });
