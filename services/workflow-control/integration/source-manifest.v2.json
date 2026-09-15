@@ -478,7 +478,7 @@
     },
     "workflowOwnerFileSecurity": {
       "path": "packages/workflows/src/workflow-control-shadow.ts",
-      "sha256": "73ccb9b37adc536d089df96dc3efa63ca942e6463e9fa7a2a84550587ce36062"
+      "sha256": "0f88ee361499a0bf2e2a6b63a5450b81750da524059ad8c4c7fd04ae6f9db4e6"
     },
     "workflowRunnerAuthorityClient": {
       "path": "packages/workflows/src/workflow-runner-authority-binding-client.ts",

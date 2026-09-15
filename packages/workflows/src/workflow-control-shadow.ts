@@ -703,6 +703,31 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
   });
 }
 
+// Child churn can invalidate an ACL cache key without replacing the directory.
+// Require one stable snapshot across the actual security read; otherwise refresh
+// at most three times. An old safe ACL must never authorize a newer DACL.
+async function assertStableDirectorySecurity(
+  path: string,
+  initial: BigIntStats,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
+  let before = initial;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assertOwnerOnlyPath(path, before, security);
+    const after = await lstat(path, { bigint: true });
+    if (!sameDirectoryObject(before, after)) {
+      throw new TypeError(
+        'Workflow Control shadow journal directory changed during security validation.',
+      );
+    }
+    if (sameIdentity(before, after)) return;
+    before = after;
+  }
+  throw new TypeError(
+    'Workflow Control shadow journal directory security identity did not stabilize.',
+  );
+}
+
 export async function ensureOwnerDirectory(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -737,12 +762,7 @@ export async function ensureOwnerDirectory(
   }
   // Child creation/removal changes directory timestamps without replacing it.
   // Recheck security using the fresh identity so an ACL change is never cached away.
-  assertOwnerOnlyPath(path, after, security);
-  if (!sameDirectoryObject(after, await lstat(path, { bigint: true }))) {
-    throw new TypeError(
-      'Workflow Control shadow journal directory changed during security validation.',
-    );
-  }
+  await assertStableDirectorySecurity(path, after, security);
   return canonical;
 }
 
@@ -772,12 +792,7 @@ export async function assertOwnerDirectory(
   }
   // Child creation/removal changes directory timestamps without replacing it.
   // Recheck security using the fresh identity so an ACL change is never cached away.
-  assertOwnerOnlyPath(path, after, security);
-  if (!sameDirectoryObject(after, await lstat(path, { bigint: true }))) {
-    throw new TypeError(
-      'Workflow Control shadow journal directory changed during security validation.',
-    );
-  }
+  await assertStableDirectorySecurity(path, after, security);
   return canonical;
 }
 

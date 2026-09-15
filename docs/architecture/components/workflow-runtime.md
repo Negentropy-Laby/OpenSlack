@@ -1024,7 +1024,8 @@ name before an exclusive hardlink publishes the final lock. Contenders never con
 an unfinished final lock; an existing malformed lock still fails closed. Cleanup verifies
 the owned inode and exact content, accounting for Windows link and close timestamp
 changes without deleting replacement evidence. Directory validation distinguishes child
-entry churn from directory replacement and rechecks owner access with fresh metadata.
+entry churn from directory replacement and requires stable metadata across the owner-access
+lookup. Metadata drift triggers at most three refresh attempts; exhaustion fails closed.
 The effect-authority inventory permits only strictly named lock construction files;
 unknown entries and symlinks remain invalid. This changes neither persistent record
 formats nor the authority or lease rules.

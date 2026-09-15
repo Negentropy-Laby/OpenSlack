@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, utimesSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -285,6 +285,52 @@ describe('owner lock publication', () => {
           },
         }),
       ).rejects.toThrow(/directory changed/u);
+    });
+
+    it('rejects a safe ACL snapshot invalidated during the refreshed read', async () => {
+      const root = await fixture();
+      let reads = 0;
+      await expect(
+        validate(root, {
+          ...security,
+          readWindowsPathSecurity: (path, identity, cacheable) => {
+            reads += 1;
+            if (reads <= 2) {
+              // The first change forces refresh. The second models a safe Get-Acl
+              // snapshot followed by a DACL mutation before that read returns.
+              writeFileSync(join(root, `acl-identity-change-${reads}`), 'changed metadata');
+              const timestamp = new Date(1_800_000_000_000 + reads * 1000);
+              utimesSync(root, timestamp, timestamp);
+              return security.readWindowsPathSecurity!(path, identity, cacheable);
+            }
+            return {
+              owner: 'S-1-5-21-1000-1001-1002-1003',
+              protected: false,
+              reparse: false,
+              rules: [],
+            };
+          },
+        }),
+      ).rejects.toThrow(/ACL is not owner-only/u);
+      expect(reads).toBe(3);
+    });
+
+    it('fails closed when repeated metadata drift prevents stable ACL proof', async () => {
+      const root = await fixture();
+      let reads = 0;
+      await expect(
+        validate(root, {
+          ...security,
+          readWindowsPathSecurity: (path, identity, cacheable) => {
+            reads += 1;
+            writeFileSync(join(root, `child-${reads}`), 'changed metadata');
+            const timestamp = new Date(1_800_000_000_000 + reads * 1000);
+            utimesSync(root, timestamp, timestamp);
+            return security.readWindowsPathSecurity!(path, identity, cacheable);
+          },
+        }),
+      ).rejects.toThrow(/security identity did not stabilize/u);
+      expect(reads).toBe(4); // Initial lookup plus three bounded refresh attempts.
     });
 
     it('rejects an unsafe ACL instead of accepting timestamp drift', async () => {
