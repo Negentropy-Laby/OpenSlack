@@ -1506,10 +1506,14 @@ describe('workflow effect D2 authorization', () => {
     async function prepareRevision(
       value: Awaited<ReturnType<typeof fixture>>,
     ): Promise<Participant[]> {
-      const results = await Promise.allSettled(
-        Array.from({ length: 12 }, async () => {
-          const port = value.makePort();
-          return {
+      const participants: Participant[] = [];
+      // Preparation is fixture setup, not the concurrency assertion. Prepare
+      // every host-minted view without competing for the production 30s lock
+      // budget; all 24 authorize calls below still start concurrently.
+      for (let index = 0; index < 12; index += 1) {
+        const port = value.makePort();
+        try {
+          participants.push({
             port,
             prepared: await port.prepare({
               runId: 'run-1',
@@ -1517,20 +1521,14 @@ describe('workflow effect D2 authorization', () => {
               operation: 'openslack.governance.audit',
               detail: 'bounded audit',
             }),
-          };
-        }),
-      );
-      const failures = results.filter((result) => result.status === 'rejected');
-      if (failures.length) {
-        throw new AggregateError(
-          failures.map((result) => result.reason),
-          'Approval revision preparation failed.',
-        );
+          });
+        } catch (cause) {
+          throw new Error(`Approval revision preparation failed at participant ${index + 1}/12.`, {
+            cause,
+          });
+        }
       }
-      return results.map((result) => {
-        if (result.status !== 'fulfilled') throw new Error('Unsettled revision preparation');
-        return result.value;
-      });
+      return participants;
     }
 
     // Measured Windows preparation alone takes about 67s. Bound setup separately
@@ -1563,10 +1561,29 @@ describe('workflow effect D2 authorization', () => {
           const settled = await Promise.allSettled(
             participants.map(({ port, prepared }) => port.authorize(prepared)),
           );
+          const outcomes = settled.map((result) =>
+            result.status === 'fulfilled'
+              ? { status: result.status }
+              : {
+                  status: result.status,
+                  name: result.reason?.name,
+                  code: result.reason?.code,
+                  causeCode: result.reason?.cause?.code,
+                  causeName: result.reason?.cause?.name,
+                  message: result.reason?.message,
+                  causeMessage: result.reason?.cause?.message,
+                },
+          );
+          const diagnostic = JSON.stringify(outcomes);
           const fulfilledIndex = settled.findIndex((entry) => entry.status === 'fulfilled');
-          expect(settled.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
+          expect(
+            settled.filter((entry) => entry.status === 'fulfilled'),
+            diagnostic,
+          ).toHaveLength(1);
           for (const rejected of settled.filter((entry) => entry.status === 'rejected')) {
-            expect(rejected.reason).toBeInstanceOf(WorkflowEffectAuthorizationBusyError);
+            expect(rejected.reason, diagnostic).toBeInstanceOf(
+              WorkflowEffectAuthorizationBusyError,
+            );
             expect(rejected.reason).toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORIZATION_BUSY' });
           }
           const claimed = settled[fulfilledIndex];

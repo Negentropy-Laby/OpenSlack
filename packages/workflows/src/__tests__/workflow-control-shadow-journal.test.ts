@@ -382,9 +382,11 @@ describe('Workflow Control GS7-B durable observation journal', () => {
       ]),
     );
     const hardenedFiles = hardened.filter(({ directory }) => !directory).map(({ path }) => path);
-    expect(hardenedFiles.some((path) => /[\\/]locks[\\/][0-9a-f]{64}\.lock$/u.test(path))).toBe(
-      true,
-    );
+    expect(
+      hardenedFiles.some((path) =>
+        /[\\/]locks[\\/]\.[0-9a-f]{64}\.lock\.[1-9][0-9]*\.[0-9a-f-]{36}\.tmp$/u.test(path),
+      ),
+    ).toBe(true);
     expect(hardenedFiles.some((path) => /[\\/]entries[\\/].+\.json$/u.test(path))).toBe(true);
     expect(hardenedFiles.some((path) => /[\\/]states[\\/].+\.tmp$/u.test(path))).toBe(true);
     expect(verified.filter(({ cacheable }) => cacheable).map(({ path }) => path)).toEqual(

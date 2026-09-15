@@ -683,7 +683,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowOwnerFileSecurity": {
 			Path:   "packages/workflows/src/workflow-control-shadow.ts",
-			SHA256: "b1c40e3bc638662046eff0fa2634c3009fd47c5caac531e9c2796445cc4c461f",
+			SHA256: "73ccb9b37adc536d089df96dc3efa63ca942e6463e9fa7a2a84550587ce36062",
 		},
 		"workflowRunnerAuthorityClient": {
 			Path:   "packages/workflows/src/workflow-runner-authority-binding-client.ts",
