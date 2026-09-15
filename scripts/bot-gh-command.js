@@ -6,13 +6,19 @@ const {
   acquireConfiguredInstallationCredentials,
   formatBotAuthError,
 } = require('./bot-gh-token.js');
-const { createGhEnvironment } = require('./bot-launch-environment.js');
+const { createGhEnvironment, validateGhGoDebug } = require('./bot-launch-environment.js');
 
 async function main(args = process.argv.slice(2), dependencies = {}) {
   if (!isAllowedCommand(args)) {
     process.stderr.write(
       'BOT_GH_COMMAND_FORBIDDEN: only pr edit, pr comment, pr ready, and issue edit are allowed.\n',
     );
+    return 2;
+  }
+  try {
+    validateGhGoDebug(dependencies.env ?? process.env);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
     return 2;
   }
   let credentials;

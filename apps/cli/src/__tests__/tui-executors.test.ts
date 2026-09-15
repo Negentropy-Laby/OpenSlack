@@ -1,3 +1,6 @@
+import type * as MockModule2 from '@openslack/workflows';
+import type * as MockModule1 from '@openslack/collaboration';
+import type * as MockModule0 from '@openslack/operator';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,7 +27,7 @@ import * as github from '@openslack/github';
 // ── Module-level mocks ──────────────────────────────────────────────────────────
 
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<typeof import('@openslack/operator')>('@openslack/operator');
+  const actual = await vi.importActual<typeof MockModule0>('@openslack/operator');
   return {
     ...actual,
     updatePendingPlanState: vi.fn(),
@@ -33,9 +36,7 @@ vi.mock('@openslack/operator', async () => {
 });
 
 vi.mock('@openslack/collaboration', async () => {
-  const actual = await vi.importActual<typeof import('@openslack/collaboration')>(
-    '@openslack/collaboration',
-  );
+  const actual = await vi.importActual<typeof MockModule1>('@openslack/collaboration');
   return {
     ...actual,
     recordDecision: vi.fn(),
@@ -53,8 +54,7 @@ vi.mock('@openslack/github', () => ({
 }));
 
 vi.mock('@openslack/workflows', async () => {
-  const actual =
-    await vi.importActual<typeof import('@openslack/workflows')>('@openslack/workflows');
+  const actual = await vi.importActual<typeof MockModule2>('@openslack/workflows');
   return {
     ...actual,
     TrustStore: vi.fn((opts: { rootDir: string }) => ({

@@ -1,8 +1,9 @@
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import { readdir, readFile, rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { canonicalWorkflowControlAuthorityJson } from '../workflow-control-authority-contract.js';
 import { createWorkflowEffectDecisionAuthority } from '../workflow-effect-approval.js';
@@ -198,99 +199,139 @@ async function prepareExact(value: Awaited<ReturnType<typeof fixture>>) {
   return { port, prepared };
 }
 
+const integrationTimeoutMs = platformTestTimeout(5_000);
+
 describe('Workflow runner v2 effect authorization bridge', () => {
-  it('allows exactly one concurrent owner for an exact effect occurrence', async () => {
-    const value = await fixture('concurrent');
-    let arrived = 0;
-    let release!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    value.setAuthorize(async (_payload, source) => {
-      arrived += 1;
-      if (arrived === 2) release();
-      await barrier;
-      await commitSource('effect_authorize', source);
-      return { payload: { approvalStatus: 'approved' } } as never;
-    });
-    const attempts = await Promise.all([prepareExact(value), prepareExact(value)]);
-    const outcomes = await Promise.allSettled(
-      attempts.map(({ port, prepared }) => port.authorize(prepared)),
+  describe('concurrent exact occurrence', () => {
+    let value: Awaited<ReturnType<typeof fixture>>;
+    let attempts: Awaited<ReturnType<typeof prepareExact>>[];
+    beforeEach(async () => {
+      value = await fixture('concurrent');
+      attempts = await Promise.all([prepareExact(value), prepareExact(value)]);
+    }, platformTestTimeout(30_000));
+    it(
+      'allows exactly one concurrent owner for an exact effect occurrence',
+      async () => {
+        let arrived = 0;
+        let release!: () => void;
+        const barrier = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        value.setAuthorize(async (_payload, source) => {
+          arrived += 1;
+          if (arrived === 2) release();
+          await barrier;
+          await commitSource('effect_authorize', source);
+          return { payload: { approvalStatus: 'approved' } } as never;
+        });
+        const pending = attempts.map(({ port, prepared }) => port.authorize(prepared));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let outcomes: PromiseSettledResult<
+          Awaited<ReturnType<(typeof attempts)[number]['port']['authorize']>>
+        >[];
+        try {
+          outcomes = await Promise.race([
+            Promise.allSettled(pending),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error(`Effect authorization barrier incomplete: ${arrived}/2 arrivals.`),
+                  ),
+                platformTestTimeout(4_000, 100_000),
+              );
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+          release();
+          await Promise.allSettled(pending);
+        }
+        const claimed = outcomes.flatMap((outcome, index) =>
+          outcome.status === 'fulfilled' && outcome.value.disposition === 'claimed'
+            ? [{ index, authority: outcome.value.authority }]
+            : [],
+        );
+        expect(claimed).toHaveLength(1);
+        expect(
+          outcomes.filter(
+            (outcome) =>
+              outcome.status === 'rejected' &&
+              outcome.reason instanceof WorkflowEffectAuthorizationBusyError,
+          ),
+        ).toHaveLength(1);
+        const executeEffect = vi.fn(async () =>
+          attempts[claimed[0]!.index]!.port.complete(claimed[0]!.authority, { ok: true }),
+        );
+        await executeEffect();
+        expect(executeEffect).toHaveBeenCalledTimes(1);
+        const restarted = await prepareExact(value);
+        await expect(restarted.port.authorize(restarted.prepared)).resolves.toMatchObject({
+          disposition: 'replay',
+          value: { ok: true },
+        });
+        expect(executeEffect).toHaveBeenCalledTimes(1);
+      },
+      integrationTimeoutMs,
     );
-    const claimed = outcomes.flatMap((outcome, index) =>
-      outcome.status === 'fulfilled' && outcome.value.disposition === 'claimed'
-        ? [{ index, authority: outcome.value.authority }]
-        : [],
-    );
-    expect(claimed).toHaveLength(1);
-    expect(
-      outcomes.filter(
-        (outcome) =>
-          outcome.status === 'rejected' &&
-          outcome.reason instanceof WorkflowEffectAuthorizationBusyError,
-      ),
-    ).toHaveLength(1);
-    const executeEffect = vi.fn(async () =>
-      attempts[claimed[0]!.index]!.port.complete(claimed[0]!.authority, { ok: true }),
-    );
-    await executeEffect();
-    expect(executeEffect).toHaveBeenCalledTimes(1);
-    const restarted = await prepareExact(value);
-    await expect(restarted.port.authorize(restarted.prepared)).resolves.toMatchObject({
-      disposition: 'replay',
-      value: { ok: true },
-    });
-    expect(executeEffect).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a claim when authority expires while the Go decision is in flight', async () => {
-    const value = await fixture('expiry');
-    let reconciliationOutcomes = 0;
-    value.setReport(async (payload, source) => {
-      expect(payload.status).toBe('reconciliation_required');
-      reconciliationOutcomes += 1;
-      await commitSource('effect_complete', source);
-    });
-    value.setAuthorize(async (_payload, source) => {
-      await commitSource('effect_authorize', source);
-      value.setNow(value.descriptor.expiresAt);
-      return { payload: { approvalStatus: 'approved' } } as never;
-    });
-    const attempt = await prepareExact(value);
-    await expect(attempt.port.authorize(attempt.prepared)).rejects.toBeInstanceOf(
-      WorkflowEffectReconciliationRequiredError,
-    );
-    expect(reconciliationOutcomes).toBe(1);
-    const restarted = await prepareExact(value);
-    await expect(restarted.port.authorize(restarted.prepared)).rejects.toBeInstanceOf(
-      WorkflowEffectReconciliationRequiredError,
-    );
-  });
+  it(
+    'rejects a claim when authority expires while the Go decision is in flight',
+    async () => {
+      const value = await fixture('expiry');
+      let reconciliationOutcomes = 0;
+      value.setReport(async (payload, source) => {
+        expect(payload.status).toBe('reconciliation_required');
+        reconciliationOutcomes += 1;
+        await commitSource('effect_complete', source);
+      });
+      value.setAuthorize(async (_payload, source) => {
+        await commitSource('effect_authorize', source);
+        value.setNow(value.descriptor.expiresAt);
+        return { payload: { approvalStatus: 'approved' } } as never;
+      });
+      const attempt = await prepareExact(value);
+      await expect(attempt.port.authorize(attempt.prepared)).rejects.toBeInstanceOf(
+        WorkflowEffectReconciliationRequiredError,
+      );
+      expect(reconciliationOutcomes).toBe(1);
+      const restarted = await prepareExact(value);
+      await expect(restarted.port.authorize(restarted.prepared)).rejects.toBeInstanceOf(
+        WorkflowEffectReconciliationRequiredError,
+      );
+    },
+    integrationTimeoutMs,
+  );
 
-  it('rejects a canonical replay value splice whose stored hash was not recomputed', async () => {
-    const value = await fixture('replay-splice');
-    const attempt = await prepareExact(value);
-    const authorization = await attempt.port.authorize(attempt.prepared);
-    if (authorization.disposition !== 'claimed') throw new Error('Expected a fresh claim.');
-    await attempt.port.complete(authorization.authority, { exact: 'A' });
-    const records = join(
-      value.workspaceRoot,
-      '.openslack.local',
-      'workflows',
-      'effect-authority-v2-siblings',
-      'records',
-    );
-    const names = await readdir(records);
-    expect(names).toHaveLength(1);
-    const path = join(records, names[0]!);
-    const record = JSON.parse(await readFile(path, 'utf8')) as {
-      replay: { kind: string; value: unknown; outcomeHash: string };
-    };
-    record.replay.value = { exact: 'B' };
-    await writeFile(path, `${canonicalWorkflowControlAuthorityJson(record)}\n`, 'utf8');
-    const restarted = await prepareExact(value);
-    await expect(restarted.port.authorize(restarted.prepared)).rejects.toBeInstanceOf(
-      WorkflowEffectReconciliationRequiredError,
-    );
-  });
+  it(
+    'rejects a canonical replay value splice whose stored hash was not recomputed',
+    async () => {
+      const value = await fixture('replay-splice');
+      const attempt = await prepareExact(value);
+      const authorization = await attempt.port.authorize(attempt.prepared);
+      if (authorization.disposition !== 'claimed') throw new Error('Expected a fresh claim.');
+      await attempt.port.complete(authorization.authority, { exact: 'A' });
+      const records = join(
+        value.workspaceRoot,
+        '.openslack.local',
+        'workflows',
+        'effect-authority-v2-siblings',
+        'records',
+      );
+      const names = await readdir(records);
+      expect(names).toHaveLength(1);
+      const path = join(records, names[0]!);
+      const record = JSON.parse(await readFile(path, 'utf8')) as {
+        replay: { kind: string; value: unknown; outcomeHash: string };
+      };
+      record.replay.value = { exact: 'B' };
+      await writeFile(path, `${canonicalWorkflowControlAuthorityJson(record)}\n`, 'utf8');
+      const restarted = await prepareExact(value);
+      await expect(restarted.port.authorize(restarted.prepared)).rejects.toBeInstanceOf(
+        WorkflowEffectReconciliationRequiredError,
+      );
+    },
+    integrationTimeoutMs,
+  );
 });

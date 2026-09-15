@@ -1,3 +1,4 @@
+import { ghProcessEnvironment } from '@openslack/github';
 import { Command } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -262,6 +263,7 @@ interface GitHubOps {
 }
 
 function getGitHubOps(context: WorkspaceContext): GitHubOps {
+  const env = ghProcessEnvironment();
   try {
     const remote = context.config?.canonical_remote;
     if (!remote || remote.provider !== 'github') throw new Error('GitHub remote is not configured');
@@ -280,7 +282,7 @@ function getGitHubOps(context: WorkspaceContext): GitHubOps {
         '--json',
         'labels',
       ],
-      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
+      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe', env },
     );
     const issues = JSON.parse(issuesJson) as Array<{ labels: Array<{ name: string }> }>;
     let ready = 0;
@@ -307,7 +309,7 @@ function getGitHubOps(context: WorkspaceContext): GitHubOps {
         '--json',
         'mergeStateStatus',
       ],
-      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
+      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe', env },
     );
     const prs = JSON.parse(prsJson) as Array<{ mergeStateStatus: string }>;
     const openPRs = prs.length;

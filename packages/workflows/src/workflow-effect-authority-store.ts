@@ -14,6 +14,7 @@ import type {
 } from './internal/workflow-effect-lease-authority.js';
 import {
   acquireOwnerJournalLock,
+  isOwnerJournalLockTemporary,
   assertOwnerDirectory,
   assertOwnerFile,
   atomicWrite as atomicWriteOwnerFile,
@@ -474,14 +475,24 @@ async function validateAuthorityTree(paths: StorePaths): Promise<void> {
         );
       }
       const path = join(directory, entry.name);
-      const stat = await lstat(path);
+      const temporary = isOwnerJournalLockTemporary(entry.name, 'authority.lock');
       if (
-        entry.name !== 'authority.lock' ||
+        (entry.name !== 'authority.lock' && !temporary) ||
         entry.isSymbolicLink() ||
-        stat.isSymbolicLink() ||
-        !entry.isFile() ||
-        !stat.isFile()
+        !entry.isFile()
       ) {
+        return fail(
+          'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE',
+          'Authority store contains an unsafe entry.',
+        );
+      }
+      // Only a recognized competing construction name may disappear during scan.
+      const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+        if (temporary && error.code === 'ENOENT') return undefined;
+        throw error;
+      });
+      if (!stat) continue;
+      if (stat.isSymbolicLink() || !stat.isFile()) {
         return fail(
           'WORKFLOW_EFFECT_AUTHORITY_FILE_UNSAFE',
           'Authority store contains an unsafe entry.',

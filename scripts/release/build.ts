@@ -1,9 +1,9 @@
+import { withReleaseTemporaryDirectory } from './temporary-directory.js';
 import {
   chmodSync,
   copyFileSync,
   cpSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -11,7 +11,6 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import {
   getGitContentState,
   hasArg,
@@ -56,12 +55,6 @@ const channel = parseArg('--channel') ?? 'dev';
 const releaseRoot = resolve(parseArg('--out-dir') ?? join(root, 'dist', 'release', `v${version}`));
 const bundleName = `openslack-v${version}-${target}`;
 const bundleDir = join(releaseRoot, bundleName);
-const temporaryCleanupOptions = Object.freeze({
-  recursive: true,
-  force: true,
-  maxRetries: process.platform === 'win32' ? 10 : 0,
-  retryDelay: 100,
-});
 const commit = run('git', ['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
 const dirty = getGitContentState(root).dirty;
 if (dirty && !hasArg('--allow-dirty')) {
@@ -167,17 +160,16 @@ writeJson(join(bundleDir, 'build-info.json'), buildInfo);
 // Windows security tooling may retain a short-lived handle to an executable
 // after its process exits, which makes Compress-Archive fail on the original
 // bundle even though spawnSync has already returned.
-const smokeRoot = mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'));
-let smoke: ArtifactSmokeResult;
-try {
-  // Invariant guard: archive.test.ts intentionally pins this disposable-copy
-  // flow because executing bundleDir directly can reintroduce Windows locks.
-  const smokeBundleDir = join(smokeRoot, bundleName);
-  cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
-  smoke = smokeBundle(smokeBundleDir, target, root);
-} finally {
-  rmSync(smokeRoot, temporaryCleanupOptions);
-}
+const smoke: ArtifactSmokeResult = withReleaseTemporaryDirectory(
+  'openslack-bundle-smoke-',
+  (smokeRoot) => {
+    // Invariant guard: archive.test.ts intentionally pins this disposable-copy
+    // flow because executing bundleDir directly can reintroduce Windows locks.
+    const smokeBundleDir = join(smokeRoot, bundleName);
+    cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
+    return smokeBundle(smokeBundleDir, target, root);
+  },
+);
 writeJson(join(bundleDir, 'smoke-report.json'), smoke);
 
 mkdirSync(releaseRoot, { recursive: true });
@@ -186,14 +178,13 @@ const archivePath = join(releaseRoot, archiveName);
 rmSync(archivePath, { force: true });
 createReleaseArchive(bundleDir, archivePath, target);
 
-const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-release-extract-'));
-let archiveSmoke: ArtifactSmokeResult;
-try {
-  extractReleaseArchive(archivePath, extractionRoot, target);
-  archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target, root);
-} finally {
-  rmSync(extractionRoot, temporaryCleanupOptions);
-}
+const archiveSmoke: ArtifactSmokeResult = withReleaseTemporaryDirectory(
+  'openslack-release-extract-',
+  (extractionRoot) => {
+    extractReleaseArchive(archivePath, extractionRoot, target);
+    return smokeBundle(join(extractionRoot, bundleName), target, root);
+  },
+);
 
 const sbomName = `${bundleName}.sbom.cdx.json`;
 const sbomPath = join(releaseRoot, sbomName);

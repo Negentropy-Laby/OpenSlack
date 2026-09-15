@@ -369,7 +369,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunnerSourceInvariantTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-runner-source-invariants.test.ts",
-			SHA256: "7356a76809d894cc99f85959f94b0de99a5e3b7efbd89d86e8c42ea26da86dfb",
+			SHA256: "61a31a90210687a21634fc76a3ba58f076bb52df4db6936d7491f348a1a02eb3",
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
@@ -683,7 +683,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowOwnerFileSecurity": {
 			Path:   "packages/workflows/src/workflow-control-shadow.ts",
-			SHA256: "b1c40e3bc638662046eff0fa2634c3009fd47c5caac531e9c2796445cc4c461f",
+			SHA256: "0f88ee361499a0bf2e2a6b63a5450b81750da524059ad8c4c7fd04ae6f9db4e6",
 		},
 		"workflowRunnerAuthorityClient": {
 			Path:   "packages/workflows/src/workflow-runner-authority-binding-client.ts",

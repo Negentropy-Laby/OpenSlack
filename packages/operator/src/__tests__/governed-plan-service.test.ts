@@ -11,7 +11,7 @@ import {
   registerGovernanceAuthorityGoPort,
 } from '../governed-plan-authority-store.js';
 import type { GovernedPlanRecord } from '../governed-plan.js';
-import { LocalGovernedPlanStore } from '../governed-plan-store.js';
+import { LocalGovernedPlanStore, GovernedPlanStoreError } from '../governed-plan-store.js';
 import type { GovernedPlanStore } from '../governed-plan-store.js';
 import {
   assertGovernedPlanService,
@@ -677,5 +677,79 @@ describe('governed plan service', () => {
     );
     expect(() => createGovernedPlanService(options)).toThrow('inert known fields');
     expect(getterInvoked).toBe(false);
+  });
+});
+
+describe('durable publication uncertainty', () => {
+  it.each([
+    'claim-after',
+    'claim-unreadable',
+    'terminal-before',
+    'terminal-after',
+    'reconciliation-blocked',
+  ] as const)('%s never permits replay or loses an owned claim', async (phase) => {
+    class FaultStore extends LocalGovernedPlanStore {
+      #unreadable = false;
+      override async load(planId: string) {
+        if (this.#unreadable)
+          throw new GovernedPlanStoreError('GOVERNED_PLAN_STORE_BUSY', 'Injected inspection fault');
+        return super.load(planId);
+      }
+      inspect(planId: string) {
+        return super.load(planId);
+      }
+      override async claimExecution(...args: Parameters<LocalGovernedPlanStore['claimExecution']>) {
+        const value = await super.claimExecution(...args);
+        if (phase === 'claim-unreadable') this.#unreadable = true;
+        if (phase === 'claim-after' || phase === 'claim-unreadable')
+          throw new GovernedPlanStoreError(
+            'GOVERNED_PLAN_STORE_BUSY',
+            'Injected postclaim cleanup fault',
+          );
+        return value;
+      }
+      override async completeExecution(
+        ...args: Parameters<LocalGovernedPlanStore['completeExecution']>
+      ) {
+        if (
+          phase === 'reconciliation-blocked' ||
+          (phase === 'terminal-before' && args[0].state !== 'reconciliation_required')
+        ) {
+          throw new GovernedPlanStoreError(
+            'GOVERNED_PLAN_STORE_BUSY',
+            'Injected terminal publication fault',
+          );
+        }
+        const value = await super.completeExecution(...args);
+        if (phase === 'terminal-after')
+          throw new GovernedPlanStoreError(
+            'GOVERNED_PLAN_STORE_BUSY',
+            'Injected postterminal cleanup fault',
+          );
+        return value;
+      }
+    }
+    const store = new FaultStore(makeRoot());
+    const execute = vi.fn(async () => ({
+      status: 'succeeded' as const,
+      summary: 'one effect',
+      evidenceRefs: [],
+    }));
+    const { service } = makeHarness(execute, { store });
+    const preview = await service.preview(compiler(), authority);
+    const request = { planId: preview.record.planId, confirmationToken: preview.confirmationToken };
+    await expect(service.confirm(request, authority)).rejects.toMatchObject({
+      code: 'GOVERNED_PLAN_EXECUTION_UNCERTAIN',
+    });
+    const expected =
+      phase === 'terminal-after'
+        ? 'succeeded'
+        : phase === 'reconciliation-blocked' || phase === 'claim-unreadable'
+          ? 'executing'
+          : 'reconciliation_required';
+    expect((await store.inspect(request.planId))?.state).toBe(expected);
+    await expect(service.confirm(request, authority)).rejects.toBeTruthy();
+    expect(execute).toHaveBeenCalledTimes(phase.startsWith('claim-') ? 0 : 1);
+    expect((await store.inspect(request.planId))?.state).toBe(expected);
   });
 });

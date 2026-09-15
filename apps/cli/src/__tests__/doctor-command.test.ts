@@ -1,3 +1,4 @@
+import type * as MockModule0 from '../../../../packages/operator/src/llm-config.js';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { doctorCommands } from '../commands/doctor.js';
 
@@ -35,9 +36,9 @@ vi.mock('@openslack/runtime', () => ({
 }));
 
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../../../packages/operator/src/llm-config.js')
-  >('../../../../packages/operator/src/llm-config.js');
+  const actual = await vi.importActual<typeof MockModule0>(
+    '../../../../packages/operator/src/llm-config.js',
+  );
   return {
     describeLLMRoutingConfig: actual.describeLLMRoutingConfig,
   };

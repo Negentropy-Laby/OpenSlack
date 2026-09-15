@@ -24,6 +24,7 @@ import {
   isGovernedPlanStore,
   registerGovernedPlanStore,
   type GovernedPlanStore,
+  type GovernedPlanStoreWriteControl,
 } from './governed-plan-store.js';
 import type { GovernedPlanAuditEvent, GovernedPlanAuditSink } from './governed-plan-service.js';
 
@@ -1376,13 +1377,16 @@ class RoutedGovernedPlanStore implements GovernedPlanStore {
     return this.#goPort().transition(operation, createTarget(current), expectedRevision, route);
   }
 
-  async claimExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly ownerPid: number;
-    readonly startedAt: string;
-  }): Promise<GovernedPlanRecord> {
+  async claimExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly ownerPid: number;
+      readonly startedAt: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord> {
     return this.#transition(
       params.planId,
       params.expectedRevision,
@@ -1405,20 +1409,23 @@ class RoutedGovernedPlanStore implements GovernedPlanStore {
           },
         });
       },
-      () => this.#local.claimExecution(params),
+      () => this.#local.claimExecution(params, control),
     );
   }
 
-  async completeExecution(params: {
-    readonly planId: string;
-    readonly expectedRevision: number;
-    readonly executionId: string;
-    readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
-    readonly completedAt: string;
-    readonly outcomes: GovernedPlanExecution['outcomes'];
-    readonly blocker?: string;
-    readonly failure?: string;
-  }): Promise<GovernedPlanRecord> {
+  async completeExecution(
+    params: {
+      readonly planId: string;
+      readonly expectedRevision: number;
+      readonly executionId: string;
+      readonly state: 'succeeded' | 'blocked' | 'failed' | 'reconciliation_required';
+      readonly completedAt: string;
+      readonly outcomes: GovernedPlanExecution['outcomes'];
+      readonly blocker?: string;
+      readonly failure?: string;
+    },
+    control?: GovernedPlanStoreWriteControl,
+  ): Promise<GovernedPlanRecord> {
     const operation =
       params.state === 'reconciliation_required'
         ? ('require_reconciliation' as const)
@@ -1449,7 +1456,7 @@ class RoutedGovernedPlanStore implements GovernedPlanStore {
           },
         });
       },
-      () => this.#local.completeExecution(params),
+      () => this.#local.completeExecution(params, control),
     );
   }
 

@@ -1019,6 +1019,17 @@ authoritative D2 TypeScript commits: `approval_created`, `approval_decided`, and
 and fail-open to the TypeScript effect result. Intent, execution-claim, replay-result, and legacy
 run-gate artifacts never enter this transport.
 
+Local journal locks are hardened, fully written and synced under an exclusive temporary
+name before an exclusive hardlink publishes the final lock. Contenders never consume
+an unfinished final lock; an existing malformed lock still fails closed. Cleanup verifies
+the owned inode and exact content, accounting for Windows link and close timestamp
+changes without deleting replacement evidence. Directory validation distinguishes child
+entry churn from directory replacement and requires stable metadata across the owner-access
+lookup. Metadata drift triggers at most three refresh attempts; exhaustion fails closed.
+The effect-authority inventory permits only strictly named lock construction files;
+unknown entries and symlinks remain invalid. This changes neither persistent record
+formats nor the authority or lease rules.
+
 The separate `effect-shadow-server` registers
 `POST /v1/shadow/workflow-control/effect-events` only in explicit
 `local-qualification-v1` mode. Its request idempotency keys use the frozen

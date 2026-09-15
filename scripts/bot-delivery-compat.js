@@ -4,7 +4,11 @@
 
 const { spawnSync } = require('node:child_process');
 const { formatBotAuthError, withConfiguredBotInstallation } = require('./bot-gh-token.js');
-const { createOpenSlackEnvironment, openSlackInvocation } = require('./bot-launch-environment.js');
+const {
+  createOpenSlackEnvironment,
+  openSlackInvocation,
+  validateGhGoDebug,
+} = require('./bot-launch-environment.js');
 
 const valueFlags = new Map([
   ['--title', '--title'],
@@ -55,6 +59,12 @@ async function main(args = process.argv.slice(2), dependencies = {}) {
     process.stderr.write(
       `${error instanceof Error ? error.message : 'DELIVERY_ARGUMENT_INVALID'}\n`,
     );
+    return 2;
+  }
+  try {
+    validateGhGoDebug(dependencies.env ?? process.env);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
     return 2;
   }
   try {

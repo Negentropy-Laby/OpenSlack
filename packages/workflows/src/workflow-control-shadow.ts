@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, constants as fsConstants, type BigIntStats } from 'node:fs';
 import {
+  link,
   lstat,
   mkdir,
   open,
@@ -12,7 +13,7 @@ import {
   unlink,
   type FileHandle,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { types as nodeTypes } from 'node:util';
 import { enqueueByKey } from './internal/keyed-serial-queue.js';
 import { safeInteger } from './internal/strict-data.js';
@@ -482,6 +483,18 @@ export async function assertNoWindowsReparseComponents(
   }
 }
 
+function sameDirectoryObject(left: BigIntStats, right: BigIntStats): boolean {
+  return (
+    sameFilesystemObject(left, right) &&
+    right.isDirectory() &&
+    !right.isSymbolicLink() &&
+    left.mode === right.mode &&
+    left.uid === right.uid &&
+    left.gid === right.gid &&
+    left.birthtimeNs === right.birthtimeNs
+  );
+}
+
 function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
   return (
     left.dev === right.dev &&
@@ -690,6 +703,31 @@ export function productionJournalSecurity(): WorkflowControlShadowJournalSecurit
   });
 }
 
+// Child churn can invalidate an ACL cache key without replacing the directory.
+// Require one stable snapshot across the actual security read; otherwise refresh
+// at most three times. An old safe ACL must never authorize a newer DACL.
+async function assertStableDirectorySecurity(
+  path: string,
+  initial: BigIntStats,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<void> {
+  let before = initial;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assertOwnerOnlyPath(path, before, security);
+    const after = await lstat(path, { bigint: true });
+    if (!sameDirectoryObject(before, after)) {
+      throw new TypeError(
+        'Workflow Control shadow journal directory changed during security validation.',
+      );
+    }
+    if (sameIdentity(before, after)) return;
+    before = after;
+  }
+  throw new TypeError(
+    'Workflow Control shadow journal directory security identity did not stabilize.',
+  );
+}
+
 export async function ensureOwnerDirectory(
   path: string,
   security: WorkflowControlShadowJournalSecurityDependencies,
@@ -719,9 +757,12 @@ export async function ensureOwnerDirectory(
   }
   await assertNoWindowsReparseComponents(path, security);
   const after = await lstat(path, { bigint: true });
-  if (!sameIdentity(before, after)) {
+  if (!sameDirectoryObject(before, after)) {
     throw new TypeError('Workflow Control shadow journal directory changed during validation.');
   }
+  // Child creation/removal changes directory timestamps without replacing it.
+  // Recheck security using the fresh identity so an ACL change is never cached away.
+  await assertStableDirectorySecurity(path, after, security);
   return canonical;
 }
 
@@ -746,9 +787,12 @@ export async function assertOwnerDirectory(
   }
   await assertNoWindowsReparseComponents(path, security);
   const after = await lstat(path, { bigint: true });
-  if (!sameIdentity(stat, after)) {
+  if (!sameDirectoryObject(stat, after)) {
     throw new TypeError('Workflow Control shadow journal directory changed during validation.');
   }
+  // Child creation/removal changes directory timestamps without replacing it.
+  // Recheck security using the fresh identity so an ACL change is never cached away.
+  await assertStableDirectorySecurity(path, after, security);
   return canonical;
 }
 
@@ -1009,6 +1053,183 @@ async function persistState(directories: JournalDirectories, state: JournalState
   );
 }
 
+/** Only owned lock construction names are tolerated by directory scanners. */
+export function isOwnerJournalLockTemporary(name: string, lockName: string): boolean {
+  const prefix = `.${lockName}.`;
+  const suffix = name.slice(prefix.length);
+  return (
+    name.startsWith(prefix) &&
+    /^[1-9][0-9]{0,9}\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/u.test(
+      suffix,
+    ) &&
+    Number(suffix.split('.')[0]) <= 0xffff_ffff
+  );
+}
+
+// Publish only a fully hardened, written and synced lock. O_EXCL on the final
+// path exposes an unfinished JSON document to contenders before writeFile ends.
+// link is exclusive (EEXIST means contention); rename could overwrite an owner.
+async function publishOwnerLock(
+  path: string,
+  body: string,
+  security: WorkflowControlShadowJournalSecurityDependencies,
+): Promise<BigIntStats> {
+  const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  let handle = await open(
+    temporary,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NO_FOLLOW,
+    0o600,
+  );
+  let closed = false;
+  let owned: BigIntStats | undefined;
+  let result: BigIntStats | undefined;
+  const failures: unknown[] = [];
+  let published: BigIntStats | undefined;
+  let complete: BigIntStats | undefined;
+  let linked = false;
+  try {
+    owned = await handle.stat({ bigint: true });
+    security.hardenPath(temporary, false);
+    const secured = await lstat(temporary, { bigint: true });
+    if (
+      !sameFilesystemObject(owned, secured) ||
+      !sameIdentity(secured, await handle.stat({ bigint: true }))
+    ) {
+      throw new TypeError('Workflow Control shadow journal lock temporary identity changed.');
+    }
+    await handle.writeFile(body, 'utf8');
+    await handle.sync();
+    // Close the writer before publishing: Windows may finalize write timestamps
+    // on close. Keep a read-only handle for identity checks and cleanup thereafter.
+    await handle.close();
+    closed = true;
+    handle = await open(temporary, fsConstants.O_RDONLY | NO_FOLLOW);
+    closed = false;
+    complete = await handle.stat({ bigint: true });
+    if (
+      !sameFilesystemObject(owned, complete) ||
+      !sameIdentity(complete, await assertOwnerFile(temporary, security))
+    ) {
+      throw new TypeError(
+        'Workflow Control shadow journal lock temporary changed before publication.',
+      );
+    }
+    await link(temporary, path);
+    linked = true;
+    published = await lstat(path, { bigint: true });
+    // Hardlink publication changes ctime; inode, bytes and mtime must remain stable.
+    if (
+      !sameFilesystemObject(complete, published) ||
+      complete.size !== published.size ||
+      complete.mtimeNs !== published.mtimeNs ||
+      !sameIdentity(published, await handle.stat({ bigint: true }))
+    ) {
+      throw new TypeError('Workflow Control shadow journal lock changed during publication.');
+    }
+    await removeOwnedTemporary();
+    published = await handle.stat({ bigint: true });
+    const validated = await assertOwnerFile(path, security);
+    if (!sameFilesystemObject(complete, published) || !sameIdentity(published, validated)) {
+      throw new TypeError('Workflow Control shadow journal lock changed after publication.');
+    }
+    result = published;
+  } catch (error) {
+    failures.push(error);
+  }
+  await removeOwnedTemporary().catch((error) => failures.push(error));
+  // Removing our second link changes ctime. Capture the still-open inode after
+  // cleanup, even when the first post-publication path inspection failed.
+  let cleanupIdentity: BigIntStats | undefined;
+  if (linked) {
+    try {
+      cleanupIdentity = await handle.stat({ bigint: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (!closed) await handle.close().catch((error) => failures.push(error));
+  if (result && failures.length === 0) {
+    try {
+      const current = await lstat(path, { bigint: true });
+      if (
+        !sameFilesystemObject(result, current) ||
+        result.size !== current.size ||
+        result.mtimeNs !== current.mtimeNs ||
+        result.mode !== current.mode
+      ) {
+        throw new TypeError(
+          'Workflow Control shadow journal lock changed while closing publication.',
+        );
+      }
+      result = current;
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    if (
+      linked &&
+      owned &&
+      complete &&
+      cleanupIdentity &&
+      complete.size === cleanupIdentity.size &&
+      complete.mtimeNs === cleanupIdentity.mtimeNs
+    ) {
+      try {
+        const current = await lstat(path, { bigint: true });
+        if (
+          sameFilesystemObject(owned, current) &&
+          current.size === complete.size &&
+          current.mtimeNs === complete.mtimeNs &&
+          current.mode === complete.mode
+        ) {
+          // Windows can update ctime when a hardlinked handle closes. Re-prove
+          // exact bytes and stable path/handle identity instead of using stale ctime.
+          const cleanupHandle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
+          try {
+            const expected = Buffer.from(body, 'utf8');
+            const bytes = Buffer.alloc(expected.length + 1);
+            const { bytesRead } = await cleanupHandle.read(bytes, 0, bytes.length, 0);
+            if (
+              sameIdentity(current, await cleanupHandle.stat({ bigint: true })) &&
+              bytesRead === expected.length &&
+              bytes.subarray(0, bytesRead).equals(expected) &&
+              sameIdentity(current, await lstat(path, { bigint: true }))
+            ) {
+              await unlink(path);
+              await syncDirectory(dirname(path));
+            }
+          } finally {
+            await cleanupHandle.close();
+          }
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(
+      failures,
+      'Workflow Control shadow journal lock publication and cleanup failed.',
+    );
+  }
+  return result!;
+
+  async function removeOwnedTemporary(): Promise<void> {
+    let current: BigIntStats;
+    try {
+      current = await lstat(temporary, { bigint: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    if (!owned || !sameFilesystemObject(owned, current) || current.isSymbolicLink()) {
+      throw new TypeError('Workflow Control shadow journal lock temporary changed before cleanup.');
+    }
+    await unlink(temporary);
+  }
+}
+
 async function acquireStreamLock(
   directories: JournalDirectories,
   hashValue: string,
@@ -1034,8 +1255,16 @@ async function acquireStreamLock(
       let created: BigIntStats | undefined;
       let handle: FileHandle | undefined;
       try {
-        await writeExclusiveWithIdentity(path, body, directories.security);
-        created = await lstat(path, { bigint: true });
+        // Contention is common; do not harden/write a new candidate while the
+        // final name already exists. The exclusive link still decides races.
+        const existing = await lstat(path, { bigint: true }).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return undefined;
+            throw error;
+          },
+        );
+        if (existing) throw Object.assign(new Error('Owner lock exists.'), { code: 'EEXIST' });
+        created = await publishOwnerLock(path, body, directories.security);
         await syncDirectory(directories.locks);
         handle = await open(path, fsConstants.O_RDONLY | NO_FOLLOW);
         const acquired = await handle.stat({ bigint: true });

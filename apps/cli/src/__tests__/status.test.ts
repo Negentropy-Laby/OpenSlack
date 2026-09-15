@@ -204,7 +204,33 @@ describe('status command', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it.each(['', ' tlsmlkem=0 '])(
+    'applies the gh-only environment to both dashboard reads: %j',
+    async (value) => {
+      vi.stubEnv('GODEBUG', 'ambient-canary');
+      vi.stubEnv('OPENSLACK_BOT_GH_GODEBUG', value);
+      await runStatus();
+      expect(mockExecFileSync).toHaveBeenCalledTimes(2);
+      for (const args of mockExecFileSync.mock.calls as unknown as [
+        string,
+        string[],
+        { env: NodeJS.ProcessEnv },
+      ][]) {
+        expect(args[0]).toBe('gh');
+        expect(args[2].env.GODEBUG).toBe(value.trim() ? 'tlsmlkem=0' : undefined);
+        expect(args[2].env.OPENSLACK_BOT_GH_GODEBUG).toBeUndefined();
+      }
+      expect(process.env.GODEBUG).toBe('ambient-canary');
+    },
+  );
+  it('rejects invalid dashboard configuration without launching gh', async () => {
+    vi.stubEnv('OPENSLACK_BOT_GH_GODEBUG', 'invalid-canary');
+    await runStatus();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
   it('renders Needs Attention section', async () => {

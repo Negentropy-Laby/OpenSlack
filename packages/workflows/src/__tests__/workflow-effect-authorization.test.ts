@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyWorkflowEffectApprovalDecision,
   createWorkflowEffectDecisionAuthority,
@@ -41,6 +41,7 @@ import {
   type WorkflowRunnerEffectIntentMessage,
 } from '../workflow-runner-contract.js';
 import type { WorkflowRuntime } from '../types.js';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 
 const BUILD_HASH = '1'.repeat(64);
 const SOURCE_HASH = '2'.repeat(64);
@@ -48,20 +49,43 @@ const MANIFEST_HASH = '3'.repeat(64);
 const INPUT_HASH = '4'.repeat(64);
 const REASON_HASH = '5'.repeat(64);
 const roots: string[] = [];
+let revisionPhase: { work: Promise<void>; roots: string[] } | undefined;
+
+function trackRevisionPhase(operation: (ownedRoots: string[]) => Promise<void>): Promise<void> {
+  const ownedRoots = revisionPhase?.roots ?? [];
+  const work = operation(ownedRoots);
+  revisionPhase = { work, roots: ownedRoots };
+  return work;
+}
 
 // Exact Windows DACL qualification invokes the platform ACL authority for each
 // newly-created durable artifact. Keep the bound above the observed multi-step
 // approval + claim + replay path while Linux retains the normal fast timeout.
 vi.setConfig({ testTimeout: process.platform === 'win32' ? 120_000 : 5_000 });
 
+// A hook/test timeout must not delete fixtures while its real I/O is still in flight.
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+  const phase = revisionPhase;
+  revisionPhase = undefined;
+  const ownedRoots = roots.splice(0);
+  await phase?.work.catch(() => undefined);
+  // Phase-owned roots stay separate even if the hook times out and another
+  // case starts while a filesystem call from this phase is still completing.
+  await Promise.all(
+    [...ownedRoots, ...(phase?.roots ?? [])].map((root) =>
+      rm(root, { recursive: true, force: true }),
+    ),
+  );
+}, platformTestTimeout(30_000));
 
-async function fixture(nowValue = new Date().toISOString(), descriptorTtlMs = 60 * 60_000) {
+async function fixture(
+  nowValue = new Date().toISOString(),
+  descriptorTtlMs = 60 * 60_000,
+  ownedRoots = roots,
+) {
   const temporaryRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
   const workspaceRoot = await mkdtemp(join(temporaryRoot, 'openslack-effect-authority-'));
-  roots.push(workspaceRoot);
+  ownedRoots.push(workspaceRoot);
   const approvalRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');
   let now = nowValue;
   let sequence = 2;
@@ -1469,38 +1493,27 @@ describe('workflow effect D2 authorization', () => {
     });
   });
 
-  it(
-    'maps revision-one and revision-two approval views to one concurrent execution claim',
-    async () => {
-      const value = await fixture();
-      const { pending } = await createPending(value.makePort());
-      const { decided } = await approve(value, pending.approvalId);
-      const revisionOne = await Promise.all(
-        Array.from({ length: 12 }, async () => {
-          const port = value.makePort();
-          return {
-            port,
-            prepared: await port.prepare({
-              runId: 'run-1',
-              evaluationIndex: 1,
-              operation: 'openslack.governance.audit',
-              detail: 'bounded audit',
-            }),
-          };
-        }),
-      );
-      await value.approvals.markAuditProjected({
-        runId: 'run-1',
-        approvalId: pending.approvalId,
-        expectedRevision: 1,
-        eventId: workflowEffectApprovalAuditEventId('run-1', pending.approvalId),
-      });
-      expect(decided.auditProjection?.status).toBe('pending');
+  describe('concurrent approval revisions', () => {
+    type Participant = {
+      port: WorkflowEffectAuthorizationPort;
+      prepared: Awaited<ReturnType<WorkflowEffectAuthorizationPort['prepare']>>;
+    };
+    let preparedCase: {
+      value: Awaited<ReturnType<typeof fixture>>;
+      participants: Participant[];
+    };
 
-      const revisionTwo = await Promise.all(
-        Array.from({ length: 12 }, async () => {
-          const port = value.makePort();
-          return {
+    async function prepareRevision(
+      value: Awaited<ReturnType<typeof fixture>>,
+    ): Promise<Participant[]> {
+      const participants: Participant[] = [];
+      // Preparation is fixture setup, not the concurrency assertion. Prepare
+      // every host-minted view without competing for the production 30s lock
+      // budget; all 24 authorize calls below still start concurrently.
+      for (let index = 0; index < 12; index += 1) {
+        const port = value.makePort();
+        try {
+          participants.push({
             port,
             prepared: await port.prepare({
               runId: 'run-1',
@@ -1508,38 +1521,92 @@ describe('workflow effect D2 authorization', () => {
               operation: 'openslack.governance.audit',
               detail: 'bounded audit',
             }),
-          };
+          });
+        } catch (cause) {
+          throw new Error(`Approval revision preparation failed at participant ${index + 1}/12.`, {
+            cause,
+          });
+        }
+      }
+      return participants;
+    }
+
+    // Measured Windows preparation alone takes about 67s. Bound setup separately
+    // from the unchanged 120s claim/complete/replay budget (30s on POSIX).
+    beforeEach(
+      () =>
+        trackRevisionPhase(async (ownedRoots) => {
+          const value = await fixture(undefined, undefined, ownedRoots);
+          const { pending } = await createPending(value.makePort());
+          const { decided } = await approve(value, pending.approvalId);
+          const revisionOne = await prepareRevision(value);
+          await value.approvals.markAuditProjected({
+            runId: 'run-1',
+            approvalId: pending.approvalId,
+            expectedRevision: 1,
+            eventId: workflowEffectApprovalAuditEventId('run-1', pending.approvalId),
+          });
+          expect(decided.auditProjection?.status).toBe('pending');
+          const revisionTwo = await prepareRevision(value);
+          preparedCase = { value, participants: [...revisionOne, ...revisionTwo] };
         }),
-      );
-      const settled = await Promise.allSettled(
-        [...revisionOne, ...revisionTwo].map(({ port, prepared }) => port.authorize(prepared)),
-      );
-      const fulfilledIndex = settled.findIndex((entry) => entry.status === 'fulfilled');
-      expect(settled.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
-      for (const rejected of settled.filter((entry) => entry.status === 'rejected')) {
-        expect(rejected.reason).toBeInstanceOf(WorkflowEffectAuthorizationBusyError);
-        expect(rejected.reason).toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORIZATION_BUSY' });
-      }
-      const claimed = settled[fulfilledIndex];
-      if (claimed?.status !== 'fulfilled' || claimed.value.disposition !== 'claimed') {
-        throw new Error('expected one concurrent claim');
-      }
-      const owner = [...revisionOne, ...revisionTwo][fulfilledIndex]!.port;
-      await owner.complete(claimed.value.authority, { ok: true });
-      const replayPort = value.makePort();
-      const replayPrepared = await replayPort.prepare({
-        runId: 'run-1',
-        evaluationIndex: 1,
-        operation: 'openslack.governance.audit',
-        detail: 'bounded audit',
-      });
-      await expect(replayPort.authorize(replayPrepared)).resolves.toMatchObject({
-        disposition: 'replay',
-        value: { ok: true },
-      });
-    },
-    process.platform === 'win32' ? 120_000 : 30_000,
-  );
+      platformTestTimeout(30_000),
+    );
+
+    it(
+      'maps revision-one and revision-two approval views to one concurrent execution claim',
+      () =>
+        trackRevisionPhase(async () => {
+          const { value, participants } = preparedCase;
+          const settled = await Promise.allSettled(
+            participants.map(({ port, prepared }) => port.authorize(prepared)),
+          );
+          const outcomes = settled.map((result) =>
+            result.status === 'fulfilled'
+              ? { status: result.status }
+              : {
+                  status: result.status,
+                  name: result.reason?.name,
+                  code: result.reason?.code,
+                  causeCode: result.reason?.cause?.code,
+                  causeName: result.reason?.cause?.name,
+                  message: result.reason?.message,
+                  causeMessage: result.reason?.cause?.message,
+                },
+          );
+          const diagnostic = JSON.stringify(outcomes);
+          const fulfilledIndex = settled.findIndex((entry) => entry.status === 'fulfilled');
+          expect(
+            settled.filter((entry) => entry.status === 'fulfilled'),
+            diagnostic,
+          ).toHaveLength(1);
+          for (const rejected of settled.filter((entry) => entry.status === 'rejected')) {
+            expect(rejected.reason, diagnostic).toBeInstanceOf(
+              WorkflowEffectAuthorizationBusyError,
+            );
+            expect(rejected.reason).toMatchObject({ code: 'WORKFLOW_EFFECT_AUTHORIZATION_BUSY' });
+          }
+          const claimed = settled[fulfilledIndex];
+          if (claimed?.status !== 'fulfilled' || claimed.value.disposition !== 'claimed') {
+            throw new Error('expected one concurrent claim');
+          }
+          const owner = participants[fulfilledIndex]!.port;
+          await owner.complete(claimed.value.authority, { ok: true });
+          const replayPort = value.makePort();
+          const replayPrepared = await replayPort.prepare({
+            runId: 'run-1',
+            evaluationIndex: 1,
+            operation: 'openslack.governance.audit',
+            detail: 'bounded audit',
+          });
+          await expect(replayPort.authorize(replayPrepared)).resolves.toMatchObject({
+            disposition: 'replay',
+            value: { ok: true },
+          });
+        }),
+      platformTestTimeout(30_000),
+    );
+  });
 
   it('rejects expired decisions before creating an execution claim', async () => {
     const value = await fixture();

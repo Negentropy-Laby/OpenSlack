@@ -1,3 +1,5 @@
+import type * as MockModule1 from '@openslack/github';
+import type * as MockModule0 from '@openslack/runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -7,13 +9,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@openslack/runtime', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@openslack/runtime')>()),
+  ...(await importOriginal<typeof MockModule0>()),
   proposeWorkspacePR: mocks.proposeWorkspacePR,
   resolveAgentPrincipal: mocks.resolveAgentPrincipal,
 }));
 
 vi.mock('@openslack/github', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@openslack/github')>()),
+  ...(await importOriginal<typeof MockModule1>()),
   reviewClaim: mocks.reviewClaim,
 }));
 

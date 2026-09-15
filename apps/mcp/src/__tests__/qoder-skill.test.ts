@@ -1,3 +1,4 @@
+import { testBash, testProcessEnvironment } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   existsSync,
   lstatSync,
@@ -28,7 +29,6 @@ const skillRoot = join(
   'openslack-organization-control',
 );
 const temporaryRoots: string[] = [];
-const bashAvailable = spawnSync('bash', ['--version'], { encoding: 'utf8' }).status === 0;
 const powershellAvailable =
   spawnSync('powershell', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
     encoding: 'utf8',
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 function tempRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'openslack-qoder-skill-'));
+  const root = mkdtempSync(join(tmpdir(), 'openslack qoder skill-'));
   temporaryRoots.push(root);
   return root;
 }
@@ -55,12 +55,6 @@ function files(root: string): string[] {
   };
   walk(root);
   return result.sort();
-}
-
-function shellPath(path: string): string {
-  const normalized = path.replaceAll('\\', '/');
-  const windowsDrive = /^([A-Za-z]):\/(.*)$/.exec(normalized);
-  return windowsDrive ? `/mnt/${windowsDrive[1]!.toLowerCase()}/${windowsDrive[2]!}` : normalized;
 }
 
 function shellQuote(value: string): string {
@@ -101,57 +95,67 @@ describe('Qoder Organization Control Skill qualification', () => {
     }
   });
 
-  it.runIf(bashAvailable)(
-    'runs the Bash installer idempotently with an explicit temp override and rejects unsafe targets',
-    () => {
-      const target = tempRoot();
-      const script = shellPath(join(skillRoot, 'install', 'install.sh'));
-      const shellTarget = shellPath(target);
-      const first = spawnSync('bash', [script, '--target-root', shellTarget], { encoding: 'utf8' });
-      expect(first.status, first.stderr).toBe(0);
-      const installed = join(target, 'openslack-organization-control');
-      expect(existsSync(join(installed, 'SKILL.md'))).toBe(true);
-      const before = files(installed).map((path) => readFileSync(path).toString('base64'));
-      const second = spawnSync('bash', [script, '--target-root', shellTarget], {
+  it('runs the Bash installer idempotently with an explicit temp override and rejects unsafe targets', () => {
+    const bash = testBash();
+    const target = tempRoot();
+    const script = bash.path(join(skillRoot, 'install', 'install.sh'));
+    const shellTarget = bash.path(target);
+    const first = bash.spawn([script, '--target-root', shellTarget], {
+      encoding: 'utf8',
+    });
+    expect(first.status, first.stderr).toBe(0);
+    const installed = join(target, 'openslack-organization-control');
+    expect(existsSync(join(installed, 'SKILL.md'))).toBe(true);
+    const before = files(installed).map((path) => readFileSync(path).toString('base64'));
+    const second = bash.spawn([script, '--target-root', shellTarget], {
+      encoding: 'utf8',
+    });
+    expect(second.status, second.stderr).toBe(0);
+    expect(second.stdout).toContain('already up to date');
+    expect(files(installed).map((path) => readFileSync(path).toString('base64'))).toEqual(before);
+    expect(
+      bash.spawn([script, '--target-root', 'relative/path'], {
         encoding: 'utf8',
-      });
-      expect(second.status, second.stderr).toBe(0);
-      expect(second.stdout).toContain('already up to date');
-      expect(files(installed).map((path) => readFileSync(path).toString('base64'))).toEqual(before);
-      expect(
-        spawnSync('bash', [script, '--target-root', 'relative/path'], { encoding: 'utf8' }).status,
-      ).not.toBe(0);
-      expect(
-        spawnSync('bash', [script, '--target-root', '/'], { encoding: 'utf8' }).status,
-      ).not.toBe(0);
-      expect(
-        spawnSync('bash', [script, '--target-root', '/tmp/..'], { encoding: 'utf8' }).status,
-      ).not.toBe(0);
-      expect(
-        spawnSync('bash', [script, '--target-root', '/tmp'], { encoding: 'utf8' }).status,
-      ).not.toBe(0);
-    },
-    30_000,
-  );
+      }).status,
+    ).not.toBe(0);
+    expect(
+      bash.spawn([script, '--target-root', '/'], {
+        encoding: 'utf8',
+      }).status,
+    ).not.toBe(0);
+    expect(
+      bash.spawn([script, '--target-root', '/tmp/..'], {
+        encoding: 'utf8',
+      }).status,
+    ).not.toBe(0);
+    expect(
+      bash.spawn([script, '--target-root', '/tmp'], {
+        encoding: 'utf8',
+      }).status,
+    ).not.toBe(0);
+  }, 30_000);
 
-  it.runIf(bashAvailable)('rejects a symlink component in a Bash installer target', () => {
-    const script = shellPath(join(skillRoot, 'install', 'install.sh'));
-    const result = spawnSync(
-      'bash',
+  it('rejects a symlink component in a Bash installer target', () => {
+    const bash = testBash();
+    const script = bash.path(join(skillRoot, 'install', 'install.sh'));
+    const result = bash.spawn(
       [
         '-c',
         [
-          'set -u',
+          'set -eu',
           'test_root="$(mktemp -d)"',
           'trap \'rm -rf -- "$test_root"\' EXIT',
           'mkdir -p -- "$test_root/real"',
           'ln -s -- "$test_root/real" "$test_root/link"',
-          `${shellQuote(script)} --target-root "$test_root/link/nested"`,
+          'test -L "$test_root/link"',
+          `if bash ${shellQuote(script)} --target-root "$test_root/link/nested"; then exit 1; fi`,
+          'test ! -e "$test_root/real/nested/openslack-organization-control"',
+          'exit 23',
         ].join('\n'),
       ],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', env: testProcessEnvironment() },
     );
-    expect(result.status).not.toBe(0);
+    expect(result.status, result.stderr).toBe(23);
     expect(result.stderr).toContain('symlink component');
   });
 
@@ -169,9 +173,15 @@ describe('Qoder Organization Control Skill qualification', () => {
         '-TargetRoot',
         target,
       ];
-      const first = spawnSync('powershell', command, { encoding: 'utf8' });
+      const first = spawnSync('powershell', command, {
+        encoding: 'utf8',
+        env: testProcessEnvironment(),
+      });
       expect(first.status, first.stderr).toBe(0);
-      const second = spawnSync('powershell', command, { encoding: 'utf8' });
+      const second = spawnSync('powershell', command, {
+        encoding: 'utf8',
+        env: testProcessEnvironment(),
+      });
       expect(second.status, second.stderr).toBe(0);
       expect(second.stdout).toContain('already up to date');
       const rejected = spawnSync(
@@ -185,7 +195,7 @@ describe('Qoder Organization Control Skill qualification', () => {
           '-TargetRoot',
           'relative/path',
         ],
-        { encoding: 'utf8' },
+        { encoding: 'utf8', env: testProcessEnvironment() },
       );
       expect(rejected.status).not.toBe(0);
 
@@ -201,7 +211,7 @@ describe('Qoder Organization Control Skill qualification', () => {
           '-TargetRoot',
           filesystemRootAlias,
         ],
-        { encoding: 'utf8' },
+        { encoding: 'utf8', env: testProcessEnvironment() },
       );
       expect(broad.status).not.toBe(0);
       expect(broad.stderr).toContain('broad directory');
@@ -223,7 +233,7 @@ describe('Qoder Organization Control Skill qualification', () => {
           '-TargetRoot',
           join(link, 'nested'),
         ],
-        { encoding: 'utf8' },
+        { encoding: 'utf8', env: testProcessEnvironment() },
       );
       expect(reparse.status).not.toBe(0);
       expect(reparse.stderr).toContain('reparse-point component');

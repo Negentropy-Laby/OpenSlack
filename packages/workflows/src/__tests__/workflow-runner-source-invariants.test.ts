@@ -1,3 +1,7 @@
+import {
+  createTestProcessResolver,
+  testProcessEnvironment,
+} from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -7,18 +11,6 @@ import { validateWorkflowRunnerExecutionDescriptor } from '../workflow-runner-de
 
 async function source(path: string): Promise<string> {
   return readFile(resolve(process.cwd(), path), 'utf8');
-}
-
-function commandPath(command: 'bun' | 'node'): string {
-  const resolved = execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [command], {
-    encoding: 'utf8',
-    windowsHide: true,
-    timeout: 20_000,
-  })
-    .split(/\r?\n/u)
-    .find((entry) => entry.trim().length > 0);
-  if (resolved === undefined) throw new Error(`${command} executable is unavailable.`);
-  return resolved.trim();
 }
 
 describe('GS9-I TypeScript writer deletion invariants', () => {
@@ -340,9 +332,10 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
   });
 
   it('builds and starts the path-free CJS artifact under a type-module ancestor', () => {
-    const nodeExecutable = realpathSync(commandPath('node'));
+    const processes = createTestProcessResolver();
+    const nodeExecutable = realpathSync(processes.executable('node'));
     const output = execFileSync(
-      commandPath('bun'),
+      processes.executable('bun'),
       [
         resolve(process.cwd(), 'scripts/qualification/workflow-runner-bundle.ts'),
         'verify-local',
@@ -351,6 +344,7 @@ describe('GS9-I TypeScript writer deletion invariants', () => {
       ],
       {
         cwd: process.cwd(),
+        env: testProcessEnvironment(),
         encoding: 'utf8',
         windowsHide: true,
         timeout: 120_000,

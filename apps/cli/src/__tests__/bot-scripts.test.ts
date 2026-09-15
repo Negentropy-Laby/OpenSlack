@@ -1,3 +1,4 @@
+import { testProcessEnvironment } from '../../../../scripts/testing/process-fixture.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -23,6 +24,11 @@ function tokenModule(): BotTokenModule {
 
 function scriptPath(name: string): string {
   return resolve(repoRoot, 'scripts', name);
+}
+
+function shimEnvironment(root: string, parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = testProcessEnvironment(parent);
+  return { ...env, PATH: root + ';' + env.PATH };
 }
 
 describe('bot-auth wrapper scripts', () => {
@@ -393,6 +399,12 @@ describe('bot-auth wrapper scripts', () => {
   it.runIf(process.platform === 'win32')(
     'renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7',
     () => {
+      const contaminated = shimEnvironment('fixture', { Path: 'base', PATH: 'duplicate' });
+      expect(Object.keys(contaminated).filter((key) => key.toLowerCase() === 'path')).toEqual([
+        'PATH',
+      ]);
+      expect(contaminated.PATH).toBe('fixture;base');
+      expect(contaminated.PATHEXT).toContain('.CMD');
       const shells = ['powershell'];
       if (spawnSync('where.exe', ['pwsh'], { encoding: 'utf8' }).status === 0) shells.push('pwsh');
       for (const shell of shells) {
@@ -412,7 +424,7 @@ describe('bot-auth wrapper scripts', () => {
             });
             writeFileSync(
               join(root, 'node.cmd'),
-              '@echo off\r\necho ' + envelope + '\r\nexit /b 0\r\n',
+              '@echo off\r\necho shim-executed 1>&2\r\necho ' + envelope + '\r\nexit /b 0\r\n',
             );
             const result = spawnSync(
               shell,
@@ -426,10 +438,16 @@ describe('bot-auth wrapper scripts', () => {
               ],
               {
                 encoding: 'utf8',
-                env: { ...process.env, PATH: root + ';' + (process.env.PATH ?? '') },
+                env: shimEnvironment(root, {
+                  ...process.env,
+                  Path: process.env.Path ?? process.env.PATH ?? '',
+                  PATH: 'unusable-duplicate-path',
+                  PATHEXT: undefined,
+                }),
               },
             );
             expect(result.status, result.stderr).toBe(0);
+            expect(result.stderr).toContain('shim-executed');
             expect(result.stdout.split(/\r?\n/u).filter(Boolean)).toHaveLength(
               installations.length,
             );
@@ -461,6 +479,73 @@ describe('bot-auth wrapper scripts', () => {
     expect(wrapper.isAllowedCommand(['issue', 'edit', '369'])).toBe(true);
     expect(wrapper.isAllowedCommand(['auth', 'token'])).toBe(false);
   });
+
+  it('forwards a named Go runtime opt-in to the gh child without inheriting ambient GODEBUG', () => {
+    const require = createRequire(import.meta.url);
+    const wrapper = require(scriptPath('bot-gh-command.js')) as {
+      createGhEnvironment(
+        credentials: Record<string, unknown>,
+        parent?: Record<string, string>,
+      ): Record<string, string>;
+    };
+    const credentials = {
+      value: 'installation-token-canary',
+      repository: 'Negentropy-Laby/OpenSlack',
+    };
+
+    // The gh child environment is closed by construction, so an ambient GODEBUG
+    // never reaches it. It also carries settings that weaken certificate
+    // verification, which is why it is not inherited wholesale.
+    const ambient = wrapper.createGhEnvironment(credentials, {
+      PATH: 'path-canary',
+      GODEBUG: 'x509ignoreCN=0',
+    });
+    expect(ambient).toMatchObject({ PATH: 'path-canary', GH_TOKEN: 'installation-token-canary' });
+    expect(ambient).not.toHaveProperty('GODEBUG');
+    expect(ambient).not.toHaveProperty('GITHUB_TOKEN');
+
+    // The named opt-in is the only route, and it maps onto GODEBUG for the child.
+    const optedIn = wrapper.createGhEnvironment(credentials, {
+      PATH: 'path-canary',
+      OPENSLACK_BOT_GH_GODEBUG: '  tlsmlkem=0  ',
+    });
+    expect(optedIn).toMatchObject({ GODEBUG: 'tlsmlkem=0' });
+    expect(optedIn).not.toHaveProperty('OPENSLACK_BOT_GH_GODEBUG');
+
+    // A blank value does not create the variable.
+    for (const blank of ['', '   ']) {
+      const child = wrapper.createGhEnvironment(credentials, {
+        PATH: 'path-canary',
+        OPENSLACK_BOT_GH_GODEBUG: blank,
+      });
+      expect(child).not.toHaveProperty('GODEBUG');
+    }
+  });
+
+  it.each(['unknown', 'tlsmlkem=1', 'tlsmlkem=0,other=1', 'tlsmlkem=0,tlsmlkem=0'])(
+    'rejects unsupported Go configuration %s before credentials or launch',
+    async (value) => {
+      const require = createRequire(import.meta.url);
+      const wrapper = require(scriptPath('bot-gh-command.js'));
+      const acquire = vi.fn();
+      const spawn = vi.fn();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const env = { OPENSLACK_BOT_GH_GODEBUG: value };
+        expect(wrapper.createGhEnvironment.bind(null, { value: 'secret-canary' }, env)).toThrow(
+          'BOT_GH_GODEBUG_INVALID',
+        );
+        expect(await wrapper.main(['pr', 'edit', '414'], { env, acquire, spawn })).toBe(2);
+        expect(acquire).not.toHaveBeenCalled();
+        expect(spawn).not.toHaveBeenCalled();
+        expect(stderr.mock.calls.flat().join('')).toBe(
+          'BOT_GH_GODEBUG_INVALID: only tlsmlkem=0 is supported.\n',
+        );
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
 
   it('completes merged task Issues from structured claim evidence without a human token fallback', () => {
     const workflow = readFileSync(
@@ -516,5 +601,50 @@ describe('bot-auth wrapper scripts', () => {
     expect(() => compatibility.mapCreateArgs(['--unknown'])).toThrow(
       'Unsupported bot PR compatibility argument',
     );
+  });
+});
+
+describe('bot entry configuration preflight', () => {
+  it.each(['bot-gh-command.js', 'bot-openslack-command.js', 'bot-delivery-compat.js'])(
+    '%s rejects invalid configuration before identity or launch',
+    async (name) => {
+      const require = createRequire(import.meta.url);
+      const entry = require(scriptPath(name));
+      const identity = vi.fn();
+      const spawn = vi.fn();
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const args = name === 'bot-gh-command.js' ? ['pr', 'edit', '414'] : [];
+        const status = await entry.main(args, {
+          env: { OPENSLACK_BOT_GH_GODEBUG: 'invalid-private-canary' },
+          acquire: identity,
+          withIdentity: identity,
+          withInstallation: identity,
+          spawn,
+        });
+        expect(status).toBe(2);
+        expect(identity).not.toHaveBeenCalled();
+        expect(spawn).not.toHaveBeenCalled();
+        expect(stderr.mock.calls.flat().join('')).toContain('BOT_GH_GODEBUG_INVALID');
+        expect(stderr.mock.calls.flat().join('')).not.toContain('invalid-private-canary');
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
+  it('defers the validated Go opt-in until gh itself is launched', () => {
+    const require = createRequire(import.meta.url);
+    const { createOpenSlackEnvironment } = require(scriptPath('bot-launch-environment.js'));
+    const child = createOpenSlackEnvironment(
+      { forwardPrivateKey: false },
+      {
+        GODEBUG: 'ambient-canary',
+        godebug: 'alias-canary',
+        OPENSLACK_BOT_GH_GODEBUG: ' tlsmlkem=0 ',
+      },
+    );
+    expect(child.GODEBUG).toBeUndefined();
+    expect(child.godebug).toBeUndefined();
+    expect(child.OPENSLACK_BOT_GH_GODEBUG).toBe('tlsmlkem=0');
   });
 });
