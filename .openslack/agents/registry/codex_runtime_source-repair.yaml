@@ -1,0 +1,104 @@
+schema: openslack.agent_registry.v2
+agent_id: codex_runtime_source-repair
+display_name: Workflow Source Repair
+employee_type: ai_agent
+identity:
+  uid: codex_runtime_source-repair
+  principal_id: principal:codex_runtime_source-repair
+  public_key_jwk: null
+  key_id: null
+  key_rotation:
+    last_rotated_at: null
+    rotation_interval_days: 90
+  status: active
+vendor:
+  provider: openai
+  runtime: codex
+  model: default
+employment:
+  status: active
+  hired_at: 2026-09-19T11:04:50.843Z
+  hired_by: human:founder
+  department: engineering
+  role: developer
+  manager: human:founder
+capabilities:
+  primary:
+    - typescript
+    - go
+    - test_writing
+    - documentation
+  secondary:
+    - nodejs
+permissions:
+  paths:
+    allow:
+      - packages/workflows/src/**
+      - apps/cli/src/commands/collaboration.ts
+      - apps/cli/src/commands/tui-executors.ts
+      - apps/cli/src/__tests__/workflow-*.test.ts
+      - apps/cli/src/__tests__/tui-executors.test.ts
+      - packages/github/src/workflow-*.ts
+      - packages/github/src/__tests__/workflow-*.test.ts
+      - packages/github/src/index.ts
+      - docs/architecture/components/workflow-runtime.md
+      - docs/user/cli-reference.md
+      - services/workflow-control/integration/source-manifest.v2.json
+      - services/workflow-control/tests/contracts/source_manifest_test.go
+      - .openslack/tasks/**
+      - .openslack/outbox/**
+    deny:
+      - .openslack/agents/**
+      - .openslack/policies/**
+      - .github/**
+      - .env
+      - "**/.env"
+      - "**/*.pem"
+      - "**/*.key"
+      - secrets/**
+      - credentials/**
+      - AGENTS.md
+      - CLAUDE.md
+      - .openslack/self/constitution.md
+      - .openslack/self/invariants.yaml
+      - packages/kernel/src/**
+  actions:
+    task.claim: allow
+    task.sync: allow
+    pr.propose: allow
+    pr.comment: allow
+    github.comment: allow
+  github:
+    can_create_pr: true
+    can_comment: true
+    can_approve: false
+    can_merge: false
+  max_risk_zone: yellow
+repositories:
+  workspace_repo:
+    owner: Negentropy-Laby
+    repo: OpenSlack
+    default_branch: main
+execution:
+  max_parallel_tasks: 1
+  max_task_runtime_minutes: 120
+output_contract:
+  must_create:
+    - workspace_run_record
+  may_create:
+    - workspace_pr
+    - review_comment
+  must_not_create:
+    - direct_main_push
+    - production_deploy
+approval_rules:
+  require_human_approval_for:
+    - merge_to_main
+    - policy_change
+    - permission_change
+    - agent_registry_change
+task_matching:
+  max_risk_level: medium
+scheduler:
+  preferred_mode: manual
+  cadence_minutes: 0
