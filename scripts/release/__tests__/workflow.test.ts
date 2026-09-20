@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const workflow = readFileSync(
   resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'openslack-release.yml'),
@@ -9,7 +10,7 @@ const workflow = readFileSync(
 const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
 
 describe('native release workflow integrity', () => {
-  it('runs PR release smoke for every broad compiled or packaged input family', () => {
+  it('runs PR release smoke and cleanup qualification for both native targets', () => {
     for (const path of [
       "'apps/**'",
       "'packages/**'",
@@ -24,6 +25,41 @@ describe('native release workflow integrity', () => {
     ]) {
       expect(workflow).toContain(`- ${path}`);
     }
+    const config = parse(workflow);
+    expect(config.permissions).toEqual({ contents: 'read' });
+    expect(config.jobs.build.strategy.matrix.include).toEqual([
+      { target: 'windows-x64', runner: 'windows-2022' },
+      { target: 'linux-x64', runner: 'ubuntu-24.04' },
+    ]);
+    const steps = config.jobs.build.steps;
+    const index = steps.findIndex(
+      (step: { name?: string }) => step.name === 'Qualify governed PR branch cleanup',
+    );
+    const typecheckIndex = steps.findIndex(
+      (step: { name?: string }) => step.name === 'Typecheck release and runtime sources',
+    );
+    expect(typecheckIndex).toBeGreaterThanOrEqual(0);
+    expect(index).toBeGreaterThan(typecheckIndex);
+    expect(index).toBeLessThan(
+      steps.findIndex(
+        (step: { name?: string }) =>
+          step.name === 'Build unsigned PR or development archive and run unpacked smoke',
+      ),
+    );
+    expect(steps[index]).toEqual({
+      name: 'Qualify governed PR branch cleanup',
+      run: [
+        'bunx vitest run',
+        'packages/delivery/src/__tests__/git-transport.test.ts',
+        'packages/delivery/src/__tests__/branch-cleanup.test.ts',
+        'packages/pr/src/__tests__/cleanup-branch.test.ts',
+        'packages/pr/src/__tests__/task-link.test.ts',
+        'packages/github/src/__tests__/branch-evidence.test.ts',
+        'apps/cli/src/__tests__/pr-cleanup-branch-command.test.ts',
+        'packages/collaboration/src/__tests__/events.test.ts',
+        'packages/runtime/src/__tests__/propose.test.ts',
+      ].join(' '),
+    });
   });
 
   it('packages release guides from their canonical user-documentation paths', () => {

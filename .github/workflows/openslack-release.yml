@@ -64,6 +64,18 @@ jobs:
       - name: Typecheck release and runtime sources
         run: bun run typecheck
 
+      - name: Qualify governed PR branch cleanup
+        run: >-
+          bunx vitest run
+          packages/delivery/src/__tests__/git-transport.test.ts
+          packages/delivery/src/__tests__/branch-cleanup.test.ts
+          packages/pr/src/__tests__/cleanup-branch.test.ts
+          packages/pr/src/__tests__/task-link.test.ts
+          packages/github/src/__tests__/branch-evidence.test.ts
+          apps/cli/src/__tests__/pr-cleanup-branch-command.test.ts
+          packages/collaboration/src/__tests__/events.test.ts
+          packages/runtime/src/__tests__/propose.test.ts
+
       - name: Qualify Windows Workflow Control journal ACLs
         if: ${{ matrix.target == 'windows-x64' }}
         run: bunx vitest run packages/workflows/src/__tests__/workflow-control-shadow-journal.test.ts
