@@ -317,6 +317,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain(
       'postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a',
     );
+    expect(log).toContain('--stop-timeout 300');
     expect(log).toContain(
       'prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893',
     );

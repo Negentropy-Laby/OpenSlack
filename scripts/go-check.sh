@@ -6,6 +6,9 @@ IFS=$'\n\t'
 readonly GO_VERSION="1.26.5"
 readonly GO_IMAGE="golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647"
 readonly POSTGRES_IMAGE="postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a"
+# The restart gates stop PostgreSQL through Docker; the 10s default would kill a
+# checkpoint mid-flush, so allow one full checkpoint interval instead.
+readonly POSTGRES_STOP_TIMEOUT=300
 readonly PROMETHEUS_IMAGE="prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893"
 readonly MOD_CACHE_VOLUME="openslack-go-check-mod-go1-26-5-3aff6657219a"
 readonly BUILD_CACHE_VOLUME="openslack-go-check-build-go1-26-5-3aff6657219a"
@@ -1276,6 +1279,7 @@ start_database() {
     --label "com.openslack.go-check.run=${resource_owner}" \
     --network "${network_ref}" \
     --network-alias postgres \
+    --stop-timeout "${POSTGRES_STOP_TIMEOUT}" \
     --env POSTGRES_USER=openslack \
     --env POSTGRES_PASSWORD=openslack-go-check \
     --env "POSTGRES_DB=${database_name}" \
