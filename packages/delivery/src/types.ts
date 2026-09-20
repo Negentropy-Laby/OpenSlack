@@ -105,6 +105,43 @@ export interface GitProbePublisher extends GitBranchPublisher {
   }): void;
 }
 
+export interface BranchCleanupInput {
+  rootDir: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  remote?: string;
+  timeoutMs?: number;
+}
+
+export interface ConditionalBranchDeleteResult {
+  state:
+    | 'DELETED'
+    | 'ABSENT'
+    | 'STALE'
+    | 'ABSENT_AFTER_ATTEMPT'
+    | 'RECONCILIATION_REQUIRED'
+    | 'FAILED';
+  attempted: boolean;
+  observedRefState: 'PRESENT' | 'ABSENT' | 'UNKNOWN';
+  observedSha?: string;
+  message?: string;
+}
+
+export interface ConditionalBranchTransportInput extends BranchCleanupInput {
+  remote: string;
+  timeoutMs: number;
+  token: string;
+}
+
+/** Independent of probe deletion: always uses an explicit expected-SHA lease. */
+export interface GitConditionalBranchDeleter {
+  readRemoteBranchSha(input: ConditionalBranchTransportInput): string | null;
+  deleteRemoteRefIfAt(
+    input: ConditionalBranchTransportInput & { expectedSha: string },
+  ): ConditionalBranchDeleteResult;
+}
+
 export interface GitHubDeliveryProbeInput {
   rootDir: string;
   owner: string;

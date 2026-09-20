@@ -619,3 +619,10 @@ export {
 export { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from './claim-defaults.js';
 
 export { createGhEnvironment, validateGhGoDebug, ghProcessEnvironment } from './gh-environment.js';
+export {
+  getDefaultBranch,
+  isBranchProtected,
+  listOpenPRsForBranch,
+  claimRefPresent,
+} from './branch-evidence.js';
+export type { BranchOpenPR } from './branch-evidence.js';

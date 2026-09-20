@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
@@ -27,6 +27,22 @@ function makeSnapshot(actionVerdict: 'allow' | 'ask' | 'deny'): AgentPermissionS
 }
 
 describe('proposeWorkspacePR authorization', () => {
+  it('pins renderer bytes to the cleanup consumer golden contract', () => {
+    const golden = readFileSync(
+      new URL('./fixtures/task-link-golden.txt', import.meta.url),
+      'utf8',
+    );
+    expect(
+      renderTaskLinkMetadata({
+        schema: 'openslack.task_link.v1',
+        issue_number: 42,
+        agent_id: 'repair',
+        task_id: 'TASK-42',
+        run_id: 'RUN-42',
+        claim_ref: 'refs/heads/openslack/claims/issue-42',
+      }) + '\n',
+    ).toBe(golden);
+  });
   it('round-trips the structured task-link marker', () => {
     const body = renderTaskLinkMetadata({
       schema: 'openslack.task_link.v1',

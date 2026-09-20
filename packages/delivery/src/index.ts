@@ -1,4 +1,12 @@
 export { GitHubDeliveryService } from './service.js';
+export { readRemoteBranchSha, deleteRemoteBranchIfAt } from './branch-cleanup.js';
+export type { BranchCleanupDependencies } from './branch-cleanup.js';
+export type {
+  BranchCleanupInput,
+  ConditionalBranchDeleteResult,
+  ConditionalBranchTransportInput,
+  GitConditionalBranchDeleter,
+} from './types.js';
 export type { GitHubDeliveryServiceOptions } from './service.js';
 export { GitAskPassPublisher, isAuthenticationFailure } from './git-transport.js';
 export type { GitAskPassPublisherOptions } from './git-transport.js';

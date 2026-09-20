@@ -722,6 +722,20 @@ export function prCommands(): Command {
       console.log(result.message);
     });
 
+  cmd
+    .command('cleanup-branch <number>')
+    .description('Preview or conditionally delete a merged PR remote branch')
+    .option('--execute', 'Authorize this remote branch deletion (default: preview only)')
+    .option('--agent-id <id>', 'Agent ID for authorization; resolution failure blocks cleanup')
+    .option('--repo <owner/name>', 'Target GitHub repository')
+    .option('--auth <mode>', 'Live evidence auth: auto, app, or token', 'auto')
+    .option('--remote <name>', 'Named Git remote', 'origin')
+    .option('--timeout <seconds>', 'Total timeout in seconds (1–600)', '60')
+    .action(async (number, options) => {
+      const { runPRBranchCleanupCommand } = await import('./pr-cleanup-branch.js');
+      await runPRBranchCleanupCommand(number, options);
+    });
+
   return cmd;
 }
 

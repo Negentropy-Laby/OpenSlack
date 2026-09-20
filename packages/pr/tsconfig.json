@@ -5,5 +5,10 @@
     "rootDir": "./src"
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../kernel" }, { "path": "../github" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../kernel" },
+    { "path": "../github" },
+    { "path": "../delivery" }
+  ]
 }

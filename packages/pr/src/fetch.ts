@@ -106,6 +106,9 @@ export async function fetchPRDetails(
 
   return {
     prNumber,
+    merged: pr?.merged,
+    headRepoFullName: pr?.head.repoFullName,
+    baseRepoFullName: pr?.base.repoFullName,
     title: pr?.title || `PR #${prNumber}`,
     author,
     state: pr?.state || 'unknown',
