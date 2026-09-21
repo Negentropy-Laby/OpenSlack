@@ -60,6 +60,14 @@ describe('native release workflow integrity', () => {
         'packages/runtime/src/__tests__/propose.test.ts',
       ].join(' '),
     });
+    expect(steps[index + 1]).toEqual({
+      name: 'Qualify notification blob storage races',
+      run: [
+        'bunx vitest run',
+        'packages/github/src/__tests__/notification-blob-store.test.ts',
+        'packages/github/src/__tests__/notification-blob-store-race.test.ts',
+      ].join(' '),
+    });
   });
 
   it('packages release guides from their canonical user-documentation paths', () => {

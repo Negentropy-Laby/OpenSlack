@@ -318,11 +318,20 @@ export class NotificationBlobStore {
     let total = 0;
     for (const entry of readdirSync(this.rootPath, { withFileTypes: true })) {
       if (entry.name === '.blob-store.lock' || entry.name === '.blob-store.lock.reclaim') {
-        const lockStatus = lstatSync(join(this.rootPath, entry.name));
+        if (entry.isSymbolicLink() || !entry.isFile()) {
+          throw blobError('BLOB_PATH_UNSAFE', 'Notification Blob store lock path is unsafe.');
+        }
+        let lockStatus;
+        try {
+          lockStatus = lstatSync(join(this.rootPath, entry.name));
+        } catch (error) {
+          // A contender may release its temporary reclaim gate during this scan.
+          // Missing owner locks or data files are not this benign race.
+          if (entry.name === '.blob-store.lock.reclaim' && isNodeError(error, 'ENOENT')) continue;
+          throw error;
+        }
         if (
-          entry.isSymbolicLink() ||
           lockStatus.isSymbolicLink() ||
-          !entry.isFile() ||
           !lockStatus.isFile() ||
           (process.platform !== 'win32' && (lockStatus.mode & 0o777) !== 0o600)
         ) {
