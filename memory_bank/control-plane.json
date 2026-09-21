@@ -56,6 +56,21 @@
   ],
   "documents": [
     {
+      "id": "qa-cleanup-permit-2026-09-21",
+      "path": "production/qa/qa-plan-cleanup-permit-2026-09-21.md",
+      "status": "active"
+    },
+    {
+      "id": "service-cleanup-broker",
+      "path": "services/cleanup-broker/README.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-task-claim-v2-c0",
+      "path": "docs/architecture/contracts/task-claim-v2-c0.md",
+      "status": "active"
+    },
+    {
       "id": "cdd-module-index",
       "path": "design/cdd/module-index.md",
       "status": "active"

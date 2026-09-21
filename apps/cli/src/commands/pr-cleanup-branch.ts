@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { getClient, parseGitHubRepoSpec } from '@openslack/github';
-import { cleanupPRBranch } from '@openslack/pr';
+import { cleanupPRBranch, sendCleanupBrokerRequest, CleanupBrokerClientError } from '@openslack/pr';
 import type { PRBranchCleanupAuditEvent } from '@openslack/pr';
 import { createBoundEventAppender, createEvent, recordEvent } from '@openslack/collaboration';
 import type { CollaborationEvent, CollaborationEventType } from '@openslack/collaboration';
@@ -13,6 +13,10 @@ interface CleanupCommandOptions {
   auth: string;
   remote: string;
   timeout: string;
+  permitId?: string;
+  operationId?: string;
+  operationStatus?: boolean;
+  remoteExplicit?: boolean;
 }
 
 class CleanupInputError extends Error {}
@@ -109,20 +113,121 @@ export async function runPRBranchCleanupCommand(
     if (options.repo !== undefined && !parseGitHubRepoSpec(options.repo)) {
       throw new CleanupInputError('--repo must be owner/name.');
     }
+    if (
+      options.agentId === undefined &&
+      (options.permitId !== undefined ||
+        options.operationId !== undefined ||
+        options.operationStatus)
+    ) {
+      throw new CleanupInputError('BLOCKED_AUTHORIZATION: broker options require --agent-id.');
+    }
     const rootDir = workspaceRoot();
-    let context: Parameters<typeof cleanupPRBranch>[0]['context'] = { kind: 'human-cli' };
     if (options.agentId !== undefined) {
       if (!options.agentId.trim())
         throw new CleanupInputError('BLOCKED_AUTHORIZATION: empty agent ID.');
-      const { resolveAgentPrincipal } = await import('@openslack/runtime');
-      const resolved = resolveAgentPrincipal({
-        root: rootDir,
-        agentId: options.agentId,
-        provider: 'cli',
-      });
-      if ('error' in resolved)
-        throw new CleanupInputError('BLOCKED_AUTHORIZATION: agent identity resolution failed.');
-      context = { kind: 'agent', principal: resolved.principal, snapshot: resolved.snapshot };
+      if (
+        !options.permitId ||
+        !options.repo ||
+        options.remoteExplicit !== true ||
+        options.auth !== 'app'
+      ) {
+        throw new CleanupInputError(
+          'BLOCKED_AUTHORIZATION: agent cleanup requires --permit-id, explicit --repo, explicit --remote and --auth app.',
+        );
+      }
+      if (options.execute && options.operationStatus) {
+        throw new CleanupInputError('--execute and --operation-status are mutually exclusive.');
+      }
+      const mode = options.operationStatus ? 'status' : options.execute ? 'execute' : 'preview';
+      if (
+        (mode === 'preview' && options.operationId !== undefined) ||
+        (mode !== 'preview' && !options.operationId)
+      ) {
+        throw new CleanupInputError(
+          'Execute/status requires --operation-id; preview prohibits --operation-id.',
+        );
+      }
+      const { resolveAgentPrincipal, loadRuntimeIdentity } = await import('@openslack/runtime');
+      const { parseAgentRegistry } = await import('@openslack/workspace');
+      const registry = parseAgentRegistry(rootDir, options.agentId);
+      let principal: { registry_id: string; runtime_uid: string; run_id: string };
+      if (mode === 'status') {
+        // A historical receipt remains readable after admission is revoked.
+        // Preserve the original local identity claims; never fabricate them
+        // from current authority, environment variables or a human fallback.
+        const identity = loadRuntimeIdentity(rootDir, options.agentId);
+        if (
+          !registry ||
+          !identity ||
+          identity.agent_id !== options.agentId ||
+          identity.provider !== 'cli'
+        ) {
+          throw new CleanupInputError(
+            'BLOCKED_AUTHORIZATION: STATUS_IDENTITY_UNAVAILABLE; original local identity and registry claims are required for status.',
+          );
+        }
+        principal = {
+          registry_id: identity.agent_id,
+          runtime_uid: identity.agent_uid,
+          run_id: identity.run_id,
+        };
+      } else {
+        const resolved = resolveAgentPrincipal({
+          root: rootDir,
+          agentId: options.agentId,
+          provider: 'cli',
+        });
+        if ('error' in resolved)
+          throw new CleanupInputError('BLOCKED_AUTHORIZATION: agent identity resolution failed.');
+        principal = resolved.principal;
+      }
+      if (
+        !registry ||
+        registry.agent_id !== principal.registry_id ||
+        registry.identity.uid !== principal.runtime_uid
+      ) {
+        throw new CleanupInputError('BLOCKED_AUTHORIZATION: local identity binding changed.');
+      }
+      // These fields are claims, not authenticated identity. The broker binds
+      // its kernel peer to administrator-controlled authority independently.
+      const result = await sendCleanupBrokerRequest(
+        {
+          schema: 'openslack.cleanup_request.v1',
+          mode,
+          agentId: principal.registry_id,
+          principalId: registry.identity.principal_id,
+          runtimeUid: principal.runtime_uid,
+          runId: principal.run_id,
+          repo: options.repo,
+          remote: options.remote,
+          prNumber,
+          permitId: options.permitId,
+          ...(mode !== 'preview' ? { operationId: options.operationId! } : {}),
+        },
+        { timeoutMs: remainingMs() },
+      );
+      console.log(
+        `PR: #${prNumber}\nRepository: ${options.repo}\nDecision: ${result.state}\nReason: ${result.reason}\nAudit: ${result.auditStatus}\nPermit: ${result.permitId}\nPermit state: ${result.permitState}\nOperation: ${result.operationId ?? 'not reserved'}\nClaim requirement: ${result.claimRequirement}\nClaim status: ${result.claimStatus}`,
+      );
+      if (mode === 'preview') console.log('Preview only. No remote branch was deleted.');
+      if (
+        ['reserved', 'reconciliation_required'].includes(result.permitState) ||
+        ['OPERATION_IN_PROGRESS', 'RECONCILIATION_REQUIRED', 'ABSENT_AFTER_ATTEMPT'].includes(
+          result.state,
+        )
+      ) {
+        console.error(
+          'Operation unresolved. Query --operation-status with the same operation ID; do not repeat execute.',
+        );
+      }
+      const success =
+        mode === 'preview'
+          ? ['CLEANUP_READY', 'ALREADY_ABSENT'].includes(result.state)
+          : ['DELETED', 'ALREADY_ABSENT'].includes(result.state) &&
+            result.auditStatus === 'RECORDED' &&
+            result.permitState === 'consumed';
+      if (!success || result.auditStatus === 'FAILED') process.exitCode = 1;
+      return;
     }
     const auth = options.auth as 'auto' | 'app' | 'token';
     const client = await getClient({
@@ -144,7 +249,7 @@ export async function runPRBranchCleanupCommand(
       auth,
       timeoutMs: remainingMs(),
       execute: options.execute === true,
-      context,
+      context: { kind: 'human-cli' },
       audit: async (event) => {
         if (event.mode === 'preview') {
           recordEvent(cleanupEvent(event), rootDir);
@@ -175,7 +280,7 @@ export async function runPRBranchCleanupCommand(
     if (!success) process.exitCode = 1;
   } catch (error) {
     console.error(
-      error instanceof CleanupInputError
+      error instanceof CleanupInputError || error instanceof CleanupBrokerClientError
         ? error.message
         : 'BLOCKED_EVIDENCE: branch cleanup could not complete; inspect sanitized operational diagnostics.',
     );

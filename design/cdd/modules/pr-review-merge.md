@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-09-21
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -177,3 +177,31 @@ identity are repository governed.
 - Analysis and approval remain separate.
 - Doctor results bind to the exact current head.
 - Merge cannot run until all gates including human approval pass.
+
+## A0: Permit-only Remote Branch Cleanup
+
+The governed cleanup target is **Permit-only**, implemented through an isolated
+Go broker rather than an in-process permission snapshot. Task Claim v2 is a
+separate future workstream, not a prerequisite or implicit fallback. A permit's
+task reference binds administrative scope only; it does not attest current
+claim ownership. Existing source-branch task and open-PR dependency blockers
+remain mandatory.
+
+The broker design and qualification matrix are in
+[Cleanup Broker](../../../services/cleanup-broker/README.md). The ordinary agent
+cannot supply authority JSON, principal assertions, executable paths, broker
+configuration or installation credentials. A missing/unavailable broker never
+falls back to the old direct deletion path. The scoped action is
+`pr.cleanup_branch_scoped.v1`; the old `pr.cleanup_branch` action must be denied.
+Execution grants remain administrator-governed, not self-installed.
+
+Permits bind one subject and one exact repository/PR/ref/SHA/workspace target,
+are single-use and time-bounded, and bind the broker generation and boot nonce.
+The broker owns durable reservation and outcome evidence; ambiguous sends are
+reconciled, not retried as fresh deletion. Reboot starts read-only until a new
+governed activation; previous reservations remain reconciliation-only.
+
+This CDD records the target contract, not qualification success. Go principal
+mapping, ledger and boot-nonce work is in progress; the deletion send boundary
+is not yet connected. Local tests, hosted CI, genuine OS isolation, scratch
+GitHub qualification, human review and release are independent evidence layers.

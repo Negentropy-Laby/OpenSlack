@@ -18,3 +18,6 @@ sources:
 QA plans map story acceptance criteria to automated, manual, authenticated,
 clean-machine, hosted, release, and live checks. Passing one class never
 promotes another.
+
+- [Permit-only cleanup Broker](qa-plan-cleanup-permit-2026-09-21.md): #418 A0–A4
+  component, platform, isolation and dedicated GitHub qualification plan.

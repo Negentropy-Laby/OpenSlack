@@ -1,5 +1,11 @@
 export { fetchPRDetails } from './fetch.js';
 export { cleanupPRBranch, planPRBranchCleanup } from './cleanup-branch.js';
+export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
+export type {
+  CleanupBrokerRequest,
+  CleanupBrokerResponse,
+  CleanupBrokerClientErrorCode,
+} from './cleanup-broker-client.js';
 export type { PRBranchCleanupDependencies } from './cleanup-branch.js';
 export type {
   PRBranchCleanupState,

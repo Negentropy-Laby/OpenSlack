@@ -3,6 +3,10 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeliveryError } from './errors.js';
+import {
+  assertCleanupBrokerTarget,
+  cleanupBrokerTransport,
+} from './internal/cleanup-broker-transport.js';
 import type {
   GitProbePublisher,
   GitConditionalBranchDeleter,
@@ -28,34 +32,51 @@ export class GitAskPassPublisher implements GitProbePublisher, GitConditionalBra
   constructor(private readonly options: GitAskPassPublisherOptions = {}) {}
 
   readRemoteBranchSha(input: GitTransportInput): string | null {
+    const broker = cleanupBrokerTransport(this);
+    if (broker) {
+      assertCleanupBrokerTarget(broker, input);
+      input = { ...input, rootDir: broker.rootDir };
+    }
     const deadline = Date.now() + input.timeoutMs;
-    const spawn = this.options.spawn ?? spawnSync;
+    const spawn = broker?.spawn ?? this.options.spawn ?? spawnSync;
     validateCleanupRef(spawn, input);
-    const pushUrl = resolvePushUrl(
-      spawn,
-      { ...input, timeoutMs: remaining(deadline) },
-      this.options.allowLocalRemoteForTests === true,
-    );
-    return withAskPassEnvironment(input.token, (env, hooksDir) => {
-      const transportDir = cleanupRepository(spawn, hooksDir, env, remaining(deadline));
-      return (
-        readRemoteShaAtUrl(
-          spawn,
-          transportDir,
-          pushUrl,
-          input.branch,
-          env,
-          hooksDir,
-          remaining(deadline),
-          input.token,
-        ) || null
+    const pushUrl =
+      broker?.url ??
+      resolvePushUrl(
+        spawn,
+        { ...input, timeoutMs: remaining(deadline) },
+        this.options.allowLocalRemoteForTests === true,
       );
-    });
+    return withAskPassEnvironment(
+      input.token,
+      (env, hooksDir) => {
+        const transportDir = cleanupRepository(spawn, hooksDir, env, remaining(deadline));
+        return (
+          readRemoteShaAtUrl(
+            spawn,
+            transportDir,
+            pushUrl,
+            input.branch,
+            env,
+            hooksDir,
+            remaining(deadline),
+            input.token,
+          ) || null
+        );
+      },
+      broker ? '/tmp' : undefined,
+      broker ? '/usr/lib/openslack-cleanup/sh' : undefined,
+    );
   }
 
   deleteRemoteRefIfAt(
     input: GitTransportInput & { expectedSha: string },
   ): ConditionalBranchDeleteResult {
+    const broker = cleanupBrokerTransport(this);
+    if (broker) {
+      assertCleanupBrokerTarget(broker, input);
+      input = { ...input, rootDir: broker.rootDir };
+    }
     const deadline = Date.now() + input.timeoutMs;
     if (!/^[a-f0-9]{40}$/.test(input.expectedSha)) {
       throw new DeliveryError(
@@ -64,103 +85,115 @@ export class GitAskPassPublisher implements GitProbePublisher, GitConditionalBra
         false,
       );
     }
-    const spawn = this.options.spawn ?? spawnSync;
+    const spawn = broker?.spawn ?? this.options.spawn ?? spawnSync;
     validateCleanupRef(spawn, input);
-    const pushUrl = resolvePushUrl(
-      spawn,
-      { ...input, timeoutMs: remaining(deadline) },
-      this.options.allowLocalRemoteForTests === true,
-    );
-    return withAskPassEnvironment(input.token, (env, hooksDir) => {
-      const transportDir = cleanupRepository(spawn, hooksDir, env, remaining(deadline));
-      const read = () =>
-        readRemoteShaAtUrl(
-          spawn,
-          transportDir,
-          pushUrl,
-          input.branch,
-          env,
-          hooksDir,
-          remaining(deadline),
-          input.token,
-        );
-      const before = read();
-      if (!before) return { state: 'ABSENT', attempted: false, observedRefState: 'ABSENT' };
-      if (before !== input.expectedSha)
-        return {
-          state: 'STALE',
-          attempted: false,
-          observedRefState: 'PRESENT',
-          observedSha: before,
-        };
-      const ref = `refs/heads/${input.branch}`;
-      // Reserve part of the shared budget for reconciliation; never retry a push.
-      const pushBudget = Math.max(1, Math.floor(remaining(deadline) * 0.7));
-      const result = spawn(
-        'git',
-        [
-          '-c',
-          'credential.helper=',
-          '-c',
-          `core.hooksPath=${hooksDir}`,
-          'push',
-          '--porcelain',
-          `--force-with-lease=${ref}:${input.expectedSha}`,
-          pushUrl,
-          `:${ref}`,
-        ],
-        {
-          cwd: transportDir,
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env,
-          timeout: pushBudget,
-          windowsHide: true,
-          maxBuffer: 1024 * 1024,
-        },
+    const pushUrl =
+      broker?.url ??
+      resolvePushUrl(
+        spawn,
+        { ...input, timeoutMs: remaining(deadline) },
+        this.options.allowLocalRemoteForTests === true,
       );
-      const lines = String(result.stdout ?? '').split(/\r?\n/);
-      const receipt = (flag: string, summary: string) =>
-        lines.some(
-          (line) =>
-            line === `${flag}\t:${ref}\t${summary}` ||
-            line === `${flag}\t(delete):${ref}\t${summary}`,
+    return withAskPassEnvironment(
+      input.token,
+      (env, hooksDir) => {
+        const transportDir = cleanupRepository(spawn, hooksDir, env, remaining(deadline));
+        const read = () =>
+          readRemoteShaAtUrl(
+            spawn,
+            transportDir,
+            pushUrl,
+            input.branch,
+            env,
+            hooksDir,
+            remaining(deadline),
+            input.token,
+          );
+        const before = read();
+        if (!before) return { state: 'ABSENT', attempted: false, observedRefState: 'ABSENT' };
+        if (before !== input.expectedSha)
+          return {
+            state: 'STALE',
+            attempted: false,
+            observedRefState: 'PRESENT',
+            observedSha: before,
+          };
+        const ref = `refs/heads/${input.branch}`;
+        // The private broker pipe is consulted only after credentials, installation
+        // scope and the exact remote ref have been observed. No public callback or
+        // caller-controlled boolean can authorize this final sending boundary.
+        broker?.beforePush();
+        // Reserve part of the shared budget for reconciliation; never retry a push.
+        const pushBudget = Math.max(1, Math.floor(remaining(deadline) * 0.7));
+        const result = spawn(
+          'git',
+          [
+            '-c',
+            'credential.helper=',
+            '-c',
+            `core.hooksPath=${hooksDir}`,
+            'push',
+            '--porcelain',
+            `--force-with-lease=${ref}:${input.expectedSha}`,
+            pushUrl,
+            `:${ref}`,
+          ],
+          {
+            cwd: transportDir,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env,
+            timeout: pushBudget,
+            windowsHide: true,
+            maxBuffer: 1024 * 1024,
+          },
         );
-      const deleted = !result.error && result.status === 0 && receipt('-', '[deleted]');
-      const stale = !result.error && result.status !== 0 && receipt('!', '[rejected] (stale info)');
-      const message =
-        result.error || result.status !== 0
-          ? redactTransportText(
-              `${result.stdout ?? ''}\n${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
-              input.token,
-            )
-          : undefined;
-      let after: string;
-      try {
-        after = read();
-      } catch {
-        return {
-          state: 'RECONCILIATION_REQUIRED',
-          attempted: true,
-          observedRefState: 'UNKNOWN',
-          message,
-        };
-      }
-      if (!after)
-        return {
-          state: deleted ? 'DELETED' : 'ABSENT_AFTER_ATTEMPT',
-          attempted: true,
-          observedRefState: 'ABSENT',
-          message,
-        };
-      const state =
-        stale && after !== input.expectedSha
-          ? 'STALE'
-          : !deleted && (result.error || result.status !== 0) && after === input.expectedSha
-            ? 'FAILED'
-            : 'RECONCILIATION_REQUIRED';
-      return { state, attempted: true, observedRefState: 'PRESENT', observedSha: after, message };
-    });
+        const lines = String(result.stdout ?? '').split(/\r?\n/);
+        const receipt = (flag: string, summary: string) =>
+          lines.some(
+            (line) =>
+              line === `${flag}\t:${ref}\t${summary}` ||
+              line === `${flag}\t(delete):${ref}\t${summary}`,
+          );
+        const deleted = !result.error && result.status === 0 && receipt('-', '[deleted]');
+        const stale =
+          !result.error && result.status !== 0 && receipt('!', '[rejected] (stale info)');
+        const message =
+          result.error || result.status !== 0
+            ? redactTransportText(
+                `${result.stdout ?? ''}\n${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
+                input.token,
+              )
+            : undefined;
+        let after: string;
+        try {
+          after = read();
+        } catch {
+          return {
+            state: 'RECONCILIATION_REQUIRED',
+            attempted: true,
+            observedRefState: 'UNKNOWN',
+            message,
+          };
+        }
+        if (!after)
+          return {
+            state: deleted ? 'DELETED' : 'ABSENT_AFTER_ATTEMPT',
+            attempted: true,
+            observedRefState: 'ABSENT',
+            message,
+          };
+        const state =
+          stale && after !== input.expectedSha
+            ? 'STALE'
+            : !deleted && (result.error || result.status !== 0) && after === input.expectedSha
+              ? 'FAILED'
+              : 'RECONCILIATION_REQUIRED';
+        return { state, attempted: true, observedRefState: 'PRESENT', observedSha: after, message };
+      },
+      broker ? '/tmp' : undefined,
+      broker ? '/usr/lib/openslack-cleanup/sh' : undefined,
+    );
   }
 
   push(input: GitTransportInput): { branchSha: string; remoteSha: string } {
@@ -339,8 +372,10 @@ function resolvePushUrl(
 function withAskPassEnvironment<T>(
   token: string,
   operation: (env: NodeJS.ProcessEnv, hooksDir: string) => T,
+  fixedTemporaryRoot?: string,
+  fixedShell?: string,
 ): T {
-  const helperDir = mkdtempSync(join(tmpdir(), 'openslack-askpass-'));
+  const helperDir = mkdtempSync(join(fixedTemporaryRoot ?? tmpdir(), 'openslack-askpass-'));
   const hooksDir = join(helperDir, 'disabled-hooks');
   mkdirSync(hooksDir, { recursive: true });
   const askpassPath = join(helperDir, 'askpass.sh');
@@ -349,7 +384,7 @@ function withAskPassEnvironment<T>(
   writeFileSync(
     askpassPath,
     [
-      '#!/bin/sh',
+      `#!${fixedShell ?? '/bin/sh'}`,
       'case "$1" in',
       '  *[Uu][Ss][Ee][Rr][Nn][Aa][Mm][Ee]*) printf %s x-access-token ;;',
       '  *[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]*) printf %s "$OPENSLACK_GIT_ASKPASS_TOKEN" ;;',

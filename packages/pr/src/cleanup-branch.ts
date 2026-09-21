@@ -14,6 +14,12 @@ import { fetchPRDetails } from './fetch.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
 import { parseTaskLinkMarker } from './task-link.js';
 import type { CleanupTaskLink } from './task-link.js';
+import {
+  matchesBrokerSession,
+  brokerSessionTarget,
+  type CleanupBrokerSession,
+} from './internal/cleanup-broker-executor-session.js';
+import { CleanupBrokerSendDeniedError } from '../../delivery/dist/internal/cleanup-broker-transport.js';
 import type {
   PRBranchCleanupInput,
   PRBranchCleanupResult,
@@ -142,10 +148,30 @@ export async function cleanupPRBranch(
   input: PRBranchCleanupInput,
   dependencies: Partial<PRBranchCleanupDependencies> = {},
 ): Promise<PRBranchCleanupResult> {
+  return cleanupOwned(input, dependencies);
+}
+
+/** Private fixed-executor entry; not exported from the package index. The
+ * broker owns durable intent/outcome auditing, not a caller-supplied callback. */
+export async function cleanupPRBranchThroughBroker(
+  input: PRBranchCleanupInput,
+  session: CleanupBrokerSession,
+  dependencies: PRBranchCleanupDependencies,
+): Promise<PRBranchCleanupResult> {
+  if (input.audit !== undefined || !matchesBrokerSession(session, input))
+    throw new Error('CLEANUP_BROKER_SESSION_INVALID');
+  return cleanupOwned(input, dependencies, session);
+}
+
+async function cleanupOwned(
+  input: PRBranchCleanupInput,
+  dependencies: Partial<PRBranchCleanupDependencies>,
+  broker?: CleanupBrokerSession,
+): Promise<PRBranchCleanupResult> {
   const { audit, ...data } = input;
   const owned = { ...structuredClone(data), audit };
   const deadline = Date.now() + (owned.timeoutMs ?? 60_000);
-  const result = await runCleanup(owned, dependencies);
+  const result = await runCleanup(owned, dependencies, broker);
   // Read-only and preflight-blocked decisions are also observable. Unlike the
   // mandatory pre-delete intent, failure of this notification cannot cause a write.
   if (result.auditStatus === 'NOT_REQUIRED' && audit) {
@@ -196,6 +222,7 @@ export async function cleanupPRBranch(
 async function runCleanup(
   caller: PRBranchCleanupInput,
   overrides: Partial<PRBranchCleanupDependencies>,
+  broker?: CleanupBrokerSession,
 ): Promise<PRBranchCleanupResult> {
   // Own authorization and target data before the first await. Audit is a capability.
   const { audit, ...data } = caller;
@@ -241,7 +268,7 @@ async function runCleanup(
   ) {
     return stop('BLOCKED_EVIDENCE', 'input', 'CLEANUP_INPUT_INVALID');
   }
-  if (!authorized(input))
+  if (!(broker ? matchesBrokerSession(broker, input) : authorized(input)))
     return stop('BLOCKED_AUTHORIZATION', 'authorization', 'CLEANUP_AUTHORIZATION_REQUIRED');
   pass('authorization');
   const deadline = Date.now() + timeout;
@@ -305,6 +332,13 @@ async function runCleanup(
     }
     result.branch = pr.headRef;
     result.expectedSha = pr.headSha;
+    if (broker) {
+      const target = brokerSessionTarget(broker);
+      if (target.ref !== `refs/heads/${pr.headRef}` || target.expectedSha !== pr.headSha) {
+        stop('BLOCKED_SHA_DRIFT', 'permit_target', 'CLEANUP_PERMIT_TARGET_MISMATCH');
+        return false;
+      }
+    }
     pass('pr');
     const defaultBranch = await within(deps.getDefaultBranch(options), signal);
     if (!defaultBranch || !validBranch(defaultBranch)) throw new Error('DEFAULT_BRANCH_INVALID');
@@ -385,6 +419,10 @@ async function runCleanup(
     return true;
   };
   const record = async (phase: 'requested' | 'outcome') => {
+    // This private worker cannot write the broker ledger. Its process was
+    // admitted only after the broker fsynced intent, and the broker persists
+    // the returned receipt. Do not label a worker-local callback as durable.
+    if (broker && matchesBrokerSession(broker, input)) return;
     if (!audit) throw new Error('CLEANUP_AUDIT_REQUIRED');
     remaining();
     await within(
@@ -454,13 +492,19 @@ async function runCleanup(
               : deletion.state;
         result.reason = `CLEANUP_${deletion.state}`;
       }
-    } catch {
-      result.state = result.attempted ? 'RECONCILIATION_REQUIRED' : 'BLOCKED_EVIDENCE';
-      if (result.attempted) {
-        result.observedRefState = 'UNKNOWN';
-        result.observedSha = undefined;
+    } catch (error) {
+      if (broker && error instanceof CleanupBrokerSendDeniedError) {
+        result.attempted = false;
+        result.state = 'BLOCKED_AUTHORIZATION';
+        result.reason = 'CLEANUP_BROKER_SEND_NOT_ADMITTED';
+      } else {
+        result.state = result.attempted ? 'RECONCILIATION_REQUIRED' : 'BLOCKED_EVIDENCE';
+        if (result.attempted) {
+          result.observedRefState = 'UNKNOWN';
+          result.observedSha = undefined;
+        }
+        result.reason = 'CLEANUP_EXECUTION_EVIDENCE_UNAVAILABLE';
       }
-      result.reason = 'CLEANUP_EXECUTION_EVIDENCE_UNAVAILABLE';
     }
     try {
       await record('outcome');

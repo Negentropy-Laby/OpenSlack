@@ -6,13 +6,30 @@ const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
   append: vi.fn(),
   record: vi.fn(),
+  broker: vi.fn(),
+  registry: vi.fn(),
+  identity: vi.fn(),
 }));
-vi.mock('@openslack/pr', () => ({ cleanupPRBranch: mocks.cleanup }));
+vi.mock('@openslack/pr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@openslack/pr')>();
+  return {
+    cleanupPRBranch: mocks.cleanup,
+    sendCleanupBrokerRequest: mocks.broker,
+    CleanupBrokerClientError: actual.CleanupBrokerClientError,
+  };
+});
+vi.mock('@openslack/workspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@openslack/workspace')>()),
+  parseAgentRegistry: mocks.registry,
+}));
 vi.mock('@openslack/github', () => ({
   getClient: mocks.client,
   parseGitHubRepoSpec: (s: string) => (/^[\w-]+\/[\w.-]+$/.test(s) ? {} : null),
 }));
-vi.mock('@openslack/runtime', () => ({ resolveAgentPrincipal: mocks.resolve }));
+vi.mock('@openslack/runtime', () => ({
+  resolveAgentPrincipal: mocks.resolve,
+  loadRuntimeIdentity: mocks.identity,
+}));
 vi.mock('@openslack/collaboration', () => ({
   createBoundEventAppender: () => ({ append: mocks.append }),
   createEvent: (event: unknown) => event,
@@ -20,8 +37,29 @@ vi.mock('@openslack/collaboration', () => ({
 }));
 
 import { runPRBranchCleanupCommand } from '../commands/pr-cleanup-branch.js';
+import { CleanupBrokerClientError } from '@openslack/pr';
 
 const options = { auth: 'auto', remote: 'origin', timeout: '60' };
+const agentOptions = {
+  ...options,
+  auth: 'app',
+  remoteExplicit: true,
+  repo: 'owner/repo',
+  permitId: 'PERMIT-1',
+  agentId: 'worker',
+};
+const brokerResult = {
+  schema: 'openslack.cleanup_response.v1',
+  mode: 'preview',
+  permitId: 'PERMIT-1',
+  permitState: 'issued',
+  claimRequirement: 'not_required',
+  claimStatus: 'not_evaluated',
+  state: 'CLEANUP_READY',
+  attempted: false,
+  auditStatus: 'NOT_REQUIRED',
+  reason: 'CLEANUP_READY',
+};
 const result = {
   state: 'CLEANUP_READY',
   prNumber: 417,
@@ -44,6 +82,21 @@ describe('branch cleanup CLI adapter', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.client.mockResolvedValue({ owner: 'owner', repo: 'repo', isDryRun: false });
     mocks.cleanup.mockResolvedValue(result);
+    mocks.resolve.mockReturnValue({
+      principal: { registry_id: 'worker', runtime_uid: 'uid', run_id: 'RUN-1', provider: 'cli' },
+      snapshot: {},
+    });
+    mocks.registry.mockReturnValue({
+      agent_id: 'worker',
+      identity: { uid: 'uid', principal_id: 'custom:worker' },
+    });
+    mocks.broker.mockResolvedValue(brokerResult);
+    mocks.identity.mockReturnValue({
+      agent_id: 'worker',
+      agent_uid: 'uid',
+      run_id: 'RUN-1',
+      provider: 'cli',
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -107,22 +160,210 @@ describe('branch cleanup CLI adapter', () => {
 
   it('does not fall back to human when agent resolution fails', async () => {
     mocks.resolve.mockReturnValue({ error: 'missing' });
-    await runPRBranchCleanupCommand('417', { ...options, execute: true, agentId: 'worker' });
+    await runPRBranchCleanupCommand('417', { ...agentOptions, execute: true, operationId: 'OP-1' });
     expect(process.exitCode).toBe(1);
     expect(mocks.cleanup).not.toHaveBeenCalled();
   });
 
-  it('passes resolved agent context without turning ask into human authorization', async () => {
-    const principal = { agentId: 'worker' };
-    const snapshot = { agentId: 'worker' };
-    mocks.resolve.mockReturnValue({ principal, snapshot });
-    mocks.cleanup.mockResolvedValue({ ...result, state: 'BLOCKED_AUTHORIZATION' });
-    await runPRBranchCleanupCommand('417', { ...options, execute: true, agentId: 'worker' });
-    expect(mocks.cleanup).toHaveBeenCalledWith(
-      expect.objectContaining({ context: { kind: 'agent', principal, snapshot } }),
+  it('routes self-reported agent identity exclusively to broker without GitHub auth or direct cleanup', async () => {
+    await runPRBranchCleanupCommand('417', agentOptions);
+    expect(mocks.broker).toHaveBeenCalledWith(
+      {
+        schema: 'openslack.cleanup_request.v1',
+        mode: 'preview',
+        agentId: 'worker',
+        principalId: 'custom:worker',
+        runtimeUid: 'uid',
+        runId: 'RUN-1',
+        repo: 'owner/repo',
+        remote: 'origin',
+        prNumber: 417,
+        permitId: 'PERMIT-1',
+      },
+      { timeoutMs: expect.any(Number) },
     );
-    expect(process.exitCode).toBe(1);
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+    expect(mocks.record).not.toHaveBeenCalled();
+    expect(mocks.append).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
   });
+
+  it.each([
+    { permitId: undefined },
+    { repo: undefined },
+    { remoteExplicit: false },
+    { remoteExplicit: undefined },
+    { auth: 'auto' },
+    { auth: 'token' },
+    { execute: true },
+    { operationStatus: true },
+    { operationId: 'OP-1' },
+    { execute: true, operationStatus: true, operationId: 'OP-1' },
+  ])('rejects unsafe broker flag combination %j before evidence or transport', async (patch) => {
+    await runPRBranchCleanupCommand('417', { ...agentOptions, ...patch });
+    expect(process.exitCode).toBe(1);
+    expect(mocks.broker).not.toHaveBeenCalled();
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+  });
+
+  it.each([{ permitId: 'PERMIT-1' }, { operationId: 'OP-1' }, { operationStatus: true }])(
+    'rejects broker options without explicit agent %j',
+    async (patch) => {
+      await runPRBranchCleanupCommand('417', { ...options, ...patch });
+      expect(process.exitCode).toBe(1);
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(mocks.cleanup).not.toHaveBeenCalled();
+      expect(mocks.broker).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['execute', 'status'] as const)(
+    'sends %s with stable operation ID and accepts durable consumed result',
+    async (mode) => {
+      mocks.broker.mockResolvedValue({
+        ...brokerResult,
+        mode,
+        operationId: 'OP-1',
+        state: 'DELETED',
+        attempted: true,
+        permitState: 'consumed',
+        auditStatus: 'RECORDED',
+      });
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        execute: mode === 'execute',
+        operationStatus: mode === 'status',
+        operationId: 'OP-1',
+      });
+      expect(mocks.broker).toHaveBeenCalledWith(
+        expect.objectContaining({ mode, operationId: 'OP-1' }),
+        expect.any(Object),
+      );
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(mocks.cleanup).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    },
+  );
+
+  it.each([
+    'UNSUPPORTED_PLATFORM',
+    'BROKER_UNAVAILABLE',
+    'BROKER_TIMEOUT',
+    'BROKER_INVALID_RESPONSE',
+  ] as const)('prints typed broker %s without fallback or retry', async (code) => {
+    mocks.broker.mockRejectedValue(new CleanupBrokerClientError(code, true));
+    await runPRBranchCleanupCommand('417', { ...agentOptions, execute: true, operationId: 'OP-1' });
+    expect(process.exitCode).toBe(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(code));
+    expect(mocks.broker).toHaveBeenCalledTimes(1);
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'OPERATION_IN_PROGRESS',
+    'RECONCILIATION_REQUIRED',
+    'OPERATION_NOT_FOUND',
+    'BLOCKED_AUTHORIZATION',
+  ])('does not treat broker %s as completed', async (state) => {
+    mocks.broker.mockResolvedValue({
+      ...brokerResult,
+      mode: 'status',
+      state,
+      permitState: 'reserved',
+      operationId: 'OP-1',
+    });
+    await runPRBranchCleanupCommand('417', {
+      ...agentOptions,
+      operationStatus: true,
+      operationId: 'OP-1',
+    });
+    expect(process.exitCode).toBe(1);
+    expect(mocks.broker).toHaveBeenCalledTimes(1);
+    expect(mocks.client).not.toHaveBeenCalled();
+  });
+
+  it('rejects local registry identity drift without contacting broker or GitHub', async () => {
+    mocks.registry.mockReturnValue({
+      agent_id: 'worker',
+      identity: { uid: 'different', principal_id: 'custom:worker' },
+    });
+    await runPRBranchCleanupCommand('417', agentOptions);
+    expect(process.exitCode).toBe(1);
+    expect(mocks.broker).not.toHaveBeenCalled();
+    expect(mocks.client).not.toHaveBeenCalled();
+  });
+
+  it('queries a historical receipt without current active-registry admission', async () => {
+    mocks.registry.mockReturnValue({
+      agent_id: 'worker',
+      identity: { uid: 'uid', principal_id: 'custom:worker', status: 'retired' },
+    });
+    mocks.resolve.mockReturnValue({ error: 'retired' });
+    mocks.broker.mockResolvedValue({
+      ...brokerResult,
+      mode: 'status',
+      operationId: 'OP-1',
+      state: 'DELETED',
+      attempted: true,
+      permitState: 'consumed',
+      auditStatus: 'RECORDED',
+    });
+    await runPRBranchCleanupCommand('417', {
+      ...agentOptions,
+      operationStatus: true,
+      operationId: 'OP-1',
+    });
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.broker).toHaveBeenCalledOnce();
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it.each(['registry', 'identity'] as const)(
+    'reports missing original %s for status without inventing claims',
+    async (missing) => {
+      mocks[missing].mockReturnValue(null);
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        operationStatus: true,
+        operationId: 'OP-1',
+      });
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('STATUS_IDENTITY_UNAVAILABLE'),
+      );
+      expect(mocks.broker).not.toHaveBeenCalled();
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    },
+  );
+
+  it.each([false, true])(
+    'Commander distinguishes default versus explicit origin (%s)',
+    async (explicit) => {
+      const { prCommands } = await import('../commands/pr.js');
+      const args = [
+        'cleanup-branch',
+        '417',
+        '--agent-id',
+        'worker',
+        '--permit-id',
+        'PERMIT-1',
+        '--repo',
+        'owner/repo',
+        '--auth',
+        'app',
+      ];
+      if (explicit) args.push('--remote', 'origin');
+      await prCommands().exitOverride().parseAsync(args, { from: 'user' });
+      expect(mocks.broker).toHaveBeenCalledTimes(explicit ? 1 : 0);
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(mocks.cleanup).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(explicit ? undefined : 1);
+    },
+  );
 
   it('records durable requested and executed events through the callback', async () => {
     mocks.cleanup.mockImplementation(async (input) => {
