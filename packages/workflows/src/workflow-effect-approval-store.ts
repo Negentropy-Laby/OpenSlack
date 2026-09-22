@@ -347,6 +347,7 @@ async function scanStore(
   const scanDirectory = async (
     directory: string,
     allowed: (name: string) => boolean,
+    transient: (name: string) => boolean,
   ): Promise<void> => {
     const values = await readdir(directory, { withFileTypes: true });
     entries += values.length;
@@ -358,14 +359,28 @@ async function scanStore(
     }
     for (const value of values) {
       const path = join(directory, value.name);
-      const stat = await lstat(path);
-      if (
-        !allowed(value.name) ||
-        value.isSymbolicLink() ||
-        stat.isSymbolicLink() ||
-        !value.isFile() ||
-        !stat.isFile()
-      ) {
+      if (!allowed(value.name) || value.isSymbolicLink() || !value.isFile()) {
+        return fail(
+          'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+          'Approval-store contains an unsafe entry.',
+          path,
+        );
+      }
+      // This inventory is not a lock acquisition. Another writer may publish
+      // or retire a known auxiliary file while we inspect it. Never hide an
+      // unsafe enumerated entry, a missing durable record, or another I/O error.
+      const disappeared = async (error: unknown): Promise<boolean> =>
+        transient(value.name) &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+        !(await lstatIfPresent(path));
+      let stat: Stats;
+      try {
+        stat = await lstat(path);
+      } catch (error) {
+        if (await disappeared(error)) continue;
+        throw error;
+      }
+      if (stat.isSymbolicLink() || !stat.isFile()) {
         return fail(
           'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
           'Approval-store contains an unsafe entry.',
@@ -376,6 +391,7 @@ async function scanStore(
         try {
           await assertOwnerFile(path, AUTHORITY_STORE_SECURITY);
         } catch (error) {
+          if (await disappeared(error)) continue;
           return fail(
             'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
             `Approval-store entry is not owner-only: ${String(error)}`,
@@ -396,9 +412,11 @@ async function scanStore(
   await scanDirectory(
     join(root, 'records'),
     (name) => RECORD_NAME.test(name) || RECORD_TEMP.test(name),
+    (name) => RECORD_TEMP.test(name),
   );
   await scanDirectory(
     join(root, 'locks'),
+    (name) => name === 'decision.lock' || LOCK_TEMP.test(name),
     (name) => name === 'decision.lock' || LOCK_TEMP.test(name),
   );
   return { totalBytes, entries };

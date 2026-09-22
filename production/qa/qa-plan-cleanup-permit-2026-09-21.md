@@ -443,3 +443,35 @@ artifact hash. Their source commit and fresh hosted checks must be recorded in
 the external plan and PR evidence. Host dependency discovery is not target-host
 isolation qualification. No administrator installation, permission changes,
 activation, actual branch deletion, human approval or merge is performed here.
+
+### Handoff Candidate CI Exposed Approval Inventory Race — 2026-09-22
+
+Candidate `3cef14d462eb6f4decaf3618bf2c61b28838eabb` passed the Linux/Windows
+release jobs, but Self Validate run `35679360487`, job `106592915333`, failed
+the existing opposite-decision race in `workflow-effect-approval-store.test.ts`:
+the losing call returned `ENOENT`, not `WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH`.
+This is not the earlier Docker/TLS or Bun environment problem.
+
+Source inspection found that `prepare` inventories files before lock acquisition.
+A competing writer can normally retire an enumerated auxiliary lock or atomic
+write temporary before `lstat` (also during owner-only metadata validation).
+Deterministic test-side enumeration/removal reproduced seven failing assertions
+before the fix. The fix checks enumerated name/type first and only tolerates
+`ENOENT` for explicitly known auxiliary names when a second read confirms
+absence. Durable records, unsafe enumerated entries, other I/O failures and a
+path recreated after ENOENT still fail closed. CAS, approval/permission semantics,
+lock acquisition/release, timeouts and protocols are unchanged.
+
+The store regression now covers ten additional cases. The original real
+opposite-decision test passed 20 separate invocations, each retaining its eight
+races and exact CAS assertion; these are repetitions, not additional inventory.
+Independent review found no blocking issue and recommended the now-added
+recreated-path check. Test inventory is synchronized by the formal generator,
+not handwritten totals. Final committed candidate artifacts/CI must be rebuilt
+and rebound; the earlier `3cef14d4` binaries are historical preparation only.
+
+The optional local full-suite run for `3cef14d4` first observed an inherited
+NO_COLOR diagnostic mismatch and two unchanged 5-second shadow-test timeouts.
+All three files passed focused execution, then the full suite with NO_COLOR
+unset passed 7101 cases with six existing skips. Initial results are retained;
+this does not claim timing flakes are repaired, and is not final-head evidence.
