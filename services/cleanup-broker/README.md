@@ -148,9 +148,10 @@ and same-SHA ABA must remain explicit in evidence.
 
 ## QA Plan and Evidence Classes
 
-All cases below are **PLANNED / NOT_RUN** for the complete broker route. Tests
-of individual newly implemented components must be reported separately with
-their exact candidate; they do not promote these end-to-end rows to PASS.
+The matrix below defines required evidence, not a blanket PASS. Component and
+executor-composition tests now have candidate-bound local and hosted results in
+the QA ledger. Installed distinct-UID and real GitHub qualification remain
+**NOT_RUN / BLOCKED**; fixture results cannot promote those rows to PASS.
 
 | Classification / layer         | Required cases and observable result                                                                                                                                                                                                                                               |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -315,8 +316,15 @@ an installed distinct-UID test, a successful live GitHub deletion, hosted CI or
 human approval. Their exact current results belong in the QA evidence ledger;
 the earlier B1/B2 counts above are retained as historical evidence only.
 
-Production is still status-only: B3 pinned worker, inherited-pipe handshake,
-final Git transport fence, child shutdown/reaping, and the complete authority
-reader/registry/runner composition remain **NOT_RUN / unimplemented**. Actual
-OS isolation and GitHub qualification remain unproven. No commit, push, new
-hosted CI, human approval, or merge is asserted by these local results.
+Historical B1/B2 status: production was status-only before B3 composition.
+As of candidate `92a99db2293af38b1ddb0174b3c523c046f12bed`, the production
+entrypoint connects the fixed source reader and pinned process runner. Private
+pipes, final transport admission and process shutdown are implemented and have
+component/composition evidence. Missing execution prerequisites stop admission
+while retaining authenticated historical status; this fallback is not the only
+implemented production mode.
+
+That candidate passed all nine hosted checks; tag publication was skipped.
+Real OS isolation and GitHub qualification remain unproven. No human approval,
+merge or release follows from CI. See [administrator handoff](handoff.md) for
+the non-activating package, installation responsibilities and remaining gates.

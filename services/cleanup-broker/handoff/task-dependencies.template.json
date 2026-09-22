@@ -1,0 +1,9 @@
+{
+  "schema": "openslack.cleanup_task_view.v1",
+  "workspaceId": "REQUIRED_WORKSPACE_ID",
+  "repository": "REQUIRED_OWNER/REQUIRED_REPOSITORY",
+  "repositoryId": "0",
+  "notBefore": "2000-01-01T00:00:00Z",
+  "expiresAt": "2000-01-02T00:00:00Z",
+  "tasks": [{ "taskId": "REQUIRED_ATTESTED_TASK", "issueNumber": 0, "state": "pending" }]
+}

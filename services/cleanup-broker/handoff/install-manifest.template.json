@@ -1,0 +1,11 @@
+{
+  "schema": "openslack.cleanup_installation.v1",
+  "files": [
+    { "path": "/usr/lib/openslack-cleanup/node", "sha256": "REQUIRED_SHA256" },
+    { "path": "/usr/lib/openslack-cleanup/executor.mjs", "sha256": "REQUIRED_SHA256" },
+    { "path": "/usr/lib/openslack-cleanup/git", "sha256": "REQUIRED_SHA256" },
+    { "path": "/usr/lib/openslack-cleanup/sh", "sha256": "REQUIRED_SHA256" },
+    { "path": "/usr/lib/openslack-cleanup/git-core/git-remote-https", "sha256": "REQUIRED_SHA256" }
+  ],
+  "network": { "httpsProxy": "", "noProxy": "" }
+}

@@ -412,3 +412,34 @@ the Broker and executor composition steps; Windows intentionally does not
 run the Linux-only Broker. These are historical head-bound results and must
 not be reused as passing CI for the repair commit. New-head CI, real isolated
 GitHub qualification, human approval and governance merge remain separate gates.
+
+### Non-administrator Handoff Preparation — 2026-09-22
+
+The repaired head `92a99db2293af38b1ddb0174b3c523c046f12bed` completed nine
+successful hosted checks and the expected skipped tag publication. Live job
+`106580330626` in run `35675261478` confirmed that `Run reviewed Go workspace
+verifier`, both documentation checks and Compose rendering actually succeeded.
+This closes that head's hosted failure, not the earlier local TLS failure.
+
+The service README now distinguishes historical status-only implementation
+from the current fixed reader/runner composition. The administrator handoff
+documents exact ownership, fixed paths, no-activation installation, dependency
+review, nonce acquisition, no-retry recovery and pending privileged inputs.
+Three schema-shaped templates intentionally require administrator values;
+a Go regression rejects the unfilled Broker config and guards invalid manifest
+hashes and missing repository/task evidence. No valid permit is generated.
+
+Independent review identified unsafe `set -e`/AND-list assumptions in draft
+installation recipes. Explicit rejection replaced them before delivery;
+test-side shell checks reject zero UID and existing installation targets before
+any mocked mutation. These tests never installed files or created identities.
+Go race tests for all ten packages and vet passed. The additional test is Go,
+not a new Vitest inventory declaration. C0 Claim v2 still has an independent
+future authority/migration boundary and is not a cleanup prerequisite.
+
+Final-candidate double-build reports, runtime provenance inventory and hashed
+staging contents are delivered outside the repository to avoid a self-referential
+artifact hash. Their source commit and fresh hosted checks must be recorded in
+the external plan and PR evidence. Host dependency discovery is not target-host
+isolation qualification. No administrator installation, permission changes,
+activation, actual branch deletion, human approval or merge is performed here.
