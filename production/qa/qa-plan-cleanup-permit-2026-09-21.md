@@ -363,3 +363,52 @@ Live PR lookup confirmed #418 OPEN/Draft with bot author, that same head and
 `GODEBUG=http2client=0` allowed the read to complete without weakening TLS.
 PRMS doctor independently aborted its evidence request; no merge readiness is
 claimed. Later current-head CI and real qualification remain required.
+
+### CI Workspace Registration Repair — 2026-09-22
+
+PR head `012917c059c674fa187361f646180cfdb7a0315b` completed with eight
+successful checks, one failed check and the expected skipped tag publication.
+The [failed Linux job](https://github.com/Negentropy-Laby/OpenSlack/actions/runs/35637185077/job/106457359074)
+checked out that exact head. Its `Run reviewed Go workspace verifier` step
+failed with `go.work must list every and only repository service module`.
+Local `bash scripts/go-check.sh --all` reproduced that exact error.
+
+The new cleanup Broker module had not been registered in the root workspace.
+The repair adds its workspace entry, reviewed `pure/none/none` capability
+configuration, and an empty module-local `go.sum` for its standard-library-only
+dependency set. This profile invokes the common tidy/build/vet/race gates;
+it does not qualify deployment or imply that the Broker has no I/O. Existing
+separate executor integration and isolation requirements remain unchanged.
+
+The workspace regression now compares actual service modules to workspace
+entries in both directions and requires each service's sum and gate config.
+The new expectation failed before registration and passes after the repair.
+Its two source-digest bindings were updated without changing gate assertions
+or the binding set. No new test cases were declared; inventory counts remain
+unchanged. Independent code/QA review found no blocking issue.
+
+Validation used the independent checkout
+`/var/tmp/openslack-418-go-workspace-validation-20260922`, with a local-only
+fixture commit `b8710858` containing the repair so `git archive HEAD` included
+the actual candidate changes. This is not a delivery commit.
+
+- The fixed Go 1.26.5 image (`sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647`)
+  passed `scripts/go-check.sh services/cleanup-broker`: tidy preserved the
+  empty sum; build, vet and all ten default race-test packages passed.
+- The same image passed Workflow Control `go test -race ./tests/contracts -count=1`.
+- All 45 `go-check-script.test.ts` cases passed; typecheck, build, targeted ESLint,
+  documentation, migration, notification documentation and workspace validation passed.
+- All 257 bindings in six source-manifest JSON files match. Notification
+  Delivery v2 paths were resolved relative to its service, not the root.
+- Full five-service `--all` passed the Broker gate, then stopped downloading
+  the Governance Control migration tool on a `proxy.golang.org` TLS handshake
+  timeout. This is an environment/network blocker, not a full-suite PASS;
+  the first result is retained in
+  `/var/tmp/openslack-418-go-workspace-all-20260922.log`.
+
+The prior-head release run `35637184930` confirms that the cleanup and blob
+storage steps actually passed on both Linux and Windows. Linux also passed
+the Broker and executor composition steps; Windows intentionally does not
+run the Linux-only Broker. These are historical head-bound results and must
+not be reused as passing CI for the repair commit. New-head CI, real isolated
+GitHub qualification, human approval and governance merge remain separate gates.

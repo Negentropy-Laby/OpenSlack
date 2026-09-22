@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -54,6 +55,7 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         'go 1.26.5',
         '',
         'use (',
+        '\t./services/cleanup-broker',
         '\t./services/governance-control',
         '\t./services/notification-delivery',
         '\t./services/organization-graph',
@@ -62,6 +64,32 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         '',
       ].join('\n'),
     );
+    const serviceModules = readdirSync(join(repositoryRoot, 'services'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) =>
+        readdirSync(join(repositoryRoot, 'services', entry.name)).includes('go.mod'),
+      )
+      .map((entry) => `./services/${entry.name}`)
+      .sort();
+    const workspaceModules = [
+      ...readFileSync(join(repositoryRoot, 'go.work'), 'utf8').matchAll(
+        /^\s+(\.\/services\/[^\s]+)$/gmu,
+      ),
+    ]
+      .map((match) => match[1])
+      .sort();
+    expect(workspaceModules).toEqual(serviceModules);
+    for (const module of serviceModules) {
+      expect(() => readFileSync(join(repositoryRoot, module, 'go.sum'))).not.toThrow();
+      expect(() =>
+        readFileSync(
+          join(repositoryRoot, 'scripts/go-check/services', `${module.split('/').at(-1)}.conf`),
+        ),
+      ).not.toThrow();
+    }
+    expect(
+      readFileSync(join(repositoryRoot, 'scripts/go-check/services/cleanup-broker.conf'), 'utf8'),
+    ).toBe('capabilities=pure\ndocker_target=none\nruntime_profile=none\n');
     expect(
       readFileSync(
         join(repositoryRoot, 'scripts/go-check/services/governance-control.conf'),
