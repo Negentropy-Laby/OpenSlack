@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWorkflowEffectDecisionAuthority,
   LocalWorkflowEffectApprovalStore,
@@ -172,16 +172,27 @@ describe('LocalWorkflowEffectApprovalStore', () => {
     expect(scanRace.fired).toBe(true);
   });
 
-  it('allows transient removal during owner-only validation, not just the first lstat', async () => {
-    const storeRoot = join(await root(), 'effect-approvals');
-    const store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
-    const created = await store.createPending(pending(Date.now()));
-    const directory = join(storeRoot, 'locks');
-    const path = join(directory, 'decision.lock');
-    await writeFile(path, '{}', { mode: 0o600 });
-    Object.assign(scanRace, { directory, path, ownerCheck: true });
-    await expect(store.read('run-001', 'approval-001')).resolves.toEqual(created);
-    expect(scanRace.fired).toBe(true);
+  describe('owner-only inventory', () => {
+    let store: LocalWorkflowEffectApprovalStore;
+    let created: Awaited<ReturnType<LocalWorkflowEffectApprovalStore['createPending']>>;
+    let directory: string;
+
+    beforeEach(async () => {
+      // Real Windows ACL provisioning is fixture setup, not the raced read.
+      // Keep both the hook budget and the tested operation's timeout unchanged.
+      const storeRoot = join(await root(), 'effect-approvals');
+      store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
+      created = await store.createPending(pending(Date.now()));
+      directory = join(storeRoot, 'locks');
+    });
+
+    it('allows transient removal during owner-only validation, not just the first lstat', async () => {
+      const path = join(directory, 'decision.lock');
+      await writeFile(path, '{}', { mode: 0o600 });
+      Object.assign(scanRace, { directory, path, ownerCheck: true });
+      await expect(store.read('run-001', 'approval-001')).resolves.toEqual(created);
+      expect(scanRace.fired).toBe(true);
+    });
   });
 
   it.each(['link', 'directory', 'unknown', 'record', 'EACCES', 'ENOENT'])(

@@ -475,3 +475,14 @@ NO_COLOR diagnostic mismatch and two unchanged 5-second shadow-test timeouts.
 All three files passed focused execution, then the full suite with NO_COLOR
 unset passed 7101 cases with six existing skips. Initial results are retained;
 this does not claim timing flakes are repaired, and is not final-head evidence.
+
+Native Windows supplemental validation of the repaired store used Node 22.23.2,
+Bun 1.4.0 and Git 2.48.1.windows.1. The first run passed 19 cases and timed out
+the new owner-only case, which included real ACL provisioning in its 5-second
+body. A test-only timing probe measured fixture creation at 4295 ms and the
+actual raced read/assertions at 1810 ms. Moving only fixture creation into a
+local `beforeEach` passed all 20 cases, without changing hook/test timeouts,
+mocking ACL checks, pre-reading the tested path or removing assertions. Timing
+probes were removed; independent review confirmed this fixture boundary.
+The existing Windows hosted selections do not include this store file, so this
+is separate local-native evidence, not a claim of hosted coverage for it.
