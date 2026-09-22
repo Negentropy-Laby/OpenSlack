@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import type * as FsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWorkflowEffectDecisionAuthority,
   LocalWorkflowEffectApprovalStore,
@@ -12,6 +13,58 @@ import {
   workflowEffectApprovalBytes,
 } from '../index.js';
 import { canonicalWorkflowEffectJson } from '../workflow-effect-json.js';
+
+const scanRace = vi.hoisted(() => ({
+  directory: '',
+  path: '',
+  kind: '',
+  code: '',
+  ownerCheck: false,
+  stats: 0,
+  fired: false,
+}));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof FsPromises>();
+  return {
+    ...fs,
+    readdir: async (...args: Parameters<typeof fs.readdir>) => {
+      const entries = await fs.readdir(...args);
+      if (String(args[0]) === scanRace.directory && !scanRace.fired) {
+        for (const entry of entries) {
+          if (typeof entry === 'object' && scanRace.path.endsWith(String(entry.name))) {
+            if (scanRace.kind) {
+              entry.isSymbolicLink = () => scanRace.kind === 'link';
+              entry.isFile = () => false;
+            }
+          }
+        }
+        if (!scanRace.ownerCheck && !scanRace.code) {
+          await fs.rm(scanRace.path);
+          scanRace.fired = true;
+        }
+      }
+      return entries;
+    },
+    lstat: async (...args: Parameters<typeof fs.lstat>) => {
+      if (String(args[0]) === scanRace.path) {
+        scanRace.stats += 1;
+        if (scanRace.code && !scanRace.fired) {
+          scanRace.fired = true;
+          if (scanRace.code === 'ENOENT') {
+            await fs.rm(scanRace.path);
+            await fs.writeFile(scanRace.path, '{}', { mode: 0o600 });
+          }
+          throw Object.assign(new Error('controlled metadata failure'), { code: scanRace.code });
+        }
+        if (scanRace.ownerCheck && scanRace.stats === 2) {
+          await fs.rm(scanRace.path);
+          scanRace.fired = true;
+        }
+      }
+      return fs.lstat(...args);
+    },
+  };
+});
 
 const temporaryRoots: string[] = [];
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -88,12 +141,94 @@ async function deadPid(): Promise<number> {
 }
 
 afterEach(async () => {
+  Object.assign(scanRace, {
+    directory: '',
+    path: '',
+    kind: '',
+    code: '',
+    ownerCheck: false,
+    stats: 0,
+    fired: false,
+  });
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
 });
 
 describe('LocalWorkflowEffectApprovalStore', () => {
+  it.each([
+    'decision.lock',
+    '.decision.123.11111111-1111-4111-8111-111111111111.0.22222222-2222-4222-8222-222222222222.tmp',
+    `.${'a'.repeat(64)}.123.11111111-1111-4111-8111-111111111111.tmp`,
+  ])('allows a known transient %s to disappear after enumeration', async (name) => {
+    const storeRoot = await root();
+    const store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
+    const created = await store.createPending(pending(Date.now()));
+    const directory = join(storeRoot, name.startsWith(`.${'a'.repeat(64)}`) ? 'records' : 'locks');
+    const path = join(directory, name);
+    await writeFile(path, '{}', { mode: 0o600 });
+    Object.assign(scanRace, { directory, path });
+    await expect(store.read('run-001', 'approval-001')).resolves.toEqual(created);
+    expect(scanRace.fired).toBe(true);
+  });
+
+  describe('owner-only inventory', () => {
+    let store: LocalWorkflowEffectApprovalStore;
+    let created: Awaited<ReturnType<LocalWorkflowEffectApprovalStore['createPending']>>;
+    let directory: string;
+
+    beforeEach(async () => {
+      // Real Windows ACL provisioning is fixture setup, not the raced read.
+      // Keep both the hook budget and the tested operation's timeout unchanged.
+      const storeRoot = join(await root(), 'effect-approvals');
+      store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
+      created = await store.createPending(pending(Date.now()));
+      directory = join(storeRoot, 'locks');
+    });
+
+    it('allows transient removal during owner-only validation, not just the first lstat', async () => {
+      const path = join(directory, 'decision.lock');
+      await writeFile(path, '{}', { mode: 0o600 });
+      Object.assign(scanRace, { directory, path, ownerCheck: true });
+      await expect(store.read('run-001', 'approval-001')).resolves.toEqual(created);
+      expect(scanRace.fired).toBe(true);
+    });
+  });
+
+  it.each(['link', 'directory', 'unknown', 'record', 'EACCES', 'ENOENT'])(
+    'does not hide unsafe or durable metadata failures: %s',
+    async (failure) => {
+      const storeRoot = await root();
+      const store = new LocalWorkflowEffectApprovalStore(storeRoot, authority());
+      await store.createPending(pending(Date.now()));
+      const directory = join(storeRoot, failure === 'record' ? 'records' : 'locks');
+      const path = join(
+        directory,
+        failure === 'record'
+          ? recordName()
+          : failure === 'unknown'
+            ? 'unknown.tmp'
+            : 'decision.lock',
+      );
+      if (failure !== 'record') await writeFile(path, '{}', { mode: 0o600 });
+      Object.assign(scanRace, {
+        directory,
+        path,
+        kind: ['link', 'directory'].includes(failure) ? failure : '',
+        code: ['EACCES', 'ENOENT'].includes(failure) ? failure : '',
+      });
+      await expect(store.read('run-001', 'approval-001')).rejects.toMatchObject({
+        code:
+          failure === 'record'
+            ? 'ENOENT'
+            : ['EACCES', 'ENOENT'].includes(failure)
+              ? failure
+              : 'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+      });
+      expect(scanRace.fired).toBe(true);
+    },
+  );
+
   it('treats an absent owner-only store as empty but rejects a partial tree', async () => {
     const workspaceRoot = await root();
     const storeRoot = join(workspaceRoot, '.openslack.local', 'workflows', 'effect-approvals');

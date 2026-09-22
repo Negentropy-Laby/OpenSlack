@@ -722,6 +722,26 @@ export function prCommands(): Command {
       console.log(result.message);
     });
 
+  cmd
+    .command('cleanup-branch <number>')
+    .description('Preview or conditionally delete a merged PR remote branch')
+    .option('--execute', 'Authorize this remote branch deletion (default: preview only)')
+    .option('--agent-id <id>', 'Agent ID for authorization; resolution failure blocks cleanup')
+    .option('--permit-id <id>', 'Administrator-issued broker permit (requires --agent-id)')
+    .option('--operation-id <id>', 'Stable broker operation ID for execute/status only')
+    .option('--operation-status', 'Read existing broker operation; never retry deletion')
+    .option('--repo <owner/name>', 'Target GitHub repository')
+    .option('--auth <mode>', 'Live evidence auth: auto, app, or token', 'auto')
+    .option('--remote <name>', 'Named Git remote', 'origin')
+    .option('--timeout <seconds>', 'Total timeout in seconds (1–600)', '60')
+    .action(async (number, options, command: Command) => {
+      const { runPRBranchCleanupCommand } = await import('./pr-cleanup-branch.js');
+      await runPRBranchCleanupCommand(number, {
+        ...options,
+        remoteExplicit: command.getOptionValueSource('remote') === 'cli',
+      });
+    });
+
   return cmd;
 }
 

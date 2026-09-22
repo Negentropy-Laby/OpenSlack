@@ -683,6 +683,56 @@ payloads, endpoints, credentials, or vendor responses.
 | `openslack pr queue --concurrency 4 --api-budget 100 --cache-ttl 60` | Bound projection concurrency, GitHub requests, and local cache freshness   |
 | `openslack pr watch <n>`                                             | Poll PR status until ready or timeout                                      |
 | `openslack pr merge <n>`                                             | Merge PR after all gates pass                                              |
+| `openslack pr cleanup-branch <n>`                                    | Preview governed remote branch cleanup using live evidence                 |
+| `openslack pr cleanup-branch <n> --execute`                          | Conditionally delete the merged PR's remote branch                         |
+
+### Merged PR branch cleanup
+
+`pr cleanup-branch` defaults to preview; there is no `--dry-run` flag. Both modes
+require live evidence (`--auth auto|app|token`; `--auth dry-run` is rejected).
+Use `--repo owner/name`, `--remote origin`, and `--timeout 60` to select the
+repository, named remote, and total timeout in seconds (positive integer, at
+most 600). The command never removes local branches or worktrees.
+
+Cleanup requires an already merged, canonical-main PR in the same repository,
+a non-default/non-protected/non-reserved source branch, no other open head/base
+PR dependency, and valid task-link/claim evidence. Any existing linked claim
+blocks cleanup, including expired claims awaiting repair. Missing task markers
+are not proof that a PR is human-created; known task branches without a valid
+marker are blocked. V1 does not provide a repository-wide branch-to-task index.
+Evidence failures are blocking. A successful exact ref read proving absence
+returns `ALREADY_ABSENT`; protection/dependency checks then report N/A rather
+than inventing evidence for a missing branch.
+
+`--execute` explicitly authorizes this deletion in the `human-cli` calling
+mode. That label is not authentication as a human. Managed agents must pass
+`--agent-id`; failed/incomplete identity resolution never falls back to human
+mode, and `ask` is not sufficient authorization. The `pr.cleanup_branch`
+permission is disabled by default; enabling it requires a separately reviewed
+administrator Red Zone registry change. Read-token authentication does not
+grant write authority: deletion always uses the configured GitHub App
+installation transport, never a human PAT or SSH fallback.
+
+Execution rechecks live evidence and persists an audit intent before attempting
+one exact expected-SHA lease deletion. It does not reuse preview as an execution
+ticket. `DELETED` requires an explicit successful deletion receipt and an absent
+ref on readback. SHA drift is blocked. `ABSENT_AFTER_ATTEMPT` and
+`RECONCILIATION_REQUIRED` are not success: preserve evidence and reconcile, do
+not automatically repeat deletion or recreate the branch. A terminal audit
+failure reports the actual remote result with a nonzero exit, not a claim that
+no deletion occurred. Audit records retain operation ID, repository, PR,
+branch/SHA evidence, executor mode, authorization source and outcome; no token.
+The local audit guarantee binds writes to a checked inode and fsyncs the file
+for process-crash reconciliation. It does not universally guarantee persistence
+of newly created directory entries after hardware power loss or on every
+network filesystem. The dedicated remote qualification must assess these
+filesystem limits before claiming stronger durability.
+
+The SHA lease does not atomically lock PR/claim/protection state and cannot
+identify same-SHA ABA recreation. Only remote ref changes are conditional;
+cross-resource races remain a documented limitation. Code rollback cannot
+restore deleted data. Restoration requires separate administrator authorization
+and must not overwrite a subsequently recreated branch.
 
 `pr doctor` requires live GitHub evidence by default. If no supported credential
 is configured, it exits with `AUTH_REQUIRED` instead of producing a dry-run

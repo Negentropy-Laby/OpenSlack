@@ -1,4 +1,20 @@
 export { fetchPRDetails } from './fetch.js';
+export { cleanupPRBranch, planPRBranchCleanup } from './cleanup-branch.js';
+export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
+export type {
+  CleanupBrokerRequest,
+  CleanupBrokerResponse,
+  CleanupBrokerClientErrorCode,
+} from './cleanup-broker-client.js';
+export type { PRBranchCleanupDependencies } from './cleanup-branch.js';
+export type {
+  PRBranchCleanupState,
+  PRBranchCleanupCheck,
+  PRBranchCleanupPlan,
+  PRBranchCleanupResult,
+  PRBranchCleanupInput,
+  PRBranchCleanupAuditEvent,
+} from './cleanup-types.js';
 export { classifyPRReport } from './classify.js';
 export { checkMergeReadiness } from './readiness.js';
 export { generateReviewReport } from './report.js';

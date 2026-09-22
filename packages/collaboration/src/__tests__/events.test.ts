@@ -52,6 +52,21 @@ describe('events', () => {
     expect(result.valid).toBe(true);
   });
 
+  it.each([
+    'pr.cleanup_branch.previewed',
+    'pr.cleanup_branch.requested',
+    'pr.cleanup_branch.executed',
+    'pr.cleanup_branch.already_absent',
+    'pr.cleanup_branch.blocked',
+    'pr.cleanup_branch.reconciliation_required',
+  ] as const)('accepts and persists cleanup event %s', (type) => {
+    const event = recordEvent(
+      makeEvent({ type, metadata: { operation_id: 'cleanup-1', attempted: false } }),
+    );
+    expect(validateEvent(event).valid).toBe(true);
+    expect(readEvents()).toContainEqual(event);
+  });
+
   it('validates repair events', () => {
     const event = createEvent(
       makeEvent({

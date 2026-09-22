@@ -17,6 +17,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "undici": "7.29.1",
+    "@openslack/workspace": "workspace:*",
+    "ajv": "8.17.1",
+    "@openslack/delivery": "workspace:*",
     "@openslack/core": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@openslack/github": "workspace:*",

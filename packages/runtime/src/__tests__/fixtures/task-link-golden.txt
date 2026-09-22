@@ -1,0 +1,10 @@
+<!-- openslack-task-link
+{
+  "schema": "openslack.task_link.v1",
+  "issue_number": 42,
+  "agent_id": "repair",
+  "task_id": "TASK-42",
+  "run_id": "RUN-42",
+  "claim_ref": "refs/heads/openslack/claims/issue-42"
+}
+-->

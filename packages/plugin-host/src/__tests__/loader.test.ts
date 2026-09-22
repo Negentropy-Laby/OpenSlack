@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -498,7 +498,9 @@ describe('loadPluginManifest', () => {
         { validateManifest: permissiveValidator },
         {
           afterBoundedRead: async () => {
-            await rm(manifestPath);
+            // Keep the original inode alive so the replacement cannot reuse it
+            // within the filesystem's timestamp resolution.
+            await rename(manifestPath, `${manifestPath}.original`);
             await writeFile(manifestPath, manifestBytes());
           },
         },
