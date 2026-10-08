@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as PR from '@openslack/pr';
+import type * as Workspace from '@openslack/workspace';
 
 const mocks = vi.hoisted(() => ({
   cleanup: vi.fn(),
@@ -11,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   identity: vi.fn(),
 }));
 vi.mock('@openslack/pr', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@openslack/pr')>();
+  const actual = await importOriginal<typeof PR>();
   return {
     cleanupPRBranch: mocks.cleanup,
     sendCleanupBrokerRequest: mocks.broker,
@@ -19,7 +21,7 @@ vi.mock('@openslack/pr', async (importOriginal) => {
   };
 });
 vi.mock('@openslack/workspace', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@openslack/workspace')>()),
+  ...(await importOriginal<typeof Workspace>()),
   parseAgentRegistry: mocks.registry,
 }));
 vi.mock('@openslack/github', () => ({

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type * as NodeFs from 'node:fs';
 import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +17,7 @@ const hooks = vi.hoisted(() => ({
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
-  const fs = await importOriginal<typeof import('node:fs')>();
+  const fs = await importOriginal<typeof NodeFs>();
   return {
     ...fs,
     readdirSync: (...args: Parameters<typeof fs.readdirSync>) => {

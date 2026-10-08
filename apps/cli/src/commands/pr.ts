@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
+import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 import {
   commentOnPR,
   getClient,
@@ -475,7 +476,7 @@ export function prCommands(): Command {
                     }
                   : undefined,
             });
-          } catch (error) {
+          } catch {
             console.error('TUI unavailable. Falling back to standard output.');
             console.log(doctorOutput);
           }
@@ -674,8 +675,8 @@ export function prCommands(): Command {
 
       // Resolve agent principal if --agent-id provided
       let authOptions: {
-        principal?: import('@openslack/kernel').AgentPrincipal;
-        snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+        principal?: AgentPrincipal;
+        snapshot?: AgentPermissionSnapshot;
       } = {};
       if (options.agentId) {
         const { resolveAgentPrincipal } = await import('@openslack/runtime');

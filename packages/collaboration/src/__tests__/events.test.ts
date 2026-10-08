@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 import type { CollaborationEventType } from '../types.js';
 import {
   validateEvent,
@@ -377,7 +377,7 @@ describe('events', () => {
   });
 
   it('skips malformed lines when reading', () => {
-    const dir = getEventsDirForTesting();
+    getEventsDirForTesting();
     writeFileSync(eventPath, '{"valid": true}\nnot-json\n', 'utf-8');
 
     const events = readEvents();
