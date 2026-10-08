@@ -486,3 +486,39 @@ mocking ACL checks, pre-reading the tested path or removing assertions. Timing
 probes were removed; independent review confirmed this fixture boundary.
 The existing Windows hosted selections do not include this store file, so this
 is separate local-native evidence, not a claim of hosted coverage for it.
+
+## Offline preparation tooling and unresolved deployment dependency
+
+The PR #418 preparation follow-up removes nine related lint warnings without
+changing the remaining unrelated warning baseline. `@openslack/pr` now owns
+offline draft construction and handoff verification; scripts orchestrate the
+build and invoke those package functions. New tests cover source/head drift,
+tampered digests, incomplete/extra file sets, unsafe paths and symlinks,
+duplicate/traversing manifest entries, expired task evidence, output refusal,
+old approval non-inheritance and the bundled verifier running outside a
+checkout with an empty PATH and no Git/modules. Configuration drafts bind
+actual artifact bytes and preserve the selected principal/runtime/run tuple.
+No production configuration schema, Go protocol, disk format or authority
+reader is changed by this preparation work.
+
+The frozen-candidate procedure requires two independent clean clones without
+object hardlinks/alternates, matching Broker/executor bytes, a clean embedded
+VCS revision, actual tool versions and lockfile digests. New package and input
+records are separate external candidate directories. Old administrator input
+approval is retained by source and SHA256, never carried over to new bytes.
+The final source SHA and package digest belong in the live PR body/comment;
+a commit recording its own SHA would invalidate the candidate it describes.
+Local suite, independent review, package integrity and current-head hosted CI
+are separate evidence classes, and none establishes installed qualification.
+
+The selected registry is proposed only in #418 and has not entered governance
+`main`. The fixed production reader must continue reading `main`; branch/local
+substitution is forbidden. Registry deployment, administrator configuration
+and credentials, runtime identity, actual startup nonce, governed activation,
+exact single-use Permit and real GitHub cleanup qualification are still
+uncompleted dependencies. Existing administrator input approval authorizes
+only the recorded non-secret inputs and registry proposal preparation.
+PR #418 stays Draft; the retained pre-merge real qualification criterion and
+human approval/PRMS gates are not waived or relabeled as completed. Resolving
+the deployment dependency requires an administrator governance decision,
+followed by reviewed recovery of the already partially provisioned target.

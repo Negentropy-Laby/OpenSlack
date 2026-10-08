@@ -328,3 +328,15 @@ That candidate passed all nine hosted checks; tag publication was skipped.
 Real OS isolation and GitHub qualification remain unproven. No human approval,
 merge or release follows from CI. See [administrator handoff](handoff.md) for
 the non-activating package, installation responsibilities and remaining gates.
+
+The offline preparation APIs `prepareCleanupHandoffDraft` and
+`verifyCleanupHandoffPackage` belong to `@openslack/pr`. The repository scripts
+under `scripts/cleanup-broker/` orchestrate clean builds and package calls;
+`tools/verify-handoff.mjs` in a prepared package runs independently on Node.
+Verification binds a reviewed candidate and manifest digest, reports missing
+external gates, and always states that installation/execution are unauthorized.
+New candidate inputs stay DRAFT; an earlier administrator input approval is
+preserved as hashed provenance. See the handoff for exact commands and stop
+conditions. The selected registry's absence from governance `main` remains a
+deployment blocker, without changing the production authority reader or the
+pre-merge real qualification requirement.

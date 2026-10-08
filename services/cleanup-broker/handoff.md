@@ -18,6 +18,113 @@ cd /absolute/path/to/reviewed-handoff
 sha256sum --check SHA256SUMS
 ```
 
+For newly prepared packages, use the independent Node verifier as well. Obtain
+the full candidate SHA and the SHA256 of `SHA256SUMS` from the PR's reviewed
+delivery record; do not take these trust bindings from the package itself.
+The verifier checks the closed file set, ordinary-file paths, actual bytes,
+build/source bindings and draft relationships. Exit 0 with `valid: true` means
+package integrity only. `installationAuthorized` and `executionAuthorized`
+remain false, and `unmetGates` lists work still required.
+
+From the **package directory** on Linux/WSL2 (Node 22 or newer):
+
+```sh
+set -eu
+: "${CANDIDATE_SHA:?full candidate SHA from the PR delivery record}"
+: "${MANIFEST_SHA256:?reviewed SHA256 of SHA256SUMS from the PR delivery record}"
+sha256sum --check SHA256SUMS
+node tools/verify-handoff.mjs --package . --candidate "$CANDIDATE_SHA" --manifest-sha256 "$MANIFEST_SHA256"
+```
+
+The package's ordinary `artifacts/node` is also usable on the dedicated Linux
+target after its digest has been independently checked. The verifier requires
+no Git, Go, Bun, development checkout, `node_modules`, credentials or network.
+On Windows PowerShell, first change to the copied package directory, then:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+if (-not $env:CANDIDATE_SHA -or -not $env:MANIFEST_SHA256) { throw 'Set both bindings from the PR delivery record first.' }
+$node = (Get-Command node -ErrorAction Stop).Source
+& $node .\tools\verify-handoff.mjs --package . --candidate $env:CANDIDATE_SHA --manifest-sha256 $env:MANIFEST_SHA256
+if ($LASTEXITCODE -ne 0) { throw 'Package verification failed; preserve evidence and stop.' }
+```
+
+Stop on any nonzero exit, digest/head mismatch, unexpected/missing entry,
+symlink or changed evidence. A successful verification does not authorize
+continuing into installation while any required gate remains open. Expired
+task evidence is reported as `TASK_EVIDENCE_EXPIRED` even if package integrity
+passes; refresh and independently review it before changing fixtures or tasks.
+
+## Offline preparation and candidate freezing
+
+`@openslack/pr` exposes `prepareCleanupHandoffDraft` and
+`verifyCleanupHandoffPackage`. They read only explicitly selected ordinary,
+non-secret source/evidence files. Preparation compares the clean Git head and
+committed source bytes, checks two build reports against actual artifacts,
+retains selected identity/repository/App/run values and recomputes changed
+artifact and installation-manifest digests. It emits candidate-specific
+configuration drafts, an evidence index and a new administrator input record.
+It does not acquire credentials, contact GitHub, write active target files,
+provision identity, issue authority or invoke cleanup.
+
+Commit source, tests, documentation, telemetry and necessary locks before
+freezing the candidate. From that clean candidate checkout, run:
+
+```sh
+set -eu
+bun scripts/cleanup-broker/build-handoff.ts --input /absolute/path/to/non-secret-build-input.json
+```
+
+The input uses `PrepareCleanupHandoffDraftInput` fields, except `builds` and
+`verifierPath` are supplied by the orchestrator; add a fresh `buildDirectory`.
+Provide `sourceRoot`, the full `candidateHead`, a fresh external
+`outputDirectory`, `runtimeDirectory`, Node checksum/license paths,
+`runtimeLicensePaths`, `priorInputPath` (and its original `priorInputSource`
+when using an administrator-exported copy), and all `targetEvidence` paths.
+Never put a credential or an active installation path in this input.
+`outputDirectory` and `buildDirectory` must have existing ordinary parents
+and be outside the source tree and fixed installation paths. Existing outputs
+are rejected; preserve partial output after failure and inspect it separately.
+
+The orchestrator creates two clean `git clone --no-hardlinks` checkouts with no
+shared object alternates, uses Bun 1.4.0, Go 1.26.5 and the actual Linux Node
+24.18.1, and builds the Broker with `CGO_ENABLED=0 -trimpath -buildvcs=true`.
+Both Broker/executor bytes must match; the embedded revision must equal the
+frozen SHA with `vcs.modified=false`. Reports record actual tool versions,
+lockfile digests and commands. Dependency installation is build orchestration,
+not a live credential/provider/cleanup test. For independently supplied build
+reports, `prepare-handoff.ts --input <file>` invokes only the offline package
+preparation path. Input dates are measured at execution, not overridden by CLI.
+
+Output contains `package/`, `admin-inputs.DRAFT.md` and
+`review-record.DRAFT.json`. The external draft binds the package-manifest digest
+without embedding a circular self-hash. Original packages and approved input
+records remain unchanged. A prior approval is hashed historical provenance;
+it cannot approve new candidate bytes. New records always start DRAFT with
+approval fields REQUIRED. Record final candidate/artifact digests in the PR
+body/comment, not a new source commit that would change the candidate again.
+Any subsequent source repair requires a new freeze, builds and reviewed inputs.
+
+## Registry and real qualification dependency
+
+The selected `cleanup_qualification_pr418` registry is currently proposed in
+PR #418 and is absent from the canonical `main` authority. The production reader
+continues to read the fixed governance repository's `main` once; a feature
+branch, a local file or package integrity cannot replace that authority.
+Consequently, registry deployment, target installation and runtime identity,
+actual startup nonce, governed activation, exact Permit and real qualification
+remain separate blocked steps. The preparation verifier conservatively reports
+main deployment as unverified; it does not contact GitHub to claim deployment.
+
+PR #418 remains Draft. Its retained pre-merge qualification standard and human
+approval requirements are unchanged. Including the registry in this PR has not
+resolved its deployment/qualification dependency; an administrator governance
+decision is still needed. Do not infer qualification or merge permission from
+local tests, CI, build reproducibility or the earlier input approval. Once the
+dependency is lawfully resolved, installation must follow reviewed recovery of
+the existing partial target, then acquire a real nonce before governance can
+bind activation and the single-use Permit. Preserve old state and records.
+
 Only ordinary staging files are included. No private keys, tokens, real
 permits, activation records or live ledger are supplied. A runtime inventory
 from the build host is discovery evidence, not proof of the target host's
