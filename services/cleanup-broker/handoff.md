@@ -96,6 +96,16 @@ not a live credential/provider/cleanup test. For independently supplied build
 reports, `prepare-handoff.ts --input <file>` invokes only the offline package
 preparation path. Input dates are measured at execution, not overridden by CLI.
 
+Before running the Node version command, the orchestrator checks ordinary
+runtime paths and matches their actual bytes to the previously reviewed
+installation manifest. Preparation requires report independence to be true,
+then checks the two retained clean source checkouts, their distinct Git
+directories, single-link objects and absence of object alternates. Keep those
+checkouts until preparation finishes. Broker identity is decoded from the
+ELF `.go.buildinfo` section and Go's inline metadata; free-standing text that
+resembles VCS settings is rejected. The standalone verifier checks the sealed
+report/artifact bindings without needing those source checkouts or Git.
+
 Output contains `package/`, `admin-inputs.DRAFT.md` and
 `review-record.DRAFT.json`. The external draft binds the package-manifest digest
 without embedding a circular self-hash. Original packages and approved input

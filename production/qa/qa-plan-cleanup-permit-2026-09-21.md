@@ -522,3 +522,16 @@ PR #418 stays Draft; the retained pre-merge real qualification criterion and
 human approval/PRMS gates are not waived or relabeled as completed. Resolving
 the deployment dependency requires an administrator governance decision,
 followed by reviewed recovery of the already partially provisioned target.
+
+The preparation follow-up's first independent review found three defects:
+runtime version execution preceded path validation; the inner selected-input
+object retained old candidate/manifest bindings; and contradictory build
+reports plus plaintext VCS strings could be labeled verified. Regression
+coverage now requires runtime path/digest preflight before tool execution,
+current selected candidate fields without a circular manifest hash, genuine
+ELF/Go build-info decoding, positive report independence and retained clean
+checkouts without shared objects/alternates. The new draft remains DRAFT.
+Native Windows also exposed fixed POSIX installation paths being normalized
+to drive paths before rejection; both raw and resolved forms are now checked.
+Initial failed probes remain in the external validation record. These repairs
+require renewed local validation, independent review and a fresh frozen package.

@@ -11,10 +11,12 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { readCleanupBrokerBuildInfo } from './internal/cleanup-handoff-build-info.js';
 
 export type CleanupHandoffErrorCode =
   | 'HANDOFF_INPUT_INVALID'
@@ -236,6 +238,32 @@ export function readCleanupHandoffInputFile(path: string): unknown {
   check(typeof path === 'string' && path.endsWith('.json'), 'HANDOFF_INPUT_INVALID');
   return json(safeRead(path));
 }
+
+/** Verify ordinary runtime bytes against the previous reviewed manifest before executing tools. */
+export function assertCleanupHandoffRuntime(
+  input: Pick<PrepareCleanupHandoffDraftInput, 'runtimeDirectory' | 'targetEvidence'>,
+): string {
+  const manifest = json(safeRead(input.targetEvidence.installationManifestPath));
+  check(
+    manifest.schema === 'openslack.cleanup_installation.v1' && Array.isArray(manifest.files),
+    'HANDOFF_EVIDENCE_INVALID',
+  );
+  const locations = new Map([
+    ['node', '/usr/lib/openslack-cleanup/node'],
+    ['git', '/usr/lib/openslack-cleanup/git'],
+    ['sh', '/usr/lib/openslack-cleanup/sh'],
+    ['git-remote-https', '/usr/lib/openslack-cleanup/git-core/git-remote-https'],
+  ]);
+  for (const [name, path] of locations) {
+    const entries = manifest.files.map(object).filter((entry) => entry.path === path);
+    check(
+      entries.length === 1 &&
+        entries[0]!.sha256 === sha(safeRead(join(input.runtimeDirectory, name))),
+      'HANDOFF_BUILD_MISMATCH',
+    );
+  }
+  return join(input.runtimeDirectory, 'node');
+}
 function cleanSource(root: string, head: string): void {
   check(git(root, ['rev-parse', 'HEAD']) === head, 'HANDOFF_CANDIDATE_MISMATCH');
   check(
@@ -252,6 +280,18 @@ export function assertCleanupHandoffStaging(
     input && typeof input.candidateHead === 'string' && HEAD.test(input.candidateHead),
     'HANDOFF_INPUT_INVALID',
   );
+  const active = (path: string) =>
+    [
+      '/etc/openslack-cleanup',
+      '/usr/lib/openslack-cleanup',
+      '/run/openslack-cleanup',
+      '/var/lib/openslack-cleanup',
+    ].some((target) => path === target || path.startsWith(target + '/'));
+  check(
+    typeof input.outputDirectory === 'string' &&
+      !active(input.outputDirectory.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')),
+    'HANDOFF_PATH_UNSAFE',
+  );
   const root = safePath(input.sourceRoot),
     output = safePath(input.outputDirectory);
   ancestors(root);
@@ -260,15 +300,7 @@ export function assertCleanupHandoffStaging(
     within !== '' && (within.startsWith(`..${sep}`) || isAbsolute(within)),
     'HANDOFF_PATH_UNSAFE',
   );
-  check(
-    ![
-      '/etc/openslack-cleanup',
-      '/usr/lib/openslack-cleanup',
-      '/run/openslack-cleanup',
-      '/var/lib/openslack-cleanup',
-    ].some((path) => output === path || output.startsWith(path + '/')),
-    'HANDOFF_PATH_UNSAFE',
-  );
+  check(!active(output.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')), 'HANDOFF_PATH_UNSAFE');
   ancestors(dirname(output));
   check(!existsSync(output), 'HANDOFF_OUTPUT_EXISTS');
   cleanSource(root, input.candidateHead);
@@ -302,13 +334,27 @@ function positive(fields: Record<string, string>, key: string): number {
   return Number(text);
 }
 function brokerIdentity(raw: Buffer, head: string): void {
-  for (const field of [
-    `vcs.revision=${head}\n`,
-    'vcs.modified=false\n',
-    '-trimpath=true\n',
-    'CGO_ENABLED=0\n',
-  ])
-    check(raw.includes(Buffer.from(field)), 'HANDOFF_BUILD_MISMATCH');
+  try {
+    const info = readCleanupBrokerBuildInfo(raw);
+    check(
+      info.version === 'go1.26.5' &&
+        info.path ===
+          'github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/cmd/cleanup-broker',
+      'HANDOFF_BUILD_MISMATCH',
+    );
+    for (const [key, value] of [
+      ['vcs.revision', head],
+      ['vcs.modified', 'false'],
+      ['-trimpath', 'true'],
+      ['CGO_ENABLED', '0'],
+      ['GOOS', 'linux'],
+      ['GOARCH', 'amd64'],
+      ['vcs', 'git'],
+    ])
+      check(info.settings.get(key!) === value, 'HANDOFF_BUILD_MISMATCH');
+  } catch {
+    fail('HANDOFF_BUILD_MISMATCH');
+  }
 }
 function buildReport(
   raw: Buffer,
@@ -323,6 +369,7 @@ function buildReport(
     report.schema === 'openslack.pr418.clean-build-report.v1' &&
       report.candidateHead === head &&
       report.checkoutCleanAfterBuild === true &&
+      report.independentCloneNoHardlinks === true &&
       typeof report.checkout === 'string' &&
       report.lockfileSHA256 === lock &&
       report.goModuleSHA256 === goModule,
@@ -348,6 +395,37 @@ function buildReport(
   check(Array.isArray(report.commands) && report.commands.length > 0, 'HANDOFF_BUILD_MISMATCH');
   brokerIdentity(broker, head);
   return report;
+}
+
+function inspectBuildCheckout(path: string, head: string, lock: string, goModule: string): string {
+  path = safePath(path);
+  check(existsSync(path), 'HANDOFF_BUILD_MISMATCH');
+  ancestors(path);
+  cleanSource(path, head);
+  check(
+    sha(safeRead(join(path, 'bun.lock'))) === lock &&
+      sha(safeRead(join(path, 'services/cleanup-broker/go.mod'))) === goModule,
+    'HANDOFF_BUILD_MISMATCH',
+  );
+  const gitDirectory = git(path, ['rev-parse', '--absolute-git-dir']);
+  check(realpathSync(gitDirectory) === realpathSync(join(path, '.git')), 'HANDOFF_BUILD_MISMATCH');
+  const objects = join(gitDirectory, 'objects');
+  const walk = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name),
+        stamp = lstatSync(full);
+      check(
+        !stamp.isSymbolicLink() &&
+          (!stamp.isFile() || stamp.nlink === 1) &&
+          full !== join(objects, 'info/alternates'),
+        'HANDOFF_BUILD_MISMATCH',
+      );
+      if (stamp.isDirectory()) walk(full);
+      else check(stamp.isFile(), 'HANDOFF_BUILD_MISMATCH');
+    }
+  };
+  walk(objects);
+  return realpathSync(gitDirectory);
 }
 function taskView(raw: Buffer, fields: Record<string, string>): ObjectValue {
   const task = json(raw);
@@ -402,6 +480,14 @@ export function prepareCleanupHandoffDraft(
       'HANDOFF_INPUT_INVALID',
     );
     const fields = storedFields(priorRaw);
+    const selected: Record<string, string> = {
+      ...fields,
+      candidate_head: input.candidateHead,
+      approval_status: 'DRAFT',
+      approved_by: 'REQUIRED',
+      approved_at_utc: 'REQUIRED',
+    };
+    delete selected.package_manifest_sha256;
     for (const key of [
       'agent_id',
       'broker_id',
@@ -459,6 +545,14 @@ export function prepareCleanupHandoffDraft(
       checkouts[0] !== checkouts[1] &&
         brokers[0]!.equals(brokers[1]!) &&
         executors[0]!.equals(executors[1]!),
+      'HANDOFF_BUILD_MISMATCH',
+    );
+    const gitDirectories = checkouts.map((path) =>
+      inspectBuildCheckout(path, input.candidateHead, lock, goModule),
+    );
+    check(
+      new Set([realpathSync(git(root, ['rev-parse', '--absolute-git-dir'])), ...gitDirectories])
+        .size === 3,
       'HANDOFF_BUILD_MISMATCH',
     );
     add('artifacts/cleanup-broker', brokers[0]!);
@@ -593,12 +687,7 @@ export function prepareCleanupHandoffDraft(
           sha256: sha(priorRaw),
           approvalNotInherited: true,
         },
-        selected: {
-          ...fields,
-          approval_status: 'DRAFT',
-          approved_by: 'REQUIRED',
-          approved_at_utc: 'REQUIRED',
-        },
+        selected,
         installationAuthorized: false,
         executionAuthorized: false,
       }),
@@ -894,6 +983,8 @@ export function verifyCleanupHandoffPackage(
       index.approvalStatus === 'DRAFT' &&
         index.qualification === 'NOT_RUN' &&
         draft.approvalStatus === 'DRAFT' &&
+        object(draft.selected).candidate_head === input.candidateHead &&
+        !Object.hasOwn(object(draft.selected), 'package_manifest_sha256') &&
         draft.installationAuthorized === false &&
         draft.executionAuthorized === false &&
         object(draft.priorInput).approvalNotInherited === true &&

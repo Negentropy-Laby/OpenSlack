@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
+  cpSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -12,19 +15,66 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prepareCleanupHandoffDraft, verifyCleanupHandoffPackage } from '../cleanup-handoff.js';
+import {
+  assertCleanupHandoffRuntime,
+  prepareCleanupHandoffDraft,
+  verifyCleanupHandoffPackage,
+} from '../cleanup-handoff.js';
 import type { PrepareCleanupHandoffDraftInput } from '../cleanup-handoff.js';
 
 const roots: string[] = [];
 const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const timestamp = '2026-10-08T12:30:00.000Z';
+// A small structural ELF/Go build-info fixture. It is never executed or claimed
+// to be a compiled Broker; real Broker bytes are verified during clean builds.
+function fixtureBroker(head: string): Buffer {
+  const frame = Buffer.concat([
+    Buffer.alloc(16),
+    Buffer.from(
+      `path\tgithub.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/cmd/cleanup-broker\nbuild\tvcs.revision=${head}\nbuild\tvcs.modified=false\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOOS=linux\nbuild\tGOARCH=amd64\nbuild\tvcs=git\n`,
+    ),
+    Buffer.alloc(16),
+  ]);
+  const inline = (raw: Buffer) => {
+    let length = raw.length;
+    const bytes: number[] = [];
+    do {
+      const byte = length % 128;
+      length = Math.floor(length / 128);
+      bytes.push(byte | (length ? 128 : 0));
+    } while (length);
+    return Buffer.concat([Buffer.from(bytes), raw]);
+  };
+  const header = Buffer.alloc(32);
+  Buffer.from('\xff Go buildinf:', 'latin1').copy(header);
+  header[14] = 8;
+  header[15] = 2;
+  const info = Buffer.concat([header, inline(Buffer.from('go1.26.5')), inline(frame)]);
+  const raw = Buffer.alloc(288 + info.length),
+    names = Buffer.from('\0.shstrtab\0.go.buildinfo\0');
+  Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(raw);
+  raw.writeUInt16LE(62, 18);
+  raw.writeBigUInt64LE(64n, 40);
+  raw.writeUInt16LE(64, 58);
+  raw.writeUInt16LE(3, 60);
+  raw.writeUInt16LE(1, 62);
+  raw.writeUInt32LE(1, 128);
+  raw.writeBigUInt64LE(256n, 152);
+  raw.writeBigUInt64LE(BigInt(names.length), 160);
+  raw.writeUInt32LE(11, 192);
+  raw.writeBigUInt64LE(288n, 216);
+  raw.writeBigUInt64LE(BigInt(info.length), 224);
+  names.copy(raw, 256);
+  info.copy(raw, 288);
+  return raw;
+}
 afterEach(() => {
   vi.unstubAllGlobals();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'cleanup handoff '));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'cleanup handoff '));
   roots.push(root);
   const source = join(root, 'source');
   mkdirSync(source);
@@ -71,9 +121,8 @@ function fixture() {
     'fixture',
   );
   const candidateHead = git('rev-parse', 'HEAD');
-  const broker = Buffer.from(
-    `fixture broker\nvcs.revision=${candidateHead}\nvcs.modified=false\n-trimpath=true\nCGO_ENABLED=0\n`,
-  );
+  const broker = fixtureBroker(candidateHead);
+  for (const id of ['a', 'b']) cpSync(source, join(root, `checkout-${id}`), { recursive: true });
   const executor = Buffer.from('fixture executor');
   const makeBuild = (id: string) => ({
     brokerPath: put(`build-${id}/cleanup-broker`, broker),
@@ -85,6 +134,7 @@ function fixture() {
         candidateHead,
         checkout: join(root, `checkout-${id}`),
         checkoutCleanAfterBuild: true,
+        independentCloneNoHardlinks: true,
         tools: { bun: '1.4.0', go: 'go version go1.26.5 linux/amd64', node: 'v24.18.1' },
         broker: { sha256: digest(broker), bytes: broker.length },
         executor: { sha256: digest(executor), bytes: executor.length },
@@ -109,12 +159,12 @@ function fixture() {
       files: ['node', 'executor.mjs', 'git', 'sh']
         .map((name) => ({
           path: `/usr/lib/openslack-cleanup/${name}`,
-          sha256: digest(`old ${name}`),
+          sha256: digest(name === 'executor.mjs' ? 'old executor.mjs' : `fixture ${name}`),
         }))
         .concat([
           {
             path: '/usr/lib/openslack-cleanup/git-core/git-remote-https',
-            sha256: digest('old helper'),
+            sha256: digest('fixture git-remote-https'),
           },
         ]),
     }),
@@ -222,6 +272,11 @@ describe('offline cleanup handoff preparation', () => {
     expect(draft).toContain('approval_status: DRAFT');
     expect(draft).toContain('approved_by: REQUIRED');
     expect(draft).toContain(`package_manifest_sha256: ${result.manifestSHA256}`);
+    const selected = JSON.parse(
+      readFileSync(join(result.packageDirectory, 'draft/inputs.DRAFT.json'), 'utf8'),
+    ).selected;
+    expect(selected.candidate_head).toBe(result.candidateHead);
+    expect(selected).not.toHaveProperty('package_manifest_sha256');
     const config = JSON.parse(
       readFileSync(join(result.packageDirectory, 'draft/broker.DRAFT.json'), 'utf8'),
     );
@@ -277,6 +332,72 @@ describe('offline cleanup handoff preparation', () => {
     },
   );
 
+  it.each(['independence', 'plaintext', 'missing-checkout'])(
+    'rejects false %s build evidence',
+    (mode) => {
+      const { input } = fixture();
+      const build = input.builds[0],
+        report = JSON.parse(readFileSync(build.reportPath, 'utf8'));
+      if (mode === 'independence') report.independentCloneNoHardlinks = false;
+      if (mode === 'missing-checkout') report.checkout += '-missing';
+      if (mode === 'plaintext') {
+        const bytes = Buffer.from(
+          `vcs.revision=${input.candidateHead}\nvcs.modified=false\n-trimpath=true\nCGO_ENABLED=0\n`,
+        );
+        writeFileSync(build.brokerPath, bytes);
+        report.broker = { sha256: digest(bytes), bytes: bytes.length };
+      }
+      writeFileSync(build.reportPath, JSON.stringify(report));
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({
+          code: 'HANDOFF_BUILD_MISMATCH',
+        }),
+      );
+    },
+  );
+
+  it.each(['revision', 'version', 'bounds'])(
+    'rejects structurally invalid %s Go build identity',
+    (mode) => {
+      const { input } = fixture();
+      let bytes = fixtureBroker(mode === 'revision' ? 'f'.repeat(40) : input.candidateHead);
+      if (mode === 'version')
+        bytes = Buffer.from(bytes.toString('latin1').replace('go1.26.5', 'go1.26.6'), 'latin1');
+      if (mode === 'bounds') bytes.writeBigUInt64LE(BigInt(bytes.length + 100), 40);
+      for (const build of input.builds) {
+        writeFileSync(build.brokerPath, bytes);
+        const report = JSON.parse(readFileSync(build.reportPath, 'utf8'));
+        report.broker = { bytes: bytes.length, sha256: digest(bytes) };
+        writeFileSync(build.reportPath, JSON.stringify(report));
+      }
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_BUILD_MISMATCH' }),
+      );
+    },
+  );
+
+  it.each(['hardlink', 'alternates'])(
+    'rejects %s object sharing between build checkouts',
+    (mode) => {
+      const { input } = fixture();
+      const a = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8')).checkout;
+      const b = JSON.parse(readFileSync(input.builds[1].reportPath, 'utf8')).checkout;
+      if (mode === 'alternates')
+        writeFileSync(join(a, '.git/objects/info/alternates'), join(b, '.git/objects') + '\n');
+      else {
+        const objects = join(a, '.git/objects');
+        const directory = readdirSync(objects).find((name) => /^[a-f0-9]{2}$/.test(name))!;
+        const name = readdirSync(join(objects, directory))[0]!;
+        const target = join(b, '.git/objects', directory, name);
+        rmSync(target);
+        linkSync(join(objects, directory, name), target);
+      }
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_BUILD_MISMATCH' }),
+      );
+    },
+  );
+
   it('detects source bytes hidden by an assume-unchanged index entry', () => {
     const { input, git, put } = fixture();
     git('update-index', '--assume-unchanged', 'bun.lock');
@@ -326,6 +447,35 @@ describe('offline cleanup handoff preparation', () => {
       expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
     );
   });
+});
+
+describe('runtime preflight before tool execution', () => {
+  it('selects only the ordinary runtime matching the previous reviewed manifest', () => {
+    const { input } = fixture();
+    expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));
+  });
+
+  it.each(['tamper', 'symlink', 'credentials'])(
+    'rejects %s before returning an executable path',
+    (mode) => {
+      const { input, put } = fixture();
+      const path = join(input.runtimeDirectory, 'node');
+      if (mode === 'tamper') writeFileSync(path, 'unreviewed executable');
+      if (mode === 'symlink') {
+        rmSync(path);
+        symlinkSync(join(input.runtimeDirectory, 'git'), path);
+      }
+      if (mode === 'credentials') {
+        put('credentials/node', 'must not read');
+        input.runtimeDirectory = join(input.runtimeDirectory, '..', 'credentials');
+      }
+      expect(() => assertCleanupHandoffRuntime(input)).toThrowError(
+        expect.objectContaining({
+          code: mode === 'tamper' ? 'HANDOFF_BUILD_MISMATCH' : 'HANDOFF_PATH_UNSAFE',
+        }),
+      );
+    },
+  );
 });
 
 describe('standalone package integrity contract', () => {

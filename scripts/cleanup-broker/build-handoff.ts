@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import {
   CleanupHandoffError,
   assertCleanupHandoffStaging,
+  assertCleanupHandoffRuntime,
   readCleanupHandoffInputFile,
   prepareCleanupHandoffDraft,
 } from '../../packages/pr/src/cleanup-handoff.js';
@@ -48,10 +49,11 @@ try {
   });
   if (resolve(input.outputDirectory) === buildRoot)
     throw new CleanupHandoffError('HANDOFF_PATH_UNSAFE');
+  const node = assertCleanupHandoffRuntime(input);
   const tools = {
     bun: Bun.version,
     go: run('go', ['version'], source),
-    node: run(join(input.runtimeDirectory, 'node'), ['--version'], source),
+    node: run(node, ['--version'], source),
   };
   if (
     tools.bun !== '1.4.0' ||
