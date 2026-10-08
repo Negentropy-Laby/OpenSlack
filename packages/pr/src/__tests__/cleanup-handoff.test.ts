@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertCleanupHandoffRuntime,
@@ -398,6 +398,24 @@ describe('offline cleanup handoff preparation', () => {
     },
   );
 
+  it.each(['.git', '.git/objects'])(
+    'rejects a symlinked %s root before inspecting build checkouts',
+    (directory) => {
+      const { input } = fixture();
+      const a = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8')).checkout;
+      const b = JSON.parse(readFileSync(input.builds[1].reportPath, 'utf8')).checkout;
+      rmSync(join(a, directory), { recursive: true });
+      symlinkSync(
+        join(b, directory),
+        join(a, directory),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+      );
+    },
+  );
+
   it('detects source bytes hidden by an assume-unchanged index entry', () => {
     const { input, git, put } = fixture();
     git('update-index', '--assume-unchanged', 'bun.lock');
@@ -453,6 +471,13 @@ describe('runtime preflight before tool execution', () => {
   it('selects only the ordinary runtime matching the previous reviewed manifest', () => {
     const { input } = fixture();
     expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));
+  });
+
+  it('binds a relative runtime directory to the validated absolute executable, avoiding PATH lookup', () => {
+    const { input } = fixture();
+    const reviewedNode = join(input.runtimeDirectory, 'node');
+    input.runtimeDirectory = relative(process.cwd(), input.runtimeDirectory);
+    expect(assertCleanupHandoffRuntime(input)).toBe(reviewedNode);
   });
 
   it.each(['tamper', 'symlink', 'credentials'])(

@@ -535,3 +535,9 @@ Native Windows also exposed fixed POSIX installation paths being normalized
 to drive paths before rejection; both raw and resolved forms are now checked.
 Initial failed probes remain in the external validation record. These repairs
 require renewed local validation, independent review and a fresh frozen package.
+
+The next independent pass reproduced object-root aliases bypassing the child
+walk, and a validated relative runtime path being resolved again through PATH
+at execution. Both have failing-before-fix regressions. Git and object roots
+are now checked before Git inspection, and runtime preflight returns the exact
+validated absolute executable. Historical failed probes remain preserved.

@@ -74,6 +74,9 @@ try {
     if (!existsSync(resolve(checkout, objectFiles)))
       throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
     const verifyObjects = (directory: string) => {
+      const root = lstatSync(directory);
+      if (root.isSymbolicLink() || !root.isDirectory())
+        throw new CleanupHandoffError('HANDOFF_PATH_UNSAFE');
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name),
           stamp = lstatSync(path);

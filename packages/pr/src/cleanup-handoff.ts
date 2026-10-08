@@ -243,6 +243,7 @@ export function readCleanupHandoffInputFile(path: string): unknown {
 export function assertCleanupHandoffRuntime(
   input: Pick<PrepareCleanupHandoffDraftInput, 'runtimeDirectory' | 'targetEvidence'>,
 ): string {
+  const runtime = safePath(input.runtimeDirectory);
   const manifest = json(safeRead(input.targetEvidence.installationManifestPath));
   check(
     manifest.schema === 'openslack.cleanup_installation.v1' && Array.isArray(manifest.files),
@@ -257,12 +258,12 @@ export function assertCleanupHandoffRuntime(
   for (const [name, path] of locations) {
     const entries = manifest.files.map(object).filter((entry) => entry.path === path);
     check(
-      entries.length === 1 &&
-        entries[0]!.sha256 === sha(safeRead(join(input.runtimeDirectory, name))),
+      entries.length === 1 && entries[0]!.sha256 === sha(safeRead(join(runtime, name))),
       'HANDOFF_BUILD_MISMATCH',
     );
   }
-  return join(input.runtimeDirectory, 'node');
+  // Execute the exact absolute file whose bytes were validated, never a PATH lookup.
+  return join(runtime, 'node');
 }
 function cleanSource(root: string, head: string): void {
   check(git(root, ['rev-parse', 'HEAD']) === head, 'HANDOFF_CANDIDATE_MISMATCH');
@@ -401,6 +402,15 @@ function inspectBuildCheckout(path: string, head: string, lock: string, goModule
   path = safePath(path);
   check(existsSync(path), 'HANDOFF_BUILD_MISMATCH');
   ancestors(path);
+  const cloneGit = join(path, '.git'),
+    cloneObjects = join(cloneGit, 'objects');
+  // Validate roots before Git follows them or the walk inspects only their children.
+  ancestors(cloneGit);
+  ancestors(cloneObjects);
+  check(
+    lstatSync(cloneGit).isDirectory() && lstatSync(cloneObjects).isDirectory(),
+    'HANDOFF_BUILD_MISMATCH',
+  );
   cleanSource(path, head);
   check(
     sha(safeRead(join(path, 'bun.lock'))) === lock &&
@@ -408,7 +418,7 @@ function inspectBuildCheckout(path: string, head: string, lock: string, goModule
     'HANDOFF_BUILD_MISMATCH',
   );
   const gitDirectory = git(path, ['rev-parse', '--absolute-git-dir']);
-  check(realpathSync(gitDirectory) === realpathSync(join(path, '.git')), 'HANDOFF_BUILD_MISMATCH');
+  check(realpathSync(gitDirectory) === realpathSync(cloneGit), 'HANDOFF_BUILD_MISMATCH');
   const objects = join(gitDirectory, 'objects');
   const walk = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
