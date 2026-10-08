@@ -1,4 +1,18 @@
 export { fetchPRDetails } from './fetch.js';
+export {
+  prepareCleanupHandoffDraft,
+  verifyCleanupHandoffPackage,
+  CleanupHandoffError,
+} from './cleanup-handoff.js';
+export type {
+  CleanupHandoffErrorCode,
+  CleanupHandoffBuildInput,
+  CleanupHandoffTargetEvidence,
+  PrepareCleanupHandoffDraftInput,
+  PrepareCleanupHandoffDraftResult,
+  VerifyCleanupHandoffPackageInput,
+  VerifyCleanupHandoffPackageResult,
+} from './cleanup-handoff.js';
 export { cleanupPRBranch, planPRBranchCleanup } from './cleanup-branch.js';
 export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
 export type {

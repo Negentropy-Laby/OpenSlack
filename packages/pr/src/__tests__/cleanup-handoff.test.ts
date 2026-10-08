@@ -1,0 +1,456 @@
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { prepareCleanupHandoffDraft, verifyCleanupHandoffPackage } from '../cleanup-handoff.js';
+import type { PrepareCleanupHandoffDraftInput } from '../cleanup-handoff.js';
+
+const roots: string[] = [];
+const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
+const timestamp = '2026-10-08T12:30:00.000Z';
+afterEach(() => {
+  vi.unstubAllGlobals();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'cleanup handoff '));
+  roots.push(root);
+  const source = join(root, 'source');
+  mkdirSync(source);
+  const put = (path: string, bytes: string | Buffer) => {
+    const full = join(root, path);
+    mkdirSync(join(full, '..'), { recursive: true });
+    writeFileSync(full, bytes);
+    return full;
+  };
+  put('source/bun.lock', 'fixture lock');
+  put('source/LICENSE', 'fixture source license\n');
+  put('source/services/cleanup-broker/go.mod', 'module fixture\ngo 1.26.5\n');
+  put('source/services/cleanup-broker/handoff.md', '# Fixture procedure\n');
+  put('source/services/cleanup-broker/README.md', '# Fixture README\n');
+  for (const name of ['broker', 'install-manifest', 'task-dependencies'])
+    put(`source/services/cleanup-broker/handoff/${name}.template.json`, '{}\n');
+  put(
+    'source/.openslack/agents/registry/fixture_agent.yaml',
+    JSON.stringify({
+      schema: 'openslack.agent_registry.v2',
+      agent_id: 'fixture_agent',
+      identity: { uid: 'fixture_agent', principal_id: 'principal:fixture_agent' },
+      permissions: {
+        max_risk_zone: 'yellow',
+        actions: { 'pr.cleanup_branch_scoped.v1': 'allow', 'pr.cleanup_branch': 'deny' },
+      },
+    }),
+  );
+  const git = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: source,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  git('init', '-q');
+  git('add', '.');
+  git(
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'user.email=fixture@example.invalid',
+    'commit',
+    '-qm',
+    'fixture',
+  );
+  const candidateHead = git('rev-parse', 'HEAD');
+  const broker = Buffer.from(
+    `fixture broker\nvcs.revision=${candidateHead}\nvcs.modified=false\n-trimpath=true\nCGO_ENABLED=0\n`,
+  );
+  const executor = Buffer.from('fixture executor');
+  const makeBuild = (id: string) => ({
+    brokerPath: put(`build-${id}/cleanup-broker`, broker),
+    executorPath: put(`build-${id}/executor.mjs`, executor),
+    reportPath: put(
+      `build-${id}/report.json`,
+      JSON.stringify({
+        schema: 'openslack.pr418.clean-build-report.v1',
+        candidateHead,
+        checkout: join(root, `checkout-${id}`),
+        checkoutCleanAfterBuild: true,
+        tools: { bun: '1.4.0', go: 'go version go1.26.5 linux/amd64', node: 'v24.18.1' },
+        broker: { sha256: digest(broker), bytes: broker.length },
+        executor: { sha256: digest(executor), bytes: executor.length },
+        lockfileSHA256: digest('fixture lock'),
+        goModuleSHA256: digest('module fixture\ngo 1.26.5\n'),
+        commands: ['CGO_ENABLED=0 go build -trimpath -buildvcs=true'],
+      }),
+    ),
+  });
+  const builds: PrepareCleanupHandoffDraftInput['builds'] = [makeBuild('a'), makeBuild('b')];
+  const runtimeDirectory = join(root, 'runtime');
+  for (const name of ['node', 'git', 'sh', 'git-remote-https'])
+    put(`runtime/${name}`, `fixture ${name}`);
+  const nodeChecksumPath = put('evidence/node-SHASUMS256.txt', 'fixture official list\n');
+  const nodeLicensePath = put('evidence/node-LICENSE', 'fixture license\n');
+  const runtimeLicensePaths = [put('evidence/git-copyright', 'fixture runtime license\n')];
+  const installationManifestPath = put(
+    'inputs/install-manifest.REVIEW.json',
+    JSON.stringify({
+      schema: 'openslack.cleanup_installation.v1',
+      network: { httpsProxy: '', noProxy: '' },
+      files: ['node', 'executor.mjs', 'git', 'sh']
+        .map((name) => ({
+          path: `/usr/lib/openslack-cleanup/${name}`,
+          sha256: digest(`old ${name}`),
+        }))
+        .concat([
+          {
+            path: '/usr/lib/openslack-cleanup/git-core/git-remote-https',
+            sha256: digest('old helper'),
+          },
+        ]),
+    }),
+  );
+  const task = {
+    schema: 'openslack.cleanup_task_view.v1',
+    workspaceId: 'fixture-workspace',
+    repository: 'fixture/qualification',
+    repositoryId: '12345',
+    notBefore: '2026-10-08T12:00:00.000Z',
+    expiresAt: '2026-10-09T12:00:00.000Z',
+    tasks: [],
+  };
+  const taskViewPath = put('inputs/task-view.REVIEW.json', JSON.stringify(task));
+  const taskAttestationPath = put(
+    'inputs/task-view-attestation.json',
+    JSON.stringify({ task_view_sha256: digest(JSON.stringify(task)) }),
+  );
+  const appScopePath = put('inputs/app-scope.json', '{}\n');
+  const networkPath = put('inputs/network.json', '{}\n');
+  const identityPath = put('inputs/identity.json', '{}\n');
+  const dependencyInventoryPath = put('inputs/dependency-inventory.json', '{}\n');
+  const priorInputPath = put(
+    'inputs/admin-inputs.APPROVED.md',
+    [
+      '# Historical non-secret administrator input\n',
+      'approval_status: APPROVED',
+      'approved_by: github:fixture',
+      `approved_at_utc: ${timestamp}`,
+      `candidate_head: ${'a'.repeat(40)}`,
+      `package_manifest_sha256: ${'b'.repeat(64)}`,
+      'agent_id: fixture_agent',
+      'broker_id: fixture-broker',
+      'workspace_id: fixture-workspace',
+      'principal_id: principal:fixture_agent',
+      'runtime_uid_claim: fixture_agent',
+      'run_id: fixture-run',
+      'issuer_trust_domain: fixture:cleanup-admin',
+      'target_distro: Fixture-WSL',
+      'broker_uid: 44180',
+      'broker_gid: 44180',
+      'agent_uid: 44181',
+      'agent_gid: 44181',
+      'allowed_git_remote_name: origin',
+      'qualification_repository_owner: fixture',
+      'qualification_repository_name: qualification',
+      'qualification_repository_numeric_id: 12345',
+      'qualification_repository_default_branch: main',
+      'automatic_branch_deletion: false',
+      'deletion_app_id: 123',
+      'deletion_app_installation_id: 456',
+      'approved_https_proxy: ""',
+      'approved_no_proxy: ""',
+    ].join('\n') + '\n',
+  );
+  const verifierPath = put('verify-handoff.mjs', 'fixture offline verifier\n');
+  const input: PrepareCleanupHandoffDraftInput = {
+    sourceRoot: source,
+    candidateHead,
+    outputDirectory: join(root, 'new candidate output'),
+    builds,
+    runtimeDirectory,
+    nodeChecksumPath,
+    nodeLicensePath,
+    runtimeLicensePaths,
+    priorInputPath,
+    verifierPath,
+    targetEvidence: {
+      installationManifestPath,
+      taskViewPath,
+      taskAttestationPath,
+      appScopePath,
+      networkPath,
+      identityPath,
+      dependencyInventoryPath,
+    },
+    now: new Date(timestamp),
+  };
+  return { root, put, input, git, task, taskViewPath, priorInputPath };
+}
+
+function verify(result: ReturnType<typeof prepareCleanupHandoffDraft>, now = new Date(timestamp)) {
+  return verifyCleanupHandoffPackage({
+    packageDirectory: result.packageDirectory,
+    candidateHead: result.candidateHead,
+    manifestSHA256: result.manifestSHA256,
+    now,
+  });
+}
+
+describe('offline cleanup handoff preparation', () => {
+  it('preserves selected bindings, recalculates actual hashes, and never inherits old approval', () => {
+    const { input, priorInputPath } = fixture();
+    const original = readFileSync(priorInputPath);
+    const network = vi.fn(() => {
+      throw new Error('network forbidden');
+    });
+    vi.stubGlobal('fetch', network);
+    const result = prepareCleanupHandoffDraft(input);
+    expect(result.approvalStatus).toBe('DRAFT');
+    expect(result.priorInputSHA256).toBe(digest(original));
+    expect(readFileSync(priorInputPath)).toEqual(original);
+    expect(network).not.toHaveBeenCalled();
+    const draft = readFileSync(result.adminInputPath, 'utf8');
+    expect(draft).toContain('approval_status: DRAFT');
+    expect(draft).toContain('approved_by: REQUIRED');
+    expect(draft).toContain(`package_manifest_sha256: ${result.manifestSHA256}`);
+    const config = JSON.parse(
+      readFileSync(join(result.packageDirectory, 'draft/broker.DRAFT.json'), 'utf8'),
+    );
+    expect(config.peerBindings[0].subject.runId).toBe('fixture-run');
+    expect(config.githubApp).toEqual({
+      appId: 123,
+      installationId: 456,
+      owner: 'fixture',
+      repo: 'qualification',
+    });
+    expect(config.artifacts.nodeSHA256).toBe(digest('fixture node'));
+    const checked = verify(result);
+    expect(checked.valid).toBe(true);
+    expect(checked.installationAuthorized).toBe(false);
+    expect(checked.executionAuthorized).toBe(false);
+    expect(checked.unmetGates).toContain('REGISTRY_MAIN_DEPLOYMENT_NOT_VERIFIED');
+    expect(checked.unmetGates).toContain('NEW_INPUT_REVIEW_REQUIRED');
+    expect(readdirSync(input.sourceRoot).sort()).toEqual([
+      '.git',
+      '.openslack',
+      'LICENSE',
+      'bun.lock',
+      'services',
+    ]);
+  });
+
+  it.each(['dirty', 'drift', 'candidate'])('refuses %s source before creating output', (mode) => {
+    const { input, put } = fixture();
+    if (mode === 'dirty') put('source/untracked.txt', 'dirty');
+    if (mode === 'drift') put('source/bun.lock', 'changed');
+    if (mode === 'candidate') input.candidateHead = 'f'.repeat(40);
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({
+        code: mode === 'candidate' ? 'HANDOFF_CANDIDATE_MISMATCH' : 'HANDOFF_SOURCE_DIRTY',
+      }),
+    );
+    expect(readdirSync(join(input.outputDirectory, '..'))).not.toContain('new candidate output');
+  });
+
+  it.each(['candidate', 'digest', 'revision', 'tools'])(
+    'refuses a %s build report mismatch',
+    (mode) => {
+      const { input } = fixture();
+      const report = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8'));
+      if (mode === 'candidate') report.candidateHead = 'f'.repeat(40);
+      if (mode === 'digest') report.broker.sha256 = 'f'.repeat(64);
+      if (mode === 'tools') report.tools.node = 'v22.0.0';
+      if (mode === 'revision') writeFileSync(input.builds[0].brokerPath, 'wrong revision');
+      writeFileSync(input.builds[0].reportPath, JSON.stringify(report));
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_BUILD_MISMATCH' }),
+      );
+    },
+  );
+
+  it('detects source bytes hidden by an assume-unchanged index entry', () => {
+    const { input, git, put } = fixture();
+    git('update-index', '--assume-unchanged', 'bun.lock');
+    put('source/bun.lock', 'hidden drift');
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_SOURCE_CHANGED' }),
+    );
+  });
+
+  it('rejects symlink ancestors without reading through them', () => {
+    const { input, root } = fixture();
+    const alias = join(root, 'runtime alias');
+    symlinkSync(input.runtimeDirectory, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    input.runtimeDirectory = alias;
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+    );
+  });
+
+  it('rejects expired task evidence without extending its window', () => {
+    const { input } = fixture();
+    input.now = new Date('2026-10-10T00:00:00Z');
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_TASK_EVIDENCE_EXPIRED' }),
+    );
+  });
+
+  it('does not overwrite an existing output directory', () => {
+    const { input } = fixture();
+    mkdirSync(input.outputDirectory);
+    writeFileSync(join(input.outputDirectory, 'human.txt'), 'preserve');
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_OUTPUT_EXISTS' }),
+    );
+    expect(readFileSync(join(input.outputDirectory, 'human.txt'), 'utf8')).toBe('preserve');
+  });
+
+  it('refuses credential input paths and active installation output paths', () => {
+    const { input, put } = fixture();
+    input.priorInputPath = put('credentials/admin-inputs.md', 'not to be read');
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+    );
+    input.priorInputPath = join(input.outputDirectory, '..', 'inputs/admin-inputs.APPROVED.md');
+    input.outputDirectory = '/etc/openslack-cleanup/new-draft';
+    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+      expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+    );
+  });
+});
+
+describe('standalone package integrity contract', () => {
+  it('runs the bundled Node verifier outside the checkout with no Git, modules or network', () => {
+    const { input, root } = fixture();
+    const bundle = join(root, 'offline-verifier.mjs');
+    execFileSync(
+      'bun',
+      [
+        'build',
+        'scripts/cleanup-broker/verify-handoff.ts',
+        '--target=node',
+        '--format=esm',
+        '--outfile',
+        bundle,
+      ],
+      {
+        cwd: join(import.meta.dirname, '../../../..'),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    input.verifierPath = bundle;
+    const result = prepareCleanupHandoffDraft(input);
+    const cwd = join(root, 'empty launch directory');
+    mkdirSync(cwd);
+    const env = { ...process.env, PATH: '', Path: '', GH_TOKEN: '', GITHUB_TOKEN: '' };
+    const output = execFileSync(
+      process.execPath,
+      [
+        bundle,
+        '--package',
+        result.packageDirectory,
+        '--candidate',
+        result.candidateHead,
+        '--manifest-sha256',
+        result.manifestSHA256,
+      ],
+      { cwd, env, encoding: 'utf8' },
+    );
+    const checked = JSON.parse(output);
+    expect(checked.valid).toBe(true);
+    expect(checked.installationAuthorized).toBe(false);
+    expect(checked.executionAuthorized).toBe(false);
+    expect(readdirSync(cwd)).toEqual([]);
+    const duplicate = () =>
+      execFileSync(
+        process.execPath,
+        [bundle, '--candidate', result.candidateHead, '--candidate', result.candidateHead],
+        { cwd, env, stdio: 'pipe' },
+      );
+    expect(duplicate).toThrowError(expect.objectContaining({ status: 2 }));
+  });
+
+  it.each(['broker', 'task', 'approval'])(
+    'rejects internally inconsistent %s evidence even with a new manifest digest',
+    (mode) => {
+      const { input } = fixture();
+      const result = prepareCleanupHandoffDraft(input);
+      const name =
+        mode === 'broker'
+          ? 'draft/broker.DRAFT.json'
+          : mode === 'task'
+            ? 'evidence/task-attestation.json'
+            : 'draft/inputs.DRAFT.json';
+      const path = join(result.packageDirectory, name);
+      const data = JSON.parse(readFileSync(path, 'utf8'));
+      if (mode === 'broker') data.artifacts.nodeSHA256 = 'f'.repeat(64);
+      if (mode === 'task') data.task_view_sha256 = 'f'.repeat(64);
+      if (mode === 'approval') data.approvalStatus = 'APPROVED';
+      writeFileSync(path, JSON.stringify(data));
+      const manifest = join(result.packageDirectory, 'SHA256SUMS');
+      const text = readFileSync(manifest, 'utf8')
+        .split('\n')
+        .map((line) =>
+          line.endsWith(`  ./${name}`) ? `${digest(readFileSync(path))}  ./${name}` : line,
+        )
+        .join('\n');
+      writeFileSync(manifest, text);
+      result.manifestSHA256 = digest(text);
+      expect(verify(result).errors).toEqual(['HANDOFF_EVIDENCE_INVALID']);
+    },
+  );
+
+  it.each([
+    'digest',
+    'missing',
+    'extra',
+    'traversal',
+    'duplicate',
+    'symlink',
+    'candidate',
+    'manifest',
+  ])('rejects %s package evidence', (mode) => {
+    const { input } = fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const file = join(result.packageDirectory, 'artifacts/executor.mjs');
+    const manifest = join(result.packageDirectory, 'SHA256SUMS');
+    if (mode === 'digest') writeFileSync(file, 'tampered');
+    if (mode === 'missing') rmSync(file);
+    if (mode === 'extra') writeFileSync(join(result.packageDirectory, 'unexpected.txt'), 'extra');
+    if (mode === 'symlink') {
+      rmSync(file);
+      symlinkSync(join(input.runtimeDirectory, 'node'), file);
+    }
+    if (mode === 'candidate') result.candidateHead = 'f'.repeat(40);
+    if (mode === 'manifest') result.manifestSHA256 = 'f'.repeat(64);
+    if (mode === 'duplicate' || mode === 'traversal') {
+      const text = readFileSync(manifest, 'utf8');
+      writeFileSync(
+        manifest,
+        mode === 'duplicate'
+          ? text + text.split('\n')[0] + '\n'
+          : text.replace('./README.md', '../README.md'),
+      );
+      result.manifestSHA256 = digest(readFileSync(manifest));
+    }
+    expect(verify(result).valid).toBe(false);
+    expect(verify(result).executionAuthorized).toBe(false);
+  });
+
+  it('reports expired evidence as an unmet gate even when package bytes are intact', () => {
+    const { input } = fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const checked = verify(result, new Date('2026-10-10T00:00:00Z'));
+    expect(checked.valid).toBe(true);
+    expect(checked.unmetGates).toContain('TASK_EVIDENCE_EXPIRED');
+  });
+});
