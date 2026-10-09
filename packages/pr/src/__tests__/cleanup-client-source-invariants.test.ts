@@ -45,6 +45,38 @@ describe('broker-only client source invariants', () => {
   });
 });
 
+describe('administrator upgrade tooling source invariants', () => {
+  const adminSource = readFileSync(join(REPO, 'scripts', 'cleanup-broker', 'admin-upgrade.ts'), 'utf8');
+
+  it('reuses the production upgrade-plan path', () => {
+    expect(adminSource).toContain("from '../../packages/pr/src/cleanup-target-upgrade.js'");
+    expect(adminSource).toContain('prepareCleanupTargetUpgradePlan');
+  });
+
+  it('installs nothing: it writes no file and starts no process', () => {
+    // Planning must be side-effect free; the administrator performs the steps.
+    for (const forbidden of [
+      'writeFileSync',
+      'mkdirSync',
+      'cpSync',
+      'renameSync',
+      'rmSync',
+      'node:child_process',
+      'execFile',
+      'spawn',
+      'execSync',
+    ]) {
+      expect(adminSource).not.toContain(forbidden);
+    }
+  });
+
+  it('does not reach the direct branch-deletion path either', () => {
+    expect(adminSource).not.toContain('cleanup-branch.js');
+    expect(adminSource).not.toContain('cleanupPRBranch');
+    expect(adminSource).not.toContain('deleteRemoteBranch');
+  });
+});
+
 describe('artifact profiles', () => {
   it('keeps the original profile intact and extends it in v2', () => {
     const v1 = [...CLEANUP_HANDOFF_PROFILES.v1];

@@ -92,6 +92,25 @@ try {
       { cwd: checkout, stdout: 'pipe', stderr: 'pipe' },
     );
     if (bundle.exitCode !== 0) throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+    // The Broker-only client and the administrator tooling are bundled the same
+    // way, so both carry the same two-independent-builds byte-identity proof.
+    const bundleTool = (entry: string, outfile: string) => {
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          'build',
+          `scripts/cleanup-broker/${entry}`,
+          '--target=node',
+          '--format=esm',
+          '--outfile',
+          join(artifacts, outfile),
+        ],
+        { cwd: checkout, stdout: 'pipe', stderr: 'pipe' },
+      );
+      if (result.exitCode !== 0) throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+    };
+    bundleTool('client.ts', 'cleanup-client.mjs');
+    bundleTool('admin-upgrade.ts', 'admin-upgrade.mjs');
     const brokerBuildMetadata = run('go', ['version', '-m', brokerPath], checkout).split('\n');
     if (
       !brokerBuildMetadata.some((line) => line.includes(`vcs.revision=${input.candidateHead}`)) ||
@@ -119,9 +138,19 @@ try {
             'GOWORK=off CGO_ENABLED=0 go build -trimpath -buildvcs=true -o <artifact-directory>/cleanup-broker ./cmd/cleanup-broker',
             'bun scripts/cleanup-broker/build-executor.ts --outdir <artifact-directory>',
             'bun build scripts/cleanup-broker/verify-handoff.ts --target=node --format=esm --outfile <artifact-directory>/verify-handoff.mjs',
+            'bun build scripts/cleanup-broker/client.ts --target=node --format=esm --outfile <artifact-directory>/cleanup-client.mjs',
+            'bun build scripts/cleanup-broker/admin-upgrade.ts --target=node --format=esm --outfile <artifact-directory>/admin-upgrade.mjs',
           ],
           broker: { sha256: hash(brokerPath), bytes: statSync(brokerPath).size },
           executor: { sha256: hash(executorPath), bytes: statSync(executorPath).size },
+          client: {
+            sha256: hash(join(artifacts, 'cleanup-client.mjs')),
+            bytes: statSync(join(artifacts, 'cleanup-client.mjs')).size,
+          },
+          adminTool: {
+            sha256: hash(join(artifacts, 'admin-upgrade.mjs')),
+            bytes: statSync(join(artifacts, 'admin-upgrade.mjs')).size,
+          },
           scope: 'Clean build and byte integrity only; not installation or execution authority.',
         },
         null,
@@ -132,10 +161,24 @@ try {
     return { reportPath, brokerPath, executorPath };
   };
   const builds = [build('a'), build('b')] as const;
+  // Every bundled tool must be byte-identical across the two independent builds.
+  const identicalTools = ['verify-handoff.mjs', 'cleanup-client.mjs', 'admin-upgrade.mjs'];
+  for (const tool of identicalTools) {
+    if (hash(join(buildRoot, 'build-a', tool)) !== hash(join(buildRoot, 'build-b', tool)))
+      throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+  }
   const verifierPath = join(buildRoot, 'build-a/verify-handoff.mjs');
-  if (hash(verifierPath) !== hash(join(buildRoot, 'build-b/verify-handoff.mjs')))
-    throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
-  const result = prepareCleanupHandoffDraft({ ...input, builds, verifierPath });
+  const clientPath = join(buildRoot, 'build-a/cleanup-client.mjs');
+  const adminToolPath = join(buildRoot, 'build-a/admin-upgrade.mjs');
+  const clientDocPath = join(source, 'services/cleanup-broker/client.md');
+  const result = prepareCleanupHandoffDraft({
+    ...input,
+    builds,
+    verifierPath,
+    clientPath,
+    adminToolPath,
+    clientDocPath,
+  });
   writeFileSync(
     join(buildRoot, 'preparation-result.DRAFT.json'),
     JSON.stringify(result, null, 2) + '\n',
