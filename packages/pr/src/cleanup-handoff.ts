@@ -65,6 +65,14 @@ export interface PrepareCleanupHandoffDraftInput {
   builds: readonly [CleanupHandoffBuildInput, CleanupHandoffBuildInput];
   runtimeDirectory: string;
   verifierPath: string;
+  /**
+   * Broker-only client and administrator upgrade tooling. Supplying all three
+   * selects the v2 artifact profile; omitting them keeps the original profile,
+   * so existing callers and packages are unaffected.
+   */
+  clientPath?: string;
+  adminToolPath?: string;
+  clientDocPath?: string;
   nodeChecksumPath: string;
   nodeLicensePath: string;
   runtimeLicensePaths: readonly string[];
@@ -197,6 +205,31 @@ const FILES = [
   'templates/install-manifest.template.json',
   'templates/task-dependencies.template.json',
 ].sort();
+/**
+ * Artifact profiles. A package is verified against whichever profile its own
+ * SHA256SUMS declares, so packages built before the Broker-only client and
+ * administrator tooling existed stay readable exactly as they are. There is no
+ * migration: an old package is still a valid package.
+ */
+const PROFILE_V1 = FILES;
+const PROFILE_V2 = [
+  ...FILES,
+  'tools/cleanup-client.mjs',
+  'tools/admin-upgrade.mjs',
+  'docs/client.md',
+].sort();
+const PROFILES: readonly (readonly string[])[] = [PROFILE_V1, PROFILE_V2];
+/** Every path any known profile may contain, used for the per-line check. */
+const KNOWN_FILES = [...new Set(PROFILES.flat())];
+/**
+ * The declared artifact profiles. `v1` is the original package; `v2` adds the
+ * Broker-only client and the administrator upgrade tooling. Verification
+ * accepts either, so an old package never needs migrating.
+ */
+export const CLEANUP_HANDOFF_PROFILES = Object.freeze({
+  v1: Object.freeze([...PROFILE_V1]),
+  v2: Object.freeze([...PROFILE_V2]),
+});
 const GATES = [
   'NEW_INPUT_REVIEW_REQUIRED',
   'REGISTRY_MAIN_DEPLOYMENT_NOT_VERIFIED',
@@ -544,6 +577,13 @@ export function prepareCleanupHandoffDraft(
     );
     const { sourceRoot: root, outputDirectory: output } = assertCleanupHandoffStaging(input);
     const files = new Map<string, Buffer>();
+    // The v2 profile is selected only when every new tool path is supplied;
+    // otherwise the builder writes the original profile unchanged.
+    const withClientTools =
+      input.clientPath !== undefined &&
+      input.adminToolPath !== undefined &&
+      input.clientDocPath !== undefined;
+    const profile = withClientTools ? PROFILE_V2 : PROFILE_V1;
     const add = (name: string, bytes: Buffer) => {
       check(!files.has(name), 'HANDOFF_INPUT_INVALID');
       files.set(name, bytes);
@@ -827,13 +867,18 @@ export function prepareCleanupHandoffDraft(
     add('README.md', source('services/cleanup-broker/README.md'));
     add('handoff.md', source('services/cleanup-broker/handoff.md'));
     add('evidence/OpenSlack-LICENSE', source('LICENSE'));
+    if (withClientTools) {
+      add('tools/cleanup-client.mjs', safeRead(input.clientPath!));
+      add('tools/admin-upgrade.mjs', safeRead(input.adminToolPath!));
+      add('docs/client.md', safeRead(input.clientDocPath!));
+    }
     check(
-      JSON.stringify([...files.keys()].sort()) === JSON.stringify(FILES),
+      JSON.stringify([...files.keys()].sort()) === JSON.stringify(profile),
       'HANDOFF_FILE_SET_MISMATCH',
     );
     // Recheck before any output: a change while inputs were being read cannot publish a draft.
     cleanSource(root, input.candidateHead);
-    const sums = Buffer.from(FILES.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''));
+    const sums = Buffer.from(profile.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''));
     const manifestSHA256 = sha(sums),
       packageDirectory = join(output, 'package');
     // Exclusive creation, never overwrite an old candidate. On I/O failure preserve partial
@@ -1025,18 +1070,19 @@ export function verifyCleanupHandoffPackage(
       if (line === '') continue;
       const match = /^([a-f0-9]{64})  \.\/([A-Za-z0-9._/-]+)$/.exec(line);
       check(
-        match && FILES.includes(match[2]!) && !entries.has(match[2]!),
+        match && KNOWN_FILES.includes(match[2]!) && !entries.has(match[2]!),
         'HANDOFF_MANIFEST_INVALID',
       );
       entries.set(match[2]!, match[1]!);
     }
-    check(
-      JSON.stringify([...entries.keys()].sort()) === JSON.stringify(FILES),
-      'HANDOFF_FILE_SET_MISMATCH',
-    );
+    const declared = JSON.stringify([...entries.keys()].sort());
+    const profile = PROFILES.find((candidate) => JSON.stringify(candidate) === declared);
+    check(profile !== undefined, 'HANDOFF_FILE_SET_MISMATCH');
     const observed: string[] = [],
       bytes = new Map<string, Buffer>();
-    const directories = new Set(FILES.map((path) => dirname(path)).filter((path) => path !== '.'));
+    const directories = new Set(
+      profile!.map((path) => dirname(path)).filter((path) => path !== '.'),
+    );
     const walk = (directory: string, prefix = '') => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const name = prefix + entry.name,
@@ -1053,7 +1099,7 @@ export function verifyCleanupHandoffPackage(
     };
     walk(root);
     check(
-      JSON.stringify(observed.sort()) === JSON.stringify([...FILES, 'SHA256SUMS'].sort()),
+      JSON.stringify(observed.sort()) === JSON.stringify([...profile!, 'SHA256SUMS'].sort()),
       'HANDOFF_FILE_SET_MISMATCH',
     );
     for (const [name, hash] of entries) {
@@ -1103,7 +1149,7 @@ export function verifyCleanupHandoffPackage(
     const now = nowMs(input.now);
     if (now < timestamp(task.notBefore) || now >= timestamp(task.expiresAt))
       result.unmetGates.push('TASK_EVIDENCE_EXPIRED');
-    result.fileCount = FILES.length;
+    result.fileCount = profile.length;
     result.valid = true;
   } catch (error) {
     result.errors.push(error instanceof CleanupHandoffError ? error.code : 'HANDOFF_IO_FAILED');

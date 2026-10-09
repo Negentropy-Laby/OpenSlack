@@ -259,7 +259,7 @@ export function prepareCleanupTargetUpgradePlan(
       'Independently verify the candidate package against the candidate commit and manifest digest.',
     actor: 'administrator',
     commands: [
-      `node ${join(input.packageDirectory, 'tools', 'verify-handoff.mjs')} --candidate-head ${input.candidateHead} --manifest-sha256 ${input.manifestSHA256}`,
+      `node ${join(input.packageDirectory, 'tools', 'verify-handoff.mjs')} --package ${input.packageDirectory} --candidate ${input.candidateHead} --manifest-sha256 ${input.manifestSHA256}`,
     ],
     blockedBy: [],
   });

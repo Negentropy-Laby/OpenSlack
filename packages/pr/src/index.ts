@@ -3,6 +3,7 @@ export {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
   CleanupHandoffError,
+  CLEANUP_HANDOFF_PROFILES,
 } from './cleanup-handoff.js';
 export type {
   CleanupHandoffErrorCode,
