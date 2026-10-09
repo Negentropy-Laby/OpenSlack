@@ -7,7 +7,11 @@ import {
   projectPRBranchCleanupEvent,
   evaluateCleanupBrokerResult,
   evaluatePRBranchCleanupResult,
+  buildCleanupOperationRecord,
+  readCleanupOperationRecord,
+  saveCleanupOperationRecord,
 } from '@openslack/pr';
+import type { CleanupBrokerRequest } from '@openslack/pr';
 import { createBoundEventAppender, createEvent, recordEvent } from '@openslack/collaboration';
 
 interface CleanupCommandOptions {
@@ -20,6 +24,7 @@ interface CleanupCommandOptions {
   permitId?: string;
   operationId?: string;
   operationStatus?: boolean;
+  operationRecord?: string;
   remoteExplicit?: boolean;
 }
 
@@ -64,6 +69,35 @@ export async function runPRBranchCleanupCommand(
       throw new CleanupInputError('--repo must be owner/name.');
     }
     const repository = parsedRepo ? `${parsedRepo.owner}/${parsedRepo.repo}` : undefined;
+    // A published operation record is read here — before the broker-option
+    // guard and before findWorkspaceRoot() — so a historical record stays
+    // readable without a workspace, agent registry, or local identity. The
+    // record is evidence of what was originally requested; it is never an
+    // authorization, and it cannot admit a preview or execute.
+    if (options.operationRecord !== undefined) {
+      if (options.operationStatus !== true) {
+        throw new CleanupInputError('--operation-record is only valid with --operation-status.');
+      }
+      if (
+        options.agentId !== undefined ||
+        options.permitId !== undefined ||
+        options.operationId !== undefined ||
+        options.execute === true
+      ) {
+        throw new CleanupInputError(
+          '--operation-record cannot be combined with --agent-id, --permit-id, --operation-id or --execute.',
+        );
+      }
+      const record = readCleanupOperationRecord(options.operationRecord);
+      const { request } = record;
+      console.log(
+        `Record: ${record.schema}\nCreated: ${record.createdAt}\nDigest: ${record.requestDigest}\nOperation: ${request.operationId}\nRepository: ${request.repo}\nRemote: ${request.remote}\nPR: #${request.prNumber}\nPermit: ${request.permitId}\nAgent: ${request.agentId}\nPrincipal: ${request.principalId}\nRuntime UID: ${request.runtimeUid}\nRun: ${request.runId}`,
+      );
+      console.log(
+        'Historical request only. This record is not an authorization and carries no result; query --operation-status with --agent-id for live state.',
+      );
+      return;
+    }
     if (
       options.agentId === undefined &&
       (options.permitId !== undefined ||
@@ -142,22 +176,32 @@ export async function runPRBranchCleanupCommand(
       }
       // These fields are claims, not authenticated identity. The broker binds
       // its kernel peer to administrator-controlled authority independently.
-      const result = await sendCleanupBrokerRequest(
-        {
-          schema: 'openslack.cleanup_request.v1',
-          mode,
-          agentId: principal.registry_id,
-          principalId: registry.identity.principal_id,
-          runtimeUid: principal.runtime_uid,
-          runId: principal.run_id,
-          repo: repository!,
-          remote: options.remote,
-          prNumber,
-          permitId: options.permitId,
-          ...(mode !== 'preview' ? { operationId: options.operationId! } : {}),
-        },
-        { timeoutMs: remainingMs() },
-      );
+      const brokerRequest: CleanupBrokerRequest = {
+        schema: 'openslack.cleanup_request.v1',
+        mode,
+        agentId: principal.registry_id,
+        principalId: registry.identity.principal_id,
+        runtimeUid: principal.runtime_uid,
+        runId: principal.run_id,
+        repo: repository!,
+        remote: options.remote,
+        prNumber,
+        permitId: options.permitId!,
+        ...(mode !== 'preview' ? { operationId: options.operationId! } : {}),
+      };
+      if (mode === 'execute') {
+        // Publish the historical query record before the request is sent. A
+        // persistence failure refuses the send rather than proceeding without
+        // evidence; an identical binding is reused, a different one is refused.
+        saveCleanupOperationRecord(
+          buildCleanupOperationRecord({
+            ...brokerRequest,
+            operationId: options.operationId!,
+          }),
+          { rootDir },
+        );
+      }
+      const result = await sendCleanupBrokerRequest(brokerRequest, { timeoutMs: remainingMs() });
       console.log(
         `PR: #${prNumber}\nRepository: ${repository}\nDecision: ${result.state}\nReason: ${result.reason}\nAudit: ${result.auditStatus}\nPermit: ${result.permitId}\nPermit state: ${result.permitState}\nOperation: ${result.operationId ?? 'not reserved'}\nClaim requirement: ${result.claimRequirement}\nClaim status: ${result.claimStatus}`,
       );

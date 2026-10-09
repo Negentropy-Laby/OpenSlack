@@ -47,6 +47,12 @@ const requestKeys = [
 ] as const;
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/**
+ * Identity claims use the wider charset the production digest accepts, so a
+ * request that is valid on the wire is never rejected here for a reason the
+ * wire format allows.
+ */
+const wireClaim = /^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/;
 const digest = /^[0-9a-f]{64}$/;
 
 /** Paths that must never be written to or read as a record. */
@@ -156,7 +162,9 @@ function assertRequest(value: unknown): CleanupOperationRequest {
     }
   }
   for (const name of ['agentId', 'principalId', 'runtimeUid', 'runId', 'permitId'] as const) {
-    assertIdentifier(value[name], `request.${name}`);
+    if (typeof value[name] !== 'string' || !wireClaim.test(value[name])) {
+      fail('INVALID_RECORD', `request.${name} must be a bounded claim.`);
+    }
   }
   // operationId is optional on the wire but required for a query record: it is
   // the only key an administrator can look the operation up by.
@@ -233,6 +241,22 @@ export function readCleanupOperationRecord(path: string): CleanupOperationQueryR
     fail('INVALID_RECORD', 'Cleanup operation record is not valid bounded strict JSON.');
   }
   return assertCleanupOperationRecord(decoded);
+}
+
+/**
+ * Build a record from an execute request, deriving the production digest so a
+ * caller cannot publish a record whose digest disagrees with its request.
+ */
+export function buildCleanupOperationRecord(
+  request: CleanupOperationRequest,
+  createdAt: string = new Date().toISOString(),
+): CleanupOperationQueryRecord {
+  return {
+    schema: CLEANUP_OPERATION_RECORD_SCHEMA,
+    createdAt,
+    request,
+    requestDigest: cleanupBrokerExecutionDigest(request),
+  };
 }
 
 /**

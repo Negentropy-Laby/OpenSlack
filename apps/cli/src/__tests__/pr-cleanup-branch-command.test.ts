@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as GitHub from '@openslack/github';
 import type * as PR from '@openslack/pr';
@@ -12,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   broker: vi.fn(),
   registry: vi.fn(),
   identity: vi.fn(),
+  workspaceRoot: vi.fn(),
 }));
 vi.mock('@openslack/pr', async (importOriginal) => {
   const actual = await importOriginal<typeof PR>();
@@ -22,10 +26,19 @@ vi.mock('@openslack/pr', async (importOriginal) => {
     CleanupBrokerClientError: actual.CleanupBrokerClientError,
   };
 });
-vi.mock('@openslack/workspace', async (importOriginal) => ({
-  ...(await importOriginal<typeof Workspace>()),
-  parseAgentRegistry: mocks.registry,
-}));
+vi.mock('@openslack/workspace', async (importOriginal) => {
+  const actual = await importOriginal<typeof Workspace>();
+  return {
+    ...actual,
+    parseAgentRegistry: mocks.registry,
+    // Delegate to the real implementation unless a test installs its own, so
+    // only the tests that care about workspace discovery change its behaviour.
+    findWorkspaceRoot: (...args: Parameters<typeof actual.findWorkspaceRoot>) =>
+      mocks.workspaceRoot.getMockImplementation()
+        ? mocks.workspaceRoot(...args)
+        : actual.findWorkspaceRoot(...args),
+  };
+});
 vi.mock('@openslack/github', async (importOriginal) => ({
   ...(await importOriginal<typeof GitHub>()),
   getClient: mocks.client,
@@ -41,7 +54,11 @@ vi.mock('@openslack/collaboration', () => ({
 }));
 
 import { runPRBranchCleanupCommand } from '../commands/pr-cleanup-branch.js';
-import { CleanupBrokerClientError } from '@openslack/pr';
+import {
+  CleanupBrokerClientError,
+  buildCleanupOperationRecord,
+  saveCleanupOperationRecord,
+} from '@openslack/pr';
 
 const options = { auth: 'auto', remote: 'origin', timeout: '60' };
 const agentOptions = {
@@ -451,5 +468,116 @@ describe('branch cleanup CLI adapter', () => {
     await runPRBranchCleanupCommand('417', { ...options, execute: true });
     expect(process.exitCode).toBe(1);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Decision: DELETED'));
+  });
+
+  describe('--operation-record', () => {
+    const roots: string[] = [];
+
+    function publishedRecord(): string {
+      const root = mkdtempSync(join(tmpdir(), 'cleanup-record-cli-'));
+      roots.push(root);
+      const saved = saveCleanupOperationRecord(
+        buildCleanupOperationRecord({
+          schema: 'openslack.cleanup_request.v1',
+          mode: 'execute',
+          agentId: 'worker',
+          principalId: 'custom:worker',
+          runtimeUid: 'uid',
+          runId: 'RUN-1',
+          repo: 'owner/repo',
+          remote: 'origin',
+          prNumber: 417,
+          permitId: 'PERMIT-1',
+          operationId: 'OP-1',
+        }),
+        { rootDir: root },
+      );
+      return saved.path;
+    }
+
+    afterEach(() => {
+      while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });
+    });
+
+    it('reads a published record without a workspace, registry, or local identity', async () => {
+      // A missing workspace root proves the record branch runs before
+      // findWorkspaceRoot(); a throwing registry proves it runs before the
+      // agent registry and identity lookups.
+      mocks.workspaceRoot.mockReturnValue(undefined);
+      mocks.registry.mockImplementation(() => {
+        throw new Error('registry must not be consulted for a published record');
+      });
+      mocks.identity.mockImplementation(() => {
+        throw new Error('identity must not be consulted for a published record');
+      });
+
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(mocks.broker).not.toHaveBeenCalled();
+      expect(mocks.cleanup).not.toHaveBeenCalled();
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Operation: OP-1'));
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('not an authorization and carries no result'),
+      );
+    });
+
+    it('requires --operation-status', async () => {
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationRecord: publishedRecord(),
+      });
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(
+        '--operation-record is only valid with --operation-status.',
+      );
+    });
+
+    it.each([
+      { agentId: 'worker' },
+      { permitId: 'PERMIT-1' },
+      { operationId: 'OP-1' },
+      { execute: true },
+    ])('rejects combining --operation-record with %o', async (patch) => {
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+        ...patch,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(
+        '--operation-record cannot be combined with --agent-id, --permit-id, --operation-id or --execute.',
+      );
+      expect(mocks.broker).not.toHaveBeenCalled();
+    });
+
+    it('rejects a record whose digest does not match its request', async () => {
+      const path = publishedRecord();
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+      writeFileSync(path, `${JSON.stringify({ ...parsed, requestDigest: 'f'.repeat(64) })}\n`);
+
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: path,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(mocks.broker).not.toHaveBeenCalled();
+    });
+
+    it('rejects a sensitive record path', async () => {
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: join(tmpdir(), 'secrets', 'record.json'),
+      });
+      expect(process.exitCode).toBe(1);
+    });
   });
 });

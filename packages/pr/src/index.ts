@@ -21,6 +21,7 @@ export {
   CleanupOperationRecordError,
   cleanupOperationRecordPath,
   assertCleanupOperationRecord,
+  buildCleanupOperationRecord,
   readCleanupOperationRecord,
   readCleanupOperationRecordFor,
   saveCleanupOperationRecord,
