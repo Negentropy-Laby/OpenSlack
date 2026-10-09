@@ -1,3 +1,4 @@
+import { issueClaimRef } from '@openslack/core';
 import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from './claim-defaults.js';
 import { randomUUID } from 'node:crypto';
 import { isRiskZone, type AgentPrincipal, type RiskZone } from '@openslack/kernel';
@@ -90,14 +91,6 @@ function statusOf(error: unknown): number | undefined {
     : undefined;
 }
 
-function apiClaimRef(issueNumber: number): string {
-  return `heads/openslack/claims/issue-${issueNumber}`;
-}
-
-function canonicalClaimRef(issueNumber: number): string {
-  return `refs/${apiClaimRef(issueNumber)}`;
-}
-
 function labelsOf(issue: { labels: Array<string | { name?: string | null }> }): string[] {
   return issue.labels.map((label) => (typeof label === 'string' ? label : label.name || ''));
 }
@@ -143,7 +136,7 @@ async function claimRefExists(client: GitHubClient, issueNumber: number): Promis
     await client.octokit.git.getRef({
       owner: client.owner,
       repo: client.repo,
-      ref: apiClaimRef(issueNumber),
+      ref: issueClaimRef(issueNumber),
     });
     return true;
   } catch (error) {
@@ -157,7 +150,7 @@ async function rollbackClaimRef(client: GitHubClient, issueNumber: number): Prom
     await client.octokit.git.deleteRef({
       owner: client.owner,
       repo: client.repo,
-      ref: apiClaimRef(issueNumber),
+      ref: issueClaimRef(issueNumber),
     });
   } catch {
     // The exact absence check below is the rollback authority.
@@ -360,7 +353,7 @@ async function reconcileExistingClaimProjection(
   issueNumber: number,
 ): Promise<void> {
   try {
-    const claimRef = canonicalClaimRef(issueNumber);
+    const claimRef = issueClaimRef(issueNumber, 'canonical');
     const claims = (await listClaimComments(client, issueNumber))
       .map((comment) => parseClaimMetadata(comment.body))
       .filter(
@@ -421,7 +414,7 @@ export async function claimIssueTask(
   const owner = args.owner ?? client.owner;
   const repo = args.repo ?? client.repo;
   const scopedClient = { ...client, owner, repo };
-  const ref = canonicalClaimRef(args.issueNumber);
+  const ref = issueClaimRef(args.issueNumber, 'canonical');
   const claimedAt = new Date();
   const expiresAt = new Date(claimedAt.getTime() + ttlMinutes * 60_000).toISOString();
   const nextHeartbeatAt = new Date(
@@ -589,7 +582,7 @@ export async function claimIssueTask(
 
 export async function expireIssueClaim(issueNumber: number): Promise<void> {
   const client = await getClient();
-  const ref = apiClaimRef(issueNumber);
+  const ref = issueClaimRef(issueNumber);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would expire claim for issue #${issueNumber}`);
     return;

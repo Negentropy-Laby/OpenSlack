@@ -9,14 +9,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./cleanup-broker-internal": {
+      "types": "./dist/internal/cleanup-broker.d.ts",
+      "import": "./dist/internal/cleanup-broker.js"
     }
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. --project @openslack/delivery",
+    "test:watch": "vitest --root ../.. --project @openslack/delivery",
+    "pretest": "tsc --build tsconfig.json"
   },
   "dependencies": {
-    "@openslack/github": "workspace:*"
+    "@openslack/github": "workspace:*",
+    "@openslack/core": "workspace:*"
   }
 }

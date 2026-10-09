@@ -94,6 +94,9 @@ export interface ProfileSyncGateResult {
 }
 
 export interface PRReviewReport {
+  merged?: boolean;
+  headRepoFullName?: string;
+  baseRepoFullName?: string;
   prNumber: number;
   title: string;
   author: string;

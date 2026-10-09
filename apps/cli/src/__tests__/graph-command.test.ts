@@ -1,5 +1,5 @@
-import { mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
+import { readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -45,7 +45,7 @@ const contractFixturePath = join(
 const roots: string[] = [];
 
 function root(): string {
-  const value = mkdtempSync(join(tmpdir(), 'openslack-graph-cli-'));
+  const value = testTemporaryDirectory('openslack-graph-cli-');
   roots.push(value);
   return value;
 }

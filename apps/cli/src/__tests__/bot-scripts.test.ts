@@ -1,10 +1,15 @@
-import { testProcessEnvironment } from '../../../../scripts/testing/process-fixture.mjs';
-import { spawnSync } from 'node:child_process';
+import {
+  testPowerShells,
+  testProcessEnvironment,
+  platformTestTimeout,
+} from '../../../../scripts/testing/process-fixture.mjs';
+import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, expect, it, vi } from 'vitest';
+import { promisify } from 'node:util';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   readBotGitHubPublicConfig,
   resolveBotGitHubRepository,
@@ -396,17 +401,21 @@ describe('bot-auth wrapper scripts', () => {
     });
   });
 
-  it.runIf(process.platform === 'win32')(
-    'renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7',
-    () => {
+  describe.runIf(process.platform === 'win32')('Windows installation-list rendering', () => {
+    const rendered: Array<{ stdout: string; stderr: string; count: number }> = [];
+    let expectedRenderings = 0;
+    // Six real shell launches are preparation, not a five-second business timer.
+    // Async child I/O also lets Vitest deliver task updates while shells start.
+    beforeAll(async () => {
+      const run = promisify(execFile);
       const contaminated = shimEnvironment('fixture', { Path: 'base', PATH: 'duplicate' });
       expect(Object.keys(contaminated).filter((key) => key.toLowerCase() === 'path')).toEqual([
         'PATH',
       ]);
       expect(contaminated.PATH).toBe('fixture;base');
       expect(contaminated.PATHEXT).toContain('.CMD');
-      const shells = ['powershell'];
-      if (spawnSync('where.exe', ['pwsh'], { encoding: 'utf8' }).status === 0) shells.push('pwsh');
+      const shells = testPowerShells();
+      expectedRenderings = shells.length * 3;
       for (const shell of shells) {
         for (const installations of [
           [],
@@ -426,7 +435,7 @@ describe('bot-auth wrapper scripts', () => {
               join(root, 'node.cmd'),
               '@echo off\r\necho shim-executed 1>&2\r\necho ' + envelope + '\r\nexit /b 0\r\n',
             );
-            const result = spawnSync(
+            const result = await run(
               shell,
               [
                 '-NoProfile',
@@ -438,6 +447,9 @@ describe('bot-auth wrapper scripts', () => {
               ],
               {
                 encoding: 'utf8',
+                // Shell startup is bounded fixture preparation; business
+                // assertions below keep the ordinary five-second budget.
+                timeout: platformTestTimeout(5_000, 20_000),
                 env: shimEnvironment(root, {
                   ...process.env,
                   Path: process.env.Path ?? process.env.PATH ?? '',
@@ -445,19 +457,31 @@ describe('bot-auth wrapper scripts', () => {
                   PATHEXT: undefined,
                 }),
               },
-            );
-            expect(result.status, result.stderr).toBe(0);
-            expect(result.stderr).toContain('shim-executed');
-            expect(result.stdout.split(/\r?\n/u).filter(Boolean)).toHaveLength(
-              installations.length,
-            );
+            ).catch((error: NodeJS.ErrnoException & { killed?: boolean; signal?: string }) => {
+              const code = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'UNKNOWN';
+              const signal = /^[A-Z0-9]+$/.test(error.signal ?? '') ? error.signal : 'NONE';
+              throw new Error(
+                `TEST_SHELL_RENDER_FAILED: phase=launch; code=${code}; killed=${error.killed === true}; signal=${signal}; installations=${installations.length}.`,
+              );
+            });
+            // execFile rejects nonzero exits/timeouts, so no failed launch can
+            // become a successful rendering fixture.
+            rendered.push({ ...result, count: installations.length });
           } finally {
             rmSync(root, { recursive: true, force: true });
           }
         }
       }
-    },
-  );
+    }, platformTestTimeout(40_000));
+
+    it('renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7', () => {
+      expect(rendered).toHaveLength(expectedRenderings);
+      for (const result of rendered) {
+        expect(result.stderr).toContain('shim-executed');
+        expect(result.stdout.split(/\r?\n/u).filter(Boolean)).toHaveLength(result.count);
+      }
+    });
+  });
 
   it('rejects token-revealing or extension gh commands before loading credentials', () => {
     const result = spawnSync(process.execPath, [scriptPath('bot-gh-command.js'), 'auth', 'token'], {

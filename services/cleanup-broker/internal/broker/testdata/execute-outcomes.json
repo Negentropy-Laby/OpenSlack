@@ -1,0 +1,92 @@
+[
+  {
+    "state": "CLEANUP_READY",
+    "noSend": false,
+    "afterSend": false
+  },
+  {
+    "state": "ALREADY_ABSENT",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "DELETED",
+    "noSend": false,
+    "afterSend": true
+  },
+  {
+    "state": "ABSENT_AFTER_ATTEMPT",
+    "noSend": false,
+    "afterSend": true
+  },
+  {
+    "state": "FAILED",
+    "noSend": true,
+    "afterSend": true
+  },
+  {
+    "state": "RECONCILIATION_REQUIRED",
+    "noSend": true,
+    "afterSend": true
+  },
+  {
+    "state": "BLOCKED_NOT_MERGED",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_BASE_BRANCH",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_FORK",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_BRANCH_RESERVED",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_DEPENDENCY",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_SHA_DRIFT",
+    "noSend": true,
+    "afterSend": true
+  },
+  {
+    "state": "BLOCKED_EVIDENCE",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_AUTHORIZATION",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_AUDIT",
+    "noSend": true,
+    "afterSend": false
+  },
+  {
+    "state": "BLOCKED_BROKER",
+    "noSend": false,
+    "afterSend": false
+  },
+  {
+    "state": "OPERATION_NOT_FOUND",
+    "noSend": false,
+    "afterSend": false
+  },
+  {
+    "state": "OPERATION_IN_PROGRESS",
+    "noSend": false,
+    "afterSend": false
+  }
+]

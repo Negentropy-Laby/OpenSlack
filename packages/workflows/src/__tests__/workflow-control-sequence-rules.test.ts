@@ -24,95 +24,99 @@ const expected = {
 
 describe('control companion sequence rules', () => {
   const root = fileURLToPath(new URL('../../../../', import.meta.url));
+  const states = ['missing', 'stale', 'invalid'] as const;
+  const source =
+    'packages/workflows/contracts/workflow-runner-authority-binding/control-sequences.json';
+  const projection = 'packages/workflows/src/internal/workflow-control-sequences.generated.ts';
+  const goProjection =
+    'services/workflow-control/runnerbindingcontract/control_sequences_generated.go';
+  const api = 'services/workflow-control/docs/api/runner-openapi.yaml';
   let fixture: string;
+  const prepared = new Map<
+    (typeof states)[number],
+    {
+      input: string;
+      output: string;
+      originalAPI: Buffer;
+      result: ReturnType<typeof spawnSync>;
+    }
+  >();
+  // Compilation is preparation, independently bounded from the five-second
+  // assertions. Each case owns its input; a timed-out case cannot restore files
+  // over another case's deliberately invalid source.
   beforeAll(async () => {
     fixture = await mkdtemp(join(tmpdir(), 'openslack-sequence-bootstrap-'));
-    const input = join(fixture, 'input');
-    for (const path of [
-      'scripts/workflow-runner-authority-binding-contracts',
-      'packages/workflows/src',
-      'packages/workflows/contracts',
-      'packages/workflows/package.json',
-      'services/workflow-control/migrations',
-      'services/workflow-control/docs/api/runner-openapi.yaml',
-    ]) {
-      await mkdir(dirname(join(input, path)), { recursive: true });
-      await cp(join(root, path), join(input, path), {
-        recursive: true,
-        filter: (entry) => !/[\\/]__tests__(?:[\\/]|$)/.test(entry),
-      });
+    for (const state of states) {
+      const input = join(fixture, 'input-' + state);
+      const output = join(fixture, 'output-' + state);
+      for (const path of [
+        'scripts/workflow-runner-authority-binding-contracts',
+        'packages/workflows/src',
+        'packages/workflows/contracts',
+        'packages/workflows/package.json',
+        'services/workflow-control/migrations',
+        'services/workflow-control/docs/api/runner-openapi.yaml',
+      ]) {
+        await mkdir(dirname(join(input, path)), { recursive: true });
+        await cp(join(root, path), join(input, path), {
+          recursive: true,
+          filter: (entry) => !/[\\/]__tests__(?:[\\/]|$)/.test(entry),
+        });
+      }
+      await symlink(
+        resolve(root, 'node_modules'),
+        join(input, 'node_modules'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      const originalAPI = await readFile(join(input, api));
+      if (state === 'missing') await rm(join(input, projection));
+      if (state === 'stale')
+        await writeFile(
+          join(input, projection),
+          'throw new Error("stale projection must not load");',
+        );
+      if (state === 'invalid') {
+        await writeFile(join(input, source), JSON.stringify({ event_receipt: 5 }));
+        await mkdir(dirname(join(output, projection)), { recursive: true });
+        await writeFile(join(output, projection), 'existing output');
+      }
+      const result = spawnSync(
+        'bun',
+        [join(input, 'scripts/workflow-runner-authority-binding-contracts/index.ts'), '--generate'],
+        {
+          cwd: input,
+          encoding: 'utf8',
+          env: { ...process.env, OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT: output },
+        },
+      );
+      prepared.set(state, { input, output, originalAPI, result });
     }
-    await symlink(
-      resolve(root, 'node_modules'),
-      join(input, 'node_modules'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
-  });
+  }, 30_000);
   afterAll(async () => {
     if (fixture) await rm(fixture, { recursive: true, force: true });
   });
-  it.each(['missing', 'stale', 'invalid'] as const)(
-    'isolates generator output with %s input',
-    async (state) => {
-      const input = join(fixture, 'input');
-      const output = join(fixture, 'output-' + state);
-      const source =
-        'packages/workflows/contracts/workflow-runner-authority-binding/control-sequences.json';
-      const projection = 'packages/workflows/src/internal/workflow-control-sequences.generated.ts';
-      const goProjection =
-        'services/workflow-control/runnerbindingcontract/control_sequences_generated.go';
-      const api = 'services/workflow-control/docs/api/runner-openapi.yaml';
-      const script = 'scripts/workflow-runner-authority-binding-contracts/index.ts';
-      try {
-        const originalAPI = await readFile(join(input, api));
-        const expectedProjection = await readFile(join(root, projection));
-        const run = () =>
-          spawnSync('bun', [join(input, script), '--generate'], {
-            cwd: input,
-            encoding: 'utf8',
-            env: {
-              ...process.env,
-              OPENSLACK_WORKFLOW_RUNNER_AUTHORITY_BINDING_OUTPUT_ROOT: output,
-            },
-          });
-        if (state === 'missing') await rm(join(input, projection));
-        if (state === 'stale')
-          await writeFile(
-            join(input, projection),
-            'throw new Error("stale projection must not load");',
-          );
-        if (state === 'invalid') {
-          await writeFile(join(input, source), JSON.stringify({ event_receipt: 5 }));
-          await mkdir(dirname(join(output, projection)), { recursive: true });
-          await writeFile(join(output, projection), 'existing output');
-        }
-        const result = run();
-        if (state === 'invalid') {
-          expect(result.status).not.toBe(0);
-          expect(await readFile(join(output, projection), 'utf8')).toBe('existing output');
-          await expect(readFile(join(output, api))).rejects.toMatchObject({ code: 'ENOENT' });
-        } else {
-          expect(result.status, result.stderr).toBe(0);
-          expect(await readFile(join(output, projection))).toEqual(expectedProjection);
-          expect(await readFile(join(output, goProjection))).toEqual(
-            await readFile(join(root, goProjection)),
-          );
-          if (state === 'missing')
-            await expect(readFile(join(input, projection))).rejects.toMatchObject({
-              code: 'ENOENT',
-            });
-          else
-            expect(await readFile(join(input, projection), 'utf8')).toContain(
-              'stale projection must not load',
-            );
-        }
-        expect(await readFile(join(input, api))).toEqual(originalAPI);
-      } finally {
-        await writeFile(join(input, projection), await readFile(join(root, projection)));
-        await writeFile(join(input, source), await readFile(join(root, source)));
-      }
-    },
-  );
+  it.each(states)('isolates generator output with %s input', async (state) => {
+    const { input, output, originalAPI, result } = prepared.get(state)!;
+    const expectedProjection = await readFile(join(root, projection));
+    if (state === 'invalid') {
+      expect(result.status).not.toBe(0);
+      expect(await readFile(join(output, projection), 'utf8')).toBe('existing output');
+      await expect(readFile(join(output, api))).rejects.toMatchObject({ code: 'ENOENT' });
+    } else {
+      expect(result.status, result.stderr?.toString()).toBe(0);
+      expect(await readFile(join(output, projection))).toEqual(expectedProjection);
+      expect(await readFile(join(output, goProjection))).toEqual(
+        await readFile(join(root, goProjection)),
+      );
+      if (state === 'missing')
+        await expect(readFile(join(input, projection))).rejects.toMatchObject({ code: 'ENOENT' });
+      else
+        expect(await readFile(join(input, projection), 'utf8')).toContain(
+          'stale projection must not load',
+        );
+    }
+    expect(await readFile(join(input, api))).toEqual(originalAPI);
+  });
 
   it('projects the reviewed rule matrix and rejects inconsistent generator samples', async () => {
     const script = fileURLToPath(

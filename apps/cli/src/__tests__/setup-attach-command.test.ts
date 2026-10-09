@@ -1,6 +1,6 @@
+import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyWorkspaceAttach, planWorkspaceAttach } from '@openslack/workspace';
@@ -142,7 +142,7 @@ describe('setup attach command', () => {
 });
 
 function gitRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'openslack-setup-attach-'));
+  const root = testTemporaryDirectory('openslack-setup-attach-');
   roots.push(root);
   execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
   return root;

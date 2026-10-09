@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   existsSync,
   mkdtempSync,
@@ -336,35 +337,39 @@ describe('WatchDeliveryQueueV2', () => {
     });
   });
 
-  it('caps retry delay at one hour and terminates after attempt 25', () => {
-    const { store, record } = enqueueService();
-    for (let attempt = 1; attempt <= 25; attempt += 1) {
-      const claim = store.claimNext('worker', 'notification_service');
-      if (!claim) throw new Error(`Expected attempt ${attempt}`);
-      const settled = store.markRetryable(
-        record.id,
-        claim.lease.token,
-        { code: 'SERVICE_UNAVAILABLE', message: 'Retry.' },
-        attempt === 1 ? Number.MAX_SAFE_INTEGER : undefined,
-      );
-      if (attempt === 25) {
-        expect(settled).toMatchObject({
-          state: 'handoff_dead',
-          terminalReason: 'attempts_exhausted',
-          attemptCount: 25,
-        });
-        break;
+  it(
+    'caps retry delay at one hour and terminates after attempt 25',
+    () => {
+      const { store, record } = enqueueService();
+      for (let attempt = 1; attempt <= 25; attempt += 1) {
+        const claim = store.claimNext('worker', 'notification_service');
+        if (!claim) throw new Error(`Expected attempt ${attempt}`);
+        const settled = store.markRetryable(
+          record.id,
+          claim.lease.token,
+          { code: 'SERVICE_UNAVAILABLE', message: 'Retry.' },
+          attempt === 1 ? Number.MAX_SAFE_INTEGER : undefined,
+        );
+        if (attempt === 25) {
+          expect(settled).toMatchObject({
+            state: 'handoff_dead',
+            terminalReason: 'attempts_exhausted',
+            attemptCount: 25,
+          });
+          break;
+        }
+        const delay = Date.parse(settled.availableAt) - now.getTime();
+        expect(delay).toBe(
+          attempt === 1
+            ? 60 * 60 * 1_000
+            : Math.min(60 * 60 * 1_000, 5_000 * 2 ** Math.max(0, attempt - 1)),
+        );
+        now = new Date(settled.availableAt);
       }
-      const delay = Date.parse(settled.availableAt) - now.getTime();
-      expect(delay).toBe(
-        attempt === 1
-          ? 60 * 60 * 1_000
-          : Math.min(60 * 60 * 1_000, 5_000 * 2 ** Math.max(0, attempt - 1)),
-      );
-      now = new Date(settled.availableAt);
-    }
-    expect(store.claimNext('worker', 'notification_service')).toBeNull();
-  });
+      expect(store.claimNext('worker', 'notification_service')).toBeNull();
+    },
+    platformTestTimeout(5_000),
+  );
 
   it('terminates at the exact 24-hour deadline before a new POST', () => {
     const { store, record } = enqueueService();

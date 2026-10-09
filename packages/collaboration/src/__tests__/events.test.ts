@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 import type { CollaborationEventType } from '../types.js';
 import {
   validateEvent,
@@ -50,6 +50,21 @@ describe('events', () => {
     const event = createEvent(makeEvent());
     const result = validateEvent(event);
     expect(result.valid).toBe(true);
+  });
+
+  it.each([
+    'pr.cleanup_branch.previewed',
+    'pr.cleanup_branch.requested',
+    'pr.cleanup_branch.executed',
+    'pr.cleanup_branch.already_absent',
+    'pr.cleanup_branch.blocked',
+    'pr.cleanup_branch.reconciliation_required',
+  ] as const)('accepts and persists cleanup event %s', (type) => {
+    const event = recordEvent(
+      makeEvent({ type, metadata: { operation_id: 'cleanup-1', attempted: false } }),
+    );
+    expect(validateEvent(event).valid).toBe(true);
+    expect(readEvents()).toContainEqual(event);
   });
 
   it('validates repair events', () => {
@@ -362,7 +377,7 @@ describe('events', () => {
   });
 
   it('skips malformed lines when reading', () => {
-    const dir = getEventsDirForTesting();
+    getEventsDirForTesting();
     writeFileSync(eventPath, '{"valid": true}\nnot-json\n', 'utf-8');
 
     const events = readEvents();

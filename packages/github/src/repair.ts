@@ -1,3 +1,4 @@
+import { issueClaimRef } from '@openslack/core';
 import { getClient, type GitHubClient } from './client.js';
 import { parseHeartbeatMetadata } from './claim-lifecycle.js';
 import { parseClaimMetadata, type ClaimMetadata } from './claims.js';
@@ -189,7 +190,7 @@ async function setReadyProjection(client: GitHubClient, issueNumber: number): Pr
 }
 
 async function deleteClaimRef(client: GitHubClient, issueNumber: number): Promise<boolean> {
-  const ref = `heads/openslack/claims/issue-${issueNumber}`;
+  const ref = issueClaimRef(issueNumber);
   try {
     await client.octokit.git.deleteRef({ owner: client.owner, repo: client.repo, ref });
   } catch (error) {
@@ -210,7 +211,7 @@ async function claimRefExists(client: GitHubClient, issueNumber: number): Promis
     await client.octokit.git.getRef({
       owner: client.owner,
       repo: client.repo,
-      ref: `heads/openslack/claims/issue-${issueNumber}`,
+      ref: issueClaimRef(issueNumber),
     });
     return true;
   } catch (error) {
@@ -258,8 +259,8 @@ export async function repairExpiredClaims(
     const match = ref.ref.match(/issue-(\d+)$/u);
     if (!match) continue;
     const issueNumber = Number(match[1]);
-    const claimRef = `refs/heads/openslack/claims/issue-${issueNumber}`;
     try {
+      const claimRef = issueClaimRef(issueNumber, 'canonical');
       const comments = await listComments(client, issueNumber);
       const claim = currentClaimEvidence(comments, issueNumber, claimRef);
       if (!claim) {

@@ -346,8 +346,8 @@ export interface PRDetail {
   body: string;
   state: string;
   draft: boolean;
-  head: { ref: string; sha: string };
-  base: { ref: string; sha: string };
+  head: { ref: string; sha: string; repoFullName?: string };
+  base: { ref: string; sha: string; repoFullName?: string };
   user: { login: string };
   mergeable: boolean | null;
   mergeable_state: string;
@@ -424,7 +424,9 @@ export interface GitTreeEntry {
 
 interface GraphQLPullRequestResponse {
   repository?: {
+    nameWithOwner?: string;
     pullRequest?: {
+      headRepository?: { nameWithOwner?: string } | null;
       number: number;
       title: string;
       body?: string | null;
@@ -526,7 +528,9 @@ async function getPRGraphQL(
     `
       query OpenSlackPrDetail($owner: String!, $repo: String!, $number: Int!) {
         repository(owner: $owner, name: $repo) {
+          nameWithOwner
           pullRequest(number: $number) {
+            headRepository { nameWithOwner }
             number
             title
             body
@@ -557,8 +561,16 @@ async function getPRGraphQL(
     body: pr.body || '',
     state: normalizeGraphQLState(pr.state),
     draft: pr.isDraft,
-    head: { ref: pr.headRefName, sha: pr.headRefOid },
-    base: { ref: pr.baseRefName, sha: pr.baseRefOid },
+    head: {
+      ref: pr.headRefName,
+      sha: pr.headRefOid,
+      repoFullName: pr.headRepository?.nameWithOwner,
+    },
+    base: {
+      ref: pr.baseRefName,
+      sha: pr.baseRefOid,
+      repoFullName: response.repository?.nameWithOwner,
+    },
     user: { login: pr.author?.login || 'unknown' },
     mergeable: graphqlMergeableToBoolean(pr.mergeable),
     mergeable_state: normalizeGraphQLState(pr.mergeable),
@@ -835,8 +847,8 @@ export async function getPR(
       body: data.body || '',
       state: data.state,
       draft: data.draft ?? false,
-      head: { ref: data.head.ref, sha: data.head.sha },
-      base: { ref: data.base.ref, sha: data.base.sha },
+      head: { ref: data.head.ref, sha: data.head.sha, repoFullName: data.head.repo?.full_name },
+      base: { ref: data.base.ref, sha: data.base.sha, repoFullName: data.base.repo?.full_name },
       user: { login: data.user?.login || 'unknown' },
       mergeable: data.mergeable,
       mergeable_state: data.mergeable_state,

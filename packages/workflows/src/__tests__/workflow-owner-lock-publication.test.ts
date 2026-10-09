@@ -20,6 +20,7 @@ const faultDefaults = vi.hoisted(() => () => ({
   initialStatFailure: false,
   postLinkStatFailure: false,
   linkedTarget: '',
+  directoryCtime: undefined as undefined | { path: string; value: bigint },
   beforeWrite: undefined as undefined | ((path: string) => Promise<void>),
   beforeLink: undefined as undefined | ((source: string, target: string) => Promise<void>),
 }));
@@ -82,7 +83,15 @@ vi.mock('node:fs/promises', async (original) => {
         faults.postLinkStatFailure = false;
         throw new Error('fixture post-link stat failure');
       }
-      return fs.lstat(...args);
+      const stat = await fs.lstat(...args);
+      if (faults.directoryCtime?.path === String(args[0])) {
+        // Model a specific metadata transition, independently of host ctime
+        // resolution. Keep the real directory identity and all other metadata.
+        return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, {
+          ctimeNs: faults.directoryCtime.value,
+        });
+      }
+      return stat;
     },
     link: async (source: string, target: string) => {
       await faults.beforeLink?.(source, target);
@@ -254,13 +263,17 @@ describe('owner lock publication', () => {
   ] as const)('%s directory during lock publication', (_name, validate) => {
     it('allows child churn and checks the refreshed ACL identity', async () => {
       const root = await fixture();
+      faults.directoryCtime = { path: root, value: 1n };
       const identities: unknown[] = [];
       await expect(
         validate(root, {
           ...security,
           readWindowsPathSecurity: (path, identity, cacheable) => {
             identities.push(identity);
-            if (identities.length === 1) writeFileSync(join(root, 'child'), 'owned child');
+            if (identities.length === 1) {
+              writeFileSync(join(root, 'child'), 'owned child');
+              faults.directoryCtime!.value = 2n;
+            }
             return security.readWindowsPathSecurity!(path, identity, cacheable);
           },
         }),

@@ -1,6 +1,6 @@
+import { testTemporaryDirectory } from '../../../../../scripts/testing/process-fixture.mjs';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -140,7 +140,7 @@ async function workspaceFixture(): Promise<{
   readonly root: string;
   readonly evidence: ActivationEvidence;
 }> {
-  const root = await mkdtemp(join(tmpdir(), 'openslack-p2-pr3-workspace-'));
+  const root = testTemporaryDirectory('openslack-p2-pr3-workspace-');
   roots.push(root);
   const bytes = await readFile(
     new URL('./fixtures/workspace-metrics-shadow/plugin.json', import.meta.url),

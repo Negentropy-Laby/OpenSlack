@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -244,6 +245,7 @@ function sendRequest(
   port: number,
   body: string | Buffer,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
     const req = request(
@@ -253,6 +255,7 @@ function sendRequest(
         path: '/github/webhook',
         method: 'POST',
         agent: false,
+        signal,
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
@@ -814,98 +817,112 @@ describe('WatchDaemon', () => {
     }
   });
 
-  it('acknowledges a durable enqueue without waiting for a slow notification sink', async () => {
-    let releaseSink!: () => void;
-    let sinkReleased = false;
-    let completedResponses = 0;
-    let responseDeadline: ReturnType<typeof setTimeout> | undefined;
-    const sinkGate = new Promise<void>((resolve) => {
-      releaseSink = () => {
-        sinkReleased = true;
-        resolve();
-      };
-    });
-    const sinkSend = vi.fn(async () => {
-      await sinkGate;
-      return { ok: true as const, outcome: 'delivered' as const };
-    });
-    const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(
-      config,
-      secret,
-      dedupe,
-      undefined,
-      undefined,
-      mockRecordEvent,
-      {},
-      {
-        sinks: new Map([
-          [
-            'console',
-            {
-              name: 'console',
-              send: sinkSend,
-            },
-          ],
-        ]),
-      },
-    );
-    const port = 3101 + Math.floor(Math.random() * 1000);
-    await daemon.start(port);
-    try {
-      const body = makeIssuePayload();
-      const headers = {
-        'x-hub-signature-256': signPayload(body),
-        'x-github-event': 'issues',
-        'x-github-delivery': 'durable-before-sink',
-      };
-      const responses = await Promise.race([
-        Promise.all(
-          [sendRequest(port, body, headers), sendRequest(port, body, headers)].map((response) =>
-            response.then((result) => {
-              completedResponses += 1;
-              return result;
-            }),
-          ),
-        ),
-        new Promise<never>((_, reject) => {
-          responseDeadline = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  'Webhook responses did not complete within 250ms: ' +
-                    `responses=${completedResponses}/2, sinkStarted=${sinkSend.mock.calls.length > 0}, sinkReleased=${sinkReleased}. ` +
-                    'This deadline includes admission, durable I/O and HTTP scheduling; it does not establish a sink dependency.',
-                ),
-              ),
-            250,
-          );
-        }),
-      ]);
-      clearTimeout(responseDeadline);
-      expect(sinkReleased).toBe(false);
-      expect(responses.every((response) => response.status === 200)).toBe(true);
-      expect(responses).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            body: expect.objectContaining({ event_id: expect.any(String) }),
-          }),
-          expect.objectContaining({
-            body: { ok: true, ignored: 'duplicate or filtered' },
-          }),
-        ]),
+  it(
+    'acknowledges a durable enqueue without waiting for a slow notification sink',
+    async () => {
+      let releaseSink!: () => void;
+      let sinkReleased = false;
+      let completedResponses = 0;
+      let responseDeadline: ReturnType<typeof setTimeout> | undefined;
+      const requestLifetime = new AbortController();
+      let pendingResponses: ReturnType<typeof sendRequest>[] = [];
+      const responseBudgetMs = platformTestTimeout(4_000, 100_000);
+      const sinkGate = new Promise<void>((resolve) => {
+        releaseSink = () => {
+          sinkReleased = true;
+          resolve();
+        };
+      });
+      const sinkSend = vi.fn(async () => {
+        await sinkGate;
+        return { ok: true as const, outcome: 'delivered' as const };
+      });
+      const dedupe = new WatchDedupeStore(tempDir);
+      const daemon = new WatchDaemon(
+        config,
+        secret,
+        dedupe,
+        undefined,
+        undefined,
+        mockRecordEvent,
+        {},
+        {
+          sinks: new Map([
+            [
+              'console',
+              {
+                name: 'console',
+                send: sinkSend,
+              },
+            ],
+          ]),
+        },
       );
-      expect(dedupe.getStats()).toMatchObject({ count: 1, processing: 1 });
-      expect(sinkSend).toHaveBeenCalledTimes(1);
+      const port = 3101 + Math.floor(Math.random() * 1000);
+      await daemon.start(port);
+      try {
+        const body = makeIssuePayload();
+        const headers = {
+          'x-hub-signature-256': signPayload(body),
+          'x-github-event': 'issues',
+          'x-github-delivery': 'durable-before-sink',
+        };
+        pendingResponses = [
+          sendRequest(port, body, headers, requestLifetime.signal),
+          sendRequest(port, body, headers, requestLifetime.signal),
+        ].map((response) =>
+          response.then((result) => {
+            completedResponses += 1;
+            return result;
+          }),
+        );
+        // The held sink proves ordering. The watchdog bounds real admission,
+        // durable I/O and HTTP completion, rather than asserting a 250ms SLA.
+        const responses = await Promise.race([
+          Promise.all(pendingResponses),
+          new Promise<never>((_, reject) => {
+            responseDeadline = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `Webhook responses did not complete within ${responseBudgetMs}ms: ` +
+                      `responses=${completedResponses}/2, sinkStarted=${sinkSend.mock.calls.length > 0}, sinkReleased=${sinkReleased}. ` +
+                      'This deadline includes admission, durable I/O and HTTP scheduling; it does not establish a sink dependency.',
+                  ),
+                ),
+              responseBudgetMs,
+            );
+          }),
+        ]);
+        clearTimeout(responseDeadline);
+        expect(completedResponses).toBe(2);
+        expect(sinkReleased).toBe(false);
+        expect(responses.every((response) => response.status === 200)).toBe(true);
+        expect(responses).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              body: expect.objectContaining({ event_id: expect.any(String) }),
+            }),
+            expect.objectContaining({
+              body: { ok: true, ignored: 'duplicate or filtered' },
+            }),
+          ]),
+        );
+        expect(dedupe.getStats()).toMatchObject({ count: 1, processing: 1 });
+        expect(sinkSend).toHaveBeenCalledTimes(1);
 
-      releaseSink();
-      await waitFor(() => dedupe.getStats().completed === 1);
-    } finally {
-      clearTimeout(responseDeadline);
-      releaseSink();
-      await daemon.stop();
-    }
-  });
+        releaseSink();
+        await waitFor(() => dedupe.getStats().completed === 1, platformTestTimeout(1_000, 10_000));
+      } finally {
+        clearTimeout(responseDeadline);
+        releaseSink();
+        requestLifetime.abort();
+        await Promise.allSettled(pendingResponses);
+        await daemon.stop();
+      }
+    },
+    platformTestTimeout(5_000),
+  );
 
   it('once() processes a single event without HTTP', async () => {
     const dedupe = new WatchDedupeStore(tempDir);

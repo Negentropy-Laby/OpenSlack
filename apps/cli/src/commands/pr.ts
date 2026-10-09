@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
+import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 import {
   commentOnPR,
   getClient,
@@ -475,7 +476,7 @@ export function prCommands(): Command {
                     }
                   : undefined,
             });
-          } catch (error) {
+          } catch {
             console.error('TUI unavailable. Falling back to standard output.');
             console.log(doctorOutput);
           }
@@ -674,8 +675,8 @@ export function prCommands(): Command {
 
       // Resolve agent principal if --agent-id provided
       let authOptions: {
-        principal?: import('@openslack/kernel').AgentPrincipal;
-        snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+        principal?: AgentPrincipal;
+        snapshot?: AgentPermissionSnapshot;
       } = {};
       if (options.agentId) {
         const { resolveAgentPrincipal } = await import('@openslack/runtime');
@@ -720,6 +721,26 @@ export function prCommands(): Command {
       console.log(`Decision: ${result.decision}`);
       if (result.sha) console.log(`SHA: ${result.sha}`);
       console.log(result.message);
+    });
+
+  cmd
+    .command('cleanup-branch <number>')
+    .description('Preview or conditionally delete a merged PR remote branch')
+    .option('--execute', 'Authorize this remote branch deletion (default: preview only)')
+    .option('--agent-id <id>', 'Agent ID for authorization; resolution failure blocks cleanup')
+    .option('--permit-id <id>', 'Administrator-issued broker permit (requires --agent-id)')
+    .option('--operation-id <id>', 'Stable broker operation ID for execute/status only')
+    .option('--operation-status', 'Read existing broker operation; never retry deletion')
+    .option('--repo <owner/name>', 'Target GitHub repository')
+    .option('--auth <mode>', 'Live evidence auth: auto, app, or token', 'auto')
+    .option('--remote <name>', 'Named Git remote', 'origin')
+    .option('--timeout <seconds>', 'Total timeout in seconds (1–600)', '60')
+    .action(async (number, options, command: Command) => {
+      const { runPRBranchCleanupCommand } = await import('./pr-cleanup-branch.js');
+      await runPRBranchCleanupCommand(number, {
+        ...options,
+        remoteExplicit: command.getOptionValueSource('remote') === 'cli',
+      });
     });
 
   return cmd;

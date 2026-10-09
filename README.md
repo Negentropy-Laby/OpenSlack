@@ -66,12 +66,12 @@ Use `openslack collaboration integration negentropy export-slot --format json`,
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js >= 22, bun, python (for genesis scripts)
+# Prerequisites: Node.js >= 22, Bun 1.4.0, python (for genesis scripts)
 
 # 1. Clone and install
 git clone https://github.com/Negentropy-Laby/OpenSlack.git
 cd OpenSlack
-bun install
+bun install --frozen-lockfile
 
 # 2. One-step setup (validate + eval + doctor + all checks)
 bun run openslack setup

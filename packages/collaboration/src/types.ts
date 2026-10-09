@@ -37,7 +37,13 @@ export type PRMSEvent =
   | 'pr.merge.requested'
   | 'pr.merge.confirmed'
   | 'pr.merge.completed'
-  | 'pr.merge.blocked';
+  | 'pr.merge.blocked'
+  | 'pr.cleanup_branch.previewed'
+  | 'pr.cleanup_branch.requested'
+  | 'pr.cleanup_branch.executed'
+  | 'pr.cleanup_branch.already_absent'
+  | 'pr.cleanup_branch.blocked'
+  | 'pr.cleanup_branch.reconciliation_required';
 
 export type OperatorEvent =
   | 'operator.intent.parsed'

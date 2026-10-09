@@ -1,4 +1,33 @@
 export { fetchPRDetails } from './fetch.js';
+export {
+  prepareCleanupHandoffDraft,
+  verifyCleanupHandoffPackage,
+  CleanupHandoffError,
+} from './cleanup-handoff.js';
+export type {
+  CleanupHandoffErrorCode,
+  CleanupHandoffBuildInput,
+  CleanupHandoffTargetEvidence,
+  PrepareCleanupHandoffDraftInput,
+  PrepareCleanupHandoffDraftResult,
+  VerifyCleanupHandoffPackageInput,
+  VerifyCleanupHandoffPackageResult,
+} from './cleanup-handoff.js';
+export { cleanupPRBranch } from './cleanup-branch.js';
+export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
+export type {
+  CleanupBrokerRequest,
+  CleanupBrokerResponse,
+  CleanupBrokerClientErrorCode,
+} from './cleanup-broker-client.js';
+export type { PRBranchCleanupDependencies } from './cleanup-branch.js';
+export type {
+  PRBranchCleanupState,
+  PRBranchCleanupCheck,
+  PRBranchCleanupResult,
+  PRBranchCleanupInput,
+  PRBranchCleanupAuditEvent,
+} from './cleanup-types.js';
 export { classifyPRReport } from './classify.js';
 export { checkMergeReadiness } from './readiness.js';
 export { generateReviewReport } from './report.js';
@@ -81,3 +110,9 @@ export type {
 } from './author-risk.js';
 export type { MergeStewardResult } from './merge.js';
 export type { WatchResult, WatchOptions } from './watch.js';
+
+export {
+  projectPRBranchCleanupEvent,
+  evaluateCleanupBrokerResult,
+  evaluatePRBranchCleanupResult,
+} from './cleanup-result.js';

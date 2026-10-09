@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -310,10 +310,39 @@ describe('WatchDeliveryQueue', () => {
     const stale = new Date(Date.now() - 60_000);
     utimesSync(lockPath, stale, stale);
 
-    const store = queue({ lockStaleMs: 1_000 });
-    expect(store.claimAndEnqueue(toPersistableRepositoryEvent(issueEvent()), routes)).toMatchObject(
-      { outcome: 'enqueued' },
-    );
+    // This case exercises successful reclamation, not wall-clock I/O speed.
+    // Advance a deterministic clock; retain the unchanged 100 ms budget.
+    let clock = Date.now();
+    const time = vi.spyOn(Date, 'now').mockImplementation(() => ++clock);
+    try {
+      const store = queue({ lockStaleMs: 1_000 });
+      expect(
+        store.claimAndEnqueue(toPersistableRepositoryEvent(issueEvent()), routes),
+      ).toMatchObject({ outcome: 'enqueued' });
+    } finally {
+      time.mockRestore();
+    }
+  });
+
+  it('rejects stale-lock recovery that exhausts the unchanged acquisition budget', () => {
+    const lockPath = join(tempDir, 'delivery-state.v1.json.lock');
+    const start = Date.now();
+    writeFileSync(lockPath, JSON.stringify({ pid: 999999, nonce: 'stale' }), { mode: 0o600 });
+    utimesSync(lockPath, new Date(start - 60_000), new Date(start - 60_000));
+    const time = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(start)
+      .mockReturnValueOnce(start)
+      .mockReturnValue(start + 101);
+    try {
+      const store = queue({ lockStaleMs: 1_000 });
+      expect(() =>
+        store.claimAndEnqueue(toPersistableRepositoryEvent(issueEvent()), routes),
+      ).toThrowError(expect.objectContaining({ code: 'QUEUE_LOCK_TIMEOUT' }));
+      expect(store.getStats().count).toBe(0);
+    } finally {
+      time.mockRestore();
+    }
   });
 
   it('migrates legacy dedupe tombstones and suppresses redelivery', () => {

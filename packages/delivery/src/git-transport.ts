@@ -3,7 +3,12 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeliveryError } from './errors.js';
-import type { GitProbePublisher } from './types.js';
+import { isValidCleanupBranch, isReservedCleanupBranch, isFullGitObjectId } from '@openslack/core';
+import type {
+  GitProbePublisher,
+  GitConditionalBranchDeleter,
+  ConditionalBranchDeleteResult,
+} from './types.js';
 
 export interface GitAskPassPublisherOptions {
   allowLocalRemoteForTests?: boolean;
@@ -20,8 +25,20 @@ interface GitTransportInput {
   timeoutMs: number;
 }
 
-export class GitAskPassPublisher implements GitProbePublisher {
-  constructor(private readonly options: GitAskPassPublisherOptions = {}) {}
+export class GitAskPassPublisher implements GitProbePublisher, GitConditionalBranchDeleter {
+  private readonly conditional: GitConditionalBranchDeleter;
+  constructor(private readonly options: GitAskPassPublisherOptions = {}) {
+    this.conditional = createConditionalGitTransport(options);
+  }
+
+  readRemoteBranchSha(input: GitTransportInput): string | null {
+    return this.conditional.readRemoteBranchSha(input);
+  }
+  deleteRemoteRefIfAt(
+    input: GitTransportInput & { expectedSha: string },
+  ): ConditionalBranchDeleteResult {
+    return this.conditional.deleteRemoteRefIfAt(input);
+  }
 
   push(input: GitTransportInput): { branchSha: string; remoteSha: string } {
     assertGitRef(input.branch);
@@ -129,6 +146,42 @@ export class GitAskPassPublisher implements GitProbePublisher {
   }
 }
 
+/** A delete needs no local objects. Keep untrusted repository config out of transport. */
+function cleanupRepository(
+  spawn: typeof spawnSync,
+  hooksDir: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+  objectFormat: 'sha1' | 'sha256' = 'sha1',
+): string {
+  const root = join(hooksDir, 'transport.git');
+  const result = spawn(
+    'git',
+    [
+      'init',
+      '--bare',
+      '--template=',
+      ...(objectFormat === 'sha256' ? ['--object-format=sha256'] : []),
+      root,
+    ],
+    {
+      cwd: hooksDir,
+      env: { ...env, OPENSLACK_GIT_ASKPASS_TOKEN: undefined },
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+      windowsHide: true,
+    },
+  );
+  if (result.error || result.status !== 0)
+    throw new DeliveryError(
+      'DELIVERY_PUSH_FAILED',
+      'Isolated cleanup transport could not be prepared.',
+      false,
+    );
+  return root;
+}
+
 function resolvePushUrl(
   spawn: typeof spawnSync,
   input: Pick<GitTransportInput, 'rootDir' | 'remote' | 'owner' | 'repo' | 'timeoutMs'>,
@@ -174,8 +227,10 @@ function resolvePushUrl(
 function withAskPassEnvironment<T>(
   token: string,
   operation: (env: NodeJS.ProcessEnv, hooksDir: string) => T,
+  fixedTemporaryRoot?: string,
+  fixedShell?: string,
 ): T {
-  const helperDir = mkdtempSync(join(tmpdir(), 'openslack-askpass-'));
+  const helperDir = mkdtempSync(join(fixedTemporaryRoot ?? tmpdir(), 'openslack-askpass-'));
   const hooksDir = join(helperDir, 'disabled-hooks');
   mkdirSync(hooksDir, { recursive: true });
   const askpassPath = join(helperDir, 'askpass.sh');
@@ -184,7 +239,7 @@ function withAskPassEnvironment<T>(
   writeFileSync(
     askpassPath,
     [
-      '#!/bin/sh',
+      `#!${fixedShell ?? '/bin/sh'}`,
       'case "$1" in',
       '  *[Uu][Ss][Ee][Rr][Nn][Aa][Mm][Ee]*) printf %s x-access-token ;;',
       '  *[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]*) printf %s "$OPENSLACK_GIT_ASKPASS_TOKEN" ;;',
@@ -266,7 +321,45 @@ function readRemoteShaAtUrl(
     token,
     'Remote branch verification',
   );
-  return output.split(/\s+/)[0] ?? '';
+  if (!output) return '';
+  const lines = output.split(/\r?\n/);
+  const match = /^([a-f0-9]{40}|[a-f0-9]{64})\t(.+)$/.exec(lines[0]);
+  if (lines.length !== 1 || !match || match[2] !== `refs/heads/${branch}`) {
+    throw new DeliveryError(
+      'DELIVERY_PUSH_FAILED',
+      'Remote branch evidence is not one exact full-SHA ref.',
+      false,
+    );
+  }
+  return match[1];
+}
+
+function remaining(deadline: number): number {
+  const budget = deadline - Date.now();
+  if (budget <= 0)
+    throw new DeliveryError('DELIVERY_TIMEOUT', 'Branch cleanup deadline expired.', false);
+  return budget;
+}
+
+function validateCleanupRef(spawn: typeof spawnSync, input: GitTransportInput): void {
+  if (!isValidCleanupBranch(input.branch))
+    throw new DeliveryError('DELIVERY_PUSH_FAILED', 'Cleanup branch name is invalid.', false);
+  if (isReservedCleanupBranch(input.branch) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input.remote)) {
+    throw new DeliveryError(
+      'DELIVERY_PUSH_FAILED',
+      'Reserved branch or invalid remote cannot be cleaned.',
+      false,
+    );
+  }
+  if (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs <= 0) {
+    throw new DeliveryError('DELIVERY_TIMEOUT', 'Invalid branch cleanup deadline.', false);
+  }
+  runLocalGit(
+    spawn,
+    input.rootDir,
+    ['check-ref-format', `refs/heads/${input.branch}`],
+    input.timeoutMs,
+  );
 }
 
 function runLocalGit(
@@ -334,6 +427,9 @@ function parseGitHubHttpsTarget(value: string): { owner: string; repo: string } 
     if (
       url.protocol !== 'https:' ||
       url.hostname.toLowerCase() !== 'github.com' ||
+      url.port ||
+      url.search ||
+      url.hash ||
       url.username ||
       url.password
     ) {
@@ -359,4 +455,201 @@ function redactTransportText(value: string, token: string): string {
     .replace(/[\r\n]+/g, ' ')
     .trim()
     .slice(0, 500);
+}
+
+interface ConditionalGitContext {
+  readonly fixed?: boolean;
+  readonly rootDir: string;
+  readonly url: string;
+  readonly spawn: typeof spawnSync;
+  readonly tempRoot?: string;
+  readonly shell?: string;
+  readonly beforePush?: () => void;
+}
+
+/** Package-internal composition; not exported by the general delivery entrypoint. */
+export function createConditionalGitTransport(
+  options: GitAskPassPublisherOptions = {},
+  fixed?: (input: GitTransportInput & { expectedSha?: string }) => ConditionalGitContext,
+): GitConditionalBranchDeleter {
+  const transport = new ConditionalGitTransport(options, fixed);
+  return Object.freeze({
+    readRemoteBranchSha: transport.readRemoteBranchSha.bind(transport),
+    deleteRemoteRefIfAt: transport.deleteRemoteRefIfAt.bind(transport),
+  });
+}
+class ConditionalGitTransport implements GitConditionalBranchDeleter {
+  constructor(
+    private readonly options: GitAskPassPublisherOptions,
+    private readonly fixed?: (
+      input: GitTransportInput & { expectedSha?: string },
+    ) => ConditionalGitContext,
+  ) {}
+  private context(input: GitTransportInput & { expectedSha?: string }): ConditionalGitContext {
+    if (this.fixed) return this.fixed(input);
+    const spawn = this.options.spawn ?? spawnSync;
+    return {
+      rootDir: input.rootDir,
+      spawn,
+      url: resolvePushUrl(spawn, input, this.options.allowLocalRemoteForTests === true),
+    };
+  }
+  readRemoteBranchSha(input: GitTransportInput): string | null {
+    if (!isValidCleanupBranch(input.branch))
+      throw new DeliveryError('DELIVERY_PUSH_FAILED', 'Cleanup branch name is invalid.', false);
+    const deadline = Date.now() + input.timeoutMs;
+    const context = this.context(input);
+    if (context.fixed) input = { ...input, rootDir: context.rootDir };
+    input = { ...input, timeoutMs: remaining(deadline) };
+    const spawn = context.spawn;
+    validateCleanupRef(spawn, input);
+    const pushUrl = context.url;
+    return withAskPassEnvironment(
+      input.token,
+      (env, hooksDir) => {
+        const transportDir = hooksDir;
+        return (
+          readRemoteShaAtUrl(
+            spawn,
+            transportDir,
+            pushUrl,
+            input.branch,
+            env,
+            hooksDir,
+            remaining(deadline),
+            input.token,
+          ) || null
+        );
+      },
+      context.tempRoot,
+      context.shell,
+    );
+  }
+
+  deleteRemoteRefIfAt(
+    input: GitTransportInput & { expectedSha: string },
+  ): ConditionalBranchDeleteResult {
+    if (!isValidCleanupBranch(input.branch))
+      throw new DeliveryError('DELIVERY_PUSH_FAILED', 'Cleanup branch name is invalid.', false);
+    const deadline = Date.now() + input.timeoutMs;
+    const context = this.context(input);
+    if (context.fixed) input = { ...input, rootDir: context.rootDir };
+    input = { ...input, timeoutMs: remaining(deadline) };
+    if (!isFullGitObjectId(input.expectedSha)) {
+      throw new DeliveryError(
+        'DELIVERY_PUSH_FAILED',
+        'Conditional deletion requires a full 40- or 64-hex Git object id.',
+        false,
+      );
+    }
+    const spawn = context.spawn;
+    validateCleanupRef(spawn, input);
+    const pushUrl = context.url;
+    return withAskPassEnvironment(
+      input.token,
+      (env, hooksDir) => {
+        const transportDir = cleanupRepository(
+          spawn,
+          hooksDir,
+          env,
+          remaining(deadline),
+          input.expectedSha.length === 64 ? 'sha256' : 'sha1',
+        );
+        const read = () =>
+          readRemoteShaAtUrl(
+            spawn,
+            transportDir,
+            pushUrl,
+            input.branch,
+            env,
+            hooksDir,
+            remaining(deadline),
+            input.token,
+          );
+        const before = read();
+        if (!before) return { state: 'ABSENT', attempted: false, observedRefState: 'ABSENT' };
+        if (before !== input.expectedSha)
+          return {
+            state: 'STALE',
+            attempted: false,
+            observedRefState: 'PRESENT',
+            observedSha: before,
+          };
+        const ref = `refs/heads/${input.branch}`;
+        // The private broker pipe is consulted only after credentials, installation
+        // scope and the exact remote ref have been observed. No public callback or
+        // caller-controlled boolean can authorize this final sending boundary.
+        context.beforePush?.();
+        // Reserve part of the shared budget for reconciliation; never retry a push.
+        const pushBudget = Math.max(1, Math.floor(remaining(deadline) * 0.7));
+        const result = spawn(
+          'git',
+          [
+            '-c',
+            'credential.helper=',
+            '-c',
+            `core.hooksPath=${hooksDir}`,
+            'push',
+            '--porcelain',
+            `--force-with-lease=${ref}:${input.expectedSha}`,
+            pushUrl,
+            `:${ref}`,
+          ],
+          {
+            cwd: transportDir,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env,
+            timeout: pushBudget,
+            windowsHide: true,
+            maxBuffer: 1024 * 1024,
+          },
+        );
+        const lines = String(result.stdout ?? '').split(/\r?\n/);
+        const receipt = (flag: string, summary: string) =>
+          lines.some(
+            (line) =>
+              line === `${flag}\t:${ref}\t${summary}` ||
+              line === `${flag}\t(delete):${ref}\t${summary}`,
+          );
+        const deleted = !result.error && result.status === 0 && receipt('-', '[deleted]');
+        const stale =
+          !result.error && result.status !== 0 && receipt('!', '[rejected] (stale info)');
+        const message =
+          result.error || result.status !== 0
+            ? redactTransportText(
+                `${result.stdout ?? ''}\n${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
+                input.token,
+              )
+            : undefined;
+        let after: string;
+        try {
+          after = read();
+        } catch {
+          return {
+            state: 'RECONCILIATION_REQUIRED',
+            attempted: true,
+            observedRefState: 'UNKNOWN',
+            message,
+          };
+        }
+        if (!after)
+          return {
+            state: deleted ? 'DELETED' : 'ABSENT_AFTER_ATTEMPT',
+            attempted: true,
+            observedRefState: 'ABSENT',
+            message,
+          };
+        const state =
+          stale && after !== input.expectedSha
+            ? 'STALE'
+            : !deleted && (result.error || result.status !== 0) && after === input.expectedSha
+              ? 'FAILED'
+              : 'RECONCILIATION_REQUIRED';
+        return { state, attempted: true, observedRefState: 'PRESENT', observedSha: after, message };
+      },
+      context.tempRoot,
+      context.shell,
+    );
+  }
 }

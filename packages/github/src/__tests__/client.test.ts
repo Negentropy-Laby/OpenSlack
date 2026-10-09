@@ -1,6 +1,6 @@
+import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -32,7 +32,7 @@ beforeEach(() => {
     originalEnv.set(key, process.env[key]);
     delete process.env[key];
   }
-  noAppRoot = mkdtempSync(join(tmpdir(), 'openslack-gh-no-app-'));
+  noAppRoot = testTemporaryDirectory('openslack-gh-no-app-');
 });
 
 afterEach(() => {
@@ -96,7 +96,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('uses git remote origin when explicit repo and env repo are absent', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'openslack-gh-client-'));
+    const dir = testTemporaryDirectory('openslack-gh-client-');
     try {
       execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' });
       execFileSync(
@@ -119,7 +119,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('rejects oversized and malformed workspace metadata instead of parsing partial evidence', () => {
-    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-workspace-metadata-'));
+    const container = testTemporaryDirectory('openslack-gh-workspace-metadata-');
     try {
       const oversized = join(container, 'oversized');
       mkdirSync(oversized);
@@ -140,7 +140,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it.runIf(process.platform !== 'win32')('rejects symlinked workspace metadata', () => {
-    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-workspace-link-'));
+    const container = testTemporaryDirectory('openslack-gh-workspace-link-');
     try {
       const symlinked = join(container, 'symlinked');
       mkdirSync(symlinked);
@@ -171,7 +171,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('resolves App local state from the primary workspace for a linked worktree', () => {
-    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-worktree-'));
+    const container = testTemporaryDirectory('openslack-gh-worktree-');
     const primary = join(container, 'primary');
     const linked = join(container, 'linked');
     try {
@@ -213,7 +213,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('does not trust an unregistered workspace that forges another repository gitdir', () => {
-    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-forged-gitdir-'));
+    const container = testTemporaryDirectory('openslack-gh-forged-gitdir-');
     const primary = join(container, 'external-primary');
     const forged = join(container, 'forged-workspace');
     try {
@@ -300,7 +300,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('does not fall back to a human token when local App metadata is invalid', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'openslack-gh-invalid-app-'));
+    const root = testTemporaryDirectory('openslack-gh-invalid-app-');
     try {
       mkdirSync(join(root, '.openslack.local'));
       writeFileSync(
@@ -318,7 +318,7 @@ describe('GitHub client repository and auth resolution', () => {
   });
 
   it('retains the human-token development fallback when no App config exists', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'openslack-gh-no-app-config-'));
+    const root = testTemporaryDirectory('openslack-gh-no-app-config-');
     try {
       process.env.GITHUB_TOKEN = 'development-token';
       await expect(

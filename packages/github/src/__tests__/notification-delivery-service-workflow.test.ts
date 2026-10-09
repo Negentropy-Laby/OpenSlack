@@ -486,7 +486,7 @@ describe('notification delivery service workflow', () => {
     expect(job.steps[setupBunIndex]).toEqual({
       name: 'Set up the exact Bun toolchain',
       uses: setupBunAction,
-      with: { 'bun-version': '1.3.11' },
+      with: { 'bun-version': '1.4.0' },
     });
     expect(job.steps[installIndex]).toEqual({
       name: 'Install root dependencies',

@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { require: tsxRequire } = require('tsx/cjs/api');
@@ -9,10 +11,31 @@ const {
   bashCandidates,
   probeBash,
   executableIdentity,
+  executableCandidates,
 } = tsxRequire('../../packages/core/src/process-discovery.ts', import.meta.url);
 
 export const testProcessEnvironment = normalizeProcessEnvironment;
 export const createTestProcessResolver = createProcessResolver;
+export function testTemporaryDirectory(prefix, parent = tmpdir()) {
+  // Windows TEMP may use an 8.3 alias; fixtures pass canonical owned paths
+  // to production code whose redirect/reparse checks deliberately stay strict.
+  return realpathSync.native(mkdtempSync(join(realpathSync.native(parent), prefix)));
+}
+export function testPowerShells(env = testProcessEnvironment()) {
+  // Use the same PATH/PATHEXT candidates as other fixtures. Discovering an
+  // optional shell does not need another process or a separate startup timer.
+  for (const candidate of executableCandidates('pwsh', env, 'win32')) {
+    try {
+      if (statSync(candidate).isFile()) return ['powershell', realpathSync.native(candidate)];
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') continue;
+      throw new Error('TEST_PWSH_DISCOVERY_FAILED: optional shell inspection did not complete.');
+    }
+  }
+  // The Windows fixture must still launch mandatory PowerShell 5.1, and every
+  // discovered pwsh must actually render all three cases under its child bound.
+  return ['powershell'];
+}
 export function platformTestTimeout(baseMs, windowsMs = 120_000) {
   return process.platform === 'win32' ? windowsMs : baseMs;
 }

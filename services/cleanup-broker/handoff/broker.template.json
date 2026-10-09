@@ -1,0 +1,35 @@
+{
+  "schema": "openslack.cleanup_broker_config.v2",
+  "brokerId": "REQUIRED_BROKER_ID",
+  "workspaceId": "REQUIRED_WORKSPACE_ID",
+  "uid": 0,
+  "gid": 0,
+  "peerBindings": [
+    {
+      "uid": 0,
+      "agentId": "REQUIRED_AGENT_ID",
+      "subject": {
+        "principalId": "REQUIRED_PRINCIPAL_ID",
+        "runtimeUid": "REQUIRED_RUNTIME_UID",
+        "runId": "REQUIRED_RUN_ID"
+      }
+    }
+  ],
+  "allowedRemotes": ["REQUIRED_REMOTE_NAME"],
+  "artifacts": {
+    "nodeSHA256": "REQUIRED_SHA256",
+    "executorSHA256": "REQUIRED_SHA256",
+    "gitSHA256": "REQUIRED_SHA256",
+    "installManifestSHA256": "REQUIRED_SHA256"
+  },
+  "credentialRefs": {
+    "governance": "/etc/openslack-cleanup/credentials/governance",
+    "githubAppPrivateKey": "/etc/openslack-cleanup/credentials/github-app-private-key"
+  },
+  "githubApp": {
+    "appId": 0,
+    "installationId": 0,
+    "owner": "REQUIRED_OWNER",
+    "repo": "REQUIRED_REPOSITORY"
+  }
+}

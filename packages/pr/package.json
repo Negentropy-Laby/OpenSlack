@@ -13,10 +13,15 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. --project @openslack/pr",
+    "test:watch": "vitest --root ../.. --project @openslack/pr",
+    "pretest": "tsc --build tsconfig.json"
   },
   "dependencies": {
+    "undici": "7.29.1",
+    "@openslack/workspace": "workspace:*",
+    "ajv": "8.17.1",
+    "@openslack/delivery": "workspace:*",
     "@openslack/core": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@openslack/github": "workspace:*",

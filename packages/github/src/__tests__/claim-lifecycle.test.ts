@@ -129,7 +129,43 @@ const reviewInput = {
   prUrl: 'https://github.com/acme/project/pull/7',
 };
 
+const invalidInputHandlers = {
+  heartbeat: heartbeatClaim,
+  review: reviewClaim,
+  complete: completeClaim,
+};
+
 describe('strict claim lifecycle', () => {
+  it.each<[keyof typeof invalidInputHandlers, number]>([
+    ['heartbeat', 0],
+    ['heartbeat', -1],
+    ['heartbeat', 1.5],
+    ['review', 0],
+    ['review', -1],
+    ['review', 1.5],
+    ['complete', 0],
+    ['complete', -1],
+    ['complete', 1.5],
+  ])(
+    'returns a structured refusal for %s issue %s before client access',
+    async (operation, issueNumber) => {
+      const getClient = vi.fn(async () => {
+        throw new Error('CLIENT_FORBIDDEN');
+      });
+      const result = await invalidInputHandlers[operation](
+        { ...reviewInput, issueNumber },
+        { getClient, now: () => new Date('2026-07-14T00:30:00.000Z') },
+      );
+      expect(result).toMatchObject({
+        operation,
+        outcome: 'failed',
+        errorCode: 'CLAIM_INVALID_INPUT',
+        claimRef: '',
+      });
+      expect(getClient).not.toHaveBeenCalled();
+    },
+  );
+
   it('records and verifies a bounded heartbeat', async () => {
     const harness = createHarness();
     const result = await heartbeatClaim(
