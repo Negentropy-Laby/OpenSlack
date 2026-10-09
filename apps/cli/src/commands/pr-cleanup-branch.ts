@@ -1,10 +1,14 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { findWorkspaceRoot } from '@openslack/workspace';
 import { getClient, parseGitHubRepoSpec } from '@openslack/github';
-import { cleanupPRBranch, sendCleanupBrokerRequest, CleanupBrokerClientError } from '@openslack/pr';
-import type { PRBranchCleanupAuditEvent } from '@openslack/pr';
+import {
+  cleanupPRBranch,
+  sendCleanupBrokerRequest,
+  CleanupBrokerClientError,
+  projectPRBranchCleanupEvent,
+  evaluateCleanupBrokerResult,
+  evaluatePRBranchCleanupResult,
+} from '@openslack/pr';
 import { createBoundEventAppender, createEvent, recordEvent } from '@openslack/collaboration';
-import type { CollaborationEvent, CollaborationEventType } from '@openslack/collaboration';
 
 interface CleanupCommandOptions {
   execute?: boolean;
@@ -31,66 +35,11 @@ function positiveInteger(value: string, name: string, maximum = Number.MAX_SAFE_
   return parsed;
 }
 
-function workspaceRoot(): string {
-  let root = process.cwd();
-  while (!existsSync(join(root, 'openslack.yaml'))) {
-    const parent = dirname(root);
-    if (parent === root)
-      throw new CleanupInputError('Workspace root with openslack.yaml was not found.');
-    root = parent;
-  }
-  return root;
-}
-
-function cleanupEvent(
-  event: PRBranchCleanupAuditEvent,
-): Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'> {
-  let type: CollaborationEventType = 'pr.cleanup_branch.blocked';
-  if (event.mode === 'preview' && event.state === 'CLEANUP_READY')
-    type = 'pr.cleanup_branch.previewed';
-  else if (event.phase === 'requested') type = 'pr.cleanup_branch.requested';
-  else if (event.state === 'DELETED') type = 'pr.cleanup_branch.executed';
-  else if (event.state === 'ALREADY_ABSENT') type = 'pr.cleanup_branch.already_absent';
-  else if (['RECONCILIATION_REQUIRED', 'ABSENT_AFTER_ATTEMPT'].includes(event.state)) {
-    type = 'pr.cleanup_branch.reconciliation_required';
-  }
-  return {
-    type,
-    // human-cli denotes an explicit calling mode, not proof of a human login.
-    actor: {
-      id: event.executor,
-      kind: event.executor === 'human-cli' ? 'system' : 'agent',
-      provider: 'cli',
-    },
-    object: { kind: 'pr', id: String(event.prNumber) },
-    source: { kind: 'prms', ref: 'pr.cleanup-branch' },
-    summary: `PR #${event.prNumber} branch cleanup: ${event.phase} / ${event.state}`,
-    visibility: 'local',
-    redacted: false,
-    containsSensitiveData: false,
-    correlationId: event.operationId,
-    metadata: {
-      operation_id: event.operationId,
-      repository: event.repository,
-      pr_number: event.prNumber,
-      branch: event.branch,
-      expected_sha: event.expectedSha,
-      observed_sha: event.observedSha,
-      observed_ref_state: event.observedRefState,
-      outcome: event.state,
-      attempted: event.attempted,
-      executor: event.executor,
-      authorization_source: event.authorizationSource,
-      evidence_timestamp: event.evidenceTimestamp,
-      transport_identity: 'github_app_installation',
-    },
-  };
-}
-
 export async function runPRBranchCleanupCommand(
   number: string,
   options: CleanupCommandOptions,
 ): Promise<void> {
+  process.exitCode = 0;
   const startedAt = Date.now();
   try {
     const prNumber = positiveInteger(number, 'PR number');
@@ -110,9 +59,11 @@ export async function runPRBranchCleanupCommand(
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.remote)) {
       throw new CleanupInputError('--remote must be a named Git remote, not a URL or option.');
     }
-    if (options.repo !== undefined && !parseGitHubRepoSpec(options.repo)) {
+    const parsedRepo = options.repo === undefined ? undefined : parseGitHubRepoSpec(options.repo);
+    if (options.repo !== undefined && !parsedRepo) {
       throw new CleanupInputError('--repo must be owner/name.');
     }
+    const repository = parsedRepo ? `${parsedRepo.owner}/${parsedRepo.repo}` : undefined;
     if (
       options.agentId === undefined &&
       (options.permitId !== undefined ||
@@ -121,7 +72,8 @@ export async function runPRBranchCleanupCommand(
     ) {
       throw new CleanupInputError('BLOCKED_AUTHORIZATION: broker options require --agent-id.');
     }
-    const rootDir = workspaceRoot();
+    const rootDir = findWorkspaceRoot();
+    if (!rootDir) throw new CleanupInputError('Workspace root with openslack.yaml was not found.');
     if (options.agentId !== undefined) {
       if (!options.agentId.trim())
         throw new CleanupInputError('BLOCKED_AUTHORIZATION: empty agent ID.');
@@ -198,7 +150,7 @@ export async function runPRBranchCleanupCommand(
           principalId: registry.identity.principal_id,
           runtimeUid: principal.runtime_uid,
           runId: principal.run_id,
-          repo: options.repo,
+          repo: repository!,
           remote: options.remote,
           prNumber,
           permitId: options.permitId,
@@ -207,31 +159,17 @@ export async function runPRBranchCleanupCommand(
         { timeoutMs: remainingMs() },
       );
       console.log(
-        `PR: #${prNumber}\nRepository: ${options.repo}\nDecision: ${result.state}\nReason: ${result.reason}\nAudit: ${result.auditStatus}\nPermit: ${result.permitId}\nPermit state: ${result.permitState}\nOperation: ${result.operationId ?? 'not reserved'}\nClaim requirement: ${result.claimRequirement}\nClaim status: ${result.claimStatus}`,
+        `PR: #${prNumber}\nRepository: ${repository}\nDecision: ${result.state}\nReason: ${result.reason}\nAudit: ${result.auditStatus}\nPermit: ${result.permitId}\nPermit state: ${result.permitState}\nOperation: ${result.operationId ?? 'not reserved'}\nClaim requirement: ${result.claimRequirement}\nClaim status: ${result.claimStatus}`,
       );
       if (mode === 'preview') console.log('Preview only. No remote branch was deleted.');
-      if (
-        ['reserved', 'reconciliation_required'].includes(result.permitState) ||
-        ['OPERATION_IN_PROGRESS', 'RECONCILIATION_REQUIRED', 'ABSENT_AFTER_ATTEMPT'].includes(
-          result.state,
-        )
-      ) {
-        console.error(
-          'Operation unresolved. Query --operation-status with the same operation ID; do not repeat execute.',
-        );
-      }
-      const success =
-        mode === 'preview'
-          ? ['CLEANUP_READY', 'ALREADY_ABSENT'].includes(result.state)
-          : ['DELETED', 'ALREADY_ABSENT'].includes(result.state) &&
-            result.auditStatus === 'RECORDED' &&
-            result.permitState === 'consumed';
-      if (!success || result.auditStatus === 'FAILED') process.exitCode = 1;
+      const evaluation = evaluateCleanupBrokerResult(result);
+      if (evaluation.notice) console.error(evaluation.notice);
+      process.exitCode = evaluation.exitCode;
       return;
     }
     const auth = options.auth as 'auto' | 'app' | 'token';
     const client = await getClient({
-      repoFullName: options.repo,
+      repoFullName: repository,
       auth,
       requireLive: true,
       strictEvidence: true,
@@ -252,13 +190,13 @@ export async function runPRBranchCleanupCommand(
       context: { kind: 'human-cli' },
       audit: async (event) => {
         if (event.mode === 'preview') {
-          recordEvent(cleanupEvent(event), rootDir);
+          recordEvent(projectPRBranchCleanupEvent(event), rootDir);
           return;
         }
         // Creation and append errors propagate to the steward. Intent must be
         // fsynced before deletion; terminal failure must not trigger a retry.
         appender ??= createBoundEventAppender(rootDir);
-        appender.append(createEvent(cleanupEvent(event)));
+        appender.append(createEvent(projectPRBranchCleanupEvent(event)));
       },
     });
     console.log(
@@ -274,10 +212,7 @@ export async function runPRBranchCleanupCommand(
       console.error(
         'Audit incomplete. Preserve this operation result; do not automatically retry deletion.',
       );
-    const success = options.execute
-      ? ['DELETED', 'ALREADY_ABSENT'].includes(result.state) && result.auditStatus !== 'FAILED'
-      : ['CLEANUP_READY', 'ALREADY_ABSENT'].includes(result.state);
-    if (!success) process.exitCode = 1;
+    process.exitCode = evaluatePRBranchCleanupResult(result, options.execute === true);
   } catch (error) {
     console.error(
       error instanceof CleanupInputError || error instanceof CleanupBrokerClientError

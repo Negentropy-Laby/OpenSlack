@@ -1,3 +1,4 @@
+import { issueClaimRef } from '@openslack/core';
 import { getClient, type GitHubClient, type GitHubClientOptions } from './client.js';
 import { parseClaimMetadata } from './claims.js';
 
@@ -103,14 +104,6 @@ class ClaimLifecycleFailure extends Error {
     super(code);
     this.name = 'ClaimLifecycleFailure';
   }
-}
-
-function canonicalClaimRef(issueNumber: number): string {
-  return `refs/heads/openslack/claims/issue-${issueNumber}`;
-}
-
-function apiClaimRef(issueNumber: number): string {
-  return `heads/openslack/claims/issue-${issueNumber}`;
 }
 
 function validateCommonInput(issueNumber: number, agentId: string): void {
@@ -298,7 +291,7 @@ async function requireClaimRef(client: GitHubClient, issueNumber: number): Promi
     await client.octokit.git.getRef({
       owner: client.owner,
       repo: client.repo,
-      ref: apiClaimRef(issueNumber),
+      ref: issueClaimRef(issueNumber),
     });
   } catch (error) {
     if (statusOf(error) === 404) throw new ClaimLifecycleFailure('CLAIM_REF_NOT_FOUND');
@@ -311,7 +304,7 @@ async function claimRefIsAbsent(client: GitHubClient, issueNumber: number): Prom
     await client.octokit.git.getRef({
       owner: client.owner,
       repo: client.repo,
-      ref: apiClaimRef(issueNumber),
+      ref: issueClaimRef(issueNumber),
     });
     return false;
   } catch (error) {
@@ -414,7 +407,11 @@ function failedResult(
     operation,
     outcome: options.outcome ?? 'failed',
     issueNumber: input.issueNumber,
-    claimRef: canonicalClaimRef(input.issueNumber),
+    // Invalid input has no claim target; keep the structured failure contract.
+    claimRef:
+      Number.isSafeInteger(input.issueNumber) && input.issueNumber > 0
+        ? issueClaimRef(input.issueNumber, 'canonical')
+        : '',
     agentId: input.agentId,
     ...(options.owner ? { owner: options.owner } : {}),
     ...(options.prUrl ? { prUrl: options.prUrl } : {}),
@@ -436,10 +433,10 @@ export async function heartbeatClaim(
   input: HeartbeatClaimInput,
   dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<ClaimLifecycleResult> {
-  const claimRef = canonicalClaimRef(input.issueNumber);
   let owner: string | undefined;
   try {
     validateCommonInput(input.issueNumber, input.agentId);
+    const claimRef = issueClaimRef(input.issueNumber, 'canonical');
     if (
       input.ttlMinutes !== undefined &&
       (!Number.isSafeInteger(input.ttlMinutes) || input.ttlMinutes < 1 || input.ttlMinutes > 480)
@@ -592,11 +589,11 @@ export async function reviewClaim(
   input: ReviewClaimInput,
   dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<ClaimLifecycleResult> {
-  const claimRef = canonicalClaimRef(input.issueNumber);
   let owner: string | undefined;
   let prUrl: string | undefined;
   try {
     validateCommonInput(input.issueNumber, input.agentId);
+    const claimRef = issueClaimRef(input.issueNumber, 'canonical');
     const client = await requireLiveClient(dependencies);
     prUrl = normalizePullRequest(input.prUrl, client).url;
     await requireClaimRef(client, input.issueNumber);
@@ -709,11 +706,11 @@ export async function completeClaim(
   input: CompleteClaimInput,
   dependencies: ClaimLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<ClaimLifecycleResult> {
-  const claimRef = canonicalClaimRef(input.issueNumber);
   let owner: string | undefined;
   let prUrl: string | undefined;
   try {
     validateCommonInput(input.issueNumber, input.agentId);
+    const claimRef = issueClaimRef(input.issueNumber, 'canonical');
     const client = await requireLiveClient(dependencies);
     const pullRequest = normalizePullRequest(input.prUrl, client);
     prUrl = pullRequest.url;
@@ -784,7 +781,7 @@ export async function completeClaim(
       await client.octokit.git.deleteRef({
         owner: client.owner,
         repo: client.repo,
-        ref: apiClaimRef(input.issueNumber),
+        ref: issueClaimRef(input.issueNumber),
       });
     } catch (error) {
       if (statusOf(error) !== 404) mutationFailed = true;

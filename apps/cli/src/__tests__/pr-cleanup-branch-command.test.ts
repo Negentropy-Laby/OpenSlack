@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as GitHub from '@openslack/github';
 import type * as PR from '@openslack/pr';
 import type * as Workspace from '@openslack/workspace';
 
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@openslack/pr', async (importOriginal) => {
   const actual = await importOriginal<typeof PR>();
   return {
+    ...actual,
     cleanupPRBranch: mocks.cleanup,
     sendCleanupBrokerRequest: mocks.broker,
     CleanupBrokerClientError: actual.CleanupBrokerClientError,
@@ -24,9 +26,9 @@ vi.mock('@openslack/workspace', async (importOriginal) => ({
   ...(await importOriginal<typeof Workspace>()),
   parseAgentRegistry: mocks.registry,
 }));
-vi.mock('@openslack/github', () => ({
+vi.mock('@openslack/github', async (importOriginal) => ({
+  ...(await importOriginal<typeof GitHub>()),
   getClient: mocks.client,
-  parseGitHubRepoSpec: (s: string) => (/^[\w-]+\/[\w.-]+$/.test(s) ? {} : null),
 }));
 vi.mock('@openslack/runtime', () => ({
   resolveAgentPrincipal: mocks.resolve,
@@ -188,7 +190,7 @@ describe('branch cleanup CLI adapter', () => {
     expect(mocks.cleanup).not.toHaveBeenCalled();
     expect(mocks.record).not.toHaveBeenCalled();
     expect(mocks.append).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeUndefined();
+    expect(process.exitCode).toBe(0);
   });
 
   it.each([
@@ -245,7 +247,7 @@ describe('branch cleanup CLI adapter', () => {
       );
       expect(mocks.client).not.toHaveBeenCalled();
       expect(mocks.cleanup).not.toHaveBeenCalled();
-      expect(process.exitCode).toBeUndefined();
+      expect(process.exitCode).toBe(0);
     },
   );
 
@@ -264,6 +266,30 @@ describe('branch cleanup CLI adapter', () => {
     expect(mocks.cleanup).not.toHaveBeenCalled();
   });
 
+  it.each(['https://github.com/owner/repo.git', 'git@github.com:owner/repo.git', ' owner/repo '])(
+    'normalizes explicit repository %j before sending broker claims',
+    async (repo) => {
+      await runPRBranchCleanupCommand('417', { ...agentOptions, repo });
+      expect(mocks.broker).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'owner/repo' }),
+        expect.any(Object),
+      );
+      expect(process.exitCode).toBe(0);
+    },
+  );
+  it('clears a previous embedded-command failure when execute is accepted and still running', async () => {
+    process.exitCode = 1;
+    mocks.broker.mockResolvedValue({
+      ...brokerResult,
+      mode: 'execute',
+      state: 'OPERATION_IN_PROGRESS',
+      permitState: 'reserved',
+      operationId: 'OP-1',
+    });
+    await runPRBranchCleanupCommand('417', { ...agentOptions, execute: true, operationId: 'OP-1' });
+    expect(process.exitCode).toBe(0);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('has not completed'));
+  });
   it.each([
     'OPERATION_IN_PROGRESS',
     'RECONCILIATION_REQUIRED',
@@ -282,7 +308,7 @@ describe('branch cleanup CLI adapter', () => {
       operationStatus: true,
       operationId: 'OP-1',
     });
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(state === 'OPERATION_IN_PROGRESS' ? 0 : 1);
     expect(mocks.broker).toHaveBeenCalledTimes(1);
     expect(mocks.client).not.toHaveBeenCalled();
   });
@@ -321,7 +347,7 @@ describe('branch cleanup CLI adapter', () => {
     expect(mocks.resolve).not.toHaveBeenCalled();
     expect(mocks.broker).toHaveBeenCalledOnce();
     expect(mocks.client).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeUndefined();
+    expect(process.exitCode).toBe(0);
   });
 
   it.each(['registry', 'identity'] as const)(
@@ -363,7 +389,7 @@ describe('branch cleanup CLI adapter', () => {
       expect(mocks.broker).toHaveBeenCalledTimes(explicit ? 1 : 0);
       expect(mocks.client).not.toHaveBeenCalled();
       expect(mocks.cleanup).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(explicit ? undefined : 1);
+      expect(process.exitCode).toBe(explicit ? 0 : 1);
     },
   );
 
@@ -384,7 +410,7 @@ describe('branch cleanup CLI adapter', () => {
       authorization_source: 'explicit-execute',
       transport_identity: 'github_app_installation',
     });
-    expect(process.exitCode).toBeUndefined();
+    expect(process.exitCode).toBe(0);
   });
 
   it('propagates durable append failure to the steward without swallowing it', async () => {

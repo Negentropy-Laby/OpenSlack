@@ -62,6 +62,36 @@ describe('proposeWorkspacePR authorization', () => {
     });
   });
 
+  it.each(['../bad', 'with space', ':bad', 'x'.repeat(129)])(
+    'rejects unsafe task/run identifiers %s',
+    (identifier) => {
+      const metadata = {
+        schema: 'openslack.task_link.v1' as const,
+        issue_number: 42,
+        agent_id: 'repair',
+        task_id: identifier,
+        run_id: 'run-42',
+        claim_ref: 'refs/heads/openslack/claims/issue-42',
+      };
+      expect(parseTaskLinkMetadata(renderTaskLinkMetadata(metadata))).toBeNull();
+      expect(
+        parseTaskLinkMetadata(
+          renderTaskLinkMetadata({ ...metadata, task_id: 'task-42', run_id: identifier }),
+        ),
+      ).toBeNull();
+    },
+  );
+  it('rejects duplicate association markers on completion', () => {
+    const marker = renderTaskLinkMetadata({
+      schema: 'openslack.task_link.v1',
+      issue_number: 42,
+      agent_id: 'repair',
+      task_id: 'task-42',
+      run_id: 'run-42',
+      claim_ref: 'refs/heads/openslack/claims/issue-42',
+    });
+    expect(parseTaskLinkMetadata(marker + marker)).toBeNull();
+  });
   it('rejects malformed task-link metadata', () => {
     expect(
       parseTaskLinkMetadata(

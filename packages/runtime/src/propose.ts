@@ -1,3 +1,4 @@
+import { parseTaskLinkMarker, issueClaimRef, type TaskLinkMetadata } from '@openslack/core';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -35,45 +36,13 @@ export interface PRProposalResult {
   delivery?: GitHubDeliveryResult;
 }
 
-export interface TaskLinkMetadata {
-  schema: 'openslack.task_link.v1';
-  issue_number: number;
-  agent_id: string;
-  task_id: string;
-  run_id: string;
-  claim_ref: string;
-}
-
-const TASK_LINK_AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
-
+export type { TaskLinkMetadata } from '@openslack/core';
 export function renderTaskLinkMetadata(metadata: TaskLinkMetadata): string {
   return `<!-- openslack-task-link\n${JSON.stringify(metadata, null, 2)}\n-->`;
 }
-
 export function parseTaskLinkMetadata(body: string | null | undefined): TaskLinkMetadata | null {
-  if (!body) return null;
-  const match = body.match(/<!--\s*openslack-task-link\s*([\s\S]*?)-->/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[1].trim()) as Partial<TaskLinkMetadata>;
-    if (
-      parsed.schema !== 'openslack.task_link.v1' ||
-      !Number.isSafeInteger(parsed.issue_number) ||
-      (parsed.issue_number ?? 0) <= 0 ||
-      typeof parsed.agent_id !== 'string' ||
-      !TASK_LINK_AGENT_ID_PATTERN.test(parsed.agent_id) ||
-      typeof parsed.task_id !== 'string' ||
-      parsed.task_id.length === 0 ||
-      typeof parsed.run_id !== 'string' ||
-      parsed.run_id.length === 0 ||
-      parsed.claim_ref !== `refs/heads/openslack/claims/issue-${parsed.issue_number}`
-    ) {
-      return null;
-    }
-    return parsed as TaskLinkMetadata;
-  } catch {
-    return null;
-  }
+  const result = parseTaskLinkMarker(body);
+  return result.state === 'VALID' ? result.metadata : null;
 }
 
 function loadLocalCodeowners(root: string, changedPaths: string[]): string[] {
@@ -115,7 +84,7 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
         agent_id: input.agentId,
         task_id: input.taskId,
         run_id: input.runId,
-        claim_ref: `refs/heads/openslack/claims/issue-${input.issueNumber}`,
+        claim_ref: issueClaimRef(input.issueNumber, 'canonical'),
       })
     : '';
 
