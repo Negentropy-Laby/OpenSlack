@@ -1,6 +1,15 @@
 import type * as ChildProcess from 'node:child_process';
+import type * as FileSystem from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -16,21 +25,55 @@ vi.mock('node:child_process', async (original) => {
   const actual = await original<typeof ChildProcess>();
   return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
 });
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof FileSystem>();
+  return { ...actual, statSync: vi.fn(actual.statSync) };
+});
+
+it('discovers optional PowerShell from the shared PATH candidates without launching where', () => {
+  const root = testTemporaryDirectory('openslack pwsh discovery ');
+  const executable = join(root, 'pwsh.exe');
+  writeFileSync(executable, 'non-executing shell path fixture');
+  vi.mocked(spawnSync).mockClear();
+  try {
+    expect(testPowerShells({ Path: root, PATH: 'unusable-duplicate' })).toEqual([
+      'powershell',
+      realpathSync.native(executable),
+    ]);
+    expect(spawnSync).not.toHaveBeenCalled();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 it('distinguishes an absent optional PowerShell from failed executable discovery', () => {
-  const result = { pid: 0, output: [], stdout: '', stderr: '', signal: null };
-  for (const status of [0, 1]) {
-    vi.mocked(spawnSync).mockReturnValueOnce({ ...result, status });
-    expect(testPowerShells({})).toEqual(status === 0 ? ['powershell', 'pwsh'] : ['powershell']);
+  const root = testTemporaryDirectory('openslack-pwsh-errors-');
+  try {
+    expect(testPowerShells({ PATH: '' })).toEqual(['powershell']);
+    for (const code of ['ENOENT', 'ENOTDIR']) {
+      vi.mocked(statSync).mockImplementationOnce(() => {
+        throw Object.assign(new Error('missing fixture candidate'), { code });
+      });
+      expect(testPowerShells({ PATH: root })).toEqual(['powershell']);
+    }
+    for (const code of ['EACCES', 'EIO', 'ETIMEDOUT', 'EBADF']) {
+      vi.mocked(statSync).mockImplementationOnce(() => {
+        throw Object.assign(new Error('inspection fixture failure'), { code });
+      });
+      expect(() => testPowerShells({ PATH: root })).toThrow('TEST_PWSH_DISCOVERY_FAILED');
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
-  for (const failure of [
-    { status: null, error: Object.assign(new Error('timeout fixture'), { code: 'ETIMEDOUT' }) },
-    { status: null, error: Object.assign(new Error('missing tool fixture'), { code: 'ENOENT' }) },
-    { status: null, signal: 'SIGTERM' as const },
-    { status: 2 },
-  ]) {
-    vi.mocked(spawnSync).mockReturnValueOnce({ ...result, ...failure });
-    expect(() => testPowerShells({})).toThrow('TEST_PWSH_DISCOVERY_FAILED');
+});
+
+it('does not treat a directory named pwsh.exe as an optional shell', () => {
+  const root = testTemporaryDirectory('openslack-pwsh-directory-');
+  mkdirSync(join(root, 'pwsh.exe'));
+  try {
+    expect(testPowerShells({ PATH: root })).toEqual(['powershell']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

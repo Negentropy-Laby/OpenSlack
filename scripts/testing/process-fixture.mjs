@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, realpathSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -11,6 +11,7 @@ const {
   bashCandidates,
   probeBash,
   executableIdentity,
+  executableCandidates,
 } = tsxRequire('../../packages/core/src/process-discovery.ts', import.meta.url);
 
 export const testProcessEnvironment = normalizeProcessEnvironment;
@@ -21,14 +22,19 @@ export function testTemporaryDirectory(prefix, parent = tmpdir()) {
   return realpathSync.native(mkdtempSync(join(realpathSync.native(parent), prefix)));
 }
 export function testPowerShells(env = testProcessEnvironment()) {
-  const discovery = spawnSync('where.exe', ['pwsh'], {
-    encoding: 'utf8',
-    timeout: 1_000,
-    env,
-  });
-  if (discovery.error || discovery.signal || (discovery.status !== 0 && discovery.status !== 1))
-    throw new Error('TEST_PWSH_DISCOVERY_FAILED: optional shell discovery did not complete.');
-  return discovery.status === 0 ? ['powershell', 'pwsh'] : ['powershell'];
+  // Use the same PATH/PATHEXT candidates as other fixtures. Discovering an
+  // optional shell does not need another process or a separate startup timer.
+  for (const candidate of executableCandidates('pwsh', env, 'win32')) {
+    try {
+      if (statSync(candidate).isFile()) return ['powershell', realpathSync.native(candidate)];
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') continue;
+      throw new Error('TEST_PWSH_DISCOVERY_FAILED: optional shell inspection did not complete.');
+    }
+  }
+  // The Windows fixture must still launch mandatory PowerShell 5.1, and every
+  // discovered pwsh must actually render all three cases under its child bound.
+  return ['powershell'];
 }
 export function platformTestTimeout(baseMs, windowsMs = 120_000) {
   return process.platform === 'win32' ? windowsMs : baseMs;
