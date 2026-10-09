@@ -5,7 +5,7 @@ import {
   renderWorkflowRunReadDiagnostic,
 } from '@openslack/workflows';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { parse as parseYaml } from 'yaml';
@@ -53,6 +53,8 @@ import type {
 } from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
+import type { AgentPermissionSnapshot, AgentPrincipal } from '@openslack/kernel';
+import type { ProfileSyncConfig, ProfileSyncPreviewResult } from '@openslack/github';
 import {
   buildDashboardCard,
   buildDigestCard,
@@ -148,8 +150,8 @@ const BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES = 8 * 1024 * 1024;
 const BUSINESS_OUTCOME_EVENT_QUERY_MAX_RECORDS = 50_000;
 
 type AgentAuthOptions = {
-  principal?: import('@openslack/kernel').AgentPrincipal;
-  snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+  principal?: AgentPrincipal;
+  snapshot?: AgentPermissionSnapshot;
 };
 
 function workflowRunnerComposition(workspaceRoot: string) {
@@ -360,35 +362,6 @@ function loadWorkflowTemplate(pathOrId: string): WorkflowTemplate {
   const builtinPath = resolveBuiltinTemplatePath(pathOrId);
   const resolvedPath = builtinPath ?? pathOrId;
   return parseYaml(readFileSync(resolvedPath, 'utf-8')) as WorkflowTemplate;
-}
-
-interface BuiltinTemplateSummary {
-  id: string;
-  name: string;
-  phases: number;
-  inputs: number;
-  file: string;
-}
-
-function listBuiltinTemplates(): BuiltinTemplateSummary[] {
-  const dir = resolveBuiltinTemplatesDir();
-  if (!dir) return [];
-  if (!existsSync(dir)) return [];
-  const files = readdirSync(dir).filter((f) => f.endsWith('.yaml'));
-  const templates: BuiltinTemplateSummary[] = [];
-  for (const file of files) {
-    const template = parseYaml(readFileSync(join(dir, file), 'utf-8')) as WorkflowTemplate;
-    const errors = validateWorkflowTemplate(template);
-    if (errors.length > 0) continue;
-    templates.push({
-      id: template.id,
-      name: template.name,
-      phases: template.phases.length,
-      inputs: (template.inputs ?? []).length,
-      file,
-    });
-  }
-  return templates;
 }
 
 interface OutcomeAssumptionValue {
@@ -720,7 +693,7 @@ export function collaborationCommands(): Command {
           try {
             const { renderDashboardTui } = await import('@openslack/tui');
             await renderDashboardTui(dashboard);
-          } catch (error) {
+          } catch {
             console.error('TUI unavailable. Falling back to standard output.');
             console.log(renderDashboardProjection(dashboard));
           }
@@ -863,7 +836,7 @@ export function collaborationCommands(): Command {
           try {
             const { renderActivityTui } = await import('@openslack/tui');
             await renderActivityTui(filtered, { periodHours: hours });
-          } catch (error) {
+          } catch {
             console.error('TUI unavailable. Falling back to standard output.');
             console.log(renderActivityFeed(filtered));
           }
@@ -967,7 +940,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderDigestTui } = await import('@openslack/tui');
           await renderDigestTui(digest);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderDigest(digest));
         }
@@ -1025,7 +998,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderHandoffListTui } = await import('@openslack/tui');
           await renderHandoffListTui(handoffs);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderHandoffList(handoffs));
         }
@@ -1050,7 +1023,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderHandoffDetailTui } = await import('@openslack/tui');
           await renderHandoffDetailTui(h);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderHandoff(h));
         }
@@ -1138,7 +1111,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderDecisionListTui } = await import('@openslack/tui');
           await renderDecisionListTui(decisions);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderDecisionList(decisions));
         }
@@ -1163,7 +1136,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderDecisionDetailTui } = await import('@openslack/tui');
           await renderDecisionDetailTui(d);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderDecision(d));
         }
@@ -1204,7 +1177,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderRoomTui } = await import('@openslack/tui');
           await renderRoomTui(view);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderRoom(view));
         }
@@ -1240,7 +1213,7 @@ export function collaborationCommands(): Command {
         try {
           const { renderWorkflowPreviewTui } = await import('@openslack/tui');
           await renderWorkflowPreviewTui(preview);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderWorkflowPreview(preview));
         }
@@ -3101,7 +3074,7 @@ export function collaborationCommands(): Command {
 
   // Helper to build config from file + CLI overrides
   async function resolveProfileSyncConfig(options: Record<string, unknown>): Promise<{
-    config: import('@openslack/github').ProfileSyncConfig;
+    config: ProfileSyncConfig;
     overrides: string[];
   }> {
     const { loadProfileSyncConfig } = await import('@openslack/github');
@@ -3400,7 +3373,7 @@ export function collaborationCommands(): Command {
 // ── Profile Sync helpers ──────────────────────────────────────────────────────
 
 function renderProfileSyncPreviewMarkdown(
-  result: import('@openslack/github').ProfileSyncPreviewResult,
+  result: ProfileSyncPreviewResult,
 ): string {
   const lines: string[] = [];
   lines.push('# Profile Sync Preview');

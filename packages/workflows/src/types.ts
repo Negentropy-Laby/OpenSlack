@@ -4,6 +4,7 @@ import type {
   WorkflowRunReadDiagnostic,
   WorkflowRunReadProvenance,
 } from './workflow-run-read-errors.js';
+import type { ResolvedAgentConfig } from './agent-resolver.js';
 
 // ── JSON Schema type (lightweight inline to avoid external dep) ────────────────
 
@@ -85,7 +86,7 @@ export interface AgentOptions {
   agentType?: string;
   resolvedAgentId?: string;
   /** Resolved agent config from agent-resolver. Passed through to launcher. */
-  resolvedAgentConfig?: import('./agent-resolver.js').ResolvedAgentConfig;
+  resolvedAgentConfig?: ResolvedAgentConfig;
   /** Pre-generated agent runtime run ID. Passed through to launcher for stable correlation. */
   agentRunId?: string;
   /** Bridge mode for adapter selection (e.g., 'fake', 'process', 'local'). */
