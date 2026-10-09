@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Box from '../ink/components/Box.js';
-import Text from '../ink/components/Text.js';
-import useApp from '../ink/hooks/use-app.js';
 import useInput from '../ink/hooks/use-input.js';
 import ThemedText from '../design-system/ThemedText.js';
 import Divider from '../design-system/Divider.js';
-import Pane from '../design-system/Pane.js';
-import ListItem from '../design-system/ListItem.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import { NavigationProvider, useNavigation } from '../navigation/context.js';
 import type { Route } from '../navigation/router.js';
@@ -14,13 +10,9 @@ import { mapHomeToViewModel } from '../view-models/home.js';
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js';
 import { mapWorkflowGalleryToViewModel } from '../view-models/workflow-gallery.js';
 import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js';
-import { mapDigestToViewModel } from '../view-models/digest.js';
-import { mapHandoffListToViewModel } from '../view-models/handoff.js';
-import { mapDecisionListToViewModel } from '../view-models/decision.js';
 import { mapRoomToViewModel } from '../view-models/room.js';
 import type { RoomViewModel } from '../view-models/room.js';
 import { mapProfileToViewModel } from '../view-models/profile.js';
-import type { ProfileViewModel } from '../view-models/profile.js';
 import {
   mapConversationListToViewModel,
   mapThreadToViewModel,

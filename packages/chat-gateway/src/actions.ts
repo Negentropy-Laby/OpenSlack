@@ -8,7 +8,6 @@ import {
   buildHandoffCard,
   buildDecisionCard,
 } from './cards.js';
-import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
 import {
   recordEvent,
   acceptHandoff,

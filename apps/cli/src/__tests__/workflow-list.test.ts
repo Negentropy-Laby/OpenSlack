@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { Command } from 'commander';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';

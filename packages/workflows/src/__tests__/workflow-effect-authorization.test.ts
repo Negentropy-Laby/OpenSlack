@@ -40,7 +40,6 @@ import {
   WORKFLOW_RUNNER_PROTOCOL_VERSION,
   type WorkflowRunnerEffectIntentMessage,
 } from '../workflow-runner-contract.js';
-import type { WorkflowRuntime } from '../types.js';
 import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 
 const BUILD_HASH = '1'.repeat(64);

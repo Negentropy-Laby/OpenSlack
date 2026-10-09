@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { executePreview, PreviewModeError } from '../preview.js';
-import { createRuntime } from '../runtime.js';
 import type { AgentLauncher } from '../agent-shim.js';
 import type { WorkflowMeta, WorkflowRuntime } from '../types.js';
 

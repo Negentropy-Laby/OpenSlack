@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { diagnoseTui, renderDiagnosticsPlain } from '../diagnostics.js';
-import type { TuiDiagnosticReport } from '../diagnostics.js';
 
 describe('diagnoseTui', () => {
   const originalEnv: Record<string, string | undefined> = {};

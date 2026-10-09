@@ -10,7 +10,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
-import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

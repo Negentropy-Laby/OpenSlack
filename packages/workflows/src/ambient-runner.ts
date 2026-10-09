@@ -1,5 +1,4 @@
 import { createContext, Script } from 'node:vm';
-import type { AnthropicCompatSandbox } from './anthropic-compat.js';
 import type { WorkflowRuntime } from './types.js';
 
 /**

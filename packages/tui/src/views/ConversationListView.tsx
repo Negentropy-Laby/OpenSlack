@@ -5,7 +5,6 @@ import useApp from '../ink/hooks/use-app.js';
 import useInput from '../ink/hooks/use-input.js';
 import ThemedText from '../design-system/ThemedText.js';
 import Divider from '../design-system/Divider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import SelectableList from '../design-system/SelectableList.js';
 import type {

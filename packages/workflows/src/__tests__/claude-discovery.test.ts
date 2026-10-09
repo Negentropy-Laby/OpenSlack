@@ -6,7 +6,6 @@ import {
   discoverWorkflows as discoverWorkflowsWithUserHome,
   discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
 } from '../loader.js';
-import type { WorkflowSource } from '../types.js';
 
 const discoverWorkflows = (cwd: string) =>
   discoverWorkflowsWithUserHome(cwd, { userHomeDir: null });

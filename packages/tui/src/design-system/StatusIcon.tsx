@@ -1,5 +1,4 @@
 import React from 'react';
-import { useTheme } from './ThemeProvider.js';
 import ThemedText from './ThemedText.js';
 
 export type StatusCategory = 'pass' | 'warn' | 'fail' | 'blocked' | 'info';

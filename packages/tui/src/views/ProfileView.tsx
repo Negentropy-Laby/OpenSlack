@@ -7,7 +7,6 @@ import Pane from '../design-system/Pane.js';
 import ThemedText from '../design-system/ThemedText.js';
 import ListItem from '../design-system/ListItem.js';
 import Divider from '../design-system/Divider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import { sanitizeTerminalText } from '../sanitize.js';
 import {

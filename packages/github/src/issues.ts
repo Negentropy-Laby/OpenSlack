@@ -1,4 +1,3 @@
-import type { GitHubClient } from './client.js';
 import { getClient } from './client.js';
 
 export interface CreateIssueResult {
