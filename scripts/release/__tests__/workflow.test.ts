@@ -70,26 +70,25 @@ describe('native release workflow integrity', () => {
           step.name === 'Build unsigned PR or development archive and run unpacked smoke',
       ),
     );
-    expect(steps[index]).toEqual({
-      name: 'Qualify governed PR branch cleanup',
-      run: [
-        'bunx vitest run',
-        'packages/delivery/src/__tests__/git-transport.test.ts',
-        'packages/delivery/src/__tests__/branch-cleanup.test.ts',
-        'packages/delivery/src/__tests__/cleanup-broker-channel.test.ts',
-        'packages/delivery/src/__tests__/cleanup-broker-transport.test.ts',
-        'packages/pr/src/__tests__/cleanup-branch.test.ts',
-        'packages/pr/src/__tests__/cleanup-broker-client.test.ts',
-        'packages/pr/src/__tests__/cleanup-broker-authorization.test.ts',
-        'packages/pr/src/__tests__/cleanup-broker-digest.test.ts',
-        'packages/pr/src/__tests__/task-link.test.ts',
-        'packages/github/src/__tests__/branch-evidence.test.ts',
-        'packages/github/src/__tests__/cleanup-broker-client-scope.test.ts',
-        'apps/cli/src/__tests__/pr-cleanup-branch-command.test.ts',
-        'packages/collaboration/src/__tests__/events.test.ts',
-        'packages/runtime/src/__tests__/propose.test.ts',
-      ].join(' '),
-    });
+    const qualification = steps[index];
+    expect(qualification.name).toBe('Qualify governed PR branch cleanup');
+    const scopes = [...qualification.run.matchAll(/--project\s+(@openslack\/[^\s]+)/g)].map(
+      (match) => match[1],
+    );
+    expect(new Set(scopes)).toEqual(
+      new Set([
+        '@openslack/core',
+        '@openslack/github',
+        '@openslack/delivery',
+        '@openslack/pr',
+        '@openslack/runtime',
+        '@openslack/collaboration',
+        '@openslack/cli',
+      ]),
+    );
+    expect(qualification.run.startsWith('bunx vitest run')).toBe(true);
+    expect(qualification.run).not.toContain('__tests__/');
+    expect(qualification.if).toBeUndefined();
     expect(steps[index + 1]).toEqual({
       name: 'Set up Go for cleanup broker components',
       if: "${{ matrix.target == 'linux-x64' }}",

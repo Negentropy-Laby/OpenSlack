@@ -30,10 +30,7 @@ const result = await Bun.build({
             'claimRefPresent',
           ])
             contents = contents.replace(`  ${name},\n`, '');
-          contents = contents.replace(
-            "import { fetchPRDetails } from '../fetch.js';",
-            `import { fetchPRDetails, getDefaultBranch, isBranchProtected, listOpenPRsForBranch, claimRefPresent } from ${JSON.stringify(resources)};`,
-          );
+          contents = `import { getDefaultBranch, isBranchProtected, listOpenPRsForBranch, claimRefPresent } from ${JSON.stringify(resources)};\n${contents}`;
           return { contents, loader: 'ts' };
         });
         build.onLoad({ filter: /cleanup-broker-transport\.(?:ts|js)$/ }, async ({ path }) => {

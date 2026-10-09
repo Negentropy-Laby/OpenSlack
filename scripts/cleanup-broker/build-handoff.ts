@@ -1,14 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CleanupHandoffError,
@@ -16,6 +8,10 @@ import {
   assertCleanupHandoffRuntime,
   readCleanupHandoffInputFile,
   prepareCleanupHandoffDraft,
+  CLEANUP_HANDOFF_SCHEMAS,
+  cleanupHandoffToolchain,
+  assertCleanupHandoffToolchain,
+  assertCleanupHandoffObjects,
 } from '../../packages/pr/src/cleanup-handoff.js';
 import type {
   CleanupHandoffBuildInput,
@@ -55,12 +51,7 @@ try {
     go: run('go', ['version'], source),
     node: run(node, ['--version'], source),
   };
-  if (
-    tools.bun !== '1.4.0' ||
-    tools.go !== 'go version go1.26.5 linux/amd64' ||
-    tools.node !== 'v24.18.1'
-  )
-    throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+  assertCleanupHandoffToolchain(tools, cleanupHandoffToolchain(source));
   mkdirSync(buildRoot, { mode: 0o755 });
   const build = (id: string): CleanupHandoffBuildInput => {
     const checkout = join(buildRoot, `source-${id}`),
@@ -71,25 +62,7 @@ try {
       throw new CleanupHandoffError('HANDOFF_SOURCE_DIRTY');
     // --no-hardlinks is mandatory, and verify the cloned object files are single-link.
     const objectFiles = run('git', ['rev-parse', '--git-path', 'objects'], checkout);
-    if (!existsSync(resolve(checkout, objectFiles)))
-      throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
-    const verifyObjects = (directory: string) => {
-      const root = lstatSync(directory);
-      if (root.isSymbolicLink() || !root.isDirectory())
-        throw new CleanupHandoffError('HANDOFF_PATH_UNSAFE');
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name),
-          stamp = lstatSync(path);
-        if (
-          stamp.isSymbolicLink() ||
-          (stamp.isFile() && stamp.nlink !== 1) ||
-          path.endsWith('/info/alternates')
-        )
-          throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
-        if (stamp.isDirectory()) verifyObjects(path);
-      }
-    };
-    verifyObjects(resolve(checkout, objectFiles));
+    assertCleanupHandoffObjects(resolve(checkout, objectFiles));
     run(process.execPath, ['install', '--frozen-lockfile', '--ignore-scripts'], checkout);
     mkdirSync(artifacts);
     const brokerPath = join(artifacts, 'cleanup-broker'),
@@ -130,7 +103,7 @@ try {
       reportPath,
       JSON.stringify(
         {
-          schema: 'openslack.pr418.clean-build-report.v1',
+          schema: CLEANUP_HANDOFF_SCHEMAS.build,
           candidateHead: input.candidateHead,
           checkout,
           checkoutCleanAfterBuild: run('git', ['status', '--porcelain'], checkout) === '',

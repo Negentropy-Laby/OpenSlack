@@ -69,20 +69,13 @@ jobs:
       - name: Qualify governed PR branch cleanup
         run: >-
           bunx vitest run
-          packages/delivery/src/__tests__/git-transport.test.ts
-          packages/delivery/src/__tests__/branch-cleanup.test.ts
-          packages/delivery/src/__tests__/cleanup-broker-channel.test.ts
-          packages/delivery/src/__tests__/cleanup-broker-transport.test.ts
-          packages/pr/src/__tests__/cleanup-branch.test.ts
-          packages/pr/src/__tests__/cleanup-broker-client.test.ts
-          packages/pr/src/__tests__/cleanup-broker-authorization.test.ts
-          packages/pr/src/__tests__/cleanup-broker-digest.test.ts
-          packages/pr/src/__tests__/task-link.test.ts
-          packages/github/src/__tests__/branch-evidence.test.ts
-          packages/github/src/__tests__/cleanup-broker-client-scope.test.ts
-          apps/cli/src/__tests__/pr-cleanup-branch-command.test.ts
-          packages/collaboration/src/__tests__/events.test.ts
-          packages/runtime/src/__tests__/propose.test.ts
+          --project @openslack/core
+          --project @openslack/github
+          --project @openslack/delivery
+          --project @openslack/pr
+          --project @openslack/runtime
+          --project @openslack/collaboration
+          --project @openslack/cli
 
       # Broker v1 is Linux/WSL2 only; this is component testing, not live
       # credential isolation or GitHub deletion qualification.

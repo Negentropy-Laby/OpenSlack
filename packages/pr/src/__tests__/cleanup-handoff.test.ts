@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type * as Crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -22,6 +23,22 @@ import {
 } from '../cleanup-handoff.js';
 import type { PrepareCleanupHandoffDraftInput } from '../cleanup-handoff.js';
 
+const digestWork = vi.hoisted(() => [] as Buffer[]);
+vi.mock('node:crypto', async (original) => {
+  const crypto = await original<typeof Crypto>();
+  return {
+    ...crypto,
+    createHash: (...args: Parameters<typeof crypto.createHash>) => {
+      const hash = crypto.createHash(...args),
+        update = hash.update.bind(hash);
+      hash.update = ((...args: Parameters<typeof hash.update>) => {
+        if (Buffer.isBuffer(args[0])) digestWork.push(args[0]);
+        return update(...args);
+      }) as typeof hash.update;
+      return hash;
+    },
+  };
+});
 const roots: string[] = [];
 const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const timestamp = '2026-10-08T12:30:00.000Z';
@@ -84,6 +101,7 @@ function fixture() {
     writeFileSync(full, bytes);
     return full;
   };
+  put('source/package.json', JSON.stringify({ devDependencies: { 'bun-types': '1.4.0' } }));
   put('source/bun.lock', 'fixture lock');
   put('source/LICENSE', 'fixture source license\n');
   put('source/services/cleanup-broker/go.mod', 'module fixture\ngo 1.26.5\n');
@@ -299,6 +317,7 @@ describe('offline cleanup handoff preparation', () => {
       '.openslack',
       'LICENSE',
       'bun.lock',
+      'package.json',
       'services',
     ]);
   });
@@ -316,6 +335,43 @@ describe('offline cleanup handoff preparation', () => {
     expect(readdirSync(join(input.outputDirectory, '..'))).not.toContain('new candidate output');
   });
 
+  it('hashes each safely read large artifact once per verification and accepts historical schemas', () => {
+    const { input } = fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    digestWork.length = 0;
+    expect(
+      verifyCleanupHandoffPackage({
+        packageDirectory: result.packageDirectory,
+        candidateHead: result.candidateHead,
+        manifestSHA256: result.manifestSHA256,
+      }).valid,
+    ).toBe(true);
+    for (const name of ['cleanup-broker', 'executor.mjs', 'node']) {
+      const bytes = readFileSync(join(result.packageDirectory, 'artifacts', name));
+      expect(
+        digestWork.filter((work) => work.equals(bytes)),
+        name,
+      ).toHaveLength(1);
+    }
+    const indexPath = join(result.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8'));
+    expect(index.schema).toBe('openslack.cleanup_handoff_evidence_index.v1');
+    index.schema = 'openslack.pr418.qualification-evidence-index.v1';
+    writeFileSync(indexPath, JSON.stringify(index));
+    const sumPath = join(result.packageDirectory, 'SHA256SUMS');
+    const sums = readFileSync(sumPath, 'utf8').replace(
+      /^([a-f0-9]{64})(  \.\/evidence\/qualification-index\.json)$/m,
+      digest(readFileSync(indexPath)) + '$2',
+    );
+    writeFileSync(sumPath, sums);
+    const legacy = verifyCleanupHandoffPackage({
+      packageDirectory: result.packageDirectory,
+      candidateHead: result.candidateHead,
+      manifestSHA256: digest(Buffer.from(sums)),
+    });
+    expect(legacy.valid).toBe(true);
+    expect(legacy.executionAuthorized).toBe(false);
+  });
   it.each(['candidate', 'digest', 'revision', 'tools'])(
     'refuses a %s build report mismatch',
     (mode) => {
@@ -419,6 +475,7 @@ describe('offline cleanup handoff preparation', () => {
   it('detects source bytes hidden by an assume-unchanged index entry', () => {
     const { input, git, put } = fixture();
     git('update-index', '--assume-unchanged', 'bun.lock');
+    put('source/package.json', JSON.stringify({ devDependencies: { 'bun-types': '1.4.0' } }));
     put('source/bun.lock', 'hidden drift');
     expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
       expect.objectContaining({ code: 'HANDOFF_SOURCE_CHANGED' }),

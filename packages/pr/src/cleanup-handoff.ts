@@ -1,3 +1,4 @@
+import { decodeStrictJSON } from '@openslack/core';
 /** Offline preparation only. This module does not import auth, delivery or cleanup execution. */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -105,6 +106,65 @@ export interface VerifyCleanupHandoffPackageResult {
   executionAuthorized: false;
 }
 
+export const CLEANUP_HANDOFF_SCHEMAS = Object.freeze({
+  build: 'openslack.cleanup_handoff_build_report.v1',
+  evidence: 'openslack.cleanup_handoff_evidence_index.v1',
+});
+const LEGACY_SCHEMAS = {
+  build: 'openslack.pr418.clean-build-report.v1',
+  evidence: 'openslack.pr418.qualification-evidence-index.v1',
+} as const;
+const QUALIFICATION_NODE = 'v24.18.1';
+export interface CleanupHandoffToolchain {
+  bun: string;
+  go: string;
+  node: string;
+}
+const LEGACY_TOOLCHAIN = Object.freeze({
+  bun: '1.4.0',
+  go: 'go version go1.26.5 linux/amd64',
+  node: QUALIFICATION_NODE,
+});
+
+/** Repository Bun/Go pins are byte-bound to the candidate; Node is the reviewed target pin. */
+function toolchainFromPins(packageBytes: Buffer, goBytes: Buffer): CleanupHandoffToolchain {
+  const manifest = json(packageBytes),
+    dependencies = object(manifest.devDependencies);
+  const bun = dependencies['bun-types'],
+    go = /^go (1\.\d+\.\d+)$/m.exec(goBytes.toString('utf8'))?.[1];
+  check(typeof bun === 'string' && /^\d+\.\d+\.\d+$/.test(bun) && go, 'HANDOFF_BUILD_MISMATCH');
+  return Object.freeze({ bun, go: `go version go${go} linux/amd64`, node: QUALIFICATION_NODE });
+}
+export function cleanupHandoffToolchain(sourceRoot: string): CleanupHandoffToolchain {
+  return toolchainFromPins(
+    safeRead(join(sourceRoot, 'package.json')),
+    safeRead(join(sourceRoot, 'services/cleanup-broker/go.mod')),
+  );
+}
+export function assertCleanupHandoffToolchain(
+  actual: unknown,
+  expected: CleanupHandoffToolchain,
+): void {
+  const tools = object(actual);
+  check(
+    tools.bun === expected.bun && tools.go === expected.go && tools.node === expected.node,
+    'HANDOFF_BUILD_MISMATCH',
+  );
+}
+function verifiedToolchain(value: unknown): CleanupHandoffToolchain {
+  if (value === undefined) return LEGACY_TOOLCHAIN;
+  const tools = object(value);
+  check(
+    typeof tools.bun === 'string' &&
+      /^\d+\.\d+\.\d+$/.test(tools.bun) &&
+      typeof tools.go === 'string' &&
+      /^go version go1\.\d+\.\d+ linux\/amd64$/.test(tools.go) &&
+      tools.node === QUALIFICATION_NODE,
+    'HANDOFF_BUILD_MISMATCH',
+  );
+  return { bun: tools.bun, go: tools.go, node: QUALIFICATION_NODE };
+}
+
 const FILES = [
   'README.md',
   'handoff.md',
@@ -150,6 +210,18 @@ const GATES = [
 const HASH = /^[a-f0-9]{64}$/;
 const HEAD = /^[a-f0-9]{40}$/;
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
+type Digest = typeof sha;
+function ownByteDigests(): Digest {
+  const hashes = new WeakMap<Buffer, string>();
+  return (bytes) => {
+    if (typeof bytes === 'string') return sha(bytes);
+    const existing = hashes.get(bytes);
+    if (existing) return existing;
+    const hash = sha(bytes);
+    hashes.set(bytes, hash);
+    return hash;
+  };
+}
 const jsonBytes = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const fail = (code: CleanupHandoffErrorCode): never => {
   throw new CleanupHandoffError(code);
@@ -164,7 +236,7 @@ function object(value: unknown): ObjectValue {
 }
 function json(raw: Buffer): ObjectValue {
   try {
-    return object(JSON.parse(raw.toString('utf8')));
+    return object(decodeStrictJSON(raw, 256 * 1024 * 1024));
   } catch (error) {
     if (error instanceof CleanupHandoffError) throw error;
     return fail('HANDOFF_EVIDENCE_INVALID');
@@ -334,11 +406,11 @@ function positive(fields: Record<string, string>, key: string): number {
   );
   return Number(text);
 }
-function brokerIdentity(raw: Buffer, head: string): void {
+function brokerIdentity(raw: Buffer, head: string, tools: CleanupHandoffToolchain): void {
   try {
     const info = readCleanupBrokerBuildInfo(raw);
     check(
-      info.version === 'go1.26.5' &&
+      info.version === tools.go.split(' ')[2] &&
         info.path ===
           'github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/cmd/cleanup-broker',
       'HANDOFF_BUILD_MISMATCH',
@@ -364,10 +436,12 @@ function buildReport(
   head: string,
   lock: string,
   goModule: string,
+  expectedTools: CleanupHandoffToolchain,
+  sha: Digest,
 ): ObjectValue {
   const report = json(raw);
   check(
-    report.schema === 'openslack.pr418.clean-build-report.v1' &&
+    (report.schema === CLEANUP_HANDOFF_SCHEMAS.build || report.schema === LEGACY_SCHEMAS.build) &&
       report.candidateHead === head &&
       report.checkoutCleanAfterBuild === true &&
       report.independentCloneNoHardlinks === true &&
@@ -376,13 +450,7 @@ function buildReport(
       report.goModuleSHA256 === goModule,
     'HANDOFF_BUILD_MISMATCH',
   );
-  const tools = object(report.tools);
-  check(
-    tools.bun === '1.4.0' &&
-      tools.go === 'go version go1.26.5 linux/amd64' &&
-      tools.node === 'v24.18.1',
-    'HANDOFF_BUILD_MISMATCH',
-  );
+  assertCleanupHandoffToolchain(report.tools, expectedTools);
   for (const [name, rawBytes] of [
     ['broker', broker],
     ['executor', executor],
@@ -394,8 +462,29 @@ function buildReport(
     );
   }
   check(Array.isArray(report.commands) && report.commands.length > 0, 'HANDOFF_BUILD_MISMATCH');
-  brokerIdentity(broker, head);
+  brokerIdentity(broker, head, expectedTools);
   return report;
+}
+
+export function assertCleanupHandoffObjects(path: string): void {
+  const objects = safePath(path);
+  ancestors(objects);
+  check(lstatSync(objects).isDirectory(), 'HANDOFF_BUILD_MISMATCH');
+  const walk = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name),
+        stamp = lstatSync(full);
+      check(
+        !stamp.isSymbolicLink() &&
+          (!stamp.isFile() || stamp.nlink === 1) &&
+          full !== join(objects, 'info/alternates'),
+        'HANDOFF_BUILD_MISMATCH',
+      );
+      if (stamp.isDirectory()) walk(full);
+      else check(stamp.isFile(), 'HANDOFF_BUILD_MISMATCH');
+    }
+  };
+  walk(objects);
 }
 
 function inspectBuildCheckout(path: string, head: string, lock: string, goModule: string): string {
@@ -420,21 +509,7 @@ function inspectBuildCheckout(path: string, head: string, lock: string, goModule
   const gitDirectory = git(path, ['rev-parse', '--absolute-git-dir']);
   check(realpathSync(gitDirectory) === realpathSync(cloneGit), 'HANDOFF_BUILD_MISMATCH');
   const objects = join(gitDirectory, 'objects');
-  const walk = (directory: string) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const full = join(directory, entry.name),
-        stamp = lstatSync(full);
-      check(
-        !stamp.isSymbolicLink() &&
-          (!stamp.isFile() || stamp.nlink === 1) &&
-          full !== join(objects, 'info/alternates'),
-        'HANDOFF_BUILD_MISMATCH',
-      );
-      if (stamp.isDirectory()) walk(full);
-      else check(stamp.isFile(), 'HANDOFF_BUILD_MISMATCH');
-    }
-  };
-  walk(objects);
+  assertCleanupHandoffObjects(objects);
   return realpathSync(gitDirectory);
 }
 function taskView(raw: Buffer, fields: Record<string, string>): ObjectValue {
@@ -455,6 +530,7 @@ function taskView(raw: Buffer, fields: Record<string, string>): ObjectValue {
 export function prepareCleanupHandoffDraft(
   input: PrepareCleanupHandoffDraftInput,
 ): PrepareCleanupHandoffDraftResult {
+  const sha = ownByteDigests();
   try {
     check(
       input &&
@@ -480,7 +556,9 @@ export function prepareCleanupHandoffDraft(
       return raw;
     };
     const lock = sha(source('bun.lock'));
-    const goModule = sha(source('services/cleanup-broker/go.mod'));
+    const goModuleBytes = source('services/cleanup-broker/go.mod');
+    const goModule = sha(goModuleBytes);
+    const expectedTools = toolchainFromPins(source('package.json'), goModuleBytes);
     const priorRaw = safeRead(input.priorInputPath);
     const priorSource = input.priorInputSource ?? resolve(input.priorInputPath);
     check(
@@ -545,7 +623,16 @@ export function prepareCleanupHandoffDraft(
       const broker = safeRead(build.brokerPath),
         executor = safeRead(build.executorPath),
         report = safeRead(build.reportPath);
-      const parsed = buildReport(report, broker, executor, input.candidateHead, lock, goModule);
+      const parsed = buildReport(
+        report,
+        broker,
+        executor,
+        input.candidateHead,
+        lock,
+        goModule,
+        expectedTools,
+        sha,
+      );
       checkouts.push(parsed.checkout as string);
       brokers.push(broker);
       executors.push(executor);
@@ -708,13 +795,14 @@ export function prepareCleanupHandoffDraft(
         candidateHead: input.candidateHead,
         lockfileSHA256: lock,
         goModuleSHA256: goModule,
+        toolchain: expectedTools,
         registrySHA256: sha(registry),
       }),
     );
     add(
       'evidence/qualification-index.json',
       jsonBytes({
-        schema: 'openslack.pr418.qualification-evidence-index.v1',
+        schema: CLEANUP_HANDOFF_SCHEMAS.evidence,
         candidateHead: input.candidateHead,
         recordedAt: new Date(now).toISOString(),
         target: fields.target_distro,
@@ -824,7 +912,7 @@ function objectErrorCode(error: unknown): unknown {
   return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
 }
 
-function verifyDraftRelations(bytes: Map<string, Buffer>): ObjectValue {
+function verifyDraftRelations(bytes: Map<string, Buffer>, sha: Digest): ObjectValue {
   const fields = storedFields(bytes.get('evidence/prior-admin-inputs.md')!);
   const broker = json(bytes.get('draft/broker.DRAFT.json')!);
   const artifacts = object(broker.artifacts);
@@ -907,6 +995,7 @@ function verifyDraftRelations(bytes: Map<string, Buffer>): ObjectValue {
 export function verifyCleanupHandoffPackage(
   input: VerifyCleanupHandoffPackageInput,
 ): VerifyCleanupHandoffPackageResult {
+  const sha = ownByteDigests();
   const result: VerifyCleanupHandoffPackageResult = {
     valid: false,
     candidateHead: input?.candidateHead ?? '',
@@ -982,6 +1071,8 @@ export function verifyCleanupHandoffPackage(
         input.candidateHead,
         String(locks.lockfileSHA256),
         String(locks.goModuleSHA256),
+        verifiedToolchain(locks.toolchain),
+        sha,
       );
     const index = json(bytes.get('evidence/qualification-index.json')!),
       draft = json(bytes.get('draft/inputs.DRAFT.json')!);
@@ -990,7 +1081,9 @@ export function verifyCleanupHandoffPackage(
       'HANDOFF_CANDIDATE_MISMATCH',
     );
     check(
-      index.approvalStatus === 'DRAFT' &&
+      (index.schema === CLEANUP_HANDOFF_SCHEMAS.evidence ||
+        index.schema === LEGACY_SCHEMAS.evidence) &&
+        index.approvalStatus === 'DRAFT' &&
         index.qualification === 'NOT_RUN' &&
         draft.approvalStatus === 'DRAFT' &&
         object(draft.selected).candidate_head === input.candidateHead &&
@@ -1001,7 +1094,7 @@ export function verifyCleanupHandoffPackage(
         object(draft.priorInput).sha256 === sha(bytes.get('evidence/prior-admin-inputs.md')!),
       'HANDOFF_EVIDENCE_INVALID',
     );
-    const task = verifyDraftRelations(bytes);
+    const task = verifyDraftRelations(bytes, sha);
     const now = nowMs(input.now);
     if (now < timestamp(task.notBefore) || now >= timestamp(task.expiresAt))
       result.unmetGates.push('TASK_EVIDENCE_EXPIRED');

@@ -9,10 +9,10 @@ if (args.length !== 2 || !['--outdir', '--internal-single-build'].includes(args[
     'Usage: bun scripts/cleanup-broker/build-executor.ts --outdir <artifact-directory>',
   );
 if (args[0] === '--outdir') {
-  // Private relative dist imports must be regenerated from this candidate, not
-  // whatever a previous checkout happened to leave behind.
+  // Incrementally build package-controlled subpaths from this candidate.
+  // Fresh checkouts and changed dependency sources cannot use stale outputs.
   const compiler = Bun.spawn(
-    [process.execPath, 'node_modules/typescript/bin/tsc', '-b', 'packages/pr', '--force'],
+    [process.execPath, 'node_modules/typescript/bin/tsc', '-b', 'packages/pr'],
     { stdout: 'inherit', stderr: 'inherit' },
   );
   if ((await compiler.exited) !== 0) throw new Error('CLEANUP_EXECUTOR_TYPECHECK_FAILED');
