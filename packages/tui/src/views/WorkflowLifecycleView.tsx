@@ -45,16 +45,6 @@ function stageStatusCategory(status: string): 'pass' | 'warn' | 'fail' | 'blocke
   return 'warn';
 }
 
-/** Map a phase issue status string to a StatusIcon category. */
-function issueStatusCategory(status: string): 'pass' | 'warn' | 'fail' | 'blocked' | 'info' {
-  const lower = status.toLowerCase();
-  if (lower === 'closed' || lower === 'merged' || lower === 'resolved') return 'pass';
-  if (lower === 'blocked' || lower === 'waiting') return 'blocked';
-  if (lower === 'failed' || lower === 'error') return 'fail';
-  if (lower === 'open' || lower === 'in-progress') return 'info';
-  return 'warn';
-}
-
 /** Determine the color theme key for a trust level badge. */
 function trustColorTheme(trustLevel: string): 'pass' | 'warning' | 'error' | 'info' {
   if (trustLevel === 'core') return 'pass';

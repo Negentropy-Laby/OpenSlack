@@ -18,22 +18,6 @@ export type ConversationListViewProps = {
   onBack?: () => void;
 };
 
-function statusToCategory(status: string): 'pass' | 'warn' | 'info' | 'fail' {
-  switch (status) {
-    case 'active':
-      return 'pass';
-    case 'open':
-      return 'info';
-    case 'paused':
-      return 'warn';
-    case 'completed':
-    case 'archived':
-      return 'info';
-    default:
-      return 'info';
-  }
-}
-
 export default function ConversationListView({
   model,
   onSelect,

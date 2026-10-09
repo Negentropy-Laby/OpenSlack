@@ -112,12 +112,6 @@ function normalizeOrigin(value: string, networkMode: 'loopback' | 'internal'): s
   return origin.origin;
 }
 
-function exactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
 function parseReceipt(
   bytes: Uint8Array,
   envelope: GovernanceShadowEnvelope,

@@ -135,10 +135,7 @@ const revision = {
   maximum: WORKFLOW_BUDGET_AUTHORITY_LIMITS.maxSafeInteger,
 };
 const positiveRevision = { ...revision, minimum: 1 };
-const nullableHash = { oneOf: [hash, { type: 'null' }] };
 const nullablePrefixedHash = { oneOf: [prefixedHash, { type: 'null' }] };
-const nullableTimestamp = { oneOf: [timestamp, { type: 'null' }] };
-const nullableId = { oneOf: [id, { type: 'null' }] };
 
 const base = {
   contractVersion: { const: WORKFLOW_BUDGET_AUTHORITY_CONTRACT_VERSION },

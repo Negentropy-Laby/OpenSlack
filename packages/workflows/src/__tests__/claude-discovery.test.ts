@@ -43,24 +43,6 @@ export const meta = {
     );
   }
 
-  function writeAmbientWorkflow(dir: string, filename: string, name: string) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, filename),
-      `
-export const meta = {
-  name: '${name}',
-  description: 'Ambient ${name}',
-  phases: [{ title: 'Scan', detail: 'Scan phase' }]
-}
-
-phase("Scan")
-log("Running ambient ${name}")
-const result = await agent("do work", { label: "scan", phase: "Scan" })
-`,
-    );
-  }
-
   // ── .mjs discovery ──────────────────────────────────────────────────────────
 
   describe('.mjs extension discovery', () => {
