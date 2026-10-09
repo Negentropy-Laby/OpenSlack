@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { stripMetaExport, createSecureSandbox, executeAmbientScript } from '../ambient-runner.js';
 
 describe('claude-ambient-runner', () => {

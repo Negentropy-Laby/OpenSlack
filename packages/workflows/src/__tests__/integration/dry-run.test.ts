@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { executeDryRun } from '../../execute.js';
 import type { AgentLauncher } from '../../agent-shim.js';
-import type { WorkflowMeta, WorkflowRuntime, RunResult } from '../../types.js';
+import type { WorkflowMeta, WorkflowRuntime } from '../../types.js';
 
 const testManifest: WorkflowMeta = {
   name: 'test-dry-run-workflow',

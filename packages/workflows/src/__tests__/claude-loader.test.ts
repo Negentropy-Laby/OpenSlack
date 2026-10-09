@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
-import { detectFormatFromSource, loadWorkflow, detectFormat } from '../loader.js';
+import { detectFormatFromSource, loadWorkflow } from '../loader.js';
 
 // Path to fixtures
 const FIXTURES_DIR = join(import.meta.dirname, '..', '__fixtures__', 'claude-workflows');

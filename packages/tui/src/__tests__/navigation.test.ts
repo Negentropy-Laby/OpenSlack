@@ -8,7 +8,7 @@ import {
   createInitialRouterState,
   HOME_ROUTE,
 } from '../navigation/router.js';
-import type { Route, RouterState } from '../navigation/router.js';
+import type { Route } from '../navigation/router.js';
 
 describe('navigation router', () => {
   describe('createInitialRouterState', () => {

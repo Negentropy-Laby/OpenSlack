@@ -16,7 +16,6 @@ import {
   resumePendingPlan,
   generateSessionId,
   appendTurn,
-  loadConversation,
   listConversations,
   getRecentTurns,
   resolveContext,

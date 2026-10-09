@@ -58,7 +58,6 @@ import {
   validateWorkflowBudgetSettlementRequest,
   workflowBudgetAuthorityChargeNanoUsd,
   workflowBudgetAuthorityUsdToNanoUsd,
-  type WorkflowBudgetAccount,
   type WorkflowBudgetLedgerEntry,
   type WorkflowBudgetProviderUsage,
   type WorkflowBudgetPreparedRequest,

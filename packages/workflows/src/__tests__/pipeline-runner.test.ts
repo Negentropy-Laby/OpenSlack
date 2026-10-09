@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runPipeline } from '../pipeline-runner.js';
 import type { PipelineCacheStore } from '../pipeline-runner.js';
-import type { BudgetState, PipelineOptions } from '../types.js';
+import type { BudgetState } from '../types.js';
 
 function makeCache(
   overrides: Partial<{

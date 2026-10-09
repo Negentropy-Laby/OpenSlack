@@ -1,4 +1,4 @@
-import type { BudgetState, ClaudeBudgetAPI, PipelineOptions } from './types.js';
+import type { BudgetState, PipelineOptions } from './types.js';
 
 /**
  * Cache store interface for pipeline item checkpointing.

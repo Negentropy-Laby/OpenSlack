@@ -14,7 +14,7 @@ import type {
   WorkflowCheckpointCommitInput,
 } from './types.js';
 import { resolvePermissions } from './permission-checker.js';
-import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js';
+import { executeAgentCall, computeAgentCacheKey } from './agent-shim.js';
 import type { AgentCacheStore, AgentLauncher, AgentEventEmitter } from './agent-shim.js';
 import { runParallel } from './parallel-runner.js';
 import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';

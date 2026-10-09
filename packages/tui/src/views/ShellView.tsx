@@ -8,7 +8,7 @@ import Divider from '../design-system/Divider.js';
 import Pane from '../design-system/Pane.js';
 import ListItem from '../design-system/ListItem.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
-import { NavigationProvider, useNavigation, HOME_ROUTE } from '../navigation/context.js';
+import { NavigationProvider, useNavigation } from '../navigation/context.js';
 import type { Route } from '../navigation/router.js';
 import { mapHomeToViewModel } from '../view-models/home.js';
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js';
@@ -30,7 +30,7 @@ import { mapAgentRunToViewModel } from '../view-models/agent-run.js';
 import { mapWorkflowRunsToViewModel } from '../view-models/workflow-runs.js';
 import type { SubagentDefinition } from '@openslack/kernel';
 import { createRunStore } from '@openslack/agent-runtime';
-import type { ShellViewData, TuiActionHandlers } from './render-shell.js';
+import type { ShellViewData } from './render-shell.js';
 
 import HomeView from './HomeView.js';
 import ApprovalCenterView from './ApprovalCenterView.js';

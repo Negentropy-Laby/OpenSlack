@@ -5,7 +5,6 @@ import {
   isTaskRiskLevel,
   isRiskZone,
   type AgentRegistryEntry,
-  type AgentPermissions,
   type RiskZone,
 } from '@openslack/kernel';
 

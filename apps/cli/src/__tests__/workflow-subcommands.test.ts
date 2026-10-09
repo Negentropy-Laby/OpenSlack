@@ -1,10 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   existsSync,
   readFileSync,
-  readdirSync,
   mkdtempSync,
   rmSync,
   mkdirSync,

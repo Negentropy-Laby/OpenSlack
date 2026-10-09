@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { ChatAdapter, ChatMessage, ChatResponse, ChatUser, ChatChannel } from './types.js';
+import type { ChatAdapter, ChatMessage, ChatResponse } from './types.js';
 
 interface WebhookAdapterOptions {
   port: number;

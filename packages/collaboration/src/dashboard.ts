@@ -1,4 +1,4 @@
-import type { CollaborationEvent, EventFilter, RiskLevel } from './types.js';
+import type { CollaborationEvent, EventFilter } from './types.js';
 import { readEvents } from './events.js';
 import { listHandoffs } from './handoff.js';
 import { listDecisions } from './decision.js';

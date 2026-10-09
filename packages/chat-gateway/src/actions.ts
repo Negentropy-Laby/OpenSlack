@@ -2,14 +2,11 @@ import { BUILTIN_ACTION_REGISTRY, planActions, executePlan } from '@openslack/op
 import type { ActionRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
-import { formatResultAsMarkdown, formatError } from './formatter.js';
+import { formatError } from './formatter.js';
 import {
-  buildPRCard,
   cardToText,
-  toSlackBlocks,
   buildHandoffCard,
   buildDecisionCard,
-  buildWorkflowCard,
 } from './cards.js';
 import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
 import {
