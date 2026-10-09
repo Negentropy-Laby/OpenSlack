@@ -609,6 +609,12 @@ processes using its unchanged 90-second case budget, retaining every positive,
 failure-propagation and skipped-test assertion. Its test source lock is updated
 without changing the verifier script or any Workflow runtime implementation.
 
+The clean-checkout package acceptance probe exposed a separate executor fixture
+path error: its relative build script used the calling package directory. The
+fixture now resolves its repository root from its own source location; ordinary
+PR package tests must prove real private-FD cases run from the package directory
+as well as the root, with dependency builds refreshed in a new checkout.
+
 The selected registry, permissions, identity and fixed main authority remain
 unchanged. New frozen artifacts and administrator inputs are DRAFT; earlier
 approval cannot approve changed bytes. Main registry deployment, credentials,

@@ -10,7 +10,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, beforeAll } from 'vitest';
 import {
   parseCleanupExecutorBootstrap,
@@ -159,7 +159,7 @@ describe.runIf(process.platform === 'linux')(
     beforeAll(() => {
       bundle = join(mkdtempSync(join(tmpdir(), 'cleanup-fixture-build-')), 'fixture.mjs');
       const built = spawnSync('bun', ['scripts/cleanup-broker/build-test-fixture.ts', bundle], {
-        cwd: process.cwd(),
+        cwd: resolve(import.meta.dirname, '../../../..'),
         encoding: 'utf8',
       });
       expect(built.status, built.stderr).toBe(0);
