@@ -1,6 +1,7 @@
 import {
   testPowerShells,
   testProcessEnvironment,
+  platformTestTimeout,
 } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
@@ -446,7 +447,9 @@ describe('bot-auth wrapper scripts', () => {
               ],
               {
                 encoding: 'utf8',
-                timeout: 5_000,
+                // Shell startup is bounded fixture preparation; business
+                // assertions below keep the ordinary five-second budget.
+                timeout: platformTestTimeout(5_000, 20_000),
                 env: shimEnvironment(root, {
                   ...process.env,
                   Path: process.env.Path ?? process.env.PATH ?? '',
@@ -454,7 +457,13 @@ describe('bot-auth wrapper scripts', () => {
                   PATHEXT: undefined,
                 }),
               },
-            );
+            ).catch((error: NodeJS.ErrnoException & { killed?: boolean; signal?: string }) => {
+              const code = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'UNKNOWN';
+              const signal = /^[A-Z0-9]+$/.test(error.signal ?? '') ? error.signal : 'NONE';
+              throw new Error(
+                `TEST_SHELL_RENDER_FAILED: phase=launch; code=${code}; killed=${error.killed === true}; signal=${signal}; installations=${installations.length}.`,
+              );
+            });
             // execFile rejects nonzero exits/timeouts, so no failed launch can
             // become a successful rendering fixture.
             rendered.push({ ...result, count: installations.length });
@@ -463,7 +472,7 @@ describe('bot-auth wrapper scripts', () => {
           }
         }
       }
-    }, 40_000);
+    }, platformTestTimeout(40_000));
 
     it('renders zero, one, and multiple installations in Windows PowerShell 5.1 and pwsh 7', () => {
       expect(rendered).toHaveLength(expectedRenderings);

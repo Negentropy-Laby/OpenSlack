@@ -16,7 +16,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   assertCleanupHandoffRuntime,
   prepareCleanupHandoffDraft,
@@ -278,14 +279,24 @@ function verify(result: ReturnType<typeof prepareCleanupHandoffDraft>, now = new
 }
 
 describe('offline cleanup handoff preparation', () => {
-  it('keeps real Git fixture preparation responsive to worker task updates', async () => {
-    let responded = false;
-    setImmediate(() => {
-      responded = true;
+  describe('real Git preparation responsiveness', () => {
+    let respondedAtPreparationEnd = false;
+    let candidateHead: string;
+    beforeAll(async () => {
+      let responded = false;
+      setImmediate(() => {
+        responded = true;
+      });
+      const prepared = await fixture();
+      // Capture here: a synchronous fixture must not pass merely because
+      // Vitest yields between preparation and the assertion callback.
+      respondedAtPreparationEnd = responded;
+      candidateHead = prepared.input.candidateHead;
+    }, platformTestTimeout(30_000));
+    it('keeps real Git fixture preparation responsive to worker task updates', () => {
+      expect(respondedAtPreparationEnd).toBe(true);
+      expect(candidateHead).toMatch(/^[a-f0-9]{40}$/);
     });
-    const prepared = await fixture();
-    expect(responded).toBe(true);
-    expect(prepared.input.candidateHead).toMatch(/^[a-f0-9]{40}$/);
   });
 
   it('preserves selected bindings, recalculates actual hashes, and never inherits old approval', async () => {

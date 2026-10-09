@@ -626,15 +626,43 @@ same native canonicalization, with an alias-parent regression that failed
 before the helper fix. PowerShell preparation awaits bounded real child
 processes separately from unchanged business assertions. New-head Windows
 qualification must pass; previous Linux/macOS success cannot close that gate.
-Optional `pwsh` discovery errors, cancellation and unknown exit codes refuse
-preparation; only an explicit not-found result permits the required PowerShell
-5.1 cases to run alone. A failed-before-fix matrix covers this distinction.
+Optional `pwsh` discovery uses shared executable candidates and native canonical
+paths. Only missing files permit the required PowerShell 5.1 cases to run alone;
+other filesystem errors refuse preparation, and a discovered shell must actually
+run. Failed-before-fix discovery and filesystem-fault cases cover this distinction.
 One native complete-scope run subsequently passed all business assertions but
 reported `onTaskUpdate` timeout: the handoff fixture's serial synchronous Git
 preparation occupied the worker for over a minute. Its responsiveness regression
 failed before changing the fixture. Real Git preparation is now awaited, with
 bounded children, so task updates run between cases; production handoff checks,
 all business assertions and their existing test budgets remain unchanged.
+
+The next hosted Windows qualification run exposed four further fixture failures:
+real Git preparation and the 25-attempt delivery queue case exceeded their
+five-second case budgets; the webhook response watchdog expired while its sink
+was deliberately held; and PowerShell preparation rejected without recording a
+safe error classification. The last failure does not establish a shell timeout,
+and none of these logs proves machine slowness. Those negative logs remain part
+of the delivery evidence.
+
+Real Git preparation now owns a separate 30-second POSIX / 120-second Windows
+hook. Its responsiveness result is captured at preparation completion, before
+Vitest can yield to the assertion. PowerShell fixture startup is independently
+bounded at 5 seconds on POSIX / 20 seconds on Windows, with a 40-second POSIX /
+120-second Windows preparation hook; launch failures report only sanitized
+phase, code, signal, killed flag and installation-count fields. Assertion
+budgets stay unchanged. The queue case retains all 25 real persisted attempts,
+delay checks and terminal-state assertions, with a case-specific 120-second
+Windows budget and the existing five-second POSIX budget.
+
+The webhook case proves ordering with a controlled sink barrier: both HTTP
+responses, durable processing and duplicate acknowledgement must complete while
+the sink remains held, and exactly one delivery must complete after release.
+Its watchdog bounds real admission, persistence and HTTP completion at 4 seconds
+on POSIX / 100 seconds on Windows rather than asserting an arbitrary 250 ms
+service-level target. A failing case releases the sink, cancels and collects its
+requests, then stops the daemon. Production deadlines, durable writes and
+business assertions remain unchanged; the new head requires fresh validation.
 
 The selected registry, permissions, identity and fixed main authority remain
 unchanged. New frozen artifacts and administrator inputs are DRAFT; earlier
