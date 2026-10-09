@@ -32,6 +32,20 @@ export type {
   CleanupOperationRecordErrorCode,
   SaveCleanupOperationRecordResult,
 } from './cleanup-operation-record.js';
+export {
+  CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA,
+  CLEANUP_TARGET_UPGRADE_GATES,
+  CleanupTargetUpgradeError,
+  prepareCleanupTargetUpgradePlan,
+  isUpgradeTargetDirectory,
+} from './cleanup-target-upgrade.js';
+export type {
+  PrepareCleanupTargetUpgradePlanInput,
+  PrepareCleanupTargetUpgradePlanResult,
+  CleanupTargetUpgradeFileAction,
+  CleanupTargetUpgradeStep,
+  CleanupTargetUpgradeErrorCode,
+} from './cleanup-target-upgrade.js';
 export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
 export type {
   CleanupBrokerRequest,
