@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: pr-review-merge
-updated: 2026-09-21
+updated: 2026-10-09
 sources:
   - design/cdd/modules/pr-review-merge.md
   - docs/architecture/control-manifest.md
@@ -131,6 +131,40 @@ stale authorization. Failure before send must retain `attempted: false`; after
 send may have started, only read-only reconciliation and outcome recording are
 allowed. Expiry never erases a possible side effect or triggers another send.
 
+## Client, transport and result boundaries
+
+The executor's operation scope grants only REST GET requests under the exact
+qualification repository on `api.github.com`. Captured clients and derived
+requests lose that capability when the scope ends. Scope revocation cancels
+outstanding requests; request cancellation and the execution deadline also
+apply. An ordinary installation-client constructor cannot create a parallel
+client inside that scope. The separate deletion transport exposes only remote
+ref reads and exact-SHA deletion, with the private Broker admission handshake
+immediately before its single push.
+
+Workspace authority remains the fixed OpenSlack governance repository on
+`main`. Product-target authorization is a separate check against the registry's
+`allowed_product_repos`; selecting a qualification repository does not change
+workspace authority or expand registry permissions. Branch validation follows
+Git ref syntax, including `+` and Unicode. Generic remote reads accept complete
+40- or 64-hex object IDs. The GitHub Broker Permit still requires a 40-hex SHA;
+this does not assert SHA-256 repository support on GitHub or GitHub Enterprise.
+
+TS and Go apply the same explicit proxy rules. Proxy ports must be in
+1–65535. Fixed GitHub noProxy matching ignores surrounding whitespace, case,
+a single leading dot and the HTTPS `:443` suffix. These settings never come
+from the Agent's inherited environment. Invalid installation settings continue
+to select status-only service.
+
+An accepted `OPERATION_IN_PROGRESS` response exits 0 and explicitly says the
+operation has not completed. Query status with the same operation ID instead
+of repeating execute. Completed, audited `DELETED` or `ALREADY_ABSENT` results
+exit 0. Refusal, failure, unknown outcome, audit failure and reconciliation exit
+
+1. A force-with-lease SHA rejection may report `BLOCKED_SHA_DRIFT` with
+   `attempted: true` only after genuine send admission; it consumes the Permit
+   without authorizing a retry. Other blocked results must be no-send.
+
 ## A4: Restart, Recovery and Rollback
 
 Each broker boot creates a new nonce and begins read-only until administrator-
@@ -138,6 +172,15 @@ governed activation. Old permits do not migrate into the new boot. Existing
 reservations can only be reconciled; backup restore, a clock rollback or lost
 in-memory state cannot renew executable permission. V1 is single-host, not a
 distributed lock or multi-host replay-prevention claim.
+
+If a durable ledger exists but `workers.jsonl` is absent, startup reports
+`CLEANUP_BROKER_WORKER_EVIDENCE_MISSING` and refuses to create an empty journal.
+Stop the supervised Broker and prove its owned process groups are absent before
+any recovery. Preserve the damaged files and restore ledger and worker journal
+from one reviewed, consistent backup with their required ownership and modes.
+Do not combine files from different snapshots or erase consumed reservations.
+Restored history remains subject to normal validation; a new boot still needs
+activation and cannot reuse old executable permission.
 
 Close new admission before rollback, drain or reconcile admitted operations,
 preserve the ledger and retain read-only status. Do not restore executable

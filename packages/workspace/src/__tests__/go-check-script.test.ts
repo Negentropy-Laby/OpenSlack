@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
@@ -39,6 +39,7 @@ const gs9eQualificationFixture = Object.fromEntries(
     .map((line) => line.split('=', 2) as [string, string]),
 );
 const temporaryRoots: string[] = [];
+const RUNTIME_DELIVERY_TIMEOUT_MS = 90_000;
 const describeOnBashHosts = process.platform === 'win32' ? describe.skip : describe;
 
 afterEach(async () => {
@@ -568,200 +569,217 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     },
   );
 
-  it('runs the Workflow Control GS9-F2b runtime-delivery profile as a real F1 superset', () => {
-    const fixture = createFixture();
-    const moduleRoot = join(fixture.root, 'services/pure');
-    addFullServiceCapabilities(moduleRoot);
-    addWorkflowRunnerEvidence(moduleRoot);
-    addWorkflowRunnerV2FoundationEvidence(moduleRoot);
-    addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot);
-    addWorkflowAuthorityEvidence(moduleRoot);
-    addWorkflowCheckpointShadowEvidence(moduleRoot);
-    addWorkflowEffectShadowEvidence(moduleRoot);
-    addWorkflowBudgetAuthorityEvidence(moduleRoot);
-    writeServiceConfig(fixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
-    });
-    commitFixture(fixture.root);
+  it(
+    'runs the Workflow Control GS9-F2b runtime-delivery profile as a real F1 superset',
+    async () => {
+      const deadlineAt = Date.now() + RUNTIME_DELIVERY_TIMEOUT_MS;
+      const verify = (fixture: Fixture, args: string[], env: Record<string, string> = {}) =>
+        runGoCheckAsync(fixture, args, env, deadlineAt);
+      const fixture = createFixture();
+      const moduleRoot = join(fixture.root, 'services/pure');
+      addFullServiceCapabilities(moduleRoot);
+      addWorkflowRunnerEvidence(moduleRoot);
+      addWorkflowRunnerV2FoundationEvidence(moduleRoot);
+      addWorkflowRunnerV2RuntimeDeliveryEvidence(moduleRoot);
+      addWorkflowAuthorityEvidence(moduleRoot);
+      addWorkflowCheckpointShadowEvidence(moduleRoot);
+      addWorkflowEffectShadowEvidence(moduleRoot);
+      addWorkflowBudgetAuthorityEvidence(moduleRoot);
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus,worker',
+        dockerTarget: 'app',
+        runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
+      });
+      commitFixture(fixture.root);
 
-    const result = runGoCheck(fixture, ['services/pure']);
+      let workerResponsive = false;
+      const heartbeat = setImmediate(() => {
+        workerResponsive = true;
+      });
+      const result = await verify(fixture, ['services/pure']);
+      clearImmediate(heartbeat);
+      expect(workerResponsive, 'the real verifier must yield while its child process runs').toBe(
+        true,
+      );
 
-    expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(fixture.dockerLog, 'utf8');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F1_QUALIFICATION=1');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1');
-    for (const stage of ['GS7B', 'GS9B', 'GS9C', 'GS9D', 'GS9E']) {
-      expect(log).toContain('WORKFLOW_CONTROL_' + stage + '_QUALIFICATION=1');
-    }
-    for (const binary of [
-      'authority-server',
-      'checkpoint-shadow-server',
-      'effect-shadow-server',
-      'budget-authority-server',
-    ]) {
-      const command = log.split('\n').find((line) => line.includes('--entrypoint /' + binary));
-      expect(command).toContain('--network none');
-      expect(command).not.toContain('DATABASE_URL=');
-    }
-    expect(log).toContain('-qualification-runner-cancel-ack-stability');
-    expect(log).toContain('-count=100');
-    expect(log).toContain('TestGS9F2MixedOrphanRestartRecovery');
-    expect(log).toContain('TestBudgetManifestPostgresRestart');
-    expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=verify');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify');
-    const mixedSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=(workflow_control_gs9f2_mixed_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(mixedSchemas).toHaveLength(4);
-    expect(new Set(mixedSchemas).size).toBe(1);
-    for (const testName of [
-      'TestBindingReconciliationRejectsOtherSchemaWithoutBusinessWrites',
-      'TestBindingReconciliationRejectsClonedDatabaseLockDomain',
-      'TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying',
-      'TestBindingReconciliationEffectFrontier',
-      'TestBindingReconciliationBudgetSourceCrashWindow',
-      'TestBindingReconciliationSourceCASAndFenceOrder',
-      'TestBindingReconciliationUpgradeRestart',
-    ]) {
-      expect(log).toContain('OPENSLACK_GO_CHECK_EXPECT_TEST=' + testName);
-    }
-    expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify');
-    const reconciliationSchemas = [
-      ...log.matchAll(/WORKFLOW_RUNNER_RECONCILIATION_RESTART_SCHEMA=(wf_reconcile_[a-z0-9]+)/gu),
-    ].map((match) => match[1]);
-    expect(reconciliationSchemas).toHaveLength(4);
-    expect(new Set(reconciliationSchemas).size).toBe(1);
-    const reconciliationSeed = log.indexOf('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
-    const reconciliationRestart = log.indexOf(' restart ', reconciliationSeed);
-    const reconciliationVerify = log.indexOf('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify');
-    expect(reconciliationRestart).toBeGreaterThan(reconciliationSeed);
-    expect(reconciliationVerify).toBeGreaterThan(reconciliationRestart);
-    expect(log).not.toContain('TestGS8BRestartQualification');
-    expect(log).not.toContain('TestGS8BImageDefaultOff');
-    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRuntimeDelivery\\$');
-    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingMigrationGuards\\$');
-    expect(log).toContain('-run \\^TestGS9F2Qualification\\$');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
-    expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify');
-    expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRestartRecovery\\$');
-    expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
-    expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1');
-    expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
-    expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
-    const restartSchemas = [
-      ...log.matchAll(
-        /WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA=(workflow_control_gs9f2_restart_[a-z0-9]+)/gu,
-      ),
-    ].map((match) => match[1]);
-    expect(restartSchemas).toHaveLength(4);
-    expect(new Set(restartSchemas).size).toBe(1);
-    expect(log.match(/ restart /gu)).toHaveLength(7);
+      expect(result.status, result.stderr).toBe(0);
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F1_QUALIFICATION=1');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F2_QUALIFICATION=1');
+      for (const stage of ['GS7B', 'GS9B', 'GS9C', 'GS9D', 'GS9E']) {
+        expect(log).toContain('WORKFLOW_CONTROL_' + stage + '_QUALIFICATION=1');
+      }
+      for (const binary of [
+        'authority-server',
+        'checkpoint-shadow-server',
+        'effect-shadow-server',
+        'budget-authority-server',
+      ]) {
+        const command = log.split('\n').find((line) => line.includes('--entrypoint /' + binary));
+        expect(command).toContain('--network none');
+        expect(command).not.toContain('DATABASE_URL=');
+      }
+      expect(log).toContain('-qualification-runner-cancel-ack-stability');
+      expect(log).toContain('-count=100');
+      expect(log).toContain('TestGS9F2MixedOrphanRestartRecovery');
+      expect(log).toContain('TestBudgetManifestPostgresRestart');
+      expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=seed');
+      expect(log).toContain('WORKFLOW_BUDGET_MANIFEST_RESTART_PHASE=verify');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=verify');
+      const mixedSchemas = [
+        ...log.matchAll(
+          /WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_SCHEMA=(workflow_control_gs9f2_mixed_[a-z0-9]+)/gu,
+        ),
+      ].map((match) => match[1]);
+      expect(mixedSchemas).toHaveLength(4);
+      expect(new Set(mixedSchemas).size).toBe(1);
+      for (const testName of [
+        'TestBindingReconciliationRejectsOtherSchemaWithoutBusinessWrites',
+        'TestBindingReconciliationRejectsClonedDatabaseLockDomain',
+        'TestBindingReconciliationClosesHistoryAndPausesWithoutReplaying',
+        'TestBindingReconciliationEffectFrontier',
+        'TestBindingReconciliationBudgetSourceCrashWindow',
+        'TestBindingReconciliationSourceCASAndFenceOrder',
+        'TestBindingReconciliationUpgradeRestart',
+      ]) {
+        expect(log).toContain('OPENSLACK_GO_CHECK_EXPECT_TEST=' + testName);
+      }
+      expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
+      expect(log).toContain('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify');
+      const reconciliationSchemas = [
+        ...log.matchAll(/WORKFLOW_RUNNER_RECONCILIATION_RESTART_SCHEMA=(wf_reconcile_[a-z0-9]+)/gu),
+      ].map((match) => match[1]);
+      expect(reconciliationSchemas).toHaveLength(4);
+      expect(new Set(reconciliationSchemas).size).toBe(1);
+      const reconciliationSeed = log.indexOf('WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=seed');
+      const reconciliationRestart = log.indexOf(' restart ', reconciliationSeed);
+      const reconciliationVerify = log.indexOf(
+        'WORKFLOW_RUNNER_RECONCILIATION_RESTART_PHASE=verify',
+      );
+      expect(reconciliationRestart).toBeGreaterThan(reconciliationSeed);
+      expect(reconciliationVerify).toBeGreaterThan(reconciliationRestart);
+      expect(log).not.toContain('TestGS8BRestartQualification');
+      expect(log).not.toContain('TestGS8BImageDefaultOff');
+      expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRuntimeDelivery\\$');
+      expect(log).toContain('-run \\^TestGS9F2AuthorityBindingMigrationGuards\\$');
+      expect(log).toContain('-run \\^TestGS9F2Qualification\\$');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
+      expect(log).toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=verify');
+      expect(log).toContain('-run \\^TestGS9F2AuthorityBindingRestartRecovery\\$');
+      expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_QUALIFICATION_ENABLED=1');
+      expect(log).not.toContain('WORKFLOW_RUNNER_CONTROL_V2_RUNTIME_DELIVERY_ENABLED=1');
+      expect(log).not.toContain('WORKFLOW_RUNNER_V2_SUBMISSION_ENABLED=true');
+      expect(log).not.toContain('WORKFLOW_RUNNER_V2_ROUTING_ENABLED=true');
+      const restartSchemas = [
+        ...log.matchAll(
+          /WORKFLOW_RUNNER_GS9F2_RESTART_SCHEMA=(workflow_control_gs9f2_restart_[a-z0-9]+)/gu,
+        ),
+      ].map((match) => match[1]);
+      expect(restartSchemas).toHaveLength(4);
+      expect(new Set(restartSchemas).size).toBe(1);
+      expect(log.match(/ restart /gu)).toHaveLength(7);
 
-    const failureFixture = createFixture();
-    const failureModuleRoot = join(failureFixture.root, 'services/pure');
-    addFullServiceCapabilities(failureModuleRoot);
-    addWorkflowRunnerEvidence(failureModuleRoot);
-    addWorkflowRunnerV2FoundationEvidence(failureModuleRoot);
-    addWorkflowRunnerV2RuntimeDeliveryEvidence(failureModuleRoot);
-    addWorkflowAuthorityEvidence(failureModuleRoot);
-    addWorkflowCheckpointShadowEvidence(failureModuleRoot);
-    addWorkflowEffectShadowEvidence(failureModuleRoot);
-    addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
-    writeServiceConfig(failureFixture.root, 'pure', {
-      capabilities: 'database,distribution,http-openapi,prometheus,worker',
-      dockerTarget: 'app',
-      runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
-    });
-    commitFixture(failureFixture.root);
+      const failureFixture = createFixture();
+      const failureModuleRoot = join(failureFixture.root, 'services/pure');
+      addFullServiceCapabilities(failureModuleRoot);
+      addWorkflowRunnerEvidence(failureModuleRoot);
+      addWorkflowRunnerV2FoundationEvidence(failureModuleRoot);
+      addWorkflowRunnerV2RuntimeDeliveryEvidence(failureModuleRoot);
+      addWorkflowAuthorityEvidence(failureModuleRoot);
+      addWorkflowCheckpointShadowEvidence(failureModuleRoot);
+      addWorkflowEffectShadowEvidence(failureModuleRoot);
+      addWorkflowBudgetAuthorityEvidence(failureModuleRoot);
+      writeServiceConfig(failureFixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus,worker',
+        dockerTarget: 'app',
+        runtimeProfile: 'workflow-control-runner-v2-runtime-delivery-v1',
+      });
+      commitFixture(failureFixture.root);
 
-    const failure = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9F2_FAIL_PHASE: 'runner-v2-runtime-delivery-bounds',
-      FAKE_GS9F2_FAIL_STATUS: '53',
-    });
-    expect(failure.status).toBe(53);
-    const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
-    expect(failureLog).toContain('-qualification-runner-v2-runtime-delivery-bounds');
-    expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
-
-    for (const phase of [
-      'runner-mixed-restart-seed',
-      'runner-mixed-restart-verify',
-      'runner-binding-reconciliation',
-      'runner-reconciliation-restart-seed',
-      'runner-reconciliation-restart-verify',
-      'runner-v2-runtime-delivery-migration',
-      'runner-v2-runtime-delivery-worker',
-      'runner-v2-runtime-delivery-restart-seed',
-      'runner-v2-runtime-delivery-restart-verify',
-    ]) {
-      const phaseFailure = runGoCheck(failureFixture, ['services/pure'], {
-        FAKE_GS9F2_FAIL_PHASE: phase,
+      const failure = await verify(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_FAIL_PHASE: 'runner-v2-runtime-delivery-bounds',
         FAKE_GS9F2_FAIL_STATUS: '53',
       });
-      expect(phaseFailure.status, phase).toBe(53);
-    }
+      expect(failure.status).toBe(53);
+      const failureLog = readFileSync(failureFixture.dockerLog, 'utf8');
+      expect(failureLog).toContain('-qualification-runner-v2-runtime-delivery-bounds');
+      expect(failureLog).not.toContain('WORKFLOW_RUNNER_GS9F2_RESTART_PHASE=seed');
 
-    for (const [prefix, phase, status] of [
-      ['GS8B', 'runner-cancel-ack-stability', 47],
-      ['GS9B', 'authority-bounds', 48],
-      ['GS9C', 'checkpoint-bounds', 49],
-      ['GS9D', 'effect-bounds', 50],
-      ['GS9E', 'budget-bounds', 51],
-      ['GS9F1', 'runner-v2-foundation-bounds', 52],
-    ] as const) {
-      const priorLogLength = readFileSync(failureFixture.dockerLog, 'utf8').length;
-      const failed = runGoCheck(failureFixture, ['services/pure'], {
-        ['FAKE_' + prefix + '_FAIL_PHASE']: phase,
-        ['FAKE_' + prefix + '_FAIL_STATUS']: String(status),
+      for (const phase of [
+        'runner-mixed-restart-seed',
+        'runner-mixed-restart-verify',
+        'runner-binding-reconciliation',
+        'runner-reconciliation-restart-seed',
+        'runner-reconciliation-restart-verify',
+        'runner-v2-runtime-delivery-migration',
+        'runner-v2-runtime-delivery-worker',
+        'runner-v2-runtime-delivery-restart-seed',
+        'runner-v2-runtime-delivery-restart-verify',
+      ]) {
+        const phaseFailure = await verify(failureFixture, ['services/pure'], {
+          FAKE_GS9F2_FAIL_PHASE: phase,
+          FAKE_GS9F2_FAIL_STATUS: '53',
+        });
+        expect(phaseFailure.status, phase).toBe(53);
+      }
+
+      for (const [prefix, phase, status] of [
+        ['GS8B', 'runner-cancel-ack-stability', 47],
+        ['GS9B', 'authority-bounds', 48],
+        ['GS9C', 'checkpoint-bounds', 49],
+        ['GS9D', 'effect-bounds', 50],
+        ['GS9E', 'budget-bounds', 51],
+        ['GS9F1', 'runner-v2-foundation-bounds', 52],
+      ] as const) {
+        const priorLogLength = readFileSync(failureFixture.dockerLog, 'utf8').length;
+        const failed = await verify(failureFixture, ['services/pure'], {
+          ['FAKE_' + prefix + '_FAIL_PHASE']: phase,
+          ['FAKE_' + prefix + '_FAIL_STATUS']: String(status),
+        });
+        expect(failed.status, phase).toBe(status);
+        const failedLog = readFileSync(failureFixture.dockerLog, 'utf8').slice(priorLogLength);
+        expect(failedLog).toContain('-qualification-' + phase);
+        expect(failedLog).not.toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
+      }
+      const emptySelection = await verify(failureFixture, ['services/pure'], {
+        FAKE_GO_TEST_LIST_EMPTY: '1',
       });
-      expect(failed.status, phase).toBe(status);
-      const failedLog = readFileSync(failureFixture.dockerLog, 'utf8').slice(priorLogLength);
-      expect(failedLog).toContain('-qualification-' + phase);
-      expect(failedLog).not.toContain('WORKFLOW_RUNNER_GS9F2_MIXED_RESTART_PHASE=seed');
-    }
-    const emptySelection = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GO_TEST_LIST_EMPTY: '1',
-    });
-    expect(emptySelection.status).toBe(1);
-    expect(emptySelection.stderr).toContain(
-      'Workflow Control runner test selector matched no tests:',
-    );
-    const mixedSkip = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9F2_SKIP_TEST: 'TestGS9F2MixedOrphanRestartRecovery',
-    });
-    expect(mixedSkip.status).toBe(1);
-    expect(mixedSkip.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
-    for (const testName of [
-      'TestBindingReconciliationSourceCASAndFenceOrder',
-      'TestBindingReconciliationUpgradeRestart',
-    ]) {
-      const reconciliationSkip = runGoCheck(failureFixture, ['services/pure'], {
-        FAKE_GS9F2_SKIP_TEST: testName,
-      });
-      expect(reconciliationSkip.status, testName).toBe(1);
-      expect(reconciliationSkip.stderr).toContain(
-        'Workflow Control GS9-F2b qualification test skipped',
+      expect(emptySelection.status).toBe(1);
+      expect(emptySelection.stderr).toContain(
+        'Workflow Control runner test selector matched no tests:',
       );
-    }
-    const budgetSkip = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9F2_SKIP_TEST: 'TestBudgetManifestPostgresRestart',
-    });
-    expect(budgetSkip.status).toBe(1);
-    expect(budgetSkip.stderr).toContain('TestBudgetManifestPostgresRestart');
-    expect(budgetSkip.stderr).toContain('qualification test skipped');
-    const skipped = runGoCheck(failureFixture, ['services/pure'], {
-      FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
-    });
-    expect(skipped.status).toBe(1);
-    expect(skipped.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
-  }, 90_000);
+      const mixedSkip = await verify(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_SKIP_TEST: 'TestGS9F2MixedOrphanRestartRecovery',
+      });
+      expect(mixedSkip.status).toBe(1);
+      expect(mixedSkip.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
+      for (const testName of [
+        'TestBindingReconciliationSourceCASAndFenceOrder',
+        'TestBindingReconciliationUpgradeRestart',
+      ]) {
+        const reconciliationSkip = await verify(failureFixture, ['services/pure'], {
+          FAKE_GS9F2_SKIP_TEST: testName,
+        });
+        expect(reconciliationSkip.status, testName).toBe(1);
+        expect(reconciliationSkip.stderr).toContain(
+          'Workflow Control GS9-F2b qualification test skipped',
+        );
+      }
+      const budgetSkip = await verify(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_SKIP_TEST: 'TestBudgetManifestPostgresRestart',
+      });
+      expect(budgetSkip.status).toBe(1);
+      expect(budgetSkip.stderr).toContain('TestBudgetManifestPostgresRestart');
+      expect(budgetSkip.stderr).toContain('qualification test skipped');
+      const skipped = await verify(failureFixture, ['services/pure'], {
+        FAKE_GS9F2_SKIP_TEST: 'TestGS9F2AuthorityBindingRuntimeDelivery',
+      });
+      expect(skipped.status).toBe(1);
+      expect(skipped.stderr).toContain('Workflow Control GS9-F2b qualification test skipped');
+    },
+    RUNTIME_DELIVERY_TIMEOUT_MS,
+  );
 
   it.each(['bounds', 'restart-seed', 'restart-verify', 'image-smoke'])(
     'propagates a Workflow Control GS7-B %s qualification failure before completion',
@@ -2389,6 +2407,43 @@ function runGoCheck(fixture: Fixture, args: string[], env: Record<string, string
     env: goCheckEnvironment(fixture, env),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+async function runGoCheckAsync(
+  fixture: Fixture,
+  args: string[],
+  env: Record<string, string>,
+  deadlineAt: number,
+): Promise<Pick<ReturnType<typeof runGoCheck>, 'status' | 'stdout' | 'stderr' | 'signal'>> {
+  const remaining = deadlineAt - Date.now();
+  if (remaining <= 0) throw new Error('GO_CHECK_FIXTURE_DEADLINE_EXCEEDED');
+  // Preserve the case's existing budget while allowing worker RPC updates to
+  // progress throughout its long verifier matrix. Await child exit before
+  // inspecting evidence or allowing afterEach to remove the owned fixture.
+  return new Promise((resolveResult, rejectResult) => {
+    execFile(
+      '/bin/bash',
+      [join(fixture.root, 'scripts/go-check.sh'), ...args],
+      {
+        cwd: fixture.root,
+        env: goCheckEnvironment(fixture, env),
+        encoding: 'utf8',
+        timeout: remaining,
+      },
+      (error, stdout, stderr) => {
+        if (error && typeof error.code !== 'number') {
+          rejectResult(error);
+          return;
+        }
+        resolveResult({
+          status: typeof error?.code === 'number' ? error.code : 0,
+          stdout,
+          stderr,
+          signal: error?.signal ?? null,
+        });
+      },
+    );
   });
 }
 

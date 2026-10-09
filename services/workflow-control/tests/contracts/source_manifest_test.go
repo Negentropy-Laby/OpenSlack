@@ -564,7 +564,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"bindingControlSequenceTSRegression": {
 			Path:   "packages/workflows/src/__tests__/workflow-control-sequence-rules.test.ts",
-			SHA256: "607556f8c3fb12883542dc33ebcfd8c0d880ed00fe76a839a6b53299290925b7",
+			SHA256: "b4c06cda659e91ab9d193bc09708c092024c4c9b9d8a4c45cf992d0ce66ef4da",
 		},
 		"bindingControlSequenceGoRegression": {
 			Path:   "services/workflow-control/runnerbindingcontract/control_sequences_test.go",
@@ -719,7 +719,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"goCheckVerifierRegression": {
 			Path:   "packages/workspace/src/__tests__/go-check-script.test.ts",
-			SHA256: "cbecca35ea7c85296e144e7cb2753c6cf3393cce58249f15c4f6ac313d7a63d5",
+			SHA256: "cd99b6474ba9c414879e11a91824731a958ff5237da0ddefd18578192b1b4aa1",
 		},
 		"workflowEvidenceFileSource": {
 			Path:   "packages/workflows/src/internal/workflow-evidence-file.ts",

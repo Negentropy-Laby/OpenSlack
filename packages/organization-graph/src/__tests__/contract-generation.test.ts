@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import type { ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -114,8 +115,36 @@ afterEach(async () => {
   );
 }, CONTRACT_CLEANUP_TIMEOUT_MS);
 
-function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
-  const result = spawnSync('bun', ['run', 'graph:golden', '--', mode], {
+interface GeneratorResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  options: ExecFileOptionsWithStringEncoding,
+): Promise<GeneratorResult> {
+  // Keep worker RPC and timeout handling responsive while the real generator
+  // runs. Await completion before inspecting or removing its fixture files.
+  return new Promise((resolveResult) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      resolveResult({
+        status: error === null ? 0 : typeof error.code === 'number' ? error.code : null,
+        stdout,
+        stderr,
+        signal: error?.signal ?? null,
+        ...(error && typeof error.code !== 'number' ? { error } : {}),
+      });
+    });
+  });
+}
+
+async function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
+  const result = await runCommand('bun', ['run', 'graph:golden', '--', mode], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     shell: process.platform === 'win32',
@@ -132,7 +161,7 @@ function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
     if (match === null) throw new Error(`Cannot translate Windows path for WSL: ${path}`);
     return `/mnt/${match[1]!.toLowerCase()}/${match[2]}`;
   };
-  return spawnSync(
+  return runCommand(
     'wsl.exe',
     [
       '--cd',
@@ -152,7 +181,7 @@ function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
   );
 }
 
-function generatorDiagnostic(result: ReturnType<typeof runGenerator>): string {
+function generatorDiagnostic(result: Awaited<ReturnType<typeof runGenerator>>): string {
   return [result.error?.message, result.signal, result.stdout, result.stderr]
     .filter((value) => value !== undefined && value !== null && value !== '')
     .join('\n');
@@ -310,9 +339,9 @@ describe('Organization Graph generated contract freeze', () => {
       const outputRoot = await mkdtemp(resolve(tmpdir(), 'openslack-graph-contracts-'));
       temporaryRoots.push(outputRoot);
 
-      const generated = runGenerator('generate', outputRoot);
+      const generated = await runGenerator('generate', outputRoot);
       expect(generated.status, generatorDiagnostic(generated)).toBe(0);
-      const checked = runGenerator('--check', outputRoot);
+      const checked = await runGenerator('--check', outputRoot);
       expect(checked.status, checked.stderr).toBe(0);
       expect(checked.stdout).toContain('22 generated files');
 
@@ -321,17 +350,17 @@ describe('Organization Graph generated contract freeze', () => {
         'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
       );
       await writeFile(manifestPath, 'stale\n', 'utf8');
-      const stale = runGenerator('--check', outputRoot);
+      const stale = await runGenerator('--check', outputRoot);
       expect(stale.status).toBe(1);
       expect(`${stale.stdout}\n${stale.stderr}`).toContain('manifest.json (stale)');
 
-      expect(runGenerator('generate', outputRoot).status).toBe(0);
+      expect((await runGenerator('generate', outputRoot)).status).toBe(0);
       const extraPath = resolve(
         outputRoot,
         'services/organization-graph/internal/contractmirror/generated/v1/extra.json',
       );
       await writeFile(extraPath, '{}\n', 'utf8');
-      const extra = runGenerator('--check', outputRoot);
+      const extra = await runGenerator('--check', outputRoot);
       expect(extra.status).toBe(1);
       expect(`${extra.stdout}\n${extra.stderr}`).toContain('extra.json (unexpected file)');
       await rm(extraPath);
@@ -341,10 +370,10 @@ describe('Organization Graph generated contract freeze', () => {
         'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
       );
       if (await tryCreateSymlink('manifest.json', symlinkPath)) {
-        const linked = runGenerator('--check', outputRoot);
+        const linked = await runGenerator('--check', outputRoot);
         expect(linked.status).toBe(1);
         expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
-        const linkedWrite = runGenerator('generate', outputRoot);
+        const linkedWrite = await runGenerator('generate', outputRoot);
         expect(linkedWrite.status).toBe(1);
         expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
           'Refusing to write unsafe Organization Graph generated trees',
@@ -352,19 +381,19 @@ describe('Organization Graph generated contract freeze', () => {
         await rm(symlinkPath);
       }
 
-      expect(runGenerator('generate', outputRoot).status).toBe(0);
+      expect((await runGenerator('generate', outputRoot)).status).toBe(0);
       const authoritativeManifestPath = resolve(
         outputRoot,
         'packages/organization-graph/contracts/v1/manifest.json',
       );
       await rm(authoritativeManifestPath);
       if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
-        const authoritativeLinked = runGenerator('--check', outputRoot);
+        const authoritativeLinked = await runGenerator('--check', outputRoot);
         expect(authoritativeLinked.status).toBe(1);
         expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
           'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
         );
-        const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
+        const authoritativeLinkedWrite = await runGenerator('generate', outputRoot);
         expect(authoritativeLinkedWrite.status).toBe(1);
         expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
           'Refusing to write unsafe Organization Graph generated trees',

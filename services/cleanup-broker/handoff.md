@@ -87,8 +87,9 @@ and be outside the source tree and fixed installation paths. Existing outputs
 are rejected; preserve partial output after failure and inspect it separately.
 
 The orchestrator creates two clean `git clone --no-hardlinks` checkouts with no
-shared object alternates, uses Bun 1.4.0, Go 1.26.5 and the actual Linux Node
-24.18.1, and builds the Broker with `CGO_ENABLED=0 -trimpath -buildvcs=true`.
+shared object alternates, reads the Bun pin from the candidate
+`package.json`, the Go pin from `services/cleanup-broker/go.mod`, and the reviewed
+Linux Node 24.18.1 qualification pin (currently Bun 1.4.0 and Go 1.26.5), and builds the Broker with `CGO_ENABLED=0 -trimpath -buildvcs=true`.
 Both Broker/executor bytes must match; the embedded revision must equal the
 frozen SHA with `vcs.modified=false`. Reports record actual tool versions,
 lockfile digests and commands. Dependency installation is build orchestration,
@@ -105,6 +106,14 @@ checkouts until preparation finishes. Broker identity is decoded from the
 ELF `.go.buildinfo` section and Go's inline metadata; free-standing text that
 resembles VCS settings is rejected. The standalone verifier checks the sealed
 report/artifact bindings without needing those source checkouts or Git.
+
+New preparation reports use the shared `openslack.cleanup_handoff_build_report.v1`
+and `openslack.cleanup_handoff_evidence_index.v1` schema names. The verifier
+also accepts existing `openslack.pr418.clean-build-report.v1` and
+`openslack.pr418.qualification-evidence-index.v1` records without rewriting old packages.
+Conceptual tool naming does not rename the administrator-selected identity,
+paths or bindings. Source/object-store checks run both before building and
+again during preparation; validated file bytes supply their own digests.
 
 Output contains `package/`, `admin-inputs.DRAFT.md` and
 `review-record.DRAFT.json`. The external draft binds the package-manifest digest
@@ -280,7 +289,13 @@ attempted, intent/outcome link and observed ref. Claim remains `not_required` /
 On unknown result stop destructive operations and query the original operation.
 Do not reissue a permit to retry it. Preserve the ledger and worker journal
 together, even after a crash or restore. An absent ref alone is not proof that
-this operation deleted it.
+this operation deleted it. An existing ledger without `workers.jsonl` must stop
+with `CLEANUP_BROKER_WORKER_EVIDENCE_MISSING`; never create an empty journal or
+remove the ledger to bypass that diagnosis. Prove supervised worker-group
+absence, retain the damaged evidence, then restore both files from the same
+reviewed consistent backup. Preserve consumed and reconciliation records and
+revalidate ownership, modes and history before startup. A new boot cannot
+restore the old Permit's authority.
 
 To stop, signal the exact supervised Broker process with SIGTERM, allowing its
 bounded worker shutdown and durable receipt handling. Do not use `pkill` by

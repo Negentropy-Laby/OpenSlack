@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-09-21
+updated: 2026-10-09
 sources:
   - design/cdd/modules/pr-review-merge.md
   - services/cleanup-broker/README.md
@@ -541,3 +541,78 @@ walk, and a validated relative runtime path being resolved again through PATH
 at execution. Both have failing-before-fix regressions. Git and object roots
 are now checked before Git inspection, and runtime preflight returns the exact
 validated absolute executable. Historical failed probes remain preserved.
+
+## Full review closure requirements — 2026-10-09
+
+The follow-up covers the 42 numbered A–H findings and the independently
+reproduced product-repository binding defect. Repository tests must prove the
+admitted stale race is terminal without stopping unrelated operations, all
+legal no-send blockers retain their states, and illegal attempted combinations
+remain protocol failures. The Go acceptance matrix and TS runtime state list
+are cross-checked through the same test vectors; digest vectors retain separate
+Go and TS implementations.
+
+Operation-scope tests cover captured clients, derived requests, expiry,
+revocation/cancellation, wrong hosts/repos/methods and parallel public-client
+construction with zero real network. Transport tests retain real bare-Git CAS,
+Unicode/plus branch names, SHA-256 remote reads, and one final admission. A
+qualification target is checked against `allowed_product_repos` independently
+of the unchanged workspace `main` authority and selected registry bytes.
+
+Scope regression evidence also covers parsed responses arriving after headers,
+mutable endpoint defaults, and parent hook tampering before request derivation.
+Derived requests retain the construction-time hook, and public hook extension
+is refused before callbacks run. Execution deadlines, caller cancellation,
+token expiry and scope revocation continue to reject late parsed data.
+
+Missing worker history is a deliberate startup refusal, not an invitation to
+reset storage. The recovery test preserves the consumed ledger bytes, refuses
+to create a journal, and restores an internally consistent ledger/journal backup
+without allowing Permit reuse. Strict task-link and JSON tests reject ambiguous
+or malformed evidence without changing old records. CLI tests distinguish
+accepted/incomplete exit 0 from failure/reconciliation exit 1.
+
+Performance evidence uses mock request and real Git-process counts, not the
+review's estimates. Cleanup fetches its narrow PR evidence, filters head/base
+queries independently, deduplicates without accepting conflicting observations,
+and reuses branded repository evidence in one observation. Go tree caching is
+per Acquire only. Broker execution keeps its independent final Go resource,
+authority and task checks. Human execution retains the post-intent observation.
+The handoff verifier hashes owned artifact bytes once and accepts legacy schema
+names while new evidence uses shared conceptual names.
+
+Package-scoped release qualification covers Core, GitHub, Delivery, PR, Runtime,
+Collaboration and CLI; Linux executor composition remains a separate boundary.
+Package tests first incrementally build their dependency graph. Fresh clones,
+updated dependency source, standalone verification and installation packaging
+must be checked separately. Final local suites, final-head hosted CI,
+independent review and PRMS results belong in the PR delivery record. This
+appendix defines required evidence and does not assert a current-head PASS.
+
+An initial complete validation of the review-repair tree exposed generator-test
+isolation and worker responsiveness failures. The stale sequence case exceeded
+its assertion budget, and its asynchronous shared-input restoration could
+overwrite the next invalid case. Each input now owns a separate directory;
+real generation runs in a bounded 30-second preparation hook and the existing
+five-second assertions remain. Graph generation awaits real child processes
+asynchronously with the existing workload budgets, preserving stale-byte,
+unexpected-file and symlink checks without blocking worker communication. Only
+the changed test source locks and Go contract expectations are
+refreshed; no Workflow runtime implementation is changed. Initial failure logs
+are retained separately from final validation evidence.
+
+A later complete run passed every assertion but still failed with one worker
+`onTaskUpdate` timeout. The long Go verifier matrix synchronously blocked the
+worker; a failing responsiveness regression proves that an event-loop callback
+cannot run while that child executes. This one workload now awaits real child
+processes using its unchanged 90-second case budget, retaining every positive,
+failure-propagation and skipped-test assertion. Its test source lock is updated
+without changing the verifier script or any Workflow runtime implementation.
+
+The selected registry, permissions, identity and fixed main authority remain
+unchanged. New frozen artifacts and administrator inputs are DRAFT; earlier
+approval cannot approve changed bytes. Main registry deployment, credentials,
+installation and runtime identity, activation, exact Permit, real deletion,
+human approval and governed merge remain external unfinished gates. PR #418
+stays Draft and receives linear commits only. Existing evidence and review
+comments remain intact.

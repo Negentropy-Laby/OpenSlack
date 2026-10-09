@@ -713,6 +713,21 @@ administrator Red Zone registry change. Read-token authentication does not
 grant write authority: deletion always uses the configured GitHub App
 installation transport, never a human PAT or SSH fallback.
 
+The managed Agent route requires `--agent-id <id> --permit-id <id>` and an
+explicit `--repo <owner/name> --remote <name>`. Execute additionally requires
+`--operation-id <id>`; read-only polling uses `--operation-status --operation-id
+<id>` with the same Permit and target. These controls send typed requests to the
+Linux/WSL2 Broker, without direct transport fallback. Accepted repo forms are
+normalized to `owner/name` before that request. `OPERATION_IN_PROGRESS` exits 0
+with an explicit incomplete notice; it does not mean deletion succeeded.
+Completed audited cleanup exits 0; denied, failed, unknown, unaudited or
+reconciliation results exit 1. Never issue another execute to poll an operation.
+
+Task-link `task_id`, `run_id` and `agent_id` must each contain 1–128 characters:
+a letter or digit first, then letters, digits or `._-`. Duplicate markers,
+duplicate JSON keys and invalid identifiers block cleanup. Historical abnormal
+records are inspectable and are not automatically rewritten.
+
 Execution rechecks live evidence and persists an audit intent before attempting
 one exact expected-SHA lease deletion. It does not reuse preview as an execution
 ticket. `DELETED` requires an explicit successful deletion receipt and an absent
