@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  getCleanupPREvidence,
   claimRefPresent,
   getDefaultBranch,
   isBranchProtected,
@@ -52,6 +53,52 @@ beforeEach(() => {
 });
 
 describe('branch evidence', () => {
+  it('uses one repository/PR read and reuses validated repository evidence within the observation', async () => {
+    mocks.repo.mockResolvedValue(
+      response({ id: 123, full_name: 'owner/repo', default_branch: 'main' }),
+    );
+    mocks.pr.mockResolvedValue(
+      response({
+        ...pull(),
+        merged: true,
+        node_id: 'PR_fixture',
+        base: { ...pull().base, repo: { id: 123, full_name: 'owner/repo' } },
+        head: { ...pull().head, repo: { id: 123, full_name: 'owner/repo' } },
+      }),
+    );
+    const proof = await getCleanupPREvidence(1);
+    expect(proof.prNodeId).toBe('PR_fixture');
+    expect(proof.repositoryEvidence?.id).toBe('123');
+    expect(await getDefaultBranch(undefined, proof.repositoryEvidence)).toBe('main');
+    expect(await claimRefPresent(42, undefined, proof.repositoryEvidence)).toBe(true);
+    expect(mocks.repo).toHaveBeenCalledOnce();
+    expect(mocks.pr).toHaveBeenCalledOnce();
+    expect(mocks.graphql).not.toHaveBeenCalled();
+    await expect(
+      getDefaultBranch(undefined, { id: '123', fullName: 'owner/repo', defaultBranch: 'main' }),
+    ).rejects.toThrow('INVALID');
+  });
+  it('queries head and base separately, unions matches, and deduplicates without a full-repository scan', async () => {
+    mocks.pulls.mockImplementation(async (options) => {
+      expect(options.head || options.base).toBeTruthy();
+      return response(
+        options.head
+          ? [pull(1), pull(2, 'feature', 'feature')]
+          : [pull(2, 'feature', 'feature'), pull(3, 'other', 'feature')],
+      );
+    });
+    expect((await listOpenPRsForBranch('feature')).map((p) => p.number)).toEqual([1, 2, 3]);
+    expect(mocks.pulls.mock.calls.map(([args]) => [args.head, args.base, args.page])).toEqual([
+      ['owner:feature', undefined, 1],
+      [undefined, 'feature', 1],
+    ]);
+  });
+  it('rejects conflicting observations of the same PR across filtered pages', async () => {
+    mocks.pulls.mockImplementation(async (options) =>
+      response([pull(1, options.head ? 'feature' : 'other', 'feature')]),
+    );
+    await expect(listOpenPRsForBranch('feature')).rejects.toThrow('INVALID');
+  });
   it('requires live evidence', async () => {
     mocks.getClient.mockResolvedValue({ isDryRun: true });
     await expect(getDefaultBranch()).rejects.toThrow('REQUIRES_LIVE');

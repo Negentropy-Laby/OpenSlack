@@ -78,6 +78,9 @@ func (l *Ledger) openWorkers(ledgerExisted bool) error {
 	}
 	fd, err := syscall.Openat(int(l.dir.Fd()), workerFileName, flags, 0600)
 	if err != nil {
+		if ledgerExisted && errors.Is(err, syscall.ENOENT) {
+			return ErrWorkerEvidenceMissing
+		}
 		return ErrCorrupt
 	}
 	f := os.NewFile(uintptr(fd), workerFileName)

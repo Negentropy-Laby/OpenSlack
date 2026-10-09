@@ -6,11 +6,13 @@ import {
   type RequestOptions,
   type IncomingMessage,
 } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLEANUP_BROKER_STATES,
+  CLEANUP_PERMIT_ONLY_CLAIM,
   createCleanupBrokerClientForTesting,
   type CleanupBrokerRequest,
   type CleanupBrokerResponse,
@@ -100,6 +102,21 @@ async function fixture(handle: (value: CleanupBrokerRequest, response: ServerRes
 }
 
 describe('cleanup broker Unix socket client contract', () => {
+  it('covers every runtime/union state in the independent Go acceptance matrix and retains Permit-only wire markers', () => {
+    const matrix = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../../services/cleanup-broker/internal/broker/testdata/execute-outcomes.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as Array<{ state: string }>;
+    expect(matrix.map((row) => row.state).sort()).toEqual([...CLEANUP_BROKER_STATES].sort());
+    expect(reply(input())).toMatchObject(CLEANUP_PERMIT_ONLY_CLAIM);
+    expect(new Set(matrix.map((row) => row.state)).size).toBe(CLEANUP_BROKER_STATES.length);
+  });
+
   it.each(['preview', 'execute', 'status'] as const)(
     'sends bounded %s protocol once without credentials',
     async (mode) => {
@@ -202,6 +219,7 @@ describe('cleanup broker Unix socket client contract', () => {
 
   it.each([
     'duplicate',
+    'escaped-duplicate',
     'oversize',
     'invalid-json',
     'invalid-utf8',
@@ -214,6 +232,8 @@ describe('cleanup broker Unix socket client contract', () => {
       res.setHeader('Content-Type', 'application/json');
       if (kind === 'duplicate')
         res.end(JSON.stringify(reply(value)).replace('{', '{"state":"DELETED",'));
+      if (kind === 'escaped-duplicate')
+        res.end(JSON.stringify(reply(value)).replace('{', '{"sta\\u0074e":"DELETED",'));
       if (kind === 'oversize') res.end('x'.repeat(17000));
       if (kind === 'invalid-json') res.end('server secret');
       if (kind === 'invalid-utf8') res.end(Buffer.from([0xff]));
@@ -273,6 +293,64 @@ describe('cleanup broker Unix socket client contract', () => {
       expect(f.calls()).toBe(1);
     },
   );
+
+  it.each([
+    'ALREADY_ABSENT',
+    'BLOCKED_NOT_MERGED',
+    'BLOCKED_BASE_BRANCH',
+    'BLOCKED_FORK',
+    'BLOCKED_BRANCH_RESERVED',
+    'BLOCKED_DEPENDENCY',
+    'BLOCKED_EVIDENCE',
+    'BLOCKED_AUTHORIZATION',
+    'BLOCKED_AUDIT',
+    'BLOCKED_BROKER',
+    'OPERATION_NOT_FOUND',
+  ] as const)('rejects attempted=true for no-send state %s', async (state) => {
+    const f = await fixture((value, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ...reply(value), state }));
+    });
+    await expect(f.client(input('execute'))).rejects.toMatchObject({
+      code: 'BROKER_INVALID_RESPONSE',
+      outcomeUnknown: true,
+    });
+    expect(f.calls()).toBe(1);
+  });
+
+  it.each([false, true])(
+    'accepts a consumed SHA-drift receipt, attempted=%s',
+    async (attempted) => {
+      const f = await fixture((value, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ...reply(value), state: 'BLOCKED_SHA_DRIFT', attempted }));
+      });
+      await expect(f.client(input('execute'))).resolves.toMatchObject({
+        state: 'BLOCKED_SHA_DRIFT',
+        attempted,
+        permitState: 'consumed',
+        auditStatus: 'RECORDED',
+      });
+      expect(f.calls()).toBe(1);
+    },
+  );
+
+  it.each([
+    { permitState: 'issued' },
+    { permitState: 'reserved' },
+    { auditStatus: 'NOT_REQUIRED' },
+    { auditStatus: 'FAILED' },
+  ])('rejects an unconsumed or unaudited attempted SHA-drift receipt: %j', async (patch) => {
+    const f = await fixture((value, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ...reply(value), state: 'BLOCKED_SHA_DRIFT', ...patch }));
+    });
+    await expect(f.client(input('execute'))).rejects.toMatchObject({
+      code: 'BROKER_INVALID_RESPONSE',
+      outcomeUnknown: true,
+    });
+    expect(f.calls()).toBe(1);
+  });
 
   it.each([0, -1, 600001, NaN, 1.1])('rejects invalid timeout %s', async (timeoutMs) => {
     const transport = vi.fn();

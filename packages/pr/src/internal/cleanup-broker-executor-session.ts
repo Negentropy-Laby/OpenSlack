@@ -1,16 +1,10 @@
-import { parseAgentRegistryText } from '@openslack/workspace';
 import { validateCleanupBrokerRegistry } from './cleanup-broker-authorization.js';
-import {
-  authorizeAgentAction,
-  resolvePermissionSnapshot,
-  type AgentPermissionSnapshot,
-  type AgentPrincipal,
-} from '@openslack/kernel';
+import { type AgentPermissionSnapshot, type AgentPrincipal } from '@openslack/kernel';
 import {
   isCleanupBrokerChannel,
   type CleanupBrokerChannel,
-} from '../../../delivery/dist/internal/cleanup-broker-channel.js';
-import type { CleanupBrokerSendBinding } from '../../../delivery/dist/internal/cleanup-broker-transport.js';
+} from '@openslack/delivery/cleanup-broker-internal';
+import type { CleanupBrokerSendBinding } from '@openslack/delivery/cleanup-broker-internal';
 
 const sessions = new WeakMap<
   object,
@@ -40,45 +34,11 @@ export function createCleanupBrokerSession(
     Buffer.byteLength(registryText) > 65536
   )
     deny();
-  validateCleanupBrokerRegistry(registryText, {
+  const { snapshot } = validateCleanupBrokerRegistry(registryText, {
     agentId,
     ...subject,
     repository: binding.target.repository,
   });
-  const registry = parseAgentRegistryText(registryText, agentId);
-  if (
-    !registry ||
-    registry.schema !== 'openslack.agent_registry.v2' ||
-    registry._source_schema !== 'openslack.agent_registry.v2' ||
-    registry.agent_id !== agentId ||
-    registry.identity.status !== 'active' ||
-    registry.employment.status !== 'active' ||
-    registry.identity.uid !== subject.runtimeUid ||
-    registry.identity.principal_id !== subject.principalId ||
-    registry.permissions.actions['pr.cleanup_branch'] !== 'deny' ||
-    registry.permissions.actions['pr.cleanup_branch_scoped.v1'] !== 'allow'
-  )
-    deny();
-  const snapshot = resolvePermissionSnapshot({
-    registry,
-    runtimeIdentity: {
-      schema: 'openslack.agent_runtime_identity.v1',
-      agent_id: agentId,
-      agent_uid: subject.runtimeUid,
-      run_id: subject.runId,
-      provider: 'cli',
-      public_key_jwk: null,
-      key_id: null,
-      key_generated_at: null,
-      started_at: new Date().toISOString(),
-    },
-  });
-  if (
-    !snapshot ||
-    authorizeAgentAction({ snapshot, action: 'pr.cleanup_branch_scoped.v1', riskZone: 'yellow' })
-      .decision !== 'allow'
-  )
-    deny();
   const token = Object.freeze({});
   sessions.set(token, {
     binding: structuredClone(binding),

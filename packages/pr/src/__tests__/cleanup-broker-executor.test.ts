@@ -85,6 +85,14 @@ function fixture() {
   };
 }
 describe('fixed executor boundary', () => {
+  it.each(['http://proxy:0', 'http://proxy:65536', 'http://proxy:99999'])(
+    'rejects invalid proxy port %s before execution',
+    (proxy) => {
+      const input = fixture();
+      input.network.httpsProxy = proxy;
+      expect(() => parseCleanupExecutorBootstrap(input)).toThrow('CLEANUP_EXECUTOR_INPUT_INVALID');
+    },
+  );
   it('owns structural input without claiming registry authentication', () => {
     const input = fixture();
     const result = parseCleanupExecutorBootstrap(input);
@@ -220,7 +228,8 @@ describe.runIf(process.platform === 'linux')(
         employment: { status: 'active', hired_at: '2026-09-21T00:00:00Z' },
         capabilities: { primary: ['typescript'] },
         repositories: {
-          workspace_repo: { owner: 'example', repo: 'qualification', default_branch: 'main' },
+          workspace_repo: { owner: 'Negentropy-Laby', repo: 'OpenSlack', default_branch: 'main' },
+          allowed_product_repos: ['example/qualification'],
         },
         permissions: {
           paths: { allow: [], deny: [] },
@@ -341,6 +350,9 @@ describe.runIf(process.platform === 'linux')(
       expect(result.frames.map((f) => f.type)).toEqual(['admit', 'result']);
       expect(result.frames[1]).toMatchObject({ state: 'DELETED', attempted: true });
       expect(result.calls.filter((c) => c === 'push')).toHaveLength(1);
+      expect(
+        result.calls.filter((c) => c === 'api:/repos/example/qualification/pulls/1'),
+      ).toHaveLength(1);
       expect(result.ref).toBe('');
     });
     it('final broker rejection produces zero pushes and preserves ref', async () => {
@@ -355,6 +367,9 @@ describe.runIf(process.platform === 'linux')(
       expect(result.frames[1]).toMatchObject({ attempted: true });
       expect(result.frames[1]?.state).not.toBe('DELETED');
       expect(result.calls.filter((c) => c === 'push')).toHaveLength(1);
+      expect(
+        result.calls.filter((c) => c === 'api:/repos/example/qualification/pulls/1'),
+      ).toHaveLength(1);
     });
   },
 );

@@ -13,6 +13,9 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/permit"
 )
 
+const PermitOnlyClaimRequirement = "not_required"
+const PermitOnlyClaimStatus = "not_evaluated"
+
 const MaxMessage = 16 << 10
 
 var ErrRequest = errors.New("BROKER_REQUEST_INVALID")
@@ -110,5 +113,5 @@ type Response struct {
 }
 
 func Reply(r Request, state, reason string) Response {
-	return Response{Schema: "openslack.cleanup_response.v1", Mode: r.Mode, PermitID: r.PermitID, OperationID: r.OperationID, PermitState: "unknown", ClaimRequirement: "not_required", ClaimStatus: "not_evaluated", State: state, AuditStatus: "NOT_REQUIRED", Reason: reason}
+	return Response{Schema: "openslack.cleanup_response.v1", Mode: r.Mode, PermitID: r.PermitID, OperationID: r.OperationID, PermitState: "unknown", ClaimRequirement: PermitOnlyClaimRequirement, ClaimStatus: PermitOnlyClaimStatus, State: state, AuditStatus: "NOT_REQUIRED", Reason: reason}
 }

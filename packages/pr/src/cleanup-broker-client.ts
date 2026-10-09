@@ -1,5 +1,6 @@
+import { decodeStrictJSON } from '@openslack/core';
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from 'node:http';
-import type { PRBranchCleanupState } from './cleanup-types.js';
+import { PR_BRANCH_CLEANUP_STATES, type PRBranchCleanupState } from './cleanup-types.js';
 
 const SOCKET = '/run/openslack-cleanup/broker.sock';
 const MAX_RESPONSE_BYTES = 16 * 1024;
@@ -85,26 +86,17 @@ const responseKeys = [
   'auditStatus',
   'reason',
 ];
-const states = new Set<string>([
-  'CLEANUP_READY',
-  'ALREADY_ABSENT',
-  'DELETED',
-  'ABSENT_AFTER_ATTEMPT',
-  'FAILED',
-  'RECONCILIATION_REQUIRED',
-  'BLOCKED_NOT_MERGED',
-  'BLOCKED_BASE_BRANCH',
-  'BLOCKED_FORK',
-  'BLOCKED_BRANCH_RESERVED',
-  'BLOCKED_DEPENDENCY',
-  'BLOCKED_SHA_DRIFT',
-  'BLOCKED_EVIDENCE',
-  'BLOCKED_AUTHORIZATION',
-  'BLOCKED_AUDIT',
+export const CLEANUP_BROKER_STATES = [
+  ...PR_BRANCH_CLEANUP_STATES,
   'BLOCKED_BROKER',
   'OPERATION_NOT_FOUND',
   'OPERATION_IN_PROGRESS',
-]);
+] as const;
+export const CLEANUP_PERMIT_ONLY_CLAIM = Object.freeze({
+  claimRequirement: 'not_required',
+  claimStatus: 'not_evaluated',
+} as const);
+const states = new Set<string>(CLEANUP_BROKER_STATES);
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -165,8 +157,8 @@ function validateResponse(
       'expired',
       'unknown',
     ].includes(value.permitState as string) ||
-    value.claimRequirement !== 'not_required' ||
-    value.claimStatus !== 'not_evaluated' ||
+    value.claimRequirement !== CLEANUP_PERMIT_ONLY_CLAIM.claimRequirement ||
+    value.claimStatus !== CLEANUP_PERMIT_ONLY_CLAIM.claimStatus ||
     typeof value.state !== 'string' ||
     !states.has(value.state) ||
     typeof value.attempted !== 'boolean' ||
@@ -178,6 +170,19 @@ function validateResponse(
   if (
     input.mode === 'preview' &&
     (value.attempted || ['DELETED', 'ABSENT_AFTER_ATTEMPT'].includes(value.state))
+  )
+    return false;
+  if (
+    value.attempted &&
+    (value.state === 'ALREADY_ABSENT' ||
+      value.state === 'OPERATION_NOT_FOUND' ||
+      (value.state.startsWith('BLOCKED_') && value.state !== 'BLOCKED_SHA_DRIFT'))
+  )
+    return false;
+  if (
+    value.state === 'BLOCKED_SHA_DRIFT' &&
+    value.attempted &&
+    (value.permitState !== 'consumed' || value.auditStatus !== 'RECORDED')
   )
     return false;
   if (['DELETED', 'ABSENT_AFTER_ATTEMPT'].includes(value.state) && !value.attempted) return false;
@@ -281,14 +286,8 @@ async function send(
           incoming.on('end', () => {
             if (finished) return;
             try {
-              const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
-              const value: unknown = JSON.parse(text);
-              // This protocol is a flat object. Count top-level member tokens to reject duplicate keys.
-              const members = text.match(/"(?:[^"\\]|\\.)*"\s*:/g);
-              if (
-                !validateResponse(value, owned) ||
-                members?.length !== Object.keys(value).length
-              ) {
+              const value = decodeStrictJSON(Buffer.concat(chunks), MAX_RESPONSE_BYTES);
+              if (!validateResponse(value, owned)) {
                 fail('BROKER_INVALID_RESPONSE');
                 return;
               }

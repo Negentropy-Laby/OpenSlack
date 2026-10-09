@@ -5,10 +5,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GitAskPassPublisher } from '../git-transport.js';
 import { openCleanupBrokerChannel } from '../internal/cleanup-broker-channel.js';
 import {
-  bindCleanupBrokerTransport,
+  createCleanupBrokerTransport,
   type CleanupBrokerSendBinding,
   type CleanupBrokerNetwork,
 } from '../internal/cleanup-broker-transport.js';
@@ -144,12 +143,7 @@ function setup(
   state.input = Buffer.from(`{}\n${JSON.stringify(reply)}\n`);
   const channel = openCleanupBrokerChannel();
   channel.readBootstrap();
-  const publisher = new GitAskPassPublisher({
-    spawn: vi.fn(() => {
-      throw Error('public spawn injection');
-    }) as unknown as typeof spawnSync,
-  });
-  bindCleanupBrokerTransport(publisher, channel, b, network);
+  const publisher = createCleanupBrokerTransport(channel, b, network);
   return { publisher, channel, b };
 }
 function supported() {
@@ -159,6 +153,14 @@ function supported() {
 }
 
 describe('private broker final-send fence', () => {
+  it('exposes only exact read and conditional delete capabilities', () => {
+    if (!supported()) return;
+    const { publisher } = setup();
+    expect('push' in publisher).toBe(false);
+    expect('deleteRemoteRef' in publisher).toBe(false);
+    expect('readRemoteSha' in publisher).toBe(false);
+    expect(Object.isFrozen(publisher)).toBe(true);
+  });
   it('pins preview reads but refuses any admission or push with an empty operation', () => {
     if (!supported()) return;
     const { publisher } = setup(undefined, undefined, true);
@@ -239,8 +241,8 @@ describe('private broker final-send fence', () => {
   it('rejects forged channels and target drift before transport', () => {
     if (!supported()) return;
     const { publisher, channel, b } = setup();
-    expect(() => bindCleanupBrokerTransport({}, { ...channel }, b)).toThrow();
-    expect(() => bindCleanupBrokerTransport(publisher, channel, b)).toThrow();
+    expect(() => createCleanupBrokerTransport({ ...channel }, b)).toThrow();
+    expect(() => createCleanupBrokerTransport(channel, b)).toThrow();
     expect(() => publisher.deleteRemoteRefIfAt({ ...input(), branch: 'other' })).toThrow();
     expect(state.calls).toHaveLength(0);
   });

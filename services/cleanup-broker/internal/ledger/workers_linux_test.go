@@ -3,6 +3,8 @@
 package ledger
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -123,5 +125,72 @@ func TestWorkerJournalPoisonAfterExternalMutation(t *testing.T) {
 	}
 	if err = l.FinishWorker("worker"); !errors.Is(err, ErrPoisoned) {
 		t.Fatalf("writer not poisoned %v", err)
+	}
+}
+
+func TestMissingJournalPreservesHistoryAndCoherentBackupRestoresSpending(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0700)
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := json.RawMessage(`{"request":"fixture"}`)
+	if _, err = l.Reserve("permit", "operation", strings.Repeat("a", 64), "subject", intent); err != nil {
+		t.Fatal(err)
+	}
+	if err = l.RegisterWorker(workerFixture()); err != nil {
+		t.Fatal(err)
+	}
+	if err = l.FinishWorker("worker"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = l.Finish("operation", Consumed, json.RawMessage(`{"result":"DELETED","attempted":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err = l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	historyPath := filepath.Join(dir, fileName)
+	journalPath := filepath.Join(dir, workerFileName)
+	history, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(journalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Open(dir); !errors.Is(err, ErrWorkerEvidenceMissing) {
+		t.Fatalf("missing diagnostic: %v", err)
+	}
+	preserved, err := os.ReadFile(historyPath)
+	if err != nil || !bytes.Equal(preserved, history) {
+		t.Fatal("failed startup altered consumption history")
+	}
+	if _, err = os.Lstat(journalPath); !os.IsNotExist(err) {
+		t.Fatal("missing journal was recreated")
+	}
+	if err = os.WriteFile(journalPath, journal, 0600); err != nil {
+		t.Fatal(err)
+	}
+	l, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	replay, err := l.Reserve("permit", "operation", strings.Repeat("a", 64), "subject", intent)
+	if err != nil || replay.Fresh || replay.Record.State != Consumed {
+		t.Fatalf("restored history authorized reuse: %v %v", replay, err)
+	}
+	if _, err = l.Reserve("permit", "other", strings.Repeat("a", 64), "subject", intent); !errors.Is(err, ErrConflict) {
+		t.Fatal("spent permit could be reserved again")
+	}
+	pending, err := l.UnfinishedWorkers()
+	if err != nil || len(pending) != 0 {
+		t.Fatal("restored terminal worker changed")
 	}
 }

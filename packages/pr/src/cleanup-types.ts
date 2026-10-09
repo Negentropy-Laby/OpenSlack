@@ -1,22 +1,24 @@
 import type { AgentPermissionSnapshot, AgentPrincipal } from '@openslack/kernel';
 import type { GitHubAuthPreference } from '@openslack/github';
 
-export type PRBranchCleanupState =
-  | 'CLEANUP_READY'
-  | 'ALREADY_ABSENT'
-  | 'DELETED'
-  | 'ABSENT_AFTER_ATTEMPT'
-  | 'FAILED'
-  | 'RECONCILIATION_REQUIRED'
-  | 'BLOCKED_NOT_MERGED'
-  | 'BLOCKED_BASE_BRANCH'
-  | 'BLOCKED_FORK'
-  | 'BLOCKED_BRANCH_RESERVED'
-  | 'BLOCKED_DEPENDENCY'
-  | 'BLOCKED_SHA_DRIFT'
-  | 'BLOCKED_EVIDENCE'
-  | 'BLOCKED_AUTHORIZATION'
-  | 'BLOCKED_AUDIT';
+export const PR_BRANCH_CLEANUP_STATES = [
+  'CLEANUP_READY',
+  'ALREADY_ABSENT',
+  'DELETED',
+  'ABSENT_AFTER_ATTEMPT',
+  'FAILED',
+  'RECONCILIATION_REQUIRED',
+  'BLOCKED_NOT_MERGED',
+  'BLOCKED_BASE_BRANCH',
+  'BLOCKED_FORK',
+  'BLOCKED_BRANCH_RESERVED',
+  'BLOCKED_DEPENDENCY',
+  'BLOCKED_SHA_DRIFT',
+  'BLOCKED_EVIDENCE',
+  'BLOCKED_AUTHORIZATION',
+  'BLOCKED_AUDIT',
+] as const;
+export type PRBranchCleanupState = (typeof PR_BRANCH_CLEANUP_STATES)[number];
 
 export interface PRBranchCleanupCheck {
   name: string;
@@ -39,8 +41,6 @@ export interface PRBranchCleanupResult {
   evidenceTimestamp: string;
   auditStatus: 'NOT_REQUIRED' | 'RECORDED' | 'FAILED';
 }
-
-export type PRBranchCleanupPlan = PRBranchCleanupResult;
 
 export interface PRBranchCleanupAuditEvent {
   mode: 'preview' | 'execute';

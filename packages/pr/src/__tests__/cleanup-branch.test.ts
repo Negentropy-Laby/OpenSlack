@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cleanupPRBranch, planPRBranchCleanup } from '../cleanup-branch.js';
+import { cleanupPRBranch } from '../cleanup-branch.js';
 import type { PRBranchCleanupDependencies } from '../cleanup-branch.js';
 import type { PRBranchCleanupInput } from '../cleanup-types.js';
 import type { PRReviewReport } from '../types.js';
@@ -92,11 +92,9 @@ describe('governed branch cleanup', () => {
       expect.objectContaining({ mode: 'preview', phase: 'outcome', attempted: false }),
     );
   });
-  it('planner ignores execute, and new execute re-observes current evidence', async () => {
+  it('preview followed by execute re-observes current evidence', async () => {
     const { input, deps } = setup();
-    expect((await planPRBranchCleanup({ ...input, execute: true }, deps)).state).toBe(
-      'CLEANUP_READY',
-    );
+    expect((await cleanupPRBranch({ ...input, execute: false }, deps)).state).toBe('CLEANUP_READY');
     deps.fetchPR.mockResolvedValue(report({ merged: false }));
     expect((await cleanupPRBranch({ ...input, execute: true }, deps)).state).toBe(
       'BLOCKED_NOT_MERGED',

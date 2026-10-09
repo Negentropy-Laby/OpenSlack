@@ -11,3 +11,15 @@ export {
   probeBash,
   createProcessResolver,
 } from './process-discovery.js';
+
+export { decodeStrictJSON } from './strict-json.js';
+export {
+  parseTaskLinkMarker,
+  issueClaimRef,
+  isReservedCleanupBranch,
+  isValidCleanupBranch,
+  isFullGitObjectId,
+  type TaskLinkMetadata,
+  type TaskLinkResult,
+} from './task-link.js';
+export { validateGitHubNetwork, githubProxyBypassed } from './github-network.js';

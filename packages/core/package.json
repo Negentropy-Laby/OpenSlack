@@ -13,7 +13,8 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. --project @openslack/core",
+    "test:watch": "vitest --root ../.. --project @openslack/core",
+    "pretest": "tsc --build tsconfig.json"
   }
 }

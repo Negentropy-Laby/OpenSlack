@@ -1,8 +1,11 @@
+import { createPRBranchCleanupAuditEvent } from './cleanup-result.js';
+import { isFullGitObjectId, isValidCleanupBranch, isReservedCleanupBranch } from '@openslack/core';
 import { randomUUID } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { authorizeAgentAction } from '@openslack/kernel';
 import {
+  getCleanupPREvidence,
   claimRefPresent,
   getDefaultBranch,
   isBranchProtected,
@@ -10,7 +13,6 @@ import {
   type GitHubClientOptions,
 } from '@openslack/github';
 import { deleteRemoteBranchIfAt, readRemoteBranchSha } from '@openslack/delivery';
-import { fetchPRDetails } from './fetch.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
 import { parseTaskLinkMarker } from './task-link.js';
 import type { CleanupTaskLink } from './task-link.js';
@@ -19,7 +21,7 @@ import {
   brokerSessionTarget,
   type CleanupBrokerSession,
 } from './internal/cleanup-broker-executor-session.js';
-import { CleanupBrokerSendDeniedError } from '../../delivery/dist/internal/cleanup-broker-transport.js';
+import { CleanupBrokerSendDeniedError } from '@openslack/delivery/cleanup-broker-internal';
 import type {
   PRBranchCleanupInput,
   PRBranchCleanupResult,
@@ -27,7 +29,7 @@ import type {
 } from './cleanup-types.js';
 
 export interface PRBranchCleanupDependencies {
-  fetchPR: typeof fetchPRDetails;
+  fetchPR: typeof getCleanupPREvidence;
   getDefaultBranch: typeof getDefaultBranch;
   isBranchProtected: typeof isBranchProtected;
   listOpenPRsForBranch: typeof listOpenPRsForBranch;
@@ -52,42 +54,17 @@ function hasLocalTaskDependency(root: string, link: CleanupTaskLink): boolean {
 }
 
 const defaults: PRBranchCleanupDependencies = {
-  fetchPR: (n, options) => fetchPRDetails(n, options),
-  getDefaultBranch: (options) => getDefaultBranch(options),
+  fetchPR: (n, options) => getCleanupPREvidence(n, options),
+  getDefaultBranch: (options, evidence) => getDefaultBranch(options, evidence),
   isBranchProtected: (branch, options) => isBranchProtected(branch, options),
   listOpenPRsForBranch: (branch, options) => listOpenPRsForBranch(branch, options),
-  claimRefPresent: (issue, options) => claimRefPresent(issue, options),
+  claimRefPresent: (issue, options, evidence) => claimRefPresent(issue, options, evidence),
   readRemoteBranchSha: (input, options) => readRemoteBranchSha(input, options),
   deleteRemoteBranchIfAt: (input, options) => deleteRemoteBranchIfAt(input, options),
   hasLocalTaskDependency,
 };
 
-const fullSha = /^[0-9a-f]{40}$/;
 const repositoryPart = /^[A-Za-z0-9_.-]+$/;
-
-function validBranch(branch: string): boolean {
-  return (
-    branch.length > 0 &&
-    branch.length <= 1024 &&
-    !/[\x00-\x20\x7f~^:?*\[\\]/.test(branch) &&
-    !branch.includes('..') &&
-    !branch.includes('@{') &&
-    !branch.endsWith('.') &&
-    !branch.startsWith('-') &&
-    branch !== '@' &&
-    branch
-      .split('/')
-      .every((part) => part.length > 0 && !part.startsWith('.') && !part.endsWith('.lock'))
-  );
-}
-
-function reserved(branch: string, defaultBranch: string): boolean {
-  return (
-    branch === 'main' ||
-    branch === defaultBranch ||
-    /^openslack\/(claims|probes)(\/|$)/.test(branch)
-  );
-}
 
 function authorized(input: PRBranchCleanupInput): boolean {
   const c = input.context;
@@ -137,13 +114,6 @@ async function within<T>(operation: Promise<T>, signal: AbortSignal): Promise<T>
   }
 }
 
-export async function planPRBranchCleanup(
-  input: PRBranchCleanupInput,
-  dependencies: Partial<PRBranchCleanupDependencies> = {},
-): Promise<PRBranchCleanupResult> {
-  return cleanupPRBranch({ ...input, execute: false }, dependencies);
-}
-
 export async function cleanupPRBranch(
   input: PRBranchCleanupInput,
   dependencies: Partial<PRBranchCleanupDependencies> = {},
@@ -175,39 +145,12 @@ async function cleanupOwned(
   // Read-only and preflight-blocked decisions are also observable. Unlike the
   // mandatory pre-delete intent, failure of this notification cannot cause a write.
   if (result.auditStatus === 'NOT_REQUIRED' && audit) {
-    const context = owned.context;
-    const executor =
-      context?.kind === 'human-cli'
-        ? 'human-cli'
-        : context?.kind === 'agent' &&
-            /^[A-Za-z0-9_.-]{1,128}$/.test(context.principal?.registry_id ?? '')
-          ? context.principal.registry_id
-          : 'unknown';
     try {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) throw new Error('CLEANUP_DEADLINE');
       await within(
         Promise.resolve().then(() =>
-          audit({
-            mode: owned.execute ? 'execute' : 'preview',
-            phase: 'outcome',
-            operationId: result.operationId,
-            repository: result.repository,
-            prNumber: result.prNumber,
-            branch: result.branch,
-            expectedSha: result.expectedSha,
-            observedSha: result.observedSha,
-            observedRefState: result.observedRefState,
-            state: result.state,
-            attempted: result.attempted,
-            executor,
-            authorizationSource: !owned.execute
-              ? 'preview-only'
-              : executor === 'human-cli'
-                ? 'human-cli:--execute'
-                : 'registry:pr.cleanup_branch',
-            evidenceTimestamp: result.evidenceTimestamp,
-          }),
+          audit(createPRBranchCleanupAuditEvent(owned, result, 'outcome')),
         ),
         AbortSignal.timeout(Math.max(1, remainingMs)),
       );
@@ -303,9 +246,9 @@ async function runCleanup(
       !pr.headRepoFullName ||
       !pr.baseRepoFullName ||
       !pr.headRef ||
-      !validBranch(pr.headRef) ||
+      !isValidCleanupBranch(pr.headRef) ||
       !pr.headSha ||
-      !fullSha.test(pr.headSha) ||
+      !isFullGitObjectId(pr.headSha) ||
       !pr.baseRef
     ) {
       stop('BLOCKED_EVIDENCE', 'pr', 'CLEANUP_PR_EVIDENCE_INCOMPLETE');
@@ -340,9 +283,13 @@ async function runCleanup(
       }
     }
     pass('pr');
-    const defaultBranch = await within(deps.getDefaultBranch(options), signal);
-    if (!defaultBranch || !validBranch(defaultBranch)) throw new Error('DEFAULT_BRANCH_INVALID');
-    if (reserved(result.branch, defaultBranch)) {
+    const defaultBranch = await within(
+      deps.getDefaultBranch(options, pr.repositoryEvidence),
+      signal,
+    );
+    if (!defaultBranch || !isValidCleanupBranch(defaultBranch))
+      throw new Error('DEFAULT_BRANCH_INVALID');
+    if (isReservedCleanupBranch(result.branch, defaultBranch)) {
       stop('BLOCKED_BRANCH_RESERVED', 'reserved', 'CLEANUP_BRANCH_RESERVED');
       return false;
     }
@@ -360,7 +307,7 @@ async function runCleanup(
       });
       return false;
     }
-    if (!fullSha.test(sha)) throw new Error('REMOTE_SHA_INVALID');
+    if (!isFullGitObjectId(sha)) throw new Error('REMOTE_SHA_INVALID');
     result.observedSha = sha;
     result.observedRefState = 'PRESENT';
     if (sha !== result.expectedSha) {
@@ -405,7 +352,10 @@ async function runCleanup(
         return false;
       }
       if (
-        (await within(deps.claimRefPresent(m.issue_number, options), signal)) ||
+        (await within(
+          deps.claimRefPresent(m.issue_number, options, pr.repositoryEvidence),
+          signal,
+        )) ||
         deps.hasLocalTaskDependency(input.rootDir, m)
       ) {
         stop('BLOCKED_DEPENDENCY', 'task', 'CLEANUP_TASK_DEPENDENCY');
@@ -425,27 +375,7 @@ async function runCleanup(
     if (broker && matchesBrokerSession(broker, input)) return;
     if (!audit) throw new Error('CLEANUP_AUDIT_REQUIRED');
     remaining();
-    await within(
-      audit({
-        mode: input.execute ? 'execute' : 'preview',
-        phase,
-        operationId: result.operationId,
-        repository: result.repository,
-        prNumber: result.prNumber,
-        branch: result.branch,
-        expectedSha: result.expectedSha,
-        observedSha: result.observedSha,
-        observedRefState: result.observedRefState,
-        state: result.state,
-        attempted: result.attempted,
-        executor:
-          input.context.kind === 'agent' ? input.context.principal.registry_id : 'human-cli',
-        authorizationSource:
-          input.context.kind === 'agent' ? 'registry:pr.cleanup_branch' : 'human-cli:--execute',
-        evidenceTimestamp: result.evidenceTimestamp,
-      }),
-      signal,
-    );
+    await within(audit(createPRBranchCleanupAuditEvent(input, result, phase)), signal);
     result.auditStatus = 'RECORDED';
   };
   try {
@@ -468,8 +398,9 @@ async function runCleanup(
       return stop('BLOCKED_AUDIT', 'audit', 'CLEANUP_INTENT_NOT_DURABLE');
     }
     try {
-      // Revalidate AFTER durable intent: audit callbacks may await human or disk work.
-      if (await observe()) {
+      // Human intent callbacks may await disk or operator work, so re-observe.
+      // Broker workers have no local wait; Go independently re-acquires all evidence at send admission.
+      if (broker || (await observe())) {
         // Keep a bounded tail for terminal audit; delivery reserves its own ref readback.
         const auditBudget = Math.min(2_000, Math.max(20, Math.floor(timeout / 5)));
         const transportBudget = remaining() - auditBudget;

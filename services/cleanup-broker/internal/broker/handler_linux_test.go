@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -551,7 +552,7 @@ func TestRunnerOutcomeAttemptSemantics(t *testing.T) {
 	for _, tc := range []struct {
 		state     string
 		attempted bool
-	}{{"DELETED", false}, {"ABSENT_AFTER_ATTEMPT", false}, {"ALREADY_ABSENT", true}, {"BLOCKED_SHA_DRIFT", true}} {
+	}{{"DELETED", false}, {"ABSENT_AFTER_ATTEMPT", false}, {"ALREADY_ABSENT", true}, {"BLOCKED_EVIDENCE", true}, {"BLOCKED_AUTHORIZATION", true}, {"BLOCKED_NOT_MERGED", true}, {"BLOCKED_BASE_BRANCH", true}, {"BLOCKED_FORK", true}} {
 		t.Run(tc.state, func(t *testing.T) {
 			h, _, runner, r := fixture(t)
 			runner.execute = func(ctx context.Context, _ Execution, admit func(context.Context) error) (Outcome, error) {
@@ -572,6 +573,57 @@ func TestRunnerOutcomeAttemptSemantics(t *testing.T) {
 	}
 }
 
+func TestAdmittedStaleRaceConsumesOnceWithoutStoppingOtherOperations(t *testing.T) {
+	h, s, runner, r := fixture(t)
+	runner.execute = func(ctx context.Context, _ Execution, admit func(context.Context) error) (Outcome, error) {
+		if err := admit(ctx); err != nil {
+			return Outcome{}, err
+		}
+		return Outcome{State: "BLOCKED_SHA_DRIFT", Reason: "CLEANUP_STALE", Attempted: true}, nil
+	}
+	call(t, h, r)
+	result := terminal(t, h, r)
+	if result.State != "BLOCKED_SHA_DRIFT" || !result.Attempted || result.PermitState != "consumed" || result.AuditStatus != "RECORDED" {
+		t.Fatal(result)
+	}
+	if replay := call(t, h, r); replay.State != result.State || runner.executions.Load() != 1 {
+		t.Fatal("stale operation replayed", replay)
+	}
+	record, found, err := h.deps.ledger.Lookup(r.OperationID)
+	if err != nil || !found || !record.SendAdmitted || record.State != ledger.Consumed {
+		t.Fatalf("stale receipt not durable: %+v %v", record, err)
+	}
+	if err := h.deps.runtime.Check(); err != nil {
+		t.Fatal("ordinary Git CAS rejection stopped admission", err)
+	}
+	runner.execute = nil
+	r.PermitID, r.OperationID = "permit-2", "op-2"
+	s.mu.Lock()
+	s.bundle.Permit.ID = r.PermitID
+	s.mu.Unlock()
+	call(t, h, r)
+	if next := terminal(t, h, r); next.State != "DELETED" || runner.executions.Load() != 2 {
+		t.Fatal("independent operation was denied", next)
+	}
+}
+
+func TestNoSendExecutionBlockersPreserveTheirStateAndReceipt(t *testing.T) {
+	for _, state := range []string{"BLOCKED_NOT_MERGED", "BLOCKED_BASE_BRANCH", "BLOCKED_FORK", "BLOCKED_BRANCH_RESERVED", "BLOCKED_DEPENDENCY", "BLOCKED_SHA_DRIFT", "BLOCKED_EVIDENCE", "BLOCKED_AUTHORIZATION", "BLOCKED_AUDIT"} {
+		t.Run(state, func(t *testing.T) {
+			h, _, runner, r := fixture(t)
+			runner.execute = func(context.Context, Execution, func(context.Context) error) (Outcome, error) {
+				return Outcome{State: state, Reason: "CLEANUP_NO_SEND"}, nil
+			}
+			call(t, h, r)
+			result := terminal(t, h, r)
+			record, found, err := h.deps.ledger.Lookup(r.OperationID)
+			if result.State != state || result.Attempted || result.PermitState != "consumed" || result.AuditStatus != "RECORDED" || err != nil || !found || record.SendAdmitted || h.deps.runtime.Check() != nil {
+				t.Fatalf("clean blocker lost: state=%s attempted=%t permit=%s audit=%s found=%t sendAdmitted=%t error=%v", result.State, result.Attempted, result.PermitState, result.AuditStatus, found, record.SendAdmitted, err)
+			}
+		})
+	}
+}
+
 func TestResourcePreflightRejectionPreservesReasonWithoutReservation(t *testing.T) {
 	h, _, runner, r := fixture(t)
 	runner.preflight = func(_ context.Context, _ protocol.Request, b source.Bundle) (Preflight, error) {
@@ -583,5 +635,38 @@ func TestResourcePreflightRejectionPreservesReasonWithoutReservation(t *testing.
 	}
 	if _, found, _ := h.deps.ledger.Lookup(r.OperationID); found || runner.executions.Load() != 0 {
 		t.Fatal("preflight rejection reserved/executed")
+	}
+}
+
+// This vector is consumed by the TypeScript state-constant contract too.
+func TestExecuteOutcomeMatrix(t *testing.T) {
+	data, err := os.ReadFile("testdata/execute-outcomes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		State     string
+		NoSend    bool
+		AfterSend bool
+	}
+	if err = json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.State, func(t *testing.T) {
+			for _, admitted := range []bool{false, true} {
+				for _, attempted := range []bool{false, true} {
+					outcome := Outcome{State: tc.State, Attempted: attempted}
+					actual := validExecutionState(tc.State) && validExecutionAttempt(outcome, admitted)
+					expected := tc.NoSend
+					if attempted {
+						expected = admitted && tc.AfterSend
+					}
+					if actual != expected {
+						t.Fatalf("admitted=%t attempted=%t accepted=%t want=%t", admitted, attempted, actual, expected)
+					}
+				}
+			}
+		})
 	}
 }

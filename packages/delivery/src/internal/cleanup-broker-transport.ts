@@ -1,10 +1,13 @@
+import { validateGitHubNetwork, isValidCleanupBranch } from '@openslack/core';
+import { createConditionalGitTransport } from '../git-transport.js';
+import type { GitConditionalBranchDeleter } from '../types.js';
 import { spawnSync } from 'node:child_process';
 import { DeliveryError } from '../errors.js';
 import { isCleanupBrokerChannel, type CleanupBrokerChannel } from './cleanup-broker-channel.js';
 
 const GIT = '/usr/lib/openslack-cleanup/git';
 const ROOT = '/var/lib/openslack-cleanup';
-const bindings = new WeakMap<object, BoundTransport>();
+const channels = new WeakSet<object>();
 
 export interface CleanupBrokerSendBinding {
   workerId: string;
@@ -28,14 +31,6 @@ export interface CleanupBrokerNetwork {
   noProxy: string;
 }
 
-interface BoundTransport {
-  readonly binding: CleanupBrokerSendBinding;
-  readonly url: string;
-  readonly spawn: typeof spawnSync;
-  readonly rootDir: string;
-  beforePush(): void;
-}
-
 export class CleanupBrokerSendDeniedError extends DeliveryError {
   readonly attempted = false;
   constructor() {
@@ -48,41 +43,20 @@ function deny(): never {
 }
 
 /** Internal bundle composition only. Never exported by the package entrypoint. */
-export function bindCleanupBrokerTransport(
-  publisher: object,
+export function createCleanupBrokerTransport(
   channel: CleanupBrokerChannel,
   input: CleanupBrokerSendBinding,
   network?: CleanupBrokerNetwork,
-): void {
-  if (!isCleanupBrokerChannel(channel) || bindings.has(publisher)) deny();
+): GitConditionalBranchDeleter {
+  if (!isCleanupBrokerChannel(channel) || channels.has(channel)) deny();
   // Only the pinned installation bootstrap may supply this configuration.
   // Never inherit process.env proxies (including lowercase aliases).
   const proxy = network?.httpsProxy ?? '';
   const noProxy = network?.noProxy ?? '';
-  if (
-    typeof proxy !== 'string' ||
-    typeof noProxy !== 'string' ||
-    proxy.length > 2048 ||
-    noProxy.length > 2048 ||
-    /[^\x20-\x7e]/.test(noProxy)
-  )
+  try {
+    validateGitHubNetwork(proxy, noProxy);
+  } catch {
     deny();
-  if (proxy !== '') {
-    try {
-      const parsed = new URL(proxy);
-      if (
-        !['http:', 'https:'].includes(parsed.protocol) ||
-        !parsed.hostname ||
-        parsed.username ||
-        parsed.password ||
-        parsed.search ||
-        parsed.hash ||
-        (proxy !== parsed.origin && proxy !== `${parsed.origin}/`)
-      )
-        deny();
-    } catch {
-      deny();
-    }
   }
   const binding = structuredClone(input);
   if (
@@ -92,7 +66,8 @@ export function bindCleanupBrokerTransport(
     !/^[a-f0-9]{64}$/.test(binding.requestDigest) ||
     binding.target.host !== 'github.com' ||
     !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(binding.target.repository) ||
-    !/^refs\/heads\/.+/.test(binding.target.ref) ||
+    !binding.target.ref.startsWith('refs/heads/') ||
+    !isValidCleanupBranch(binding.target.ref.slice(11)) ||
     !/^[a-f0-9]{40}$/.test(binding.target.expectedSha) ||
     /^0{40}$/.test(binding.target.expectedSha)
   )
@@ -126,32 +101,44 @@ export function bindCleanupBrokerTransport(
     const trustedOptions = { ...options, env, detached: false };
     return spawnSync(GIT, args, trustedOptions);
   }) as unknown as typeof spawnSync;
-  bindings.set(
-    publisher,
-    Object.freeze({
-      binding,
-      url: `https://github.com/${binding.target.repository}.git`,
-      rootDir: ROOT,
-      spawn,
-      beforePush(): void {
-        if (requested || binding.operationId === '') deny();
-        requested = true;
-        const frame = {
-          schema: 'openslack.cleanup_executor_control.v1',
-          type: 'admit',
-          ...binding,
-        };
-        try {
-          channel.writeControl(frame);
-          const reply = channel.readControl();
-          if (!reply || typeof reply !== 'object' || Array.isArray(reply)) deny();
-          const expected = { ...frame, type: 'admitted' };
-          // Property order is irrelevant, but every value and every field is bound.
-          if (!sameJSON(reply, expected)) deny();
-        } catch {
-          deny();
-        }
-      },
+  channels.add(channel);
+  const context = Object.freeze({
+    fixed: true,
+    url: `https://github.com/${binding.target.repository}.git`,
+    rootDir: ROOT,
+    spawn,
+    tempRoot: '/tmp',
+    shell: '/usr/lib/openslack-cleanup/sh',
+    beforePush(): void {
+      if (requested || binding.operationId === '') deny();
+      requested = true;
+      const frame = {
+        schema: 'openslack.cleanup_executor_control.v1',
+        type: 'admit',
+        ...binding,
+      };
+      try {
+        channel.writeControl(frame);
+        const reply = channel.readControl();
+        if (!reply || typeof reply !== 'object' || Array.isArray(reply)) deny();
+        const expected = { ...frame, type: 'admitted' };
+        // Property order is irrelevant, but every value and every field is bound.
+        if (!sameJSON(reply, expected)) deny();
+      } catch {
+        deny();
+      }
+    },
+  });
+  return Object.freeze(
+    createConditionalGitTransport({}, (input) => {
+      const t = binding.target;
+      if (
+        `${input.owner}/${input.repo}` !== t.repository ||
+        `refs/heads/${input.branch}` !== t.ref ||
+        (input.expectedSha !== undefined && input.expectedSha !== t.expectedSha)
+      )
+        deny();
+      return context;
     }),
   );
 }
@@ -173,22 +160,4 @@ function sameJSON(a: unknown, b: unknown): boolean {
     Object.keys(left).length === Object.keys(right).length &&
     Object.keys(right).every((key) => Object.hasOwn(left, key) && sameJSON(left[key], right[key]))
   );
-}
-
-/** A lookup cannot mint a binding, and ordinary transport options cannot spoof it. */
-export function cleanupBrokerTransport(publisher: object): BoundTransport | undefined {
-  return bindings.get(publisher);
-}
-
-export function assertCleanupBrokerTarget(
-  context: BoundTransport,
-  input: { owner: string; repo: string; branch: string; expectedSha?: string },
-): void {
-  const t = context.binding.target;
-  if (
-    `${input.owner}/${input.repo}` !== t.repository ||
-    `refs/heads/${input.branch}` !== t.ref ||
-    (input.expectedSha !== undefined && input.expectedSha !== t.expectedSha)
-  )
-    deny();
 }

@@ -10,7 +10,7 @@ export class ProxyAgent extends Agent {}
 export async function fetch(url: string): Promise<Response> {
   const path = new URL(url).pathname;
   appendFileSync(process.env.CLEANUP_FIXTURE_LOG!, `api:${path}\n`);
-  const repo = { id: 123, full_name: 'example/qualification' };
+  const repo = { id: 123, full_name: 'example/qualification', default_branch: 'main' };
   let data: unknown;
   if (path.endsWith('/installation')) data = { id: 2, app_id: 1, suspended_at: null };
   else if (path.endsWith('/access_tokens'))
@@ -24,8 +24,10 @@ export async function fetch(url: string): Promise<Response> {
   else if (path === '/repos/example/qualification/pulls/1')
     data = {
       node_id: 'PR_test',
+      merged: true,
+      body: '',
       number: 1,
-      base: { repo },
+      base: { repo, ref: 'main', sha: process.env.CLEANUP_FIXTURE_SHA },
       head: { repo, ref: 'fixture', sha: process.env.CLEANUP_FIXTURE_SHA },
     };
   else throw new Error('UNEXPECTED_FIXTURE_API');

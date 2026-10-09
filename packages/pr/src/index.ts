@@ -13,7 +13,7 @@ export type {
   VerifyCleanupHandoffPackageInput,
   VerifyCleanupHandoffPackageResult,
 } from './cleanup-handoff.js';
-export { cleanupPRBranch, planPRBranchCleanup } from './cleanup-branch.js';
+export { cleanupPRBranch } from './cleanup-branch.js';
 export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
 export type {
   CleanupBrokerRequest,
@@ -24,7 +24,6 @@ export type { PRBranchCleanupDependencies } from './cleanup-branch.js';
 export type {
   PRBranchCleanupState,
   PRBranchCleanupCheck,
-  PRBranchCleanupPlan,
   PRBranchCleanupResult,
   PRBranchCleanupInput,
   PRBranchCleanupAuditEvent,
@@ -111,3 +110,9 @@ export type {
 } from './author-risk.js';
 export type { MergeStewardResult } from './merge.js';
 export type { WatchResult, WatchOptions } from './watch.js';
+
+export {
+  projectPRBranchCleanupEvent,
+  evaluateCleanupBrokerResult,
+  evaluatePRBranchCleanupResult,
+} from './cleanup-result.js';

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
+import { readFileSync } from 'node:fs';
 import {
   CleanupBrokerRegistryError,
   validateCleanupBrokerRegistry,
@@ -23,7 +24,8 @@ function fixture() {
     employment: { status: 'active', hired_at: '2026-09-21T00:00:00.000Z' },
     capabilities: { primary: ['typescript'] },
     repositories: {
-      workspace_repo: { owner: 'example', repo: 'qualification', default_branch: 'main' },
+      workspace_repo: { owner: 'Negentropy-Laby', repo: 'OpenSlack', default_branch: 'main' },
+      allowed_product_repos: ['example/qualification'],
     },
     permissions: {
       paths: { allow: [], deny: [] },
@@ -37,10 +39,40 @@ function fixture() {
   };
 }
 
+it('authorizes selected product repository independently of fixed workspace authority', () => {
+  const bytes = readFileSync(
+    new URL(
+      '../../../../.openslack/agents/registry/cleanup_qualification_pr418.yaml',
+      import.meta.url,
+    ),
+    'utf8',
+  );
+  const binding = {
+    agentId: 'cleanup_qualification_pr418',
+    principalId: 'principal:cleanup_qualification_pr418',
+    runtimeUid: 'cleanup_qualification_pr418',
+    runId: 'cleanup-pr418-f8db249a48c8492587e4515a31c60c45',
+    repository: 'Negentropy-Laby/openslack-cleanup-qualification',
+  };
+  expect(validateCleanupBrokerRegistry(bytes, binding).repository).toBe(binding.repository);
+  for (const repository of ['Negentropy-Laby/OpenSlack', 'Negentropy-Laby/other']) {
+    expect(() => validateCleanupBrokerRegistry(bytes, { ...binding, repository })).toThrow(
+      CleanupBrokerRegistryError,
+    );
+  }
+});
+
 describe('broker-acquired registry structure', () => {
   it('validates exact scope including the registered runtime UID', () => {
     const result = validateCleanupBrokerRegistry(stringify(fixture()), expected);
-    expect(result).toEqual({ ...expected, action: 'pr.cleanup_branch_scoped.v1' });
+    expect(result).toMatchObject({ ...expected, action: 'pr.cleanup_branch_scoped.v1' });
+    expect(result.snapshot.principal).toEqual({
+      registry_id: expected.agentId,
+      runtime_uid: expected.runtimeUid,
+      run_id: expected.runId,
+      provider: 'cli',
+    });
+    expect(Object.isFrozen(result.snapshot.permissions.actions)).toBe(true);
     expect(Object.isFrozen(result)).toBe(true);
   });
 
@@ -75,6 +107,9 @@ describe('broker-acquired registry structure', () => {
     ['insufficient-risk', 'permissions.max_risk_zone', 'green'],
     ['invalid-risk', 'permissions.max_risk_zone', 'purple'],
     ['wrong-repository', 'repositories.workspace_repo.repo', 'other'],
+    ['missing-products', 'repositories.allowed_product_repos', undefined],
+    ['empty-products', 'repositories.allowed_product_repos', []],
+    ['other-products', 'repositories.allowed_product_repos', ['example/other']],
     ['alternate-base', 'repositories.workspace_repo.default_branch', 'other'],
     ['approval-normalization', 'permissions.github.can_approve', true],
     ['merge-normalization', 'permissions.github.can_merge', true],

@@ -626,3 +626,9 @@ export {
   claimRefPresent,
 } from './branch-evidence.js';
 export type { BranchOpenPR } from './branch-evidence.js';
+
+export {
+  getCleanupPREvidence,
+  type CleanupPREvidence,
+  type CleanupRepositoryEvidence,
+} from './branch-evidence.js';

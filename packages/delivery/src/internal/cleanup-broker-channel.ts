@@ -1,3 +1,4 @@
+import { decodeStrictJSON } from '@openslack/core';
 import { fstatSync, readSync, writeSync } from 'node:fs';
 
 const INPUT_FD = 3;
@@ -15,97 +16,6 @@ export class CleanupBrokerChannelError extends Error {
 
 function invalid(): never {
   throw new CleanupBrokerChannelError();
-}
-
-// Reject duplicate keys before JSON.parse can apply last-key-wins semantics.
-// This parser checks structure; JSON.parse still validates complete JSON syntax.
-function decode(bytes: Buffer): unknown {
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return invalid();
-  }
-  let offset = 0;
-  const space = () => {
-    while (/\s/.test(text[offset] ?? '') && offset < text.length) offset++;
-  };
-  const string = (): string => {
-    if (text[offset] !== '"') invalid();
-    const start = offset++;
-    while (offset < text.length) {
-      const c = text[offset++];
-      if (c === '\\') {
-        offset++;
-        continue;
-      }
-      if (c === '"') {
-        const value: unknown = JSON.parse(text.slice(start, offset));
-        if (typeof value !== 'string' || Buffer.from(value).toString('utf8') !== value) invalid();
-        return value;
-      }
-    }
-    return invalid();
-  };
-  const value = (depth: number): void => {
-    if (depth > 64) invalid();
-    space();
-    const c = text[offset];
-    if (c === '"') {
-      string();
-      return;
-    }
-    if (c === '{') {
-      offset++;
-      space();
-      const keys = new Set<string>();
-      if (text[offset] === '}') {
-        offset++;
-        return;
-      }
-      while (offset < text.length) {
-        space();
-        const key = string();
-        if (keys.has(key)) invalid();
-        keys.add(key);
-        space();
-        if (text[offset++] !== ':') invalid();
-        value(depth + 1);
-        space();
-        const delimiter = text[offset++];
-        if (delimiter === '}') return;
-        if (delimiter !== ',') invalid();
-      }
-      invalid();
-    }
-    if (c === '[') {
-      offset++;
-      space();
-      if (text[offset] === ']') {
-        offset++;
-        return;
-      }
-      while (offset < text.length) {
-        value(depth + 1);
-        space();
-        const delimiter = text[offset++];
-        if (delimiter === ']') return;
-        if (delimiter !== ',') invalid();
-      }
-      invalid();
-    }
-    const start = offset;
-    while (offset < text.length && !/[\s,}\]]/.test(text[offset]!)) offset++;
-    if (offset === start) invalid();
-  };
-  try {
-    value(0);
-    space();
-    if (offset !== text.length) invalid();
-    return JSON.parse(text);
-  } catch {
-    return invalid();
-  }
 }
 
 /** One private inherited-pipe conversation, never configurable by request/env. */
@@ -132,7 +42,7 @@ export function openCleanupBrokerChannel(): CleanupBrokerChannel {
         const newline = buffered.subarray(0, used).indexOf(10, scanned);
         if (newline >= 0) {
           if (newline > limit) invalid();
-          const value = decode(buffered.subarray(0, newline));
+          const value = decodeStrictJSON(buffered.subarray(0, newline), limit);
           buffered.copyWithin(0, newline + 1, used);
           used -= newline + 1;
           scanned = 0;
@@ -165,7 +75,7 @@ export function openCleanupBrokerChannel(): CleanupBrokerChannel {
       try {
         const frame = Buffer.from(`${JSON.stringify(value)}\n`);
         if (frame.length - 1 > MAX_CONTROL) invalid();
-        decode(frame.subarray(0, -1));
+        decodeStrictJSON(frame.subarray(0, -1), MAX_CONTROL);
         let offset = 0;
         while (offset < frame.length) {
           const n = writeSync(OUTPUT_FD, frame, offset, frame.length - offset);

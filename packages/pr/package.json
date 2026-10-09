@@ -13,8 +13,9 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. --project @openslack/pr",
+    "test:watch": "vitest --root ../.. --project @openslack/pr",
+    "pretest": "tsc --build tsconfig.json"
   },
   "dependencies": {
     "undici": "7.29.1",

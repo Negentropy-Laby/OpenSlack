@@ -133,7 +133,7 @@ func TestAcquirePinsAllInputsToOneAuthorityCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Commit != strings.Repeat("a", 40) || b.Permit.ID != "permit-1" || len(b.Registry) == 0 || len(*seen) != 18 {
+	if b.Commit != strings.Repeat("a", 40) || b.Permit.ID != "permit-1" || len(b.Registry) == 0 || len(*seen) != 13 {
 		t.Fatalf("unexpected bundle or requests: %d", len(*seen))
 	}
 	p, _ := json.Marshal(permit.Permit{ID: "permit-1"})
@@ -258,5 +258,28 @@ func TestNoSourcePathInjectionOrRedirect(t *testing.T) {
 	})
 	if _, err := r.Acquire(context.Background(), "permit-1", "agent-1"); err == nil {
 		t.Fatal("redirect accepted")
+	}
+}
+
+func TestTreeCacheIsLimitedToOneAcquire(t *testing.T) {
+	r, seen := readerFixture(t, nil)
+	for pass := 0; pass < 2; pass++ {
+		if _, err := r.Acquire(context.Background(), "permit-1", "agent-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts := map[string]int{}
+	for _, request := range *seen {
+		if strings.Contains(request, "/git/trees/") {
+			counts[request]++
+		}
+	}
+	if len(*seen) != 26 || len(counts) != 6 {
+		t.Fatalf("requests=%d unique trees=%d", len(*seen), len(counts))
+	}
+	for _, count := range counts {
+		if count != 2 {
+			t.Fatalf("tree did not get one read per Acquire: %v", counts)
+		}
 	}
 }

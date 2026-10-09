@@ -16,10 +16,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/network"
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/permit"
 )
 
@@ -49,40 +49,14 @@ func NewWithNetwork(readOnlyToken, httpsProxy, noProxy string) (*Reader, error) 
 	if readOnlyToken == "" || strings.ContainsAny(readOnlyToken, "\r\n") {
 		return nil, ErrEvidence
 	}
-	if len(noProxy) > 2048 {
+
+	proxy, valid := network.Proxy(httpsProxy, noProxy)
+	if !valid {
 		return nil, ErrEvidence
 	}
-	for _, c := range noProxy {
-		if c < 32 || c > 126 {
-			return nil, ErrEvidence
-		}
-	}
 	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext, ForceAttemptHTTP2: true, MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 15 * time.Second}
-	if httpsProxy != "" {
-		u, e := url.Parse(httpsProxy)
-		if e != nil || len(httpsProxy) > 2048 || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil || (httpsProxy != u.Scheme+"://"+u.Host && httpsProxy != u.Scheme+"://"+u.Host+"/") {
-			return nil, ErrEvidence
-		}
-		if u.Port() != "" {
-			port, e := strconv.Atoi(u.Port())
-			if e != nil || port < 1 || port > 65535 {
-				return nil, ErrEvidence
-			}
-		}
-		bypass := false
-		// This reader has only one fixed host. No caller URL or environment is
-		// used to decide whether that host bypasses the configured proxy.
-		for _, item := range strings.Split(strings.ToLower(noProxy), ",") {
-			item = strings.TrimSpace(item)
-			item = strings.TrimSuffix(item, ":443")
-			domain := strings.TrimPrefix(item, ".")
-			if item == "*" || domain == "api.github.com" || domain == "github.com" {
-				bypass = true
-			}
-		}
-		if !bypass {
-			transport.Proxy = http.ProxyURL(u)
-		}
+	if proxy != nil && !network.GitHubBypassed(noProxy) {
+		transport.Proxy = http.ProxyURL(proxy)
 	}
 	return &Reader{token: readOnlyToken, client: &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
@@ -126,17 +100,18 @@ func (r *Reader) Acquire(ctx context.Context, permitID, agentID string) (Bundle,
 	if r.get(ctx, "/git/commits/"+head, &object) != nil || object.SHA != head || !commit.MatchString(object.Tree.SHA) {
 		return zero, ErrEvidence
 	}
-	policyBytes, err := r.file(ctx, policyPath, object.Tree.SHA)
+	cache := make(map[string]treeObject) // This Acquire only; never retain between admissions.
+	policyBytes, err := r.file(ctx, policyPath, object.Tree.SHA, cache)
 	if err != nil {
 		return zero, err
 	}
 	permitPath := ".openslack/policies/pr-cleanup-grants/" + permitID + ".json"
 	registryPath := ".openslack/agents/registry/" + agentID + ".yaml"
-	permitBytes, err := r.file(ctx, permitPath, object.Tree.SHA)
+	permitBytes, err := r.file(ctx, permitPath, object.Tree.SHA, cache)
 	if err != nil {
 		return zero, err
 	}
-	registry, err := r.file(ctx, registryPath, object.Tree.SHA)
+	registry, err := r.file(ctx, registryPath, object.Tree.SHA, cache)
 	if err != nil {
 		return zero, err
 	}
@@ -170,23 +145,29 @@ func (r *Reader) head(ctx context.Context) (string, error) {
 	return ref.Object.SHA, nil
 }
 
-func (r *Reader) file(ctx context.Context, path, treeSHA string) ([]byte, error) {
+type treeEntry struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+}
+type treeObject struct {
+	SHA       string      `json:"sha"`
+	Truncated bool        `json:"truncated"`
+	Tree      []treeEntry `json:"tree"`
+}
+
+func (r *Reader) file(ctx context.Context, path, treeSHA string, cache map[string]treeObject) ([]byte, error) {
 	// Contents API may dereference symlinks. Walk exact pinned Git tree modes
 	// instead; neither a symlink ancestor nor a submodule is a policy source.
 	parts := strings.Split(path, "/")
 	for i, part := range parts {
-		var tree struct {
-			SHA       string `json:"sha"`
-			Truncated bool   `json:"truncated"`
-			Tree      []struct {
-				Path string `json:"path"`
-				Mode string `json:"mode"`
-				Type string `json:"type"`
-				SHA  string `json:"sha"`
-			} `json:"tree"`
-		}
-		if r.get(ctx, "/git/trees/"+url.PathEscape(treeSHA), &tree) != nil || tree.SHA != treeSHA || tree.Truncated {
-			return nil, ErrEvidence
+		tree, exists := cache[treeSHA]
+		if !exists {
+			if r.get(ctx, "/git/trees/"+url.PathEscape(treeSHA), &tree) != nil || tree.SHA != treeSHA || tree.Truncated {
+				return nil, ErrEvidence
+			}
+			cache[treeSHA] = tree
 		}
 		found := false
 		for _, entry := range tree.Tree {

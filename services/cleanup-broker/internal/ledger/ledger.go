@@ -25,13 +25,14 @@ import (
 )
 
 var (
-	ErrLocked        = errors.New("cleanup ledger already locked")
-	ErrUnsafeStorage = errors.New("cleanup ledger storage is unsafe or unsupported")
-	ErrCorrupt       = errors.New("cleanup ledger is corrupt; recovery required")
-	ErrConflict      = errors.New("cleanup ledger reservation conflict")
-	ErrInvalid       = errors.New("invalid cleanup ledger input")
-	ErrPoisoned      = errors.New("cleanup ledger writer poisoned; recovery required")
-	ErrClosed        = errors.New("cleanup ledger closed")
+	ErrLocked                = errors.New("cleanup ledger already locked")
+	ErrUnsafeStorage         = errors.New("cleanup ledger storage is unsafe or unsupported")
+	ErrCorrupt               = errors.New("cleanup ledger is corrupt; recovery required")
+	ErrWorkerEvidenceMissing = fmt.Errorf("%w: worker evidence is missing; restore a coherent backup, never reset spending history", ErrCorrupt)
+	ErrConflict              = errors.New("cleanup ledger reservation conflict")
+	ErrInvalid               = errors.New("invalid cleanup ledger input")
+	ErrPoisoned              = errors.New("cleanup ledger writer poisoned; recovery required")
+	ErrClosed                = errors.New("cleanup ledger closed")
 )
 
 type State string

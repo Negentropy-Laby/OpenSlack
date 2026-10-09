@@ -1,27 +1,25 @@
-import { createHash } from 'node:crypto';
+import { validateGitHubNetwork, githubProxyBypassed, isValidCleanupBranch } from '@openslack/core';
+import { cleanupBrokerExecutionDigest } from './cleanup-broker-digest.js';
 import { Agent, ProxyAgent, fetch as networkFetch } from 'undici';
 import {
+  getCleanupPREvidence,
   getDefaultBranch,
   isBranchProtected,
   listOpenPRsForBranch,
   claimRefPresent,
   inspectInstallationRepositoryAccess,
 } from '@openslack/github';
-import {
-  GitAskPassPublisher,
-  readRemoteBranchSha,
-  deleteRemoteBranchIfAt,
-} from '@openslack/delivery';
-import { createGitHubAppJwt } from '../../../github/dist/app-jwt.js';
+import { readRemoteBranchSha, deleteRemoteBranchIfAt } from '@openslack/delivery';
+import { createGitHubAppJwt } from '@openslack/github/cleanup-broker-internal';
 import {
   createCleanupBrokerClient,
   withCleanupBrokerClient,
-} from '../../../github/dist/internal/cleanup-broker-client-scope.js';
-import { openCleanupBrokerChannel } from '../../../delivery/dist/internal/cleanup-broker-channel.js';
+} from '@openslack/github/cleanup-broker-internal';
+import { openCleanupBrokerChannel } from '@openslack/delivery/cleanup-broker-internal';
 import {
-  bindCleanupBrokerTransport,
+  createCleanupBrokerTransport,
   type CleanupBrokerSendBinding,
-} from '../../../delivery/dist/internal/cleanup-broker-transport.js';
+} from '@openslack/delivery/cleanup-broker-internal';
 import {
   createCleanupBrokerSession,
   brokerSessionContext,
@@ -30,7 +28,6 @@ import {
   cleanupPRBranchThroughBroker,
   type PRBranchCleanupDependencies,
 } from '../cleanup-branch.js';
-import { fetchPRDetails } from '../fetch.js';
 import type { CleanupBrokerRequest } from '../cleanup-broker-client.js';
 
 interface TaskView {
@@ -132,6 +129,7 @@ export function parseCleanupExecutorBootstrap(value: unknown): CleanupExecutorBo
     Number(target.prNumber) <= 0 ||
     typeof target.ref !== 'string' ||
     !target.ref.startsWith('refs/heads/') ||
+    !isValidCleanupBranch(target.ref.slice('refs/heads/'.length)) ||
     target.ref.length > 1024 ||
     typeof target.expectedSha !== 'string' ||
     !/^[a-f0-9]{40}$/.test(target.expectedSha) ||
@@ -175,22 +173,7 @@ export function parseCleanupExecutorBootstrap(value: unknown): CleanupExecutorBo
     (value.mode === 'preview' ? r.operationId !== '' : !id.test(r.operationId))
   )
     deny();
-  const hash = createHash('sha256')
-    .update(
-      JSON.stringify([
-        'openslack.cleanup_execution_digest.v1',
-        r.agentId,
-        r.principalId,
-        r.runtimeUid,
-        r.runId,
-        r.repo,
-        r.remote,
-        String(r.prNumber),
-        r.permitId,
-        r.operationId,
-      ]),
-    )
-    .digest('hex');
+  const hash = cleanupBrokerExecutionDigest(r as unknown as CleanupBrokerRequest);
   if (hash !== value.binding.requestDigest) deny();
   keys(value.app, ['appId', 'installationId', 'privateKey']);
   if (
@@ -204,26 +187,10 @@ export function parseCleanupExecutorBootstrap(value: unknown): CleanupExecutorBo
   )
     deny();
   keys(value.network, ['httpsProxy', 'noProxy']);
-  if (
-    typeof value.network.httpsProxy !== 'string' ||
-    value.network.httpsProxy.length > 2048 ||
-    typeof value.network.noProxy !== 'string' ||
-    value.network.noProxy.length > 2048 ||
-    /[\r\n\0]/.test(value.network.noProxy)
-  )
+  try {
+    validateGitHubNetwork(value.network.httpsProxy as string, value.network.noProxy as string);
+  } catch {
     deny();
-  if (value.network.httpsProxy) {
-    const url = new URL(value.network.httpsProxy);
-    if (
-      !['http:', 'https:'].includes(url.protocol) ||
-      !url.hostname ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      (url.pathname && url.pathname !== '/')
-    )
-      deny();
   }
   const result = structuredClone(value) as unknown as CleanupExecutorBootstrap;
   checkTaskView(result.taskView, result.binding.target);
@@ -287,13 +254,9 @@ async function run(
     { principalId: r.principalId, runtimeUid: r.runtimeUid, runId: r.runId },
     binding,
   );
-  const publisher = new GitAskPassPublisher();
-  bindCleanupBrokerTransport(publisher, channel, binding, bootstrap.network);
+  const publisher = createCleanupBrokerTransport(channel, binding, bootstrap.network);
   const signal = AbortSignal.timeout(Math.max(1, bootstrap.deadlineMs - Date.now()));
-  const bypass = bootstrap.network.noProxy
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .some((s) => s === '*' || s === 'api.github.com' || s === '.github.com' || s === 'github.com');
+  const bypass = githubProxyBypassed(bootstrap.network.noProxy);
   const dispatcher =
     bootstrap.network.httpsProxy && !bypass
       ? new ProxyAgent(bootstrap.network.httpsProxy)
@@ -311,7 +274,11 @@ async function run(
       body: init?.body as never,
       dispatcher,
       redirect: 'error',
-      signal: signal,
+      signal: AbortSignal.any([
+        signal,
+        ...(init?.signal ? [init.signal] : []),
+        ...(input instanceof Request ? [input.signal] : []),
+      ]),
     });
     return response as unknown as Response;
   };
@@ -387,30 +354,9 @@ async function run(
     )
       throw new Error('CLEANUP_EXECUTOR_TOKEN_INVALID');
     const [owner, repo] = r.repo.split('/') as [string, string];
-    const client = createCleanupBrokerClient(token.token, owner, repo, fetchBound);
+    const client = createCleanupBrokerClient(token.token, owner, repo, fetchBound, signal);
     client.tokenExpiresAt = token.expires_at;
-    const validateResource = async () => {
-      checkTaskView(bootstrap.taskView, binding.target);
-      const [repository, pull] = await Promise.all([
-        client.octokit.repos.get({ owner, repo, request: { signal } }),
-        client.octokit.pulls.get({ owner, repo, pull_number: r.prNumber, request: { signal } }),
-      ]);
-      if (
-        !Number.isSafeInteger(repository.data.id) ||
-        String(repository.data.id) !== binding.target.repositoryId ||
-        repository.data.full_name !== r.repo ||
-        pull.data.node_id !== binding.target.prNodeId ||
-        pull.data.number !== r.prNumber ||
-        String(pull.data.base.repo.id) !== binding.target.repositoryId ||
-        String(pull.data.head.repo?.id) !== binding.target.repositoryId ||
-        `refs/heads/${pull.data.head.ref}` !== binding.target.ref ||
-        pull.data.head.sha !== binding.target.expectedSha
-      )
-        throw new Error('CLEANUP_EXECUTOR_RESOURCE_MISMATCH');
-      checkTaskView(bootstrap.taskView, binding.target);
-    };
     await withCleanupBrokerClient(client, async () => {
-      await validateResource();
       const access = async (input: { token: string; owner: string; repo: string }) =>
         inspectInstallationRepositoryAccess(input, {
           listPage: async ({ page, perPage }) => {
@@ -445,8 +391,20 @@ async function run(
       };
       const resources: PRBranchCleanupDependencies = {
         fetchPR: async (n, o) => {
-          await validateResource();
-          return fetchPRDetails(n, o);
+          checkTaskView(bootstrap.taskView, binding.target);
+          const proof = await getCleanupPREvidence(n, o);
+          if (
+            proof.repositoryEvidence?.id !== binding.target.repositoryId ||
+            proof.repositoryEvidence.fullName !== r.repo ||
+            proof.prNodeId !== binding.target.prNodeId ||
+            proof.baseRepoId !== binding.target.repositoryId ||
+            proof.headRepoId !== binding.target.repositoryId ||
+            `refs/heads/${proof.headRef}` !== binding.target.ref ||
+            proof.headSha !== binding.target.expectedSha
+          )
+            throw new Error('CLEANUP_EXECUTOR_RESOURCE_MISMATCH');
+          checkTaskView(bootstrap.taskView, binding.target);
+          return proof;
         },
         getDefaultBranch,
         isBranchProtected,

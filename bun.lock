@@ -137,6 +137,7 @@
       "name": "@openslack/delivery",
       "version": "0.2.0",
       "dependencies": {
+        "@openslack/core": "workspace:*",
         "@openslack/github": "workspace:*",
       },
     },
@@ -145,6 +146,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@octokit/rest": "^21.0.0",
+        "@openslack/core": "workspace:*",
         "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "ajv": "8.17.1",

@@ -1,7 +1,11 @@
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { isAlias, isScalar, parseDocument, visit } from 'yaml';
 import { agentRegistryV2Schema, parseAgentRegistryText } from '@openslack/workspace';
-import { authorizeAgentAction } from '@openslack/kernel';
+import {
+  authorizeAgentAction,
+  resolvePermissionSnapshot,
+  type AgentPermissionSnapshot,
+} from '@openslack/kernel';
 
 const action = 'pr.cleanup_branch_scoped.v1' as const;
 const legacy = 'pr.cleanup_branch';
@@ -19,6 +23,11 @@ export interface CleanupBrokerRegistryExpectation {
   runtimeUid: string;
   runId: string;
   repository: string;
+}
+
+export interface CleanupBrokerRegistryContext extends Readonly<CleanupBrokerRegistryExpectation> {
+  readonly action: typeof action;
+  readonly snapshot: AgentPermissionSnapshot;
 }
 
 export class CleanupBrokerRegistryError extends Error {
@@ -53,7 +62,7 @@ function closed(value: unknown, fields: readonly string[]): Record<string, unkno
 export function validateCleanupBrokerRegistry(
   registryBytes: string,
   expected: CleanupBrokerRegistryExpectation,
-): Readonly<CleanupBrokerRegistryExpectation & { action: typeof action }> {
+): CleanupBrokerRegistryContext {
   try {
     if (
       typeof registryBytes !== 'string' ||
@@ -112,7 +121,12 @@ export function validateCleanupBrokerRegistry(
     if (employment.status !== 'active') reject();
     const repositories = closed(data.repositories, ['workspace_repo', 'allowed_product_repos']);
     const repo = closed(repositories.workspace_repo, ['owner', 'repo', 'default_branch']);
-    if (`${repo.owner}/${repo.repo}` !== expected.repository || repo.default_branch !== 'main')
+    if (
+      `${repo.owner}/${repo.repo}` !== 'Negentropy-Laby/OpenSlack' ||
+      repo.default_branch !== 'main' ||
+      !Array.isArray(repositories.allowed_product_repos) ||
+      !repositories.allowed_product_repos.includes(expected.repository)
+    )
       reject();
     const permissions = closed(data.permissions, ['paths', 'actions', 'github', 'max_risk_zone']);
     closed(permissions.paths, ['allow', 'deny']);
@@ -136,22 +150,22 @@ export function validateCleanupBrokerRegistry(
     // can supply permission in this path.
     const registry = parseAgentRegistryText(registryBytes, expected.agentId);
     if (!registry || registry._source_schema !== 'openslack.agent_registry.v2') reject();
-    const result = authorizeAgentAction({
-      action,
-      riskZone: 'yellow',
-      snapshot: {
-        principal: {
-          registry_id: expected.agentId,
-          runtime_uid: expected.runtimeUid,
-          run_id: expected.runId,
-          provider: 'cli',
-        },
-        registry_entry_agent_id: registry.agent_id,
-        permissions: registry.permissions,
-        source: 'registry_v2',
-        resolved_at: '1970-01-01T00:00:00.000Z',
+    const snapshot = resolvePermissionSnapshot({
+      registry,
+      runtimeIdentity: {
+        schema: 'openslack.agent_runtime_identity.v1',
+        agent_id: expected.agentId,
+        agent_uid: expected.runtimeUid,
+        run_id: expected.runId,
+        provider: 'cli',
+        public_key_jwk: null,
+        key_id: null,
+        key_generated_at: null,
+        started_at: new Date().toISOString(),
       },
     });
+    if (!snapshot) reject();
+    const result = authorizeAgentAction({ action, riskZone: 'yellow', snapshot });
     if (result.decision !== 'allow') reject();
     return Object.freeze({
       agentId: expected.agentId,
@@ -160,6 +174,7 @@ export function validateCleanupBrokerRegistry(
       runId: expected.runId,
       repository: expected.repository,
       action,
+      snapshot,
     });
   } catch {
     // Do not surface YAML source snippets or parsed permission contents.

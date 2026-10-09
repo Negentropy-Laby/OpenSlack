@@ -24,6 +24,11 @@ describe('Go/TypeScript fixed execution digest vectors', () => {
     expect(cleanupBrokerExecutionDigest({ ...request, prNumber })).toBe(digest);
     expect(cleanupBrokerExecutionDigest({ ...request, mode: 'status', prNumber })).toBe(digest);
   });
+  it('supports a validated preview without an operation reservation', () => {
+    expect(cleanupBrokerExecutionDigest({ ...request, mode: 'preview', operationId: '' })).toBe(
+      cleanupBrokerExecutionDigest({ ...request, mode: 'preview', operationId: undefined }),
+    );
+  });
   it.each([
     'agentId',
     'principalId',
@@ -39,7 +44,7 @@ describe('Go/TypeScript fixed execution digest vectors', () => {
     );
   });
   it.each([
-    { mode: 'preview' as const },
+    { mode: 'preview' as const, operationId: 'not-empty' },
     { operationId: undefined },
     { prNumber: 0 },
     { prNumber: 9007199254740992 },

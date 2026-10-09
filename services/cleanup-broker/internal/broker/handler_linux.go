@@ -34,6 +34,22 @@ var ErrUnavailable = errors.New("BROKER_UNAVAILABLE")
 var ErrSendDenied = errors.New("BROKER_SEND_DENIED")
 var safeCode = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
 
+var noSendBlockerStates = []string{"BLOCKED_NOT_MERGED", "BLOCKED_BASE_BRANCH", "BLOCKED_FORK", "BLOCKED_BRANCH_RESERVED", "BLOCKED_DEPENDENCY", "BLOCKED_SHA_DRIFT", "BLOCKED_EVIDENCE", "BLOCKED_AUTHORIZATION", "BLOCKED_AUDIT"}
+
+func validExecutionState(state string) bool {
+	return slices.Contains(noSendBlockerStates, state) || slices.Contains([]string{"DELETED", "ALREADY_ABSENT", "ABSENT_AFTER_ATTEMPT", "RECONCILIATION_REQUIRED", "FAILED"}, state)
+}
+
+func validExecutionAttempt(outcome Outcome, admitted bool) bool {
+	if outcome.Attempted && !admitted {
+		return false
+	}
+	if slices.Contains([]string{"DELETED", "ABSENT_AFTER_ATTEMPT"}, outcome.State) {
+		return admitted && outcome.Attempted
+	}
+	return !(outcome.State == "ALREADY_ABSENT" || strings.HasPrefix(outcome.State, "BLOCKED_") && outcome.State != "BLOCKED_SHA_DRIFT") || !outcome.Attempted
+}
+
 // RequestTimeout bounds authority lookup and preparation, including work that
 // can continue independently after the initial operation receipt is returned.
 const RequestTimeout = 60 * time.Second
@@ -237,7 +253,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if preflight.State != "CLEANUP_READY" && preflight.State != "ALREADY_ABSENT" {
-		if slices.Contains([]string{"BLOCKED_NOT_MERGED", "BLOCKED_BASE_BRANCH", "BLOCKED_FORK", "BLOCKED_BRANCH_RESERVED", "BLOCKED_DEPENDENCY", "BLOCKED_SHA_DRIFT", "BLOCKED_EVIDENCE", "BLOCKED_AUTHORIZATION", "BLOCKED_AUDIT"}, preflight.State) {
+		if slices.Contains(noSendBlockerStates, preflight.State) {
 			h.write(w, protocol.Reply(r, preflight.State, preflight.Reason))
 		} else {
 			h.write(w, protocol.Reply(r, "BLOCKED_EVIDENCE", "PREFLIGHT_REJECTED"))
@@ -454,12 +470,14 @@ func (h *Handler) execute(r protocol.Request, bundle source.Bundle, preflight Pr
 		}
 		return
 	}
-	if returned.Attempted && !admitted || slices.Contains([]string{"DELETED", "ABSENT_AFTER_ATTEMPT"}, returned.State) && (!admitted || !returned.Attempted) || (returned.State == "ALREADY_ABSENT" || strings.HasPrefix(returned.State, "BLOCKED_")) && returned.Attempted {
+	// A force-with-lease rejection is a known attempted send, not an
+	// executor protocol violation. Every other BLOCKED result is no-send.
+	if !validExecutionAttempt(returned, admitted) {
 		h.StopAdmission()
 		outcome = Outcome{State: "RECONCILIATION_REQUIRED", Reason: "TRUSTED_RUNNER_PROTOCOL_INVALID", Attempted: admitted}
 		return
 	}
-	if !slices.Contains([]string{"DELETED", "ALREADY_ABSENT", "ABSENT_AFTER_ATTEMPT", "RECONCILIATION_REQUIRED", "FAILED", "BLOCKED_EVIDENCE", "BLOCKED_AUTHORIZATION", "BLOCKED_SHA_DRIFT", "BLOCKED_BRANCH_RESERVED", "BLOCKED_DEPENDENCY", "BLOCKED_AUDIT"}, returned.State) {
+	if !validExecutionState(returned.State) {
 		outcome = Outcome{State: "RECONCILIATION_REQUIRED", Reason: "TRUSTED_RUNNER_PROTOCOL_INVALID", Attempted: admitted}
 		return
 	}

@@ -1,3 +1,4 @@
+import { isValidCleanupBranch, isReservedCleanupBranch, isFullGitObjectId } from '@openslack/core';
 import {
   inspectInstallationRepositoryAccess,
   requireAppInstallationToken,
@@ -15,6 +16,7 @@ import type {
   ConditionalBranchDeleteResult,
   ConditionalBranchTransportInput,
   DeliveryTokenProvider,
+  DeliveryToken,
   GitConditionalBranchDeleter,
 } from './types.js';
 
@@ -42,7 +44,8 @@ async function prepare(
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs <= 0 ||
     timeoutMs > 600_000 ||
-    /^openslack\/(?:claims|probes)(?:\/|$)/.test(input.branch)
+    !isValidCleanupBranch(input.branch) ||
+    isReservedCleanupBranch(input.branch)
   ) {
     throw new DeliveryError(
       'DELIVERY_PUSH_FAILED',
@@ -50,7 +53,7 @@ async function prepare(
       false,
     );
   }
-  let token;
+  let token: DeliveryToken;
   try {
     token = await withinDeadline(async () => {
       if (deps.tokenProvider) return deps.tokenProvider.acquire();
@@ -58,7 +61,12 @@ async function prepare(
         localStateRoot: resolveGitHubAppLocalStateRoot(input.rootDir),
         repository: { owner: input.owner, repo: input.repo },
       });
-      return { value: acquired.token, permissions: acquired.permissions };
+      return {
+        value: acquired.token,
+        expiresAt: acquired.expiresAt,
+        installationId: acquired.installationId,
+        permissions: acquired.permissions,
+      } satisfies DeliveryToken;
     }, deadline);
   } catch (error) {
     if (error instanceof DeliveryError) throw error;
@@ -146,10 +154,10 @@ export async function deleteRemoteBranchIfAt(
 ): Promise<ConditionalBranchDeleteResult> {
   const ownedInput = { ...input };
   const ownedDeps = { ...deps };
-  if (!/^[a-f0-9]{40}$/.test(ownedInput.expectedSha))
+  if (!isFullGitObjectId(ownedInput.expectedSha))
     throw new DeliveryError(
       'DELIVERY_PUSH_FAILED',
-      'Expected branch SHA must be a full 40-hex object id.',
+      'Expected branch SHA must be a full 40- or 64-hex object id.',
       false,
     );
   const prepared = await prepare(ownedInput, ownedDeps);

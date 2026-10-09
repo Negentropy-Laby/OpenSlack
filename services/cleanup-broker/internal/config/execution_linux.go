@@ -6,10 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/network"
 	"io"
-	"net/url"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -123,30 +122,7 @@ func (s *Snapshot) LoadExecution() (ExecutionInstallation, error) {
 	return result, nil
 }
 
-func validNetwork(n Network) bool {
-	if len(n.NoProxy) > 2048 {
-		return false
-	}
-	for _, c := range n.NoProxy {
-		if c < 32 || c > 126 {
-			return false
-		}
-	}
-	if n.HTTPSProxy == "" {
-		return true
-	}
-	u, e := url.Parse(n.HTTPSProxy)
-	if e != nil {
-		return false
-	}
-	if port := u.Port(); port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number > 65535 {
-			return false
-		}
-	}
-	return e == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && u.User == nil && (n.HTTPSProxy == u.Scheme+"://"+u.Host || n.HTTPSProxy == u.Scheme+"://"+u.Host+"/") && len(n.HTTPSProxy) <= 2048
-}
+func validNetwork(n Network) bool { _, ok := network.Proxy(n.HTTPSProxy, n.NoProxy); return ok }
 
 func (s *Snapshot) pinAdditional(path string, private, executable bool, limit int64) (*pinnedFile, error) {
 	if f := s.files[path]; f != nil {

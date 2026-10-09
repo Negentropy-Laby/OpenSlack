@@ -13,18 +13,24 @@
     "./bounded-json-post": {
       "types": "./dist/bounded-json-post.d.ts",
       "import": "./dist/bounded-json-post.js"
+    },
+    "./cleanup-broker-internal": {
+      "types": "./dist/internal/cleanup-broker.d.ts",
+      "import": "./dist/internal/cleanup-broker.js"
     }
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. --project @openslack/github",
+    "test:watch": "vitest --root ../.. --project @openslack/github",
+    "pretest": "tsc --build tsconfig.json"
   },
   "dependencies": {
     "@openslack/credentials": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@octokit/rest": "^21.0.0",
     "ajv": "8.17.1",
-    "yaml": "^2.7.0"
+    "yaml": "^2.7.0",
+    "@openslack/core": "workspace:*"
   }
 }

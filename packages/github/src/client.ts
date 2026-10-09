@@ -8,7 +8,10 @@ import {
   type GitHubAppInstallationTokenOptions,
 } from './auth.js';
 import { readStableLocalUtf8 as readStableUtf8 } from './stable-local-file.js';
-import { cleanupBrokerClient } from './internal/cleanup-broker-client-scope.js';
+import {
+  cleanupBrokerClient,
+  assertNoCleanupBrokerClientConstruction,
+} from './internal/cleanup-broker-client-scope.js';
 
 const LOCAL_METADATA_MAX_BYTES = 256 * 1024;
 const GIT_COMMAND_TIMEOUT_MS = 2_000;
@@ -101,6 +104,7 @@ export function createInstallationClient(
   token: string,
   options: Omit<GitHubClientOptions, 'auth'> = {},
 ): GitHubClient {
+  assertNoCleanupBrokerClientConstruction();
   if (!token) throw new GitHubAuthRequiredError('AUTH_REQUIRED: installation token is empty.');
   const target = resolveGitHubRepoTarget(options);
   return {

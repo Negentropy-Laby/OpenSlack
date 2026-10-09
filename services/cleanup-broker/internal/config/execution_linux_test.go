@@ -14,6 +14,19 @@ import (
 )
 
 func executionDigest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+
+func TestExecutionProxyPortsMatchSourceReader(t *testing.T) {
+	for _, proxy := range []string{"http://proxy:0", "http://proxy:65536", "https://proxy:99999"} {
+		if validNetwork(Network{HTTPSProxy: proxy}) {
+			t.Fatalf("invalid proxy port accepted: %s", proxy)
+		}
+	}
+	for _, proxy := range []string{"http://proxy", "https://proxy:1", "http://proxy:65535/"} {
+		if !validNetwork(Network{HTTPSProxy: proxy}) {
+			t.Fatalf("valid proxy rejected: %s", proxy)
+		}
+	}
+}
 func writeExecutionJSON(t *testing.T, s loadSpec, path string, value any, mode os.FileMode) []byte {
 	t.Helper()
 	b, e := json.Marshal(value)

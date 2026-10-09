@@ -16,16 +16,21 @@ export function cleanupBrokerExecutionDigest(request: CleanupBrokerRequest): str
     request.remote,
     String(request.prNumber),
     request.permitId,
-    request.operationId,
+    request.operationId ?? '',
   ];
   if (
     request.schema !== 'openslack.cleanup_request.v1' ||
-    !['execute', 'status'].includes(request.mode) ||
+    !['preview', 'execute', 'status'].includes(request.mode) ||
     !Number.isSafeInteger(request.prNumber) ||
     request.prNumber <= 0 ||
-    !fields.every(
-      (field) => typeof field === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/.test(field),
-    )
+    !fields
+      .slice(0, -1)
+      .every(
+        (field) => typeof field === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/.test(field),
+      ) ||
+    (request.mode === 'preview'
+      ? fields.at(-1) !== ''
+      : !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(fields.at(-1)!))
   )
     throw new TypeError('CLEANUP_EXECUTION_DIGEST_INVALID');
   return createHash('sha256')

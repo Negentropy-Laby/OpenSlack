@@ -19,6 +19,11 @@ describe('cleanup task-link evidence', () => {
   it.each([
     '<!-- openslack-task-link {broken} -->',
     marker + marker,
+    marker.replace('\"task_id\": \"TASK-42\"', '\"task_id\": \"../bad\", \"task_id\": \"TASK-42\"'),
+    marker.replace(
+      '\"task_id\": \"TASK-42\"',
+      '\"task_id\": \"../bad\", \"task_\\u0069d\": \"TASK-42\"',
+    ),
     marker.replace('"issue_number": 42', '"issue_number": "42"'),
     marker.replace('issue-42', 'issue-43'),
     marker.replace('RUN-42', '../secret'),

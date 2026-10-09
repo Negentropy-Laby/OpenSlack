@@ -62,6 +62,57 @@ describe('GitAskPassPublisher', () => {
     expect(pushes[0][1]).toContain(':refs/heads/topic');
   });
 
+  it.each(['topic+fix', '开发/分支'])(
+    'uses shared branch syntax through exact transport for %s',
+    (branch) => {
+      const spawn = vi.fn((_command: string, args: readonly string[]) =>
+        result(
+          args[0] === 'remote'
+            ? 'https://github.com/acme/repo.git'
+            : args.includes('ls-remote')
+              ? `${'a'.repeat(40)}\trefs/heads/${branch}`
+              : '',
+        ),
+      ) as unknown as typeof spawnSync;
+      expect(
+        new GitAskPassPublisher({ spawn }).readRemoteBranchSha({ ...cleanupInput, branch }),
+      ).toBe('a'.repeat(40));
+      const calls = vi.mocked(spawn).mock.calls;
+      expect(calls.filter(([, args]) => (args as string[]).includes('init'))).toHaveLength(0);
+      expect(calls.filter(([, args]) => (args as string[]).includes('ls-remote'))).toHaveLength(1);
+    },
+  );
+  it('reads and conditionally deletes a real SHA-256-format branch', () => {
+    const bare = temp('cleanup sha256 bare '),
+      root = temp('cleanup sha256 work ');
+    run('git', ['init', '--bare', '--object-format=sha256', bare]);
+    run('git', ['init', '--object-format=sha256', root]);
+    run('git', [
+      '-C',
+      root,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.invalid',
+      'commit',
+      '--allow-empty',
+      '-m',
+      'seed',
+    ]);
+    run('git', ['-C', root, 'remote', 'add', 'origin', bare]);
+    run('git', ['-C', root, 'push', 'origin', 'HEAD:refs/heads/topic+资格']);
+    const expectedSha = output('git', ['-C', root, 'rev-parse', 'HEAD']);
+    expect(expectedSha).toHaveLength(64);
+    const transport = new GitAskPassPublisher({ allowLocalRemoteForTests: true });
+    const input = { ...cleanupInput, rootDir: root, branch: 'topic+资格', expectedSha };
+    expect(transport.readRemoteBranchSha(input)).toBe(expectedSha);
+    expect(transport.deleteRemoteRefIfAt(input)).toMatchObject({
+      state: 'DELETED',
+      attempted: true,
+      observedRefState: 'ABSENT',
+    });
+    expect(transport.readRemoteBranchSha(input)).toBeNull();
+  });
   it.each(['', `${'b'.repeat(40)}\trefs/heads/topic`])(
     'does not push on absent or stale preflight',
     (evidence) => {

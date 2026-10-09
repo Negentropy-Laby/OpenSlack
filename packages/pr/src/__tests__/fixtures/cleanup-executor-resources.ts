@@ -19,16 +19,3 @@ export async function claimRefPresent() {
   record('claim');
   return false;
 }
-export async function fetchPRDetails() {
-  record('pr');
-  return {
-    prNumber: 1,
-    merged: true,
-    headRepoFullName: 'example/qualification',
-    baseRepoFullName: 'example/qualification',
-    headRef: 'fixture',
-    baseRef: 'main',
-    headSha: process.env.CLEANUP_FIXTURE_SHA,
-    body: '',
-  };
-}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/broker"
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/config"
+	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/ledger"
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/lifecycle"
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/runner"
 	"github.com/Negentropy-Laby/OpenSlack/services/cleanup-broker/internal/source"
@@ -24,7 +25,11 @@ import (
 func main() {
 	if err := run(); err != nil {
 		// Do not expose errors from upstream transports or installation contents.
-		fmt.Fprintln(os.Stderr, "CLEANUP_BROKER_START_OR_SHUTDOWN_FAILED")
+		if errors.Is(err, ledger.ErrWorkerEvidenceMissing) {
+			fmt.Fprintln(os.Stderr, "CLEANUP_BROKER_WORKER_EVIDENCE_MISSING")
+		} else {
+			fmt.Fprintln(os.Stderr, "CLEANUP_BROKER_START_OR_SHUTDOWN_FAILED")
+		}
 		os.Exit(1)
 	}
 }
