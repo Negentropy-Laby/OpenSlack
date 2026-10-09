@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { require: tsxRequire } = require('tsx/cjs/api');
@@ -13,6 +15,21 @@ const {
 
 export const testProcessEnvironment = normalizeProcessEnvironment;
 export const createTestProcessResolver = createProcessResolver;
+export function testTemporaryDirectory(prefix, parent = tmpdir()) {
+  // Windows TEMP may use an 8.3 alias; fixtures pass canonical owned paths
+  // to production code whose redirect/reparse checks deliberately stay strict.
+  return realpathSync.native(mkdtempSync(join(realpathSync.native(parent), prefix)));
+}
+export function testPowerShells(env = testProcessEnvironment()) {
+  const discovery = spawnSync('where.exe', ['pwsh'], {
+    encoding: 'utf8',
+    timeout: 1_000,
+    env,
+  });
+  if (discovery.error || discovery.signal || (discovery.status !== 0 && discovery.status !== 1))
+    throw new Error('TEST_PWSH_DISCOVERY_FAILED: optional shell discovery did not complete.');
+  return discovery.status === 0 ? ['powershell', 'pwsh'] : ['powershell'];
+}
 export function platformTestTimeout(baseMs, windowsMs = 120_000) {
   return process.platform === 'win32' ? windowsMs : baseMs;
 }

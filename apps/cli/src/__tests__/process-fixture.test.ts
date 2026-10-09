@@ -1,15 +1,51 @@
 import type * as ChildProcess from 'node:child_process';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   testBash,
   testExecutable,
   testProcessEnvironment,
+  testTemporaryDirectory,
+  testPowerShells,
 } from '../../../../scripts/testing/process-fixture.mjs';
 
 vi.mock('node:child_process', async (original) => {
   const actual = await original<typeof ChildProcess>();
   return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
+
+it('distinguishes an absent optional PowerShell from failed executable discovery', () => {
+  const result = { pid: 0, output: [], stdout: '', stderr: '', signal: null };
+  for (const status of [0, 1]) {
+    vi.mocked(spawnSync).mockReturnValueOnce({ ...result, status });
+    expect(testPowerShells({})).toEqual(status === 0 ? ['powershell', 'pwsh'] : ['powershell']);
+  }
+  for (const failure of [
+    { status: null, error: Object.assign(new Error('timeout fixture'), { code: 'ETIMEDOUT' }) },
+    { status: null, error: Object.assign(new Error('missing tool fixture'), { code: 'ENOENT' }) },
+    { status: null, signal: 'SIGTERM' as const },
+    { status: 2 },
+  ]) {
+    vi.mocked(spawnSync).mockReturnValueOnce({ ...result, ...failure });
+    expect(() => testPowerShells({})).toThrow('TEST_PWSH_DISCOVERY_FAILED');
+  }
+});
+
+it('returns a native canonical temporary directory when its parent is an alias', () => {
+  const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'openslack-temp-parent-'));
+  const alias = join(root, 'alias');
+  symlinkSync(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  try {
+    const directory = testTemporaryDirectory('fixture ', alias);
+    expect(directory).toBe(realpathSync.native(directory));
+    expect(dirname(directory)).toBe(realpathSync.native(root));
+  } finally {
+    rmSync(alias, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 describe('test process environment', () => {

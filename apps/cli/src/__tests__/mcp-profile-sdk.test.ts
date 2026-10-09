@@ -1,5 +1,5 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -159,7 +159,7 @@ function createWorkspace(
     readonly identityStatus?: 'active' | 'suspended' | 'retired';
   } = {},
 ): string {
-  const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-cli-profile-'));
+  const root = testTemporaryDirectory('openslack-mcp-cli-profile-');
   roots.push(root);
   writeFileSync(
     join(root, 'openslack.yaml'),
@@ -282,7 +282,7 @@ describe('MCP CLI production profiles over the official SDK', () => {
     { name: 'default', args: [] as string[] },
     { name: 'explicit', args: ['--profile', 'read-only'] },
   ])('lists exactly 12 tools for the $name read-only CLI profile', async ({ args }) => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), 'openslack-mcp-read-only-cli-'));
+    const workspaceRoot = testTemporaryDirectory('openslack-mcp-read-only-cli-');
     roots.push(workspaceRoot);
     await runOverOfficialSdk(workspaceRoot, args, async (client) => {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(READ_TOOL_NAMES);
@@ -294,7 +294,7 @@ describe('MCP CLI production profiles over the official SDK', () => {
   });
 
   it('keeps exactly 12 read-only tools when an explicit read canary is configured', async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), 'openslack-mcp-read-only-canary-cli-'));
+    const workspaceRoot = testTemporaryDirectory('openslack-mcp-read-only-canary-cli-');
     roots.push(workspaceRoot);
     const createGraphReadCanary = vi.fn(() => Object.freeze({}) as never);
     await runOverOfficialSdk(

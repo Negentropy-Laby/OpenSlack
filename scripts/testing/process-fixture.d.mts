@@ -18,6 +18,8 @@ export function testBash(
 };
 
 export function platformTestTimeout(baseMs: number, windowsMs?: number): number;
+export function testTemporaryDirectory(prefix: string, parent?: string): string;
+export function testPowerShells(env?: NodeJS.ProcessEnv): string[];
 export function createTestProcessResolver(
   parent?: NodeJS.ProcessEnv,
   cwd?: string,

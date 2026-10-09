@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type * as Crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   cpSync,
   linkSync,
@@ -90,7 +91,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture() {
+async function fixture() {
   const root = mkdtempSync(join(realpathSync(tmpdir()), 'cleanup handoff '));
   roots.push(root);
   const source = join(root, 'source');
@@ -121,15 +122,18 @@ function fixture() {
       },
     }),
   );
-  const git = (...args: string[]) =>
-    execFileSync('git', args, {
-      cwd: source,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  git('init', '-q');
-  git('add', '.');
-  git(
+  const run = promisify(execFile);
+  const git = async (...args: string[]) =>
+    (
+      await run('git', args, {
+        cwd: source,
+        encoding: 'utf8',
+        timeout: 4_000,
+      })
+    ).stdout.trim();
+  await git('init', '-q');
+  await git('add', '.');
+  await git(
     '-c',
     'user.name=fixture',
     '-c',
@@ -138,7 +142,7 @@ function fixture() {
     '-qm',
     'fixture',
   );
-  const candidateHead = git('rev-parse', 'HEAD');
+  const candidateHead = await git('rev-parse', 'HEAD');
   const broker = fixtureBroker(candidateHead);
   for (const id of ['a', 'b']) cpSync(source, join(root, `checkout-${id}`), { recursive: true });
   const executor = Buffer.from('fixture executor');
@@ -274,8 +278,18 @@ function verify(result: ReturnType<typeof prepareCleanupHandoffDraft>, now = new
 }
 
 describe('offline cleanup handoff preparation', () => {
-  it('preserves selected bindings, recalculates actual hashes, and never inherits old approval', () => {
-    const { input, priorInputPath } = fixture();
+  it('keeps real Git fixture preparation responsive to worker task updates', async () => {
+    let responded = false;
+    setImmediate(() => {
+      responded = true;
+    });
+    const prepared = await fixture();
+    expect(responded).toBe(true);
+    expect(prepared.input.candidateHead).toMatch(/^[a-f0-9]{40}$/);
+  });
+
+  it('preserves selected bindings, recalculates actual hashes, and never inherits old approval', async () => {
+    const { input, priorInputPath } = await fixture();
     const original = readFileSync(priorInputPath);
     const network = vi.fn(() => {
       throw new Error('network forbidden');
@@ -322,21 +336,24 @@ describe('offline cleanup handoff preparation', () => {
     ]);
   });
 
-  it.each(['dirty', 'drift', 'candidate'])('refuses %s source before creating output', (mode) => {
-    const { input, put } = fixture();
-    if (mode === 'dirty') put('source/untracked.txt', 'dirty');
-    if (mode === 'drift') put('source/bun.lock', 'changed');
-    if (mode === 'candidate') input.candidateHead = 'f'.repeat(40);
-    expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
-      expect.objectContaining({
-        code: mode === 'candidate' ? 'HANDOFF_CANDIDATE_MISMATCH' : 'HANDOFF_SOURCE_DIRTY',
-      }),
-    );
-    expect(readdirSync(join(input.outputDirectory, '..'))).not.toContain('new candidate output');
-  });
+  it.each(['dirty', 'drift', 'candidate'])(
+    'refuses %s source before creating output',
+    async (mode) => {
+      const { input, put } = await fixture();
+      if (mode === 'dirty') put('source/untracked.txt', 'dirty');
+      if (mode === 'drift') put('source/bun.lock', 'changed');
+      if (mode === 'candidate') input.candidateHead = 'f'.repeat(40);
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({
+          code: mode === 'candidate' ? 'HANDOFF_CANDIDATE_MISMATCH' : 'HANDOFF_SOURCE_DIRTY',
+        }),
+      );
+      expect(readdirSync(join(input.outputDirectory, '..'))).not.toContain('new candidate output');
+    },
+  );
 
-  it('hashes each safely read large artifact once per verification and accepts historical schemas', () => {
-    const { input } = fixture();
+  it('hashes each safely read large artifact once per verification and accepts historical schemas', async () => {
+    const { input } = await fixture();
     const result = prepareCleanupHandoffDraft(input);
     digestWork.length = 0;
     expect(
@@ -374,8 +391,8 @@ describe('offline cleanup handoff preparation', () => {
   });
   it.each(['candidate', 'digest', 'revision', 'tools'])(
     'refuses a %s build report mismatch',
-    (mode) => {
-      const { input } = fixture();
+    async (mode) => {
+      const { input } = await fixture();
       const report = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8'));
       if (mode === 'candidate') report.candidateHead = 'f'.repeat(40);
       if (mode === 'digest') report.broker.sha256 = 'f'.repeat(64);
@@ -390,8 +407,8 @@ describe('offline cleanup handoff preparation', () => {
 
   it.each(['independence', 'plaintext', 'missing-checkout'])(
     'rejects false %s build evidence',
-    (mode) => {
-      const { input } = fixture();
+    async (mode) => {
+      const { input } = await fixture();
       const build = input.builds[0],
         report = JSON.parse(readFileSync(build.reportPath, 'utf8'));
       if (mode === 'independence') report.independentCloneNoHardlinks = false;
@@ -414,8 +431,8 @@ describe('offline cleanup handoff preparation', () => {
 
   it.each(['revision', 'version', 'bounds'])(
     'rejects structurally invalid %s Go build identity',
-    (mode) => {
-      const { input } = fixture();
+    async (mode) => {
+      const { input } = await fixture();
       let bytes = fixtureBroker(mode === 'revision' ? 'f'.repeat(40) : input.candidateHead);
       if (mode === 'version')
         bytes = Buffer.from(bytes.toString('latin1').replace('go1.26.5', 'go1.26.6'), 'latin1');
@@ -434,8 +451,8 @@ describe('offline cleanup handoff preparation', () => {
 
   it.each(['hardlink', 'alternates'])(
     'rejects %s object sharing between build checkouts',
-    (mode) => {
-      const { input } = fixture();
+    async (mode) => {
+      const { input } = await fixture();
       const a = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8')).checkout;
       const b = JSON.parse(readFileSync(input.builds[1].reportPath, 'utf8')).checkout;
       if (mode === 'alternates')
@@ -456,8 +473,8 @@ describe('offline cleanup handoff preparation', () => {
 
   it.each(['.git', '.git/objects'])(
     'rejects a symlinked %s root before inspecting build checkouts',
-    (directory) => {
-      const { input } = fixture();
+    async (directory) => {
+      const { input } = await fixture();
       const a = JSON.parse(readFileSync(input.builds[0].reportPath, 'utf8')).checkout;
       const b = JSON.parse(readFileSync(input.builds[1].reportPath, 'utf8')).checkout;
       rmSync(join(a, directory), { recursive: true });
@@ -472,9 +489,9 @@ describe('offline cleanup handoff preparation', () => {
     },
   );
 
-  it('detects source bytes hidden by an assume-unchanged index entry', () => {
-    const { input, git, put } = fixture();
-    git('update-index', '--assume-unchanged', 'bun.lock');
+  it('detects source bytes hidden by an assume-unchanged index entry', async () => {
+    const { input, git, put } = await fixture();
+    await git('update-index', '--assume-unchanged', 'bun.lock');
     put('source/package.json', JSON.stringify({ devDependencies: { 'bun-types': '1.4.0' } }));
     put('source/bun.lock', 'hidden drift');
     expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
@@ -482,8 +499,8 @@ describe('offline cleanup handoff preparation', () => {
     );
   });
 
-  it('rejects symlink ancestors without reading through them', () => {
-    const { input, root } = fixture();
+  it('rejects symlink ancestors without reading through them', async () => {
+    const { input, root } = await fixture();
     const alias = join(root, 'runtime alias');
     symlinkSync(input.runtimeDirectory, alias, process.platform === 'win32' ? 'junction' : 'dir');
     input.runtimeDirectory = alias;
@@ -492,16 +509,16 @@ describe('offline cleanup handoff preparation', () => {
     );
   });
 
-  it('rejects expired task evidence without extending its window', () => {
-    const { input } = fixture();
+  it('rejects expired task evidence without extending its window', async () => {
+    const { input } = await fixture();
     input.now = new Date('2026-10-10T00:00:00Z');
     expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
       expect.objectContaining({ code: 'HANDOFF_TASK_EVIDENCE_EXPIRED' }),
     );
   });
 
-  it('does not overwrite an existing output directory', () => {
-    const { input } = fixture();
+  it('does not overwrite an existing output directory', async () => {
+    const { input } = await fixture();
     mkdirSync(input.outputDirectory);
     writeFileSync(join(input.outputDirectory, 'human.txt'), 'preserve');
     expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
@@ -510,8 +527,8 @@ describe('offline cleanup handoff preparation', () => {
     expect(readFileSync(join(input.outputDirectory, 'human.txt'), 'utf8')).toBe('preserve');
   });
 
-  it('refuses credential input paths and active installation output paths', () => {
-    const { input, put } = fixture();
+  it('refuses credential input paths and active installation output paths', async () => {
+    const { input, put } = await fixture();
     input.priorInputPath = put('credentials/admin-inputs.md', 'not to be read');
     expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
       expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
@@ -525,13 +542,13 @@ describe('offline cleanup handoff preparation', () => {
 });
 
 describe('runtime preflight before tool execution', () => {
-  it('selects only the ordinary runtime matching the previous reviewed manifest', () => {
-    const { input } = fixture();
+  it('selects only the ordinary runtime matching the previous reviewed manifest', async () => {
+    const { input } = await fixture();
     expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));
   });
 
-  it('binds a relative runtime directory to the validated absolute executable, avoiding PATH lookup', () => {
-    const { input } = fixture();
+  it('binds a relative runtime directory to the validated absolute executable, avoiding PATH lookup', async () => {
+    const { input } = await fixture();
     const reviewedNode = join(input.runtimeDirectory, 'node');
     input.runtimeDirectory = relative(process.cwd(), input.runtimeDirectory);
     expect(assertCleanupHandoffRuntime(input)).toBe(reviewedNode);
@@ -539,8 +556,8 @@ describe('runtime preflight before tool execution', () => {
 
   it.each(['tamper', 'symlink', 'credentials'])(
     'rejects %s before returning an executable path',
-    (mode) => {
-      const { input, put } = fixture();
+    async (mode) => {
+      const { input, put } = await fixture();
       const path = join(input.runtimeDirectory, 'node');
       if (mode === 'tamper') writeFileSync(path, 'unreviewed executable');
       if (mode === 'symlink') {
@@ -561,8 +578,8 @@ describe('runtime preflight before tool execution', () => {
 });
 
 describe('standalone package integrity contract', () => {
-  it('runs the bundled Node verifier outside the checkout with no Git, modules or network', () => {
-    const { input, root } = fixture();
+  it('runs the bundled Node verifier outside the checkout with no Git, modules or network', async () => {
+    const { input, root } = await fixture();
     const bundle = join(root, 'offline-verifier.mjs');
     execFileSync(
       'bun',
@@ -613,8 +630,8 @@ describe('standalone package integrity contract', () => {
 
   it.each(['broker', 'task', 'approval'])(
     'rejects internally inconsistent %s evidence even with a new manifest digest',
-    (mode) => {
-      const { input } = fixture();
+    async (mode) => {
+      const { input } = await fixture();
       const result = prepareCleanupHandoffDraft(input);
       const name =
         mode === 'broker'
@@ -650,8 +667,8 @@ describe('standalone package integrity contract', () => {
     'symlink',
     'candidate',
     'manifest',
-  ])('rejects %s package evidence', (mode) => {
-    const { input } = fixture();
+  ])('rejects %s package evidence', async (mode) => {
+    const { input } = await fixture();
     const result = prepareCleanupHandoffDraft(input);
     const file = join(result.packageDirectory, 'artifacts/executor.mjs');
     const manifest = join(result.packageDirectory, 'SHA256SUMS');
@@ -678,8 +695,8 @@ describe('standalone package integrity contract', () => {
     expect(verify(result).executionAuthorized).toBe(false);
   });
 
-  it('reports expired evidence as an unmet gate even when package bytes are intact', () => {
-    const { input } = fixture();
+  it('reports expired evidence as an unmet gate even when package bytes are intact', async () => {
+    const { input } = await fixture();
     const result = prepareCleanupHandoffDraft(input);
     const checked = verify(result, new Date('2026-10-10T00:00:00Z'));
     expect(checked.valid).toBe(true);

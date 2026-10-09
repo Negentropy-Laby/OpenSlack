@@ -615,6 +615,27 @@ fixture now resolves its repository root from its own source location; ordinary
 PR package tests must prove real private-FD cases run from the package directory
 as well as the root, with dependency builds refreshed in a new checkout.
 
+Hosted Windows package qualification exposed 33 failures: 17 Git checkout
+identity comparisons, 15 fixtures consuming short TEMP paths, and one six-shell
+PowerShell preparation case exceeding the five-second assertion budget. A
+native Windows reproduction retained the 32 path failures. Node's ordinary
+`realpathSync` preserved the 8.3 alias while Git returned the long path; native
+canonical Git directory identities now agree without removing ancestor, link,
+object-store or independent-clone checks. Owned fixture directories use the
+same native canonicalization, with an alias-parent regression that failed
+before the helper fix. PowerShell preparation awaits bounded real child
+processes separately from unchanged business assertions. New-head Windows
+qualification must pass; previous Linux/macOS success cannot close that gate.
+Optional `pwsh` discovery errors, cancellation and unknown exit codes refuse
+preparation; only an explicit not-found result permits the required PowerShell
+5.1 cases to run alone. A failed-before-fix matrix covers this distinction.
+One native complete-scope run subsequently passed all business assertions but
+reported `onTaskUpdate` timeout: the handoff fixture's serial synchronous Git
+preparation occupied the worker for over a minute. Its responsiveness regression
+failed before changing the fixture. Real Git preparation is now awaited, with
+bounded children, so task updates run between cases; production handoff checks,
+all business assertions and their existing test budgets remain unchanged.
+
 The selected registry, permissions, identity and fixed main authority remain
 unchanged. New frozen artifacts and administrator inputs are DRAFT; earlier
 approval cannot approve changed bytes. Main registry deployment, credentials,

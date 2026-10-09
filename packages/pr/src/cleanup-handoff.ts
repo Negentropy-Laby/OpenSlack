@@ -507,10 +507,13 @@ function inspectBuildCheckout(path: string, head: string, lock: string, goModule
     'HANDOFF_BUILD_MISMATCH',
   );
   const gitDirectory = git(path, ['rev-parse', '--absolute-git-dir']);
-  check(realpathSync(gitDirectory) === realpathSync(cloneGit), 'HANDOFF_BUILD_MISMATCH');
+  // Native realpath expands Windows 8.3 aliases, as Git does. Ancestor/link
+  // checks above remain mandatory before comparing these directory identities.
+  const identity = realpathSync.native(gitDirectory);
+  check(identity === realpathSync.native(cloneGit), 'HANDOFF_BUILD_MISMATCH');
   const objects = join(gitDirectory, 'objects');
   assertCleanupHandoffObjects(objects);
-  return realpathSync(gitDirectory);
+  return identity;
 }
 function taskView(raw: Buffer, fields: Record<string, string>): ObjectValue {
   const task = json(raw);
@@ -648,8 +651,10 @@ export function prepareCleanupHandoffDraft(
       inspectBuildCheckout(path, input.candidateHead, lock, goModule),
     );
     check(
-      new Set([realpathSync(git(root, ['rev-parse', '--absolute-git-dir'])), ...gitDirectories])
-        .size === 3,
+      new Set([
+        realpathSync.native(git(root, ['rev-parse', '--absolute-git-dir'])),
+        ...gitDirectories,
+      ]).size === 3,
       'HANDOFF_BUILD_MISMATCH',
     );
     add('artifacts/cleanup-broker', brokers[0]!);
