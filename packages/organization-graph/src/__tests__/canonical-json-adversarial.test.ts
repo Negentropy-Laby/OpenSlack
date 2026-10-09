@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
+import type {
   CanonicalJsonError,
-  StrictGraphJsonError,
+  StrictGraphJsonError} from '../index.js';
+import {
   canonicalJson,
   parseStrictGraphJson,
 } from '../index.js';

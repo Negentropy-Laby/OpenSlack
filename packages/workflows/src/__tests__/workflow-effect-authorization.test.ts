@@ -12,7 +12,7 @@ import {
 } from '../workflow-effect-approval.js';
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
 import { createRuntimeWithHostAuthorities } from '../runtime.js';
-import { RunStore } from '../run-store.js';
+import type { RunStore } from '../run-store.js';
 import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import { canonicalWorkflowEffectControlJson } from '../workflow-effect-control-contract.js';
 import {
