@@ -46,11 +46,32 @@ const URL_WITH_QUERY = /https?:\/\/[^\s"'<>]+\?[^\s"'<>]+/g;
 
 /**
  * Absolute path patterns for common OS paths (Rule 4).
+ *
+ * Matching is deliberately bounded. A fully general "any absolute path"
+ * pattern is unsafe in this position: it would also match HTML closing tags
+ * (`</div>`) and URL path segments (`https://host/owner/repo`), corrupting
+ * redacted output. Windows matching is drive-rooted and guarded by a word
+ * boundary so an uppercase URL scheme (`HTTP://`) is not mistaken for a path.
  */
-const ABSOLUTE_PATH_PATTERN =
-  /(?:[A-Z]:\\|\/)(?:Users|home|tmp|var|etc|opt|Users)[\/\\][^\s"'<>),;\]]+/gi;
-const WIN_ABSOLUTE_PATH = /[A-Z]:\\(?:Users|home|tmp)[\/\\][^\s"'<>),;\]]+/gi;
-const POSIX_ABSOLUTE_PATH = /\/(?:home|tmp|var|etc|opt|Users)\/[^\s"'<>),;\]]+/gi;
+const WIN_ABSOLUTE_PATH = /\b[A-Z]:[\\/][^\s"'<>),;\]]+/gi;
+const POSIX_ABSOLUTE_PATH =
+  /\/(?:Users|home|root|usr|srv|mnt|media|opt|var|etc|boot|proc|sys|run|snap|tmp|workspace|data)\/[^\s"'<>),;\]]+/g;
+
+/**
+ * Convert a matched absolute path to a repo-root-relative path, or redact it.
+ *
+ * The root comparison is segment-bounded: a sibling such as
+ * `/home/user/project-secrets` shares the textual prefix of
+ * `/home/user/project` but is not inside the repository and must be redacted.
+ */
+function toRepoRelative(normalizedMatch: string, normalizedRoot: string): string {
+  if (normalizedRoot === '/') return normalizedMatch;
+  if (normalizedMatch === normalizedRoot) return '/';
+  if (normalizedMatch.startsWith(`${normalizedRoot}/`)) {
+    return normalizedMatch.slice(normalizedRoot.length);
+  }
+  return '[path redacted]';
+}
 
 // ── Redaction API ────────────────────────────────────────────────────────────
 
@@ -181,25 +202,19 @@ export function stripTokensAndCredentials(value: string): string {
 export function remapAbsolutePaths(value: string, repoRoot?: string): string {
   if (!repoRoot) return value;
 
-  // Normalize separators for comparison
-  const normalizedRoot = repoRoot.replace(/\\/g, '/');
+  // Normalize separators and drop a trailing separator so the segment
+  // comparison below is not confused by `project` vs `project/`.
+  const normalizedRoot = repoRoot.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
 
   // Handle Windows-style absolute paths
-  let result = value.replace(WIN_ABSOLUTE_PATH, (match) => {
-    const normalized = match.replace(/\\/g, '/');
-    if (normalized.startsWith(normalizedRoot)) {
-      return normalized.slice(normalizedRoot.length) || '/';
-    }
-    return '[path redacted]';
-  });
+  let result = value.replace(WIN_ABSOLUTE_PATH, (match) =>
+    toRepoRelative(match.replace(/\\/g, '/'), normalizedRoot),
+  );
 
   // Handle POSIX-style absolute paths
-  result = result.replace(POSIX_ABSOLUTE_PATH, (match) => {
-    if (match.startsWith(normalizedRoot)) {
-      return match.slice(normalizedRoot.length) || '/';
-    }
-    return '[path redacted]';
-  });
+  result = result.replace(POSIX_ABSOLUTE_PATH, (match) =>
+    toRepoRelative(match, normalizedRoot),
+  );
 
   return result;
 }
