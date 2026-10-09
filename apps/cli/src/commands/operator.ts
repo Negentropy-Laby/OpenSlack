@@ -31,6 +31,7 @@ import type {
 } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
+import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -65,8 +66,8 @@ function parseSetOptions(items: string[] | undefined): Record<string, string | n
 }
 
 type AgentAuthOptions = {
-  principal?: import('@openslack/kernel').AgentPrincipal;
-  snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+  principal?: AgentPrincipal;
+  snapshot?: AgentPermissionSnapshot;
 };
 
 export interface OperatorCommandContext {

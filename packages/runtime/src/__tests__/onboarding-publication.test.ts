@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('node:fs', async (original) => {
-  const actual = await original<typeof import('node:fs')>();
+  const actual = await original<typeof fs>();
   return {
     ...actual,
     linkSync: vi.fn(actual.linkSync),

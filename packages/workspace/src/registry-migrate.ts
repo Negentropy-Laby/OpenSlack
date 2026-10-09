@@ -10,6 +10,7 @@ export interface MigrationResult {
 }
 
 import { isSafeAgentId } from './agent-id.js';
+import type { ActionVerdict } from '@openslack/kernel';
 const RISK_ZONES = new Set<RiskZone>(['green', 'yellow', 'red', 'black']);
 const EMPLOYMENT_STATUSES = new Set(['active', 'paused', 'onboarding', 'retired']);
 
@@ -111,7 +112,7 @@ export function migrateV1ToV2(data: Record<string, unknown>, agentId: string): A
         'pr.propose': 'allow',
         'pr.comment': 'allow',
         'github.comment': 'allow',
-      } as Record<string, import('@openslack/kernel').ActionVerdict>,
+      } as Record<string, ActionVerdict>,
       github: {
         can_create_pr: true,
         can_comment: true,

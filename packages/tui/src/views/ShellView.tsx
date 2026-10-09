@@ -52,6 +52,7 @@ import SubagentDetailView from './SubagentDetailView.js';
 import AgentRunDetailView from './AgentRunDetailView.js';
 import AgentRuntimeDiagnosticsView from './AgentRuntimeDiagnosticsView.js';
 import WorkflowRunsView from './WorkflowRunsView.js';
+import type { AgentRunState } from '@openslack/agent-runtime';
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -375,7 +376,7 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     }
     case 'agent-run-detail': {
       const runState = current.params?.runState as
-        | import('@openslack/agent-runtime').AgentRunState
+        | AgentRunState
         | undefined;
       const runId = current.params?.runId as string | undefined;
       const resolvedRunState =

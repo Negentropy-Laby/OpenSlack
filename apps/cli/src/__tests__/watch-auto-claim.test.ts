@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NormalizedIssueRepositoryEvent } from '@openslack/github';
+import type * as OpenSlackGitHubModule from '@openslack/github';
 import { buildAutoClaimFn } from '../commands/watch-auto-claim.js';
 
 const mocks = vi.hoisted(() => ({
@@ -28,7 +29,7 @@ vi.mock('@openslack/collaboration', () => ({
 }));
 
 vi.mock('@openslack/github', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@openslack/github')>()),
+  ...(await importOriginal<typeof OpenSlackGitHubModule>()),
   claimIssueTask: mocks.claimIssueTask,
   createIssueTaskSnapshot: mocks.createIssueTaskSnapshot,
   normalizeErrorMessage: mocks.normalizeErrorMessage,

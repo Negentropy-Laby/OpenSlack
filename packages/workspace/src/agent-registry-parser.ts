@@ -9,6 +9,7 @@ import {
 } from '@openslack/kernel';
 
 import { isSafeAgentId } from './agent-id.js';
+import type { ActionVerdict } from '@openslack/kernel';
 
 const DEFAULT_AGENT_RISK_ZONE: RiskZone = 'yellow';
 function parseRiskZone(value: unknown): RiskZone {
@@ -83,7 +84,7 @@ function parseV2(data: Record<string, unknown>, agentId: string): AgentRegistryE
   const repos = data.repositories as Record<string, unknown>;
   const perms = data.permissions as Record<string, unknown>;
   const paths = perms.paths as Record<string, unknown>;
-  const actions = perms.actions as Record<string, import('@openslack/kernel').ActionVerdict>;
+  const actions = perms.actions as Record<string, ActionVerdict>;
   const gh = perms.github as Record<string, boolean>;
   const execution = (data.execution as Record<string, unknown>) || {};
   const outputContract = data.output_contract as Record<string, unknown>;
@@ -229,7 +230,7 @@ function normalizeV1toV2(data: Record<string, unknown>, agentId: string): AgentR
         'pr.propose': 'allow',
         'pr.comment': 'allow',
         'github.comment': 'allow',
-      } as Record<string, import('@openslack/kernel').ActionVerdict>,
+      } as Record<string, ActionVerdict>,
       github: {
         can_create_pr: true,
         can_comment: true,

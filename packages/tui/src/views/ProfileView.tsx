@@ -18,6 +18,7 @@ import {
   type ProfileGuidedStep,
   type ProfileCheckGroup,
 } from '../view-models/profile.js';
+import type { StatusCategory } from '../design-system/StatusIcon.js';
 
 export type ProfileViewProps = {
   model: ProfileViewModel;
@@ -38,7 +39,7 @@ function diffLineTheme(line: string): 'success' | 'error' | 'info' {
 
 function syncStatusIcon(
   status: ProfileViewModel['syncStatus'],
-): import('../design-system/StatusIcon.js').StatusCategory {
+): StatusCategory {
   if (status === 'synced') return 'pass';
   if (status === 'pending') return 'warn';
   if (status === 'failed') return 'fail';
@@ -47,7 +48,7 @@ function syncStatusIcon(
 
 function markerStatusIcon(
   status: ProfileViewModel['markerStatus'],
-): import('../design-system/StatusIcon.js').StatusCategory {
+): StatusCategory {
   if (status === 'present') return 'pass';
   if (status === 'missing') return 'fail';
   return 'info';
