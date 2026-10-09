@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { basename, join, resolve } from 'node:path';
 import {
@@ -13,6 +13,7 @@ import {
   getOnboardingStepGuide,
   OnboardingStore,
   migrateLocalStateSchemas,
+  runGenesisValidation,
   runGoldenEval,
 } from '@openslack/runtime';
 import type { OnboardingState, OnboardingStepId, PlainFinding } from '@openslack/runtime';
@@ -383,18 +384,17 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
     }
 
     if (context.sourceCheckout) {
-      try {
-        const genesis = detectGenesisShell(root);
-        if (!genesis.command) throw new Error(genesis.detail);
-        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-        results.push({ step: 'Genesis validate', passed: true, detail: '5/5 checks passed' });
-      } catch (err) {
-        results.push({
-          step: 'Genesis validate',
-          passed: false,
-          detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200),
-        });
-      }
+      const outcome = runGenesisValidation(detectGenesisShell(root), { cwd: root });
+      results.push(
+        outcome.ok
+          ? { step: 'Genesis validate', passed: true, detail: '5/5 checks passed' }
+          : {
+              step: 'Genesis validate',
+              passed: false,
+              detail:
+                `Genesis validation ${outcome.failure ?? 'FAILED'}: ${outcome.detail}`.slice(0, 200),
+            },
+      );
     }
 
     const runtimeReport = diagnoseAgentRuntime({ rootDir: root, env: process.env });
@@ -588,14 +588,16 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
     }
 
     if (context.sourceCheckout) {
-      try {
-        const genesis = detectGenesisShell(root);
-        if (!genesis.command) throw new Error(genesis.detail);
-        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-        results.push({ check: 'Genesis validate', passed: true, detail: '5/5' });
-      } catch {
-        results.push({ check: 'Genesis validate', passed: false, detail: 'Failed' });
-      }
+      const outcome = runGenesisValidation(detectGenesisShell(root), { cwd: root });
+      results.push(
+        outcome.ok
+          ? { check: 'Genesis validate', passed: true, detail: '5/5' }
+          : {
+              check: 'Genesis validate',
+              passed: false,
+              detail: `Genesis validation ${outcome.failure ?? 'FAILED'}`,
+            },
+      );
     }
 
     // LLM routing status

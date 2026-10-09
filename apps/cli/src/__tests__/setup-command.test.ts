@@ -82,6 +82,7 @@ vi.mock('@openslack/runtime', () => ({
     detail: 'Git Bash detected',
     command: 'git-bash scripts/genesis-validate.sh',
   })),
+  runGenesisValidation: vi.fn(() => ({ ok: true, detail: '5/5 checks passing' })),
   buildSetupReport: (opts: unknown) => mockBuildSetupReport(opts),
   renderSetupReport: vi.fn(() => 'setup report'),
   recommendNextActions: (ctx: unknown) => mockRecommendNextActions(ctx),
