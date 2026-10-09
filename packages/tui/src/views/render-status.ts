@@ -7,5 +7,5 @@ export type StatusTuiData = Parameters<typeof mapStatusToViewModel>[0];
 
 export async function renderStatusTui(data: StatusTuiData): Promise<void> {
   const model = mapStatusToViewModel(data);
-  const { unmount } = await renderTui(React.createElement(StatusView, { model }));
+  await renderTui(React.createElement(StatusView, { model }));
 }

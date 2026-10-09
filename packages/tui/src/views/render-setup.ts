@@ -6,5 +6,5 @@ import SetupView from './SetupView.js';
 
 export async function renderSetupTui(report: SetupReport): Promise<void> {
   const model = mapSetupToViewModel(report);
-  const { unmount } = await renderTui(React.createElement(SetupView, { model }));
+  await renderTui(React.createElement(SetupView, { model }));
 }

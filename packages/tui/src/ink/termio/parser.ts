@@ -52,12 +52,7 @@ function isEastAsianWide(codePoint: number): boolean {
 }
 
 function hasMultipleCodepoints(str: string): boolean {
-  let count = 0;
-  for (const _ of str) {
-    count++;
-    if (count > 1) return true;
-  }
-  return false;
+  return [...str].length > 1;
 }
 
 function graphemeWidth(grapheme: string): 1 | 2 {

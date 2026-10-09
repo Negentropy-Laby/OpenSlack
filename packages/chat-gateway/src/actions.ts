@@ -471,7 +471,7 @@ async function handlePreviewTask(issueNumber: string): Promise<ChatResponse> {
   };
 }
 
-async function handleClaimTask(issueNumber: string, message: ChatMessage): Promise<ChatResponse> {
+async function handleClaimTask(issueNumber: string, _message: ChatMessage): Promise<ChatResponse> {
   return {
     text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\``,
   };

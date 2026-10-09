@@ -5,11 +5,29 @@ export interface DeadlockResult {
   type: 'AUTHOR_IS_SOLE_CODEOWNER' | 'SINGLE_MAINTAINER' | null;
 }
 
+/**
+ * Detect a structural CODEOWNER deadlock.
+ *
+ * This judges the CODEOWNER topology only — whether the author is the sole
+ * CODEOWNER for the changed paths, which GitHub cannot resolve with an author
+ * self-approval. Filtering which reviews count as *valid* approvals is a
+ * separate concern owned by the doctor: `doctor.ts` derives `validApprovers`
+ * via `filterValidApprovals(reviews, author, headSha)` and consumes it for the
+ * approval gate. `validApprovers` is accepted here to keep the public
+ * three-argument signature stable for existing callers; it is deliberately not
+ * consulted for the deadlock decision. Do not rename it to `_validApprovers`:
+ * the name records that approval validity lives elsewhere.
+ */
 export function detectDeadlock(
   author: string,
   codeowners: string[],
   validApprovers: string[],
 ): DeadlockResult {
+  // Retained for signature compatibility; approval validity is the doctor's
+  // concern (see the doc comment above). Reading it keeps the binding honest
+  // without renaming it away.
+  void validApprovers;
+
   const authorAsOwner = `@${author}`;
   const authorIsCodeowner = codeowners.includes(authorAsOwner);
   const otherCodeowners = codeowners.filter((o) => o !== authorAsOwner);

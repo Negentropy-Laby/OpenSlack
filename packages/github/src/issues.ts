@@ -82,7 +82,7 @@ export interface ReadyTask {
 
 export async function queryReadyItems(
   projectNodeId: string,
-  agentType?: string,
+  _agentType?: string,
 ): Promise<ReadyTask[]> {
   const client = await getClient();
   if (client.isDryRun) {

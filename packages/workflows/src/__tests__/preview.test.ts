@@ -17,7 +17,7 @@ describe('executePreview', () => {
     it('returns preview result for workflow with preview function', async () => {
       const workflow = {
         meta: testManifest,
-        preview: vi.fn(async (ctx: WorkflowRuntime, args: Record<string, unknown>) => {
+        preview: vi.fn(async (ctx: WorkflowRuntime, _args: Record<string, unknown>) => {
           ctx.phase('Scan');
           ctx.log('Preview scan starting');
           return {

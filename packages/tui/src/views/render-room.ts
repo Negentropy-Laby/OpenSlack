@@ -6,5 +6,5 @@ import RoomView from './RoomView.js';
 
 export async function renderRoomTui(view: RoomViewType): Promise<void> {
   const model = mapRoomToViewModel(view);
-  const { unmount } = await renderTui(React.createElement(RoomView, { model }));
+  await renderTui(React.createElement(RoomView, { model }));
 }

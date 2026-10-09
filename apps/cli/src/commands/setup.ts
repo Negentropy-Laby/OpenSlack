@@ -728,7 +728,7 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
         try {
           const { renderSetupTui } = await import('@openslack/tui');
           await renderSetupTui(report);
-        } catch (error) {
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(renderSetupReport(report));
         }

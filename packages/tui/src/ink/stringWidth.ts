@@ -107,9 +107,8 @@ function getEmojiWidth(grapheme: string): number {
   // Regional indicators: single = 1, pair = 2
   const first = grapheme.codePointAt(0)!;
   if (first >= 0x1f1e6 && first <= 0x1f1ff) {
-    let count = 0;
-    for (const _ of grapheme) count++;
-    return count === 1 ? 1 : 2;
+    const codePointCount = [...grapheme].length;
+    return codePointCount === 1 ? 1 : 2;
   }
 
   // Incomplete keycap: digit/symbol + VS16 without U+20E3

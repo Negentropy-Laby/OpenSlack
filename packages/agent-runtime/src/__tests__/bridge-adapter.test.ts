@@ -30,8 +30,6 @@ function cleanup(root: string) {
   }
 }
 
-const NODE = 'bun';
-
 function createToolPlane(
   rootPath: string,
   profile: AgentPermissionProfile,
