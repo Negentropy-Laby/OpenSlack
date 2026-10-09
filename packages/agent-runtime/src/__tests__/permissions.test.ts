@@ -5,7 +5,13 @@ import {
   enforceToolScope,
   validatePermissionProfile,
 } from '../permissions.js';
+import type { PermissionMode } from '@openslack/kernel';
 import type { ResolvedAgentConfig } from '../types.js';
+
+/** Deliberately outside the PermissionMode union to exercise runtime defaulting. */
+function invalidPermissionMode(value: string): PermissionMode {
+  return value as unknown as PermissionMode;
+}
 
 function makeConfig(overrides?: Partial<ResolvedAgentConfig>): ResolvedAgentConfig {
   return {
@@ -113,7 +119,9 @@ describe('buildPermissionProfile', () => {
   });
 
   it('defaults invalid mode to strict', () => {
-    const profile = buildPermissionProfile(makeConfig({ permissionMode: 'invalidMode' as any }));
+    const profile = buildPermissionProfile(
+      makeConfig({ permissionMode: invalidPermissionMode('invalidMode') }),
+    );
     expect(profile.permissionMode).toBe('strict');
     expect(profile.canApprovePR).toBe(false);
     expect(profile.canMerge).toBe(false);

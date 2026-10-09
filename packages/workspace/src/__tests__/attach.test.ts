@@ -60,7 +60,9 @@ describe('transactional workspace attach', () => {
       attach_mode: 'read-only-monitor',
       auto_claim: false,
     });
-    const watch = yaml(root, '.openslack/monitors/github-watch.yaml');
+    const watch = yaml(root, '.openslack/monitors/github-watch.yaml') as {
+      repositories: Array<{ auto_claim?: unknown; routes?: unknown; events?: string[] }>;
+    };
     expect(watch.repositories[0].auto_claim).toEqual({ enabled: false, agent_ids: [] });
     expect(watch.repositories[0].routes).toEqual([{ sink: 'console' }]);
     expect(watch.repositories[0].events).toContain('pull_request_review.submitted');
@@ -72,7 +74,10 @@ describe('transactional workspace attach', () => {
     const result = applyWorkspaceAttach(attachPlan(root, 'full-agent'));
 
     expect(result.validation.valid).toBe(true);
-    const agent = yaml(root, '.openslack/agents/registry/openslack_agent_operator.yaml');
+    const agent = yaml(root, '.openslack/agents/registry/openslack_agent_operator.yaml') as {
+      permissions: { github?: unknown; actions: Record<string, string> };
+      output_contract: { must_not_create: string[] };
+    };
     expect(agent.permissions.github).toEqual({
       can_create_pr: true,
       can_comment: true,
@@ -339,8 +344,15 @@ function temporaryRoot(prefix: string): string {
   return root;
 }
 
-function yaml(root: string, path: string): Record<string, any> {
-  return parseYaml(readFileSync(join(root, path), 'utf8')) as Record<string, any>;
+type YamlValue = string | number | boolean | null | YamlValue[] | { [key: string]: YamlValue };
+
+/** A parsed YAML document; each test narrows the shape it asserts. */
+interface YamlObject {
+  [key: string]: YamlValue;
+}
+
+function yaml(root: string, path: string): YamlObject {
+  return parseYaml(readFileSync(join(root, path), 'utf8')) as YamlObject;
 }
 
 function mode(path: string): number {

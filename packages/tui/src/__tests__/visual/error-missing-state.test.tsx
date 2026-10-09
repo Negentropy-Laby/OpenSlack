@@ -140,7 +140,7 @@ function createMissingProfileViewModel(): ProfileViewModel {
     markerStatus: 'missing',
     posts: [],
     validationSummary: { total: 0, published: 0, failed: 0 },
-    syncDetails: undefined as any,
+    syncDetails: undefined,
     mode: 'manual',
     guidedStep: 'check',
     checkGroups: [

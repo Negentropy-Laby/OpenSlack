@@ -587,14 +587,12 @@ describe('BridgeProcessAdapter', () => {
       // Verify lifecycle events were recorded in transcript
       const transcript = readTranscript(runId, mr);
       const lifecycleEvents = transcript.filter(
-        (e: any) => typeof e?.data?.step === 'string' && e.data.step.startsWith('bridge_'),
+        (e) => typeof e.data.step === 'string' && e.data.step.startsWith('bridge_'),
       );
       expect(lifecycleEvents.length).toBeGreaterThan(0);
       // Should include session started and completed
-      const started = lifecycleEvents.some((e: any) => e.data.step === 'bridge_session_started');
-      const completed = lifecycleEvents.some(
-        (e: any) => e.data.step === 'bridge_session_completed',
-      );
+      const started = lifecycleEvents.some((e) => e.data.step === 'bridge_session_started');
+      const completed = lifecycleEvents.some((e) => e.data.step === 'bridge_session_completed');
       expect(started).toBe(true);
       expect(completed).toBe(true);
     });
@@ -631,13 +629,13 @@ describe('BridgeProcessAdapter', () => {
 
       const transcript = readTranscript(runId, mr);
       const postValidation = transcript.filter(
-        (e: any) => e?.data?.step === 'bridge_worktree_post_validation',
+        (e) => e.data.step === 'bridge_worktree_post_validation',
       );
       // Post-session validation should exist (boundary evidence)
       expect(postValidation.length).toBeGreaterThan(0);
       // But must NOT contain fabricated dirty: false / preserved: false
       for (const evt of postValidation) {
-        const data = (evt as any).data;
+        const data = evt.data;
         expect(data).not.toHaveProperty('dirty', false);
         expect(data).not.toHaveProperty('preserved', false);
       }
@@ -681,14 +679,14 @@ describe('BridgeProcessAdapter', () => {
       const transcript = readTranscript(runId, mr);
 
       // Verify canonical tool_call and tool_result transcript events exist
-      const toolCalls = transcript.filter((e: any) => e?.type === 'tool_call');
-      const toolResults = transcript.filter((e: any) => e?.type === 'tool_result');
+      const toolCalls = transcript.filter((e) => e.type === 'tool_call');
+      const toolResults = transcript.filter((e) => e.type === 'tool_result');
       expect(toolCalls.length).toBeGreaterThan(0);
       expect(toolResults.length).toBeGreaterThan(0);
 
       // Verify all recorded tool calls are for allowed tools only
       for (const tc of toolCalls) {
-        const toolName = (tc as any).data?.toolName;
+        const toolName = tc.data.toolName;
         expect(profile.allowedTools).toContain(toolName);
       }
     });

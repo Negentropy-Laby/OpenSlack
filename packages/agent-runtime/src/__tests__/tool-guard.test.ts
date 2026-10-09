@@ -13,8 +13,17 @@ import type {
   AgentExecutionAdapter,
   AdapterExecutionContext,
   AdapterExecutionResult,
+  RunRecorder,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
+
+/**
+ * ToolGuard.check() only reaches `progress`; the remaining RunRecorder methods
+ * are unreachable on this path, so the mock is narrowed to the real interface.
+ */
+function makeMockRecorder(): RunRecorder {
+  return { progress: vi.fn() } as unknown as RunRecorder;
+}
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'tool-guard-test-'));
@@ -30,7 +39,7 @@ function cleanup(root: string) {
 
 describe('ToolGuard', () => {
   it('check() returns true for allowed tools', () => {
-    const mockRecorder = { progress: vi.fn() } as any;
+    const mockRecorder = makeMockRecorder();
     const profile = {
       allowedTools: ['Read', 'Grep', 'Glob'],
       deniedTools: ['Bash', 'github.pr.approve'],
@@ -50,7 +59,7 @@ describe('ToolGuard', () => {
   });
 
   it('check() throws PermissionDeniedError for denied tools', () => {
-    const mockRecorder = { progress: vi.fn() } as any;
+    const mockRecorder = makeMockRecorder();
     const profile = {
       allowedTools: ['Read'],
       deniedTools: ['Bash', 'github.pr.merge'],
@@ -73,7 +82,7 @@ describe('ToolGuard', () => {
   });
 
   it('check() throws for hardcoded forbidden actions', () => {
-    const mockRecorder = { progress: vi.fn() } as any;
+    const mockRecorder = makeMockRecorder();
     const profile = {
       allowedTools: ['Read', 'github.pr.approve'], // Even if somehow in allowed
       deniedTools: [],
@@ -98,7 +107,7 @@ describe('ToolGuard', () => {
   });
 
   it('isAllowed() returns boolean without throwing', () => {
-    const mockRecorder = { progress: vi.fn() } as any;
+    const mockRecorder = makeMockRecorder();
     const profile = {
       allowedTools: ['Read'],
       deniedTools: ['Bash'],
@@ -120,7 +129,7 @@ describe('ToolGuard', () => {
   });
 
   it('enforceScope() returns allowed/denied and writes transcript for denied', () => {
-    const mockRecorder = { progress: vi.fn() } as any;
+    const mockRecorder = makeMockRecorder();
     const profile = {
       allowedTools: ['Read', 'Grep'],
       deniedTools: ['Bash'],
