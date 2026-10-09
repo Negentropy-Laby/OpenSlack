@@ -17,10 +17,6 @@ import {
 } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 
-interface ActionContext {
-  message: ChatMessage;
-}
-
 function chatProvider(message: ChatMessage): 'slack' | 'webhook' {
   return message.channel.type === 'webhook' ? 'webhook' : 'slack';
 }

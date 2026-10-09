@@ -1296,7 +1296,9 @@ describe('WatchDaemon polling', () => {
       ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(
+    // Construction is kept for its setup effects; this case asserts on the
+    // event-key mapping below rather than on the daemon handle.
+    void new WatchDaemon(
       labeledOnlyConfig,
       '',
       dedupe,

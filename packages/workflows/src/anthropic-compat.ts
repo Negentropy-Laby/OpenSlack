@@ -184,11 +184,11 @@ export function createAnthropicCompatRunner(
   preview: (args: Record<string, unknown>) => Promise<PreviewResult>;
   run: (args: Record<string, unknown>) => Promise<RunResult>;
 } {
-  const sandbox = createAnthropicCompatSandbox(runtime);
-
-  // The sandbox is available for modules that use ambient globals.
+  // The sandbox is installed for modules that use ambient globals, so the call
+  // is required even though this wrapper does not read the returned handle.
   // For OpenSlack-native-format modules wrapped via compat, the module's
   // own preview/run functions receive the runtime directly.
+  createAnthropicCompatSandbox(runtime);
 
   return {
     async preview(args: Record<string, unknown>): Promise<PreviewResult> {
