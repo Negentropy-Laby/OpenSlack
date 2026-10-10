@@ -715,6 +715,9 @@ describe('branch cleanup CLI adapter', () => {
       ['--permit-id', { permitId: 'PERMIT-1' }],
       ['--operation-id', { operationId: 'OP-1' }],
       ['--repo', { repo: 'owner/repo' }],
+      ['--repo URL', { repo: 'https://github.com/owner/repo.git' }],
+      ['--repo SSH', { repo: 'git@github.com:owner/repo.git' }],
+      ['--repo whitespace', { repo: ' owner/repo ' }],
       ['--remote', { remote: 'origin', remoteExplicit: true }],
     ])(
       'accepts %s when it matches the record',

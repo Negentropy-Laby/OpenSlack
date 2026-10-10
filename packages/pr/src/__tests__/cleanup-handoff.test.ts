@@ -22,6 +22,7 @@ import { platformTestTimeout } from '../../../../scripts/testing/process-fixture
 import {
   assertCleanupHandoffRuntime,
   CleanupHandoffError,
+  evaluateCleanupHandoffVerification,
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
 } from '../cleanup-handoff.js';
@@ -46,6 +47,19 @@ vi.mock('node:crypto', async (original) => {
 });
 const roots: string[] = [];
 const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
+function rehashPackage(result: { packageDirectory: string; manifestSHA256: string }) {
+  const path = join(result.packageDirectory, 'SHA256SUMS');
+  const sums = readFileSync(path, 'utf8')
+    .split('\n')
+    .map((line) =>
+      line === ''
+        ? line
+        : `${digest(readFileSync(join(result.packageDirectory, line.slice(68))))}  ./${line.slice(68)}`,
+    )
+    .join('\n');
+  writeFileSync(path, sums);
+  result.manifestSHA256 = digest(sums);
+}
 const timestamp = '2026-10-08T12:30:00.000Z';
 // A small structural ELF/Go build-info fixture. It is never executed or claimed
 // to be a compiled Broker; real Broker bytes are verified during clean builds.
@@ -829,6 +843,72 @@ describe('R18-12 per-build tool proof', () => {
 });
 
 describe('standalone package integrity contract', () => {
+  it.each(['lockfileSHA256', 'goModuleSHA256'])(
+    'refuses array coercion of the %s source proof',
+    async (field) => {
+      const { input } = await fixture();
+      const result = prepareCleanupHandoffDraft(input);
+      const path = join(result.packageDirectory, 'evidence/source-locks.json');
+      const locks = JSON.parse(readFileSync(path, 'utf8'));
+      locks[field] = [locks[field]];
+      writeFileSync(path, JSON.stringify(locks));
+      rehashPackage(result);
+      expect(verify(result).errors).toEqual(['HANDOFF_CANDIDATE_MISMATCH']);
+    },
+  );
+  it.each([
+    'openslack.cleanup_handoff_evidence_index.v1',
+    'openslack.pr418.qualification-evidence-index.v1',
+  ])('retains and refuses an unknown package-declared gate under %s', async (schema) => {
+    const { input } = await fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const path = join(result.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(path, 'utf8'));
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...index,
+        schema,
+        unmetGates: [...index.unmetGates, 'UNRECOGNIZED_PACKAGE_GATE'],
+      }),
+    );
+    rehashPackage(result);
+    const checked = verify(result);
+    expect(checked.valid).toBe(true);
+    expect(checked.outstandingGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    expect(checked.validityIssues).toContain('HANDOFF_UNKNOWN_GATE');
+    expect(evaluateCleanupHandoffVerification(checked)).toBe(2);
+  });
+
+  it.each([
+    { gates: null },
+    { gates: ['NEW_INPUT_REVIEW_REQUIRED', 'NEW_INPUT_REVIEW_REQUIRED'] },
+    { gates: [42] },
+  ])(
+    'refuses malformed package-declared gates $gates',
+    async ({ gates: unmetGates }) => {
+      const { input } = await fixture();
+      const result = prepareCleanupHandoffDraft(input);
+      const path = join(result.packageDirectory, 'evidence/qualification-index.json');
+      const index = JSON.parse(readFileSync(path, 'utf8'));
+      writeFileSync(path, JSON.stringify({ ...index, unmetGates }));
+      rehashPackage(result);
+      expect(verify(result).errors).toEqual(['HANDOFF_EVIDENCE_INVALID']);
+    },
+  );
+
+  it('keeps historical evidence without a declared gate list readable', async () => {
+    const { input } = await fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const path = join(result.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(path, 'utf8'));
+    index.schema = 'openslack.pr418.qualification-evidence-index.v1';
+    delete index.unmetGates;
+    writeFileSync(path, JSON.stringify(index));
+    rehashPackage(result);
+    expect(evaluateCleanupHandoffVerification(verify(result))).toBe(0);
+  });
+
   it('exits 2 for an intact expired package in a real Node subprocess', async () => {
     const { input, root } = await fixture();
     const bundle = join(root, 'expired-verifier.mjs');
@@ -942,6 +1022,31 @@ describe('standalone package integrity contract', () => {
         { cwd, env, stdio: 'pipe' },
       );
     expect(duplicate).toThrowError(expect.objectContaining({ status: 2 }));
+    const indexPath = join(result.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8'));
+    index.unmetGates.push('UNRECOGNIZED_PACKAGE_GATE');
+    writeFileSync(indexPath, JSON.stringify(index));
+    rehashPackage(result);
+    try {
+      execFileSync(
+        process.execPath,
+        [
+          bundle,
+          '--package',
+          result.packageDirectory,
+          '--candidate',
+          result.candidateHead,
+          '--manifest-sha256',
+          result.manifestSHA256,
+        ],
+        { cwd, env, encoding: 'utf8', stdio: 'pipe' },
+      );
+      expect.fail('An unknown package gate must refuse.');
+    } catch (error) {
+      const failure = error as { status: number; stdout: string };
+      expect(failure.status).toBe(2);
+      expect(JSON.parse(failure.stdout).unmetGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    }
   });
 
   it.each(['broker', 'task', 'approval'])(
@@ -1188,6 +1293,27 @@ function onUpgradePlatform<A extends unknown[]>(run: (...args: A) => void | Prom
 }
 
 describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
+  it('emits zero installation commands for an unknown package-declared gate', async () => {
+    const { input } = await upgradeFixture();
+    const indexPath = join(input.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8'));
+    index.unmetGates.push('UNRECOGNIZED_PACKAGE_GATE');
+    writeFileSync(indexPath, JSON.stringify(index));
+    const binding = {
+      packageDirectory: input.packageDirectory,
+      manifestSHA256: input.manifestSHA256,
+    };
+    rehashPackage(binding);
+    input.manifestSHA256 = binding.manifestSHA256;
+    for (const path of [input.adminInputPath, input.hostInspectionPath]) {
+      const value = JSON.parse(readFileSync(path, 'utf8'));
+      value.manifestSHA256 = input.manifestSHA256;
+      writeFileSync(path, JSON.stringify(value));
+    }
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.unmetGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+  });
   it('runs the actual Node administrator tool outside the checkout without installing anything', async () => {
     const { input, f } = await upgradeFixture(new Date());
     const bundle = join(f.root, 'admin.mjs'),
