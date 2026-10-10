@@ -38,6 +38,13 @@ describe('broker-only client source invariants', () => {
     expect(source).not.toContain('simple-git');
   });
 
+  it('shares the production result evaluator rather than a private exit-code table', () => {
+    // R18-06: both entries must agree on accepted-but-running = 0 and
+    // refused/failed/unknown/reconciliation = 1.
+    expect(source).toContain('evaluateCleanupBrokerResult');
+    expect(source).not.toContain('OPERATION_IN_PROGRESS');
+  });
+
   it('refuses to use a published record in place of identity authorization', () => {
     // The record is evidence of a past request, so it is readable only in
     // status mode and can never admit a preview or execute.

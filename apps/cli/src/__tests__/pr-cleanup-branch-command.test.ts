@@ -553,7 +553,7 @@ describe('branch cleanup CLI adapter', () => {
       while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });
     });
 
-    it('reads a published record without a workspace, registry, or local identity', async () => {
+    it('queries the Broker with the recorded binding, without a workspace, registry or identity', async () => {
       // A missing workspace root proves the record branch runs before
       // findWorkspaceRoot(); a throwing registry proves it runs before the
       // agent registry and identity lookups.
@@ -564,21 +564,62 @@ describe('branch cleanup CLI adapter', () => {
       mocks.identity.mockImplementation(() => {
         throw new Error('identity must not be consulted for a published record');
       });
+      mocks.broker.mockResolvedValue({
+        ...brokerResult,
+        mode: 'status',
+        operationId: 'OP-1',
+        state: 'DELETED',
+        permitState: 'consumed',
+        auditStatus: 'RECORDED',
+      });
 
-      await runPRBranchCleanupCommand('417', {
+      // No PR positional: the record supplies it.
+      await runPRBranchCleanupCommand(undefined, {
         ...options,
         operationStatus: true,
         operationRecord: publishedRecord(),
       });
 
       expect(process.exitCode).toBe(0);
-      expect(mocks.broker).not.toHaveBeenCalled();
+      // The record must be queried, not merely printed.
+      expect(mocks.broker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          schema: 'openslack.cleanup_request.v1',
+          mode: 'status',
+          operationId: 'OP-1',
+          repo: 'owner/repo',
+          remote: 'origin',
+          prNumber: 417,
+          permitId: 'PERMIT-1',
+          agentId: 'worker',
+        }),
+        expect.any(Object),
+      );
       expect(mocks.cleanup).not.toHaveBeenCalled();
       expect(mocks.client).not.toHaveBeenCalled();
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Operation: OP-1'));
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('not an authorization and carries no result'),
+        expect.stringContaining('not an authorization'),
       );
+    });
+
+    it('uses the shared evaluator for the exit code', async () => {
+      mocks.broker.mockResolvedValue({
+        ...brokerResult,
+        mode: 'status',
+        operationId: 'OP-1',
+        state: 'OPERATION_IN_PROGRESS',
+        permitState: 'reserved',
+      });
+      await runPRBranchCleanupCommand(undefined, {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+      });
+      // Accepted but still running is exit 0 with a notice, matching the
+      // production evaluator rather than a private exit-code table.
+      expect(process.exitCode).toBe(0);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('still running'));
     });
 
     it('requires --operation-status', async () => {
@@ -592,12 +633,27 @@ describe('branch cleanup CLI adapter', () => {
       );
     });
 
+    it('never lets a record authorize an execute', async () => {
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+        execute: true,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(
+        '--operation-record cannot authorize an execute.',
+      );
+      expect(mocks.broker).not.toHaveBeenCalled();
+    });
+
     it.each([
-      { agentId: 'worker' },
-      { permitId: 'PERMIT-1' },
-      { operationId: 'OP-1' },
-      { execute: true },
-    ])('rejects combining --operation-record with %o', async (patch) => {
+      ['--agent-id', { agentId: 'other' }],
+      ['--permit-id', { permitId: 'PERMIT-2' }],
+      ['--operation-id', { operationId: 'OP-2' }],
+      ['--repo', { repo: 'other/repo' }],
+      ['--remote', { remote: 'upstream', remoteExplicit: true }],
+    ])('refuses %s when it conflicts with the record', async (label, patch) => {
       await runPRBranchCleanupCommand('417', {
         ...options,
         operationStatus: true,
@@ -606,7 +662,38 @@ describe('branch cleanup CLI adapter', () => {
       });
       expect(process.exitCode).toBe(1);
       expect(console.error).toHaveBeenCalledWith(
-        '--operation-record cannot be combined with --agent-id, --permit-id, --operation-id or --execute.',
+        expect.stringContaining(`--operation-record conflicts with ${label}`),
+      );
+      // A conflict is refused before the query.
+      expect(mocks.broker).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['--agent-id', { agentId: 'worker' }],
+      ['--permit-id', { permitId: 'PERMIT-1' }],
+      ['--operation-id', { operationId: 'OP-1' }],
+      ['--repo', { repo: 'owner/repo' }],
+      ['--remote', { remote: 'origin', remoteExplicit: true }],
+    ])('accepts %s when it matches the record', async (label, patch) => {
+      await runPRBranchCleanupCommand('417', {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+        ...patch,
+      });
+      expect(mocks.broker).toHaveBeenCalled();
+      expect(process.exitCode).toBe(0);
+    });
+
+    it('refuses a PR number that conflicts with the record', async () => {
+      await runPRBranchCleanupCommand('999', {
+        ...options,
+        operationStatus: true,
+        operationRecord: publishedRecord(),
+      });
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('--operation-record conflicts with PR number'),
       );
       expect(mocks.broker).not.toHaveBeenCalled();
     });

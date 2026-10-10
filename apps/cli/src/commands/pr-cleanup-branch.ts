@@ -42,13 +42,15 @@ function positiveInteger(value: string, name: string, maximum = Number.MAX_SAFE_
 }
 
 export async function runPRBranchCleanupCommand(
-  number: string,
+  number: string | undefined,
   options: CleanupCommandOptions,
 ): Promise<void> {
   process.exitCode = 0;
   const startedAt = Date.now();
   try {
-    const prNumber = positiveInteger(number, 'PR number');
+    // The PR positional is optional so record status mode can run without one;
+    // every other mode requires it, checked once the record branch has passed.
+    const parsedNumber = number === undefined ? undefined : positiveInteger(number, 'PR number');
     const timeoutMs = positiveInteger(options.timeout, '--timeout', 600) * 1000;
     const deadline = startedAt + timeoutMs;
     const remainingMs = () => {
@@ -79,26 +81,57 @@ export async function runPRBranchCleanupCommand(
       if (options.operationStatus !== true) {
         throw new CleanupInputError('--operation-record is only valid with --operation-status.');
       }
-      if (
-        options.agentId !== undefined ||
-        options.permitId !== undefined ||
-        options.operationId !== undefined ||
-        options.execute === true
-      ) {
-        throw new CleanupInputError(
-          '--operation-record cannot be combined with --agent-id, --permit-id, --operation-id or --execute.',
-        );
+      if (options.execute === true) {
+        throw new CleanupInputError('--operation-record cannot authorize an execute.');
       }
       const record = readCleanupOperationRecord(options.operationRecord);
       const { request } = record;
+
+      // The record carries the original validated binding. An explicit argument
+      // that matches it is allowed; a conflict is refused before the query so a
+      // mistyped argument cannot silently query a different operation.
+      const conflicts: string[] = [];
+      if (options.agentId !== undefined && options.agentId !== request.agentId)
+        conflicts.push('--agent-id');
+      if (options.permitId !== undefined && options.permitId !== request.permitId)
+        conflicts.push('--permit-id');
+      if (options.operationId !== undefined && options.operationId !== request.operationId)
+        conflicts.push('--operation-id');
+      if (options.repo !== undefined && options.repo !== request.repo) conflicts.push('--repo');
+      if (options.remoteExplicit === true && options.remote !== request.remote)
+        conflicts.push('--remote');
+      if (parsedNumber !== undefined && parsedNumber !== request.prNumber)
+        conflicts.push('PR number');
+      if (conflicts.length > 0) {
+        throw new CleanupInputError(`--operation-record conflicts with ${conflicts.join(', ')}.`);
+      }
+
+      // Status uses the recorded binding, so it needs no workspace, agent
+      // registry, local identity or PR positional argument.
+      const result = await sendCleanupBrokerRequest(
+        { ...request, mode: 'status' },
+        { timeoutMs: remainingMs() },
+      );
       console.log(
         `Record: ${record.schema}\nCreated: ${record.createdAt}\nDigest: ${record.requestDigest}\nOperation: ${request.operationId}\nRepository: ${request.repo}\nRemote: ${request.remote}\nPR: #${request.prNumber}\nPermit: ${request.permitId}\nAgent: ${request.agentId}\nPrincipal: ${request.principalId}\nRuntime UID: ${request.runtimeUid}\nRun: ${request.runId}`,
       );
       console.log(
-        'Historical request only. This record is not an authorization and carries no result; query --operation-status with --agent-id for live state.',
+        `Decision: ${result.state}\nReason: ${result.reason}\nAudit: ${result.auditStatus}\nPermit state: ${result.permitState}\nAttempted: ${result.attempted}`,
       );
+      console.log(
+        'The record is historical evidence, not an authorization: it cannot admit a preview or execute.',
+      );
+      const evaluation = evaluateCleanupBrokerResult(result);
+      if (evaluation.notice) console.error(evaluation.notice);
+      process.exitCode = evaluation.exitCode;
       return;
     }
+    if (parsedNumber === undefined) {
+      throw new CleanupInputError(
+        'PR number is required unless --operation-record supplies the binding.',
+      );
+    }
+    const prNumber = parsedNumber;
     if (
       options.agentId === undefined &&
       (options.permitId !== undefined ||

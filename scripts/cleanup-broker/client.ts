@@ -4,6 +4,7 @@ import {
   type CleanupBrokerRequest,
 } from '../../packages/pr/src/cleanup-broker-client.js';
 import { readCleanupOperationRecord } from '../../packages/pr/src/cleanup-operation-record.js';
+import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-result.js';
 
 /**
  * Broker-only cleanup client for the installed target.
@@ -60,6 +61,11 @@ for (let index = 0; index < args.length; index += 2) {
 const rawMode = options.get('--mode');
 if (!rawMode || !(MODES as readonly string[]).includes(rawMode)) usage('--mode is required');
 const mode = rawMode as (typeof MODES)[number];
+// Resolved once, before main(), because the record branch uses it too.
+const timeoutMs = options.has('--timeout-ms') ? Number(options.get('--timeout-ms')) : 60_000;
+if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000) {
+  usage('--timeout-ms must be an integer between 1 and 600000');
+}
 
 async function main(): Promise<void> {
   const recordPath = options.get('--operation-record');
@@ -69,7 +75,50 @@ async function main(): Promise<void> {
     // refused for preview and execute.
     if (mode !== 'status') usage('--operation-record is only valid with --mode status');
     const record = readCleanupOperationRecord(recordPath);
+    const { request } = record;
+
+    // Explicit bindings must match the record; a conflict is refused before the
+    // query so a mistyped argument cannot query a different operation.
+    const conflicts: string[] = [];
+    if (options.has('--agent-id') && options.get('--agent-id') !== request.agentId)
+      conflicts.push('--agent-id');
+    if (options.has('--principal-id') && options.get('--principal-id') !== request.principalId)
+      conflicts.push('--principal-id');
+    if (options.has('--runtime-uid') && options.get('--runtime-uid') !== request.runtimeUid)
+      conflicts.push('--runtime-uid');
+    if (options.has('--run-id') && options.get('--run-id') !== request.runId)
+      conflicts.push('--run-id');
+    if (options.has('--repo') && options.get('--repo') !== request.repo) conflicts.push('--repo');
+    if (options.has('--remote') && options.get('--remote') !== request.remote)
+      conflicts.push('--remote');
+    if (options.has('--pr') && Number(options.get('--pr')) !== request.prNumber)
+      conflicts.push('--pr');
+    if (options.has('--permit-id') && options.get('--permit-id') !== request.permitId)
+      conflicts.push('--permit-id');
+    if (options.has('--operation-id') && options.get('--operation-id') !== request.operationId)
+      conflicts.push('--operation-id');
+    if (conflicts.length > 0) usage(`--operation-record conflicts with ${conflicts.join(', ')}`);
+
     process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
+    // The record supplies the validated original binding, so status needs no
+    // workspace, registry or local identity. It must actually query the Broker.
+    try {
+      const response = await sendCleanupBrokerRequest(
+        { ...request, mode: 'status' },
+        { timeoutMs },
+      );
+      process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
+      const evaluation = evaluateCleanupBrokerResult(response);
+      if (evaluation.notice) process.stderr.write(`${evaluation.notice}\n`);
+      process.exitCode = evaluation.exitCode;
+    } catch (error) {
+      process.stderr.write(
+        error instanceof CleanupBrokerClientError
+          ? `${error.message}\n`
+          : 'BROKER_UNAVAILABLE: the cleanup broker could not be reached.\n',
+      );
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -112,11 +161,6 @@ async function main(): Promise<void> {
     usage('--operation-id must be a bounded identifier');
   }
 
-  const timeoutMs = options.has('--timeout-ms') ? Number(options.get('--timeout-ms')) : 60_000;
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000) {
-    usage('--timeout-ms must be an integer between 1 and 600000');
-  }
-
   const request: CleanupBrokerRequest = {
     schema: 'openslack.cleanup_request.v1',
     mode,
@@ -137,12 +181,12 @@ async function main(): Promise<void> {
     if (mode === 'preview') {
       process.stdout.write('Preview only. No remote branch was deleted.\n');
     }
-    if (response.state === 'RECONCILIATION_REQUIRED' || response.state === 'OPERATION_IN_PROGRESS') {
-      process.stderr.write(
-        'Operation unresolved. Query --mode status with the same operation ID; do not repeat execute.\n',
-      );
-      process.exitCode = 1;
-    }
+    // The shared evaluator owns the exit-code table so both entries agree:
+    // accepted-but-running is 0 with a notice; refused, failed, unknown and
+    // reconciliation are 1.
+    const evaluation = evaluateCleanupBrokerResult(response);
+    if (evaluation.notice) process.stderr.write(`${evaluation.notice}\n`);
+    process.exitCode = evaluation.exitCode;
   } catch (error) {
     if (error instanceof CleanupBrokerClientError) {
       process.stderr.write(`${error.message}\n`);
