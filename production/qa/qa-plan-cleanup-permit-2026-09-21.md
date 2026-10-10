@@ -1012,10 +1012,23 @@ equals the branch SHA before reporting.
 | PR | **#420** — https://github.com/Negentropy-Laby/OpenSlack/pull/420 |
 | Author | `app/openslack-agent-operator` (`is_bot: true`) |
 | Branch | `prms/pr418-followup-repair` |
-| Branch SHA = PR head SHA | `339c144ecd0da39d8e75633f6a428bb6216f59ec` |
 | Base | `main` (`94ca2d3f`) |
 | PRMS decision at creation | `BLOCKED_DRAFT`, owner agent |
 | After `pr ready` | `isDraft: false`, `reviewDecision: REVIEW_REQUIRED`, `mergeStateStatus: BLOCKED` |
+
+The head is deliberately not pinned to one SHA here, because recording this
+section necessarily advanced the branch. The binding rule is that three values
+must agree at every point of review: `git ls-remote origin
+refs/heads/prms/pr418-followup-repair`, the local `HEAD`, and the PR
+`headRefOid` — with the check runs belonging to that same SHA. Re-running the
+delivery path after a further commit pushes the branch and **updates the same
+PR** rather than opening a second one, so the rule can always be restored.
+
+At the point the hosted checks were observed, all three agreed at
+`cde385304faee374a9b52d250d66d98478679a8a`: `canonical-base` had passed, and
+`classify`, `canary`, `validate / validate`, `tui-visual-gate`, both
+build-and-smoke jobs, the notification-delivery validation and the
+GS8-B/GS9-F2b Windows qualification were still pending.
 
 PRMS was re-run with live bot credentials (`scripts/openslack-bot.ps1 pr
 doctor 420`), reporting live GitHub evidence and **Risk Zone: RED**, because the
