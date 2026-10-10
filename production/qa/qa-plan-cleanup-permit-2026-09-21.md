@@ -1115,3 +1115,72 @@ rather than dead code.
 
 A TOCTOU window on ancestor directories between `assertSafeAncestry` and
 `openSync`, inherent to path-based POSIX APIs and not demonstrated exploitable.
+
+## Round 18 review rounds two and three — 2026-10-10
+
+Two further independent adversarial reviews were obtained. Between them they
+found four more defects, all in this branch's own work, and all four are fixed
+with a regression shown to fail when the fix is reverted.
+
+### Review two: D6
+
+The reviewer confirmed the five earlier fixes correct — reverting each itself and
+restoring every file byte-identically — but found a defect the earlier fix pass
+had masked.
+
+`PrepareCleanupHandoffDraftInput.verifierPath` was declared **required** and was
+**never read**. The packaged `tools/verify-handoff.mjs` took its bytes from the
+optional per-build path, defaulting to `Buffer.alloc(0)`, so the package shipped
+a **zero-byte verifier** while `verifyCleanupHandoffPackage` reported it
+**valid**. At base the line read `safeRead(input.verifierPath)`, so this branch
+introduced it; D2's tolerance fix then removed the accidental failure that had
+been catching it. The verifier is the artifact an administrator runs against the
+package, so an empty one that verifies is a silent integrity failure.
+
+Fixed by resolving tool bytes from the build that proved them (v2), else from the
+explicitly supplied path, and refusing when neither is present. A separately
+supplied file still cannot satisfy a v2 proof.
+
+### Review three: D7, D8, D9
+
+The reviewer confirmed the D6 fix correct, including that a v2 report cannot be
+satisfied by a top-level file and that `?? EMPTY` is not exploitable because
+verify requires the declared and observed file sets to match. It also checked
+**every field of all five interfaces by exact read pattern** — 16/16, 6/6, 5/5,
+2/2 and 11/11 — confirming the declared-but-unread failure mode is gone from
+those types. It then found three more defects:
+
+- **D7** — nothing rejected a **zero-byte** tool artifact at any schema level.
+  The D6 fix removed the default placeholder without adding a non-empty check, so
+  the same outcome remained reachable, including a v2 report that honestly
+  describes an empty artifact — which no digest check can catch. Fixed by
+  rejecting empty tool bytes outright.
+- **D8** — with the package unverified and all evidence missing, the plan still
+  generated **six runnable `install` commands**. They were guarded by `blockedBy`,
+  but the requirement is that an invalid package or evidence produces no install
+  instructions, and a guarded-but-runnable command is still an instruction. Fixed
+  by withholding the commands entirely while anything is invalid.
+- **D9** — `verify-handoff.ts` exited 2 only on `!result.valid`, while `valid` is
+  set `true` unconditionally after `TASK_EVIDENCE_EXPIRED` is pushed. An
+  expired-evidence package therefore verified with **exit 0** and a scripted flow
+  would proceed. Fixed by reporting unmet gates on stderr and exiting 2, with byte
+  integrity still reported separately.
+
+Also closed: `packageErrors` and `claimDisagrees` were computed but reached no
+consumer. The plan now exposes `manifestDisagreements`, and `admin-upgrade.ts`
+prints both the verifier's error codes and the destinations whose recorded
+manifest digest contradicts the target.
+
+### Regression discipline
+
+Every fix in all three rounds was validated the same way: revert the fix, observe
+the specific failure, restore, and confirm the file is byte-identical. The
+observed failures were concrete, for example
+`expected 'cleanup_identity_probe' to be 'principal:cleanup_identity_probe'`,
+`expected +0 to be 25` for the empty verifier, and
+`expected [ { program: 'install', …(1) }, …(5) ] to deeply equal []` for the six
+withheld commands. One revert probe of mine produced a syntax error and silently
+ran no tests; it was detected and redone rather than recorded as a pass.
+
+Across three review rounds, nine defects were found in this branch's own work,
+none of them visible to a green test suite.
