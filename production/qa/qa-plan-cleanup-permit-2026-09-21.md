@@ -930,3 +930,72 @@ members:
 
 All five recorded digests equal the current file content, so no digest update is
 required and the binding set, paths and scope are untouched.
+
+## Round 18 freeze and delivery record — 2026-10-10
+
+### Production collector, run twice
+
+`node scripts/verify-test-counts.mjs --update` was run twice against the frozen
+candidate. Both runs reported 7,486 declared cases in 536 files, and both
+generated files were byte-identical across runs:
+
+| File | SHA-256 after both runs |
+|---|---|
+| `.openslack/modules.yaml` | `e2e467e6f6dcb38e0ff8ff31ab66d8bdb12e5cebb7860935f46bfbf7a49accc5` |
+| `docs/status/current.md` | `5049b39a9314dd5e3c91689993e9ff415ba86705be69c3343adbdDD333fcc564` |
+
+The worktree was clean after each run, so the counts are stable and there is no
+generation drift.
+
+### New DRAFT input, in a new directory
+
+A fresh non-sensitive input was written outside the repository at
+`D:\Temp\openslack-r18-handoff-draft\`, with `inputs.DRAFT.json`, an `evidence/`
+directory, a `runtime/` directory and fresh `output/` and `build/` directories.
+It deliberately carries the **template** installation manifest
+(`REQUIRED_SHA256` placeholders) rather than a manifest with real digests: the
+manifest is the record of what an administrator actually installed on the
+qualification target, and generating one locally from downloaded bytes would
+manufacture the very evidence the design requires to come from that target.
+The input stays DRAFT and no approval is claimed for it.
+
+### The two-clean-checkout build fails closed
+
+Driving the frozen build in WSL2 Ubuntu-24.04:
+
+```sh
+bun scripts/cleanup-broker/build-handoff.ts --input .../inputs.DRAFT.json
+```
+
+Result: **exit code 2**, empty stdout, a single `HANDOFF_IO_FAILED` line on
+stderr, and **nothing written** — the output directory, the build directory and
+the whole draft tree contain no package and no `SHA256SUMS`, and the repository
+worktree stayed clean. That is the required fail-closed behaviour: invalid
+evidence produces no install instruction and no partial artifact.
+
+### What the build actually requires, and why it is still outstanding
+
+`assertCleanupHandoffRuntime` validates a `runtimeDirectory` containing `node`,
+`git`, `sh` and `git-remote-https` whose SHA-256 digests must equal the digests
+recorded in an `openslack.cleanup_installation.v1` manifest for
+`/usr/lib/openslack-cleanup/{node,git,sh,git-core/git-remote-https}`. The run
+passed the platform gate, the input parse, the staging checks and the manifest
+schema check, then failed reading those runtime bytes.
+
+Neither a frozen Linux Node 24.18.1 runtime directory nor a real installation
+manifest exists in this repository or this session — a recursive search found no
+`git-remote-https` file and no manifest carrying real digests, only the template.
+The same applies to the target evidence set (task view, task attestation, app
+scope, network, identity, dependency inventory), which the goal assigns to the
+administrator after deployment.
+
+**Correction to the earlier environment note.** The prior entry recorded "no Node
+runtime is present anywhere on that filesystem" as the concern for this step.
+Measurement shows that is *not* the blocker: the driver is Bun, the pinned Node
+24.18.1 is supplied as the `runtimeDirectory` input artifact, and the run reached
+the runtime-bytes check without any system Node. The real gate is the absent
+administrator-provisioned runtime and host evidence.
+
+**Status.** The two-independent-checkout package proof remains an **outstanding
+external gate**. No Windows result and no locally synthesised evidence is
+presented as a substitute for it.
