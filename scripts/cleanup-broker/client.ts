@@ -12,6 +12,7 @@ import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-resul
 // Narrow import: only the identity resolver is needed, not the whole runtime
 // surface, so the bundle stays small and gains no unrelated capability.
 import { resolveAgentPrincipal } from '../../packages/runtime/src/identity.js';
+import { parseAgentRegistry } from '../../packages/workspace/src/index.js';
 
 /**
  * Broker-only cleanup client for the installed target.
@@ -171,9 +172,23 @@ async function main(): Promise<void> {
   const principal = resolved.principal;
   const snapshot = resolved.snapshot;
 
+  // The principal ID is a distinct registry field. `AgentPrincipal` carries only
+  // the registry id, so reading the principal from it would send the agent id
+  // instead — producing a different record digest than the CLI for the same
+  // operation and failing the Broker's own registry binding check.
+  const registry = parseAgentRegistry(workspace, agentId);
+  if (
+    !registry ||
+    registry.agent_id !== principal.registry_id ||
+    registry.identity.uid !== principal.runtime_uid
+  ) {
+    usage('the local identity binding changed; do not bootstrap a new identity');
+  }
+  const principalId = registry.identity.principal_id;
+
   // Explicit claims are checked against the resolved identity, never trusted.
   const mismatched: string[] = [];
-  if (options.has('--principal-id') && options.get('--principal-id') !== principal.registry_id)
+  if (options.has('--principal-id') && options.get('--principal-id') !== principalId)
     mismatched.push('--principal-id');
   if (options.has('--runtime-uid') && options.get('--runtime-uid') !== principal.runtime_uid)
     mismatched.push('--runtime-uid');
@@ -187,7 +202,7 @@ async function main(): Promise<void> {
     schema: 'openslack.cleanup_request.v1',
     mode,
     agentId: principal.registry_id,
-    principalId: principal.registry_id,
+    principalId,
     runtimeUid: principal.runtime_uid,
     runId: principal.run_id,
     repo,

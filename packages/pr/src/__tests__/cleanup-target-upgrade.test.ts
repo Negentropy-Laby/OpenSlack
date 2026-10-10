@@ -7,6 +7,7 @@ import {
   CLEANUP_INSTALL_LAYOUT,
   CLEANUP_TARGET_UPGRADE_GATES,
   CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA,
+  classifyDestination,
   CleanupTargetUpgradeError,
   prepareCleanupTargetUpgradePlan,
   renderUpgradeCommand,
@@ -216,7 +217,7 @@ describe('R18-10 observed state and manifest claims', () => {
     expect(result.files.every((file) => file.action === 'install')).toBe(true);
   });
 
-  it('reports a manifest claim that disagrees with the observed file', () => {
+  it('records the manifest claim without letting it decide the action', () => {
     const result = plan({
       targetEvidence: evidence(
         installationManifest([
@@ -225,8 +226,9 @@ describe('R18-10 observed state and manifest claims', () => {
       ),
     });
     const node = result.files.find((file) => file.artifact === 'node')!;
-    // The manifest claims a digest, but the destination does not exist, so the
-    // claim cannot be confirmed and the action follows the observation.
+    // The manifest claims a digest but the destination does not exist, so the
+    // claim cannot be confirmed here and the action follows the observation.
+    // The disagreement branch itself is covered by classifyDestination above.
     expect(node.manifestClaimedSHA256).toBe('a'.repeat(64));
     expect(node.observed).toBe('missing');
     expect(node.action).toBe('install');
@@ -270,6 +272,82 @@ describe('R18-11 the nonce step is not blocked by activation', () => {
   });
 });
 
+describe('R18-09/R18-10 destination classification', () => {
+  const HASH_A = 'a'.repeat(64);
+  const HASH_B = 'b'.repeat(64);
+
+  it.each([
+    ['missing -> install', { state: 'missing' as const, sha256: null }, HASH_A, null, 'install'],
+    ['present and matching -> current', { state: 'present' as const, sha256: HASH_A }, HASH_A, null, 'current'],
+    ['present and differing -> replace', { state: 'present' as const, sha256: HASH_B }, HASH_A, null, 'replace'],
+    ['unreadable -> unverified', { state: 'unreadable' as const, sha256: null }, HASH_A, null, 'unverified'],
+    ['present with no candidate digest -> replace', { state: 'present' as const, sha256: HASH_A }, '', null, 'replace'],
+  ])('classifies %s', (_label, observed, candidate, claimed, expected) => {
+    expect(classifyDestination(observed, candidate, claimed).action).toBe(expected);
+  });
+
+  it('reports a claim that disagrees with a present file', () => {
+    // The behaviour the earlier test only appeared to cover: this needs a
+    // PRESENT observation, which the planner can never produce for the absolute
+    // layout destinations in a test environment.
+    const result = classifyDestination({ state: 'present', sha256: HASH_A }, HASH_A, HASH_B);
+    expect(result.claimDisagrees).toBe(true);
+    // The observation still decides the action, not the claim.
+    expect(result.action).toBe('current');
+  });
+
+  it('does not report a claim that agrees', () => {
+    expect(
+      classifyDestination({ state: 'present', sha256: HASH_A }, HASH_A, HASH_A).claimDisagrees,
+    ).toBe(false);
+  });
+
+  it('does not report a disagreement when nothing is installed', () => {
+    expect(
+      classifyDestination({ state: 'missing', sha256: null }, HASH_A, HASH_B).claimDisagrees,
+    ).toBe(false);
+  });
+
+  it('does not report a disagreement when the manifest is silent', () => {
+    expect(
+      classifyDestination({ state: 'present', sha256: HASH_A }, HASH_A, null).claimDisagrees,
+    ).toBe(false);
+  });
+});
+
+describe('R18-10 unreadable gates are enforced', () => {
+  it('blocks the controlled upgrade on both unreadable gates', () => {
+    const result = plan();
+    const upgrade = result.steps.find((step) => step.id === 'controlled-upgrade')!;
+    // Computing a gate and never blocking on it is the defect this guards.
+    expect(upgrade.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.evidenceUnreadable);
+    expect(upgrade.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable);
+  });
+
+  it('blocks the installation isolation check on an unreadable manifest', () => {
+    const result = plan();
+    const isolation = result.steps.find(
+      (step) => step.id === 'installation-isolation-verification',
+    )!;
+    expect(isolation.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable);
+  });
+
+  it('reports every gate that some step blocks on, or explains its absence', () => {
+    const result = plan();
+    const blocked = new Set(result.steps.flatMap((step) => step.blockedBy));
+    // Gates that legitimately gate nothing are listed here explicitly, so a new
+    // gate that is computed but never enforced fails this test.
+    const intentionallyUngated = new Set<string>([
+      CLEANUP_TARGET_UPGRADE_GATES.qualificationTargets,
+      CLEANUP_TARGET_UPGRADE_GATES.governanceAuthority,
+      CLEANUP_TARGET_UPGRADE_GATES.brokerActivation,
+    ]);
+    const unenforced = result.unmetGates.filter(
+      (gate) => !blocked.has(gate) && !intentionallyUngated.has(gate),
+    );
+    expect(unenforced).toEqual([]);
+  });
+});
 describe('cleanup target upgrade plan', () => {
   it('classifies destinations against the candidate artifacts from the fixed layout', () => {
     const result = plan();

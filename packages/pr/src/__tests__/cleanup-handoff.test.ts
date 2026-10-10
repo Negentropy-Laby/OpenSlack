@@ -599,7 +599,7 @@ describe('R18-12 per-build tool proof', () => {
       const client = f.put(`build-${id}/cleanup-client.mjs`, 'fixture client\n');
       const adminTool = f.put(`build-${id}/admin-upgrade.mjs`, 'fixture admin tool\n');
       const report = JSON.parse(readFileSync(build.reportPath, 'utf8')) as Record<string, unknown>;
-      report.schema = 'openslack.cleanup_handoff_build_report.v1';
+      report.schema = 'openslack.cleanup_handoff_build_report.v2';
       report.verifier = { sha256: digest(readFileSync(verifier)), bytes: readFileSync(verifier).length };
       report.client = { sha256: digest(readFileSync(client)), bytes: readFileSync(client).length };
       report.adminTool = {
@@ -681,6 +681,29 @@ describe('R18-12 per-build tool proof', () => {
     expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
   });
 
+  it('still verifies a report under the pre-existing schema that binds only broker and executor', async () => {
+    // The shape real packages built before tool proofs carry: the v1 schema with
+    // no verifier/client/adminTool fields. Requiring tool proofs under this
+    // schema would retroactively invalidate every such package.
+    const f = await fixture();
+    for (const id of ['a', 'b'] as const) {
+      const build = f.input.builds[id === 'a' ? 0 : 1];
+      const report = JSON.parse(readFileSync(build.reportPath, 'utf8')) as Record<string, unknown>;
+      report.schema = 'openslack.cleanup_handoff_build_report.v1';
+      delete report.verifier;
+      delete report.client;
+      delete report.adminTool;
+      writeFileSync(build.reportPath, JSON.stringify(report));
+    }
+    const result = prepareCleanupHandoffDraft(f.input);
+    const verified = verifyCleanupHandoffPackage({
+      packageDirectory: result.packageDirectory,
+      candidateHead: result.candidateHead,
+      manifestSHA256: result.manifestSHA256,
+      now: new Date(timestamp),
+    });
+    expect(verified.valid).toBe(true);
+  });
   it('keeps a real v1 package readable', async () => {
     // The default fixture is the legacy schema and carries no per-build tools.
     const f = await fixture();

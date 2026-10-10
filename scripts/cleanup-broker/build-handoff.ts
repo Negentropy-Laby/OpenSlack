@@ -122,7 +122,8 @@ try {
       reportPath,
       JSON.stringify(
         {
-          schema: CLEANUP_HANDOFF_SCHEMAS.build,
+          // The v2 profile: this build proves verifier, client and admin tool too.
+          schema: CLEANUP_HANDOFF_SCHEMAS.buildV2,
           candidateHead: input.candidateHead,
           checkout,
           checkoutCleanAfterBuild: run('git', ['status', '--porcelain'], checkout) === '',

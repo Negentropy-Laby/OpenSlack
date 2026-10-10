@@ -130,6 +130,16 @@ export interface VerifyCleanupHandoffPackageResult {
 
 export const CLEANUP_HANDOFF_SCHEMAS = Object.freeze({
   build: 'openslack.cleanup_handoff_build_report.v1',
+  /**
+   * The per-build tool proof profile.
+   *
+   * It is a distinct schema on purpose. `build` is already carried by packages
+   * built before tool proofs existed, and those reports bind only the broker and
+   * executor. Requiring tool proofs under the same name would retroactively
+   * invalidate every real package that previously verified, so the stricter
+   * requirement lives here and `build` stays readable.
+   */
+  buildV2: 'openslack.cleanup_handoff_build_report.v2',
   evidence: 'openslack.cleanup_handoff_evidence_index.v1',
 });
 const LEGACY_SCHEMAS = {
@@ -489,7 +499,9 @@ function buildReport(
 ): ObjectValue {
   const report = json(raw);
   check(
-    (report.schema === CLEANUP_HANDOFF_SCHEMAS.build || report.schema === LEGACY_SCHEMAS.build) &&
+    (report.schema === CLEANUP_HANDOFF_SCHEMAS.build ||
+      report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2 ||
+      report.schema === LEGACY_SCHEMAS.build) &&
       report.candidateHead === head &&
       report.checkoutCleanAfterBuild === true &&
       report.independentCloneNoHardlinks === true &&
@@ -503,9 +515,10 @@ function buildReport(
     ['broker', broker],
     ['executor', executor],
   ];
-  // A v2 report must prove the tools this build produced. A v1 report predates
-  // per-build tool proof, so it keeps its original shape and stays readable.
-  if (report.schema === CLEANUP_HANDOFF_SCHEMAS.build) {
+  // Only the v2 profile must prove the tools this build produced. Reports under
+  // the earlier schemas bind broker and executor only, and must keep verifying:
+  // requiring tool proofs of them would invalidate already-published packages.
+  if (report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2) {
     proofs.push(['verifier', tools[0]], ['client', tools[1]], ['adminTool', tools[2]]);
   }
   for (const [name, rawBytes] of proofs) {

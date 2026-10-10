@@ -117,9 +117,41 @@ export function renderUpgradeCommand(command: CleanupUpgradeCommand): string {
 /** What the target itself reports about a layout destination. */
 type ObservedState = 'present' | 'missing' | 'unreadable';
 
-interface ObservedFile {
+export interface ObservedFile {
   state: ObservedState;
   sha256: string | null;
+}
+
+/**
+ * Decide the action for one destination.
+ *
+ * Separated from the filesystem walk so every branch — present, missing,
+ * unreadable, matching, differing, and a disagreeing manifest claim — is
+ * reachable in a test. The layout destinations are absolute, so a test that only
+ * calls the planner can never observe anything but `missing`.
+ */
+export function classifyDestination(
+  observed: ObservedFile,
+  candidateSHA256: string,
+  manifestClaimedSHA256: string | null,
+): { action: 'install' | 'replace' | 'current' | 'unverified'; claimDisagrees: boolean } {
+  const action: 'install' | 'replace' | 'current' | 'unverified' =
+    observed.state === 'unreadable'
+      ? 'unverified'
+      : observed.state === 'missing'
+        ? 'install'
+        : candidateSHA256 !== '' && observed.sha256 === candidateSHA256
+          ? 'current'
+          : 'replace';
+  return {
+    action,
+    // A manifest that claims a digest the target contradicts is reported, never
+    // used to decide the action.
+    claimDisagrees:
+      manifestClaimedSHA256 !== null &&
+      observed.state === 'present' &&
+      manifestClaimedSHA256 !== observed.sha256,
+  };
 }
 
 /**
@@ -370,29 +402,19 @@ export function prepareCleanupTargetUpgradePlan(
   const files: CleanupTargetUpgradeFileAction[] = CLEANUP_INSTALL_LAYOUT.map((entry) => {
     const candidate = artifacts.get(entry.artifact) ?? '';
     const observed = observeFile(entry.path);
-    const action: CleanupTargetUpgradeFileAction['action'] =
-      observed.state === 'unreadable'
-        ? 'unverified'
-        : observed.state === 'missing'
-          ? 'install'
-          : candidate !== '' && observed.sha256 === candidate
-            ? 'current'
-            : 'replace';
     const claimed = manifestClaim?.get(entry.path) ?? null;
+    const classified = classifyDestination(observed, candidate, claimed);
     return {
       path: entry.path,
       artifact: entry.artifact,
       mode: entry.mode,
       owner: entry.owner,
-      action,
+      action: classified.action,
       observed: observed.state,
       installedSHA256: observed.sha256,
       candidateSHA256: candidate,
       manifestClaimedSHA256: claimed,
-      // A manifest that claims a digest the target contradicts is reported, not
-      // used to decide the action.
-      claimDisagrees:
-        claimed !== null && observed.state === 'present' && claimed !== observed.sha256,
+      claimDisagrees: classified.claimDisagrees,
     };
   });
   if (files.some((file) => file.action === 'unverified' || file.candidateSHA256 === '')) {
@@ -402,7 +424,9 @@ export function prepareCleanupTargetUpgradePlan(
   const replace = files.filter((file) => file.action !== 'current');
   const verifiedGate = CLEANUP_TARGET_UPGRADE_GATES.packageUnverified;
   const evidenceGate = CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete;
+  const evidenceUnreadableGate = CLEANUP_TARGET_UPGRADE_GATES.evidenceUnreadable;
   const installGate = CLEANUP_TARGET_UPGRADE_GATES.installationMissing;
+  const installUnreadableGate = CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable;
   const destinationGate = CLEANUP_TARGET_UPGRADE_GATES.destinationUnverified;
   const approvalGate = CLEANUP_TARGET_UPGRADE_GATES.adminApproval;
 
@@ -465,7 +489,15 @@ export function prepareCleanupTargetUpgradePlan(
     expectedOutput: 'Every destination matches its candidate artifact digest and its fixed mode.',
     stopCondition:
       'A destination is unverified, a digest differs after install, or the backup is inconsistent.',
-    blockedBy: [verifiedGate, evidenceGate, installGate, destinationGate, approvalGate],
+    blockedBy: [
+      verifiedGate,
+      evidenceGate,
+      evidenceUnreadableGate,
+      installGate,
+      installUnreadableGate,
+      destinationGate,
+      approvalGate,
+    ],
   });
   steps.push({
     id: 'installation-isolation-verification',
@@ -477,7 +509,7 @@ export function prepareCleanupTargetUpgradePlan(
     workingDirectory: input.packageDirectory,
     expectedOutput: 'Installed digests, owner and mode match the fixed layout exactly.',
     stopCondition: 'Any digest, owner or mode mismatch: restore the consistent backup and stop.',
-    blockedBy: [approvalGate, destinationGate],
+    blockedBy: [approvalGate, destinationGate, installUnreadableGate],
   });
   steps.push({
     id: 'credentials-and-identity',

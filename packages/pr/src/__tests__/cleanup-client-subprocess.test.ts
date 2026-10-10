@@ -167,6 +167,139 @@ describe('bundled client subprocess', () => {
   });
 });
 
+describe('client identity binding', () => {
+  /**
+   * A registry whose principal id differs from its agent id, which is how every
+   * real registry is written. `AgentPrincipal` carries only the registry id, so
+   * a client that reads the principal from it sends the agent id instead.
+   */
+  function workspaceWithDistinctPrincipal(agentId: string): string {
+    const root = temporaryRoot('cleanup-client-workspace-');
+    const principalId = `principal:${agentId}`;
+    const registryDirectory = join(root, '.openslack', 'agents', 'registry');
+    mkdirSync(registryDirectory, { recursive: true });
+    writeFileSync(
+      join(registryDirectory, `${agentId}.yaml`),
+      JSON.stringify({
+        schema: 'openslack.agent_registry.v2',
+        agent_id: agentId,
+        display_name: 'Client Identity Probe',
+        employee_type: 'ai_agent',
+        identity: { uid: agentId, principal_id: principalId, status: 'active' },
+        vendor: { provider: 'openai', runtime: 'codex' },
+        employment: { status: 'active', hired_at: '2026-10-08T09:33:53.927Z' },
+        capabilities: { primary: ['branch_cleanup_qualification'] },
+        repositories: {
+          workspace_repo: { owner: 'Negentropy-Laby', repo: 'OpenSlack', default_branch: 'main' },
+          allowed_product_repos: ['Negentropy-Laby/openslack-cleanup-qualification'],
+        },
+        permissions: {
+          paths: { allow: ['.openslack/outbox/**'], deny: [] },
+          actions: { 'pr.cleanup_branch_scoped.v1': 'allow', 'pr.cleanup_branch': 'deny' },
+          github: {
+            can_create_pr: false,
+            can_comment: false,
+            can_approve: false,
+            can_merge: false,
+          },
+          max_risk_zone: 'yellow',
+        },
+        execution: {},
+        output_contract: { must_create: [], may_create: [], must_not_create: [] },
+        approval_rules: { require_human_approval_for: ['merge_to_main'] },
+      }),
+    );
+    const identityDirectory = join(root, '.openslack.local', 'agents', agentId);
+    mkdirSync(identityDirectory, { recursive: true });
+    writeFileSync(
+      join(identityDirectory, 'identity.yaml'),
+      [
+        'schema: openslack.agent_runtime_identity.v1',
+        `agent_id: ${agentId}`,
+        `agent_uid: ${agentId}`,
+        'run_id: run-client-probe',
+        'provider: cli',
+        'started_at: 2026-10-08T09:33:53.927Z',
+        'public_key_jwk: null',
+        'key_id: null',
+        'key_generated_at: null',
+        '',
+      ].join('\n'),
+    );
+    return root;
+  }
+
+  it('sends the registry principal id, not the agent id', () => {
+    const agentId = 'cleanup_identity_probe';
+    const workspace = workspaceWithDistinctPrincipal(agentId);
+    const result = runClient([
+      '--mode',
+      'execute',
+      '--workspace',
+      workspace,
+      '--agent-id',
+      agentId,
+      '--repo',
+      'Negentropy-Laby/openslack-cleanup-qualification',
+      '--remote',
+      'origin',
+      '--pr',
+      '417',
+      '--permit-id',
+      'PERMIT-1',
+      '--operation-id',
+      'OP-IDENTITY-1',
+    ]);
+
+    // The record is published before the send, so it exists even though the
+    // broker query then fails on this platform.
+    const recordPath = join(
+      workspace,
+      '.openslack',
+      'outbox',
+      'cleanup-operations',
+      'OP-IDENTITY-1.json',
+    );
+    expect(readFileSync(recordPath, 'utf8')).toBeTruthy();
+    const published = JSON.parse(readFileSync(recordPath, 'utf8')) as {
+      request: { agentId: string; principalId: string };
+    };
+    expect(published.request.agentId).toBe(agentId);
+    // The bug this guards: the agent id was sent as the principal id, which
+    // hashes to a different request digest than the CLI's and is rejected by
+    // the Broker's own registry binding check.
+    expect(published.request.principalId).toBe(`principal:${agentId}`);
+    expect(result.code).toBe(1);
+  });
+
+  it('accepts an explicit --principal-id that matches the registry', () => {
+    const agentId = 'cleanup_identity_probe2';
+    const workspace = workspaceWithDistinctPrincipal(agentId);
+    const result = runClient([
+      '--mode',
+      'execute',
+      '--workspace',
+      workspace,
+      '--agent-id',
+      agentId,
+      '--principal-id',
+      `principal:${agentId}`,
+      '--repo',
+      'Negentropy-Laby/openslack-cleanup-qualification',
+      '--remote',
+      'origin',
+      '--pr',
+      '417',
+      '--permit-id',
+      'PERMIT-1',
+      '--operation-id',
+      'OP-IDENTITY-2',
+    ]);
+    // Must not be refused as a mismatch: the value is correct.
+    expect(result.stderr).not.toContain('does not match the fixed workspace identity');
+  });
+});
+
 // Keep a written copy so a failing run leaves inspectable evidence.
 it('leaves the bundle readable for inspection', () => {
   const dir = temporaryRoot('cleanup-client-copy-');
