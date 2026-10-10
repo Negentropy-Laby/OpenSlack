@@ -98,7 +98,7 @@ export async function runPRBranchCleanupCommand(
         conflicts.push('--permit-id');
       if (options.operationId !== undefined && options.operationId !== request.operationId)
         conflicts.push('--operation-id');
-      if (options.repo !== undefined && options.repo !== request.repo) conflicts.push('--repo');
+      if (repository !== undefined && repository !== request.repo) conflicts.push('--repo');
       if (options.remoteExplicit === true && options.remote !== request.remote)
         conflicts.push('--remote');
       if (parsedNumber !== undefined && parsedNumber !== request.prNumber)

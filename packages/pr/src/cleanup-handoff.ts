@@ -1248,8 +1248,10 @@ export function verifyCleanupHandoffPackage(
     const locks = json(bytes.get('evidence/source-locks.json')!);
     check(
       locks.candidateHead === input.candidateHead &&
-        HASH.test(String(locks.lockfileSHA256)) &&
-        HASH.test(String(locks.goModuleSHA256)),
+        typeof locks.lockfileSHA256 === 'string' &&
+        HASH.test(locks.lockfileSHA256) &&
+        typeof locks.goModuleSHA256 === 'string' &&
+        HASH.test(locks.goModuleSHA256),
       'HANDOFF_CANDIDATE_MISMATCH',
     );
     check(bytes.get('tools/verify-handoff.mjs')!.length > 0, 'HANDOFF_BUILD_MISMATCH');
@@ -1273,8 +1275,8 @@ export function verifyCleanupHandoffPackage(
           bytes.get('tools/admin-upgrade.mjs') ?? EMPTY,
         ],
         input.candidateHead,
-        String(locks.lockfileSHA256),
-        String(locks.goModuleSHA256),
+        locks.lockfileSHA256 as string,
+        locks.goModuleSHA256 as string,
         verifiedToolchain(locks.toolchain),
         sha,
       );
@@ -1299,6 +1301,25 @@ export function verifyCleanupHandoffPackage(
         object(draft.priorInput).sha256 === sha(bytes.get('evidence/prior-admin-inputs.md')!),
       'HANDOFF_EVIDENCE_INVALID',
     );
+    // Historical indexes may predate the declared gate list. Once present,
+    // the list is evidence: never silently discard an unfamiliar condition or
+    // let it remove the fixed administrator/authorization gates.
+    if (index.unmetGates !== undefined || index.schema !== LEGACY_SCHEMAS.evidence) {
+      const declaredGates = index.unmetGates;
+      check(
+        Array.isArray(declaredGates) &&
+          declaredGates.length <= 64 &&
+          declaredGates.every(
+            (gate) => typeof gate === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(gate),
+          ) &&
+          new Set(declaredGates).size === declaredGates.length,
+        'HANDOFF_EVIDENCE_INVALID',
+      );
+      const gates = declaredGates as string[];
+      result.outstandingGates = [...new Set([...GATES, ...gates])];
+      if (gates.some((gate) => !GATES.includes(gate)))
+        result.validityIssues.push('HANDOFF_UNKNOWN_GATE');
+    }
     const task = verifyDraftRelations(bytes, sha);
     const now = nowMs(input.now);
     if (now < timestamp(task.notBefore) || now >= timestamp(task.expiresAt))

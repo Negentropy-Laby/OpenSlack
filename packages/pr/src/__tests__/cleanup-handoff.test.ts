@@ -884,18 +884,15 @@ describe('standalone package integrity contract', () => {
     { gates: null },
     { gates: ['NEW_INPUT_REVIEW_REQUIRED', 'NEW_INPUT_REVIEW_REQUIRED'] },
     { gates: [42] },
-  ])(
-    'refuses malformed package-declared gates $gates',
-    async ({ gates: unmetGates }) => {
-      const { input } = await fixture();
-      const result = prepareCleanupHandoffDraft(input);
-      const path = join(result.packageDirectory, 'evidence/qualification-index.json');
-      const index = JSON.parse(readFileSync(path, 'utf8'));
-      writeFileSync(path, JSON.stringify({ ...index, unmetGates }));
-      rehashPackage(result);
-      expect(verify(result).errors).toEqual(['HANDOFF_EVIDENCE_INVALID']);
-    },
-  );
+  ])('refuses malformed package-declared gates $gates', async ({ gates: unmetGates }) => {
+    const { input } = await fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const path = join(result.packageDirectory, 'evidence/qualification-index.json');
+    const index = JSON.parse(readFileSync(path, 'utf8'));
+    writeFileSync(path, JSON.stringify({ ...index, unmetGates }));
+    rehashPackage(result);
+    expect(verify(result).errors).toEqual(['HANDOFF_EVIDENCE_INVALID']);
+  });
 
   it('keeps historical evidence without a declared gate list readable', async () => {
     const { input } = await fixture();

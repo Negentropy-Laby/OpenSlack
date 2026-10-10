@@ -282,8 +282,10 @@ export function prepareCleanupTargetUpgradePlan(
   });
   unmetGates.push(...verified.validityIssues);
   const snapshot = verifiedCleanupHandoffSnapshot(verified);
-  if (evaluateCleanupHandoffVerification(verified) !== 0 || !snapshot)
+  if (evaluateCleanupHandoffVerification(verified) !== 0 || !snapshot) {
     unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+    unmetGates.push(...verified.outstandingGates);
+  }
   const artifacts = snapshot?.artifactDigests ?? {};
   const paths: Record<string, string | undefined> = {
     ...Object.fromEntries(UPGRADE_EVIDENCE_ROLES.map((role) => [role, evidence?.[role]])),
