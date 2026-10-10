@@ -1290,6 +1290,63 @@ function onUpgradePlatform<A extends unknown[]>(run: (...args: A) => void | Prom
 }
 
 describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
+  it.each([{ uid: -1 }, { uid: [0] }, { gid: 4294967295 }])(
+    'refuses invalid observed owner facts $uid/$gid',
+    onUpgradePlatform(async (patch) => {
+      const { input, write } = await upgradeFixture();
+      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+      Object.assign(
+        host.files[0],
+        { state: 'present', sha256: digest('fixture'), uid: 0, gid: 0, mode: '0755' },
+        patch,
+      );
+      write(input.hostInspectionPath, host);
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.evidenceIssues).toContainEqual({
+        role: 'hostInspectionPath',
+        reason: 'EVIDENCE_INVALID',
+      });
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+    }),
+  );
+  it.each([{ uid: 44181 }, { gid: 44181 }, { mode: '0666' }, { mode: '0777' }])(
+    'plans to repair observed artifact ownership or mode drift $uid/$gid/$mode',
+    onUpgradePlatform(async (patch) => {
+      const { input, write } = await upgradeFixture();
+      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+      const file = host.files.find(
+        (entry: { path: string }) => entry.path === '/usr/lib/openslack-cleanup/node',
+      );
+      Object.assign(
+        file,
+        {
+          state: 'present',
+          sha256: digest(readFileSync(join(input.packageDirectory, 'artifacts/node'))),
+          uid: 0,
+          gid: 0,
+          mode: '0755',
+        },
+        patch,
+      );
+      write(input.hostInspectionPath, host);
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.evidenceIssues).toEqual([]);
+      expect(plan.files.find((entry) => entry.artifact === 'node')!.action).toBe('replace');
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toContainEqual({
+        program: 'install',
+        args: [
+          '-m',
+          '0755',
+          '-o',
+          'root',
+          '-g',
+          'root',
+          join(input.packageDirectory, 'artifacts/node'),
+          '/usr/lib/openslack-cleanup/node',
+        ],
+      });
+    }),
+  );
   it('emits zero installation commands for an unknown package-declared gate', async () => {
     const { input } = await upgradeFixture();
     const indexPath = join(input.packageDirectory, 'evidence/qualification-index.json');
