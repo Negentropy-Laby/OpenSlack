@@ -20,7 +20,6 @@ import type {
 import { FRAME_INTERVAL_MS } from './constants.js';
 import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
-import type { TerminalEvent } from './events/terminal-event.js';
 import { FocusManager } from './focus.js';
 import { emptyFrame, type Frame, type FrameEvent } from './frame.js';
 import { dispatchClick, dispatchHover } from './hit-test.js';
@@ -1493,10 +1492,10 @@ export default class Ink {
   }
   dispatchKeyboardEvent(parsedKey: ParsedKey): void {
     const target = this.focusManager.activeElement ?? this.rootNode;
-    // The dispatcher contract is TerminalEvent. The vendored KeyboardEvent has
-    // not migrated to it yet (see events/terminal-event.ts), so this is a
-    // type-level narrowing only: the dispatched object is unchanged.
-    const event = new KeyboardEvent(parsedKey as unknown as string) as unknown as TerminalEvent;
+    // KeyboardEvent extends TerminalEvent, so it is dispatched as-is with no
+    // cast: the dispatcher sets target/eventPhase and handlers may
+    // preventDefault().
+    const event = new KeyboardEvent(parsedKey);
     dispatcher.dispatchDiscrete(target, event);
 
     // Tab cycling is the default action — only fires if no handler
