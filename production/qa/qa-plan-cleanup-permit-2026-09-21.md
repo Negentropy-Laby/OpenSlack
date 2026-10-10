@@ -1305,3 +1305,92 @@ established by fixtures. Expired October 8 task evidence cannot authorize a new
 package or qualification batch. Credentials, deployment, fixed runtime identity,
 real nonce, governance activation/Permit and the full live qualification matrix
 are external uncompleted gates. No service was started and no branch was deleted.
+
+### Current-head hosted Windows qualification correction
+
+The first new-head hosted run at `722f4f05844e2717de25627db9ad062f3323fc68`
+did not pass packaging qualification. Workflow run `38062111125`, job
+`114242298031`, failed in **Qualify governed PR branch cleanup** with two
+5-second test timeouts: the supplied-verifier byte preservation regression
+(`cleanup-handoff.test.ts`) and the combined preview/apply/reapply CLI init
+case (`init.test.ts`). The job reported 2,900 passed, 2 failed and 12 skipped.
+The original masked hosted job log is retained outside the source checkout;
+its SHA256 is `085a79443da148b6e7c4b22221e7e3afc9dc04b30fa0ad878577c1120e244235`.
+
+Both failures are closed by test-structure changes, not relaxed checks or
+production timeouts. Handoff cases copy an immutable real committed Git source
+into their own directories and object stores; the existing bounded preparation
+hook creates that source once. Per-case source and object mutations remain
+isolated, and preparation responsiveness is still asserted at the end of the
+real asynchronous preparation. Candidate validation, no-hardlink checks,
+source rechecks, tool proofs and every negative assertion remain production
+calls. The verifier-byte regression still compares the supplied non-empty
+bytes with the packaged bytes.
+
+CLI init now independently asserts preview with no writes, explicit apply with
+validation, and repeated apply preserving the original workspace bytes. Git
+initialization and first-apply setup are separate from the single behavior
+under assertion. This adds two declared cases; the production collector,
+rather than a predicted increment, updates module telemetry and projections.
+No test skip, retry, timeout increase, workflow change or production init
+change is used. These two test files do not intersect the exact source lock.
+
+The completed native Windows full run before this hosted correction reported
+7,527 passed, 0 failed and 80 existing platform skips (7,607 collected), closing
+the inherited PowerShell module-path failure on that source. Its result is
+preserved; the post-correction complete runs, new candidate source-build proof,
+new head checks and PRMS are separate evidence and must be refreshed. Any
+remaining CI failure prevents an approval-ready claim.
+
+#### Acceptance orchestration correction
+
+The first post-correction Linux complete run is retained as failed: 7,602 passed,
+1 failed and 6 existing platform skips (7,609 collected). The unchanged
+Organization Graph deterministic generation/check case reached its existing
+120-second deadline. Its task started at 15:40:37 UTC on October 10, overlapping
+an 84.8-second typecheck and document/inventory workers started by this repair
+session. The previously accepted complete run took 86.0 seconds for that case.
+The negative complete-run JSON has SHA256 `632c686909dac07cccad5eaa74336cb2d15ffba5d2c87f8ea30394b301a41a78`.
+
+This result is not closed by a targeted rerun. Final acceptance orchestration is
+corrected to serialize heavy build/documentation checks and the native Windows
+and Linux complete runs. No Organization Graph code, test assertion, deadline,
+platform rule or automatic retry is changed. The new complete-run result must
+still pass before repository acceptance; the live PR evidence records it
+separately from the retained overlapping run.
+
+#### Post-correction complete acceptance
+
+The final implementation passed three consecutive affected runs on each host:
+Linux 346 passed, 0 failed and 1 existing platform skip; native Windows 347
+passed, 0 failed and 0 skipped, per run. The additional CLI init assertions
+retain independent preview, explicit apply and byte-preserving reapply behavior.
+
+Native Windows complete Vitest acceptance reports 7,529 passed, 0 failed and 80
+existing platform skips, with 7,609 collected; its JSON SHA256 is
+`b3089b4764209ee62f0b8dbe9b70ec46a044468cddb5c8c90f52542222690c31`. After that run and all heavy
+build/documentation workers completed, the separate Linux complete acceptance
+reports 7,603 passed, 0 failed and 6 existing platform skips, with 7,609
+collected; its JSON SHA256 is
+`0a2bc0934b0f6c0125b22c0d2834c6f60bbd0bed50bd94e228733db12320e1b7`. The unchanged Organization Graph
+deterministic generation/check case passed in 97.2 seconds at the
+same 120-second budget. The negative overlapping run remains retained; no
+narrow rerun is substituted for these complete-run results.
+
+ESLint remains 0 errors / 0 warnings. The production collector reports 7,609
+cases and 538 files; module-attributed counts are 10,631 across 772 files.
+Status and documentation generation are byte-identical on a second run, and
+the new test-only correction has an empty exact-source-lock intersection.
+The final documentation append is verified separately after these test runs.
+
+The independent read-only review found no blocker in the test correction. Its
+fixture probe established responsiveness, independent object stores without
+hardlinks/shared inodes, and mutation isolation. Timeout values, platform
+rules, required checks and all production negative controls are unchanged.
+This is agent review evidence and does not supply human/CODEOWNER approval.
+
+The final frozen SHA, double-clean-build artifact digests, current-head hosted
+checks and final PRMS outcome are recorded in the live PR #420 evidence after
+freezing. Source build qualification does not produce an installable package
+without fresh genuine target evidence, and cannot authorize deployment or live
+cleanup. The administrator gates stated above remain uncompleted.
