@@ -1184,3 +1184,124 @@ ran no tests; it was detected and redone rather than recorded as a pass.
 
 Across three review rounds, nine defects were found in this branch's own work,
 none of them visible to a green test suite.
+
+## PR #420 descriptor and upgrade acceptance checkpoint — 2026-10-10
+
+This append-only checkpoint supersedes the earlier narrow conclusions that
+ancestor TOCTOU had not been reproduced and that publication/read primitives
+were correct. The earlier runs and findings remain historical evidence. The
+current repair series starts at `8eac6d5e` and its implementation checkpoint is
+`e7c8212b`; final frozen head, source-build digests, hosted checks and PRMS are
+published on PR #420 so recording them does not change the candidate itself.
+This record is automated evidence, not approval, installation or qualification.
+
+### Ten finding definitions and dispositions
+
+| ID  | Confirmed defect                                                                          | Repair and behavioral evidence                                                                                                                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Pathname ancestry checks and recursive creation could escape through a replaced parent    | Linux root-to-leaf directory descriptors anchor every child operation. Static and raced parent links create no external directories or records; detected movement refuses sending. Writes already made in the original authorized directory cannot be revoked.                                |
+| Q2  | Existing-record reuse could read one inode and fsync another                              | One FD performs bounded decode, binding comparison, fsync and byte recheck. Final entry and directory-chain identities must still match; replacing the record between read and fsync refuses reuse.                                                                                           |
+| Q3  | Changing temporary-file size defeated owned-file cleanup and cleanup failures were hidden | Temporary ownership uses the created FD's dev/ino. Complete writes and file fsync precede no-overwrite link publication; owned unlink and directory fsync must complete. Short/zero-progress writes, cleanup and fsync failures refuse sending; unrelated replacement inodes are not removed. |
+| H1  | Seven evidence roles and current administrator/host inputs were not fully validated       | Mandatory closed schemas, strict decoding, actual byte digests, fixed bindings and observation validity windows are checked independently from a complete valid package. Current host evidence describes the six artifacts, identities, process and persistent state.                         |
+| H2  | Expired packages and invalid current evidence lost their specific installation gates      | All validity issues remain visible. Invalid, expired, missing, unreadable or unknown evidence generates zero installation commands. The upgrade consumes the verifier's private immutable byte snapshot rather than rereading an unbound manifest.                                            |
+| H3  | Ordinary outstanding approvals made the standalone verifier permanently fail              | Integrity remains `valid`; `validityIssues` and `outstandingGates` are distinct, with combined `unmetGates` compatibility. Actual Node subprocesses exit 0 for fresh intact packages and 2 for expired, corrupt or unknown gates.                                                             |
+| H4  | A v2 profile could use tools not proven by both builds                                    | Both v2 reports and each build's verifier/client/adminTool inputs are mandatory. Top-level paths only cross-check; partial proofs, downgraded reports and inconsistent bytes refuse preparation. Genuine v1 packages retain their profile.                                                    |
+| H5  | A required empty verifier was accepted                                                    | Preparation and independent verification require nonempty tools. A v2 profile additionally binds their actual digest/size across both reports and package bytes; genuine v1 retains its original report requirements. Empty required-tool regressions refuse.                                                                                                                |
+| H6  | Evidence could be unbounded, replaced or non-regular and block reads                      | Nonblocking, bounded FD reads reject FIFO, directory, symlink, hardlink, unsafe input permissions and replacement. Strict JSON rejects duplicate/unknown keys before evidence is trusted.                                                                                                     |
+| H7  | Activation planning depended on activation being complete                                 | Explicit prerequisite IDs are topologically ordered. Unactivated startup obtains the real nonce before governance preparation; graph tests reject cycles and later prerequisites.                                                                                                             |
+
+Record publication and historical record reads now explicitly require Linux
+descriptor capabilities. Windows/macOS and missing capabilities return stable
+`UNSUPPORTED_PLATFORM` before record writes or Broker sends; there is no weak
+pathname fallback. Historical status still needs no surviving registry or local
+runtime identity on a supported platform. The record schema, Broker protocol,
+fixed identity, authority reader and Workflow execution permissions are unchanged.
+
+### Additional findings from the independent acceptance review
+
+The read-only reviewer found further defects after the original ten-item scope.
+All effective findings were repaired rather than deferred:
+
+- A package-declared unknown gate was ignored. Declared gates are now validated
+  and retained; unknown gates refuse integrity evaluation with exit 2 and zero
+  install commands. Ordinary outstanding authorization gates remain informational.
+- Arrays could pass some digest checks by implicit string conversion. Source-lock
+  and evidence digests must be actual strings; selected binding fields are closed
+  and type-checked against the original administrator-input bytes.
+- Canonically equivalent explicit repository URLs conflicted with record status.
+  The CLI compares normalized `owner/name` bindings before querying the Broker.
+- Correct-byte targets with the wrong observed owner/mode were not repaired.
+  Verified observations now produce fixed root:root/0755 replacement actions.
+  Reported destination anomalies are distinct from unsafe evidence-file inputs;
+  invalid unsigned ownership values and malformed mode observations still refuse.
+- Invalid identity claims, impossible manifest paths and lost specific gate
+  reasons were repaired with semantic checks and complete issue propagation.
+
+The final read-only review of `e7c8212b` found no confirmed functional blocker.
+Its five independent synthetic probe suites passed. This was an agent review of
+non-sensitive fixtures, not a human approval or real target observation.
+
+### Failure-first proof index
+
+These non-secret JSON reports are preserved outside the repository in the
+session's acceptance directory; their exact byte digests bind the observed
+pre-fix failures. Collection failures and syntax errors are not behavioral proof.
+
+| Report                        | Observed pre-fix result | SHA256                                                             |
+| ----------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| `q-original-before.json`      | 5 failures              | `91301b0871dfb254443ef9174da698c4fa7826be91584eac5cced5d4e2807a2e` |
+| `h-proof-before.json`         | 4 failures, 57 passes   | `f10be53c5def97826bfbb41b3baff4834ce1aca57e853951c6504ec02913d4d1` |
+| `h-evidence-before.json`      | 15 failures, 1 pass     | `02b6694635542d9ddc998be0725fdd984b12211350d14ebf70a247f39a7a30a0` |
+| `index-gates-before.json`     | 10 failures             | `418b753154df7ff7929ac75da86767cc5e89a1fa9fd94f4abec721b2a79c4ba1` |
+| `source-locks-before.json`    | 2 failures              | `5841ab0d720cf6f3bb5d47113e6c9e2d1cf3e470039ae79e9199e1ca1c6c575b` |
+| `owner-before-corrected.json` | 4 failures, 3 passes    | `c6bad7db1c8f7703edc7c8db7af4719397b84dd42cb3dd778200a5ef4209cbf6` |
+
+The owner/mode cases pass 7/7 after repair. An earlier owner replay failed test
+collection because a package dependency was unavailable; the corrected replay
+above is the behavioral evidence. No production credential or deletion was used.
+
+### Current local validation and remaining gates
+
+The final ten affected suites passed three consecutive runs on both hosts:
+Linux 343 passed / 0 failed / 1 existing platform skip per run; native Windows
+344 passed / 0 failed / 0 skipped per run. Windows inherited a PowerShell 7
+`PSModulePath`; the test-only child environment removes every case variant,
+allowing Windows PowerShell 5.1 `Get-FileHash` and optional pwsh 7 to run with
+their own defaults. Discovery and execution share that environment. No test
+skip, retry or timeout increase was added to hide the original full-suite failure.
+Final full-suite results are a separate acceptance gate and are recorded in the
+live PR evidence after those runs complete.
+
+The final Linux full Vitest run completed with 7,601 passed, 0 failed and 6
+existing platform skips (7,607 collected). Native Windows full acceptance on
+the same final source remains in progress at this documentation checkpoint;
+the earlier Windows full run is retained but does not replace that result.
+
+Linux and native Windows typechecks passed. ESLint reports 0 errors and 0 warnings;
+build passes. The production collector reports 7,607 cases across 538 files.
+Status/document generation was run twice with byte-identical second outputs.
+The source-lock intersection for this repair series is empty; binding paths,
+scope and set are unchanged, and no unrelated digest was refreshed. Historical
+production lint-lock changes remain subject to their separate contract review.
+
+Source construction and target-evidence packaging are now separate stages.
+`build-handoff.ts --source-only` can produce two independent clean Linux builds
+without inventing a target installation manifest. Its proof records all five
+artifact digests/sizes, revision, `vcs.modified=false`, real tool versions and
+lock digests, and explicitly grants no package, installation or execution
+authorization. Full installable packaging still requires fresh genuine target
+inputs. Windows build output is not substituted for Linux Node 24.18.1 proof.
+
+The earlier Git 2.34.1 and malformed ancestor Git metadata failures remain
+environment-dependent historical records. Qualified Git/Go builds do not claim
+compatibility with those failing environments; no unknown parent metadata is
+removed and VCS stamping is not disabled.
+
+PR #418 and its registry are merged into `main`; the administrator selected
+code/registry merge before real qualification. Prior packages and approvals
+remain untouched. `OpenSlack-Cleanup-Qual` and UID/GID 44180/44181 remain external
+administrator bindings requiring fresh actual-host verification, not facts
+established by fixtures. Expired October 8 task evidence cannot authorize a new
+package or qualification batch. Credentials, deployment, fixed runtime identity,
+real nonce, governance activation/Permit and the full live qualification matrix
+are external uncompleted gates. No service was started and no branch was deleted.
