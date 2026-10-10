@@ -53,9 +53,7 @@ function packageDirectory(files: Record<string, string>): { path: string; manife
   return { path, manifestSHA256: digest(text) };
 }
 
-function installationManifest(
-  entries: Array<{ path: string; sha256?: string | null }>,
-): string {
+function installationManifest(entries: Array<{ path: string; sha256?: string | null }>): string {
   const path = join(root(), 'install-manifest.json');
   writeFileSync(
     path,
@@ -97,6 +95,8 @@ function plan(overrides: Partial<PrepareCleanupTargetUpgradePlanInput> = {}) {
         { path: '/usr/lib/openslack-cleanup/executor.mjs', sha256: digest('old executor') },
       ]),
     ),
+    adminInputPath: join(root(), 'missing-admin.json'),
+    hostInspectionPath: join(root(), 'missing-host.json'),
     now: new Date('2026-09-21T00:00:00.000Z'),
   };
   return prepareCleanupTargetUpgradePlan({ ...base, ...overrides });
@@ -120,7 +120,9 @@ describe('R18-01 administrator commands are rendered safely', () => {
     (metacharacter) => {
       const rendered = renderUpgradeCommand({
         program: 'install',
-        args: [metacharacter === '\n' || metacharacter === '\r' ? '/tmp/x' : `/tmp/${metacharacter}`],
+        args: [
+          metacharacter === '\n' || metacharacter === '\r' ? '/tmp/x' : `/tmp/${metacharacter}`,
+        ],
       });
       // Either the character is refused outright, or it appears only inside
       // single quotes where a shell cannot act on it.
@@ -174,9 +176,7 @@ describe('R18-09 the fixed layout includes the Broker', () => {
     // The old manifest lists only node, so an old-manifest-driven plan would
     // never touch the Broker at all.
     const result = plan({
-      targetEvidence: evidence(
-        installationManifest([{ path: '/usr/lib/openslack-cleanup/node' }]),
-      ),
+      targetEvidence: evidence(installationManifest([{ path: '/usr/lib/openslack-cleanup/node' }])),
     });
     const broker = result.files.find((file) => file.artifact === 'cleanup-broker');
     expect(broker).toBeDefined();
@@ -213,25 +213,23 @@ describe('R18-10 observed state and manifest claims', () => {
       targetEvidence: evidence(installationManifest([])),
     });
     // Nothing is installed in this test, so every destination is missing.
-    expect(result.files.every((file) => file.observed === 'missing')).toBe(true);
-    expect(result.files.every((file) => file.action === 'install')).toBe(true);
+    expect(result.files.every((file) => file.observed === 'unverified')).toBe(true);
+    expect(result.files.every((file) => file.action === 'unverified')).toBe(true);
   });
 
   it('records the manifest claim without letting it decide the action', () => {
     const result = plan({
       targetEvidence: evidence(
-        installationManifest([
-          { path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) },
-        ]),
+        installationManifest([{ path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) }]),
       ),
     });
     const node = result.files.find((file) => file.artifact === 'node')!;
     // The manifest claims a digest but the destination does not exist, so the
     // claim cannot be confirmed here and the action follows the observation.
     // The disagreement branch itself is covered by classifyDestination above.
-    expect(node.manifestClaimedSHA256).toBe('a'.repeat(64));
-    expect(node.observed).toBe('missing');
-    expect(node.action).toBe('install');
+    expect(node.manifestClaimedSHA256).toBeNull();
+    expect(node.observed).toBe('unverified');
+    expect(node.action).toBe('unverified');
   });
 
   it('propagates the package gate when the package is unverified', () => {
@@ -253,10 +251,11 @@ describe('R18-11 the nonce step is not blocked by activation', () => {
     expect(start.blockedBy).not.toContain(CLEANUP_TARGET_UPGRADE_GATES.brokerActivation);
   });
 
-  it('blocks the governance PR step on activation, which needs the nonce', () => {
+  it('prepares governance from the nonce without requiring its activation output', () => {
     const result = plan();
     const governance = result.steps.find((step) => step.id === 'prepare-governance-pr')!;
-    expect(governance.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.brokerActivation);
+    expect(governance.blockedBy).not.toContain(CLEANUP_TARGET_UPGRADE_GATES.brokerActivation);
+    expect(governance.dependsOn).toEqual(['start-unactivated']);
   });
 
   it('orders the stages so the nonce is obtained before activation is prepared', () => {
@@ -278,10 +277,34 @@ describe('R18-09/R18-10 destination classification', () => {
 
   it.each([
     ['missing -> install', { state: 'missing' as const, sha256: null }, HASH_A, null, 'install'],
-    ['present and matching -> current', { state: 'present' as const, sha256: HASH_A }, HASH_A, null, 'current'],
-    ['present and differing -> replace', { state: 'present' as const, sha256: HASH_B }, HASH_A, null, 'replace'],
-    ['unreadable -> unverified', { state: 'unreadable' as const, sha256: null }, HASH_A, null, 'unverified'],
-    ['present with no candidate digest -> replace', { state: 'present' as const, sha256: HASH_A }, '', null, 'replace'],
+    [
+      'present and matching -> current',
+      { state: 'present' as const, sha256: HASH_A },
+      HASH_A,
+      null,
+      'current',
+    ],
+    [
+      'present and differing -> replace',
+      { state: 'present' as const, sha256: HASH_B },
+      HASH_A,
+      null,
+      'replace',
+    ],
+    [
+      'unreadable -> unverified',
+      { state: 'unreadable' as const, sha256: null },
+      HASH_A,
+      null,
+      'unverified',
+    ],
+    [
+      'present with no candidate digest -> replace',
+      { state: 'present' as const, sha256: HASH_A },
+      '',
+      null,
+      'replace',
+    ],
   ])('classifies %s', (_label, observed, candidate, claimed, expected) => {
     expect(classifyDestination(observed, candidate, claimed).action).toBe(expected);
   });
@@ -323,9 +346,7 @@ describe('diagnostics reach the administrator', () => {
     writeFileSync(present, 'installed node bytes');
     const result = plan({
       targetEvidence: evidence(
-        installationManifest([
-          { path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) },
-        ]),
+        installationManifest([{ path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) }]),
       ),
     });
     // Nothing is installed in this fixture, so the claim cannot be confirmed and
@@ -371,7 +392,7 @@ describe('D8 no install instruction while the package or evidence is invalid', (
     expect(upgrade.commands).toEqual([]);
   });
 
-  it('still emits install commands when everything is valid', () => {
+  it('emits no install commands for the deliberately incomplete fixture', () => {
     // The gate must not disable the plan unconditionally. This fixture's package
     // is unverified, so assert the step is at least structured to carry them.
     const result = plan();
@@ -420,9 +441,9 @@ describe('cleanup target upgrade plan', () => {
 
     // Nothing is installed on this host, so every destination is planned as an
     // install regardless of what the manifest claims about it.
-    expect(byArtifact.get('node')).toBe('install');
-    expect(byArtifact.get('executor.mjs')).toBe('install');
-    expect(result.files.every((file) => file.observed === 'missing')).toBe(true);
+    expect(byArtifact.get('node')).toBe('unverified');
+    expect(byArtifact.get('executor.mjs')).toBe('unverified');
+    expect(result.files.every((file) => file.observed === 'unverified')).toBe(true);
     expect(result.schema).toBe(CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA);
     expect(result.createdAt).toBe('2026-09-21T00:00:00.000Z');
   });
@@ -436,7 +457,7 @@ describe('cleanup target upgrade plan', () => {
     // The layout, not the manifest, decides how many destinations exist.
     expect(result.files).toHaveLength(CLEANUP_INSTALL_LAYOUT.length);
     const node = result.files.find((file) => file.artifact === 'node')!;
-    expect(node.action).toBe('install');
+    expect(node.action).toBe('unverified');
     expect(node.installedSHA256).toBeNull();
   });
 
@@ -492,6 +513,8 @@ describe('cleanup target upgrade plan', () => {
       candidateHead: HEAD,
       manifestSHA256: pkg.manifestSHA256,
       targetEvidence: evidence(manifestPath),
+      adminInputPath: join(root(), 'missing-admin.json'),
+      hostInspectionPath: join(root(), 'missing-host.json'),
       now: new Date('2026-09-21T00:00:00.000Z'),
     });
 
@@ -519,12 +542,12 @@ describe('cleanup target upgrade plan', () => {
     expect(result.unmetGates).toContain(CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete);
   });
 
-  it.each([
-    { candidateHead: 'short' },
-    { manifestSHA256: 'nothex' },
-  ])('rejects invalid bindings %o', (patch) => {
-    expect(() => plan(patch)).toThrowError(CleanupTargetUpgradeError);
-  });
+  it.each([{ candidateHead: 'short' }, { manifestSHA256: 'nothex' }])(
+    'rejects invalid bindings %o',
+    (patch) => {
+      expect(() => plan(patch)).toThrowError(CleanupTargetUpgradeError);
+    },
+  );
 
   it.each([
     { packageDirectory: '/tmp/root/secrets/pkg' },
@@ -544,9 +567,7 @@ describe('cleanup target upgrade plan', () => {
         manifestSHA256: pkg.manifestSHA256,
         targetEvidence: { ...present, identityPath: '/tmp/root/credentials/identity.json' },
       }),
-    ).toThrowError(
-      expect.objectContaining({ code: 'UPGRADE_PATH_SENSITIVE' }) as unknown as Error,
-    );
+    ).toThrowError(expect.objectContaining({ code: 'UPGRADE_PATH_SENSITIVE' }) as unknown as Error);
   });
 
   it('rejects a relative package path', () => {

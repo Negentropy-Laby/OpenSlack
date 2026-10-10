@@ -2,6 +2,7 @@ export { fetchPRDetails } from './fetch.js';
 export {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
+  evaluateCleanupHandoffVerification,
   CleanupHandoffError,
   CLEANUP_HANDOFF_PROFILES,
 } from './cleanup-handoff.js';

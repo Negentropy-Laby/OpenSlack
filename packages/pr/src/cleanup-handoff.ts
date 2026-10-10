@@ -10,13 +10,17 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readSync,
   readdirSync,
   realpathSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import {
+  readCleanupBoundedFile,
+  CleanupFileBoundaryError,
+} from './internal/cleanup-file-boundary.js';
 import { readCleanupBrokerBuildInfo } from './internal/cleanup-handoff-build-info.js';
 
 export type CleanupHandoffErrorCode =
@@ -124,6 +128,8 @@ export interface VerifyCleanupHandoffPackageResult {
   fileCount: number;
   errors: CleanupHandoffErrorCode[];
   unmetGates: string[];
+  validityIssues: string[];
+  outstandingGates: string[];
   installationAuthorized: false;
   executionAuthorized: false;
 }
@@ -332,26 +338,45 @@ function ancestors(path: string): void {
 }
 function safeRead(path: string): Buffer {
   path = safePath(path);
-  ancestors(path);
-  const before = lstatSync(path);
-  check(
-    before.isFile() && before.nlink === 1 && before.size <= 256 * 1024 * 1024,
-    'HANDOFF_PATH_UNSAFE',
-  );
-  const binding = (s: typeof before) =>
-    [s.dev, s.ino, s.mode, s.nlink, s.size, s.mtimeMs, s.ctimeMs].join(':');
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
-    check(binding(fstatSync(fd)) === binding(before), 'HANDOFF_SOURCE_CHANGED');
-    const raw = readFileSync(fd);
-    check(
-      binding(fstatSync(fd)) === binding(before) && binding(lstatSync(path)) === binding(before),
-      'HANDOFF_SOURCE_CHANGED',
-    );
+    if (process.platform === 'linux') return readCleanupBoundedFile(path, 256 * 1024 * 1024);
+    // Offline read-only verification remains portable. It never publishes a record.
     ancestors(path);
-    return raw;
-  } finally {
-    closeSync(fd);
+    const before = lstatSync(path);
+    check(
+      before.isFile() && before.nlink === 1 && before.size <= 256 * 1024 * 1024,
+      'HANDOFF_PATH_UNSAFE',
+    );
+    const binding = (s: typeof before) =>
+      [s.dev, s.ino, s.mode, s.nlink, s.size, s.mtimeMs, s.ctimeMs].join(':');
+    const fd = openSync(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
+    try {
+      check(binding(fstatSync(fd)) === binding(before), 'HANDOFF_SOURCE_CHANGED');
+      const raw = Buffer.alloc(before.size + 1);
+      let count = 0;
+      while (count < raw.length) {
+        const n = readSync(fd, raw, count, raw.length - count, count);
+        if (n === 0) break;
+        count += n;
+      }
+      check(
+        count === before.size &&
+          binding(fstatSync(fd)) === binding(before) &&
+          binding(lstatSync(path)) === binding(before),
+        'HANDOFF_SOURCE_CHANGED',
+      );
+      ancestors(path);
+      return raw.subarray(0, count);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (error) {
+    if (error instanceof CleanupFileBoundaryError)
+      fail(error.code === 'FILE_CHANGED' ? 'HANDOFF_SOURCE_CHANGED' : 'HANDOFF_PATH_UNSAFE');
+    throw error;
   }
 }
 function git(root: string, args: string[]): string {
@@ -547,6 +572,10 @@ function buildReport(
   // the earlier schemas bind broker and executor only, and must keep verifying:
   // requiring tool proofs of them would invalidate already-published packages.
   if (report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2) {
+    check(
+      tools.every((raw) => raw.length > 0),
+      'HANDOFF_BUILD_MISMATCH',
+    );
     proofs.push(['verifier', tools[0]], ['client', tools[1]], ['adminTool', tools[2]]);
   }
   for (const [name, rawBytes] of proofs) {
@@ -639,12 +668,16 @@ export function prepareCleanupHandoffDraft(
     );
     const { sourceRoot: root, outputDirectory: output } = assertCleanupHandoffStaging(input);
     const files = new Map<string, Buffer>();
-    // The v2 profile is selected only when every new tool path is supplied;
-    // otherwise the builder writes the original profile unchanged.
+    // A partial v2 request must not silently omit its tools by selecting v1.
+    const wantsClientTools =
+      input.clientPath !== undefined ||
+      input.adminToolPath !== undefined ||
+      input.clientDocPath !== undefined;
     const withClientTools =
       input.clientPath !== undefined &&
       input.adminToolPath !== undefined &&
       input.clientDocPath !== undefined;
+    check(!wantsClientTools || withClientTools, 'HANDOFF_INPUT_INVALID');
     const profile = withClientTools ? PROFILE_V2 : PROFILE_V1;
     const add = (name: string, bytes: Buffer) => {
       check(!files.has(name), 'HANDOFF_INPUT_INVALID');
@@ -735,18 +768,29 @@ export function prepareCleanupHandoffDraft(
       // the explicitly supplied top-level paths. Reading the report first is what
       // makes that choice, so a v1 package never ships an empty verifier.
       const declaredSchema = (JSON.parse(report.toString('utf8')) as { schema?: unknown }).schema;
+      check(
+        !withClientTools || declaredSchema === CLEANUP_HANDOFF_SCHEMAS.buildV2,
+        'HANDOFF_BUILD_MISMATCH',
+      );
       const requiresToolProofs = declaredSchema === CLEANUP_HANDOFF_SCHEMAS.buildV2;
       const tools = [
         toolBytes(requiresToolProofs, build.verifierPath, input.verifierPath),
         // The client and administrator tools are only in the v2 profile, so an
         // earlier profile must not be required to supply them at all.
-        withClientTools
-          ? toolBytes(requiresToolProofs, build.clientPath, input.clientPath)
-          : EMPTY,
+        withClientTools ? toolBytes(requiresToolProofs, build.clientPath, input.clientPath) : EMPTY,
         withClientTools
           ? toolBytes(requiresToolProofs, build.adminToolPath, input.adminToolPath)
           : EMPTY,
       ] as const;
+      if (withClientTools) {
+        for (const [topLevel, captured] of [
+          [input.verifierPath, tools[0]],
+          [input.clientPath, tools[1]],
+          [input.adminToolPath, tools[2]],
+        ] as const)
+          if (topLevel !== undefined)
+            check(safeRead(topLevel).equals(captured), 'HANDOFF_BUILD_MISMATCH');
+      }
       const parsed = buildReport(
         report,
         broker,
@@ -968,7 +1012,9 @@ export function prepareCleanupHandoffDraft(
     );
     // Recheck before any output: a change while inputs were being read cannot publish a draft.
     cleanSource(root, input.candidateHead);
-    const sums = Buffer.from(profile.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''));
+    const sums = Buffer.from(
+      profile.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''),
+    );
     const manifestSHA256 = sha(sums),
       packageDirectory = join(output, 'package');
     // Exclusive creation, never overwrite an old candidate. On I/O failure preserve partial
@@ -1143,6 +1189,8 @@ export function verifyCleanupHandoffPackage(
     fileCount: 0,
     errors: [],
     unmetGates: [...GATES],
+    validityIssues: [],
+    outstandingGates: [...GATES],
     installationAuthorized: false,
     executionAuthorized: false,
   };
@@ -1204,7 +1252,14 @@ export function verifyCleanupHandoffPackage(
         HASH.test(String(locks.goModuleSHA256)),
       'HANDOFF_CANDIDATE_MISMATCH',
     );
-    for (const id of ['a', 'b'])
+    check(bytes.get('tools/verify-handoff.mjs')!.length > 0, 'HANDOFF_BUILD_MISMATCH');
+    for (const id of ['a', 'b']) {
+      if (profile === PROFILE_V2)
+        check(
+          json(bytes.get(`evidence/build-report-${id}.json`)!).schema ===
+            CLEANUP_HANDOFF_SCHEMAS.buildV2,
+          'HANDOFF_BUILD_MISMATCH',
+        );
       buildReport(
         bytes.get(`evidence/build-report-${id}.json`)!,
         bytes.get('artifacts/cleanup-broker')!,
@@ -1223,6 +1278,7 @@ export function verifyCleanupHandoffPackage(
         verifiedToolchain(locks.toolchain),
         sha,
       );
+    }
     const index = json(bytes.get('evidence/qualification-index.json')!),
       draft = json(bytes.get('draft/inputs.DRAFT.json')!);
     check(
@@ -1246,11 +1302,66 @@ export function verifyCleanupHandoffPackage(
     const task = verifyDraftRelations(bytes, sha);
     const now = nowMs(input.now);
     if (now < timestamp(task.notBefore) || now >= timestamp(task.expiresAt))
-      result.unmetGates.push('TASK_EVIDENCE_EXPIRED');
+      result.validityIssues.push('TASK_EVIDENCE_EXPIRED');
+    const suppliedSelected = object(draft.selected);
+    const selected = {
+      ...storedFields(bytes.get('evidence/prior-admin-inputs.md')!),
+      candidate_head: input.candidateHead,
+      approval_status: 'DRAFT',
+      approved_by: 'REQUIRED',
+      approved_at_utc: 'REQUIRED',
+    };
+    delete (selected as Record<string, string>).package_manifest_sha256;
+    check(
+      Object.keys(suppliedSelected).length === Object.keys(selected).length &&
+        Object.entries(selected).every(([field, value]) => suppliedSelected[field] === value),
+      'HANDOFF_EVIDENCE_INVALID',
+    );
+    const artifacts = Object.fromEntries(
+      [...entries]
+        .filter(([name]) => name.startsWith('artifacts/'))
+        .map(([name, hash]) => [name.slice('artifacts/'.length), hash]),
+    );
+    snapshots.set(
+      result,
+      Object.freeze({
+        selected: Object.freeze({ ...selected }),
+        artifactDigests: Object.freeze(artifacts),
+      }),
+    );
     result.fileCount = profile.length;
     result.valid = true;
   } catch (error) {
     result.errors.push(error instanceof CleanupHandoffError ? error.code : 'HANDOFF_IO_FAILED');
   }
+  result.validityIssues.push(...result.errors);
+  result.unmetGates = [...result.outstandingGates, ...result.validityIssues];
   return result;
+}
+
+interface VerifiedHandoffSnapshot {
+  selected: Readonly<Record<string, string>>;
+  artifactDigests: Readonly<Record<string, string>>;
+}
+const snapshots = new WeakMap<VerifyCleanupHandoffPackageResult, VerifiedHandoffSnapshot>();
+/** Package-internal immutable projection from the same verification read. Not a root export. */
+export function verifiedCleanupHandoffSnapshot(
+  result: VerifyCleanupHandoffPackageResult,
+): VerifiedHandoffSnapshot | undefined {
+  return snapshots.get(result);
+}
+/** Integrity/time assessment is separate from the administrator's outstanding authorizations. */
+export function evaluateCleanupHandoffVerification(
+  result: VerifyCleanupHandoffPackageResult,
+): 0 | 2 {
+  const known = new Set(GATES);
+  if (
+    !result.valid ||
+    result.errors.length ||
+    result.validityIssues.length ||
+    result.unmetGates.some((gate) => !known.has(gate)) ||
+    result.outstandingGates.some((gate) => !known.has(gate))
+  )
+    return 2;
+  return 0;
 }

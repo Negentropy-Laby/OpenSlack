@@ -23,6 +23,8 @@ const OPTIONS = [
   '--network',
   '--identity',
   '--dependency-inventory',
+  '--admin-inputs',
+  '--host-inspection',
 ] as const;
 
 const args = process.argv.slice(2);
@@ -31,13 +33,11 @@ for (let index = 0; index < args.length; index += 2) {
   const name = args[index];
   const value = args[index + 1];
   if (!name || !(OPTIONS as readonly string[]).includes(name) || !value || options.has(name)) {
-    process.stderr.write(
-      `UPGRADE_INPUT_INVALID: unexpected or repeated argument ${name ?? ''}.\n`,
-    );
+    process.stderr.write(`UPGRADE_INPUT_INVALID: unexpected or repeated argument ${name ?? ''}.\n`);
     process.stderr.write(
       'Usage: admin-upgrade.mjs --package <dir> --candidate <full SHA> --manifest-sha256 <reviewed SHA256> ' +
         '--install-manifest <path> --task-view <path> --task-attestation <path> --app-scope <path> ' +
-        '--network <path> --identity <path> --dependency-inventory <path>\n',
+        '--network <path> --identity <path> --dependency-inventory <path> --admin-inputs <path> --host-inspection <path>\n',
     );
     process.exitCode = 2;
   } else {
@@ -62,6 +62,8 @@ if (!process.exitCode) {
       candidateHead: options.get('--candidate') ?? '',
       manifestSHA256: options.get('--manifest-sha256') ?? '',
       targetEvidence,
+      adminInputPath: options.get('--admin-inputs') ?? '',
+      hostInspectionPath: options.get('--host-inspection') ?? '',
     });
     process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
     process.stdout.write(
@@ -85,7 +87,13 @@ if (!process.exitCode) {
     }
     // An unverified candidate is a hard stop for the administrator; outstanding
     // gates are expected and do not by themselves make the plan unusable.
-    if (!plan.packageVerified) process.exitCode = 2;
+    if (
+      !plan.packageVerified ||
+      plan.unmetGates.some((gate) =>
+        /(?:UNVERIFIED|UNREADABLE|INCOMPLETE|INVALID|EXPIRED|MISSING|UNSUPPORTED)$/.test(gate),
+      )
+    )
+      process.exitCode = 2;
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error ? error.message : 'UPGRADE_INPUT_INVALID: the plan could not be produced.'}\n`,

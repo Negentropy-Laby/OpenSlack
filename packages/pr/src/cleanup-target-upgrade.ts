@@ -1,12 +1,18 @@
-import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join } from 'node:path';
+import { lstatSync, statSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import {
-  CleanupHandoffError,
   verifyCleanupHandoffPackage,
+  evaluateCleanupHandoffVerification,
+  verifiedCleanupHandoffSnapshot,
   type CleanupHandoffErrorCode,
   type CleanupHandoffTargetEvidence,
 } from './cleanup-handoff.js';
+import {
+  validateUpgradeEvidence,
+  UpgradeEvidenceError,
+  UPGRADE_EVIDENCE_ROLES,
+  type ValidatedUpgradeEvidence,
+} from './internal/cleanup-upgrade-evidence.js';
 
 /**
  * Plan a controlled upgrade of a partial cleanup installation onto a verified
@@ -20,8 +26,6 @@ import {
  */
 export const CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA = 'openslack.cleanup_target_upgrade_plan.v1';
 
-/** Installation manifest schema written by the installed cleanup client. */
-const INSTALLATION_SCHEMA = 'openslack.cleanup_installation.v1';
 const HASH = /^[0-9a-f]{64}$/;
 const HEAD = /^[0-9a-f]{40}$/;
 
@@ -56,6 +60,8 @@ export interface PrepareCleanupTargetUpgradePlanInput {
   manifestSHA256: string;
   /** Current partial installation described by its installation manifest. */
   targetEvidence: CleanupHandoffTargetEvidence;
+  adminInputPath: string;
+  hostInspectionPath: string;
   now?: Date;
 }
 
@@ -115,7 +121,7 @@ export function renderUpgradeCommand(command: CleanupUpgradeCommand): string {
 }
 
 /** What the target itself reports about a layout destination. */
-type ObservedState = 'present' | 'missing' | 'unreadable';
+type ObservedState = 'present' | 'missing' | 'unreadable' | 'unverified';
 
 export interface ObservedFile {
   state: ObservedState;
@@ -136,7 +142,7 @@ export function classifyDestination(
   manifestClaimedSHA256: string | null,
 ): { action: 'install' | 'replace' | 'current' | 'unverified'; claimDisagrees: boolean } {
   const action: 'install' | 'replace' | 'current' | 'unverified' =
-    observed.state === 'unreadable'
+    observed.state === 'unreadable' || observed.state === 'unverified'
       ? 'unverified'
       : observed.state === 'missing'
         ? 'install'
@@ -152,30 +158,6 @@ export function classifyDestination(
       observed.state === 'present' &&
       manifestClaimedSHA256 !== observed.sha256,
   };
-}
-
-/**
- * Observe a destination directly. The installation manifest is only a claim;
- * the current state of the target is read from the target.
- */
-function observeFile(path: string): ObservedFile {
-  let stats: ReturnType<typeof lstatSync>;
-  try {
-    stats = lstatSync(path);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT'
-      ? { state: 'missing', sha256: null }
-      : { state: 'unreadable', sha256: null };
-  }
-  if (!stats.isFile()) return { state: 'unreadable', sha256: null };
-  try {
-    return {
-      state: 'present',
-      sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
-    };
-  } catch {
-    return { state: 'unreadable', sha256: null };
-  }
 }
 
 export interface CleanupTargetUpgradeFileAction {
@@ -211,6 +193,7 @@ export interface CleanupTargetUpgradeStep {
   stopCondition: string;
   /** Gates that must be satisfied before this step may run. */
   blockedBy: string[];
+  dependsOn: string[];
 }
 
 export interface PrepareCleanupTargetUpgradePlanResult {
@@ -220,6 +203,7 @@ export interface PrepareCleanupTargetUpgradePlanResult {
   manifestSHA256: string;
   packageVerified: boolean;
   packageErrors: CleanupHandoffErrorCode[];
+  evidenceIssues: { role: string; reason: string }[];
   files: CleanupTargetUpgradeFileAction[];
   steps: CleanupTargetUpgradeStep[];
   administratorCommands: string[];
@@ -246,6 +230,8 @@ export interface PrepareCleanupTargetUpgradePlanResult {
 export const CLEANUP_TARGET_UPGRADE_GATES = Object.freeze({
   packageUnverified: 'CANDIDATE_PACKAGE_UNVERIFIED',
   evidenceIncomplete: 'TARGET_EVIDENCE_INCOMPLETE',
+  evidenceInvalid: 'TARGET_EVIDENCE_INVALID',
+  platformUnsupported: 'TARGET_FILE_BOUNDARY_UNSUPPORTED',
   evidenceUnreadable: 'TARGET_EVIDENCE_UNREADABLE',
   installationMissing: 'INSTALLATION_MANIFEST_MISSING',
   installationUnreadable: 'INSTALLATION_MANIFEST_UNREADABLE',
@@ -266,55 +252,6 @@ function assertSafePath(path: string, what: string): void {
   void what;
 }
 
-/** Read the candidate package's artifact digests from its own SHA256SUMS. */
-function packageArtifacts(packageDirectory: string): Map<string, string> {
-  let text: string;
-  try {
-    text = readFileSync(join(packageDirectory, 'SHA256SUMS'), 'utf8');
-  } catch {
-    throw new CleanupTargetUpgradeError('UPGRADE_PACKAGE_UNREADABLE');
-  }
-  const artifacts = new Map<string, string>();
-  for (const line of text.split('\n')) {
-    if (line === '') continue;
-    const match = /^([a-f0-9]{64})  \.\/([A-Za-z0-9._/-]+)$/.exec(line);
-    if (!match) continue;
-    const path = match[2]!;
-    if (!path.startsWith('artifacts/')) continue;
-    artifacts.set(basename(path), match[1]!);
-  }
-  return artifacts;
-}
-
-interface InstalledFile {
-  path: string;
-  sha256: string | null;
-}
-
-function installationFiles(path: string): InstalledFile[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    throw new CleanupTargetUpgradeError('UPGRADE_INSTALLATION_UNREADABLE');
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new CleanupTargetUpgradeError('UPGRADE_INSTALLATION_UNREADABLE');
-  }
-  const manifest = parsed as { schema?: unknown; files?: unknown };
-  if (manifest.schema !== INSTALLATION_SCHEMA || !Array.isArray(manifest.files)) {
-    throw new CleanupTargetUpgradeError('UPGRADE_INSTALLATION_UNREADABLE');
-  }
-  return manifest.files.map((entry) => {
-    const file = entry as { path?: unknown; sha256?: unknown };
-    if (typeof file.path !== 'string' || file.path.length === 0) {
-      throw new CleanupTargetUpgradeError('UPGRADE_INSTALLATION_UNREADABLE');
-    }
-    const digest = typeof file.sha256 === 'string' && HASH.test(file.sha256) ? file.sha256 : null;
-    return { path: file.path, sha256: digest };
-  });
-}
-
 /**
  * Build the upgrade plan. Every returned command is for the administrator to
  * run; none is executed by this function.
@@ -322,11 +259,7 @@ function installationFiles(path: string): InstalledFile[] {
 export function prepareCleanupTargetUpgradePlan(
   input: PrepareCleanupTargetUpgradePlanInput,
 ): PrepareCleanupTargetUpgradePlanResult {
-  if (
-    !input ||
-    !HEAD.test(input.candidateHead ?? '') ||
-    !HASH.test(input.manifestSHA256 ?? '')
-  ) {
+  if (!input || !HEAD.test(input.candidateHead ?? '') || !HASH.test(input.manifestSHA256 ?? '')) {
     throw new CleanupTargetUpgradeError('UPGRADE_INPUT_INVALID');
   }
   assertSafePath(input.packageDirectory, 'packageDirectory');
@@ -337,87 +270,110 @@ export function prepareCleanupTargetUpgradePlan(
   }
 
   const unmetGates: string[] = [];
+  const evidenceIssues: { role: string; reason: string }[] = [];
   const steps: CleanupTargetUpgradeStep[] = [];
 
-  // 1. The package must verify against bindings obtained independently.
-  let verified: ReturnType<typeof verifyCleanupHandoffPackage>;
-  try {
-    verified = verifyCleanupHandoffPackage({
-      packageDirectory: input.packageDirectory,
-      candidateHead: input.candidateHead,
-      manifestSHA256: input.manifestSHA256,
-      ...(input.now ? { now: input.now } : {}),
-    });
-  } catch (error) {
-    if (!(error instanceof CleanupHandoffError)) throw error;
-    verified = {
-      valid: false,
-      candidateHead: input.candidateHead,
-      manifestSHA256: input.manifestSHA256,
-      fileCount: 0,
-      errors: [error.code],
-      unmetGates: [],
-      installationAuthorized: false,
-      executionAuthorized: false,
-    };
-  }
-  if (!verified.valid) unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
-
-  const artifacts = packageArtifacts(input.packageDirectory);
-
-  // 2. Target evidence must be present *and* readable. Missing and unreadable
-  // are distinguished rather than collapsed into one "incomplete" state.
-  const missingEvidence: string[] = [];
-  const unreadableEvidence: string[] = [];
-  for (const [name, path] of Object.entries(evidence ?? {})) {
-    if (typeof path !== 'string' || path.length === 0 || !existsSync(path)) {
-      missingEvidence.push(name);
+  // The snapshot is created only by this verification; no unbound SHA256SUMS re-read.
+  const verified = verifyCleanupHandoffPackage({
+    packageDirectory: input.packageDirectory,
+    candidateHead: input.candidateHead,
+    manifestSHA256: input.manifestSHA256,
+    now: input.now,
+  });
+  unmetGates.push(...verified.validityIssues);
+  const snapshot = verifiedCleanupHandoffSnapshot(verified);
+  if (evaluateCleanupHandoffVerification(verified) !== 0 || !snapshot)
+    unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+  const artifacts = snapshot?.artifactDigests ?? {};
+  const paths: Record<string, string | undefined> = {
+    ...Object.fromEntries(UPGRADE_EVIDENCE_ROLES.map((role) => [role, evidence?.[role]])),
+    adminInputPath: input.adminInputPath,
+    hostInspectionPath: input.hostInspectionPath,
+  };
+  let evidenceUsable = true;
+  for (const [role, path] of Object.entries(paths)) {
+    if (!path) {
+      evidenceIssues.push({ role, reason: 'MISSING' });
+      evidenceUsable = false;
+      unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete);
       continue;
     }
+    assertSafePath(path, role);
     try {
-      statSync(path);
-    } catch {
-      unreadableEvidence.push(name);
-    }
-  }
-  if (missingEvidence.length > 0) {
-    unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete);
-  }
-  if (unreadableEvidence.length > 0) {
-    unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.evidenceUnreadable);
-  }
-
-  // 3. Derive every action from the fixed layout, not from the installation
-  // manifest. The manifest is a claim about a past install and cannot prove the
-  // current state of the target; the destination itself is observed instead.
-  // The manifest is still validated and cross-checked, so a corrupt or
-  // disagreeing manifest is reported rather than silently trusted.
-  const manifestPath = evidence?.installationManifestPath;
-  let manifestClaim: Map<string, string | null> | null = null;
-  if (typeof manifestPath !== 'string' || manifestPath.length === 0 || !existsSync(manifestPath)) {
-    unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.installationMissing);
-  } else {
-    try {
-      manifestClaim = new Map(
-        installationFiles(manifestPath).map((file) => [file.path, file.sha256]),
-      );
+      const stamp = lstatSync(path);
+      if (!stamp.isFile() || stamp.isSymbolicLink()) {
+        evidenceIssues.push({ role, reason: 'NOT_REGULAR_FILE' });
+        evidenceUsable = false;
+        unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.evidenceUnreadable);
+      }
     } catch (error) {
-      if (!(error instanceof CleanupTargetUpgradeError)) throw error;
-      unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable);
+      evidenceIssues.push({
+        role,
+        reason: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'MISSING' : 'UNREADABLE',
+      });
+      evidenceUsable = false;
+      unmetGates.push(
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete
+          : CLEANUP_TARGET_UPGRADE_GATES.evidenceUnreadable,
+      );
     }
   }
-
+  if (!evidence?.installationManifestPath)
+    unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.installationMissing);
+  else {
+    try {
+      if (!lstatSync(evidence.installationManifestPath).isFile())
+        unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable);
+    } catch (error) {
+      unmetGates.push(
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? CLEANUP_TARGET_UPGRADE_GATES.installationMissing
+          : CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable,
+      );
+    }
+  }
+  let capture: ValidatedUpgradeEvidence | undefined;
+  if (evidenceUsable && snapshot) {
+    try {
+      capture = validateUpgradeEvidence({
+        ...input,
+        selected: snapshot.selected,
+        layout: CLEANUP_INSTALL_LAYOUT,
+        now: (input.now ?? new Date()).getTime(),
+      });
+    } catch (error) {
+      const issue =
+        error instanceof UpgradeEvidenceError
+          ? { role: error.role, reason: error.reason }
+          : { role: 'targetEvidence', reason: 'EVIDENCE_INVALID' };
+      evidenceIssues.push(issue);
+      unmetGates.push(
+        issue.reason === 'UNSUPPORTED_PLATFORM'
+          ? CLEANUP_TARGET_UPGRADE_GATES.platformUnsupported
+          : CLEANUP_TARGET_UPGRADE_GATES.evidenceInvalid,
+      );
+      if (issue.role === 'installationManifestPath')
+        unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.installationUnreadable);
+    }
+  }
   const files: CleanupTargetUpgradeFileAction[] = CLEANUP_INSTALL_LAYOUT.map((entry) => {
-    const candidate = artifacts.get(entry.artifact) ?? '';
-    const observed = observeFile(entry.path);
-    const claimed = manifestClaim?.get(entry.path) ?? null;
+    const candidate = artifacts[entry.artifact] ?? '';
+    const current = capture?.files.find((file) => file.path === entry.path);
+    const observed: ObservedFile = current
+      ? { state: current.state, sha256: current.sha256 }
+      : { state: 'unverified', sha256: null };
+    const claimed = capture?.manifest.get(entry.path) ?? null;
     const classified = classifyDestination(observed, candidate, claimed);
     return {
       path: entry.path,
       artifact: entry.artifact,
       mode: entry.mode,
       owner: entry.owner,
-      action: classified.action,
+      action:
+        classified.action === 'current' && current?.mode !== entry.mode
+          ? 'replace'
+          : classified.action,
       observed: observed.state,
       installedSHA256: observed.sha256,
       candidateSHA256: candidate,
@@ -425,17 +381,12 @@ export function prepareCleanupTargetUpgradePlan(
       claimDisagrees: classified.claimDisagrees,
     };
   });
-  if (files.some((file) => file.action === 'unverified' || file.candidateSHA256 === '')) {
+  if (files.some((file) => file.action === 'unverified' || !file.candidateSHA256))
     unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.destinationUnverified);
-  }
-
-  // Install instructions are generated only when the package verified, the
-  // evidence is present and readable, and every destination was classified.
   const installable =
-    verified.valid &&
-    missingEvidence.length === 0 &&
-    unreadableEvidence.length === 0 &&
-    files.every((file) => file.action !== 'unverified' && file.candidateSHA256 !== '');
+    evaluateCleanupHandoffVerification(verified) === 0 &&
+    capture !== undefined &&
+    files.every((file) => file.action !== 'unverified' && HASH.test(file.candidateSHA256));
   const replace = files.filter((file) => file.action !== 'current');
   const verifiedGate = CLEANUP_TARGET_UPGRADE_GATES.packageUnverified;
   const evidenceGate = CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete;
@@ -447,6 +398,7 @@ export function prepareCleanupTargetUpgradePlan(
 
   steps.push({
     id: 'verify-candidate',
+    dependsOn: [],
     summary:
       'Independently verify the candidate package against the candidate commit and manifest digest.',
     actor: 'administrator',
@@ -472,6 +424,7 @@ export function prepareCleanupTargetUpgradePlan(
   });
   steps.push({
     id: 'refresh-target-evidence',
+    dependsOn: ['verify-candidate'],
     summary:
       'Pre-create this batch qualification targets and refresh App, network and full task evidence.',
     actor: 'administrator',
@@ -482,7 +435,32 @@ export function prepareCleanupTargetUpgradePlan(
     blockedBy: [CLEANUP_TARGET_UPGRADE_GATES.qualificationTargets],
   });
   steps.push({
+    id: 'approve-new-inputs',
+    summary: 'Review and approve these exact new inputs; old approval does not apply.',
+    actor: 'administrator',
+    commands: [],
+    workingDirectory: input.packageDirectory,
+    expectedOutput: 'Current administrator approval bound to this candidate and manifest.',
+    stopCondition: 'Any binding differs or evidence expires.',
+    blockedBy: [approvalGate],
+    dependsOn: ['verify-candidate', 'refresh-target-evidence'],
+  });
+  steps.push({
+    id: 'stop-and-consistent-backup',
+    summary:
+      'Use the verified supervisor to stop the broker and preserve one consistent ledger/journal backup; never clear consumption history.',
+    actor: 'administrator',
+    commands: [],
+    workingDirectory: input.packageDirectory,
+    expectedOutput: 'Stopped process and verified consistent backup.',
+    stopCondition:
+      'Unknown supervisor, process, locks or state: stop and request actual host evidence.',
+    blockedBy: [approvalGate],
+    dependsOn: ['approve-new-inputs'],
+  });
+  steps.push({
     id: 'controlled-upgrade',
+    dependsOn: ['stop-and-consistent-backup'],
     summary:
       `Replace ${replace.length} layout destination(s) from the verified package. Preserve the ` +
       'existing ledger, journal and consistent backup; do not rebuild accounts or clear state.',
@@ -518,10 +496,27 @@ export function prepareCleanupTargetUpgradePlan(
       installUnreadableGate,
       destinationGate,
       approvalGate,
+      CLEANUP_TARGET_UPGRADE_GATES.evidenceInvalid,
+      CLEANUP_TARGET_UPGRADE_GATES.platformUnsupported,
+      ...verified.validityIssues,
     ],
   });
   steps.push({
+    id: 'credentials-and-identity',
+    dependsOn: ['controlled-upgrade'],
+    summary:
+      'Configure broker credentials and the fixed runtime identity. The agent does not perform this step.',
+    actor: 'administrator',
+    commands: [],
+    workingDirectory: input.packageDirectory,
+    expectedOutput: 'The broker authenticates its OS peer against the fixed identity.',
+    stopCondition:
+      'The fixed identity or approved UID/GID mapping differs: stop, do not recreate it.',
+    blockedBy: [approvalGate],
+  });
+  steps.push({
     id: 'installation-isolation-verification',
+    dependsOn: ['credentials-and-identity'],
     summary:
       'Verify the installed layout in isolation: digests, owner, mode, and that the broker starts ' +
       'against the candidate revision before it is activated.',
@@ -533,18 +528,8 @@ export function prepareCleanupTargetUpgradePlan(
     blockedBy: [approvalGate, destinationGate, installUnreadableGate],
   });
   steps.push({
-    id: 'credentials-and-identity',
-    summary:
-      'Configure broker credentials and the fixed runtime identity. The agent does not perform this step.',
-    actor: 'administrator',
-    commands: [],
-    workingDirectory: input.packageDirectory,
-    expectedOutput: 'The broker authenticates its OS peer against the fixed identity.',
-    stopCondition: 'The fixed identity or approved UID/GID mapping differs: stop, do not recreate it.',
-    blockedBy: [approvalGate],
-  });
-  steps.push({
     id: 'start-unactivated',
+    dependsOn: ['installation-isolation-verification'],
     summary:
       'Start the broker unactivated and record the real boot nonce it reports. This step produces ' +
       'the nonce, so it is deliberately not blocked by activation.',
@@ -557,6 +542,7 @@ export function prepareCleanupTargetUpgradePlan(
   });
   steps.push({
     id: 'prepare-governance-pr',
+    dependsOn: ['start-unactivated'],
     summary:
       'Prepare the governance PR, binding registry, policy and Permit to the same authority commit ' +
       'and the same stable governance repository ID, using the nonce from this boot. Verify the ' +
@@ -565,11 +551,13 @@ export function prepareCleanupTargetUpgradePlan(
     commands: [],
     workingDirectory: input.packageDirectory,
     expectedOutput: 'An activation bound to this boot nonce and one authority commit.',
-    stopCondition: 'The nonce is stale, or a repository ID differs: stop and re-boot rather than swap.',
-    blockedBy: [CLEANUP_TARGET_UPGRADE_GATES.brokerActivation, approvalGate],
+    stopCondition:
+      'The nonce is stale, or a repository ID differs: stop and re-boot rather than swap.',
+    blockedBy: [approvalGate],
   });
   steps.push({
     id: 'qualification-matrix',
+    dependsOn: ['prepare-governance-pr'],
     summary:
       'After governance approval and release, run the qualification matrix and record state and ' +
       'evidence per stage. Never hot-swap the task view: a refresh needs supervised shutdown, a new ' +
@@ -598,6 +586,7 @@ export function prepareCleanupTargetUpgradePlan(
     manifestSHA256: input.manifestSHA256,
     packageVerified: verified.valid,
     packageErrors: verified.errors,
+    evidenceIssues,
     manifestDisagreements: files.filter((file) => file.claimDisagrees).map((file) => file.path),
     files,
     steps,
