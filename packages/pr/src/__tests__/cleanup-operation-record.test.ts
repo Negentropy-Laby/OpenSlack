@@ -13,6 +13,7 @@ import {
   type CleanupOperationRequest,
 } from '../cleanup-operation-record.js';
 import { cleanupBrokerExecutionDigest } from '../internal/cleanup-broker-digest.js';
+import { snapshotAllowingOutbox } from './helpers/cleanup-record-snapshot.js';
 
 const roots: string[] = [];
 
@@ -56,7 +57,7 @@ function record(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperat
 describe('cleanup operation query record', () => {
   it('publishes a record under the authorized outbox subdirectory and reads it back', () => {
     const root = temporaryRoot();
-    const saved = saveCleanupOperationRecord(record(), { rootDir: root });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
 
     expect(saved.status).toBe('published');
     expect(saved.path).toBe(
@@ -70,8 +71,8 @@ describe('cleanup operation query record', () => {
 
   it('reuses an identical record for the same operation and binding', () => {
     const root = temporaryRoot();
-    const first = saveCleanupOperationRecord(record(), { rootDir: root });
-    const second = saveCleanupOperationRecord(record(), { rootDir: root });
+    const first = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
+    const second = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
 
     expect(first.status).toBe('published');
     expect(second.status).toBe('reused');
@@ -80,11 +81,11 @@ describe('cleanup operation query record', () => {
 
   it('refuses a different binding for an already-published operation', () => {
     const root = temporaryRoot();
-    saveCleanupOperationRecord(record(), { rootDir: root });
+    saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
 
     // Same operation, different permit: a different durable binding.
     expect(() =>
-      saveCleanupOperationRecord(record({ permitId: 'PERMIT-0002' }), { rootDir: root }),
+      saveCleanupOperationRecord(record({ permitId: 'PERMIT-0002' }), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
     ).toThrowError(
       expect.objectContaining({ code: 'BINDING_CONFLICT' }) as unknown as Error,
     );
@@ -96,14 +97,14 @@ describe('cleanup operation query record', () => {
     expect(() =>
       saveCleanupOperationRecord(
         { ...value, requestDigest: 'f'.repeat(64) },
-        { rootDir: root },
+        { rootDir: root, snapshot: snapshotAllowingOutbox() },
       ),
     ).toThrowError(expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error);
   });
 
   it('rejects unknown and missing keys', () => {
     const root = temporaryRoot();
-    const saved = saveCleanupOperationRecord(record(), { rootDir: root });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
     const parsed = JSON.parse(readFileSync(saved.path, 'utf8')) as Record<string, unknown>;
 
     const withUnknown = { ...parsed, extra: 1 };
@@ -126,7 +127,7 @@ describe('cleanup operation query record', () => {
 
   it('rejects duplicate keys before last-key-wins can apply', () => {
     const root = temporaryRoot();
-    const saved = saveCleanupOperationRecord(record(), { rootDir: root });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
     const text = readFileSync(saved.path, 'utf8');
     const digestValue = JSON.stringify(record().requestDigest);
     const duplicated = text.replace(
@@ -149,7 +150,7 @@ describe('cleanup operation query record', () => {
     expect(() =>
       saveCleanupOperationRecord(
         { ...record(), request: value, requestDigest: 'a'.repeat(64) },
-        { rootDir: root },
+        { rootDir: root, snapshot: snapshotAllowingOutbox() },
       ),
     ).toThrowError(expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error);
   });
@@ -165,7 +166,7 @@ describe('cleanup operation query record', () => {
           request: value as CleanupOperationRequest,
           requestDigest: 'a'.repeat(64),
         },
-        { rootDir: root },
+        { rootDir: root, snapshot: snapshotAllowingOutbox() },
       ),
     ).toThrowError(expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error);
   });
@@ -187,7 +188,7 @@ describe('cleanup operation query record', () => {
 
   it('rejects a symlink to a record', () => {
     const root = temporaryRoot();
-    const saved = saveCleanupOperationRecord(record(), { rootDir: root });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
     const link = join(root, 'link.json');
     symlinkSync(saved.path, link);
 

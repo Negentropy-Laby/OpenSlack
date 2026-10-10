@@ -1,4 +1,5 @@
 import { decodeStrictJSON } from '@openslack/core';
+import { authorizeAgentAction, type AgentPermissionSnapshot } from '@openslack/kernel';
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
@@ -13,7 +14,7 @@ import {
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import type { CleanupBrokerRequest } from './cleanup-broker-client.js';
 import { cleanupBrokerExecutionDigest } from './internal/cleanup-broker-digest.js';
 
@@ -74,6 +75,7 @@ export type CleanupOperationRecordErrorCode =
   | 'SENSITIVE_PATH'
   | 'SYMLINK_REJECTED'
   | 'BINDING_CONFLICT'
+  | 'BLOCKED_AUTHORIZATION'
   | 'PERSISTENCE_FAILED';
 
 export class CleanupOperationRecordError extends Error {
@@ -413,6 +415,39 @@ function identityOf(path: string): string | null {
 }
 
 /**
+ * Options for publishing a record.
+ *
+ * `snapshot` is required rather than optional so that a caller cannot skip the
+ * authorization step by omitting it: a null snapshot is an unknown principal
+ * and the production authorizer denies it.
+ */
+export interface SaveCleanupOperationRecordOptions {
+  rootDir: string;
+  snapshot: AgentPermissionSnapshot | null;
+}
+
+/**
+ * Authorize the action against the record's real workspace-relative path, with
+ * deny precedence, before any directory or file is created.
+ */
+function assertRecordPathAuthorized(
+  snapshot: AgentPermissionSnapshot | null,
+  rootDir: string,
+  path: string,
+): void {
+  const relativePath = relative(resolve(rootDir), path).split(sep).join('/');
+  const result = authorizeAgentAction({
+    snapshot,
+    action: 'pr.cleanup_branch_scoped.v1',
+    changedPaths: [relativePath],
+    riskZone: 'yellow',
+  });
+  if (result.decision !== 'allow') {
+    fail('BLOCKED_AUTHORIZATION', 'Cleanup operation record path is not authorized.');
+  }
+}
+
+/**
  * Publish the record for an execute request **before** it is sent.
  *
  * The publish is exclusive and atomic: this call writes its own `O_EXCL` temp
@@ -425,11 +460,14 @@ function identityOf(path: string): string | null {
  */
 export function saveCleanupOperationRecord(
   record: CleanupOperationQueryRecord,
-  options: { rootDir: string },
+  options: SaveCleanupOperationRecordOptions,
 ): SaveCleanupOperationRecordResult {
   const validated = assertCleanupOperationRecord(record);
   const path = cleanupOperationRecordPath(options.rootDir, validated.request.operationId);
   assertNotSensitive(path);
+  // Authorize before anything is created: a denial must leave no directory, no
+  // record and no send behind it.
+  assertRecordPathAuthorized(options.snapshot, options.rootDir, path);
 
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   assertSafeAncestry(path);

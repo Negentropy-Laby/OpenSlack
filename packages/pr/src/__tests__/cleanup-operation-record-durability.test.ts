@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import type * as Fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,6 +68,11 @@ import {
   type CleanupOperationRequest,
 } from '../cleanup-operation-record.js';
 import { cleanupBrokerExecutionDigest } from '../internal/cleanup-broker-digest.js';
+import {
+  snapshotAllowingNothing,
+  snapshotAllowingOutbox,
+  snapshotDenyingOutbox,
+} from './helpers/cleanup-record-snapshot.js';
 
 const roots: string[] = [];
 
@@ -110,29 +123,29 @@ function record(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperat
 describe('R18-03 reuse must re-establish durability', () => {
   it('reuses an identical record when durability can be re-established', () => {
     const root = temporaryRoot();
-    expect(saveCleanupOperationRecord(record(), { rootDir: root }).status).toBe('published');
+    expect(saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }).status).toBe('published');
     const fsyncsAfterPublish = control.fsyncCalls;
-    expect(saveCleanupOperationRecord(record(), { rootDir: root }).status).toBe('reused');
+    expect(saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }).status).toBe('reused');
     // Reuse must actually sync, rather than trusting the earlier publish.
     expect(control.fsyncCalls).toBeGreaterThan(fsyncsAfterPublish);
   });
 
   it('refuses to reuse when the re-sync fails, instead of reporting success', () => {
     const root = temporaryRoot();
-    expect(saveCleanupOperationRecord(record(), { rootDir: root }).status).toBe('published');
+    expect(saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }).status).toBe('published');
     // Every fsync from the second call onward fails: the reuse cannot prove
     // durability, so it must refuse rather than bypass the earlier failure.
     control.failFsyncFromCall = control.fsyncCalls + 1;
-    expect(() => saveCleanupOperationRecord(record(), { rootDir: root })).toThrowError(
+    expect(() => saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() })).toThrowError(
       expect.objectContaining({ code: 'PERSISTENCE_FAILED' }) as unknown as Error,
     );
   });
 
   it('still refuses a different binding for an existing operation', () => {
     const root = temporaryRoot();
-    saveCleanupOperationRecord(record(), { rootDir: root });
+    saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
     expect(() =>
-      saveCleanupOperationRecord(record({ permitId: 'PERMIT-0002' }), { rootDir: root }),
+      saveCleanupOperationRecord(record({ permitId: 'PERMIT-0002' }), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
     ).toThrowError(expect.objectContaining({ code: 'BINDING_CONFLICT' }) as unknown as Error);
   });
 });
@@ -141,7 +154,7 @@ describe('R18-08 writes must complete or refuse', () => {
   it('completes a short write by looping and publishes complete bytes', () => {
     const root = temporaryRoot();
     control.shortWriteOnce = true;
-    const saved = saveCleanupOperationRecord(record(), { rootDir: root });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
     expect(saved.status).toBe('published');
     // The published record must be complete and decodable.
     expect(readCleanupOperationRecord(saved.path).requestDigest).toBe(record().requestDigest);
@@ -150,7 +163,7 @@ describe('R18-08 writes must complete or refuse', () => {
   it('refuses when a write makes no progress', () => {
     const root = temporaryRoot();
     control.zeroProgress = true;
-    expect(() => saveCleanupOperationRecord(record(), { rootDir: root })).toThrowError(
+    expect(() => saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() })).toThrowError(
       expect.objectContaining({ code: 'PERSISTENCE_FAILED' }) as unknown as Error,
     );
   });
@@ -158,7 +171,7 @@ describe('R18-08 writes must complete or refuse', () => {
   it('leaves no published record when a write fails', () => {
     const root = temporaryRoot();
     control.zeroProgress = true;
-    expect(() => saveCleanupOperationRecord(record(), { rootDir: root })).toThrowError(
+    expect(() => saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() })).toThrowError(
       CleanupOperationRecordError,
     );
     control.zeroProgress = false;
@@ -173,6 +186,53 @@ describe('R18-08 writes must complete or refuse', () => {
   });
 });
 
+describe('R18-02 publication requires authorization', () => {
+  const outbox = (root: string) => join(root, '.openslack', 'outbox', 'cleanup-operations');
+
+  it('creates no directory and writes no record when the path is denied', () => {
+    const root = temporaryRoot();
+    expect(() =>
+      saveCleanupOperationRecord(record(), {
+        rootDir: root,
+        snapshot: snapshotDenyingOutbox(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'BLOCKED_AUTHORIZATION' }) as unknown as Error);
+
+    // A denial must leave nothing behind, not even the outbox directory.
+    expect(existsSync(join(root, '.openslack'))).toBe(false);
+    expect(existsSync(outbox(root))).toBe(false);
+  });
+
+  it('creates nothing when the allow list does not cover the record path', () => {
+    const root = temporaryRoot();
+    expect(() =>
+      saveCleanupOperationRecord(record(), {
+        rootDir: root,
+        snapshot: snapshotAllowingNothing(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'BLOCKED_AUTHORIZATION' }) as unknown as Error);
+    expect(existsSync(join(root, '.openslack'))).toBe(false);
+  });
+
+  it('creates nothing for an unknown principal', () => {
+    const root = temporaryRoot();
+    expect(() =>
+      saveCleanupOperationRecord(record(), { rootDir: root, snapshot: null }),
+    ).toThrowError(expect.objectContaining({ code: 'BLOCKED_AUTHORIZATION' }) as unknown as Error);
+    expect(existsSync(join(root, '.openslack'))).toBe(false);
+  });
+
+  it('publishes when the path is allowed', () => {
+    const root = temporaryRoot();
+    const saved = saveCleanupOperationRecord(record(), {
+      rootDir: root,
+      snapshot: snapshotAllowingOutbox(),
+    });
+    expect(saved.status).toBe('published');
+    expect(existsSync(saved.path)).toBe(true);
+  });
+});
+
 describe('R18-07 file boundaries', () => {
   const directoryLink = process.platform === 'win32' ? 'junction' : 'dir';
 
@@ -184,7 +244,7 @@ describe('R18-07 file boundaries', () => {
     symlinkSync(real, link, directoryLink);
 
     // Writing through the alias would place the record outside the workspace.
-    expect(() => saveCleanupOperationRecord(record(), { rootDir: link })).toThrowError(
+    expect(() => saveCleanupOperationRecord(record(), { rootDir: link, snapshot: snapshotAllowingOutbox() })).toThrowError(
       expect.objectContaining({ code: 'SYMLINK_REJECTED' }) as unknown as Error,
     );
   });
@@ -193,7 +253,7 @@ describe('R18-07 file boundaries', () => {
     const root = temporaryRoot();
     const real = join(root, 'real');
     mkdirSync(real, { recursive: true });
-    const saved = saveCleanupOperationRecord(record(), { rootDir: real });
+    const saved = saveCleanupOperationRecord(record(), { rootDir: real, snapshot: snapshotAllowingOutbox() });
     const link = join(root, 'linked-read');
     symlinkSync(real, link, directoryLink);
 

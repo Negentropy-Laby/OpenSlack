@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as GitHub from '@openslack/github';
 import type * as PR from '@openslack/pr';
 import type * as Workspace from '@openslack/workspace';
+import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 const mocks = vi.hoisted(() => ({
   cleanup: vi.fn(),
@@ -61,6 +62,23 @@ import {
 } from '@openslack/pr';
 
 const options = { auth: 'auto', remote: 'origin', timeout: '60' };
+/**
+ * A resolved permission snapshot that permits the record outbox path. The CLI
+ * authorizes publication against the real snapshot, so a placeholder such as
+ * `{}` is denied — which is the behaviour under test.
+ */
+const allowSnapshot: AgentPermissionSnapshot = {
+  principal: { registry_id: 'worker', runtime_uid: 'uid', run_id: 'RUN-1', provider: 'cli' },
+  registry_entry_agent_id: 'worker',
+  permissions: {
+    paths: { allow: ['.openslack/outbox/**'], deny: [] },
+    actions: { 'pr.cleanup_branch_scoped.v1': 'allow', 'pr.cleanup_branch': 'deny' },
+    github: { can_create_pr: false, can_comment: false, can_approve: false, can_merge: false },
+    max_risk_zone: 'yellow',
+  },
+  resolved_at: '2026-10-10T00:00:00.000Z',
+  source: 'registry_v2',
+};
 const agentOptions = {
   ...options,
   auth: 'app',
@@ -105,7 +123,7 @@ describe('branch cleanup CLI adapter', () => {
     mocks.cleanup.mockResolvedValue(result);
     mocks.resolve.mockReturnValue({
       principal: { registry_id: 'worker', runtime_uid: 'uid', run_id: 'RUN-1', provider: 'cli' },
-      snapshot: {},
+      snapshot: allowSnapshot,
     });
     mocks.registry.mockReturnValue({
       agent_id: 'worker',
@@ -470,6 +488,42 @@ describe('branch cleanup CLI adapter', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Decision: DELETED'));
   });
 
+  describe('R18-02 record publication is authorized', () => {
+    const denySnapshot: AgentPermissionSnapshot = {
+      ...allowSnapshot,
+      permissions: {
+        ...allowSnapshot.permissions,
+        paths: { allow: ['.openslack/outbox/**'], deny: ['.openslack/outbox/**'] },
+      },
+    };
+
+    it('sends nothing when the resolved snapshot denies the record path', async () => {
+      mocks.resolve.mockReturnValue({
+        principal: { registry_id: 'worker', runtime_uid: 'uid', run_id: 'RUN-1', provider: 'cli' },
+        snapshot: denySnapshot,
+      });
+
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        execute: true,
+        operationId: 'OP-1',
+      });
+
+      // Denial must stop before the broker is contacted.
+      expect(mocks.broker).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('still sends when the resolved snapshot allows the record path', async () => {
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        execute: true,
+        operationId: 'OP-1',
+      });
+      expect(mocks.broker).toHaveBeenCalled();
+    });
+  });
+
   describe('--operation-record', () => {
     const roots: string[] = [];
 
@@ -490,7 +544,7 @@ describe('branch cleanup CLI adapter', () => {
           permitId: 'PERMIT-1',
           operationId: 'OP-1',
         }),
-        { rootDir: root },
+        { rootDir: root, snapshot: allowSnapshot },
       );
       return saved.path;
     }

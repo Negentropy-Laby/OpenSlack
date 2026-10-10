@@ -12,6 +12,7 @@ import {
   saveCleanupOperationRecord,
 } from '@openslack/pr';
 import type { CleanupBrokerRequest } from '@openslack/pr';
+import type { AgentPermissionSnapshot } from '@openslack/kernel';
 import { createBoundEventAppender, createEvent, recordEvent } from '@openslack/collaboration';
 
 interface CleanupCommandOptions {
@@ -137,6 +138,9 @@ export async function runPRBranchCleanupCommand(
       const { parseAgentRegistry } = await import('@openslack/workspace');
       const registry = parseAgentRegistry(rootDir, options.agentId);
       let principal: { registry_id: string; runtime_uid: string; run_id: string };
+      // Resolved permission snapshot for the execute path. Publication is
+      // authorized against it before any record directory is created.
+      let snapshot: AgentPermissionSnapshot | null = null;
       if (mode === 'status') {
         // A historical receipt remains readable after admission is revoked.
         // Preserve the original local identity claims; never fabricate them
@@ -166,6 +170,9 @@ export async function runPRBranchCleanupCommand(
         if ('error' in resolved)
           throw new CleanupInputError('BLOCKED_AUTHORIZATION: agent identity resolution failed.');
         principal = resolved.principal;
+        // Retained, not discarded: publishing the query record is authorized
+        // against this resolved snapshot before anything is created.
+        snapshot = resolved.snapshot;
       }
       if (
         !registry ||
@@ -190,15 +197,18 @@ export async function runPRBranchCleanupCommand(
         ...(mode !== 'preview' ? { operationId: options.operationId! } : {}),
       };
       if (mode === 'execute') {
-        // Publish the historical query record before the request is sent. A
-        // persistence failure refuses the send rather than proceeding without
-        // evidence; an identical binding is reused, a different one is refused.
+        // Publish the historical query record before the request is sent. The
+        // resolved permission snapshot authorizes the real record path first, so
+        // a denial creates no directory, writes no record and sends nothing. A
+        // persistence failure likewise refuses the send rather than proceeding
+        // without evidence; an identical binding is reused, a different one is
+        // refused.
         saveCleanupOperationRecord(
           buildCleanupOperationRecord({
             ...brokerRequest,
             operationId: options.operationId!,
           }),
-          { rootDir },
+          { rootDir, snapshot },
         );
       }
       const result = await sendCleanupBrokerRequest(brokerRequest, { timeoutMs: remainingMs() });
