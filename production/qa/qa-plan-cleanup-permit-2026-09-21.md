@@ -999,3 +999,38 @@ administrator-provisioned runtime and host evidence.
 **Status.** The two-independent-checkout package proof remains an **outstanding
 external gate**. No Windows result and no locally synthesised evidence is
 presented as a substitute for it.
+
+## Round 18 delivery PR — 2026-10-10
+
+The repair branch was pushed and the delivery PR created through the governed
+bot path (`scripts/bot-gh-pr-create.ps1` → `openslack delivery publish`), which
+pushes the branch with the bot installation token and verifies the remote SHA
+equals the branch SHA before reporting.
+
+| Field | Value |
+|---|---|
+| PR | **#420** — https://github.com/Negentropy-Laby/OpenSlack/pull/420 |
+| Author | `app/openslack-agent-operator` (`is_bot: true`) |
+| Branch | `prms/pr418-followup-repair` |
+| Branch SHA = PR head SHA | `339c144ecd0da39d8e75633f6a428bb6216f59ec` |
+| Base | `main` (`94ca2d3f`) |
+| PRMS decision at creation | `BLOCKED_DRAFT`, owner agent |
+| After `pr ready` | `isDraft: false`, `reviewDecision: REVIEW_REQUIRED`, `mergeStateStatus: BLOCKED` |
+
+PRMS was re-run with live bot credentials (`scripts/openslack-bot.ps1 pr
+doctor 420`), reporting live GitHub evidence and **Risk Zone: RED**, because the
+branch touches `packages/kernel/src/**` via
+`packages/kernel/src/__tests__/agent-authorizer.test.ts`. That change removes an
+unused import binding only. CODEOWNERS resolves to `@wsman`; valid approvers
+excluding the author: none. There is no sole-author deadlock, because the PR is
+bot-authored.
+
+Pending hosted checks at the time of writing: `validate / macos-read-paths`,
+`validate / validate`, `tui-visual-gate`, `Build and smoke windows-x64`,
+`Qualify GS8-B and GS9-F2b runtime delivery boundaries on Windows`, `Validate
+notification delivery service`, `Build and smoke linux-x64`.
+
+**Human approval is required and has not been given.** The repository ruleset
+`Protect main` requires a CODEOWNER review and one approving review, so this PR
+cannot merge without an explicit human approval recorded as a GitHub review from
+the required human identity. No agent approval exists or will be originated.
