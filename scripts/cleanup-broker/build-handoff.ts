@@ -143,6 +143,12 @@ try {
           ],
           broker: { sha256: hash(brokerPath), bytes: statSync(brokerPath).size },
           executor: { sha256: hash(executorPath), bytes: statSync(executorPath).size },
+          // Every tool this build produced is proven by digest and size, so the
+          // package's tools cannot be completed by a file no build bound.
+          verifier: {
+            sha256: hash(join(artifacts, 'verify-handoff.mjs')),
+            bytes: statSync(join(artifacts, 'verify-handoff.mjs')).size,
+          },
           client: {
             sha256: hash(join(artifacts, 'cleanup-client.mjs')),
             bytes: statSync(join(artifacts, 'cleanup-client.mjs')).size,
@@ -158,7 +164,14 @@ try {
       ) + '\n',
       { flag: 'wx' },
     );
-    return { reportPath, brokerPath, executorPath };
+    return {
+      reportPath,
+      brokerPath,
+      executorPath,
+      verifierPath: join(artifacts, 'verify-handoff.mjs'),
+      clientPath: join(artifacts, 'cleanup-client.mjs'),
+      adminToolPath: join(artifacts, 'admin-upgrade.mjs'),
+    };
   };
   const builds = [build('a'), build('b')] as const;
   // Every bundled tool must be byte-identical across the two independent builds.

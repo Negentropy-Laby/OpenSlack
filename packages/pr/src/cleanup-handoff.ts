@@ -41,10 +41,24 @@ export class CleanupHandoffError extends Error {
   }
 }
 
+/** Placeholder for a tool a v1 build does not prove. */
+const EMPTY = Buffer.alloc(0);
+
 export interface CleanupHandoffBuildInput {
   reportPath: string;
   brokerPath: string;
   executorPath: string;
+  /**
+   * Per-build tool artifacts.
+   *
+   * A v2 build report must prove the verifier, client and administrator tool it
+   * actually built, each bound by digest and size to the file on disk. They are
+   * required for a v2 report so the package's tools cannot be completed by an
+   * arbitrary third file supplied separately from the builds.
+   */
+  verifierPath?: string;
+  clientPath?: string;
+  adminToolPath?: string;
 }
 
 export interface CleanupHandoffTargetEvidence {
@@ -466,6 +480,7 @@ function buildReport(
   raw: Buffer,
   broker: Buffer,
   executor: Buffer,
+  tools: readonly [Buffer, Buffer, Buffer],
   head: string,
   lock: string,
   goModule: string,
@@ -484,10 +499,16 @@ function buildReport(
     'HANDOFF_BUILD_MISMATCH',
   );
   assertCleanupHandoffToolchain(report.tools, expectedTools);
-  for (const [name, rawBytes] of [
+  const proofs: Array<[string, Buffer]> = [
     ['broker', broker],
     ['executor', executor],
-  ] as const) {
+  ];
+  // A v2 report must prove the tools this build produced. A v1 report predates
+  // per-build tool proof, so it keeps its original shape and stays readable.
+  if (report.schema === CLEANUP_HANDOFF_SCHEMAS.build) {
+    proofs.push(['verifier', tools[0]], ['client', tools[1]], ['adminTool', tools[2]]);
+  }
+  for (const [name, rawBytes] of proofs) {
     const artifact = object(report[name]);
     check(
       artifact.sha256 === sha(rawBytes) && artifact.bytes === rawBytes.length,
@@ -661,15 +682,26 @@ export function prepareCleanupHandoffDraft(
     );
     const brokers: Buffer[] = [],
       executors: Buffer[] = [],
+      verifiers: Buffer[] = [],
+      clients: Buffer[] = [],
+      adminTools: Buffer[] = [],
       checkouts: string[] = [];
     input.builds.forEach((build, index) => {
       const broker = safeRead(build.brokerPath),
         executor = safeRead(build.executorPath),
         report = safeRead(build.reportPath);
+      // Each build reads its own tools. A v2 report must bind all three; the
+      // separately supplied top-level paths are never used to satisfy a build.
+      const tools = [
+        build.verifierPath === undefined ? EMPTY : safeRead(build.verifierPath),
+        build.clientPath === undefined ? EMPTY : safeRead(build.clientPath),
+        build.adminToolPath === undefined ? EMPTY : safeRead(build.adminToolPath),
+      ] as const;
       const parsed = buildReport(
         report,
         broker,
         executor,
+        tools,
         input.candidateHead,
         lock,
         goModule,
@@ -679,12 +711,18 @@ export function prepareCleanupHandoffDraft(
       checkouts.push(parsed.checkout as string);
       brokers.push(broker);
       executors.push(executor);
+      verifiers.push(tools[0]);
+      clients.push(tools[1]);
+      adminTools.push(tools[2]);
       add(`evidence/build-report-${index === 0 ? 'a' : 'b'}.json`, report);
     });
     check(
       checkouts[0] !== checkouts[1] &&
         brokers[0]!.equals(brokers[1]!) &&
-        executors[0]!.equals(executors[1]!),
+        executors[0]!.equals(executors[1]!) &&
+        verifiers[0]!.equals(verifiers[1]!) &&
+        clients[0]!.equals(clients[1]!) &&
+        adminTools[0]!.equals(adminTools[1]!),
       'HANDOFF_BUILD_MISMATCH',
     );
     const gitDirectories = checkouts.map((path) =>
@@ -701,7 +739,7 @@ export function prepareCleanupHandoffDraft(
     add('artifacts/executor.mjs', executors[0]!);
     for (const name of ['node', 'git', 'sh', 'git-remote-https'])
       add(`artifacts/${name}`, safeRead(join(input.runtimeDirectory, name)));
-    add('tools/verify-handoff.mjs', safeRead(input.verifierPath));
+    add('tools/verify-handoff.mjs', verifiers[0]!);
     add('evidence/node-LICENSE', safeRead(input.nodeLicensePath));
     add('evidence/node-SHASUMS256.txt', safeRead(input.nodeChecksumPath));
     check(
@@ -868,8 +906,10 @@ export function prepareCleanupHandoffDraft(
     add('handoff.md', source('services/cleanup-broker/handoff.md'));
     add('evidence/OpenSlack-LICENSE', source('LICENSE'));
     if (withClientTools) {
-      add('tools/cleanup-client.mjs', safeRead(input.clientPath!));
-      add('tools/admin-upgrade.mjs', safeRead(input.adminToolPath!));
+      // Both tools come from the builds that proved them, never from a
+      // separately supplied file that no build report binds.
+      add('tools/cleanup-client.mjs', clients[0]!);
+      add('tools/admin-upgrade.mjs', adminTools[0]!);
       add('docs/client.md', safeRead(input.clientDocPath!));
     }
     check(
@@ -1119,6 +1159,14 @@ export function verifyCleanupHandoffPackage(
         bytes.get(`evidence/build-report-${id}.json`)!,
         bytes.get('artifacts/cleanup-broker')!,
         bytes.get('artifacts/executor.mjs')!,
+        // Cross-check the tools against the bytes actually inside the package.
+        // A v1 package may carry neither tool file nor a tool proof; its report
+        // is not required to bind them, so it still verifies.
+        [
+          bytes.get('tools/verify-handoff.mjs') ?? EMPTY,
+          bytes.get('tools/cleanup-client.mjs') ?? EMPTY,
+          bytes.get('tools/admin-upgrade.mjs') ?? EMPTY,
+        ],
         input.candidateHead,
         String(locks.lockfileSHA256),
         String(locks.goModuleSHA256),

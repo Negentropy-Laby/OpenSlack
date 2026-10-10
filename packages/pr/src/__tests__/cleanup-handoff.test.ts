@@ -20,6 +20,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   assertCleanupHandoffRuntime,
+  CleanupHandoffError,
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
 } from '../cleanup-handoff.js';
@@ -586,6 +587,112 @@ describe('runtime preflight before tool execution', () => {
       );
     },
   );
+});
+
+describe('R18-12 per-build tool proof', () => {
+  /** Switch both build reports to the current schema and bind real tool bytes. */
+  async function v2Fixture() {
+    const f = await fixture();
+    for (const id of ['a', 'b'] as const) {
+      const build = f.input.builds[id === 'a' ? 0 : 1];
+      const verifier = f.put(`build-${id}/verify-handoff.mjs`, 'fixture offline verifier\n');
+      const client = f.put(`build-${id}/cleanup-client.mjs`, 'fixture client\n');
+      const adminTool = f.put(`build-${id}/admin-upgrade.mjs`, 'fixture admin tool\n');
+      const report = JSON.parse(readFileSync(build.reportPath, 'utf8')) as Record<string, unknown>;
+      report.schema = 'openslack.cleanup_handoff_build_report.v1';
+      report.verifier = { sha256: digest(readFileSync(verifier)), bytes: readFileSync(verifier).length };
+      report.client = { sha256: digest(readFileSync(client)), bytes: readFileSync(client).length };
+      report.adminTool = {
+        sha256: digest(readFileSync(adminTool)),
+        bytes: readFileSync(adminTool).length,
+      };
+      writeFileSync(build.reportPath, JSON.stringify(report));
+      Object.assign(build, {
+        verifierPath: verifier,
+        clientPath: client,
+        adminToolPath: adminTool,
+      });
+    }
+    // The top-level paths still select the v2 profile; the artifact bytes come
+    // from the builds above, which is the point of R18-12.
+    f.input.clientPath = f.put('top-level-client.mjs', 'top-level client\n');
+    f.input.adminToolPath = f.put('top-level-admin.mjs', 'top-level admin\n');
+    f.input.clientDocPath = f.put('client.md', '# client\n');
+    return f;
+  }
+
+  it('accepts a v2 pair whose reports bind all three tools', async () => {
+    const f = await v2Fixture();
+    const result = prepareCleanupHandoffDraft(f.input);
+    expect(result.packageDirectory).toBeTruthy();
+    // The tools inside the package are the ones the builds proved.
+    const client = readFileSync(join(result.packageDirectory, 'tools', 'cleanup-client.mjs'));
+    expect(client.toString('utf8')).toBe('fixture client\n');
+  });
+
+  it.each(['verifier', 'client', 'adminTool'])(
+    'rejects a v2 report that omits the %s proof',
+    async (tool) => {
+      const f = await v2Fixture();
+      for (const index of [0, 1]) {
+        const report = JSON.parse(
+          readFileSync(f.input.builds[index]!.reportPath, 'utf8'),
+        ) as Record<string, unknown>;
+        delete report[tool];
+        writeFileSync(f.input.builds[index]!.reportPath, JSON.stringify(report));
+      }
+      expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+    },
+  );
+
+  it.each(['verifier', 'client', 'adminTool'])(
+    'rejects a v2 report whose %s digest does not match the actual file',
+    async (tool) => {
+      const f = await v2Fixture();
+      const report = JSON.parse(
+        readFileSync(f.input.builds[0]!.reportPath, 'utf8'),
+      ) as Record<string, unknown>;
+      // Claim a digest for bytes no build produced.
+      report[tool] = { sha256: digest('not the real tool'), bytes: 17 };
+      writeFileSync(f.input.builds[0]!.reportPath, JSON.stringify(report));
+      expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+    },
+  );
+
+  it('rejects a v2 pair whose builds disagree about a tool', async () => {
+    const f = await v2Fixture();
+    // Build b proves a different client than build a.
+    const other = f.put('build-b/other-client.mjs', 'a different client\n');
+    const report = JSON.parse(
+      readFileSync(f.input.builds[1]!.reportPath, 'utf8'),
+    ) as Record<string, unknown>;
+    report.client = { sha256: digest(readFileSync(other)), bytes: readFileSync(other).length };
+    writeFileSync(f.input.builds[1]!.reportPath, JSON.stringify(report));
+    f.input.builds[1]!.clientPath = other;
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
+
+  it('does not let a separately supplied file satisfy a v2 tool proof', async () => {
+    const f = await v2Fixture();
+    // All three top-level paths are supplied, but the builds bind nothing for
+    // the client, so the package cannot be completed by that arbitrary file.
+    delete f.input.builds[0]!.clientPath;
+    delete f.input.builds[1]!.clientPath;
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
+
+  it('keeps a real v1 package readable', async () => {
+    // The default fixture is the legacy schema and carries no per-build tools.
+    const f = await fixture();
+    const result = prepareCleanupHandoffDraft(f.input);
+    const verified = verifyCleanupHandoffPackage({
+      packageDirectory: result.packageDirectory,
+      candidateHead: result.candidateHead,
+      manifestSHA256: result.manifestSHA256,
+      now: new Date(timestamp),
+    });
+    expect(verified.valid).toBe(true);
+  });
 });
 
 describe('standalone package integrity contract', () => {
