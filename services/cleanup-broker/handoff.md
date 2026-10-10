@@ -86,11 +86,11 @@ Never put a credential or an active installation path in this input.
 and be outside the source tree and fixed installation paths. Existing outputs
 are rejected; preserve partial output after failure and inspect it separately.
 
-The orchestrator creates two clean `git clone --no-hardlinks` checkouts with no
+The orchestrator creates two clean `git clone --no-local --no-checkout` checkouts with no
 shared object alternates, reads the Bun pin from the candidate
 `package.json`, the Go pin from `services/cleanup-broker/go.mod`, and the reviewed
 Linux Node 24.18.1 qualification pin (currently Bun 1.4.0 and Go 1.26.5), and builds the Broker with `CGO_ENABLED=0 -trimpath -buildvcs=true`.
-Both Broker/executor bytes must match; the embedded revision must equal the
+Broker, executor, verifier, client and administrator tool bytes must match; the embedded revision must equal the
 frozen SHA with `vcs.modified=false`. Reports record actual tool versions,
 lockfile digests and commands. Dependency installation is build orchestration,
 not a live credential/provider/cleanup test. For independently supplied build
@@ -107,8 +107,11 @@ ELF `.go.buildinfo` section and Go's inline metadata; free-standing text that
 resembles VCS settings is rejected. The standalone verifier checks the sealed
 report/artifact bindings without needing those source checkouts or Git.
 
-New preparation reports use the shared `openslack.cleanup_handoff_build_report.v1`
-and `openslack.cleanup_handoff_evidence_index.v1` schema names. The verifier
+New v2 profiles require `openslack.cleanup_handoff_build_report.v2` from both
+builds, each binding nonempty verifier, client and administrator tool bytes by
+size and digest. Per-build tool paths are required; top-level paths only
+cross-check them. Real v1 packages retain their original report requirements.
+The evidence index uses `openslack.cleanup_handoff_evidence_index.v1`. The verifier
 also accepts existing `openslack.pr418.clean-build-report.v1` and
 `openslack.pr418.qualification-evidence-index.v1` records without rewriting old packages.
 Conceptual tool naming does not rename the administrator-selected identity,
@@ -124,25 +127,102 @@ approval fields REQUIRED. Record final candidate/artifact digests in the PR
 body/comment, not a new source commit that would change the candidate again.
 Any subsequent source repair requires a new freeze, builds and reviewed inputs.
 
+## Source build proof without target packaging
+
+A source build may be completed before fresh administrator evidence is available.
+From a clean frozen Linux checkout, use a non-secret JSON recipe with
+`sourceRoot`, full `candidateHead`, a fresh external `buildDirectory` and an
+absolute `nodePath` to the independently verified Linux Node 24.18.1 executable:
+
+```sh
+bun scripts/cleanup-broker/build-handoff.ts --source-only --input /absolute/path/to/source-build-input.json
+```
+
+This stage builds two independent copies of all five artifacts, verifies VCS
+stamping and emits `source-build-proof.json`. It creates no installable package,
+reads no target installation evidence and grants no authorization. The runtime
+binary digest is build-host evidence; it cannot serve as target installation
+proof. Full packaging still requires the seven current target evidence inputs.
+
+## Strict current evidence and upgrade planning
+
+Run `tools/admin-upgrade.mjs` on Linux from the independently verified package
+directory. Supply all seven `--install-manifest`, `--task-view`,
+`--task-attestation`, `--app-scope`, `--network`, `--identity` and
+`--dependency-inventory` paths, plus `--admin-inputs` and `--host-inspection`,
+`--package`, `--candidate` and `--manifest-sha256`. Paths may contain spaces;
+keep each argument quoted. The tool outputs a plan only and exits 2 on invalid,
+expired, missing or unsupported evidence, with zero installation instructions.
+Approval and activation gates remain visible without permanently failing an
+otherwise valid integrity check. Installation requires current valid evidence,
+administrator input approval, supervised shutdown and consistent backup.
+Activation and Permit gate governed execution and qualification; approved
+installation and unactivated startup to obtain the real nonce occur first.
+
+The seven proofs, administrator inputs and current host report are closed,
+strict JSON read through bounded Linux descriptors. They refuse duplicate or
+unknown keys, links/hardlinks, group- or world-writable input files, non-regular objects,
+impossible file paths, inconsistent digests/identity and expired observation
+windows. `evidenceIssues` identifies the input role and stable failure reason;
+the installation manifest is only a historical claim.
+
+Administrator inputs use `openslack.cleanup_upgrade_inputs.v1`; current host
+observations use `openslack.cleanup_host_inspection.v1`. Both carry schema,
+target, workspaceId, repository/repositoryId, recordedAt/expiresAt, candidateHead
+and manifestSHA256. Inputs contain the exact selected binding map and explicit
+DRAFT/APPROVED fields. The host report includes broker/agent UID/GID and fixed
+principal/runtime/run, all six fixed artifact observations (path, state, digest,
+UID/GID, mode), process state/PID, ledger/journal digests and backup observations,
+and exact SHA256 values for all seven proof files. Missing or unreadable files
+must be reported as such, never inferred from an old manifest.
+
+An observed destination with the correct bytes but the wrong owner or mode is
+planned for repair to root:root and 0755. Those observed values describe the
+target; they do not relax the separate requirement that evidence input files
+have safe ownership and permissions. Invalid numeric ownership or mode syntax
+still refuses the plan.
+
+App, network, identity, task attestation and dependency observations use
+`openslack.cleanup_app_scope_evidence.v1`,
+`openslack.cleanup_network_evidence.v1`,
+`openslack.cleanup_identity_evidence.v1`,
+`openslack.cleanup_task_attestation.v1` and
+`openslack.cleanup_dependency_inventory.v1`, respectively. Installation and
+task view retain the production `openslack.cleanup_installation.v1` and
+`openslack.cleanup_task_view.v1` schemas. Old unnormalized staging reports are
+historical evidence; they do not satisfy these new current-evidence contracts.
+
+Steps are returned in prerequisite order and include explicit `dependsOn`:
+verify candidate/current evidence; approve new inputs; supervised stop and
+consistent backup; upgrade and fixed identity/credentials; isolation checks;
+unactivated start and real nonce; governance activation/Permit; qualification.
+The nonce-producing step does not require activation, and preparing activation
+never requires its own output. Unknown supervisor, process or state requires
+actual administrator evidence rather than invented startup/stop commands.
+
+Every qualification batch must finish before the task view and Permit expire.
+Expiry, a changed target or restart stops the batch. Refreshing the task view
+requires shutdown, a new boot nonce, activation and Permit; never hot-replace it.
+
 ## Registry and real qualification dependency
 
-The selected `cleanup_qualification_pr418` registry is currently proposed in
-PR #418 and is absent from the canonical `main` authority. The production reader
-continues to read the fixed governance repository's `main` once; a feature
-branch, a local file or package integrity cannot replace that authority.
-Consequently, registry deployment, target installation and runtime identity,
-actual startup nonce, governed activation, exact Permit and real qualification
-remain separate blocked steps. The preparation verifier conservatively reports
-main deployment as unverified; it does not contact GitHub to claim deployment.
+PR #418 and the selected `cleanup_qualification_pr418` registry have entered
+canonical `main`. The administrator explicitly selected code/registry merge
+before deployment and real qualification. The production reader still reads the
+fixed governance repository's `main`; local files and package integrity cannot
+replace that authority. No real qualification PASS follows from the merge.
 
-PR #418 remains Draft. Its retained pre-merge qualification standard and human
-approval requirements are unchanged. Including the registry in this PR has not
-resolved its deployment/qualification dependency; an administrator governance
-decision is still needed. Do not infer qualification or merge permission from
-local tests, CI, build reproducibility or the earlier input approval. Once the
-dependency is lawfully resolved, installation must follow reviewed recovery of
-the existing partial target, then acquire a real nonce before governance can
-bind activation and the single-use Permit. Preserve old state and records.
+Target installation, fixed runtime identity, a real startup nonce, governed
+activation, a single-use Permit and real qualification remain separate gates.
+The offline verifier's `REGISTRY_MAIN_DEPLOYMENT_NOT_VERIFIED` reports the
+verifier's lack of live authority evidence; it is not a current assertion that
+the registry is absent. Historical package gates and approved input bytes are
+retained. Current deployment state requires a fresh independent host report.
+
+`OpenSlack-Cleanup-Qual` and UID/GID 44180/44181 are administrator-selected
+external bindings, not facts proved by repository fixtures. Compare the actual
+host accounts, ownership and identity mapping with the approved inputs before
+reuse. Any disagreement stops deployment; do not recreate or recycle accounts.
 
 Only ordinary staging files are included. No private keys, tokens, real
 permits, activation records or live ledger are supplied. A runtime inventory

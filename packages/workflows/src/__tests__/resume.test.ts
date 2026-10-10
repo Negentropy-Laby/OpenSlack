@@ -13,7 +13,7 @@ import { validateWorkflowRunRouteReceipt } from '../workflow-run-routing.js';
 import type { WorkflowModule } from '../types.js';
 import { describe, it, expect } from 'vitest';
 import { checkResumable, prepareResume, replayCachedPhases } from '../resume.js';
-import type { ResumeState, WorkflowResumeIdentity } from '../resume.js';
+import type { WorkflowResumeIdentity } from '../resume.js';
 import { RunStore } from '../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import type { RunStoreFs, RunMeta } from '../run-store.js';

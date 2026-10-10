@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   ALWAYS_FORBIDDEN,
   resolvePermissions,
-  checkPermission,
-  intersectPermissions,
   resolveTrustLevel,
   getPermissionsForTrustLevel,
   fullCheckPermission,

@@ -724,13 +724,17 @@ export function prCommands(): Command {
     });
 
   cmd
-    .command('cleanup-branch <number>')
+    .command('cleanup-branch [number]')
     .description('Preview or conditionally delete a merged PR remote branch')
     .option('--execute', 'Authorize this remote branch deletion (default: preview only)')
     .option('--agent-id <id>', 'Agent ID for authorization; resolution failure blocks cleanup')
     .option('--permit-id <id>', 'Administrator-issued broker permit (requires --agent-id)')
     .option('--operation-id <id>', 'Stable broker operation ID for execute/status only')
     .option('--operation-status', 'Read existing broker operation; never retry deletion')
+    .option(
+      '--operation-record <path>',
+      'Read a published cleanup operation record; requires --operation-status and no --agent-id',
+    )
     .option('--repo <owner/name>', 'Target GitHub repository')
     .option('--auth <mode>', 'Live evidence auth: auto, app, or token', 'auto')
     .option('--remote <name>', 'Named Git remote', 'origin')

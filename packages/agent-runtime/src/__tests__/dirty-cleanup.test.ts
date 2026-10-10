@@ -313,7 +313,8 @@ describe('Dirty-state-aware worktree cleanup', () => {
     expect(mockCreateWorktree).toHaveBeenCalledTimes(1);
     expect(mockCheckDirty).toHaveBeenCalledTimes(1);
     expect(mockCleanupWorktree).toHaveBeenCalledTimes(1);
-    expect((result.data as any).cwd).toBe(worktreePath);
-    expect((result.data as any).worktreePath).toBe(worktreePath);
+    const data = result.data as { cwd?: string; worktreePath?: string };
+    expect(data.cwd).toBe(worktreePath);
+    expect(data.worktreePath).toBe(worktreePath);
   });
 });

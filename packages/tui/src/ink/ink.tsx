@@ -1492,13 +1492,16 @@ export default class Ink {
   }
   dispatchKeyboardEvent(parsedKey: ParsedKey): void {
     const target = this.focusManager.activeElement ?? this.rootNode;
-    const event = new KeyboardEvent(parsedKey as unknown as string) as any;
+    // KeyboardEvent extends TerminalEvent, so it is dispatched as-is with no
+    // cast: the dispatcher sets target/eventPhase and handlers may
+    // preventDefault().
+    const event = new KeyboardEvent(parsedKey);
     dispatcher.dispatchDiscrete(target, event);
 
     // Tab cycling is the default action — only fires if no handler
     // called preventDefault(). Mirrors browser behavior.
     if (
-      !(event as any).defaultPrevented &&
+      !event.defaultPrevented &&
       parsedKey.name === 'tab' &&
       !parsedKey.ctrl &&
       !parsedKey.meta

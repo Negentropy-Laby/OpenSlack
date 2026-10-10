@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { ChatAdapter, ChatMessage, ChatResponse, ChatUser, ChatChannel } from './types.js';
+import type { ChatAdapter, ChatMessage, ChatResponse } from './types.js';
 
 interface SlackAdapterOptions {
   port: number;

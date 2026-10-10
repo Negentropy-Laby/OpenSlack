@@ -149,7 +149,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRuntimeTypesSource": {
 			Path:   "packages/workflows/src/types.ts",
-			SHA256: "5982313028e82d74aa3ffb9e0a8e03c1bd880cef8c1b904ba44320cf639bb9e3",
+			SHA256: "e91e3571f156e38f5a917126c68711e26d124930595a0a7132b0b1fd02aefe58",
 		},
 		"workflowSourceSnapshotSource": {
 			Path:   "packages/workflows/src/internal/workflow-source-snapshot.ts",
@@ -373,7 +373,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowCLICompositionSource": {
 			Path:   "apps/cli/src/commands/collaboration.ts",
-			SHA256: "3e3a87d7458a3073bf9a1e2d424e58e47a59701cbb3b078ebd4c3025f42f31ee",
+			SHA256: "f03b477052ae3c57714aaaf05bec357c1c9d5da050a110d4b600a29740e0fbd1",
 		},
 		"workflowTUIExecutorsSource": {
 			Path:   "apps/cli/src/commands/tui-executors.ts",
@@ -381,7 +381,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowTUICompositionSource": {
 			Path:   "apps/cli/src/commands/tui.ts",
-			SHA256: "427ad506fd5cb6b068eb91d73d62eb0c6d2d83a059d095e402a62f3ebfc0c8e6",
+			SHA256: "d5eea89a4fe1504bb1b9ecb5232a13c0a4a13dffde56128a50edcbafbdb9bf02",
 		},
 		"workflowTUIRunsViewSource": {
 			Path:   "packages/tui/src/views/WorkflowRunsView.tsx",
@@ -389,7 +389,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowTUIRenderShellSource": {
 			Path:   "packages/tui/src/views/render-shell.ts",
-			SHA256: "2e8468c4c75470fb99d53af19278a2a60fc88ceca77a101330c4c9304f9f8c67",
+			SHA256: "1edd2022ee6f2d3307c19056b5dc0102f83434accd12710a28fa62a3adef4d58",
 		},
 		"demoAIOrgRehearseSource": {
 			Path:   "scripts/demo-ai-org-rehearse.ts",
@@ -497,7 +497,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowRunProjectionReadTest": {
 			Path:   "packages/workflows/src/__tests__/workflow-run-projection.test.ts",
-			SHA256: "3089e2d7aa1a1e24df2cae0692da4af810a9ffc3dc25090eb2d93a517aa62ab9",
+			SHA256: "11844c972cef51b3a2e9fbfd2c58bf02e95badbe1f5205eb037592f3c0331f67",
 		},
 		"workflowGoExecutionRecoveryTest": {
 			Path:   "packages/workflows/src/__tests__/execute-go-authority.test.ts",

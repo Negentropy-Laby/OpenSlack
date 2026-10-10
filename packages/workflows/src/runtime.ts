@@ -14,7 +14,7 @@ import type {
   WorkflowCheckpointCommitInput,
 } from './types.js';
 import { resolvePermissions } from './permission-checker.js';
-import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js';
+import { executeAgentCall, computeAgentCacheKey } from './agent-shim.js';
 import type { AgentCacheStore, AgentLauncher, AgentEventEmitter } from './agent-shim.js';
 import { runParallel } from './parallel-runner.js';
 import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';
@@ -44,6 +44,7 @@ import {
   type WorkflowEffectAuthorizationDisposition,
   type WorkflowEffectAuthorizationPort,
 } from './internal/workflow-effect-authorization-contract.js';
+import type { ResolvedAgentConfig } from './agent-resolver.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -782,7 +783,7 @@ function createRuntimeInternal(
     async agent<T>(prompt: string, agentOptions: AgentOptions): Promise<T> {
       throwIfAborted('agent_call');
       // Resolve agentType if provided
-      let resolvedAgent: import('./agent-resolver.js').ResolvedAgentConfig | null = null;
+      let resolvedAgent: ResolvedAgentConfig | null = null;
       if (agentOptions.agentType) {
         resolvedAgent = resolveAgentType(agentOptions.agentType, options.rootDir ?? process.cwd());
       }

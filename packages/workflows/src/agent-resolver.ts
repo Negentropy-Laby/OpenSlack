@@ -45,7 +45,7 @@ function readYamlFiles(dir: string): string[] {
  */
 function parseRegistryYaml(
   content: string,
-  filePath: string,
+  _filePath: string,
 ): {
   agentId: string;
   model?: string;

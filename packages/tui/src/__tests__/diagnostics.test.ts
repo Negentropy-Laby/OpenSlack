@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { diagnoseTui, renderDiagnosticsPlain } from '../diagnostics.js';
-import type { TuiDiagnosticReport } from '../diagnostics.js';
 
 describe('diagnoseTui', () => {
   const originalEnv: Record<string, string | undefined> = {};
@@ -126,12 +125,24 @@ describe('diagnoseTui', () => {
   });
 
   it('reports color depth', () => {
+    delete process.env.NO_COLOR;
     process.env.COLORTERM = 'truecolor';
 
     const report = diagnoseTui({ isTTY: true, columns: 80, rows: 24 });
 
     const colorFinding = report.findings.find((f) => f.label === 'Color')!;
     expect(colorFinding.detail).toContain('truecolor');
+  });
+
+  it('lets an inherited NO_COLOR take precedence over COLORTERM', () => {
+    process.env.NO_COLOR = '1';
+    process.env.COLORTERM = 'truecolor';
+
+    const report = diagnoseTui({ isTTY: true, columns: 80, rows: 24 });
+
+    const colorFinding = report.findings.find((f) => f.label === 'Color')!;
+    expect(colorFinding.detail).toContain('mono');
+    expect(colorFinding.status).toBe('warn');
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -6,7 +6,6 @@ import {
   discoverWorkflows as discoverWorkflowsWithUserHome,
   discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
 } from '../loader.js';
-import type { WorkflowSource } from '../types.js';
 
 const discoverWorkflows = (cwd: string) =>
   discoverWorkflowsWithUserHome(cwd, { userHomeDir: null });
@@ -40,24 +39,6 @@ export const meta = {
   description: 'Test ${name}',
   phases: [{ title: 'Scan', detail: 'Scan phase' }]
 }
-`,
-    );
-  }
-
-  function writeAmbientWorkflow(dir: string, filename: string, name: string) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, filename),
-      `
-export const meta = {
-  name: '${name}',
-  description: 'Ambient ${name}',
-  phases: [{ title: 'Scan', detail: 'Scan phase' }]
-}
-
-phase("Scan")
-log("Running ambient ${name}")
-const result = await agent("do work", { label: "scan", phase: "Scan" })
 `,
     );
   }

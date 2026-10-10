@@ -205,7 +205,26 @@ export function assertProviderUsageReceipt(value: unknown): asserts value is Pro
       throw new TypeError('Provider usage token counts are inconsistent.');
     }
   }
-  const { receiptHash: _receiptHash, ...unsigned } = typed;
+  // The digest covers the receipt without its own hash. This is an explicit
+  // projection rather than a rest-omit so the omitted field is a named,
+  // typed decision: `assertProviderUsageReceipt` above enforces a closed
+  // fourteen-key set, so these thirteen fields are exactly the hashed bytes,
+  // and `canonicalJson` sorts keys, so the digest is unchanged.
+  const unsigned: Omit<ProviderUsageReceipt, 'receiptHash'> = {
+    schema: typed.schema,
+    providerHash: typed.providerHash,
+    modelHash: typed.modelHash,
+    runHash: typed.runHash,
+    attempt: typed.attempt,
+    calls: typed.calls,
+    status: typed.status,
+    inputTokens: typed.inputTokens,
+    outputTokens: typed.outputTokens,
+    totalTokens: typed.totalTokens,
+    outcome: typed.outcome,
+    requestHash: typed.requestHash,
+    outcomeHash: typed.outcomeHash,
+  };
   const expectedHash = hashDomainValue(RECEIPT_DOMAIN, canonicalJson(unsigned));
   if (receipt.receiptHash !== expectedHash) {
     throw new TypeError('Provider usage receipt hash is invalid.');

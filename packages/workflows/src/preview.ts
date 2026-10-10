@@ -7,7 +7,6 @@ import type {
   WorkflowFormat,
 } from './types.js';
 import { createRuntime } from './runtime.js';
-import type { RuntimeOptions } from './runtime.js';
 import type { AgentLauncher, AgentCacheStore } from './agent-shim.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
 

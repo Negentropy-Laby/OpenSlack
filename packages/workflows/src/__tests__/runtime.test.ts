@@ -11,8 +11,7 @@ import { createWorkflowCheckpointLeaseAuthority } from '../internal/workflow-che
 import { registerWorkflowEffectAuthorizationPort } from '../internal/workflow-effect-authorization-contract.js';
 import type { RuntimeOptions } from '../runtime.js';
 import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
-import type { PipelineCacheStore } from '../pipeline-runner.js';
-import type { WorkflowMeta, BudgetState } from '../types.js';
+import type { WorkflowMeta } from '../types.js';
 import type { RunStore } from '../run-store.js';
 
 const testManifest: WorkflowMeta = {

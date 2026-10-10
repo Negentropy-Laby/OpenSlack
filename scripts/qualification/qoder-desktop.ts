@@ -47,10 +47,8 @@ const CONFIG_FILE = 'mcp-config.windows.json';
 const CALL_PLAN_FILE = 'call-plan.json';
 const EVIDENCE_REF = /^sha256:[0-9a-f]{64}$/;
 const PENDING = 'PENDING';
-const PERMISSION_OUTCOMES = Object.freeze([
-  'prompt_observed',
-  'no_prompt_read_only_observed',
-] as const);
+/** Observed permission-prompt outcomes. Used only at the type level. */
+type PermissionOutcome = 'prompt_observed' | 'no_prompt_read_only_observed';
 const SKILL_MODES = Object.freeze(['automatic', 'slash_chooser', 'explicit_name'] as const);
 const REQUIRED_SECTIONS = Object.freeze([
   'Status',
@@ -104,7 +102,7 @@ export interface QoderDesktopQualificationManifest {
 }
 
 interface QoderReceiptToolCall extends QoderToolBaseline {
-  readonly permissionOutcome: (typeof PERMISSION_OUTCOMES)[number];
+  readonly permissionOutcome: PermissionOutcome;
   readonly evidenceRef: string;
 }
 
@@ -219,7 +217,7 @@ function isReviewedReadOnlyBinding(binding: QoderToolAnnotationBinding | undefin
   );
 }
 
-function isPermissionOutcome(value: unknown): value is (typeof PERMISSION_OUTCOMES)[number] {
+function isPermissionOutcome(value: unknown): value is PermissionOutcome {
   return value === 'prompt_observed' || value === 'no_prompt_read_only_observed';
 }
 
@@ -1232,7 +1230,7 @@ export function verifyQoderDesktopQualification(receiptPathValue: string): Reado
 export function qoderReceiptFixture(
   manifest: QoderDesktopQualificationManifest,
   timestamp = new Date().toISOString(),
-  permissionOutcome: (typeof PERMISSION_OUTCOMES)[number] = 'no_prompt_read_only_observed',
+  permissionOutcome: PermissionOutcome = 'no_prompt_read_only_observed',
 ): QoderDesktopQualificationReceipt {
   const evidenceRef = `sha256:${'e'.repeat(64)}`;
   return {

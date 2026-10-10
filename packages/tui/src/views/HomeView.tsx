@@ -9,7 +9,7 @@ import Divider from '../design-system/Divider.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import { useNavigation } from '../navigation/context.js';
 import { useClampedIndex } from '../hooks/use-clamped-index.js';
-import type { HomeViewModel, TaskItem, RecommendedAction } from '../view-models/home.js';
+import type { HomeViewModel, RecommendedAction } from '../view-models/home.js';
 import AskBar from '../components/AskBar.js';
 import ActionCard from '../components/ActionCard.js';
 import type { AskBarSubmit } from '../components/AskBar.js';

@@ -22,6 +22,7 @@ import {
   bootstrapWorkflowLabels,
 } from '../workflow-issue-publisher.js';
 import type { WorkflowModuleShape } from '../workflow-issues.js';
+import type { GitHubClient } from '../client.js';
 
 const mockGetClient = vi.mocked(getClient);
 const mockCreateTaskIssue = vi.mocked(createTaskIssue);
@@ -499,7 +500,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -614,7 +615,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -669,7 +670,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -703,7 +704,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -725,7 +726,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -740,7 +741,7 @@ describe('workflow issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: {} as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: {} as unknown as GitHubClient['octokit'],
         authMode: 'dry_run',
         isDryRun: true,
       });

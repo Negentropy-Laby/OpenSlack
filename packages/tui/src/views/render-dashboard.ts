@@ -6,5 +6,5 @@ import DashboardView from './DashboardView.js';
 
 export async function renderDashboardTui(projection: DashboardProjection): Promise<void> {
   const model = mapDashboardToViewModel(projection);
-  const { unmount } = await renderTui(React.createElement(DashboardView, { model }));
+  await renderTui(React.createElement(DashboardView, { model }));
 }

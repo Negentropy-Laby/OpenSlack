@@ -1,17 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   existsSync,
   readFileSync,
-  readdirSync,
   mkdtempSync,
   rmSync,
   mkdirSync,
   writeFileSync,
 } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
-import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

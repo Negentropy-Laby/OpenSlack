@@ -53,8 +53,6 @@ import {
 import { assertNoLineExceedsWidth } from './helpers/render-at-columns.js';
 
 import { Writable } from 'stream';
-import stripAnsi from 'strip-ansi';
-import { stringWidth } from '../ink/stringWidth.js';
 
 function createMockStdout(columns: number, rows = 50) {
   const chunks: string[] = [];

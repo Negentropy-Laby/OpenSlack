@@ -380,6 +380,9 @@ Verification binds a reviewed candidate and manifest digest, reports missing
 external gates, and always states that installation/execution are unauthorized.
 New candidate inputs stay DRAFT; an earlier administrator input approval is
 preserved as hashed provenance. See the handoff for exact commands and stop
-conditions. The selected registry's absence from governance `main` remains a
-deployment blocker, without changing the production authority reader or the
-pre-merge real qualification requirement.
+conditions. PR #418 and its selected registry are now merged into governance
+`main`; the administrator selected deployment and real qualification afterward.
+No isolation or live deletion PASS follows from that merge. Historical package
+gates remain unchanged, and current host/authority evidence is reported
+separately. See the handoff for strict current-evidence planning and the separate
+source-only build proof.

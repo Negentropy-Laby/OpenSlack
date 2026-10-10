@@ -19,6 +19,7 @@ import {
   testProcessEnvironment,
   testTemporaryDirectory,
   testPowerShells,
+  testPowerShellEnvironment,
 } from '../../../../scripts/testing/process-fixture.mjs';
 
 vi.mock('node:child_process', async (original) => {
@@ -135,4 +136,36 @@ it('caches repeated Git Bash path conversions within one fixture', () => {
     .mocked(spawnSync)
     .mock.calls.filter((call) => JSON.stringify(call[1]).includes('cygpath'));
   expect(conversions).toHaveLength(process.platform === 'win32' ? 1 : 0);
+});
+
+it.each(['PSModulePath', 'psmodulepath', 'PsModulePath'])(
+  'isolates inherited %s only in PowerShell test children',
+  (key) => {
+    const parent = { PATH: 'tools', [key]: 'another shell edition', KEEP: 'yes' };
+    const env = testPowerShellEnvironment(parent, 'win32');
+    expect(Object.keys(env).some((name) => name.toLowerCase() === 'psmodulepath')).toBe(false);
+    expect(parent[key]).toBe('another shell edition');
+    expect(env.KEEP).toBe('yes');
+    expect(testProcessEnvironment(parent, 'linux')[key]).toBe('another shell edition');
+  },
+);
+
+it('PowerShell 5.1 resolves Get-FileHash with a poisoned parent module path', () => {
+  if (process.platform !== 'win32') {
+    expect(testPowerShellEnvironment({ PSModulePath: '/foreign/modules' })).toEqual({});
+    return;
+  }
+  const env = testPowerShellEnvironment({
+    ...process.env,
+    PSModulePath: 'C:\\foreign-edition\\Modules',
+  });
+  for (const shell of testPowerShells(env)) {
+    const result = spawnSync(
+      shell,
+      ['-NoProfile', '-Command', '(Get-Command Get-FileHash -ErrorAction Stop).Name'],
+      { env, encoding: 'utf8' },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toBe('Get-FileHash');
+  }
 });

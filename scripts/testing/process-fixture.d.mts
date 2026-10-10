@@ -28,3 +28,8 @@ export function createTestProcessResolver(
   cwd: string;
   executable(command: string): string;
 };
+
+export function testPowerShellEnvironment(
+  parent?: NodeJS.ProcessEnv,
+  platform?: NodeJS.Platform,
+): NodeJS.ProcessEnv;

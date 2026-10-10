@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -8,8 +8,6 @@ import {
   listPendingJobs,
   markJobComplete,
   markJobFailed,
-  isDuplicate,
-  recordDedupe,
 } from '../profile-sync-queue.js';
 import type { ProfileSyncConfig } from '../profile-sync-config.js';
 

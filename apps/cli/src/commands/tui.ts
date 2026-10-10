@@ -1,6 +1,16 @@
 import { Command } from 'commander';
 import { asWorkflowRunReadError, renderWorkflowRunReadDiagnostics } from '@openslack/workflows';
 import type { OperatorApplicationContext } from '../boot/context.js';
+import type {
+  LifecycleStage,
+  PhaseIssueItem,
+  ProfileFailureDetails,
+  ProfileSyncDetails,
+  ProfileSyncMode,
+  ShellViewData,
+  WorkflowLifecycleBaseData,
+  WorkflowLifecycleViewModel,
+} from '@openslack/tui';
 import { getBuildInfo } from '../release/build-info.js';
 
 interface WorkflowLifecycleRunCandidate {
@@ -75,7 +85,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           mapAbyRuntimeDoctorToViewModel,
           mapWorkflowRunsToViewModel,
         } = await import('@openslack/tui');
-        const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
+        const data: ShellViewData = { rootDir: process.cwd() };
 
         const { resolveWorkspaceContext } = await import('@openslack/workspace');
         const context = resolveWorkspaceContext();
@@ -284,12 +294,12 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
         data.workflowLifecycleLoader = async (
           workflowName: string,
-          baseData?: import('@openslack/tui').WorkflowLifecycleBaseData,
-        ): Promise<import('@openslack/tui').WorkflowLifecycleViewModel | null> => {
+          baseData?: WorkflowLifecycleBaseData,
+        ): Promise<WorkflowLifecycleViewModel | null> => {
           const { fetchWorkflowLifecycleIssues } = await import('@openslack/github');
           const gh = await fetchWorkflowLifecycleIssues(workflowName);
 
-          const stages: import('@openslack/tui').LifecycleStage[] = [];
+          const stages: LifecycleStage[] = [];
 
           if (gh.proposalIssue) {
             stages.push({
@@ -393,7 +403,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             });
           }
 
-          const phaseIssues: import('@openslack/tui').PhaseIssueItem[] = gh.phaseIssues.map(
+          const phaseIssues: PhaseIssueItem[] = gh.phaseIssues.map(
             (pi) => ({
               phase: pi.phase,
               issueNumber: pi.number,
@@ -559,9 +569,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           let markerStatus: 'present' | 'missing' | 'unknown' = 'unknown';
           let validationSummary = { total: 0, published: 0, failed: 0 };
           let pendingPR: { number: number; url: string; branch: string } | undefined;
-          let syncDetails: import('@openslack/tui').ProfileSyncDetails | undefined;
-          let failureDetails: import('@openslack/tui').ProfileFailureDetails | undefined;
-          let psMode: import('@openslack/tui').ProfileSyncMode = 'manual'; // conservative default if config load fails below
+          let syncDetails: ProfileSyncDetails | undefined;
+          let failureDetails: ProfileFailureDetails | undefined;
+          let psMode: ProfileSyncMode = 'manual'; // conservative default if config load fails below
           let syncStatus: 'synced' | 'pending' | 'failed' | 'never' = 'never';
 
           try {

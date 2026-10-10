@@ -181,7 +181,8 @@ function mapMessageToItem(
         metadata: { runId: s(msg.runId), eventType: s(msg.eventType) },
       };
     default: {
-      const _exhaustive: never = msg;
+      // Compile-time exhaustiveness check with no runtime binding.
+      msg satisfies never;
       throw new Error(`Unhandled message kind: ${(msg as { kind: string }).kind}`);
     }
   }

@@ -2,7 +2,9 @@ export { fetchPRDetails } from './fetch.js';
 export {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
+  evaluateCleanupHandoffVerification,
   CleanupHandoffError,
+  CLEANUP_HANDOFF_PROFILES,
 } from './cleanup-handoff.js';
 export type {
   CleanupHandoffErrorCode,
@@ -14,6 +16,38 @@ export type {
   VerifyCleanupHandoffPackageResult,
 } from './cleanup-handoff.js';
 export { cleanupPRBranch } from './cleanup-branch.js';
+export {
+  CLEANUP_OPERATION_RECORD_SCHEMA,
+  CLEANUP_OPERATION_RECORD_MAX_BYTES,
+  CLEANUP_OPERATION_RECORD_DIRECTORY,
+  CleanupOperationRecordError,
+  cleanupOperationRecordPath,
+  assertCleanupOperationRecord,
+  buildCleanupOperationRecord,
+  readCleanupOperationRecord,
+  readCleanupOperationRecordFor,
+  saveCleanupOperationRecord,
+} from './cleanup-operation-record.js';
+export type {
+  CleanupOperationQueryRecord,
+  CleanupOperationRequest,
+  CleanupOperationRecordErrorCode,
+  SaveCleanupOperationRecordResult,
+} from './cleanup-operation-record.js';
+export {
+  CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA,
+  CLEANUP_TARGET_UPGRADE_GATES,
+  CleanupTargetUpgradeError,
+  prepareCleanupTargetUpgradePlan,
+  isUpgradeTargetDirectory,
+} from './cleanup-target-upgrade.js';
+export type {
+  PrepareCleanupTargetUpgradePlanInput,
+  PrepareCleanupTargetUpgradePlanResult,
+  CleanupTargetUpgradeFileAction,
+  CleanupTargetUpgradeStep,
+  CleanupTargetUpgradeErrorCode,
+} from './cleanup-target-upgrade.js';
 export { sendCleanupBrokerRequest, CleanupBrokerClientError } from './cleanup-broker-client.js';
 export type {
   CleanupBrokerRequest,

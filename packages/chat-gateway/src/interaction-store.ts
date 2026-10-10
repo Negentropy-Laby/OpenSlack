@@ -8,7 +8,6 @@ interface ProcessedEntry {
 
 const processed = new Map<string, ProcessedEntry>();
 const MAX_ENTRIES = 10000;
-const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function hashMessage(text: string, userId: string, channelId: string): string {
   return createHash('sha256').update(`${userId}:${channelId}:${text}`).digest('hex');

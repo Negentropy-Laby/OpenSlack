@@ -314,13 +314,6 @@ export function layoutTerminalText(
     lineWidth = lineItems.reduce((sum, item) => sum + item.width, 0);
   }
 
-  function resetBreakSnapshot(): void {
-    lastBreakIdx = -1;
-    snapText = '';
-    snapWidth = 0;
-    snapItemCount = 0;
-  }
-
   function rememberBreak(segmentIndex: number): void {
     lastBreakIdx = segmentIndex;
     snapText = lineText;

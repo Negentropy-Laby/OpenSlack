@@ -13,7 +13,7 @@ export const meta: WorkflowMeta = {
 
 export async function preview(
   ctx: WorkflowRuntime,
-  args: Record<string, unknown>,
+  _args: Record<string, unknown>,
 ): Promise<PreviewResult> {
   ctx.phase('Scan');
   ctx.log('Test scan starting');

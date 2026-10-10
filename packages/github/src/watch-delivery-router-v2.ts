@@ -9,7 +9,8 @@ import {
   materializeWebhookNotificationBody,
   validateNotificationBodyForHandoff,
 } from './notification-body.js';
-import { NotificationBlobStore, NotificationBlobStoreError } from './notification-blob-store.js';
+import type { NotificationBlobStore} from './notification-blob-store.js';
+import { NotificationBlobStoreError } from './notification-blob-store.js';
 import type { NotificationAcceptanceReceiptV1 } from './notification-receipt-store.js';
 import type { NotificationReceiptStore } from './notification-receipt-store.js';
 import type { NotificationServiceClient } from './notification-service-client.js';
@@ -34,8 +35,9 @@ import {
   type RepositoryEvent,
 } from './repository-event.js';
 import type { GitHubWatchRouteV2 } from './watch-config-v2.js';
+import type {
+  WatchDeliveryQueueV2} from './watch-delivery-queue-v2.js';
 import {
-  WatchDeliveryQueueV2,
   WatchDeliveryQueueV2Error,
   type ClaimedWatchRouteV2,
   type WatchRouteEnqueueInputV2,
