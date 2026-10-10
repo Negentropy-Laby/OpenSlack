@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  CLEANUP_INSTALL_LAYOUT,
   CLEANUP_TARGET_UPGRADE_GATES,
   CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA,
   CleanupTargetUpgradeError,
   prepareCleanupTargetUpgradePlan,
+  renderUpgradeCommand,
   type PrepareCleanupTargetUpgradePlanInput,
 } from '../cleanup-target-upgrade.js';
 import type { CleanupHandoffTargetEvidence } from '../cleanup-handoff.js';
@@ -99,27 +101,200 @@ function plan(overrides: Partial<PrepareCleanupTargetUpgradePlanInput> = {}) {
   return prepareCleanupTargetUpgradePlan({ ...base, ...overrides });
 }
 
+describe('R18-01 administrator commands are rendered safely', () => {
+  it('quotes arguments so spaces survive and metacharacters are neutralised', () => {
+    const rendered = renderUpgradeCommand({
+      program: 'install',
+      args: ['-m', '0755', '/opt/candidate package/node', '/usr/lib/openslack-cleanup/node'],
+    });
+    expect(rendered).toBe(
+      "'install' '-m' '0755' '/opt/candidate package/node' '/usr/lib/openslack-cleanup/node'",
+    );
+    // A space path stays one argument rather than splitting into two.
+    expect(rendered).toContain("'/opt/candidate package/node'");
+  });
+
+  it.each([';', '&&', '|', '$(id)', '`id`', '\n', '\r'])(
+    'never leaves %j outside quotes',
+    (metacharacter) => {
+      const rendered = renderUpgradeCommand({
+        program: 'install',
+        args: [metacharacter === '\n' || metacharacter === '\r' ? '/tmp/x' : `/tmp/${metacharacter}`],
+      });
+      // Either the character is refused outright, or it appears only inside
+      // single quotes where a shell cannot act on it.
+      const outsideQuotes = rendered.replace(/'[^']*'/g, '');
+      expect(outsideQuotes).not.toContain(metacharacter);
+    },
+  );
+
+  it.each(['\n', '\r', '\u0000', '\u001f', '\u007f'])(
+    'refuses control character %j in an argument',
+    (control) => {
+      expect(() =>
+        renderUpgradeCommand({ program: 'install', args: [`/tmp/${control}node`] }),
+      ).toThrow(CleanupTargetUpgradeError);
+    },
+  );
+
+  it('refuses a control character in the program name', () => {
+    expect(() => renderUpgradeCommand({ program: 'in\nstall', args: [] })).toThrow(
+      CleanupTargetUpgradeError,
+    );
+  });
+
+  it('never emits a destination taken from the manifest', () => {
+    // A manifest entry that tries to add a destination, and one that tries to
+    // inject a command, must both be absent from every planned action.
+    const injected = '/usr/lib/openslack-cleanup/node; echo UNSAFE';
+    const result = plan({
+      targetEvidence: evidence(
+        installationManifest([
+          { path: injected },
+          { path: '/tmp/attacker-controlled/node' },
+          { path: '/usr/lib/openslack-cleanup/node' },
+        ]),
+      ),
+    });
+
+    const destinations = result.files.map((file) => file.path);
+    expect(destinations).not.toContain(injected);
+    expect(destinations).not.toContain('/tmp/attacker-controlled/node');
+    expect(result.files).toHaveLength(CLEANUP_INSTALL_LAYOUT.length);
+    for (const command of result.administratorCommands) {
+      expect(command).not.toContain('UNSAFE');
+      expect(command).not.toContain('/tmp/attacker-controlled');
+    }
+  });
+});
+
+describe('R18-09 the fixed layout includes the Broker', () => {
+  it('plans the Broker even when the installation manifest omits it', () => {
+    // The old manifest lists only node, so an old-manifest-driven plan would
+    // never touch the Broker at all.
+    const result = plan({
+      targetEvidence: evidence(
+        installationManifest([{ path: '/usr/lib/openslack-cleanup/node' }]),
+      ),
+    });
+    const broker = result.files.find((file) => file.artifact === 'cleanup-broker');
+    expect(broker).toBeDefined();
+    expect(broker!.path).toBe('/usr/lib/openslack-cleanup/cleanup-broker');
+    expect(broker!.mode).toBe('0755');
+    expect(broker!.owner).toBe('root:root');
+  });
+
+  it('plans every layout member with a fixed mode and owner', () => {
+    const result = plan();
+    expect(result.files.map((file) => file.artifact).sort()).toEqual(
+      CLEANUP_INSTALL_LAYOUT.map((entry) => entry.artifact).sort(),
+    );
+    for (const file of result.files) {
+      expect(file.mode).toBe('0755');
+      expect(file.owner).toBe('root:root');
+    }
+  });
+
+  it('reports a candidate artifact missing from the package as unverified', () => {
+    const result = plan();
+    // The minimal test package carries only node and executor.mjs.
+    expect(result.files.find((file) => file.artifact === 'git')!.candidateSHA256).toBe('');
+    expect(result.unmetGates).toContain(CLEANUP_TARGET_UPGRADE_GATES.destinationUnverified);
+  });
+});
+
+describe('R18-10 observed state and manifest claims', () => {
+  it('distinguishes missing, unreadable and mismatched', () => {
+    const dir = root();
+    const unreadable = join(dir, 'directory-not-file');
+    mkdirSync(unreadable, { recursive: true });
+    const result = plan({
+      targetEvidence: evidence(installationManifest([])),
+    });
+    // Nothing is installed in this test, so every destination is missing.
+    expect(result.files.every((file) => file.observed === 'missing')).toBe(true);
+    expect(result.files.every((file) => file.action === 'install')).toBe(true);
+  });
+
+  it('reports a manifest claim that disagrees with the observed file', () => {
+    const result = plan({
+      targetEvidence: evidence(
+        installationManifest([
+          { path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) },
+        ]),
+      ),
+    });
+    const node = result.files.find((file) => file.artifact === 'node')!;
+    // The manifest claims a digest, but the destination does not exist, so the
+    // claim cannot be confirmed and the action follows the observation.
+    expect(node.manifestClaimedSHA256).toBe('a'.repeat(64));
+    expect(node.observed).toBe('missing');
+    expect(node.action).toBe('install');
+  });
+
+  it('propagates the package gate when the package is unverified', () => {
+    const result = plan({ manifestSHA256: 'b'.repeat(64) });
+    expect(result.packageVerified).toBe(false);
+    expect(result.unmetGates).toContain(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+    // The upgrade step must be blocked by that gate.
+    const upgrade = result.steps.find((step) => step.id === 'controlled-upgrade')!;
+    expect(upgrade.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+  });
+});
+
+describe('R18-11 the nonce step is not blocked by activation', () => {
+  it('does not block start-unactivated on activation', () => {
+    const result = plan();
+    const start = result.steps.find((step) => step.id === 'start-unactivated')!;
+    // Activation needs the nonce this step produces, so requiring activation
+    // here would deadlock the ordering.
+    expect(start.blockedBy).not.toContain(CLEANUP_TARGET_UPGRADE_GATES.brokerActivation);
+  });
+
+  it('blocks the governance PR step on activation, which needs the nonce', () => {
+    const result = plan();
+    const governance = result.steps.find((step) => step.id === 'prepare-governance-pr')!;
+    expect(governance.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.brokerActivation);
+  });
+
+  it('orders the stages so the nonce is obtained before activation is prepared', () => {
+    const result = plan();
+    const ids = result.steps.map((step) => step.id);
+    expect(ids.indexOf('start-unactivated')).toBeLessThan(ids.indexOf('prepare-governance-pr'));
+    expect(ids.indexOf('controlled-upgrade')).toBeLessThan(
+      ids.indexOf('installation-isolation-verification'),
+    );
+    expect(ids.indexOf('installation-isolation-verification')).toBeLessThan(
+      ids.indexOf('start-unactivated'),
+    );
+  });
+});
+
 describe('cleanup target upgrade plan', () => {
-  it('classifies installed files against the candidate artifacts', () => {
+  it('classifies destinations against the candidate artifacts from the fixed layout', () => {
     const result = plan();
     const byArtifact = new Map(result.files.map((file) => [file.artifact, file.action]));
 
-    // node already matches the candidate; executor.mjs differs and must be replaced.
-    expect(byArtifact.get('node')).toBe('current');
-    expect(byArtifact.get('executor.mjs')).toBe('replace');
+    // Nothing is installed on this host, so every destination is planned as an
+    // install regardless of what the manifest claims about it.
+    expect(byArtifact.get('node')).toBe('install');
+    expect(byArtifact.get('executor.mjs')).toBe('install');
+    expect(result.files.every((file) => file.observed === 'missing')).toBe(true);
     expect(result.schema).toBe(CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA);
     expect(result.createdAt).toBe('2026-09-21T00:00:00.000Z');
   });
 
-  it('classifies an installed file with no recorded digest as install', () => {
+  it('plans every fixed destination even when the manifest lists one path', () => {
     const result = plan({
       targetEvidence: evidence(
         installationManifest([{ path: '/usr/lib/openslack-cleanup/node', sha256: null }]),
       ),
     });
-    expect(result.files).toHaveLength(1);
-    expect(result.files[0]!.action).toBe('install');
-    expect(result.files[0]!.installedSHA256).toBeNull();
+    // The layout, not the manifest, decides how many destinations exist.
+    expect(result.files).toHaveLength(CLEANUP_INSTALL_LAYOUT.length);
+    const node = result.files.find((file) => file.artifact === 'node')!;
+    expect(node.action).toBe('install');
+    expect(node.installedSHA256).toBeNull();
   });
 
   it('reports the package gate instead of throwing when the package is unverified', () => {
@@ -153,7 +328,13 @@ describe('cleanup target upgrade plan', () => {
     const result = plan();
     expect(result.steps.length).toBeGreaterThan(0);
     expect(result.steps.every((step) => step.actor === 'administrator')).toBe(true);
-    expect(result.administratorCommands).toEqual(result.steps.flatMap((s) => s.commands));
+    // Commands are structured, and the rendered list is exactly their rendering.
+    expect(result.administratorCommands).toEqual(
+      result.steps.flatMap((step) => step.commands.map((command) => renderUpgradeCommand(command))),
+    );
+    expect(result.steps.every((step) => step.workingDirectory.length > 0)).toBe(true);
+    expect(result.steps.every((step) => step.expectedOutput.length > 0)).toBe(true);
+    expect(result.steps.every((step) => step.stopCondition.length > 0)).toBe(true);
   });
 
   it('does not modify the installation it plans for', () => {
