@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type * as Crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
+import { cp as copyDirectory } from 'node:fs/promises';
 import {
   cpSync,
   chmodSync,
@@ -17,7 +18,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   assertCleanupHandoffRuntime,
@@ -46,6 +47,8 @@ vi.mock('node:crypto', async (original) => {
   };
 });
 const roots: string[] = [];
+let sourceSeed: { root: string; source: string; candidateHead: string } | undefined;
+let respondedAtPreparationEnd = false;
 const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 function rehashPackage(result: { packageDirectory: string; manifestSHA256: string }) {
   const path = join(result.packageDirectory, 'SHA256SUMS');
@@ -108,6 +111,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+beforeAll(async () => {
+  let responded = false;
+  setImmediate(() => {
+    responded = true;
+  });
+  // Commit a real, immutable Git source once. Each case gets independent file
+  // copies, so source mutations never leak between cases. Git startup and
+  // commit preparation belong to setup, not each case's business deadline.
+  const prepared = await fixture();
+  respondedAtPreparationEnd = responded;
+  sourceSeed = {
+    root: prepared.root,
+    source: prepared.input.sourceRoot,
+    candidateHead: prepared.input.candidateHead,
+  };
+  roots.splice(roots.indexOf(prepared.root), 1);
+}, platformTestTimeout(30_000));
+afterAll(() => {
+  if (sourceSeed) rmSync(sourceSeed.root, { recursive: true, force: true });
+});
 
 async function fixture() {
   const root = mkdtempSync(join(realpathSync(tmpdir()), 'cleanup handoff '));
@@ -120,26 +143,28 @@ async function fixture() {
     writeFileSync(full, bytes);
     return full;
   };
-  put('source/package.json', JSON.stringify({ devDependencies: { 'bun-types': '1.4.0' } }));
-  put('source/bun.lock', 'fixture lock');
-  put('source/LICENSE', 'fixture source license\n');
-  put('source/services/cleanup-broker/go.mod', 'module fixture\ngo 1.26.5\n');
-  put('source/services/cleanup-broker/handoff.md', '# Fixture procedure\n');
-  put('source/services/cleanup-broker/README.md', '# Fixture README\n');
-  for (const name of ['broker', 'install-manifest', 'task-dependencies'])
-    put(`source/services/cleanup-broker/handoff/${name}.template.json`, '{}\n');
-  put(
-    'source/.openslack/agents/registry/fixture_agent.yaml',
-    JSON.stringify({
-      schema: 'openslack.agent_registry.v2',
-      agent_id: 'fixture_agent',
-      identity: { uid: 'fixture_agent', principal_id: 'principal:fixture_agent' },
-      permissions: {
-        max_risk_zone: 'yellow',
-        actions: { 'pr.cleanup_branch_scoped.v1': 'allow', 'pr.cleanup_branch': 'deny' },
-      },
-    }),
-  );
+  if (!sourceSeed) {
+    put('source/package.json', JSON.stringify({ devDependencies: { 'bun-types': '1.4.0' } }));
+    put('source/bun.lock', 'fixture lock');
+    put('source/LICENSE', 'fixture source license\n');
+    put('source/services/cleanup-broker/go.mod', 'module fixture\ngo 1.26.5\n');
+    put('source/services/cleanup-broker/handoff.md', '# Fixture procedure\n');
+    put('source/services/cleanup-broker/README.md', '# Fixture README\n');
+    for (const name of ['broker', 'install-manifest', 'task-dependencies'])
+      put(`source/services/cleanup-broker/handoff/${name}.template.json`, '{}\n');
+    put(
+      'source/.openslack/agents/registry/fixture_agent.yaml',
+      JSON.stringify({
+        schema: 'openslack.agent_registry.v2',
+        agent_id: 'fixture_agent',
+        identity: { uid: 'fixture_agent', principal_id: 'principal:fixture_agent' },
+        permissions: {
+          max_risk_zone: 'yellow',
+          actions: { 'pr.cleanup_branch_scoped.v1': 'allow', 'pr.cleanup_branch': 'deny' },
+        },
+      }),
+    );
+  }
   const run = promisify(execFile);
   const git = async (...args: string[]) =>
     (
@@ -149,18 +174,24 @@ async function fixture() {
         timeout: 4_000,
       })
     ).stdout.trim();
-  await git('init', '-q');
-  await git('add', '.');
-  await git(
-    '-c',
-    'user.name=fixture',
-    '-c',
-    'user.email=fixture@example.invalid',
-    'commit',
-    '-qm',
-    'fixture',
-  );
-  const candidateHead = await git('rev-parse', 'HEAD');
+  let candidateHead: string;
+  if (sourceSeed) {
+    await copyDirectory(sourceSeed.source, source, { recursive: true });
+    candidateHead = sourceSeed.candidateHead;
+  } else {
+    await git('init', '-q');
+    await git('add', '.');
+    await git(
+      '-c',
+      'user.name=fixture',
+      '-c',
+      'user.email=fixture@example.invalid',
+      'commit',
+      '-qm',
+      'fixture',
+    );
+    candidateHead = await git('rev-parse', 'HEAD');
+  }
   const broker = fixtureBroker(candidateHead);
   for (const id of ['a', 'b']) cpSync(source, join(root, `checkout-${id}`), { recursive: true });
   const executor = Buffer.from('fixture executor');
@@ -297,22 +328,9 @@ function verify(result: ReturnType<typeof prepareCleanupHandoffDraft>, now = new
 
 describe('offline cleanup handoff preparation', () => {
   describe('real Git preparation responsiveness', () => {
-    let respondedAtPreparationEnd = false;
-    let candidateHead: string;
-    beforeAll(async () => {
-      let responded = false;
-      setImmediate(() => {
-        responded = true;
-      });
-      const prepared = await fixture();
-      // Capture here: a synchronous fixture must not pass merely because
-      // Vitest yields between preparation and the assertion callback.
-      respondedAtPreparationEnd = responded;
-      candidateHead = prepared.input.candidateHead;
-    }, platformTestTimeout(30_000));
     it('keeps real Git fixture preparation responsive to worker task updates', () => {
       expect(respondedAtPreparationEnd).toBe(true);
-      expect(candidateHead).toMatch(/^[a-f0-9]{40}$/);
+      expect(sourceSeed?.candidateHead).toMatch(/^[a-f0-9]{40}$/);
     });
   });
 
