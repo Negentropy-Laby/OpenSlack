@@ -38,6 +38,35 @@ describe('broker-only client source invariants', () => {
     expect(source).not.toContain('simple-git');
   });
 
+  it('publishes the query record before sending an execute', () => {
+    // R18-05: the record must exist before the request leaves, through the same
+    // authorized durable path the CLI uses. Scoped to the execute path, because
+    // the record status branch legitimately sends earlier in the file.
+    const executeAt = source.indexOf("if (mode === 'execute')");
+    expect(executeAt).toBeGreaterThan(-1);
+    const publishAt = source.indexOf('saveCleanupOperationRecord(', executeAt);
+    const sendAt = source.indexOf('await sendCleanupBrokerRequest(', executeAt);
+    expect(publishAt).toBeGreaterThan(executeAt);
+    expect(sendAt).toBeGreaterThan(publishAt);
+    expect(source).toContain('buildCleanupOperationRecord');
+  });
+
+  it('resolves identity from an explicit workspace and never bootstraps one', () => {
+    expect(source).toContain("'--workspace'");
+    expect(source).toContain('resolveAgentPrincipal');
+    // The fixed identity is the only source; claims are checked, not trusted.
+    expect(source).toContain('does not match the fixed workspace identity');
+    expect(source).not.toContain('hireAgent');
+    expect(source).not.toContain('createRuntimeIdentity');
+  });
+
+  it('imports only the identity resolver from runtime, not the whole surface', () => {
+    // Keeps the bundle free of process execution: the narrowed import was
+    // measured to produce a bundle with zero child_process references.
+    expect(source).toContain("packages/runtime/src/identity.js");
+    expect(source).not.toContain("packages/runtime/src/index.js");
+  });
+
   it('shares the production result evaluator rather than a private exit-code table', () => {
     // R18-06: both entries must agree on accepted-but-running = 0 and
     // refused/failed/unknown/reconciliation = 1.

@@ -3,8 +3,15 @@ import {
   sendCleanupBrokerRequest,
   type CleanupBrokerRequest,
 } from '../../packages/pr/src/cleanup-broker-client.js';
-import { readCleanupOperationRecord } from '../../packages/pr/src/cleanup-operation-record.js';
+import {
+  buildCleanupOperationRecord,
+  readCleanupOperationRecord,
+  saveCleanupOperationRecord,
+} from '../../packages/pr/src/cleanup-operation-record.js';
 import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-result.js';
+// Narrow import: only the identity resolver is needed, not the whole runtime
+// surface, so the bundle stays small and gains no unrelated capability.
+import { resolveAgentPrincipal } from '../../packages/runtime/src/identity.js';
 
 /**
  * Broker-only cleanup client for the installed target.
@@ -16,12 +23,18 @@ import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-resul
  * durable binding; this client can neither delete a remote branch itself nor
  * authorize one.
  *
+ * Identity is read from an explicitly named workspace and never bootstrapped:
+ * the fixed registry and runtime identity an administrator provisioned are the
+ * only source, and the explicit claims on the command line are checked against
+ * them rather than trusted.
+ *
  * This entry is bundled with its implementation and has no checkout,
  * node_modules, Git or network dependency beyond the broker socket.
  */
 const MODES = ['preview', 'execute', 'status'] as const;
 const OPTIONS = [
   '--mode',
+  '--workspace',
   '--agent-id',
   '--principal-id',
   '--runtime-uid',
@@ -41,8 +54,9 @@ const claim = /^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/;
 function usage(message: string): never {
   process.stderr.write(`CLIENT_INPUT_INVALID: ${message}\n`);
   process.stderr.write(
-    `Usage: client.mjs --mode <${MODES.join('|')}> --agent-id <id> --principal-id <id> --runtime-uid <uid> --run-id <id> --repo <owner/name> --remote <name> --pr <number> --permit-id <id> [--operation-id <id>] [--timeout-ms <n>]\n` +
-      '       client.mjs --mode status --operation-record <path>\n',
+    `Usage: client.mjs --mode <${MODES.join('|')}> --workspace <dir> --agent-id <id> --repo <owner/name> --remote <name> --pr <number> --permit-id <id> [--operation-id <id>] [--principal-id <id>] [--runtime-uid <uid>] [--run-id <id>] [--timeout-ms <n>]\n` +
+      '       client.mjs --mode status --operation-record <path>\n' +
+      'Explicit --principal-id, --runtime-uid and --run-id are checked against the fixed workspace identity; they never replace it.\n',
   );
   process.exit(2);
 }
@@ -122,31 +136,17 @@ async function main(): Promise<void> {
     return;
   }
 
-  const required = [
-    '--agent-id',
-    '--principal-id',
-    '--runtime-uid',
-    '--run-id',
-    '--repo',
-    '--remote',
-    '--pr',
-    '--permit-id',
-  ] as const;
+  const required = ['--workspace', '--agent-id', '--repo', '--remote', '--pr', '--permit-id'] as const;
   for (const name of required) if (!options.has(name)) usage(`${name} is required`);
 
+  const workspace = options.get('--workspace')!;
   const agentId = options.get('--agent-id')!;
-  const principalId = options.get('--principal-id')!;
-  const runtimeUid = options.get('--runtime-uid')!;
-  const runId = options.get('--run-id')!;
   const repo = options.get('--repo')!;
   const remote = options.get('--remote')!;
   const permitId = options.get('--permit-id')!;
   const prNumber = Number(options.get('--pr'));
 
   if (!identifier.test(agentId)) usage('--agent-id must be a bounded identifier');
-  if (!claim.test(principalId)) usage('--principal-id must be a bounded claim');
-  if (!claim.test(runtimeUid)) usage('--runtime-uid must be a bounded claim');
-  if (!claim.test(runId)) usage('--run-id must be a bounded claim');
   if (!claim.test(permitId)) usage('--permit-id must be a bounded claim');
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) usage('--repo must be owner/name');
   if (!identifier.test(remote)) usage('--remote must be a named remote');
@@ -161,19 +161,63 @@ async function main(): Promise<void> {
     usage('--operation-id must be a bounded identifier');
   }
 
+  // The fixed identity comes from the named workspace. Nothing is bootstrapped:
+  // if the administrator has not provisioned a registry and runtime identity,
+  // this refuses rather than creating one.
+  const resolved = resolveAgentPrincipal({ root: workspace, agentId, provider: 'cli' });
+  if ('error' in resolved) {
+    usage('the fixed workspace identity could not be resolved; do not bootstrap a new one');
+  }
+  const principal = resolved.principal;
+  const snapshot = resolved.snapshot;
+
+  // Explicit claims are checked against the resolved identity, never trusted.
+  const mismatched: string[] = [];
+  if (options.has('--principal-id') && options.get('--principal-id') !== principal.registry_id)
+    mismatched.push('--principal-id');
+  if (options.has('--runtime-uid') && options.get('--runtime-uid') !== principal.runtime_uid)
+    mismatched.push('--runtime-uid');
+  if (options.has('--run-id') && options.get('--run-id') !== principal.run_id)
+    mismatched.push('--run-id');
+  if (mismatched.length > 0) {
+    usage(`${mismatched.join(', ')} does not match the fixed workspace identity`);
+  }
+
   const request: CleanupBrokerRequest = {
     schema: 'openslack.cleanup_request.v1',
     mode,
-    agentId,
-    principalId,
-    runtimeUid,
-    runId,
+    agentId: principal.registry_id,
+    principalId: principal.registry_id,
+    runtimeUid: principal.runtime_uid,
+    runId: principal.run_id,
     repo,
     remote,
     prNumber,
     permitId,
     ...(mode === 'preview' ? {} : { operationId: operationId! }),
   };
+
+  if (mode === 'execute') {
+    // Publish the historical query record before the request is sent, through
+    // the same authorized, durable publish path the repository CLI uses. The
+    // resolved snapshot authorizes the real record path first, so a denial
+    // creates nothing and sends nothing; a persistence failure likewise
+    // refuses the send rather than proceeding without evidence.
+    try {
+      saveCleanupOperationRecord(
+        buildCleanupOperationRecord({ ...request, operationId: operationId! }),
+        { rootDir: workspace, snapshot },
+      );
+    } catch (error) {
+      process.stderr.write(
+        `${
+          error instanceof Error ? error.message : 'CLEANUP_OPERATION_RECORD_FAILED'
+        }\n`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   try {
     const response = await sendCleanupBrokerRequest(request, { timeoutMs });
