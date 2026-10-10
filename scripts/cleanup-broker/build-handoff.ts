@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from 'node:fs';
+import { join, resolve, isAbsolute } from 'node:path';
 import {
   CleanupHandoffError,
   assertCleanupHandoffStaging,
@@ -21,6 +21,8 @@ import type {
 // Orchestrates two clean builds; all draft construction/verification belongs to @openslack/pr.
 type BuildInput = Omit<PrepareCleanupHandoffDraftInput, 'builds' | 'verifierPath' | 'now'> & {
   buildDirectory: string;
+  /** Source-only proof does not claim this Node binary is installed on a target. */
+  nodePath?: string;
 };
 const hash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
 const run = (command: string, args: string[], cwd: string, env = process.env) =>
@@ -33,19 +35,34 @@ const run = (command: string, args: string[], cwd: string, env = process.env) =>
   }).trim();
 try {
   const args = process.argv.slice(2);
+  const sourceOnly = args[0] === '--source-only';
+  if (sourceOnly) args.shift();
   if (args.length !== 2 || args[0] !== '--input' || !args[1])
     throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
   const input = readCleanupHandoffInputFile(args[1]) as BuildInput;
   if ('now' in input || process.platform !== 'linux' || !/^[a-f0-9]{40}$/.test(input.candidateHead))
     throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
-  const { sourceRoot: source } = assertCleanupHandoffStaging(input);
+  const { sourceRoot: source } = assertCleanupHandoffStaging({
+    ...input,
+    outputDirectory: sourceOnly ? input.buildDirectory : input.outputDirectory,
+  });
   const { outputDirectory: buildRoot } = assertCleanupHandoffStaging({
     ...input,
     outputDirectory: input.buildDirectory,
   });
-  if (resolve(input.outputDirectory) === buildRoot)
+  if (!sourceOnly && resolve(input.outputDirectory) === buildRoot)
     throw new CleanupHandoffError('HANDOFF_PATH_UNSAFE');
-  const node = assertCleanupHandoffRuntime(input);
+  if (
+    sourceOnly &&
+    (typeof input.nodePath !== 'string' ||
+      !isAbsolute(input.nodePath) ||
+      /[\r\n\0]/.test(input.nodePath) ||
+      /(?:^|[\\/])(?:credentials|secrets|\.env)(?:[\\/.]|$)|\.(?:pem|key)$/i.test(input.nodePath))
+  )
+    throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  const node = sourceOnly
+    ? realpathSync.native(input.nodePath!)
+    : assertCleanupHandoffRuntime(input);
   const tools = {
     bun: Bun.version,
     go: run('go', ['version'], source),
@@ -56,11 +73,11 @@ try {
   const build = (id: string): CleanupHandoffBuildInput => {
     const checkout = join(buildRoot, `source-${id}`),
       artifacts = join(buildRoot, `build-${id}`);
-    run('git', ['clone', '--quiet', '--no-hardlinks', '--no-checkout', source, checkout], source);
+    run('git', ['clone', '--quiet', '--no-local', '--no-checkout', source, checkout], source);
     run('git', ['checkout', '--quiet', '--detach', input.candidateHead], checkout);
     if (run('git', ['status', '--porcelain'], checkout))
       throw new CleanupHandoffError('HANDOFF_SOURCE_DIRTY');
-    // --no-hardlinks is mandatory, and verify the cloned object files are single-link.
+    // --no-local prohibits shared object hardlinks; verify the resulting store too.
     const objectFiles = run('git', ['rev-parse', '--git-path', 'objects'], checkout);
     assertCleanupHandoffObjects(resolve(checkout, objectFiles));
     run(process.execPath, ['install', '--frozen-lockfile', '--ignore-scripts'], checkout);
@@ -133,7 +150,7 @@ try {
           lockfileSHA256: hash(join(checkout, 'bun.lock')),
           goModuleSHA256: hash(join(checkout, 'services/cleanup-broker/go.mod')),
           commands: [
-            'git clone --no-hardlinks --no-checkout <source> <checkout>',
+            'git clone --no-local --no-checkout <source> <checkout>',
             `git checkout --detach ${input.candidateHead}`,
             'bun install --frozen-lockfile --ignore-scripts',
             'GOWORK=off CGO_ENABLED=0 go build -trimpath -buildvcs=true -o <artifact-directory>/cleanup-broker ./cmd/cleanup-broker',
@@ -176,29 +193,64 @@ try {
   };
   const builds = [build('a'), build('b')] as const;
   // Every bundled tool must be byte-identical across the two independent builds.
-  const identicalTools = ['verify-handoff.mjs', 'cleanup-client.mjs', 'admin-upgrade.mjs'];
+  const identicalTools = [
+    'cleanup-broker',
+    'executor.mjs',
+    'verify-handoff.mjs',
+    'cleanup-client.mjs',
+    'admin-upgrade.mjs',
+  ];
   for (const tool of identicalTools) {
     if (hash(join(buildRoot, 'build-a', tool)) !== hash(join(buildRoot, 'build-b', tool)))
       throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
   }
-  const verifierPath = join(buildRoot, 'build-a/verify-handoff.mjs');
-  const clientPath = join(buildRoot, 'build-a/cleanup-client.mjs');
-  const adminToolPath = join(buildRoot, 'build-a/admin-upgrade.mjs');
-  const clientDocPath = join(source, 'services/cleanup-broker/client.md');
-  const result = prepareCleanupHandoffDraft({
-    ...input,
-    builds,
-    verifierPath,
-    clientPath,
-    adminToolPath,
-    clientDocPath,
-  });
-  writeFileSync(
-    join(buildRoot, 'preparation-result.DRAFT.json'),
-    JSON.stringify(result, null, 2) + '\n',
-    { flag: 'wx' },
-  );
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  if (sourceOnly) {
+    const proof = {
+      schema: 'openslack.cleanup_source_build_proof.v1',
+      candidateHead: input.candidateHead,
+      tools,
+      sourceNodeSHA256: hash(node),
+      builds,
+      artifacts: Object.fromEntries(
+        identicalTools.map((name) => [
+          name,
+          {
+            sha256: hash(join(buildRoot, 'build-a', name)),
+            bytes: statSync(join(buildRoot, 'build-a', name)).size,
+          },
+        ]),
+      ),
+      packageCreated: false,
+      targetEvidenceVerified: false,
+      installationAuthorized: false,
+      executionAuthorized: false,
+    };
+    writeFileSync(
+      join(buildRoot, 'source-build-proof.json'),
+      JSON.stringify(proof, null, 2) + '\n',
+      { flag: 'wx' },
+    );
+    process.stdout.write(JSON.stringify(proof, null, 2) + '\n');
+  } else {
+    const verifierPath = join(buildRoot, 'build-a/verify-handoff.mjs');
+    const clientPath = join(buildRoot, 'build-a/cleanup-client.mjs');
+    const adminToolPath = join(buildRoot, 'build-a/admin-upgrade.mjs');
+    const clientDocPath = join(source, 'services/cleanup-broker/client.md');
+    const result = prepareCleanupHandoffDraft({
+      ...input,
+      builds,
+      verifierPath,
+      clientPath,
+      adminToolPath,
+      clientDocPath,
+    });
+    writeFileSync(
+      join(buildRoot, 'preparation-result.DRAFT.json'),
+      JSON.stringify(result, null, 2) + '\n',
+      { flag: 'wx' },
+    );
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  }
 } catch (error) {
   process.stderr.write(
     (error instanceof CleanupHandoffError

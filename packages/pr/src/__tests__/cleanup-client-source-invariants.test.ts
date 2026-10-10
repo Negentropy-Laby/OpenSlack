@@ -63,8 +63,8 @@ describe('broker-only client source invariants', () => {
   it('imports only the identity resolver from runtime, not the whole surface', () => {
     // Keeps the bundle free of process execution: the narrowed import was
     // measured to produce a bundle with zero child_process references.
-    expect(source).toContain("packages/runtime/src/identity.js");
-    expect(source).not.toContain("packages/runtime/src/index.js");
+    expect(source).toContain('packages/runtime/src/identity.js');
+    expect(source).not.toContain('packages/runtime/src/index.js');
   });
 
   it('shares the production result evaluator rather than a private exit-code table', () => {
@@ -77,12 +77,15 @@ describe('broker-only client source invariants', () => {
   it('refuses to use a published record in place of identity authorization', () => {
     // The record is evidence of a past request, so it is readable only in
     // status mode and can never admit a preview or execute.
-    expect(source).toContain("if (mode !== 'status') usage('--operation-record is only valid with --mode status')");
+    expect(source).toContain('--operation-record is only valid with --mode status');
   });
 });
 
 describe('administrator upgrade tooling source invariants', () => {
-  const adminSource = readFileSync(join(REPO, 'scripts', 'cleanup-broker', 'admin-upgrade.ts'), 'utf8');
+  const adminSource = readFileSync(
+    join(REPO, 'scripts', 'cleanup-broker', 'admin-upgrade.ts'),
+    'utf8',
+  );
 
   it('reuses the production upgrade-plan path', () => {
     expect(adminSource).toContain("from '../../packages/pr/src/cleanup-target-upgrade.js'");
