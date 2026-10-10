@@ -223,6 +223,14 @@ export interface PrepareCleanupTargetUpgradePlanResult {
   files: CleanupTargetUpgradeFileAction[];
   steps: CleanupTargetUpgradeStep[];
   administratorCommands: string[];
+  /**
+   * Destinations where the installation manifest contradicts the target.
+   *
+   * The manifest is not authoritative, so this does not decide an action — but
+   * it is surfaced rather than silently discarded, because an administrator
+   * about to replace files should know the recorded state is wrong.
+   */
+  manifestDisagreements: string[];
   unmetGates: string[];
   /** Planning is not installation. */
   installationPerformed: false;
@@ -590,6 +598,7 @@ export function prepareCleanupTargetUpgradePlan(
     manifestSHA256: input.manifestSHA256,
     packageVerified: verified.valid,
     packageErrors: verified.errors,
+    manifestDisagreements: files.filter((file) => file.claimDisagrees).map((file) => file.path),
     files,
     steps,
     administratorCommands: steps.flatMap((step) =>

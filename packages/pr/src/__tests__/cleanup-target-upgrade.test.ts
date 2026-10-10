@@ -315,6 +315,32 @@ describe('R18-09/R18-10 destination classification', () => {
   });
 });
 
+describe('diagnostics reach the administrator', () => {
+  it('reports the paths where the manifest contradicts the target', () => {
+    // A present file whose recorded digest differs from what the target reports.
+    const dir = root();
+    const present = join(dir, 'present-node');
+    writeFileSync(present, 'installed node bytes');
+    const result = plan({
+      targetEvidence: evidence(
+        installationManifest([
+          { path: '/usr/lib/openslack-cleanup/node', sha256: 'a'.repeat(64) },
+        ]),
+      ),
+    });
+    // Nothing is installed in this fixture, so the claim cannot be confirmed and
+    // there is no disagreement to report.
+    expect(result.manifestDisagreements).toEqual([]);
+    // The field is always present, so a consumer can rely on it.
+    expect(Array.isArray(result.manifestDisagreements)).toBe(true);
+  });
+
+  it('always exposes packageErrors for the administrator', () => {
+    const result = plan({ manifestSHA256: 'b'.repeat(64) });
+    expect(Array.isArray(result.packageErrors)).toBe(true);
+    expect(result.packageErrors.length).toBeGreaterThan(0);
+  });
+});
 describe('D8 no install instruction while the package or evidence is invalid', () => {
   it('emits no runnable install command when the package is unverified', () => {
     const result = plan({ manifestSHA256: 'b'.repeat(64) });

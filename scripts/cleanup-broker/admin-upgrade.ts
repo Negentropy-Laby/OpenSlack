@@ -70,6 +70,19 @@ if (!process.exitCode) {
     if (plan.unmetGates.length > 0) {
       process.stdout.write(`Unmet gates: ${plan.unmetGates.join(', ')}\n`);
     }
+    // Diagnostics that would otherwise never reach the administrator: the
+    // verifier's error codes, and destinations whose recorded manifest digest
+    // contradicts the target. The manifest is not authoritative, so a
+    // disagreement does not decide an action — but it must be visible before
+    // files are replaced.
+    if (plan.packageErrors.length > 0) {
+      process.stdout.write(`Package errors: ${plan.packageErrors.join(', ')}\n`);
+    }
+    if (plan.manifestDisagreements.length > 0) {
+      process.stdout.write(
+        `Installation manifest disagrees with the target at: ${plan.manifestDisagreements.join(', ')}\n`,
+      );
+    }
     // An unverified candidate is a hard stop for the administrator; outstanding
     // gates are expected and do not by themselves make the plan unusable.
     if (!plan.packageVerified) process.exitCode = 2;
