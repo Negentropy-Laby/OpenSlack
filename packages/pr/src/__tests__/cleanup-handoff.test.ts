@@ -24,6 +24,7 @@ import {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
 } from '../cleanup-handoff.js';
+import { prepareCleanupTargetUpgradePlan } from '../cleanup-target-upgrade.js';
 import type { PrepareCleanupHandoffDraftInput } from '../cleanup-handoff.js';
 
 const digestWork = vi.hoisted(() => [] as Buffer[]);
@@ -945,5 +946,74 @@ describe('standalone package integrity contract', () => {
     const checked = verify(result, new Date('2026-10-10T00:00:00Z'));
     expect(checked.valid).toBe(true);
     expect(checked.unmetGates).toContain('TASK_EVIDENCE_EXPIRED');
+  });
+});
+
+
+async function upgradeFixture() {
+  const f = await fixture(), pkg = prepareCleanupHandoffDraft(f.input);
+  const selected = JSON.parse(readFileSync(join(pkg.packageDirectory, 'draft/inputs.DRAFT.json'), 'utf8')).selected;
+  const common = {target: selected.target_distro, workspaceId: selected.workspace_id,
+    repository: 'fixture/qualification', repositoryId: '12345', recordedAt: '2026-10-08T12:00:00Z', expiresAt: '2026-10-09T12:00:00Z'};
+  const identities = {broker: {uid: 44180, gid: 44180}, agent: {uid: 44181, gid: 44181}, principalId: 'principal:fixture_agent', runtimeUid: 'fixture_agent', runId: 'fixture-run'};
+  const write = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value));
+  const evidence = f.input.targetEvidence;
+  write(evidence.taskAttestationPath, {...common, schema: 'openslack.cleanup_task_attestation.v1', task_view_sha256: digest(readFileSync(evidence.taskViewPath)), complete: true});
+  write(evidence.appScopePath, {...common, schema: 'openslack.cleanup_app_scope_evidence.v1', appId: 123, installationId: 456, selectedRepositories: [{repository: common.repository, repositoryId: common.repositoryId}], permissions: {contents: 'write', metadata: 'read', issues: 'read', pull_requests: 'read'}});
+  write(evidence.networkPath, {...common, schema: 'openslack.cleanup_network_evidence.v1', httpsProxy: '', noProxy: '', ownerAccount: 'fixture-admin', executablePath: '/fixture/proxy', executableSHA256: digest('proxy'), administratorConfirmed: true});
+  write(evidence.identityPath, {...common, schema: 'openslack.cleanup_identity_evidence.v1', agentId: 'fixture_agent', brokerId: 'fixture-broker', identities});
+  write(evidence.dependencyInventoryPath, {...common, schema: 'openslack.cleanup_dependency_inventory.v1', files: [{path: '/usr/lib/fixture.so', sha256: digest('library'), uid: 0, gid: 0, mode: '0644'}]});
+  const adminInputPath = f.put('inputs/admin-upgrade.json', JSON.stringify({...common, schema: 'openslack.cleanup_upgrade_inputs.v1', candidateHead: pkg.candidateHead, manifestSHA256: pkg.manifestSHA256, selected, approvalStatus: 'DRAFT', approvedBy: null, approvedAt: null}));
+  const hostInspectionPath = f.put('inputs/host.json', JSON.stringify({...common, schema: 'openslack.cleanup_host_inspection.v1', candidateHead: pkg.candidateHead, manifestSHA256: pkg.manifestSHA256, identities,
+    files: ['cleanup-broker','executor.mjs','node','git','sh','git-core/git-remote-https'].map(name => ({path: '/usr/lib/openslack-cleanup/' + name, state: 'missing', sha256: null, uid: null, gid: null, mode: null})),
+    process: {state: 'stopped', pid: null}, persistentState: {state: 'inspected', ledgerSHA256: digest('ledger'), journalSHA256: digest('journal'), consistentBackupVerified: false},
+    evidenceSHA256: Object.fromEntries(Object.entries(evidence).map(([role,path])=>[role,digest(readFileSync(path))]))}));
+  const input = {packageDirectory: pkg.packageDirectory, candidateHead: pkg.candidateHead, manifestSHA256: pkg.manifestSHA256, targetEvidence: evidence, adminInputPath, hostInspectionPath, now: new Date(timestamp)};
+  return {f, input, write, pkg};
+}
+
+describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
+  it('plans six artifacts only from a verified candidate and complete current evidence', async () => {
+    const {input} = await upgradeFixture();
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.packageVerified).toBe(true);
+    expect(plan.steps.find(step=>step.id==='controlled-upgrade')!.commands).toHaveLength(6);
+  });
+  it.each(['installationManifestPath','taskViewPath','taskAttestationPath','appScopePath','networkPath','identityPath','dependencyInventoryPath'] as const)(
+    'refuses missing %s even with a verified package', async role => {
+      const {input} = await upgradeFixture();
+      delete (input.targetEvidence as Partial<typeof input.targetEvidence>)[role];
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.packageVerified).toBe(true);
+      expect(plan.steps.find(step=>step.id==='controlled-upgrade')!.commands).toEqual([]);
+      expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INCOMPLETE');
+    });
+  it.each(['malformed','directory','unknown-key','duplicate-key','expired','wrong-identity'])(
+    'refuses %s evidence without concealing the valid candidate', async mode => {
+      const {input,write} = await upgradeFixture();
+      const path = mode === 'wrong-identity' ? input.hostInspectionPath : input.targetEvidence.taskViewPath;
+      const value = JSON.parse(readFileSync(path,'utf8'));
+      if (mode === 'malformed') writeFileSync(path,'{');
+      if (mode === 'directory') { rmSync(path); mkdirSync(path); }
+      if (mode === 'unknown-key') write(path,{...value,extra: true});
+      if (mode === 'duplicate-key') writeFileSync(path, JSON.stringify(value).replace('{','{"schema":"duplicate",'));
+      if (mode === 'expired') write(path,{...value,expiresAt:'2026-10-07T00:00:00Z'});
+      if (mode === 'wrong-identity') write(path,{...value,identities:{...value.identities,runId:'WRONG'}});
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.packageVerified).toBe(true);
+      expect(plan.steps.find(step=>step.id==='controlled-upgrade')!.commands).toEqual([]);
+    });
+  it('preserves package expiry as a validity failure and emits no install commands', async () => {
+    const {input} = await upgradeFixture();
+    input.now = new Date('2026-10-10T00:00:00Z');
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.unmetGates).toContain('TASK_EVIDENCE_EXPIRED');
+    expect(plan.steps.find(step=>step.id==='controlled-upgrade')!.commands).toEqual([]);
+  });
+  it('governance preparation consumes a nonce without requiring its own activation output', async () => {
+    const {input} = await upgradeFixture();
+    const plan = prepareCleanupTargetUpgradePlan(input), governance = plan.steps.find(step=>step.id==='prepare-governance-pr')!;
+    expect(governance.blockedBy).not.toContain('BROKER_ACTIVATION_REQUIRED');
+    expect(governance).toHaveProperty('dependsOn', ['start-unactivated']);
   });
 });
