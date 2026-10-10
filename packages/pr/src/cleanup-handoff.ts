@@ -1317,8 +1317,8 @@ export function verifyCleanupHandoffPackage(
       );
       const gates = declaredGates as string[];
       result.outstandingGates = [...new Set([...GATES, ...gates])];
-      if (gates.some((gate) => !GATES.includes(gate)))
-        result.validityIssues.push('HANDOFF_UNKNOWN_GATE');
+      const unknownGates = gates.filter((gate) => !GATES.includes(gate));
+      if (unknownGates.length) result.validityIssues.push('HANDOFF_UNKNOWN_GATE', ...unknownGates);
     }
     const task = verifyDraftRelations(bytes, sha);
     const now = nowMs(input.now);
