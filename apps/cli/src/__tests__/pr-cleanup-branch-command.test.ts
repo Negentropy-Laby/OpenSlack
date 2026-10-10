@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { onCleanupRecordPlatform } from '../../../../packages/pr/src/__tests__/helpers/cleanup-record-platform.js';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -114,8 +115,11 @@ const result = {
 };
 
 describe('branch cleanup CLI adapter', () => {
+  let commandWorkspace: string;
   beforeEach(() => {
     vi.clearAllMocks();
+    commandWorkspace = mkdtempSync(join(tmpdir(), 'cleanup-command-'));
+    mocks.workspaceRoot.mockReturnValue(commandWorkspace);
     process.exitCode = undefined;
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -140,6 +144,7 @@ describe('branch cleanup CLI adapter', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     process.exitCode = undefined;
+    rmSync(commandWorkspace, { recursive: true, force: true });
   });
 
   it('defaults to live preview and records previewed without a durable execution write', async () => {
@@ -276,6 +281,13 @@ describe('branch cleanup CLI adapter', () => {
         operationStatus: mode === 'status',
         operationId: 'OP-1',
       });
+      if (mode === 'execute' && process.platform !== 'linux') {
+        expect(process.exitCode).toBe(1);
+        expect(mocks.broker).not.toHaveBeenCalled();
+        expect(existsSync(join(commandWorkspace, '.openslack', 'outbox'))).toBe(false);
+        expect(console.error).toHaveBeenCalledWith(expect.stringContaining('UNSUPPORTED_PLATFORM'));
+        return;
+      }
       expect(mocks.broker).toHaveBeenCalledWith(
         expect.objectContaining({ mode, operationId: 'OP-1' }),
         expect.any(Object),
@@ -291,15 +303,22 @@ describe('branch cleanup CLI adapter', () => {
     'BROKER_UNAVAILABLE',
     'BROKER_TIMEOUT',
     'BROKER_INVALID_RESPONSE',
-  ] as const)('prints typed broker %s without fallback or retry', async (code) => {
-    mocks.broker.mockRejectedValue(new CleanupBrokerClientError(code, true));
-    await runPRBranchCleanupCommand('417', { ...agentOptions, execute: true, operationId: 'OP-1' });
-    expect(process.exitCode).toBe(1);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(code));
-    expect(mocks.broker).toHaveBeenCalledTimes(1);
-    expect(mocks.client).not.toHaveBeenCalled();
-    expect(mocks.cleanup).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    'prints typed broker %s without fallback or retry',
+    onCleanupRecordPlatform(async (code) => {
+      mocks.broker.mockRejectedValue(new CleanupBrokerClientError(code, true));
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        execute: true,
+        operationId: 'OP-1',
+      });
+      expect(process.exitCode).toBe(1);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining(code));
+      expect(mocks.broker).toHaveBeenCalledTimes(1);
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(mocks.cleanup).not.toHaveBeenCalled();
+    }),
+  );
 
   it.each(['https://github.com/owner/repo.git', 'git@github.com:owner/repo.git', ' owner/repo '])(
     'normalizes explicit repository %j before sending broker claims',
@@ -312,19 +331,26 @@ describe('branch cleanup CLI adapter', () => {
       expect(process.exitCode).toBe(0);
     },
   );
-  it('clears a previous embedded-command failure when execute is accepted and still running', async () => {
-    process.exitCode = 1;
-    mocks.broker.mockResolvedValue({
-      ...brokerResult,
-      mode: 'execute',
-      state: 'OPERATION_IN_PROGRESS',
-      permitState: 'reserved',
-      operationId: 'OP-1',
-    });
-    await runPRBranchCleanupCommand('417', { ...agentOptions, execute: true, operationId: 'OP-1' });
-    expect(process.exitCode).toBe(0);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('has not completed'));
-  });
+  it(
+    'clears a previous embedded-command failure when execute is accepted and still running',
+    onCleanupRecordPlatform(async () => {
+      process.exitCode = 1;
+      mocks.broker.mockResolvedValue({
+        ...brokerResult,
+        mode: 'execute',
+        state: 'OPERATION_IN_PROGRESS',
+        permitState: 'reserved',
+        operationId: 'OP-1',
+      });
+      await runPRBranchCleanupCommand('417', {
+        ...agentOptions,
+        execute: true,
+        operationId: 'OP-1',
+      });
+      expect(process.exitCode).toBe(0);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('has not completed'));
+    }),
+  );
   it.each([
     'OPERATION_IN_PROGRESS',
     'RECONCILIATION_REQUIRED',
@@ -514,14 +540,17 @@ describe('branch cleanup CLI adapter', () => {
       expect(process.exitCode).toBe(1);
     });
 
-    it('still sends when the resolved snapshot allows the record path', async () => {
-      await runPRBranchCleanupCommand('417', {
-        ...agentOptions,
-        execute: true,
-        operationId: 'OP-1',
-      });
-      expect(mocks.broker).toHaveBeenCalled();
-    });
+    it(
+      'still sends when the resolved snapshot allows the record path',
+      onCleanupRecordPlatform(async () => {
+        await runPRBranchCleanupCommand('417', {
+          ...agentOptions,
+          execute: true,
+          operationId: 'OP-1',
+        });
+        expect(mocks.broker).toHaveBeenCalled();
+      }),
+    );
   });
 
   describe('--operation-record', () => {
@@ -553,99 +582,109 @@ describe('branch cleanup CLI adapter', () => {
       while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });
     });
 
-    it('queries the Broker with the recorded binding, without a workspace, registry or identity', async () => {
-      // A missing workspace root proves the record branch runs before
-      // findWorkspaceRoot(); a throwing registry proves it runs before the
-      // agent registry and identity lookups.
-      mocks.workspaceRoot.mockReturnValue(undefined);
-      mocks.registry.mockImplementation(() => {
-        throw new Error('registry must not be consulted for a published record');
-      });
-      mocks.identity.mockImplementation(() => {
-        throw new Error('identity must not be consulted for a published record');
-      });
-      mocks.broker.mockResolvedValue({
-        ...brokerResult,
-        mode: 'status',
-        operationId: 'OP-1',
-        state: 'DELETED',
-        permitState: 'consumed',
-        auditStatus: 'RECORDED',
-      });
-
-      // No PR positional: the record supplies it.
-      await runPRBranchCleanupCommand(undefined, {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-      });
-
-      expect(process.exitCode).toBe(0);
-      // The record must be queried, not merely printed.
-      expect(mocks.broker).toHaveBeenCalledWith(
-        expect.objectContaining({
-          schema: 'openslack.cleanup_request.v1',
+    it(
+      'queries the Broker with the recorded binding, without a workspace, registry or identity',
+      onCleanupRecordPlatform(async () => {
+        // A missing workspace root proves the record branch runs before
+        // findWorkspaceRoot(); a throwing registry proves it runs before the
+        // agent registry and identity lookups.
+        mocks.workspaceRoot.mockReturnValue(undefined);
+        mocks.registry.mockImplementation(() => {
+          throw new Error('registry must not be consulted for a published record');
+        });
+        mocks.identity.mockImplementation(() => {
+          throw new Error('identity must not be consulted for a published record');
+        });
+        mocks.broker.mockResolvedValue({
+          ...brokerResult,
           mode: 'status',
           operationId: 'OP-1',
-          repo: 'owner/repo',
-          remote: 'origin',
-          prNumber: 417,
-          permitId: 'PERMIT-1',
-          agentId: 'worker',
-        }),
-        expect.any(Object),
-      );
-      expect(mocks.cleanup).not.toHaveBeenCalled();
-      expect(mocks.client).not.toHaveBeenCalled();
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Operation: OP-1'));
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('not an authorization'),
-      );
-    });
+          state: 'DELETED',
+          permitState: 'consumed',
+          auditStatus: 'RECORDED',
+        });
 
-    it('uses the shared evaluator for the exit code', async () => {
-      mocks.broker.mockResolvedValue({
-        ...brokerResult,
-        mode: 'status',
-        operationId: 'OP-1',
-        state: 'OPERATION_IN_PROGRESS',
-        permitState: 'reserved',
-      });
-      await runPRBranchCleanupCommand(undefined, {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-      });
-      // Accepted but still running is exit 0 with a notice, matching the
-      // production evaluator rather than a private exit-code table.
-      expect(process.exitCode).toBe(0);
-      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('still running'));
-    });
+        // No PR positional: the record supplies it.
+        await runPRBranchCleanupCommand(undefined, {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+        });
 
-    it('requires --operation-status', async () => {
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationRecord: publishedRecord(),
-      });
-      expect(process.exitCode).toBe(1);
-      expect(console.error).toHaveBeenCalledWith(
-        '--operation-record is only valid with --operation-status.',
-      );
-    });
+        expect(process.exitCode).toBe(0);
+        // The record must be queried, not merely printed.
+        expect(mocks.broker).toHaveBeenCalledWith(
+          expect.objectContaining({
+            schema: 'openslack.cleanup_request.v1',
+            mode: 'status',
+            operationId: 'OP-1',
+            repo: 'owner/repo',
+            remote: 'origin',
+            prNumber: 417,
+            permitId: 'PERMIT-1',
+            agentId: 'worker',
+          }),
+          expect.any(Object),
+        );
+        expect(mocks.cleanup).not.toHaveBeenCalled();
+        expect(mocks.client).not.toHaveBeenCalled();
+        expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Operation: OP-1'));
+        expect(console.log).toHaveBeenCalledWith(expect.stringContaining('not an authorization'));
+      }),
+    );
 
-    it('never lets a record authorize an execute', async () => {
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-        execute: true,
-      });
-      expect(process.exitCode).toBe(1);
-      expect(console.error).toHaveBeenCalledWith(
-        '--operation-record cannot authorize an execute.',
-      );
-      expect(mocks.broker).not.toHaveBeenCalled();
-    });
+    it(
+      'uses the shared evaluator for the exit code',
+      onCleanupRecordPlatform(async () => {
+        mocks.broker.mockResolvedValue({
+          ...brokerResult,
+          mode: 'status',
+          operationId: 'OP-1',
+          state: 'OPERATION_IN_PROGRESS',
+          permitState: 'reserved',
+        });
+        await runPRBranchCleanupCommand(undefined, {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+        });
+        // Accepted but still running is exit 0 with a notice, matching the
+        // production evaluator rather than a private exit-code table.
+        expect(process.exitCode).toBe(0);
+        expect(console.error).toHaveBeenCalledWith(expect.stringContaining('still running'));
+      }),
+    );
+
+    it(
+      'requires --operation-status',
+      onCleanupRecordPlatform(async () => {
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationRecord: publishedRecord(),
+        });
+        expect(process.exitCode).toBe(1);
+        expect(console.error).toHaveBeenCalledWith(
+          '--operation-record is only valid with --operation-status.',
+        );
+      }),
+    );
+
+    it(
+      'never lets a record authorize an execute',
+      onCleanupRecordPlatform(async () => {
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+          execute: true,
+        });
+        expect(process.exitCode).toBe(1);
+        expect(console.error).toHaveBeenCalledWith(
+          '--operation-record cannot authorize an execute.',
+        );
+        expect(mocks.broker).not.toHaveBeenCalled();
+      }),
+    );
 
     it.each([
       ['--agent-id', { agentId: 'other' }],
@@ -653,20 +692,23 @@ describe('branch cleanup CLI adapter', () => {
       ['--operation-id', { operationId: 'OP-2' }],
       ['--repo', { repo: 'other/repo' }],
       ['--remote', { remote: 'upstream', remoteExplicit: true }],
-    ])('refuses %s when it conflicts with the record', async (label, patch) => {
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-        ...patch,
-      });
-      expect(process.exitCode).toBe(1);
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining(`--operation-record conflicts with ${label}`),
-      );
-      // A conflict is refused before the query.
-      expect(mocks.broker).not.toHaveBeenCalled();
-    });
+    ])(
+      'refuses %s when it conflicts with the record',
+      onCleanupRecordPlatform(async (label, patch) => {
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+          ...patch,
+        });
+        expect(process.exitCode).toBe(1);
+        expect(console.error).toHaveBeenCalledWith(
+          expect.stringContaining(`--operation-record conflicts with ${label}`),
+        );
+        // A conflict is refused before the query.
+        expect(mocks.broker).not.toHaveBeenCalled();
+      }),
+    );
 
     it.each([
       ['--agent-id', { agentId: 'worker' }],
@@ -674,51 +716,63 @@ describe('branch cleanup CLI adapter', () => {
       ['--operation-id', { operationId: 'OP-1' }],
       ['--repo', { repo: 'owner/repo' }],
       ['--remote', { remote: 'origin', remoteExplicit: true }],
-    ])('accepts %s when it matches the record', async (label, patch) => {
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-        ...patch,
-      });
-      expect(mocks.broker).toHaveBeenCalled();
-      expect(process.exitCode).toBe(0);
-    });
+    ])(
+      'accepts %s when it matches the record',
+      onCleanupRecordPlatform(async (label, patch) => {
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+          ...patch,
+        });
+        expect(mocks.broker).toHaveBeenCalled();
+        expect(process.exitCode).toBe(0);
+      }),
+    );
 
-    it('refuses a PR number that conflicts with the record', async () => {
-      await runPRBranchCleanupCommand('999', {
-        ...options,
-        operationStatus: true,
-        operationRecord: publishedRecord(),
-      });
-      expect(process.exitCode).toBe(1);
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('--operation-record conflicts with PR number'),
-      );
-      expect(mocks.broker).not.toHaveBeenCalled();
-    });
+    it(
+      'refuses a PR number that conflicts with the record',
+      onCleanupRecordPlatform(async () => {
+        await runPRBranchCleanupCommand('999', {
+          ...options,
+          operationStatus: true,
+          operationRecord: publishedRecord(),
+        });
+        expect(process.exitCode).toBe(1);
+        expect(console.error).toHaveBeenCalledWith(
+          expect.stringContaining('--operation-record conflicts with PR number'),
+        );
+        expect(mocks.broker).not.toHaveBeenCalled();
+      }),
+    );
 
-    it('rejects a record whose digest does not match its request', async () => {
-      const path = publishedRecord();
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-      writeFileSync(path, `${JSON.stringify({ ...parsed, requestDigest: 'f'.repeat(64) })}\n`);
+    it(
+      'rejects a record whose digest does not match its request',
+      onCleanupRecordPlatform(async () => {
+        const path = publishedRecord();
+        const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+        writeFileSync(path, `${JSON.stringify({ ...parsed, requestDigest: 'f'.repeat(64) })}\n`);
 
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationStatus: true,
-        operationRecord: path,
-      });
-      expect(process.exitCode).toBe(1);
-      expect(mocks.broker).not.toHaveBeenCalled();
-    });
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationStatus: true,
+          operationRecord: path,
+        });
+        expect(process.exitCode).toBe(1);
+        expect(mocks.broker).not.toHaveBeenCalled();
+      }),
+    );
 
-    it('rejects a sensitive record path', async () => {
-      await runPRBranchCleanupCommand('417', {
-        ...options,
-        operationStatus: true,
-        operationRecord: join(tmpdir(), 'secrets', 'record.json'),
-      });
-      expect(process.exitCode).toBe(1);
-    });
+    it(
+      'rejects a sensitive record path',
+      onCleanupRecordPlatform(async () => {
+        await runPRBranchCleanupCommand('417', {
+          ...options,
+          operationStatus: true,
+          operationRecord: join(tmpdir(), 'secrets', 'record.json'),
+        });
+        expect(process.exitCode).toBe(1);
+      }),
+    );
   });
 });

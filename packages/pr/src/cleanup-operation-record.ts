@@ -8,12 +8,18 @@ import {
   fstatSync,
   linkSync,
   lstatSync,
-  mkdirSync,
   openSync,
-  readSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
+import {
+  CleanupDirectoryAnchor,
+  CleanupFileBoundaryError,
+  assertCleanupDescriptorSupport,
+  inodeIdentity,
+  readCleanupDescriptor,
+  withCleanupFile,
+} from './internal/cleanup-file-boundary.js';
 import { dirname, relative, resolve, sep } from 'node:path';
 import type { CleanupBrokerRequest } from './cleanup-broker-client.js';
 import { cleanupBrokerExecutionDigest } from './internal/cleanup-broker-digest.js';
@@ -76,7 +82,9 @@ export type CleanupOperationRecordErrorCode =
   | 'SYMLINK_REJECTED'
   | 'BINDING_CONFLICT'
   | 'BLOCKED_AUTHORIZATION'
-  | 'PERSISTENCE_FAILED';
+  | 'PERSISTENCE_FAILED'
+  | 'UNSUPPORTED_PLATFORM'
+  | 'FILE_CHANGED';
 
 export class CleanupOperationRecordError extends Error {
   constructor(
@@ -198,132 +206,27 @@ export function assertCleanupOperationRecord(value: unknown): CleanupOperationQu
   return value as unknown as CleanupOperationQueryRecord;
 }
 
-/**
- * fsync the directory that holds a record. On Windows a directory cannot be
- * opened for sync, so this follows the repository convention of skipping it
- * there; the file itself is still fsynced. On other platforms a failure is
- * fatal — the caller must refuse to send.
- */
-function syncContainingDirectory(path: string): void {
-  if (process.platform === 'win32') return;
-  const handle = openSync(dirname(path), fsConstants.O_RDONLY);
-  try {
-    fsyncSync(handle);
-  } finally {
-    closeSync(handle);
+function fileFailure(error: unknown): never {
+  if (error instanceof CleanupOperationRecordError) throw error;
+  if (error instanceof CleanupFileBoundaryError) {
+    const code =
+      error.code === 'TOO_LARGE'
+        ? 'INVALID_RECORD'
+        : error.code === 'UNSAFE_FILE'
+          ? 'INVALID_PATH'
+          : error.code;
+    fail(code, error.message);
   }
+  fail('PERSISTENCE_FAILED', 'Safe cleanup record access or persistence failed; refusing to send.');
 }
-
-/**
- * fsync an existing file through its own descriptor.
- *
- * Opened `O_RDWR` because Windows refuses to fsync a handle opened read-only
- * (`EPERM`). The record is our own mode-0600 file, and a failure here is fatal
- * to the caller rather than downgraded.
- */
-function syncFile(path: string): void {
-  const handle = openSync(path, fsConstants.O_RDWR | noFollow());
+function decodeRecord(bytes: Buffer): CleanupOperationQueryRecord {
   try {
-    fsyncSync(handle);
-  } finally {
-    closeSync(handle);
-  }
-}
-
-/**
- * `O_NOFOLLOW` is not implemented on Windows, where it is 0. The explicit
- * `lstat` checks below are then the protection instead of a silent gap.
- */
-function noFollow(): number {
-  return typeof fsConstants.O_NOFOLLOW === 'number' ? fsConstants.O_NOFOLLOW : 0;
-}
-
-/**
- * Every ancestor of the path must be a real directory. A symlinked ancestor
- * would let a record be written to or read from outside the workspace, so this
- * walks from the containing directory up to the filesystem root.
- */
-function assertSafeAncestry(path: string): void {
-  let current = dirname(resolve(path));
-  for (;;) {
-    let stats: ReturnType<typeof lstatSync>;
-    try {
-      stats = lstatSync(current);
-    } catch {
-      fail('INVALID_PATH', `Cleanup operation record ancestor is not readable: ${current}`);
-    }
-    if (stats.isSymbolicLink()) {
-      fail('SYMLINK_REJECTED', `Cleanup operation record ancestor is a symlink: ${current}`);
-    }
-    if (!stats.isDirectory()) {
-      fail('INVALID_PATH', `Cleanup operation record ancestor is not a directory: ${current}`);
-    }
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-}
-
-/**
- * Read at most `MAX + 1` bytes from an already-open descriptor.
- *
- * The bound is applied to the read itself, never after reading the whole file,
- * and the descriptor's own identity is what is inspected — so replacing the
- * path between a check and the read cannot substitute different content.
- */
-function readBoundedNoFollow(path: string): Buffer {
-  // `O_NOFOLLOW` is unavailable on Windows, so the link check is explicit and
-  // platform-independent; the flag is still passed where the platform supports
-  // it, to close the window between this check and the open.
-  let linkStats: ReturnType<typeof lstatSync>;
-  try {
-    linkStats = lstatSync(path);
-  } catch {
-    fail('INVALID_PATH', 'Cleanup operation record could not be inspected.');
-  }
-  if (linkStats.isSymbolicLink()) {
-    fail('SYMLINK_REJECTED', 'Refusing to follow a symlink to a cleanup operation record.');
-  }
-  if (!linkStats.isFile()) {
-    fail('INVALID_PATH', 'Cleanup operation record must be a regular file.');
-  }
-  let handle: number;
-  try {
-    handle = openSync(path, fsConstants.O_RDONLY | noFollow());
+    return assertCleanupOperationRecord(
+      decodeStrictJSON(bytes, CLEANUP_OPERATION_RECORD_MAX_BYTES),
+    );
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ELOOP') {
-      fail('SYMLINK_REJECTED', 'Refusing to follow a symlink to a cleanup operation record.');
-    }
-    fail('INVALID_PATH', 'Cleanup operation record could not be opened.');
-  }
-  try {
-    const stats = fstatSync(handle);
-    if (!stats.isFile()) {
-      fail('INVALID_PATH', 'Cleanup operation record must be a regular file.');
-    }
-    if (stats.size > CLEANUP_OPERATION_RECORD_MAX_BYTES) {
-      fail('INVALID_RECORD', 'Cleanup operation record exceeds the bounded decode limit.');
-    }
-    const buffer = Buffer.allocUnsafe(CLEANUP_OPERATION_RECORD_MAX_BYTES + 1);
-    let total = 0;
-    for (;;) {
-      const read = readSync(
-        handle,
-        buffer,
-        total,
-        CLEANUP_OPERATION_RECORD_MAX_BYTES + 1 - total,
-        total,
-      );
-      if (read === 0) break;
-      total += read;
-      if (total > CLEANUP_OPERATION_RECORD_MAX_BYTES) {
-        fail('INVALID_RECORD', 'Cleanup operation record exceeds the bounded decode limit.');
-      }
-    }
-    return buffer.subarray(0, total);
-  } finally {
-    closeSync(handle);
+    if (error instanceof CleanupOperationRecordError) throw error;
+    fail('INVALID_RECORD', 'Cleanup operation record is not valid bounded strict JSON.');
   }
 }
 
@@ -343,15 +246,11 @@ function encode(record: CleanupOperationQueryRecord): Buffer {
 /** Read an already-published record without creating or repairing anything. */
 export function readCleanupOperationRecord(path: string): CleanupOperationQueryRecord {
   assertNotSensitive(path);
-  assertSafeAncestry(path);
-  const bytes = readBoundedNoFollow(path);
-  let decoded: unknown;
   try {
-    decoded = decodeStrictJSON(bytes, CLEANUP_OPERATION_RECORD_MAX_BYTES);
-  } catch {
-    fail('INVALID_RECORD', 'Cleanup operation record is not valid bounded strict JSON.');
+    return withCleanupFile(resolve(path), CLEANUP_OPERATION_RECORD_MAX_BYTES, decodeRecord);
+  } catch (error) {
+    return fileFailure(error);
   }
-  return assertCleanupOperationRecord(decoded);
 }
 
 /**
@@ -382,36 +281,23 @@ function writeAll(handle: number, bytes: Buffer): void {
   }
 }
 
-/**
- * Reuse an existing record only after independently re-establishing that its
- * bytes are complete, identical and durable. A previously failed fsync is
- * therefore never bypassed by a later reuse.
- */
-function reuseExisting(path: string, validated: CleanupOperationQueryRecord): SaveCleanupOperationRecordResult {
-  const existing = readCleanupOperationRecord(path);
-  if (existing.requestDigest !== validated.requestDigest) {
-    fail(
-      'BINDING_CONFLICT',
-      'A record for this operation exists with a different binding; refusing to send.',
-    );
-  }
-  try {
-    syncFile(path);
-    syncContainingDirectory(path);
-  } catch {
-    fail('PERSISTENCE_FAILED', 'Existing cleanup operation record could not be re-synced.');
-  }
+function reuseExisting(
+  path: string,
+  validated: CleanupOperationQueryRecord,
+): SaveCleanupOperationRecordResult {
+  withCleanupFile(path, CLEANUP_OPERATION_RECORD_MAX_BYTES, (bytes, fd, directory) => {
+    const existing = decodeRecord(bytes);
+    if (existing.requestDigest !== validated.requestDigest)
+      fail(
+        'BINDING_CONFLICT',
+        'A record for this operation exists with a different binding; refusing to send.',
+      );
+    fsyncSync(fd);
+    directory.sync();
+    if (!readCleanupDescriptor(fd, CLEANUP_OPERATION_RECORD_MAX_BYTES).equals(bytes))
+      fail('FILE_CHANGED', 'Record content changed while establishing durability.');
+  });
   return { status: 'reused', path };
-}
-
-/** Identity of a file, used to prove a temp file is still the one we created. */
-function identityOf(path: string): string | null {
-  try {
-    const stats = lstatSync(path);
-    return `${stats.dev}:${stats.ino}:${stats.size}`;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -469,72 +355,76 @@ export function saveCleanupOperationRecord(
   // record and no send behind it.
   assertRecordPathAuthorized(options.snapshot, options.rootDir, path);
 
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  assertSafeAncestry(path);
-
-  const bytes = encode(validated);
-  const temp = `${path}.${randomBytes(8).toString('hex')}.tmp`;
-  let tempIdentity: string | null = null;
-  const discardTemp = () => {
-    // Only remove a temp file this call created and whose identity still matches.
-    if (tempIdentity === null) return;
-    if (identityOf(temp) !== tempIdentity) return;
-    try {
-      unlinkSync(temp);
-    } catch {
-      // Already gone; nothing to clean up.
-    }
+  let directory: CleanupDirectoryAnchor | undefined;
+  let handle: number | undefined;
+  let temporary: string | undefined;
+  let temporaryIdentity: string | undefined;
+  const discard = () => {
+    if (temporaryIdentity === undefined || directory === undefined || temporary === undefined)
+      return;
+    const internal = directory.path(temporary);
+    const current = lstatSync(internal);
+    if (!current.isFile() || inodeIdentity(current) !== temporaryIdentity)
+      fail('FILE_CHANGED', 'The owned temporary record was replaced; it was not removed.');
+    unlinkSync(internal);
+    temporaryIdentity = undefined;
+    directory.sync();
   };
-
-  let handle: number;
   try {
+    assertCleanupDescriptorSupport();
+    directory = CleanupDirectoryAnchor.open(dirname(path), resolve(options.rootDir));
+    directory.verify();
+    // Existing records are read, compared and synced through one descriptor.
+    try {
+      lstatSync(directory.path(`${validated.request.operationId}.json`));
+      return reuseExisting(path, validated);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const bytes = encode(validated);
+    temporary = `${validated.request.operationId}.json.${randomBytes(8).toString('hex')}.tmp`;
+    directory.verify();
     handle = openSync(
-      temp,
-      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+      directory.path(temporary),
+      fsConstants.O_RDWR | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
       0o600,
     );
-  } catch {
-    fail('PERSISTENCE_FAILED', 'Cleanup operation record temp file could not be created.');
-  }
-  tempIdentity = identityOf(temp);
-  try {
+    temporaryIdentity = inodeIdentity(fstatSync(handle));
     writeAll(handle, bytes);
     fsyncSync(handle);
-  } catch {
-    closeSync(handle);
-    discardTemp();
-    fail('PERSISTENCE_FAILED', 'Cleanup operation record could not be durably written.');
-  }
-  closeSync(handle);
-
-  try {
-    // `link` fails with EEXIST when the record already exists, which is what
-    // makes the publish exclusive without ever overwriting.
-    linkSync(temp, path);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    discardTemp();
-    if (code === 'EEXIST') return reuseExisting(path, validated);
-    fail('PERSISTENCE_FAILED', 'Cleanup operation record could not be published.');
-  }
-
-  try {
-    const published = readBoundedNoFollow(path);
-    if (!published.equals(bytes)) {
-      fail('PERSISTENCE_FAILED', 'Published cleanup operation record does not match its bytes.');
+    directory.verify();
+    const final = directory.path(`${validated.request.operationId}.json`);
+    try {
+      linkSync(directory.path(temporary), final);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      discard();
+      return reuseExisting(path, validated);
     }
+    discard();
+    if (
+      inodeIdentity(lstatSync(final)) !== inodeIdentity(fstatSync(handle)) ||
+      !readCleanupDescriptor(handle, CLEANUP_OPERATION_RECORD_MAX_BYTES).equals(bytes)
+    )
+      fail('FILE_CHANGED', 'Published cleanup operation record changed before send.');
+    directory.sync();
+    if (inodeIdentity(lstatSync(final)) !== inodeIdentity(fstatSync(handle)))
+      fail('FILE_CHANGED', 'Published cleanup operation record was replaced.');
+    if (!readCleanupDescriptor(handle, CLEANUP_OPERATION_RECORD_MAX_BYTES).equals(bytes))
+      fail('FILE_CHANGED', 'Record bytes changed while establishing durability.');
+    directory.verify();
+    return { status: 'published', path };
   } catch (error) {
-    discardTemp();
-    throw error;
+    try {
+      discard();
+    } catch (cleanup) {
+      return fileFailure(cleanup);
+    }
+    return fileFailure(error);
+  } finally {
+    if (handle !== undefined) closeSync(handle);
+    directory?.close();
   }
-  discardTemp();
-
-  try {
-    syncContainingDirectory(path);
-  } catch {
-    fail('PERSISTENCE_FAILED', 'Cleanup operation record directory could not be fsynced.');
-  }
-  return { status: 'published', path };
 }
 
 /** Convenience for callers that only know the workspace root and operation. */

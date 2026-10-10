@@ -6,6 +6,7 @@ import {
 import {
   buildCleanupOperationRecord,
   readCleanupOperationRecord,
+  CleanupOperationRecordError,
   saveCleanupOperationRecord,
 } from '../../packages/pr/src/cleanup-operation-record.js';
 import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-result.js';
@@ -138,7 +139,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const required = ['--workspace', '--agent-id', '--repo', '--remote', '--pr', '--permit-id'] as const;
+  const required = [
+    '--workspace',
+    '--agent-id',
+    '--repo',
+    '--remote',
+    '--pr',
+    '--permit-id',
+  ] as const;
   for (const name of required) if (!options.has(name)) usage(`${name} is required`);
 
   const workspace = options.get('--workspace')!;
@@ -158,7 +166,8 @@ async function main(): Promise<void> {
   if (mode === 'preview' && operationId !== undefined) {
     usage('--operation-id is prohibited for preview');
   }
-  if (mode !== 'preview' && !operationId) usage('--operation-id is required for execute and status');
+  if (mode !== 'preview' && !operationId)
+    usage('--operation-id is required for execute and status');
   if (operationId !== undefined && !identifier.test(operationId)) {
     usage('--operation-id must be a bounded identifier');
   }
@@ -226,9 +235,7 @@ async function main(): Promise<void> {
       );
     } catch (error) {
       process.stderr.write(
-        `${
-          error instanceof Error ? error.message : 'CLEANUP_OPERATION_RECORD_FAILED'
-        }\n`,
+        `${error instanceof Error ? error.message : 'CLEANUP_OPERATION_RECORD_FAILED'}\n`,
       );
       process.exitCode = 1;
       return;
@@ -258,4 +265,13 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  process.stderr.write(
+    error instanceof CleanupOperationRecordError
+      ? `${error.message}\n`
+      : 'CLIENT_EVIDENCE_FAILED: preserve evidence and inspect the original operation.\n',
+  );
+  process.exitCode = 1;
+}

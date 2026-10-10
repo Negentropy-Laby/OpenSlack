@@ -1,3 +1,4 @@
+import { onCleanupRecordPlatform } from './helpers/cleanup-record-platform.js';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -125,40 +126,46 @@ describe('bundled client subprocess', () => {
     expect(result.stderr).toContain('--operation-record is only valid with --mode status');
   });
 
-  it('refuses an explicit binding that conflicts with the record', () => {
-    const root = temporaryRoot('cleanup-client-record-');
-    const saved = saveCleanupOperationRecord(record(), {
-      rootDir: root,
-      snapshot: snapshotAllowingOutbox(),
-    });
+  it(
+    'refuses an explicit binding that conflicts with the record',
+    onCleanupRecordPlatform(() => {
+      const root = temporaryRoot('cleanup-client-record-');
+      const saved = saveCleanupOperationRecord(record(), {
+        rootDir: root,
+        snapshot: snapshotAllowingOutbox(),
+      });
 
-    const result = runClient([
-      '--mode',
-      'status',
-      '--operation-record',
-      saved.path,
-      '--repo',
-      'other/repo',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('--operation-record conflicts with --repo');
-  });
+      const result = runClient([
+        '--mode',
+        'status',
+        '--operation-record',
+        saved.path,
+        '--repo',
+        'other/repo',
+      ]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('--operation-record conflicts with --repo');
+    }),
+  );
 
-  it('queries the broker from a record instead of only printing it', () => {
-    const root = temporaryRoot('cleanup-client-query-');
-    const saved = saveCleanupOperationRecord(record(), {
-      rootDir: root,
-      snapshot: snapshotAllowingOutbox(),
-    });
+  it(
+    'queries the broker from a record instead of only printing it',
+    onCleanupRecordPlatform(() => {
+      const root = temporaryRoot('cleanup-client-query-');
+      const saved = saveCleanupOperationRecord(record(), {
+        rootDir: root,
+        snapshot: snapshotAllowingOutbox(),
+      });
 
-    const result = runClient(['--mode', 'status', '--operation-record', saved.path]);
-    // The record is printed, and the client then attempts the broker query: on
-    // a non-Linux host the production client refuses the platform rather than
-    // silently reporting the record as a result.
-    expect(result.stdout).toContain('"operationId": "OP-1"');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toMatch(/UNSUPPORTED_PLATFORM|BROKER_UNAVAILABLE/);
-  });
+      const result = runClient(['--mode', 'status', '--operation-record', saved.path]);
+      // The record is printed, and the client then attempts the broker query: on
+      // a non-Linux host the production client refuses the platform rather than
+      // silently reporting the record as a result.
+      expect(result.stdout).toContain('"operationId": "OP-1"');
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/UNSUPPORTED_PLATFORM|BROKER_UNAVAILABLE/);
+    }),
+  );
 
   it('rejects an unknown argument', () => {
     const result = runClient(['--mode', 'status', '--bogus', 'x']);
@@ -229,75 +236,81 @@ describe('client identity binding', () => {
     return root;
   }
 
-  it('sends the registry principal id, not the agent id', () => {
-    const agentId = 'cleanup_identity_probe';
-    const workspace = workspaceWithDistinctPrincipal(agentId);
-    const result = runClient([
-      '--mode',
-      'execute',
-      '--workspace',
-      workspace,
-      '--agent-id',
-      agentId,
-      '--repo',
-      'Negentropy-Laby/openslack-cleanup-qualification',
-      '--remote',
-      'origin',
-      '--pr',
-      '417',
-      '--permit-id',
-      'PERMIT-1',
-      '--operation-id',
-      'OP-IDENTITY-1',
-    ]);
+  it(
+    'sends the registry principal id, not the agent id',
+    onCleanupRecordPlatform(() => {
+      const agentId = 'cleanup_identity_probe';
+      const workspace = workspaceWithDistinctPrincipal(agentId);
+      const result = runClient([
+        '--mode',
+        'execute',
+        '--workspace',
+        workspace,
+        '--agent-id',
+        agentId,
+        '--repo',
+        'Negentropy-Laby/openslack-cleanup-qualification',
+        '--remote',
+        'origin',
+        '--pr',
+        '417',
+        '--permit-id',
+        'PERMIT-1',
+        '--operation-id',
+        'OP-IDENTITY-1',
+      ]);
 
-    // The record is published before the send, so it exists even though the
-    // broker query then fails on this platform.
-    const recordPath = join(
-      workspace,
-      '.openslack',
-      'outbox',
-      'cleanup-operations',
-      'OP-IDENTITY-1.json',
-    );
-    expect(readFileSync(recordPath, 'utf8')).toBeTruthy();
-    const published = JSON.parse(readFileSync(recordPath, 'utf8')) as {
-      request: { agentId: string; principalId: string };
-    };
-    expect(published.request.agentId).toBe(agentId);
-    // The bug this guards: the agent id was sent as the principal id, which
-    // hashes to a different request digest than the CLI's and is rejected by
-    // the Broker's own registry binding check.
-    expect(published.request.principalId).toBe(`principal:${agentId}`);
-    expect(result.code).toBe(1);
-  });
+      // The record is published before the send, so it exists even though the
+      // broker query then fails on this platform.
+      const recordPath = join(
+        workspace,
+        '.openslack',
+        'outbox',
+        'cleanup-operations',
+        'OP-IDENTITY-1.json',
+      );
+      expect(readFileSync(recordPath, 'utf8')).toBeTruthy();
+      const published = JSON.parse(readFileSync(recordPath, 'utf8')) as {
+        request: { agentId: string; principalId: string };
+      };
+      expect(published.request.agentId).toBe(agentId);
+      // The bug this guards: the agent id was sent as the principal id, which
+      // hashes to a different request digest than the CLI's and is rejected by
+      // the Broker's own registry binding check.
+      expect(published.request.principalId).toBe(`principal:${agentId}`);
+      expect(result.code).toBe(1);
+    }),
+  );
 
-  it('accepts an explicit --principal-id that matches the registry', () => {
-    const agentId = 'cleanup_identity_probe2';
-    const workspace = workspaceWithDistinctPrincipal(agentId);
-    const result = runClient([
-      '--mode',
-      'execute',
-      '--workspace',
-      workspace,
-      '--agent-id',
-      agentId,
-      '--principal-id',
-      `principal:${agentId}`,
-      '--repo',
-      'Negentropy-Laby/openslack-cleanup-qualification',
-      '--remote',
-      'origin',
-      '--pr',
-      '417',
-      '--permit-id',
-      'PERMIT-1',
-      '--operation-id',
-      'OP-IDENTITY-2',
-    ]);
-    // Must not be refused as a mismatch: the value is correct.
-    expect(result.stderr).not.toContain('does not match the fixed workspace identity');
-  });
+  it(
+    'accepts an explicit --principal-id that matches the registry',
+    onCleanupRecordPlatform(() => {
+      const agentId = 'cleanup_identity_probe2';
+      const workspace = workspaceWithDistinctPrincipal(agentId);
+      const result = runClient([
+        '--mode',
+        'execute',
+        '--workspace',
+        workspace,
+        '--agent-id',
+        agentId,
+        '--principal-id',
+        `principal:${agentId}`,
+        '--repo',
+        'Negentropy-Laby/openslack-cleanup-qualification',
+        '--remote',
+        'origin',
+        '--pr',
+        '417',
+        '--permit-id',
+        'PERMIT-1',
+        '--operation-id',
+        'OP-IDENTITY-2',
+      ]);
+      // Must not be refused as a mismatch: the value is correct.
+      expect(result.stderr).not.toContain('does not match the fixed workspace identity');
+    }),
+  );
 });
 
 // Keep a written copy so a failing run leaves inspectable evidence.

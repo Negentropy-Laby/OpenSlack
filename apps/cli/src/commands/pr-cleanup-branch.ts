@@ -9,6 +9,7 @@ import {
   evaluatePRBranchCleanupResult,
   buildCleanupOperationRecord,
   readCleanupOperationRecord,
+  CleanupOperationRecordError,
   saveCleanupOperationRecord,
 } from '@openslack/pr';
 import type { CleanupBrokerRequest } from '@openslack/pr';
@@ -302,7 +303,9 @@ export async function runPRBranchCleanupCommand(
     process.exitCode = evaluatePRBranchCleanupResult(result, options.execute === true);
   } catch (error) {
     console.error(
-      error instanceof CleanupInputError || error instanceof CleanupBrokerClientError
+      error instanceof CleanupInputError ||
+        error instanceof CleanupBrokerClientError ||
+        error instanceof CleanupOperationRecordError
         ? error.message
         : 'BLOCKED_EVIDENCE: branch cleanup could not complete; inspect sanitized operational diagnostics.',
     );
