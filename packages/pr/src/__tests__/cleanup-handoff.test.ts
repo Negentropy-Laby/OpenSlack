@@ -681,6 +681,36 @@ describe('R18-12 per-build tool proof', () => {
     expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
   });
 
+  it('refuses a zero-byte tool artifact supplied at the top level', async () => {
+    // D7: no digest check can catch an empty artifact when the report honestly
+    // describes it, so emptiness must be rejected outright.
+    const f = await fixture();
+    const empty = join(f.root, 'empty-verifier.mjs');
+    writeFileSync(empty, '');
+    f.input.verifierPath = empty;
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
+
+  it('refuses a zero-byte per-build tool artifact under a v2 report', async () => {
+    const f = await fixture();
+    for (const id of ['a', 'b'] as const) {
+      const build = f.input.builds[id === 'a' ? 0 : 1];
+      const empty = f.put(`build-${id}/empty-verifier.mjs`, '');
+      const report = JSON.parse(readFileSync(build.reportPath, 'utf8')) as Record<string, unknown>;
+      report.schema = 'openslack.cleanup_handoff_build_report.v2';
+      // An honestly self-consistent report describing an empty artifact.
+      report.verifier = { sha256: digest(''), bytes: 0 };
+      report.client = { sha256: digest(''), bytes: 0 };
+      report.adminTool = { sha256: digest(''), bytes: 0 };
+      writeFileSync(build.reportPath, JSON.stringify(report));
+      Object.assign(build, {
+        verifierPath: empty,
+        clientPath: empty,
+        adminToolPath: empty,
+      });
+    }
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
   it('packages the supplied verifier bytes rather than an empty placeholder', async () => {
     // D6: the packaged verifier is the artifact an administrator runs against the
     // package itself. A package that verifies while shipping a zero-byte verifier
@@ -762,21 +792,36 @@ describe('standalone package integrity contract', () => {
     const cwd = join(root, 'empty launch directory');
     mkdirSync(cwd);
     const env = { ...process.env, PATH: '', Path: '', GH_TOKEN: '', GITHUB_TOKEN: '' };
-    const output = execFileSync(
-      process.execPath,
-      [
-        bundle,
-        '--package',
-        result.packageDirectory,
-        '--candidate',
-        result.candidateHead,
-        '--manifest-sha256',
-        result.manifestSHA256,
-      ],
-      { cwd, env, encoding: 'utf8' },
-    );
+    // The verifier now exits 2 when the package's own gate list is unmet, even
+    // though byte integrity holds. Byte integrity alone is not sufficient for a
+    // scripted flow to proceed.
+    let output = '';
+    let failure: { status?: number; stderr?: string } | undefined;
+    try {
+      output = execFileSync(
+        process.execPath,
+        [
+          bundle,
+          '--package',
+          result.packageDirectory,
+          '--candidate',
+          result.candidateHead,
+          '--manifest-sha256',
+          result.manifestSHA256,
+        ],
+        { cwd, env, encoding: 'utf8' },
+      );
+    } catch (error) {
+      const thrown = error as { status?: number; stdout?: string; stderr?: string };
+      failure = thrown;
+      output = thrown.stdout ?? '';
+    }
     const checked = JSON.parse(output);
     expect(checked.valid).toBe(true);
+    // Integrity holds, so the exit status must come from the gate list.
+    expect(failure?.status).toBe(2);
+    expect(failure?.stderr).toContain('HANDOFF_GATES_UNMET');
+    expect(checked.unmetGates.length).toBeGreaterThan(0);
     expect(checked.installationAuthorized).toBe(false);
     expect(checked.executionAuthorized).toBe(false);
     expect(readdirSync(cwd)).toEqual([]);

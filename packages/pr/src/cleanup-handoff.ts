@@ -501,11 +501,18 @@ function toolBytes(
   perBuild: string | undefined,
   supplied: string | undefined,
 ): Buffer {
-  if (perBuild !== undefined) return safeRead(perBuild);
-  if (requirePerBuild || supplied === undefined) {
-    throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
-  }
-  return safeRead(supplied);
+  const bytes =
+    perBuild !== undefined
+      ? safeRead(perBuild)
+      : requirePerBuild || supplied === undefined
+        ? null
+        : safeRead(supplied);
+  if (bytes === null) throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  // A zero-byte tool is never legitimate. No digest check can catch it when the
+  // report honestly describes the empty artifact, so it is rejected outright:
+  // the verifier is the artifact an administrator runs against the package.
+  if (bytes.length === 0) throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  return bytes;
 }
 function buildReport(
   raw: Buffer,

@@ -421,6 +421,13 @@ export function prepareCleanupTargetUpgradePlan(
     unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.destinationUnverified);
   }
 
+  // Install instructions are generated only when the package verified, the
+  // evidence is present and readable, and every destination was classified.
+  const installable =
+    verified.valid &&
+    missingEvidence.length === 0 &&
+    unreadableEvidence.length === 0 &&
+    files.every((file) => file.action !== 'unverified' && file.candidateSHA256 !== '');
   const replace = files.filter((file) => file.action !== 'current');
   const verifiedGate = CLEANUP_TARGET_UPGRADE_GATES.packageUnverified;
   const evidenceGate = CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete;
@@ -472,19 +479,25 @@ export function prepareCleanupTargetUpgradePlan(
       `Replace ${replace.length} layout destination(s) from the verified package. Preserve the ` +
       'existing ledger, journal and consistent backup; do not rebuild accounts or clear state.',
     actor: 'administrator',
-    commands: replace.map((file) => ({
-      program: 'install',
-      args: [
-        '-m',
-        file.mode,
-        '-o',
-        file.owner.split(':')[0]!,
-        '-g',
-        file.owner.split(':')[1]!,
-        join(input.packageDirectory, 'artifacts', file.artifact),
-        file.path,
-      ],
-    })),
+    // No install instruction is generated while the package or its evidence is
+    // invalid. The step remains as a blocked placeholder with no runnable
+    // command, which is what "no install instructions" requires: a guarded but
+    // runnable command is still an install instruction.
+    commands: installable
+      ? replace.map((file) => ({
+          program: 'install',
+          args: [
+            '-m',
+            file.mode,
+            '-o',
+            file.owner.split(':')[0]!,
+            '-g',
+            file.owner.split(':')[1]!,
+            join(input.packageDirectory, 'artifacts', file.artifact),
+            file.path,
+          ],
+        }))
+      : [],
     workingDirectory: input.packageDirectory,
     expectedOutput: 'Every destination matches its candidate artifact digest and its fixed mode.',
     stopCondition:

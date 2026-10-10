@@ -28,5 +28,13 @@ if (!process.exitCode) {
     manifestSHA256: options.get('--manifest-sha256') ?? '',
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  // `valid` is byte integrity only. A package can be byte-intact while its own
+  // gate list is unmet — an expired evidence window, for example — so the exit
+  // status must reflect the gates too. Treating integrity as sufficient would
+  // let a scripted flow proceed on a package that fails its own requirements.
+  if (result.unmetGates.length > 0) {
+    process.stderr.write(`HANDOFF_GATES_UNMET: ${result.unmetGates.join(', ')}\n`);
+    process.exitCode = 2;
+  }
   if (!result.valid) process.exitCode = 2;
 }

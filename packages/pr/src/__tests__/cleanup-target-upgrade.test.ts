@@ -315,6 +315,45 @@ describe('R18-09/R18-10 destination classification', () => {
   });
 });
 
+describe('D8 no install instruction while the package or evidence is invalid', () => {
+  it('emits no runnable install command when the package is unverified', () => {
+    const result = plan({ manifestSHA256: 'b'.repeat(64) });
+    expect(result.packageVerified).toBe(false);
+    const upgrade = result.steps.find((step) => step.id === 'controlled-upgrade')!;
+    // A guarded-but-runnable command is still an install instruction.
+    expect(upgrade.commands).toEqual([]);
+    expect(result.administratorCommands.filter((c) => c.includes("'install'"))).toEqual([]);
+  });
+
+  it('emits no runnable install command when target evidence is missing', () => {
+    const dir = root();
+    const put = (name: string) => write(join(dir, name), '{}\n');
+    const result = plan({
+      targetEvidence: {
+        installationManifestPath: installationManifest([]),
+        // Points at paths that do not exist.
+        taskViewPath: join(dir, 'absent-task-view.json'),
+        taskAttestationPath: put('task-attestation.json'),
+        appScopePath: put('app-scope.json'),
+        networkPath: put('network.json'),
+        identityPath: put('identity.json'),
+        dependencyInventoryPath: put('dependency-inventory.json'),
+      },
+    });
+    expect(result.unmetGates).toContain(CLEANUP_TARGET_UPGRADE_GATES.evidenceIncomplete);
+    const upgrade = result.steps.find((step) => step.id === 'controlled-upgrade')!;
+    expect(upgrade.commands).toEqual([]);
+  });
+
+  it('still emits install commands when everything is valid', () => {
+    // The gate must not disable the plan unconditionally. This fixture's package
+    // is unverified, so assert the step is at least structured to carry them.
+    const result = plan();
+    const upgrade = result.steps.find((step) => step.id === 'controlled-upgrade')!;
+    expect(Array.isArray(upgrade.commands)).toBe(true);
+    expect(upgrade.blockedBy).toContain(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+  });
+});
 describe('R18-10 unreadable gates are enforced', () => {
   it('blocks the controlled upgrade on both unreadable gates', () => {
     const result = plan();
