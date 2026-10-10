@@ -1047,3 +1047,71 @@ notification delivery service`, `Build and smoke linux-x64`.
 `Protect main` requires a CODEOWNER review and one approving review, so this PR
 cannot merge without an explicit human approval recorded as a GitHub review from
 the required human identity. No agent approval exists or will be originated.
+
+## Round 18 independent adversarial review — 2026-10-10
+
+An independent read-only review of the whole diff was obtained and it found five
+confirmed defects in this branch's own work. All five were verified against the
+code before being accepted, and all five are fixed with a regression that was
+shown to fail when the fix is reverted.
+
+**D1 — the standalone client sent the wrong principal id (most severe).**
+`scripts/cleanup-broker/client.ts` built the request with
+`principalId: principal.registry_id`. `AgentPrincipal` carries no `principal_id`
+field, so the agent id was sent as the principal id. Every real registry differs:
+`cleanup_qualification_pr418` has `principal_id: principal:cleanup_qualification_pr418`.
+Two consequences: the record the client publishes hashes to a different
+`requestDigest` than the same operation through the CLI, so a later status query
+hits `BINDING_CONFLICT`; and the Broker's own registry binding check rejects it.
+The `--principal-id` cross-check also compared against the registry id, so an
+administrator passing the correct value was refused. Fixed by reading
+`registry.identity.principal_id` through `parseAgentRegistry` and verifying the
+registry-to-principal binding. Regression: a real workspace with a registry whose
+principal id differs from its agent id, asserting the published record's
+`principalId`. Reverting the fix fails it with exactly
+`expected 'cleanup_identity_probe' to be 'principal:cleanup_identity_probe'`.
+
+**D2 — the v1/v2 compatibility work protected the wrong schema.**
+`CLEANUP_HANDOFF_SCHEMAS.build` was never renamed, yet `buildReport` began
+demanding tool proofs for it. `git show 94ca2d3f:scripts/cleanup-broker/build-handoff.ts`
+confirms the base wrote only broker and executor under that schema, so every
+previously valid package would now fail with `HANDOFF_EVIDENCE_INVALID`. The
+schema preserved as "v1", `openslack.pr418.clean-build-report.v1`, has no producer
+at all — only a test fixture. Fixed by introducing a distinct
+`openslack.cleanup_handoff_build_report.v2` for the tool-proof requirement and
+leaving `build` tolerant. Regression: a report under the pre-existing schema
+binding only broker and executor must still verify; reverting the fix fails it.
+
+**D3 — two new gates were computed and never enforced.**
+`TARGET_EVIDENCE_UNREADABLE` and `INSTALLATION_MANIFEST_UNREADABLE` were pushed to
+`unmetGates` but appeared in no step's `blockedBy`, so an administrator could run
+the controlled upgrade while evidence was unreadable — exactly the distinction
+R18-10 was meant to add. Fixed by blocking `controlled-upgrade` on both and the
+installation isolation check on the unreadable manifest. Two regressions;
+reverting the fix fails both. A third test fails if any future gate is computed
+but enforced nowhere.
+
+**D4/D5 — the comparison logic had no real coverage, and one test did not test
+its name.** No test could reach `current`, `replace`, `unverified`,
+`observed === 'present'` or `claimDisagrees === true`, because the layout
+destinations are absolute and never exist in a test environment, so the action was
+always `install`. The test named "reports a manifest claim that disagrees" passed
+while `claimDisagrees` was false by construction. Fixed by extracting the decision
+into a pure exported `classifyDestination` and covering every branch, and by
+renaming the misleading test to what it actually asserts.
+
+### Confirmed correct by the same review
+
+Every caller of all five changed signatures is updated; no `pr → runtime` cycle
+exists (the reverse edge does, so the dependency is strictly one-directional);
+`identifier` forbids `/`, `\` and a leading `.`, so no path escape is possible;
+the POSIX `'\''` quoting idiom is correct and the program name is quoted too; the
+publication and read primitives are correct (bound applied to the read, `fstat`
+on the descriptor, zero progress refused, `link`+`EEXIST` never overwrites);
+R18-02's gate admits the real production outbox path; and `remoteExplicit` is live
+rather than dead code.
+
+### Noted but not reproduced
+
+A TOCTOU window on ancestor directories between `assertSafeAncestry` and
+`openSync`, inherent to path-based POSIX APIs and not demonstrated exploitable.
