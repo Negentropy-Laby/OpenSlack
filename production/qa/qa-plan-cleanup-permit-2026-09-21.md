@@ -885,9 +885,32 @@ Cause, established by direct measurement rather than assumption:
   so `PSModulePath` passes straight through to the child.
 
 The installer itself is correct: run directly it exits 0 and reports
-`already up to date` on the second run. With `PSModulePath` cleared, all four
-tests in that file pass. No commit on this branch touched `apps/mcp/**` or the
-installer — `git diff --name-only 94ca2d3f..HEAD` confirms it.
+`already up to date` on the second run.
+
+Isolation, measured rather than inferred. Four spawns of
+`powershell -NoProfile -Command "Get-Command Get-FileHash"` from a Bun parent:
+
+| Child environment | `Get-FileHash` |
+|---|---|
+| full parent environment | MISSING |
+| parent minus **only** `PSModulePath` | FOUND |
+| `PATH` + `PATHEXT` only | FOUND |
+| `PATH` + `PATHEXT` + the parent `PSModulePath` | MISSING |
+
+So `PSModulePath` alone decides it. A vitest worker was probed directly as well:
+it sees the inherited value when the parent has one, and `<ABSENT>` when the
+parent's is removed. Running the MCP file alone with the parent's `PSModulePath`
+removed passes all four tests, reproducibly across two runs.
+
+Recorded limit: in the **full-suite** runs the file still failed, including one
+run where `PSModulePath` was removed in the same command, so the removal did not
+reliably reach that worker. This record therefore claims only what was measured —
+the cause is `PSModulePath`, and the isolated file passes without it. It does
+**not** claim the full-suite failure is resolved; the full-suite figure for this
+session stands at 7,405 passed / 1 failed.
+
+No commit on this branch touched `apps/mcp/**` or the installer —
+`git diff --name-only 94ca2d3f..HEAD` confirms it.
 
 This is recorded as an environment-induced failure of this session, **not** as a
 repository defect and **not** as a passing check for the shipped environment.
