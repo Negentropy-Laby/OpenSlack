@@ -371,7 +371,8 @@ export function prepareCleanupTargetUpgradePlan(
       mode: entry.mode,
       owner: entry.owner,
       action:
-        classified.action === 'current' && current?.mode !== entry.mode
+        classified.action === 'current' &&
+        (current?.mode !== entry.mode || current.uid !== 0 || current.gid !== 0)
           ? 'replace'
           : classified.action,
       observed: observed.state,

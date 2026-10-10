@@ -40,6 +40,10 @@ function insist(value: unknown, reason = 'EVIDENCE_INVALID'): asserts value {
 const isHash = (value: unknown): value is string => typeof value === 'string' && HASH.test(value);
 const isMode = (value: unknown): value is string =>
   typeof value === 'string' && /^0[0-7]{3}$/.test(value) && (parseInt(value, 8) & 0o022) === 0;
+const isObservedOwner = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 4294967295;
+const isObservedMode = (value: unknown): value is string =>
+  typeof value === 'string' && /^0[0-7]{3}$/.test(value);
 const absoluteFilePath = (value: unknown): value is string =>
   typeof value === 'string' &&
   !/[\u0000-\u001f\u007f]/.test(value) &&
@@ -226,7 +230,15 @@ export function validateUpgradeEvidence(input: {
       insist(entry && !seen.has(String(file.path)));
       seen.add(String(file.path));
       if (file.state === 'present')
-        insist(isHash(file.sha256) && file.uid === 0 && file.gid === 0 && isMode(file.mode));
+        // These are observed destination facts, not the permissions of this
+        // safely opened evidence file. Drift must remain visible for a planned
+        // fixed-layout repair; the file reader enforces input ownership/mode.
+        insist(
+          isHash(file.sha256) &&
+            isObservedOwner(file.uid) &&
+            isObservedOwner(file.gid) &&
+            isObservedMode(file.mode),
+        );
       else
         insist(
           typeof file.state === 'string' &&
