@@ -621,6 +621,36 @@ describe('R18-12 per-build tool proof', () => {
     return f;
   }
 
+  it('H4 rejects v2 profile with legacy reports even when top-level tools exist', async () => {
+    const f = await fixture();
+    f.input.clientPath = f.put('client.mjs', 'client');
+    f.input.adminToolPath = f.put('admin.mjs', 'admin');
+    f.input.clientDocPath = f.put('client.md', '# client');
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
+
+  it.each(['downgraded-report', 'empty-verifier'])('H4/H5 independently refuses %s in a self-consistent package', async mode => {
+    const f = await v2Fixture(), result = prepareCleanupHandoffDraft(f.input);
+    const directory = result.packageDirectory;
+    if (mode === 'empty-verifier') writeFileSync(join(directory, 'tools/verify-handoff.mjs'), '');
+    for (const id of ['a', 'b']) {
+      const path = join(directory, `evidence/build-report-${id}.json`);
+      const report = JSON.parse(readFileSync(path, 'utf8'));
+      if (mode === 'downgraded-report') report.schema = 'openslack.cleanup_handoff_build_report.v1';
+      else report.verifier = {sha256: digest(''), bytes: 0};
+      writeFileSync(path, JSON.stringify(report));
+    }
+    const manifest = join(directory, 'SHA256SUMS');
+    const sums = readFileSync(manifest, 'utf8').split('\n').map(line => {
+      if (!line) return line;
+      const name = line.slice(68);
+      return `${digest(readFileSync(join(directory, name)))}  ./${name}`;
+    }).join('\n');
+    writeFileSync(manifest, sums);
+    result.manifestSHA256 = digest(sums);
+    expect(verify(result).valid).toBe(false);
+  });
+
   it('accepts a v2 pair whose reports bind all three tools', async () => {
     const f = await v2Fixture();
     const result = prepareCleanupHandoffDraft(f.input);
@@ -771,6 +801,13 @@ describe('R18-12 per-build tool proof', () => {
 describe('standalone package integrity contract', () => {
   it('runs the bundled Node verifier outside the checkout with no Git, modules or network', async () => {
     const { input, root } = await fixture();
+    input.now = new Date();
+    const freshTask = JSON.parse(readFileSync(input.targetEvidence.taskViewPath, 'utf8'));
+    freshTask.notBefore = new Date(Date.now() - 60_000).toISOString();
+    freshTask.expiresAt = new Date(Date.now() + 3600_000).toISOString();
+    const freshRaw = JSON.stringify(freshTask);
+    writeFileSync(input.targetEvidence.taskViewPath, freshRaw);
+    writeFileSync(input.targetEvidence.taskAttestationPath, JSON.stringify({task_view_sha256: digest(freshRaw)}));
     const bundle = join(root, 'offline-verifier.mjs');
     execFileSync(
       'bun',
@@ -819,8 +856,9 @@ describe('standalone package integrity contract', () => {
     const checked = JSON.parse(output);
     expect(checked.valid).toBe(true);
     // Integrity holds, so the exit status must come from the gate list.
-    expect(failure?.status).toBe(2);
-    expect(failure?.stderr).toContain('HANDOFF_GATES_UNMET');
+    expect(failure).toBeUndefined();
+    expect(checked.validityIssues).toEqual([]);
+    expect(checked.outstandingGates.length).toBeGreaterThan(0);
     expect(checked.unmetGates.length).toBeGreaterThan(0);
     expect(checked.installationAuthorized).toBe(false);
     expect(checked.executionAuthorized).toBe(false);
