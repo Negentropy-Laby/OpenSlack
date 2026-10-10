@@ -486,6 +486,27 @@ function brokerIdentity(raw: Buffer, head: string, tools: CleanupHandoffToolchai
     fail('HANDOFF_BUILD_MISMATCH');
   }
 }
+/**
+ * Resolve the bytes for one tool artifact.
+ *
+ * A v2 report must bind its own tool, so only the per-build path is accepted — a
+ * separately supplied file must never satisfy a v2 proof. An earlier report binds
+ * only the broker and executor, so its tools come from the explicitly supplied
+ * top-level paths. Neither source present is an input error: a package must never
+ * ship an empty tool, because the verifier is the artifact an administrator runs
+ * against the package itself.
+ */
+function toolBytes(
+  requirePerBuild: boolean,
+  perBuild: string | undefined,
+  supplied: string | undefined,
+): Buffer {
+  if (perBuild !== undefined) return safeRead(perBuild);
+  if (requirePerBuild || supplied === undefined) {
+    throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  }
+  return safeRead(supplied);
+}
 function buildReport(
   raw: Buffer,
   broker: Buffer,
@@ -703,12 +724,21 @@ export function prepareCleanupHandoffDraft(
       const broker = safeRead(build.brokerPath),
         executor = safeRead(build.executorPath),
         report = safeRead(build.reportPath);
-      // Each build reads its own tools. A v2 report must bind all three; the
-      // separately supplied top-level paths are never used to satisfy a build.
+      // A v2 report must bind its own tools; an earlier report takes them from
+      // the explicitly supplied top-level paths. Reading the report first is what
+      // makes that choice, so a v1 package never ships an empty verifier.
+      const declaredSchema = (JSON.parse(report.toString('utf8')) as { schema?: unknown }).schema;
+      const requiresToolProofs = declaredSchema === CLEANUP_HANDOFF_SCHEMAS.buildV2;
       const tools = [
-        build.verifierPath === undefined ? EMPTY : safeRead(build.verifierPath),
-        build.clientPath === undefined ? EMPTY : safeRead(build.clientPath),
-        build.adminToolPath === undefined ? EMPTY : safeRead(build.adminToolPath),
+        toolBytes(requiresToolProofs, build.verifierPath, input.verifierPath),
+        // The client and administrator tools are only in the v2 profile, so an
+        // earlier profile must not be required to supply them at all.
+        withClientTools
+          ? toolBytes(requiresToolProofs, build.clientPath, input.clientPath)
+          : EMPTY,
+        withClientTools
+          ? toolBytes(requiresToolProofs, build.adminToolPath, input.adminToolPath)
+          : EMPTY,
       ] as const;
       const parsed = buildReport(
         report,

@@ -12,7 +12,8 @@ import { evaluateCleanupBrokerResult } from '../../packages/pr/src/cleanup-resul
 // Narrow import: only the identity resolver is needed, not the whole runtime
 // surface, so the bundle stays small and gains no unrelated capability.
 import { resolveAgentPrincipal } from '../../packages/runtime/src/identity.js';
-import { parseAgentRegistry } from '../../packages/workspace/src/index.js';
+// Narrow import, matching the runtime one: only the registry parser is needed.
+import { parseAgentRegistry } from '../../packages/workspace/src/agent-registry-parser.js';
 
 /**
  * Broker-only cleanup client for the installed target.

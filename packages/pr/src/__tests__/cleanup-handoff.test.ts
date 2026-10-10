@@ -681,6 +681,26 @@ describe('R18-12 per-build tool proof', () => {
     expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
   });
 
+  it('packages the supplied verifier bytes rather than an empty placeholder', async () => {
+    // D6: the packaged verifier is the artifact an administrator runs against the
+    // package itself. A package that verifies while shipping a zero-byte verifier
+    // is a silent integrity failure.
+    const f = await fixture();
+    const supplied = readFileSync(f.input.verifierPath);
+    expect(supplied.length).toBeGreaterThan(0);
+    const result = prepareCleanupHandoffDraft(f.input);
+    const packaged = readFileSync(join(result.packageDirectory, 'tools', 'verify-handoff.mjs'));
+    expect(packaged.length).toBe(supplied.length);
+    expect(packaged.equals(supplied)).toBe(true);
+  });
+
+  it('refuses to build when no verifier source is supplied at all', async () => {
+    const f = await fixture();
+    // Neither the per-build path nor the top-level path: refuse rather than
+    // silently ship an empty verifier.
+    delete (f.input as { verifierPath?: string }).verifierPath;
+    expect(() => prepareCleanupHandoffDraft(f.input)).toThrow(CleanupHandoffError);
+  });
   it('still verifies a report under the pre-existing schema that binds only broker and executor', async () => {
     // The shape real packages built before tool proofs carry: the v1 schema with
     // no verifier/client/adminTool fields. Requiring tool proofs under this
