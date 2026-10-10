@@ -826,3 +826,84 @@ supplied as the `runtimeDirectory` input artifact, so a system Node may not be
 required. That must be established by actually running the build rather than
 assumed. Until it succeeds, the two-independent-checkout package proof is an
 outstanding gate and no Windows result may be presented as a substitute.
+
+## Round 18 final acceptance record — 2026-10-10
+
+### Branch state
+
+`prms/pr418-followup-repair`, 29 commits ahead of `94ca2d3f`. Worktree clean at
+the time of these runs. Every finding R18-01…R18-13 is closed, together with the
+independently listed items (keyboard dispatch contract, four omitted-field
+projections, three derived bindings).
+
+### Results actually obtained
+
+| Check | Command | Result |
+|---|---|---|
+| Affected suites, pass 1 | `bunx vitest run <11 suites>` | 306 passed, 0 failed |
+| Affected suites, pass 2 | same | 306 passed, 0 failed |
+| Affected suites, pass 3 | same | 306 passed, 0 failed |
+| Typecheck | `bun run typecheck` | exit 0 |
+| Build | `bun run build` | exit 0 |
+| Lint | `bunx eslint . --format json` | 0 errors, 0 warnings |
+| Workspace | `openslack workspace validate` | PASS |
+| Golden evals | `openslack self eval --suite golden` | 7/7 passed |
+| Genesis | `bash scripts/genesis-validate.sh` | PASS (5/5) |
+| Go vet | `go vet ./...` (WSL2 Linux) | exit 0 |
+| Go race | `go test -race ./...` (WSL2 Linux) | exit 0, all packages ok |
+| Go contracts | `go test ./tests/contracts/` | ok |
+| Docs verify | `bun run docs:verify` | verified |
+| Docs migration | `bun run docs:migration-check` | 103 manifest entries passed |
+| Docs notification | `bun run docs:notification-verify` | passed |
+| Status | `openslack status verify` | no drift |
+
+### Go `-race` is not available on the Windows host
+
+`go test -race ./...` on Windows fails with `-race requires cgo`, and this host
+has no C compiler (`gcc`, `cc` and `clang` are all absent), so
+`CGO_ENABLED=1` cannot help: every package fails to build. The race suite was
+therefore run in **WSL2 Ubuntu-24.04**, where `gcc` 13.3.0 exists and
+`go env CGO_ENABLED` is `1`, against the same working tree through
+`/mnt/d/...`. It passed. A Windows-only session cannot satisfy this check, and
+no Windows result is presented as a substitute for it.
+
+### One environment-induced test failure, reproduced and explained
+
+The first complete Vitest run reported 7,405 passed and **1 failed**:
+`apps/mcp/src/__tests__/qoder-skill.test.ts` — *runs the PowerShell installer
+idempotently and rejects a relative override*.
+
+Cause, established by direct measurement rather than assumption:
+
+- The test spawns Windows PowerShell **5.1** (`powershell`), not `pwsh`.
+- This session's ambient `PSModulePath` is a **PowerShell 7** value
+  (`...\Documents\PowerShell\Modules;...\program files\powershell\7\Modules;...`).
+- 5.1 inherits it and consequently cannot resolve `Get-FileHash`, which comes
+  from `Microsoft.PowerShell.Utility`. Reproduced minimally: with the inherited
+  value, `Get-FileHash` reports MISSING under 5.1; with it cleared, FOUND.
+- `normalizeProcessEnvironment` deliberately normalises only `PATH`/`PATHEXT`,
+  so `PSModulePath` passes straight through to the child.
+
+The installer itself is correct: run directly it exits 0 and reports
+`already up to date` on the second run. With `PSModulePath` cleared, all four
+tests in that file pass. No commit on this branch touched `apps/mcp/**` or the
+installer — `git diff --name-only 94ca2d3f..HEAD` confirms it.
+
+This is recorded as an environment-induced failure of this session, **not** as a
+repository defect and **not** as a passing check for the shipped environment.
+
+### Exact-byte contract intersection, recomputed
+
+`services/workflow-control/integration/source-manifest.v2.json` locks 229 paths
+across `sourceInputs`, `contractInputs` and `legalInputs`. Intersecting them with
+the 150 files changed on this branch yields exactly five files, with no new
+members:
+
+- `apps/cli/src/commands/collaboration.ts`
+- `apps/cli/src/commands/tui.ts`
+- `packages/tui/src/views/render-shell.ts`
+- `packages/workflows/src/__tests__/workflow-run-projection.test.ts`
+- `packages/workflows/src/types.ts`
+
+All five recorded digests equal the current file content, so no digest update is
+required and the binding set, paths and scope are untouched.
