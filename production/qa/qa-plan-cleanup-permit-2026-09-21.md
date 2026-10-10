@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-10-09
+updated: 2026-10-10
 sources:
   - design/cdd/modules/pr-review-merge.md
   - services/cleanup-broker/README.md
@@ -671,3 +671,158 @@ installation and runtime identity, activation, exact Permit, real deletion,
 human approval and governed merge remain external unfinished gates. PR #418
 stays Draft and receives linear commits only. Existing evidence and review
 comments remain intact.
+
+## Historical failure re-verification — 2026-10-10
+
+The two failures recorded under the Bun 1.4.0 toolchain update and retained in
+the final full-suite rerun were re-verified against the current head. Each was
+reproduced as an environment condition rather than a code defect, and none was
+closed by weakening a check.
+
+### Linked-worktree Git-version case
+
+- Historical record: Git 2.34.1 rejects `worktree list --porcelain -z`, which
+  breaks the linked-worktree local-state fixture.
+- Re-verification: the local Git is 2.49.0.windows.1, and
+  `git worktree list --porcelain -z` succeeds, returning the NUL-separated
+  worktree list for this checkout and its linked worktrees.
+- Test result: `packages/github/src/__tests__/client.test.ts` passes, 17 passed
+  and 1 skipped, including
+  `resolves App local state from the primary workspace for a linked worktree`.
+- Boundary: the fix is the newer Git, not a change to the fixture. The assertion
+  and the implementation are unchanged.
+
+### Go VCS stamping
+
+- Historical record: Go's VCS stamping encountered invalid parent `/tmp/.git`
+  metadata. That metadata was not removed and stamping was not disabled.
+- Re-verification: the parent and grandparent directories of this checkout
+  contain no `.git` metadata. A live Linux build of the Broker was produced with
+  stamping **enabled**:
+
+  ```text
+  GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -buildvcs=true -o <out>/cleanup-broker ./cmd/cleanup-broker
+  ```
+
+  `go version -m` on the result reports `go1.26.5`, `-trimpath=true`, `vcs=git`,
+  `vcs.revision=<current head>`, `vcs.modified=false` and
+  `build CGO_ENABLED=0`.
+- Assertion integrity: the required settings in `cleanup-handoff.ts` still
+  demand `vcs.revision`, `vcs.modified=false`, `-trimpath=true`, `CGO_ENABLED=0`,
+  `GOOS=linux`, `GOARCH=amd64` and `vcs=git`. A diff of this work against
+  `94ca2d3f` shows no change to those assertions or to the build flags, so
+  nothing was disabled, deleted or relaxed to obtain this result.
+- Boundary: this is a local stamping verification, not the two-independent-build
+  package proof, which requires a Linux host and remains outstanding.
+
+### Retained
+
+Both items remain environment-dependent: a host with Git 2.34.1, or with `.git`
+metadata in an ancestor directory, would still reproduce them. They are recorded
+here as re-verified, not as resolved by a code change. No earlier evidence,
+comment or failure record was altered or removed.
+
+## Round 18 finding ledger — 2026-10-10
+
+### Source
+
+| Field | Value |
+| --- | --- |
+| Report | `/var/tmp/openslack-round18-acceptance-j68jq8k0/acceptance-result.json` |
+| SHA-256 | `a7794c359469d3034cde2786db98d36e9672e0f326d6941d882fd47f6ad855ad` |
+| Bytes | 10,466 |
+| Schema | `openslack.review_acceptance.v1` |
+| Reviewed head | `1fd9d81d34b433db8f4b3f33314608950ed94f47` |
+| Base | `94ca2d3f905bd06ca2e3b4156fce550b0ecdc40a` |
+| Commits reviewed | 19 |
+| Section 3 acceptance | `NEEDS_CHANGES` |
+| Approval | none |
+
+The digest was re-read from the live file and matched byte for byte. The report
+states that it performed no repository edits and read no credentials, and that
+it did not install, activate, issue a Permit, delete a branch, approve, push or
+comment.
+
+The report's own validation independently corroborates the local record at this
+head: lint 0 errors / 8 warnings; inventory 532 files and 7,394 declared cases;
+all 229 workflow-control locked inputs matching committed bytes with exactly
+five digest changes and unchanged inventories and scope; the executor artifact at
+1,742,010 bytes and SHA-256
+`0917d7634f869ecfd775cdac810399974bb1f714b6505563450a2ec7904be10d`; and both
+historical environment items passing (Git 2.43.0 linked-worktree case, and
+`CGO_ENABLED=0` `-trimpath` `-buildvcs=true` with `vcs.modified=false`).
+
+Its environment was an isolated Linux checkout with Node 24.18.1. That is the
+review host, not this session host; see the environment note below.
+
+### Findings
+
+| ID | Pri | Confirmed issue | Closure standard |
+| --- | --- | --- | --- |
+| R18-01 | P1 | Upgrade destinations unrestricted; administrator commands not safely quoted (a manifest path can inject an executable shell separator) | Fixed artifact-to-installation mapping; safely rendered arguments; unexpected destinations rejected |
+| R18-02 | P1 | CLI record publication bypasses production path authorization | Denial yields zero directory creation, zero record writes and zero sends |
+| R18-03 | P1 | Same-binding reuse bypasses a previously failed fsync | Re-verify the complete record and establish durability before reuse |
+| R18-04 | P1 | Record mode prints intent instead of querying the Broker; explicit conflicts ignored | Query the Broker; reject binding conflicts before querying |
+| R18-05 | P1 | Standalone client never publishes a record before execute, while its documentation claims it does | Share the authorized, durable, pre-send publication path |
+| R18-06 | P1 | Standalone exit codes disagree with the production evaluator | Share `evaluateCleanupBrokerResult`; cover the full outcome matrix |
+| R18-07 | P1 | Link, file-replacement and read-boundary protections incomplete | Bounded FD reads plus ancestor and file-identity checks, proven by regression |
+| R18-08 | P2 | Short write still reports publication success | Write all bytes or refuse; zero sends on failure |
+| R18-09 | P2 | Upgrade actions derive only from the old manifest and omit the Broker | Candidate fixed layout including a Broker install-or-replace action |
+| R18-10 | P2 | Target evidence checked only for existence; freshness gate lost | Strict evidence and validity checks; unmet gates preserved |
+| R18-11 | P2 | Unactivated startup blocked by the activation gate that needs its nonce | Obtain the real nonce first, then prepare activation |
+| R18-12 | P2 | v2 profile lacks complete two-build tool proof | Both reports and the package agree byte-for-byte on verifier, client and adminTool |
+| R18-13 | P3 | Early-exit codepoint check became a full-string allocation | Restore the two-codepoint check and fix the same allocation in `getEmojiWidth` |
+
+### Independently listed acceptance items
+
+These are not covered by the R18 numbering and are tracked separately.
+
+- **Keyboard event defect.** `packages/tui/src/ink/ink.tsx` uses the vendored
+  `KeyboardEvent` stub, which lacks the `TerminalEvent` contract; the real
+  dispatcher throws `event._setTarget is not a function`. Fix the dispatched
+  path (target, type, key, modifiers, `preventDefault`) and remove the `any` on
+  `Button`. Do not substitute another forced cast.
+- **Four omitted-field bindings.** Preserve all four omitted-field controls
+  using well-typed private copies or explicit projections, with source objects,
+  hashes, generated bytes and error classification unchanged.
+- **Three derived bindings.** Remove the unconsumed `TTL_MS` without enabling
+  expiry semantics; remove the unused `blockerOnly` and `stageCat` derivations
+  without changing filtering or rendering.
+- **Already committed and retained:** the redaction fix (Windows out-of-root
+  paths, similar-root prefixes, separators and path-segment boundaries, with
+  HTML/Markdown/JSON leak probes), the `NO_COLOR` diagnostic isolation, and the
+  doctor/genesis structured `executable`/`argv`/`cwd` invocation with its
+  unchanged 30-second budget.
+- **Historical environment items:** the Git-version linked-worktree case and Go
+  VCS stamping, re-verified above and retained as environment-dependent.
+
+### Accepted behaviour boundaries
+
+Recorded so that they are not later mistaken for oversights or for implemented
+controls.
+
+- **Dedupe has no time-based expiry.** The chat-gateway dedupe table has only a
+  10,000-entry capacity bound. An entry can remain effective until capacity
+  eviction, `clearStore()`, or process restart. Deleting `TTL_MS` is a
+  scope decision that preserves this behaviour; it must not be recorded as dead
+  code, and no expiry mechanism is added.
+- **No extra filtering layer.** Deleting `blockerOnly` adds no filtering; the
+  existing `filters` and blocker identification are retained as they are.
+- **No new detail colouring.** Deleting `stageCat` adds no colour behaviour to
+  the detail view; the existing display output is retained.
+
+### Environment note for the two-clean-checkout build
+
+The frozen package requires two independent clean-checkout builds. That step
+needs a Linux host. This session's WSL2 Ubuntu-24.04 provides Bun 1.4.0
+(`/home/openslack/.bun/bin/bun`), Go 1.26.5 and Git 2.43.0, but **no Node
+runtime is present anywhere on that filesystem** — `find` located no `node`
+binary and `~/.nvm/versions/node` is empty. The review host did have Node
+24.18.1; this session does not.
+
+The build driver is Bun (`process.execPath`) and the pinned Node 24.18.1 is
+supplied as the `runtimeDirectory` input artifact, so a system Node may not be
+required. That must be established by actually running the build rather than
+assumed. Until it succeeds, the two-independent-checkout package proof is an
+outstanding gate and no Windows result may be presented as a substitute.
