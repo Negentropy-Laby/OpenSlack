@@ -34,17 +34,6 @@ export type WorkflowLifecycleViewProps = {
 
 type ViewMode = 'stages' | 'detail' | 'action-result';
 
-/** Map a stage status string to a StatusIcon category. */
-function stageStatusCategory(status: string): 'pass' | 'warn' | 'fail' | 'blocked' | 'info' {
-  const lower = status.toLowerCase();
-  if (lower === 'complete' || lower === 'done' || lower === 'merged' || lower === 'approved')
-    return 'pass';
-  if (lower === 'in-progress' || lower === 'running' || lower === 'active') return 'info';
-  if (lower === 'blocked' || lower === 'waiting') return 'blocked';
-  if (lower === 'failed' || lower === 'error' || lower === 'rejected') return 'fail';
-  return 'warn';
-}
-
 /** Determine the color theme key for a trust level badge. */
 function trustColorTheme(trustLevel: string): 'pass' | 'warning' | 'error' | 'info' {
   if (trustLevel === 'core') return 'pass';
@@ -336,7 +325,6 @@ export default function WorkflowLifecycleView({
   // --- DETAIL MODE ---
   if (mode === 'detail' && selectedStage) {
     const stage = selectedStage;
-    const stageCat = stageStatusCategory(stage.status);
 
     let overlay: React.ReactNode = null;
 

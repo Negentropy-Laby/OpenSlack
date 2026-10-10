@@ -320,8 +320,21 @@ export async function buildGovernanceShadowContractOutputs(
   for (const [path, value] of [...schemas, ['golden-vectors.json', vectorBytes] as const]) {
     artifacts[path] = { path, byteLength: value.length, sha256: sha256(value) };
   }
-  const { maxDiagnosticMessageBytes: _diagnosticLimit, ...publishedLimits } =
-    GOVERNANCE_SHADOW_POLICY;
+  // `maxDiagnosticMessageBytes` is intentionally not published. The published
+  // limit set is stated explicitly, in the policy's own declaration order, so
+  // the emitted manifest bytes are unchanged.
+  const publishedLimits = {
+    maxEnvelopeBytes: GOVERNANCE_SHADOW_POLICY.maxEnvelopeBytes,
+    maxReceiptBytes: GOVERNANCE_SHADOW_POLICY.maxReceiptBytes,
+    defaultTimeoutMs: GOVERNANCE_SHADOW_POLICY.defaultTimeoutMs,
+    maxTimeoutMs: GOVERNANCE_SHADOW_POLICY.maxTimeoutMs,
+    orderingRetryAttempts: GOVERNANCE_SHADOW_POLICY.orderingRetryAttempts,
+    defaultOrderingRetryDelayMs: GOVERNANCE_SHADOW_POLICY.defaultOrderingRetryDelayMs,
+    maxOrderingRetryDelayMs: GOVERNANCE_SHADOW_POLICY.maxOrderingRetryDelayMs,
+    maxJournalEntries: GOVERNANCE_SHADOW_POLICY.maxJournalEntries,
+    maxJournalBytes: GOVERNANCE_SHADOW_POLICY.maxJournalBytes,
+    maxJournalFileBytes: GOVERNANCE_SHADOW_POLICY.maxJournalFileBytes,
+  };
   const manifestBytes = await prettyJson({
     schema: 'openslack.governance_shadow_contract_manifest.v1',
     authority: 'typescript',
