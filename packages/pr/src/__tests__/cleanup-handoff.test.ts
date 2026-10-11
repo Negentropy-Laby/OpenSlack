@@ -1,4 +1,7 @@
-import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
+import {
+  declareLinuxCleanupTests,
+  describeLinuxCleanup as describeLinux,
+} from './helpers/cleanup-platform-qualification.js';
 import { createHash } from 'node:crypto';
 import type * as Crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
@@ -53,9 +56,6 @@ vi.mock('node:crypto', async (original) => {
   };
 });
 // Genuine execution-trust I/O suites; pure decoding and portable verifier entrypoints have separate all-OS suites.
-function describeLinux(name: string, run: () => void): void {
-  if (declareLinuxCleanupTests) describe(name, run);
-}
 const roots: string[] = [];
 let sourceSeed: { root: string; source: string; candidateHead: string } | undefined;
 let respondedAtPreparationEnd = false;

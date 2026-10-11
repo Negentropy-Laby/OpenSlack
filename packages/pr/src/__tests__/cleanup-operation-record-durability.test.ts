@@ -1,4 +1,7 @@
-import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
+import {
+  declareLinuxCleanupTests,
+  describeLinuxCleanup,
+} from './helpers/cleanup-platform-qualification.js';
 import {
   existsSync,
   chmodSync,
@@ -161,7 +164,7 @@ function record(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperat
   };
 }
 
-describe('R18-03 reuse must re-establish durability', () => {
+describeLinuxCleanup('R18-03 reuse must re-establish durability', () => {
   if (declareLinuxCleanupTests) {
     it('reuses an identical record when durability can be re-established', () => {
       const root = temporaryRoot();
@@ -209,7 +212,7 @@ describe('R18-03 reuse must re-establish durability', () => {
   }
 });
 
-describe('R18-08 writes must complete or refuse', () => {
+describeLinuxCleanup('R18-08 writes must complete or refuse', () => {
   if (declareLinuxCleanupTests)
     it('preserves the primary write failure when owned-temp cleanup also fails', () => {
       const root = temporaryRoot();
@@ -317,7 +320,7 @@ describe('R18-02 publication requires authorization', () => {
   }
 });
 
-describe('R18-07 file boundaries', () => {
+describeLinuxCleanup('R18-07 file boundaries', () => {
   const directoryLink = process.platform === 'win32' ? 'junction' : 'dir';
 
   if (declareLinuxCleanupTests) {
@@ -372,7 +375,7 @@ describe('R18-07 file boundaries', () => {
   }
 });
 
-describe('Q1–Q3 publication boundary regressions', () => {
+describeLinuxCleanup('Q1–Q3 publication boundary regressions', () => {
   if (declareLinuxCleanupTests) {
     it('refuses publication when a private directory becomes group writable during write', () => {
       const root = temporaryRoot();
