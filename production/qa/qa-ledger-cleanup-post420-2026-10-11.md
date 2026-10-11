@@ -22,40 +22,40 @@ unproven for the deployment candidate frozen after PR #420.
 
 ## Batch identity
 
-| Fact | Value |
-| --- | --- |
-| Deployment candidate | `6c8a2bcc2d6a8912c53a53ab7f3377af0ed8705b` |
-| Governance `main` at verification | `0f7a698b288a4f4353e1faf11c9f9304ccbd3d84` |
-| Candidate versus `main` | ancestor, and byte-identical source tree (`7e6282e894aac11e54db088d9eef0ca2fb385ab5`) |
-| Governance repository | `Negentropy-Laby/OpenSlack`, id `1239520892` |
-| Qualification repository | `Negentropy-Laby/openslack-cleanup-qualification`, id `1380965476` |
-| Target host | `OpenSlack-Cleanup-Qual`, Ubuntu 24.04.5, ext4 persistent state |
-| Fixed identities | Broker 44180:44180, Agent 44181:44181 |
+| Fact                              | Value                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| Deployment candidate              | `6c8a2bcc2d6a8912c53a53ab7f3377af0ed8705b`                                            |
+| Governance `main` at verification | `0f7a698b288a4f4353e1faf11c9f9304ccbd3d84`                                            |
+| Candidate versus `main`           | ancestor, and byte-identical source tree (`7e6282e894aac11e54db088d9eef0ca2fb385ab5`) |
+| Governance repository             | `Negentropy-Laby/OpenSlack`, id `1239520892`                                          |
+| Qualification repository          | `Negentropy-Laby/openslack-cleanup-qualification`, id `1380965476`                    |
+| Target host                       | `OpenSlack-Cleanup-Qual`, Ubuntu 24.04.5, ext4 persistent state                       |
+| Fixed identities                  | Broker 44180:44180, Agent 44181:44181                                                 |
 
 ## Ledger
 
-| Stage | Result | Evidence |
-| --- | --- | --- |
-| Candidate and artifact verification | PASS | Five artifact digests recomputed from bytes; build A byte-identical to build B; both retained checkouts clean at the candidate; candidate is an ancestor of `main` with an identical tree |
-| Retained-runtime cross-check | PASS | A third clean checkout reproduces both build reports' `lockfileSHA256` and `goModuleSHA256` |
-| Target observation | PASS, with a material finding | Target carries a complete six-destination layout built from the earlier candidate `a5b16b915fba3a5a6915a41dda37cb09efc4504c`, never started, with no ledger, no journal, no lock and no process |
-| Upgrade-evidence validator rehearsal | PASS, 9/9 controls | Baseline accepted; a group-writable evidence input, an impossible process state, an expired window, a proxy disagreement, a wrong repository binding and an unattested task-view digest were each refused |
-| Packaging-path rehearsal | PASS | A complete v2 package (33 files) was produced from the reused builds; the independent verifier returned `valid=true` with no errors |
-| Upgrade-plan rehearsal | PASS | `evaluateCleanupTargetUpgradePlan` returned `0`; the only outstanding gates were the four administrator gates |
-| Real qualification matrix | **NOT RUN** | Blocked on the administrator gates below |
+| Stage                                | Result                        | Evidence                                                                                                                                                                                                  |
+| ------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate and artifact verification  | PASS                          | Five artifact digests recomputed from bytes; build A byte-identical to build B; both retained checkouts clean at the candidate; candidate is an ancestor of `main` with an identical tree                 |
+| Retained-runtime cross-check         | PASS                          | A third clean checkout reproduces both build reports' `lockfileSHA256` and `goModuleSHA256`                                                                                                               |
+| Target observation                   | PASS, with a material finding | Target carries a complete six-destination layout built from the earlier candidate `a5b16b915fba3a5a6915a41dda37cb09efc4504c`, never started, with no ledger, no journal, no lock and no process           |
+| Upgrade-evidence validator rehearsal | PASS, 9/9 controls            | Baseline accepted; a group-writable evidence input, an impossible process state, an expired window, a proxy disagreement, a wrong repository binding and an unattested task-view digest were each refused |
+| Packaging-path rehearsal             | PASS                          | A complete v2 package (33 files) was produced from the reused builds; the independent verifier returned `valid=true` with no errors                                                                       |
+| Upgrade-plan rehearsal               | PASS                          | `evaluateCleanupTargetUpgradePlan` returned `0`; the only outstanding gates were the four administrator gates                                                                                             |
+| Real qualification matrix            | **NOT RUN**                   | Blocked on the administrator gates below                                                                                                                                                                  |
 
 Claim status for every qualification case remains `not_required` / `not_evaluated`. No
 case has been executed and no Permit has been issued.
 
 ## Deployment status
 
-| Gate | State |
-| --- | --- |
-| Repository repair after PR #420 | merged |
-| Handoff-package acceptance | not started — no package for this batch has been produced yet |
-| Installation | not performed |
-| Activation and Permit | not issued |
-| Real qualification | not run |
+| Gate                            | State                                                         |
+| ------------------------------- | ------------------------------------------------------------- |
+| Repository repair after PR #420 | merged                                                        |
+| Handoff-package acceptance      | not started — no package for this batch has been produced yet |
+| Installation                    | not performed                                                 |
+| Activation and Permit           | not issued                                                    |
+| Real qualification              | not run                                                       |
 
 The Broker was not started at any point in this work. Nothing was installed, and no
 state was created, cleared or migrated on the target.
@@ -93,16 +93,16 @@ is not authoritative and this changes no action.
 
 ## Evidence index
 
-| Evidence | Kind |
-| --- | --- |
-| Candidate dual-build proof and both build reports | build-host proof, reused unchanged |
-| Two retained candidate checkouts | build-host proof, preserved |
-| Third clean candidate checkout | packaging `sourceRoot` |
-| Administrator-signed input record, 2026-10-08 | historical provenance; hash preserved, approval not inherited |
-| Target host facts and dependency inventory | live target observation |
-| Upgrade-evidence validator rehearsal transcript | agent verification |
-| Packaging and upgrade-plan rehearsal transcripts | agent verification |
-| PR #418 handoff package | historical package, retained and readable as-is |
+| Evidence                                          | Kind                                                          |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| Candidate dual-build proof and both build reports | build-host proof, reused unchanged                            |
+| Two retained candidate checkouts                  | build-host proof, preserved                                   |
+| Third clean candidate checkout                    | packaging `sourceRoot`                                        |
+| Administrator-signed input record, 2026-10-08     | historical provenance; hash preserved, approval not inherited |
+| Target host facts and dependency inventory        | live target observation                                       |
+| Upgrade-evidence validator rehearsal transcript   | agent verification                                            |
+| Packaging and upgrade-plan rehearsal transcripts  | agent verification                                            |
+| PR #418 handoff package                           | historical package, retained and readable as-is               |
 
 Rehearsal packages and rehearsal manifests are explicitly excluded from this index.
 Their digests must never be recorded as deployment bindings.
@@ -118,3 +118,126 @@ Their digests must never be recorded as deployment bindings.
 
 Old records are retained as sources only. They do not carry their validity window or
 their approval into this batch.
+
+## PR #421 administrator-toolkit development batch
+
+This batch starts from `438e9148fcf744b8e2f540f5344b12bbfe7b829b` on
+`docs/qa-ledger-cleanup-post420`, targeting the live canonical `main`. All repairs
+continue in PR #421. The preceding observations, rehearsals, approvals and build
+reports remain historical evidence; they do not establish this batch's source,
+target state, validity window or approval. The final candidate and independent
+build digests are published with the PR evidence after the source is frozen.
+
+The separately versioned `openslack.cleanup_admin_toolkit.v1` package contains
+eleven tool/document/shared-code files, two independent build reports, its
+manifest and `SHA256SUMS`. The existing v1/v2 handoff profiles, five core artifacts,
+Broker protocol, selected registry bytes, identity bindings and Permit consumption
+rules are unchanged. An administrator toolkit is not an installable handoff package
+or an execution authorization.
+
+### D01 source dispositions
+
+| Source                                                                               | Recorded SHA-256                                                   | Disposition                                                                                                                                                                |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Frozen safe target collector `collect-target-facts-safe.6107c2d9d14d.py`             | `6107c2d9d14d720bb3e60714a7e3e1d40446bafff1b074d0270e747de548596d` | Reviewed source lineage for the imported observer; platform-before-import checks and no-bytecode behaviour are separately reviewed changes, not a claim of unchanged bytes |
+| Frozen dependency collector `collect-installed-dependencies.ee4f0770336e.py`         | `ee4f0770336e1a51733d351954e3d6621ca19b49b8a532e2cdacf524401f6827` | Reviewed ELF load-time closure implementation; the actual adjacent observer digest is refreshed from its bytes                                                             |
+| Administrator fixture source `T04-fixtures.mjs`                                      | `b32292eae27958064ce5078af4298a32d68df36758d57fbeb794a30b6c6b3d86` | Fixed human/repository checks retained; strict local decoding, directory binding and uncertain-result persistence repaired with regressions                                |
+| Old path-based collector and `build-t05-evidence.ts`                                 | Not adopted                                                        | Not formal collection or conversion sources; inferred installation claims cannot substitute for observations                                                               |
+| Recursive backup, historical vacuous isolation reports, rehearsals and old approvals | Not adopted                                                        | Preserved as historical material; never promoted to current installation, isolation or approval evidence                                                                   |
+
+### Delivery tasks and acceptance scope
+
+| ID  | Priority | Implementation and evidence scope                                                                                                                                                                                      |
+| --- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D01 | P0       | Reviewed source provenance and excluded inferred facts, rehearsals and inherited approvals                                                                                                                             |
+| D02 | P1       | Fixed-path target and dependency observers use actual metadata/bytes, Linux descriptor anchors, bounded reads and exclusive outputs; dependency evidence is only the ELF load-time closure                             |
+| D03 | P1       | `prepareCleanupEvidenceDraft` validates selected inputs and seven source classes, preserves current versus planned installation facts, bounds the output window and publishes DRAFT records only                       |
+| D04 | P1       | Fixture plan/create/inspect/close/merge phases verify the independent human and fixed qualification repository; exact interactive confirmation precedes each mutation; no approval or branch-deletion path exists      |
+| D05 | P1       | Offline backup is restricted to installed but never-started, empty-history targets; fixed non-secret files, original metadata, explicit absences, dual synchronization and in-backup restore verification are retained |
+| D06 | P1       | OS/installation isolation, separately parsed fixed identity/private workspace and actual PID/nonce inspection have distinct results; absent post-start objects cannot PASS                                             |
+| D07 | P1       | Separate toolkit preparation binds two actual tool collections and reports from independent clean clones; the offline verifier requires an externally supplied candidate and checksum digest                           |
+| D08 | P0       | Behaviour regressions, final source checks, independent read-only review and current-head hosted checks remain required; component green results are not target qualification                                          |
+| D09 | P2       | The administrator README and handoff navigation document exact commands, required inputs, expected outputs, authorization boundaries and stop conditions; pure formatting is not a deployment dependency               |
+| D10 | P3       | No unrelated cleanup performed; old packages, approvals, build sources, failure logs and recovery evidence remain preserved                                                                                            |
+
+The toolkit does not collect credentials, create actual fixtures, install artifacts,
+start a Broker, issue activation or a Permit, or delete a branch during this
+development batch. Pure parsing and explicit platform refusals run on all test
+platforms. Linux-only target operations do not silently fall back to path checks.
+Local Windows fixture persistence is explicitly file-fsync-only, not directory
+durability or Broker execution qualification.
+
+### Independent-review regressions
+
+| Finding                                         | Reproduced failure                                                                                                                     | Repair and acceptance assertion                                                                                                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backup child-directory replacement              | Renaming `files` or `restore-verification` after copies still yielded PASS while manifest paths no longer located those bytes          | Hold created child descriptors and verify their parent entries before copying, syncing, publishing and returning; replacement is BLOCKED and partial output is preserved                    |
+| Optional-file absence drift                     | A previously absent configuration/manifest could appear before completion without being backed up or invalidating the recorded absence | Retain anchored absence evidence and revalidate before publication; appearance, links, unreadability or an unverified parent block the route                                                |
+| Fixture parent-directory link                   | Planning through a linked scratch parent wrote outside the selected directory                                                          | Reject linked parents before creation; Linux writes use internally held directory descriptors across confirmation and asynchronous requests                                                 |
+| Uncertain mutation and failed state publication | A lost response plus failure-state rename error left a planned manifest and allowed another send                                       | Fsync and preserve the exclusive phase lock if failure-state publication cannot complete; the original error and persistence failure are retained; a later mutation cannot acquire the lock |
+| Unbound fixture manifest fields                 | Changed static disposition/parent and unknown fields reached confirmation despite unchanged plan bytes                                 | Strict manifest keys and the full static plan projection are checked before GitHub reads or confirmation                                                                                    |
+| Lock descriptor failure                         | Failure in lock `fstat` or directory synchronization leaked the opened descriptor                                                      | Register ownership immediately and close on every initialization failure, while retaining the incomplete lock and sending nothing                                                           |
+| Fast-restart nonce ambiguity                    | A nonce timestamp 500 ms before the current process was accepted by a one-second tolerance                                             | Use bounded UTC/CLOCK_BOOTTIME sampling and kernel-tick uncertainty; an old or ambiguous instance is BLOCKED, with PID/executable/identity rechecks retained                                |
+| Missing fixed-identity/workspace acceptance     | OS/installation isolation was described as proving a runtime identity and private workspace it never read                              | Separate read-only workspace entry safely captures bytes, calls production parsers and permission checks, never bootstraps, and does not produce an executable principal context            |
+
+The reviewer is a separate read-only agent that did not implement these changes.
+This is independent automated review, not human approval or an external production
+qualification. Original failing regressions and diagnostic logs are retained
+outside the checkout. Tests that deliberately disable a repair must fail; they are
+not included as failing results in final acceptance.
+
+### Environment and remaining external gates
+
+The initial full typecheck and executor integration attempts exposed an environment
+with no real `node` in PATH. Bun's substitute could not load the existing tsx CJS
+entry; Go integration reported the actual missing executable. After selecting the
+already verified Linux Node 24.18.1, both paths pass without source, assertion or
+VCS-stamping changes. This is a corrected validation prerequisite, not a claim that
+the deficient environment was qualified.
+
+Formal target collection and conversion still require fresh target facts, App scope,
+proxy ownership/trust and an administrator-attested complete task view. Hostname,
+UID/GID and selected bindings are expectations to verify, not proof of provisioning.
+Source build proofs and the administrator toolkit can be delivered without these
+records; a formal installable handoff package cannot. Administrator input approval,
+backup/deployment, fixed credentials/identity, startup, governance activation/Permit
+and the complete real qualification matrix remain separate NOT_RUN/BLOCKED stages.
+
+### Final source acceptance before freezing
+
+The final Linux full-suite report contains 7,964 tests: 7,958 passed, zero failed
+and six pre-existing pending cases. Each of the three consecutive affected-suite
+reports contains 1,015 passed cases, zero failed and zero pending. The production
+collector records 7,964 declared cases in 546 files, including pending cases; this
+inventory is not substituted for an execution result. The 193 new Vitest cases in
+five files also drive 82 Linux Python behaviour/dependency regressions; the latter
+are nested fixture checks rather than additional Vitest inventory entries.
+
+Typecheck, build, workspace validation, golden evaluation (7/7), genesis (5/5),
+document verification/migration/notification checks and status verification pass.
+ESLint reports zero errors and zero warnings. Node's pre-existing package-type
+notice for `eslint.config.js` is an environment diagnostic, not an ESLint result;
+no rules, suppressions or package semantics were changed to hide it. Cleanup
+Broker Go race, vet and the actual Linux executor integration pass with Go 1.26.5
+and the verified Node 24.18.1 in PATH. Source-manifest intersections are empty:
+no bound paths, scopes or digests need updating for this batch. The second status
+and documentation generation changes zero files.
+
+Native Windows full-suite execution, source-only dual builds, toolkit verification,
+current-head hosted CI and PRMS are recorded against the frozen candidate in the
+PR evidence. Earlier-head results do not qualify that candidate. Independent
+review covers the implementation rather than deciding human approval. No target
+collection, deployment, service startup or real GitHub mutation was executed as
+part of these fixture and source checks.
+
+| Local evidence             | SHA-256                                                            |
+| -------------------------- | ------------------------------------------------------------------ |
+| Full Linux Vitest          | `cca8fec75a371508e699e780dc22fe656348363cea754fa424da15d582b28356` |
+| Affected pass 1            | `00469b833323ee40a57a8c16811ddd344c261a22b456cbc9e2e75fb8cbcf868e` |
+| Affected pass 2            | `de603fa95a377471a9e256cd2b9c479b0096ff318de461c5ad6ab0a3cd4bb606` |
+| Affected pass 3            | `c7e199ccd7ac55acb608ba15e249c2ff3f6e7f6582551409164d38d26a4825f8` |
+| Typecheck                  | `5b2f9dd58fae414bc31715e037823f044935b648ad8de7f10909ca19b9e1e8a2` |
+| Lint                       | `a3067e5aaa8971a6d0b0b3f627db793a031bbfdc1afe191251966ac8232759c1` |
+| Go race                    | `93b828336959a18fc440cab162a188a03d8a30775e279b899e9ea95c686349d8` |
+| Go vet                     | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| Linux executor integration | `68cb65d6ef9b13baa73c6630def9da1cd89c29ff96c83e039ebd4763205cb9bd` |

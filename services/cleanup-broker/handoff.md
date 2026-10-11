@@ -331,6 +331,21 @@ must match exact final bytes, not the placeholder templates.
 
 ## Startup, activation and qualification
 
+The independent administrator toolkit is documented in
+[`scripts/cleanup-broker/administration/README.md`](../../scripts/cleanup-broker/administration/README.md).
+It accompanies, rather than extends, the fixed v1/v2 handoff file collections.
+Its source-only build does not require target observations. Formal evidence
+conversion and installable-package preparation still require fresh actual target
+facts and the separate administrator decisions. Toolkit integrity is not an
+installation, approval, activation or deletion authorization.
+
+For an existing never-started installation, use its bounded non-secret offline
+backup and explicit pre-start/post-start isolation phases. Do not use fresh-host
+commands to remove existing accounts or make installed paths absent. Unexpected
+history or an uninspectable process stops that offline route. The instance
+inspection entry consumes an actual observed PID after supervised unactivated
+startup; it does not create a nonce or start the Broker itself.
+
 Launch the Broker in foreground under a reviewed supervisor, or administrator
 terminal, with its dedicated primary group and no inherited privileged groups:
 
