@@ -1,3 +1,10 @@
+import {
+  CLEANUP_IDENTIFIER as identifier,
+  CLEANUP_SHA256 as digest,
+  cleanupObject as isPlainObject,
+  cleanupExactKeys,
+  isSensitiveCleanupInput,
+} from './internal/cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
 import { authorizeAgentAction, type AgentPermissionSnapshot } from '@openslack/kernel';
 import { randomBytes } from 'node:crypto';
@@ -21,7 +28,10 @@ import {
   withCleanupFile,
 } from './internal/cleanup-file-boundary.js';
 import { dirname, relative, resolve, sep } from 'node:path';
-import type { CleanupBrokerRequest } from './cleanup-broker-client.js';
+import {
+  validateCleanupBrokerRequest,
+  type CleanupBrokerRequest,
+} from './cleanup-broker-client.js';
 import { cleanupBrokerExecutionDigest } from './internal/cleanup-broker-digest.js';
 
 /**
@@ -43,39 +53,9 @@ export const CLEANUP_OPERATION_RECORD_MAX_BYTES = 16 * 1024;
 export const CLEANUP_OPERATION_RECORD_DIRECTORY = '.openslack/outbox/cleanup-operations';
 
 const recordKeys = ['schema', 'createdAt', 'request', 'requestDigest'] as const;
-const requestKeys = [
-  'schema',
-  'mode',
-  'agentId',
-  'principalId',
-  'runtimeUid',
-  'runId',
-  'repo',
-  'remote',
-  'prNumber',
-  'permitId',
-  'operationId',
-] as const;
-
-const identifier = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
-/**
- * Identity claims use the wider charset the production digest accepts, so a
- * request that is valid on the wire is never rejected here for a reason the
- * wire format allows.
- */
-const wireClaim = /^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/;
-const digest = /^[0-9a-f]{64}$/;
-
-/** Paths that must never be written to or read as a record. */
-const sensitive = [
-  /(^|[/\\])\.env(\.[^/\\]*)?$/i,
-  /\.pem$/i,
-  /\.key$/i,
-  /(^|[/\\])secrets([/\\]|$)/i,
-  /(^|[/\\])credentials([/\\]|$)/i,
-];
 
 export type CleanupOperationRecordErrorCode =
+  | 'NOT_FOUND'
   | 'INVALID_RECORD'
   | 'INVALID_PATH'
   | 'SENSITIVE_PATH'
@@ -90,6 +70,7 @@ export class CleanupOperationRecordError extends Error {
   constructor(
     public readonly code: CleanupOperationRecordErrorCode,
     message: string,
+    public readonly cleanupCode?: CleanupOperationRecordErrorCode,
   ) {
     super(message);
     this.name = 'CleanupOperationRecordError';
@@ -120,22 +101,18 @@ function fail(code: CleanupOperationRecordErrorCode, message: string): never {
   throw new CleanupOperationRecordError(code, message);
 }
 
-function assertNotSensitive(path: string): void {
-  if (sensitive.some((pattern) => pattern.test(path))) {
+function assertNotSensitive(path: string, root?: string): void {
+  if (isSensitiveCleanupInput(path, root)) {
     fail('SENSITIVE_PATH', `Refusing to use a sensitive path for a cleanup operation record.`);
   }
 }
 
 /** The record file for an operation, inside the authorized outbox directory. */
 export function cleanupOperationRecordPath(rootDir: string, operationId: string): string {
-  if (!identifier.test(operationId)) {
+  if (typeof operationId !== 'string' || !identifier.test(operationId)) {
     fail('INVALID_PATH', 'Operation ID must be a bounded identifier.');
   }
   return resolve(rootDir, CLEANUP_OPERATION_RECORD_DIRECTORY, `${operationId}.json`);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Reject any key outside the declared set, and any missing key. */
@@ -144,46 +121,22 @@ function assertExactKeys(
   keys: readonly string[],
   what: string,
 ): void {
-  const actual = Object.keys(value);
-  if (actual.length !== keys.length || actual.some((key) => !keys.includes(key))) {
+  if (!cleanupExactKeys(value, keys)) {
     fail('INVALID_RECORD', `${what} has unexpected or missing keys.`);
   }
 }
 
-function assertIdentifier(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !identifier.test(value)) {
-    fail('INVALID_RECORD', `${name} must be a bounded identifier.`);
-  }
-  return value;
-}
-
 function assertRequest(value: unknown): CleanupOperationRequest {
-  if (!isPlainObject(value)) fail('INVALID_RECORD', 'request must be an object.');
-  assertExactKeys(value, requestKeys, 'request');
-  if (value.schema !== 'openslack.cleanup_request.v1') {
-    fail('INVALID_RECORD', 'request.schema must be openslack.cleanup_request.v1.');
+  try {
+    validateCleanupBrokerRequest(value);
+  } catch {
+    fail('INVALID_RECORD', 'request does not satisfy the cleanup wire contract.');
   }
   if (value.mode !== 'execute') {
     // Only an execute request is recorded; a preview is not a durable intent.
     fail('INVALID_RECORD', 'request.mode must be execute.');
   }
-  if (typeof value.prNumber !== 'number' || !Number.isSafeInteger(value.prNumber)) {
-    fail('INVALID_RECORD', 'request.prNumber must be a safe integer.');
-  }
-  for (const name of ['repo', 'remote'] as const) {
-    if (typeof value[name] !== 'string' || value[name].length === 0) {
-      fail('INVALID_RECORD', `request.${name} must be a non-empty string.`);
-    }
-  }
-  for (const name of ['agentId', 'principalId', 'runtimeUid', 'runId', 'permitId'] as const) {
-    if (typeof value[name] !== 'string' || !wireClaim.test(value[name])) {
-      fail('INVALID_RECORD', `request.${name} must be a bounded claim.`);
-    }
-  }
-  // operationId is optional on the wire but required for a query record: it is
-  // the only key an administrator can look the operation up by.
-  assertIdentifier(value.operationId, 'request.operationId');
-  return value as unknown as CleanupOperationRequest;
+  return value as CleanupOperationRequest;
 }
 
 /** Validate a record and confirm its digest matches the request it carries. */
@@ -206,8 +159,16 @@ export function assertCleanupOperationRecord(value: unknown): CleanupOperationQu
   return value as unknown as CleanupOperationQueryRecord;
 }
 
-function fileFailure(error: unknown): never {
-  if (error instanceof CleanupOperationRecordError) throw error;
+function fileError(error: unknown): CleanupOperationRecordError {
+  if (error instanceof CleanupOperationRecordError) return error;
+  if (
+    (error as NodeJS.ErrnoException)?.code === 'ENOENT' ||
+    (error instanceof CleanupFileBoundaryError && error.code === 'NOT_FOUND')
+  )
+    return new CleanupOperationRecordError(
+      'NOT_FOUND',
+      'Cleanup operation record was not found; supply the original published record or an administrator export from durable intent.',
+    );
   if (error instanceof CleanupFileBoundaryError) {
     const code =
       error.code === 'TOO_LARGE'
@@ -215,11 +176,18 @@ function fileFailure(error: unknown): never {
         : error.code === 'UNSAFE_FILE'
           ? 'INVALID_PATH'
           : error.code;
-    fail(code, error.message);
+    return new CleanupOperationRecordError(code, error.message);
   }
-  fail('PERSISTENCE_FAILED', 'Safe cleanup record access or persistence failed; refusing to send.');
+  return new CleanupOperationRecordError(
+    'PERSISTENCE_FAILED',
+    'Safe cleanup record access or persistence failed; refusing to send.',
+  );
 }
-function decodeRecord(bytes: Buffer): CleanupOperationQueryRecord {
+function fileFailure(error: unknown): never {
+  throw fileError(error);
+}
+
+export function decodeCleanupOperationRecord(bytes: Buffer): CleanupOperationQueryRecord {
   try {
     return assertCleanupOperationRecord(
       decodeStrictJSON(bytes, CLEANUP_OPERATION_RECORD_MAX_BYTES),
@@ -247,7 +215,12 @@ function encode(record: CleanupOperationQueryRecord): Buffer {
 export function readCleanupOperationRecord(path: string): CleanupOperationQueryRecord {
   assertNotSensitive(path);
   try {
-    return withCleanupFile(resolve(path), CLEANUP_OPERATION_RECORD_MAX_BYTES, decodeRecord);
+    return withCleanupFile(
+      resolve(path),
+      CLEANUP_OPERATION_RECORD_MAX_BYTES,
+      decodeCleanupOperationRecord,
+      'historical-record',
+    );
   } catch (error) {
     return fileFailure(error);
   }
@@ -261,12 +234,13 @@ export function buildCleanupOperationRecord(
   request: CleanupOperationRequest,
   createdAt: string = new Date().toISOString(),
 ): CleanupOperationQueryRecord {
-  return {
+  assertRequest(request);
+  return assertCleanupOperationRecord({
     schema: CLEANUP_OPERATION_RECORD_SCHEMA,
     createdAt,
     request,
     requestDigest: cleanupBrokerExecutionDigest(request),
-  };
+  });
 }
 
 /** Write every byte, refusing rather than spinning when a write makes no progress. */
@@ -286,7 +260,7 @@ function reuseExisting(
   validated: CleanupOperationQueryRecord,
 ): SaveCleanupOperationRecordResult {
   withCleanupFile(path, CLEANUP_OPERATION_RECORD_MAX_BYTES, (bytes, fd, directory) => {
-    const existing = decodeRecord(bytes);
+    const existing = decodeCleanupOperationRecord(bytes);
     if (existing.requestDigest !== validated.requestDigest)
       fail(
         'BINDING_CONFLICT',
@@ -350,7 +324,7 @@ export function saveCleanupOperationRecord(
 ): SaveCleanupOperationRecordResult {
   const validated = assertCleanupOperationRecord(record);
   const path = cleanupOperationRecordPath(options.rootDir, validated.request.operationId);
-  assertNotSensitive(path);
+  assertNotSensitive(path, options.rootDir);
   // Authorize before anything is created: a denial must leave no directory, no
   // record and no send behind it.
   assertRecordPathAuthorized(options.snapshot, options.rootDir, path);
@@ -359,6 +333,7 @@ export function saveCleanupOperationRecord(
   let handle: number | undefined;
   let temporary: string | undefined;
   let temporaryIdentity: string | undefined;
+  let pendingDirectoryChange = false;
   const discard = () => {
     if (temporaryIdentity === undefined || directory === undefined || temporary === undefined)
       return;
@@ -367,8 +342,8 @@ export function saveCleanupOperationRecord(
     if (!current.isFile() || inodeIdentity(current) !== temporaryIdentity)
       fail('FILE_CHANGED', 'The owned temporary record was replaced; it was not removed.');
     unlinkSync(internal);
+    pendingDirectoryChange = true;
     temporaryIdentity = undefined;
-    directory.sync();
   };
   try {
     assertCleanupDescriptorSupport();
@@ -377,7 +352,9 @@ export function saveCleanupOperationRecord(
     // Existing records are read, compared and synced through one descriptor.
     try {
       lstatSync(directory.path(`${validated.request.operationId}.json`));
-      return reuseExisting(path, validated);
+      const reused = reuseExisting(path, validated);
+      directory.verify();
+      return reused;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
@@ -399,7 +376,10 @@ export function saveCleanupOperationRecord(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       discard();
-      return reuseExisting(path, validated);
+      const reused = reuseExisting(path, validated);
+      directory.sync();
+      pendingDirectoryChange = false;
+      return reused;
     }
     discard();
     if (
@@ -408,6 +388,7 @@ export function saveCleanupOperationRecord(
     )
       fail('FILE_CHANGED', 'Published cleanup operation record changed before send.');
     directory.sync();
+    pendingDirectoryChange = false;
     if (inodeIdentity(lstatSync(final)) !== inodeIdentity(fstatSync(handle)))
       fail('FILE_CHANGED', 'Published cleanup operation record was replaced.');
     if (!readCleanupDescriptor(handle, CLEANUP_OPERATION_RECORD_MAX_BYTES).equals(bytes))
@@ -415,12 +396,21 @@ export function saveCleanupOperationRecord(
     directory.verify();
     return { status: 'published', path };
   } catch (error) {
+    const primary = fileError(error);
     try {
-      discard();
+      if (temporaryIdentity !== undefined) {
+        discard();
+      }
+      if (pendingDirectoryChange) directory?.sync();
     } catch (cleanup) {
-      return fileFailure(cleanup);
+      const secondary = fileError(cleanup);
+      throw new CleanupOperationRecordError(
+        primary.code,
+        `${primary.message} Owned temporary cleanup also failed (${secondary.code}); preserve evidence.`,
+        secondary.code,
+      );
     }
-    return fileFailure(error);
+    throw primary;
   } finally {
     if (handle !== undefined) closeSync(handle);
     directory?.close();

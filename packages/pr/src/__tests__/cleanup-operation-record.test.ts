@@ -1,12 +1,14 @@
-import { onCleanupRecordPlatform } from './helpers/cleanup-record-platform.js';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLEANUP_OPERATION_RECORD_DIRECTORY,
   CLEANUP_OPERATION_RECORD_SCHEMA,
   CleanupOperationRecordError,
+  buildCleanupOperationRecord,
+  decodeCleanupOperationRecord,
   cleanupOperationRecordPath,
   readCleanupOperationRecord,
   saveCleanupOperationRecord,
@@ -25,6 +27,7 @@ function temporaryRoot(): string {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
@@ -56,9 +59,77 @@ function record(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperat
 }
 
 describe('cleanup operation query record', () => {
-  it(
-    'publishes a record under the authorized outbox subdirectory and reads it back',
-    onCleanupRecordPlatform(() => {
+  it.each(['win32', 'darwin'])('refuses %s publication and reading before IO', (platform) => {
+    const root = temporaryRoot();
+    vi.stubGlobal('process', { ...process, platform });
+    expect(() =>
+      saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
+    ).toThrowError(expect.objectContaining({ code: 'UNSUPPORTED_PLATFORM' }));
+    expect(() => readCleanupOperationRecord(join(root, 'absent.json'))).toThrowError(
+      expect.objectContaining({ code: 'UNSUPPORTED_PLATFORM' }),
+    );
+    vi.unstubAllGlobals();
+    expect(() =>
+      readFileSync(join(root, '.openslack', 'outbox', 'cleanup-operations', 'OP-0001.json')),
+    ).toThrow();
+  });
+  it.each(['unknown', 'missing', 'duplicate', 'escaped-duplicate', 'oversize'])(
+    'strictly decodes %s records on every platform',
+    (kind) => {
+      const current = record();
+      let text = JSON.stringify(current);
+      if (kind === 'unknown') text = JSON.stringify({ ...current, extra: 1 });
+      if (kind === 'missing')
+        text = JSON.stringify({
+          schema: current.schema,
+          request: current.request,
+          createdAt: current.createdAt,
+        });
+      if (kind === 'duplicate') text = text.replace('"schema":', '"schema":"discarded","schema":');
+      if (kind === 'escaped-duplicate')
+        text = text.replace('"schema":', '"sch\\u0065ma":"discarded","schema":');
+      if (kind === 'oversize') text = ' '.repeat(20_000) + text;
+      expect(() => decodeCleanupOperationRecord(Buffer.from(text))).toThrowError(
+        expect.objectContaining({ code: 'INVALID_RECORD' }),
+      );
+    },
+  );
+  if (declareLinuxCleanupTests)
+    it('reports a missing record separately from persistence failure', () => {
+      const root = temporaryRoot();
+      expect(() => readCleanupOperationRecord(join(root, 'missing.json'))).toThrowError(
+        expect.objectContaining({ code: 'NOT_FOUND' }),
+      );
+    });
+  it.each([
+    { permitId: 'PERMIT.v1' },
+    { principalId: 'principal/worker' },
+    { agentId: 'agent/worker' },
+    { runtimeUid: 'u'.repeat(129) },
+    { repo: '/owner/repo' },
+    { remote: 'r'.repeat(101) },
+    { prNumber: 0 },
+  ])('refuses a non-wire request before publication: %j', (override) => {
+    const root = temporaryRoot();
+    expect(() => buildCleanupOperationRecord(request(override))).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RECORD' }),
+    );
+    expect(() =>
+      saveCleanupOperationRecord(
+        { ...record(), request: request(override) },
+        {
+          rootDir: root,
+          snapshot: snapshotAllowingOutbox(),
+        },
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_RECORD' }));
+    expect(() =>
+      readFileSync(join(root, CLEANUP_OPERATION_RECORD_DIRECTORY, 'OP-0001.json')),
+    ).toThrow();
+  });
+
+  if (declareLinuxCleanupTests) {
+    it('publishes a record under the authorized outbox subdirectory and reads it back', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -71,12 +142,11 @@ describe('cleanup operation query record', () => {
       expect(loaded.schema).toBe(CLEANUP_OPERATION_RECORD_SCHEMA);
       expect(loaded.request.operationId).toBe('OP-0001');
       expect(loaded.requestDigest).toBe(cleanupBrokerExecutionDigest(loaded.request));
-    }),
-  );
+    });
+  }
 
-  it(
-    'reuses an identical record for the same operation and binding',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('reuses an identical record for the same operation and binding', () => {
       const root = temporaryRoot();
       const first = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -90,12 +160,11 @@ describe('cleanup operation query record', () => {
       expect(first.status).toBe('published');
       expect(second.status).toBe('reused');
       expect(second.path).toBe(first.path);
-    }),
-  );
+    });
+  }
 
-  it(
-    'refuses a different binding for an already-published operation',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses a different binding for an already-published operation', () => {
       const root = temporaryRoot();
       saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
 
@@ -106,8 +175,8 @@ describe('cleanup operation query record', () => {
           snapshot: snapshotAllowingOutbox(),
         }),
       ).toThrowError(expect.objectContaining({ code: 'BINDING_CONFLICT' }) as unknown as Error);
-    }),
-  );
+    });
+  }
 
   it('rejects a digest that does not match the request it carries', () => {
     const root = temporaryRoot();
@@ -120,9 +189,8 @@ describe('cleanup operation query record', () => {
     ).toThrowError(expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error);
   });
 
-  it(
-    'rejects unknown and missing keys',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects unknown and missing keys', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -146,12 +214,11 @@ describe('cleanup operation query record', () => {
       expect(() => readCleanupOperationRecord(saved.path)).toThrowError(
         expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 
-  it(
-    'rejects duplicate keys before last-key-wins can apply',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects duplicate keys before last-key-wins can apply', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -169,8 +236,8 @@ describe('cleanup operation query record', () => {
       expect(() => readCleanupOperationRecord(saved.path)).toThrowError(
         expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 
   it('rejects a non-execute request', () => {
     const root = temporaryRoot();
@@ -216,9 +283,8 @@ describe('cleanup operation query record', () => {
     );
   });
 
-  it(
-    'rejects a symlink to a record',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects a symlink to a record', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -230,12 +296,11 @@ describe('cleanup operation query record', () => {
       expect(() => readCleanupOperationRecord(link)).toThrowError(
         expect.objectContaining({ code: 'SYMLINK_REJECTED' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 
-  it(
-    'rejects an oversized record',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects an oversized record', () => {
       const root = temporaryRoot();
       const dir = join(root, CLEANUP_OPERATION_RECORD_DIRECTORY);
       mkdirSync(dir, { recursive: true });
@@ -248,8 +313,8 @@ describe('cleanup operation query record', () => {
       expect(() => readCleanupOperationRecord(path)).toThrowError(
         expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 
   it('exposes a typed error class for callers', () => {
     expect(() => cleanupOperationRecordPath('/tmp/root', 'bad id')).toThrowError(

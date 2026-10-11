@@ -1,6 +1,7 @@
-import { onCleanupRecordPlatform } from './helpers/cleanup-record-platform.js';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -33,6 +34,9 @@ const control = vi.hoisted(() => ({
   beforeSync: null as null | ((handle: number) => void),
   failCleanup: false,
   beforeTempOpen: null as null | (() => void),
+  beforeWrite: null as null | (() => void),
+  beforeLink: null as null | ((path: Fs.PathLike) => void),
+  events: [] as string[],
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -51,6 +55,7 @@ vi.mock('node:fs', async (importOriginal) => {
       position?: number | null,
     ): number => {
       const start = offset ?? 0;
+      control.beforeWrite?.();
       const total = length ?? buffer.length - start;
       if (control.zeroProgress) return 0;
       if (control.shortWriteOnce) {
@@ -69,9 +74,16 @@ vi.mock('node:fs', async (importOriginal) => {
     unlinkSync: (path: Fs.PathLike) => {
       if (control.failCleanup && String(path).endsWith('.tmp'))
         throw Object.assign(new Error('cleanup denied'), { code: 'EACCES' });
-      return actual.unlinkSync(path);
+      const result = actual.unlinkSync(path);
+      control.events.push('unlink');
+      return result;
+    },
+    linkSync: (source: Fs.PathLike, target: Fs.PathLike) => {
+      control.beforeLink?.(target);
+      return actual.linkSync(source, target);
     },
     fsyncSync: (handle: number) => {
+      control.events.push('sync');
       control.beforeSync?.(handle);
       control.fsyncCalls += 1;
       if (control.fsyncCalls >= control.failFsyncFromCall) {
@@ -117,6 +129,9 @@ beforeEach(() => {
   control.beforeSync = null;
   control.failCleanup = false;
   control.beforeTempOpen = null;
+  control.beforeWrite = null;
+  control.beforeLink = null;
+  control.events.length = 0;
 });
 
 function request(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperationRequest {
@@ -147,9 +162,8 @@ function record(overrides: Partial<CleanupOperationRequest> = {}): CleanupOperat
 }
 
 describe('R18-03 reuse must re-establish durability', () => {
-  it(
-    'reuses an identical record when durability can be re-established',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('reuses an identical record when durability can be re-established', () => {
       const root = temporaryRoot();
       expect(
         saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() })
@@ -162,12 +176,11 @@ describe('R18-03 reuse must re-establish durability', () => {
       ).toBe('reused');
       // Reuse must actually sync, rather than trusting the earlier publish.
       expect(control.fsyncCalls).toBeGreaterThan(fsyncsAfterPublish);
-    }),
-  );
+    });
+  }
 
-  it(
-    'refuses to reuse when the re-sync fails, instead of reporting success',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses to reuse when the re-sync fails, instead of reporting success', () => {
       const root = temporaryRoot();
       expect(
         saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() })
@@ -179,12 +192,11 @@ describe('R18-03 reuse must re-establish durability', () => {
       expect(() =>
         saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
       ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_FAILED' }) as unknown as Error);
-    }),
-  );
+    });
+  }
 
-  it(
-    'still refuses a different binding for an existing operation',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('still refuses a different binding for an existing operation', () => {
       const root = temporaryRoot();
       saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
       expect(() =>
@@ -193,14 +205,27 @@ describe('R18-03 reuse must re-establish durability', () => {
           snapshot: snapshotAllowingOutbox(),
         }),
       ).toThrowError(expect.objectContaining({ code: 'BINDING_CONFLICT' }) as unknown as Error);
-    }),
-  );
+    });
+  }
 });
 
 describe('R18-08 writes must complete or refuse', () => {
-  it(
-    'completes a short write by looping and publishes complete bytes',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests)
+    it('preserves the primary write failure when owned-temp cleanup also fails', () => {
+      const root = temporaryRoot();
+      control.zeroProgress = true;
+      control.failCleanup = true;
+      expect(() =>
+        saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
+      ).toThrowError(
+        expect.objectContaining({
+          message: expect.stringContaining('write made no progress'),
+          cleanupCode: 'PERSISTENCE_FAILED',
+        }),
+      );
+    });
+  if (declareLinuxCleanupTests) {
+    it('completes a short write by looping and publishes complete bytes', () => {
       const root = temporaryRoot();
       control.shortWriteOnce = true;
       const saved = saveCleanupOperationRecord(record(), {
@@ -210,23 +235,21 @@ describe('R18-08 writes must complete or refuse', () => {
       expect(saved.status).toBe('published');
       // The published record must be complete and decodable.
       expect(readCleanupOperationRecord(saved.path).requestDigest).toBe(record().requestDigest);
-    }),
-  );
+    });
+  }
 
-  it(
-    'refuses when a write makes no progress',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses when a write makes no progress', () => {
       const root = temporaryRoot();
       control.zeroProgress = true;
       expect(() =>
         saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
       ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_FAILED' }) as unknown as Error);
-    }),
-  );
+    });
+  }
 
-  it(
-    'leaves no published record when a write fails',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('leaves no published record when a write fails', () => {
       const root = temporaryRoot();
       control.zeroProgress = true;
       expect(() =>
@@ -241,8 +264,8 @@ describe('R18-08 writes must complete or refuse', () => {
         entries = [];
       }
       expect(entries.filter((name) => name.endsWith('.json'))).toEqual([]);
-    }),
-  );
+    });
+  }
 });
 
 describe('R18-02 publication requires authorization', () => {
@@ -281,9 +304,8 @@ describe('R18-02 publication requires authorization', () => {
     expect(existsSync(join(root, '.openslack'))).toBe(false);
   });
 
-  it(
-    'publishes when the path is allowed',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('publishes when the path is allowed', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -291,16 +313,15 @@ describe('R18-02 publication requires authorization', () => {
       });
       expect(saved.status).toBe('published');
       expect(existsSync(saved.path)).toBe(true);
-    }),
-  );
+    });
+  }
 });
 
 describe('R18-07 file boundaries', () => {
   const directoryLink = process.platform === 'win32' ? 'junction' : 'dir';
 
-  it(
-    'rejects a symlinked ancestor directory on publish',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects a symlinked ancestor directory on publish', () => {
       const root = temporaryRoot();
       const real = join(root, 'real');
       mkdirSync(real, { recursive: true });
@@ -311,12 +332,11 @@ describe('R18-07 file boundaries', () => {
       expect(() =>
         saveCleanupOperationRecord(record(), { rootDir: link, snapshot: snapshotAllowingOutbox() }),
       ).toThrowError(expect.objectContaining({ code: 'SYMLINK_REJECTED' }) as unknown as Error);
-    }),
-  );
+    });
+  }
 
-  it(
-    'rejects a symlinked ancestor directory on read',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects a symlinked ancestor directory on read', () => {
       const root = temporaryRoot();
       const real = join(root, 'real');
       mkdirSync(real, { recursive: true });
@@ -331,12 +351,11 @@ describe('R18-07 file boundaries', () => {
       expect(() => readCleanupOperationRecord(aliased)).toThrowError(
         expect.objectContaining({ code: 'SYMLINK_REJECTED' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 
-  it(
-    'rejects an oversized record without reading it whole',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('rejects an oversized record without reading it whole', () => {
       const root = temporaryRoot();
       const directory = join(root, '.openslack', 'outbox', 'cleanup-operations');
       mkdirSync(directory, { recursive: true });
@@ -349,14 +368,56 @@ describe('R18-07 file boundaries', () => {
       expect(() => readCleanupOperationRecord(path)).toThrowError(
         expect.objectContaining({ code: 'INVALID_RECORD' }) as unknown as Error,
       );
-    }),
-  );
+    });
+  }
 });
 
 describe('Q1–Q3 publication boundary regressions', () => {
-  it(
-    'creates nothing outside a statically symlinked .openslack directory',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses publication when a private directory becomes group writable during write', () => {
+      const root = temporaryRoot();
+      control.beforeWrite = () => chmodSync(join(root, '.openslack'), 0o775);
+      expect(() =>
+        saveCleanupOperationRecord(record(), {
+          rootDir: root,
+          snapshot: snapshotAllowingOutbox(),
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'INVALID_PATH' }));
+      expect(readdirSync(join(root, '.openslack/outbox/cleanup-operations'))).not.toContain(
+        'OP-0001.json',
+      );
+    });
+    it('syncs temporary removal even when a competing record has a different binding', () => {
+      const root = temporaryRoot();
+      control.beforeLink = (path) =>
+        writeFileSync(path, JSON.stringify(record({ permitId: 'PERMIT-0002' })), { mode: 0o600 });
+      expect(() =>
+        saveCleanupOperationRecord(record(), {
+          rootDir: root,
+          snapshot: snapshotAllowingOutbox(),
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'BINDING_CONFLICT' }));
+      const unlink = control.events.lastIndexOf('unlink');
+      expect(unlink).toBeGreaterThanOrEqual(0);
+      expect(control.events.slice(unlink + 1)).toContain('sync');
+      expect(readdirSync(join(root, '.openslack/outbox/cleanup-operations'))).toEqual([
+        'OP-0001.json',
+      ]);
+    });
+    it('refuses reuse when directory permissions change during record fsync', () => {
+      const root = temporaryRoot();
+      saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() });
+      control.beforeSync = () => chmodSync(join(root, '.openslack'), 0o775);
+      expect(() =>
+        saveCleanupOperationRecord(record(), {
+          rootDir: root,
+          snapshot: snapshotAllowingOutbox(),
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'INVALID_PATH' }));
+    });
+  }
+  if (declareLinuxCleanupTests) {
+    it('creates nothing outside a statically symlinked .openslack directory', () => {
       const workspace = temporaryRoot(),
         external = temporaryRoot();
       symlinkSync(
@@ -371,12 +432,11 @@ describe('Q1–Q3 publication boundary regressions', () => {
         }),
       ).toThrow();
       expect(readdirSync(external)).toEqual([]);
-    }),
-  );
+    });
+  }
 
-  it(
-    'removes its temporary inode after publication and reuse',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('removes its temporary inode after publication and reuse', () => {
       const root = temporaryRoot();
       const first = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -391,12 +451,11 @@ describe('Q1–Q3 publication boundary regressions', () => {
         'OP-0001.json',
       ]);
       expect(readFileSync(first.path, 'utf8')).toContain('PERMIT-0001');
-    }),
-  );
+    });
+  }
 
-  it(
-    'refuses a record replaced between read and fsync',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses a record replaced between read and fsync', () => {
       const root = temporaryRoot();
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -416,24 +475,22 @@ describe('Q1–Q3 publication boundary regressions', () => {
       ).toThrow();
       expect(replaced).toBe(true);
       expect(readFileSync(saved.path, 'utf8')).toContain('PERMIT-0002');
-    }),
-  );
+    });
+  }
 
-  it(
-    'refuses success when owned-temp cleanup fails',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses success when owned-temp cleanup fails', () => {
       const root = temporaryRoot();
       control.failCleanup = true;
       expect(() =>
         saveCleanupOperationRecord(record(), { rootDir: root, snapshot: snapshotAllowingOutbox() }),
       ).toThrow();
-    }),
-  );
+    });
+  }
 });
 
-it(
-  'Q1 does not follow a parent replaced just before temporary creation',
-  onCleanupRecordPlatform(() => {
+if (declareLinuxCleanupTests) {
+  it('Q1 does not follow a parent replaced just before temporary creation', () => {
     const root = temporaryRoot(),
       external = temporaryRoot();
     const directory = join(root, '.openslack/outbox/cleanup-operations');
@@ -449,5 +506,5 @@ it(
     ).toThrowError(expect.objectContaining({ code: 'FILE_CHANGED' }));
     expect(changed).toBe(true);
     expect(readdirSync(external)).toEqual([]);
-  }),
-);
+  });
+}

@@ -1,4 +1,9 @@
 import {
+  readStableDescriptor,
+  stableFileIdentity as fileIdentity,
+  StableDescriptorError,
+} from '@openslack/core';
+import {
   closeSync,
   constants,
   fstatSync,
@@ -6,7 +11,6 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  readSync,
   type Stats,
 } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -17,18 +21,20 @@ export type CleanupFileBoundaryCode =
   | 'SYMLINK_REJECTED'
   | 'FILE_CHANGED'
   | 'UNSAFE_FILE'
-  | 'TOO_LARGE';
+  | 'TOO_LARGE'
+  | 'NOT_FOUND';
 export class CleanupFileBoundaryError extends Error {
-  constructor(public readonly code: CleanupFileBoundaryCode) {
-    super(`CLEANUP_${code}: safe descriptor-bound access could not be established.`);
+  constructor(
+    public readonly code: CleanupFileBoundaryCode,
+    detail = 'safe descriptor-bound access could not be established.',
+  ) {
+    super(`CLEANUP_${code}: ${detail}`);
   }
 }
 function refuse(code: CleanupFileBoundaryCode): never {
   throw new CleanupFileBoundaryError(code);
 }
 export const inodeIdentity = (s: Stats): string => `${s.dev}:${s.ino}`;
-const fileIdentity = (s: Stats): string =>
-  [s.dev, s.ino, s.mode, s.uid, s.gid, s.nlink, s.size, s.mtimeMs, s.ctimeMs].join(':');
 
 /** There is deliberately no path-check fallback on a platform without these primitives. */
 export function assertCleanupDescriptorSupport(): void {
@@ -51,6 +57,14 @@ interface Directory {
   fd: number;
   name: string;
   identity: string;
+  privatePublication: boolean;
+}
+function assertPrivateDirectory(stamp: Stats): void {
+  if (stamp.uid !== process.getuid!() || (stamp.mode & 0o022) !== 0)
+    throw new CleanupFileBoundaryError(
+      'UNSAFE_FILE',
+      'Record publication requires private directories below the workspace root. Use a dedicated workspace; shared writable directories are refused.',
+    );
 }
 /** Private capability: callers cannot supply an fd or a proc path. */
 export class CleanupDirectoryAnchor {
@@ -74,7 +88,8 @@ export class CleanupDirectoryAnchor {
     const directories: Directory[] = [];
     try {
       const root = openSync('/', flags);
-      directories.push({ fd: root, name: '', identity: inodeIdentity(fstatSync(root)) });
+      directories.push({ fd: root, name: '', identity: '', privatePublication: false });
+      directories[0]!.identity = inodeIdentity(fstatSync(root));
       const anchor = new CleanupDirectoryAnchor(directories, absolute);
       let walked = '';
       for (const name of parts) {
@@ -106,22 +121,22 @@ export class CleanupDirectoryAnchor {
             } catch (inspection) {
               if (inspection instanceof CleanupFileBoundaryError) throw inspection;
             }
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') refuse('NOT_FOUND');
             refuse('INVALID_PATH');
           }
         }
+        directories.push({
+          fd,
+          name,
+          identity: '',
+          privatePublication: boundary !== undefined && walked.startsWith(boundary + '/'),
+        });
         const stamp = fstatSync(fd);
+        directories.at(-1)!.identity = inodeIdentity(stamp);
         if (!stamp.isDirectory()) {
-          closeSync(fd);
           refuse('INVALID_PATH');
         }
-        directories.push({ fd, name, identity: inodeIdentity(stamp) });
         anchor.verify();
-        if (
-          boundary !== undefined &&
-          walked.startsWith(boundary + '/') &&
-          (stamp.uid !== process.getuid!() || (stamp.mode & 0o022) !== 0)
-        )
-          refuse('UNSAFE_FILE');
       }
       return anchor;
     } catch (error) {
@@ -137,7 +152,10 @@ export class CleanupDirectoryAnchor {
   verify(): void {
     for (let i = 0; i < this.directories.length; i++) {
       const current = this.directories[i]!;
-      if (inodeIdentity(fstatSync(current.fd)) !== current.identity) refuse('FILE_CHANGED');
+      const opened = fstatSync(current.fd);
+      if (!opened.isDirectory() || inodeIdentity(opened) !== current.identity)
+        refuse('FILE_CHANGED');
+      if (current.privatePublication) assertPrivateDirectory(opened);
       if (i === 0) continue;
       let stamp: Stats;
       try {
@@ -151,6 +169,7 @@ export class CleanupDirectoryAnchor {
         inodeIdentity(stamp) !== current.identity
       )
         refuse('FILE_CHANGED');
+      if (current.privatePublication) assertPrivateDirectory(stamp);
     }
   }
   sync(): void {
@@ -163,30 +182,30 @@ export class CleanupDirectoryAnchor {
   }
 }
 
-export function readCleanupDescriptor(fd: number, maxBytes: number): Buffer {
+type ReadPurpose = 'runtime-evidence' | 'historical-record' | 'artifact';
+export function readCleanupDescriptor(
+  fd: number,
+  maxBytes: number,
+  purpose: ReadPurpose = 'runtime-evidence',
+): Buffer {
   const stamp = fstatSync(fd);
   if (
     !stamp.isFile() ||
     stamp.nlink !== 1 ||
-    (stamp.mode & 0o022) !== 0 ||
-    (stamp.uid !== process.getuid!() && stamp.uid !== 0)
+    (purpose !== 'artifact' &&
+      ((stamp.mode & 0o022) !== 0 ||
+        (stamp.uid !== process.getuid!() &&
+          stamp.uid !== 0 &&
+          !(purpose === 'historical-record' && process.getuid!() === 0))))
   )
     refuse('UNSAFE_FILE');
-  if (stamp.size > maxBytes) refuse('TOO_LARGE');
-  const bytes = Buffer.alloc(Math.min(stamp.size + 1, maxBytes + 1));
-  let count = 0;
-  while (count < bytes.length) {
-    const read = readSync(fd, bytes, count, bytes.length - count, count);
-    if (read === 0) break;
-    count += read;
+  try {
+    return readStableDescriptor(fd, maxBytes);
+  } catch (error) {
+    if (error instanceof StableDescriptorError)
+      refuse(error.code === 'SIZE_INVALID' ? 'TOO_LARGE' : 'FILE_CHANGED');
+    throw error;
   }
-  if (
-    count > maxBytes ||
-    count !== stamp.size ||
-    fileIdentity(fstatSync(fd)) !== fileIdentity(stamp)
-  )
-    refuse(count > maxBytes ? 'TOO_LARGE' : 'FILE_CHANGED');
-  return bytes.subarray(0, count);
 }
 
 /** Read, optionally sync, and revalidate one inode without reopening a pathname. */
@@ -194,6 +213,7 @@ export function withCleanupFile<T>(
   path: string,
   maxBytes: number,
   consume: (bytes: Buffer, fd: number, anchor: CleanupDirectoryAnchor) => T,
+  purpose: ReadPurpose = 'runtime-evidence',
 ): T {
   const anchor = CleanupDirectoryAnchor.open(dirname(path));
   const leaf = path.slice(path.lastIndexOf('/') + 1);
@@ -207,7 +227,7 @@ export function withCleanupFile<T>(
     fd = openSync(internal, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const stamp = fstatSync(fd);
     if (fileIdentity(before) !== fileIdentity(stamp)) refuse('FILE_CHANGED');
-    const bytes = readCleanupDescriptor(fd, maxBytes);
+    const bytes = readCleanupDescriptor(fd, maxBytes, purpose);
     const result = consume(bytes, fd, anchor);
     if (
       fileIdentity(fstatSync(fd)) !== fileIdentity(stamp) ||
@@ -224,4 +244,36 @@ export function withCleanupFile<T>(
 
 export function readCleanupBoundedFile(path: string, maxBytes: number): Buffer {
   return withCleanupFile(path, maxBytes, (bytes) => bytes);
+}
+
+/** Offline artifact integrity is portable and does not assert execution trust. */
+export function readCleanupArtifactFile(path: string, maxBytes: number): Buffer {
+  if (process.platform === 'linux')
+    return withCleanupFile(path, maxBytes, (bytes) => bytes, 'artifact');
+  const ancestors = () => {
+    for (let p = resolve(path); ; p = dirname(p)) {
+      if (lstatSync(p).isSymbolicLink()) refuse('SYMLINK_REJECTED');
+      if (dirname(p) === p) break;
+    }
+  };
+  ancestors();
+  const before = lstatSync(path);
+  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) refuse('UNSAFE_FILE');
+  const fd = openSync(
+    path,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    if (fileIdentity(before) !== fileIdentity(fstatSync(fd))) refuse('FILE_CHANGED');
+    const bytes = readStableDescriptor(fd, maxBytes);
+    if (fileIdentity(before) !== fileIdentity(lstatSync(path))) refuse('FILE_CHANGED');
+    ancestors();
+    return bytes;
+  } catch (error) {
+    if (error instanceof StableDescriptorError)
+      refuse(error.code === 'SIZE_INVALID' ? 'TOO_LARGE' : 'FILE_CHANGED');
+    throw error;
+  } finally {
+    closeSync(fd);
+  }
 }

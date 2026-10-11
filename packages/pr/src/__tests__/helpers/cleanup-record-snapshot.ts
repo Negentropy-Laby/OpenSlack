@@ -15,15 +15,24 @@ const BINDING = {
   repository: 'example/qualification',
 } as const;
 
-function registry(paths: { allow: string[]; deny: string[] }): string {
+function registry(
+  paths: { allow: string[]; deny: string[] },
+  binding: {
+    agentId: string;
+    principalId: string;
+    runtimeUid: string;
+    runId: string;
+    repository: string;
+  } = BINDING,
+): string {
   return stringify({
     schema: 'openslack.agent_registry.v2',
-    agent_id: BINDING.agentId,
+    agent_id: binding.agentId,
     display_name: 'Cleanup',
     employee_type: 'ai_agent',
     identity: {
-      uid: BINDING.runtimeUid,
-      principal_id: BINDING.principalId,
+      uid: binding.runtimeUid,
+      principal_id: binding.principalId,
       status: 'active',
     },
     vendor: { provider: 'openai', runtime: 'codex' },
@@ -31,7 +40,7 @@ function registry(paths: { allow: string[]; deny: string[] }): string {
     capabilities: { primary: ['typescript'] },
     repositories: {
       workspace_repo: { owner: 'Negentropy-Laby', repo: 'OpenSlack', default_branch: 'main' },
-      allowed_product_repos: [BINDING.repository],
+      allowed_product_repos: [binding.repository],
     },
     permissions: {
       paths,
@@ -46,10 +55,12 @@ function registry(paths: { allow: string[]; deny: string[] }): string {
 }
 
 /** A snapshot that permits the record outbox path. */
-export function snapshotAllowingOutbox(): AgentPermissionSnapshot {
+export function snapshotAllowingOutbox(
+  binding: Parameters<typeof registry>[1] = BINDING,
+): AgentPermissionSnapshot {
   return validateCleanupBrokerRegistry(
-    registry({ allow: ['.openslack/outbox/**'], deny: [] }),
-    BINDING,
+    registry({ allow: ['.openslack/outbox/**'], deny: [] }, binding),
+    binding,
   ).snapshot;
 }
 
