@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-10-11
+updated: 2026-10-12
 sources:
   - production/qa/qa-plan-cleanup-permit-2026-09-21.md
   - services/cleanup-broker/handoff.md
@@ -319,3 +319,71 @@ controls and collector-only declaration matrix.
 | Consecutive pass 1        | `6e9b04e8acf29847bab12698886c34b71458404fe5a82ae589bac86e3e1992e5` |
 | Consecutive pass 2        | `26f352245c2b0a1c44d7b24199a74ed64fb16aa21bebf6c206075547c2bf9fd5` |
 | Consecutive pass 3        | `5d98f96e9507dca69bc2d72c55cec46e47c13954e75017812402246aaef3979c` |
+
+### Full-suite Graph fixture ownership correction
+
+The `41e5e53d` complete local Linux run reports 7,958 passed, one failed and six
+pre-existing pending cases. The failure is the Organization Graph generator
+integration scenario reaching its existing 120-second limit; an isolated run
+also fails at 120,027 ms. The source of the generator and this test is unchanged
+from `438e9148`, whose earlier run passed in 99,636 ms. The same-head hosted Linux
+job `114508004573` passes the scenario in 76,848 ms and the whole inventory in
+7,959 passed/six pending. These differing results establish environment-sensitive
+test ownership, not a completed local acceptance or a new generator behavior bug.
+
+The previous single scenario launched ten generator processes and combined
+determinism, stale repair, extra-file refusal and two distinct link refusals.
+Those are now four real scenarios with private fixtures and the existing
+120-second limit per scenario. This restructuring increases the aggregate
+worst-case allowance to four times 120 seconds; it does not change any production
+deadline or the generator's combined structure/stale diagnostics. Every original
+assertion remains, including regenerating stale content and regenerating after
+removing a mirror link. Exact stale-repair bytes are additionally checked.
+
+Generator processes run the real Bun script directly through the shared verified
+executable resolver. Native Windows failures are no longer retried through WSL.
+Vitest cancellation and assertion-failure cleanup stop the owned process, await
+its actual `close`, and settle the complete initialization/scenario before
+removing private directories. A signal already cancelled cannot launch another
+process. There are no automatic test retries, enlarged timeout constants, new
+skips or production-generator changes.
+
+Two fail-first regressions prove the ownership defects: the old abort callback
+reports no actual termination signal, and child-only settlement returns before
+a controlled asynchronous continuation releases its fixture. The independent
+review also catches the initially lost stale-repair assertion and the fixture
+initialization race; both are repaired before acceptance. A separate read-only
+review runs the two lightweight regressions and confirms all prior assertions.
+The revised complete Graph file passes 12/12, with the four generator scenarios
+at approximately 34, 18, 27 and 24 seconds. The production collector now records
+7,970 cases in the same 546 files: three separated scenarios and two ownership
+regressions add five declarations. Final full-platform results and replacement
+source/toolkit proofs are recorded against the new frozen PR head, not inferred
+from these targeted results or the previous candidate's hosted checks.
+
+The original `41e5e53d` native Windows run subsequently completes with 7,586
+passed, zero failed and 80 existing platform-pending cases (7,666 actually
+declared). Its production inventory verification still covers 7,965 Linux and
+all-platform declarations. That native report has SHA-256
+`5c27a0df32ae1f446925f7f9fef7172ff48137c37299eeabfacb72bceaeef0c9`.
+It remains original-head evidence; the Graph fixture correction must obtain its
+own complete native run. Normal native execution never sets the inventory-only
+marker or pretends that Linux IO tests ran on Windows.
+
+| Preserved failure evidence         | SHA-256                                                            |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| `41e5e53d` full Linux run          | `f21527ee5d5e938687214468eab39db09bd7c2f64b43065d4c8c2bf619c2b5e7` |
+| Isolated generator timeout         | `f6dde86be86227ce89b14d97b91e5572f7010333ac034bd061e90c46a9f469bb` |
+| Abort callback before fix          | `48a8d2733a9deb5f8c1d79f2955eab72245d8d989e869ba89efd95d1a55063c6` |
+| Continuation settlement before fix | `c4be79603e21ceb444cc8f2d901903c270d51e3871a3fb8d5e3b87c83b40eec0` |
+
+The final combined source acceptance adds the CLI cleanup command suite and the
+revised Graph integration scenarios. Three consecutive runs each pass 1,106/1,106
+with zero failed or pending cases. These are source and fixture checks, not target
+installation or real cleanup evidence.
+
+| Final affected evidence | SHA-256                                                            |
+| ----------------------- | ------------------------------------------------------------------ |
+| Consecutive pass 1      | `b911313f6f13db72ee46831e81e02c7b8644dd94cd8a6eec4b9654d2c4f83d49` |
+| Consecutive pass 2      | `62731e3cdbaa6cb50f16f2a55a11587f7413565582abaceec0eba10931f4613e` |
+| Consecutive pass 3      | `e28f8521777b7ecee06be4b8e431fc6e07b74adb83d1b678ee7a0f306eb1d618` |

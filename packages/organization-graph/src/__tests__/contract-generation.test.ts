@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  testExecutable,
+  testProcessEnvironment,
+} from '../../../../scripts/testing/process-fixture.mjs';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');
 const contractRoot = resolve(repositoryRoot, 'packages/organization-graph/contracts/v1');
@@ -57,6 +61,9 @@ const SOFTWARE_DELIVERY_FREEZE_TIMEOUT_MS = 60_000;
 const CONTRACT_TO_DELIVERY_FREEZE_TIMEOUT_MS = 90_000;
 const CONTRACT_CLEANUP_TIMEOUT_MS = 30_000;
 const temporaryRoots: string[] = [];
+const generatorControllers: AbortController[] = [];
+const activeCommands = new Set<Promise<GeneratorResult>>();
+const activeScenarios = new Set<Promise<void>>();
 
 interface ContractArtifact {
   readonly path: string;
@@ -109,11 +116,20 @@ interface SoftwareDeliveryVectors {
 type ContractToDeliveryManifest = SoftwareDeliveryManifest;
 type ContractToDeliveryVectors = SoftwareDeliveryVectors;
 
-afterEach(async () => {
+async function settleGeneratorFixtures(): Promise<void> {
+  for (const controller of generatorControllers.splice(0)) controller.abort();
+  await Promise.allSettled([...activeScenarios]);
+  await Promise.allSettled([...activeCommands]);
+}
+
+async function cleanupGeneratorFixtures(): Promise<void> {
+  await settleGeneratorFixtures();
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
-}, CONTRACT_CLEANUP_TIMEOUT_MS);
+}
+
+afterEach(cleanupGeneratorFixtures, CONTRACT_CLEANUP_TIMEOUT_MS);
 
 interface GeneratorResult {
   status: number | null;
@@ -128,56 +144,84 @@ function runCommand(
   args: string[],
   options: ExecFileOptionsWithStringEncoding,
 ): Promise<GeneratorResult> {
-  // Keep worker RPC and timeout handling responsive while the real generator
-  // runs. Await completion before inspecting or removing its fixture files.
-  return new Promise((resolveResult) => {
-    execFile(command, args, options, (error, stdout, stderr) => {
-      resolveResult({
+  options.signal?.throwIfAborted();
+  // An abort callback can precede process exit. Fixture cleanup must wait for
+  // the actual close event, including when Vitest has already timed out.
+  const completion = new Promise<GeneratorResult>((resolveResult) => {
+    let result: GeneratorResult | undefined;
+    const { signal: cancellation, ...childOptions } = options;
+    const child = execFile(command, args, childOptions, (error, stdout, stderr) => {
+      result = {
         status: error === null ? 0 : typeof error.code === 'number' ? error.code : null,
         stdout,
         stderr,
         signal: error?.signal ?? null,
         ...(error && typeof error.code !== 'number' ? { error } : {}),
+      };
+    });
+    const cancel = () => child.kill(options.killSignal ?? 'SIGTERM');
+    cancellation?.addEventListener('abort', cancel, { once: true });
+    if (cancellation?.aborted) cancel();
+    child.once('close', (code, signal) => {
+      cancellation?.removeEventListener('abort', cancel);
+      resolveResult({
+        status: result?.status ?? code,
+        stdout: result?.stdout ?? '',
+        stderr: result?.stderr ?? '',
+        signal,
+        ...(result?.error ? { error: result.error } : {}),
       });
     });
   });
+  const tracked = completion.finally(() => activeCommands.delete(tracked));
+  activeCommands.add(tracked);
+  return tracked;
 }
 
-async function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
-  const result = await runCommand('bun', ['run', 'graph:golden', '--', mode], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-    env: {
-      ...process.env,
-      ...(outputRoot === undefined ? {} : { OPENSLACK_GRAPH_CONTRACTS_OUTPUT_ROOT: outputRoot }),
-    },
-  });
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  if (process.platform !== 'win32' || !output.includes('EACCES reading')) return result;
+interface GeneratorFixture {
+  readonly outputRoot: string;
+  readonly run: (mode: 'generate' | '--check') => Promise<GeneratorResult>;
+}
 
-  const toWslPath = (path: string): string => {
-    const match = /^([A-Za-z]):\/(.*)$/.exec(path.replaceAll('\\', '/'));
-    if (match === null) throw new Error(`Cannot translate Windows path for WSL: ${path}`);
-    return `/mnt/${match[1]!.toLowerCase()}/${match[2]}`;
-  };
+function withGeneratorFixture(
+  signal: AbortSignal,
+  body: (fixture: GeneratorFixture) => Promise<void>,
+): Promise<void> {
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  generatorControllers.push(controller);
+  const fixtureSignal = AbortSignal.any([signal, controller.signal]);
+  const completion = (async () => {
+    const outputRoot = await mkdtemp(resolve(tmpdir(), 'openslack-graph-contracts-'));
+    temporaryRoots.push(outputRoot);
+    fixtureSignal.throwIfAborted();
+    await body({
+      outputRoot,
+      run: (mode) => runGenerator(mode, outputRoot, fixtureSignal),
+    });
+  })();
+  const tracked = completion.finally(() => activeScenarios.delete(tracked));
+  activeScenarios.add(tracked);
+  return tracked;
+}
+
+function runGenerator(mode: 'generate' | '--check', outputRoot: string, signal: AbortSignal) {
+  signal.throwIfAborted();
+  // Run the real generator directly so cancellation owns a single process.
+  // A native Windows failure remains a native failure, rather than a WSL retry.
   return runCommand(
-    'wsl.exe',
-    [
-      '--cd',
-      toWslPath(repositoryRoot),
-      '--exec',
-      '/usr/bin/env',
-      ...(outputRoot === undefined
-        ? []
-        : [`OPENSLACK_GRAPH_CONTRACTS_OUTPUT_ROOT=${toWslPath(outputRoot)}`]),
-      '/root/.bun/bin/bun',
-      'run',
-      'graph:golden',
-      '--',
-      mode,
-    ],
-    { encoding: 'utf8' },
+    testExecutable('bun'),
+    ['scripts/organization-graph-contracts/index.ts', mode],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      signal,
+      killSignal: 'SIGKILL',
+      env: {
+        ...testProcessEnvironment(),
+        OPENSLACK_GRAPH_CONTRACTS_OUTPUT_ROOT: outputRoot,
+      },
+    },
   );
 }
 
@@ -203,6 +247,56 @@ function sha256(bytes: Buffer): string {
 }
 
 describe('Organization Graph generated contract freeze', () => {
+  it('settles a cancelled fixture continuation before removing its directory', async ({
+    signal,
+  }) => {
+    let release: () => void = () => {};
+    let started: () => void = () => {};
+    const startedPromise = new Promise<void>((resolveStarted) => (started = resolveStarted));
+    const barrier = new Promise<void>((resolveBarrier) => (release = resolveBarrier));
+    let completed = false;
+    const scenario = withGeneratorFixture(signal, async () => {
+      started();
+      await barrier;
+      completed = true;
+    });
+    await startedPromise;
+    const cleanup = settleGeneratorFixtures();
+    let removed = false;
+    void cleanup.then(() => (removed = true));
+    try {
+      // A child-free async continuation still owns its fixture until it settles.
+      await new Promise<void>((resolveTurn) => setImmediate(resolveTurn));
+      expect(removed).toBe(false);
+      expect(completed).toBe(false);
+    } finally {
+      release();
+      await scenario;
+      await cleanup;
+      await cleanupGeneratorFixtures();
+    }
+    expect(completed).toBe(true);
+    expect(temporaryRoots).toHaveLength(0);
+  });
+
+  it('waits for a cancelled child to close and refuses another launch with that signal', async () => {
+    const controller = new AbortController();
+    const child = runCommand(testExecutable('node'), ['-e', 'setInterval(() => {}, 1000)'], {
+      encoding: 'utf8',
+      signal: controller.signal,
+      killSignal: 'SIGKILL',
+    });
+    controller.abort();
+    const result = await child;
+    expect(result.signal).toBe('SIGKILL');
+    expect(() =>
+      runCommand(testExecutable('node'), ['-e', 'process.exit(0)'], {
+        encoding: 'utf8',
+        signal: controller.signal,
+      }),
+    ).toThrow();
+  });
+
   it('keeps authoritative schemas and every generated mirror byte-identical', async () => {
     for (const name of ['graph-snapshot.v1.schema.json', 'graph-delta.v1.schema.json']) {
       const authority = await readFile(resolve(contractRoot, 'schemas', name));
@@ -335,71 +429,104 @@ describe('Organization Graph generated contract freeze', () => {
 
   it(
     'supports deterministic generate/check modes and rejects one stale byte',
-    async () => {
-      const outputRoot = await mkdtemp(resolve(tmpdir(), 'openslack-graph-contracts-'));
-      temporaryRoots.push(outputRoot);
+    ({ signal }) =>
+      withGeneratorFixture(signal, async (fixture) => {
+        const { outputRoot } = fixture;
+        const generated = await fixture.run('generate');
+        expect(generated.status, generatorDiagnostic(generated)).toBe(0);
+        const checked = await fixture.run('--check');
+        expect(checked.status, checked.stderr).toBe(0);
+        expect(checked.stdout).toContain('22 generated files');
 
-      const generated = await runGenerator('generate', outputRoot);
-      expect(generated.status, generatorDiagnostic(generated)).toBe(0);
-      const checked = await runGenerator('--check', outputRoot);
-      expect(checked.status, checked.stderr).toBe(0);
-      expect(checked.stdout).toContain('22 generated files');
-
-      const manifestPath = resolve(
-        outputRoot,
-        'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
-      );
-      await writeFile(manifestPath, 'stale\n', 'utf8');
-      const stale = await runGenerator('--check', outputRoot);
-      expect(stale.status).toBe(1);
-      expect(`${stale.stdout}\n${stale.stderr}`).toContain('manifest.json (stale)');
-
-      expect((await runGenerator('generate', outputRoot)).status).toBe(0);
-      const extraPath = resolve(
-        outputRoot,
-        'services/organization-graph/internal/contractmirror/generated/v1/extra.json',
-      );
-      await writeFile(extraPath, '{}\n', 'utf8');
-      const extra = await runGenerator('--check', outputRoot);
-      expect(extra.status).toBe(1);
-      expect(`${extra.stdout}\n${extra.stderr}`).toContain('extra.json (unexpected file)');
-      await rm(extraPath);
-
-      const symlinkPath = resolve(
-        outputRoot,
-        'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
-      );
-      if (await tryCreateSymlink('manifest.json', symlinkPath)) {
-        const linked = await runGenerator('--check', outputRoot);
-        expect(linked.status).toBe(1);
-        expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
-        const linkedWrite = await runGenerator('generate', outputRoot);
-        expect(linkedWrite.status).toBe(1);
-        expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
-          'Refusing to write unsafe Organization Graph generated trees',
+        const manifestPath = resolve(
+          outputRoot,
+          'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
         );
-        await rm(symlinkPath);
-      }
+        const originalManifest = await readFile(manifestPath);
+        await writeFile(manifestPath, 'stale\n', 'utf8');
+        const stale = await fixture.run('--check');
+        expect(stale.status).toBe(1);
+        expect(`${stale.stdout}\n${stale.stderr}`).toContain('manifest.json (stale)');
+        const repaired = await fixture.run('generate');
+        expect(repaired.status, generatorDiagnostic(repaired)).toBe(0);
+        expect(await readFile(manifestPath)).toEqual(originalManifest);
+      }),
+    CONTRACT_GENERATION_TIMEOUT_MS,
+  );
 
-      expect((await runGenerator('generate', outputRoot)).status).toBe(0);
-      const authoritativeManifestPath = resolve(
-        outputRoot,
-        'packages/organization-graph/contracts/v1/manifest.json',
-      );
-      await rm(authoritativeManifestPath);
-      if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
-        const authoritativeLinked = await runGenerator('--check', outputRoot);
-        expect(authoritativeLinked.status).toBe(1);
-        expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
-          'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+  it(
+    'rejects an unexpected generated file',
+    ({ signal }) =>
+      withGeneratorFixture(signal, async (fixture) => {
+        const { outputRoot } = fixture;
+        const generated = await fixture.run('generate');
+        expect(generated.status, generatorDiagnostic(generated)).toBe(0);
+        const extraPath = resolve(
+          outputRoot,
+          'services/organization-graph/internal/contractmirror/generated/v1/extra.json',
         );
-        const authoritativeLinkedWrite = await runGenerator('generate', outputRoot);
-        expect(authoritativeLinkedWrite.status).toBe(1);
-        expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
-          'Refusing to write unsafe Organization Graph generated trees',
+        await writeFile(extraPath, '{}\n', 'utf8');
+        const extra = await fixture.run('--check');
+        expect(extra.status).toBe(1);
+        expect(`${extra.stdout}\n${extra.stderr}`).toContain('extra.json (unexpected file)');
+        await rm(extraPath);
+      }),
+    CONTRACT_GENERATION_TIMEOUT_MS,
+  );
+
+  it(
+    'rejects a symlink in a generated mirror before checking or writing',
+    ({ signal }) =>
+      withGeneratorFixture(signal, async (fixture) => {
+        const { outputRoot } = fixture;
+        const generated = await fixture.run('generate');
+        expect(generated.status, generatorDiagnostic(generated)).toBe(0);
+        const symlinkPath = resolve(
+          outputRoot,
+          'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
         );
-      }
-    },
+        if (await tryCreateSymlink('manifest.json', symlinkPath)) {
+          const linked = await fixture.run('--check');
+          expect(linked.status).toBe(1);
+          expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
+          const linkedWrite = await fixture.run('generate');
+          expect(linkedWrite.status).toBe(1);
+          expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
+            'Refusing to write unsafe Organization Graph generated trees',
+          );
+          await rm(symlinkPath);
+          const repaired = await fixture.run('generate');
+          expect(repaired.status, generatorDiagnostic(repaired)).toBe(0);
+        }
+      }),
+    CONTRACT_GENERATION_TIMEOUT_MS,
+  );
+
+  it(
+    'rejects a symlink in the contract authority before checking or writing',
+    ({ signal }) =>
+      withGeneratorFixture(signal, async (fixture) => {
+        const { outputRoot } = fixture;
+        const generated = await fixture.run('generate');
+        expect(generated.status, generatorDiagnostic(generated)).toBe(0);
+        const authoritativeManifestPath = resolve(
+          outputRoot,
+          'packages/organization-graph/contracts/v1/manifest.json',
+        );
+        await rm(authoritativeManifestPath);
+        if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
+          const authoritativeLinked = await fixture.run('--check');
+          expect(authoritativeLinked.status).toBe(1);
+          expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
+            'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+          );
+          const authoritativeLinkedWrite = await fixture.run('generate');
+          expect(authoritativeLinkedWrite.status).toBe(1);
+          expect(
+            `${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`,
+          ).toContain('Refusing to write unsafe Organization Graph generated trees');
+        }
+      }),
     CONTRACT_GENERATION_TIMEOUT_MS,
   );
 
