@@ -7,11 +7,11 @@ authenticates its operating-system peer and the durable request binding.
 ## What it does
 
 ```text
-client.mjs --mode preview --workspace <dedicated-workspace> --agent-id <id> --principal-id <id> --runtime-uid <uid> \
+node tools/cleanup-client.mjs --mode preview --workspace <dedicated-workspace> --agent-id <id> --principal-id <id> --runtime-uid <uid> \
   --run-id <id> --repo <owner/name> --remote <name> --pr <number> --permit-id <id>
-client.mjs --mode execute ... --operation-id <id>
-client.mjs --mode status  ... --operation-id <id>
-client.mjs --mode status  --operation-record <path>
+node tools/cleanup-client.mjs --mode execute ... --operation-id <id>
+node tools/cleanup-client.mjs --mode status  ... --operation-id <id>
+node tools/cleanup-client.mjs --mode status  --operation-record <path>
 ```
 
 - `preview` asks the broker what it would do. It never deletes and prohibits
@@ -68,5 +68,19 @@ installed, deployed, approved or authorized to execute, and it never reports
 that any of those steps are complete. A fresh intact package exits 0 while
 listing outstanding approval, deployment, activation and Permit gates. Corrupt
 bytes, expired evidence or unknown gates exit 2; `validityIssues` explains the
-failure independently of `outstandingGates`. `unmetGates` retains both lists for
-older consumers.
+failure independently of `outstandingGates`. `unmetGates` retains the established
+authorization vocabulary and historical task-expiry gate for older consumers.
+Error codes stay in `validityIssues`;
+unrecognized gate names stay in `unknownGates` and always stop verification.
+
+Matching explicit repo, PR, remote, agent, principal, runtime, run, Permit and
+operation bindings are permitted in record status mode. They only check the
+record; the transmitted status request always uses its original binding. PR
+numbers use canonical positive decimal syntax. Identity status may be suspended
+or retired for a historical query; this provides no execute admission.
+
+Root may inspect an Agent-owned historical record read-only. To query the Broker,
+run as the original Agent OS UID: the Broker continues to reject UID 0. Record
+publication requires private, non-group-writable directories below the dedicated
+workspace. A shared `.openslack` directory with mode 0775 is refused; use a
+separately provisioned private workspace rather than changing shared permissions.

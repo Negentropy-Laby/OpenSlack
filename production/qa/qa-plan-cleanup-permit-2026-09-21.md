@@ -1394,3 +1394,199 @@ checks and final PRMS outcome are recorded in the live PR #420 evidence after
 freezing. Source build qualification does not produce an installable package
 without fresh genuine target evidence, and cannot authorize deployment or live
 cleanup. The administrator gates stated above remain uncompleted.
+
+### PR #420 review 47 remediation and acceptance (2026-10-11)
+
+The source is the unchanged [47-item review comment](https://github.com/Negentropy-Laby/OpenSlack/pull/420#issuecomment-6100645679),
+21,312 UTF-8 bytes with SHA256
+`1249eac3efd0c833f4a85569fff44e72253aa8819fb0a047dfb22c33df304a76`.
+Items 1–24 retain its numbering; table rows continue in original order as
+25–30 (reuse), 31–35 (efficiency), 36–43 (simplification), and 44–47 (architecture).
+The three expressly excluded candidates remain closed: inner role shadowing,
+unknown-gate bypass through the previous administrator suffix matcher, and the
+asserted D:/ root-stripping failure. No new approval, credential, activation,
+Permit or deletion is created by this repair.
+
+| ID  | Reviewed issue                                 | Disposition and behavioral evidence                                                                                                                                                                                                                        | Repair commit                          | Qualification scope                          |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------- |
+| 1   | Published request disagrees with wire contract | Fixed: validateCleanupBrokerRequest runs before record construction or publication; malformed Permit/claims/repo refuse zero writes/send.                                                                                                                  | 1f0bc3be                               | All OS logic; Linux publish                  |
+| 2   | Relative Windows paths redacted twice          | Fixed: one original-token scan never rescans emitted relative paths.                                                                                                                                                                                       | acff0817                               | All OS                                       |
+| 3   | Ordinary artifacts inherit execution trust     | Fixed: readable ordinary artifacts use integrity policy; runtime tools and current evidence retain strict ownership/mode policy.                                                                                                                           | 1f0bc3be / 5a04ba37                    | Portable artifact tests; Linux trust         |
+| 4   | Root cannot inspect Agent records              | Fixed: historical-record purpose permits root read-only; Broker still rejects UID 0 and requires original Agent OS identity.                                                                                                                               | 1f0bc3be                               | Linux                                        |
+| 5   | Shared directory blocks execute                | Disposition: private publication directories below workspace remain mandatory; explicit diagnostic advises dedicated workspace. The claim that all ancestors require current-user ownership is not true. Permission changes during write/reuse now refuse. | 1f0bc3be                               | Linux                                        |
+| 6   | URL corruption                                 | Fixed: network URI tokens and HTML syntax preserved; file URIs handled as paths. Ambiguous single-letter x:/ tokens deliberately mean drive paths.                                                                                                         | acff0817                               | All OS                                       |
+| 7   | Windows path case mismatch                     | Fixed: Windows comparison is case-insensitive, POSIX remains case-sensitive, normalized segments prevent adjacent-root/traversal acceptance.                                                                                                               | acff0817                               | All OS                                       |
+| 8   | Expired intact package exit 2                  | Retained policy: valid describes byte integrity; expiry is a distinct validity issue and still exits 2. Old packages are preserved.                                                                                                                        | 5a04ba37                               | Portable real Node                           |
+| 9   | Revoked admission prevents status              | Fixed: resolveAgentStatusBinding preserves fixed uid/provider/run claims without active execute admission or bootstrap. Real client subprocess reaches transport after suspension.                                                                         | c923aefe                               | All OS; Linux transport                      |
+| 10  | Non-Linux record publication refuses           | Retained policy: Linux descriptor-bound records refuse unsupported platforms before IO/send. Main Broker transport was already Linux-only; broader portability attribution withdrawn.                                                                      | 1f0bc3be                               | All OS refusal; Linux IO                     |
+| 11  | Every process signal is TIMEOUT                | Fixed: actual non-timeout signal uses TERMINATED; ETIMEDOUT alone uses TIMEOUT, with no invented duration.                                                                                                                                                 | acff0817                               | All OS                                       |
+| 12  | Raw report JSON parse loses classification     | Fixed: strict single parse per build report retains HANDOFF_BUILD_MISMATCH and input role. Truncated report regression demonstrably failed before correction.                                                                                              | 5a04ba37                               | Linux prepare; portable verifier             |
+| 13  | Platform wrapper replaces real assertions      | Fixed: removed onCleanupRecordPlatform/onUpgradePlatform substitutions. Pure validation/conflicts/evaluators run all OS; genuine Linux IO has explicit qualification. Portable Node verifier has an independent full fixture.                              | c923aefe / 5a04ba37                    | All OS + Linux-specific IO                   |
+| 14  | Directory FD leakage                           | Fixed: each acquired FD is registered before fstat, including root/intermediate failure; injected failures assert no open owned FD.                                                                                                                        | 1f0bc3be                               | Linux                                        |
+| 15  | Sensitive paths and conflicts drift            | Fixed: common purpose-aware sensitive-path check and shared nine-field original-binding status builder. /private/var outside declared root is not a Black-path alias.                                                                                      | 1f0bc3be / c923aefe                    | All OS                                       |
+| 16  | Absent record reported as persistence failure  | Fixed: NOT_FOUND distinguishes missing path/ancestor; no repair or creation occurs.                                                                                                                                                                        | 1f0bc3be                               | Linux; pure classification                   |
+| 17  | Number coercion in client                      | Fixed: common canonical positive-decimal parser rejects hex, exponent, whitespace, fractional and unsafe integers before identity IO.                                                                                                                      | c923aefe                               | All OS real Node                             |
+| 18  | Record repo URL disagreement                   | Fixed: shared pure repo-spec parser normalizes supported GitHub URLs to owner/name for both entries.                                                                                                                                                       | c923aefe                               | All OS                                       |
+| 19  | Synchronous exit truncates pipe diagnostics    | Fixed: client input error uses exitCode and returns; real Node pipe regressions inspect complete stderr.                                                                                                                                                   | c923aefe                               | All OS real Node                             |
+| 20  | Cleanup error masks primary failure            | Fixed: preserve primary code/detail and separately report cleanupCode; no failed persistence may send.                                                                                                                                                     | 1f0bc3be                               | Linux                                        |
+| 21  | Errors mixed into gate vocabulary              | Fixed: derive known outstanding gates, validity issues and unknown gates separately; legacy unmetGates retains known vocabulary plus historical TASK_EVIDENCE_EXPIRED.                                                                                     | 5a04ba37                               | All OS + portable Node                       |
+| 22  | PowerShell mandatory on Windows                | Retained qualification policy: PowerShell 5.1 required; discovered pwsh additionally verified. Missing tools fail related qualification, without hiding unrelated collection.                                                                              | Existing policy; this round acceptance | Native Windows                               |
+| 23  | Help contradicts matching identity binding     | Fixed: help explicitly permits matching bindings; status sends original record request.                                                                                                                                                                    | c923aefe                               | All OS                                       |
+| 24  | Tautological bundle copy                       | Fixed: removed self-copy assertion; retained real bundle capability and subprocess behavior tests.                                                                                                                                                         | c923aefe                               | All OS                                       |
+| 25  | Duplicate record wire validator                | Covered by #1: one production request validator with unchanged protocol.                                                                                                                                                                                   | 1f0bc3be                               | All OS                                       |
+| 26  | Stable-read algorithm duplicated               | Fixed: Core owns bounded same-FD read and file identity; GitHub/PR retain their own link, ownership, UTF-8 and anchoring controls.                                                                                                                         | 1f0bc3be                               | All OS logic; Linux anchored IO              |
+| 27  | Client bounds disagree with transport          | Covered by #1/#17: provisional and resolved requests use exact production wire validator before publication.                                                                                                                                               | c923aefe                               | All OS                                       |
+| 28  | Duplicate digest/object/key validators         | Fixed: package-internal shared constants and strict object/key primitives; input-role errors remain distinct.                                                                                                                                              | 1f0bc3be / 5a04ba37                    | All OS                                       |
+| 29  | Handwritten permission snapshot fixture        | Fixed: CLI test uses the same production-validated snapshot factory, with isolated explicit binding.                                                                                                                                                       | c923aefe                               | All OS                                       |
+| 30  | Client and CLI duplicate business flow         | Fixed: shared record publication, original-binding status construction and result evaluator; Runtime identity resolution stays in application entries only.                                                                                                | c923aefe                               | All OS                                       |
+| 31  | Artifact proof repeats same-stage work         | Fixed: capture bytes/digest/size once per build phase, independently reread both builds at final race-check phase, then reuse final proof for source-only output.                                                                                          | 5a04ba37                               | Linux clean-build                            |
+| 32  | Same tool bytes repeatedly read                | Fixed: preparation captures its own bytes once per stage, reuses top/per-build tool reads, and preserves separate later verification.                                                                                                                      | 5a04ba37                               | Linux prepare                                |
+| 33  | Repeated verifier hash and report parse        | Partially disproved: same owned Buffer hashing already cached. Repeated report parsing fixed; digest-work regression retains measured one hash per owned bytes.                                                                                            | 5a04ba37                               | Linux prepare; portable verifier             |
+| 34  | Registry read twice                            | Fixed: resolved principalId comes from Runtime same registry read; entries do not parse registry again.                                                                                                                                                    | c923aefe                               | All OS                                       |
+| 35  | Repeated readonly fixture fsync                | Fixed: pure CLI conflict/result cases share immutable record bytes; dedicated publication/durability cases retain real isolated IO.                                                                                                                        | c923aefe                               | All OS + Linux IO                            |
+| 36  | Reduce evaluator to one array                  | Not adopted: require valid result shape, known gates, integrity/time and false authorization flags. Forged truthy success flags now explicitly refuse.                                                                                                     | 5a04ba37                               | All OS                                       |
+| 37  | Publish mutable authorization snapshot         | Not adopted: keep private immutable WeakMap snapshot from same verification; callers cannot forge install instructions through public result fields.                                                                                                       | 5a04ba37                               | All OS + Linux upgrade                       |
+| 38  | Nine repeated conflict conditions              | Covered by #15: one table-driven status binding comparison.                                                                                                                                                                                                | c923aefe                               | All OS                                       |
+| 39  | Repeated persistence checks                    | Disposition: removed redundant same-stage work while retaining before/after content/inode/lineage verification and file/directory fsync. Review found and repaired a failure-path unlink sync gap; pending changes are sealed before refusing.             | 1f0bc3be                               | Linux                                        |
+| 40  | Repeated identity shape parsing                | Fixed: one validated UpgradeIdentities shape with exact fields; each independent evidence object is parsed once then compared.                                                                                                                             | 5a04ba37                               | All OS pure capture; Linux IO                |
+| 41  | Remove public validApprovers argument          | Not adopted: retain three-argument public compatibility and separation of approver availability from CODEOWNER deadlock. Existing duty-separation regression retained.                                                                                     | Existing verified behavior             | All OS                                       |
+| 42  | Discarded input role label                     | Fixed: typed upgrade error includes safe input role.                                                                                                                                                                                                       | 5a04ba37                               | All OS                                       |
+| 43  | Unused new directory API                       | Fixed: remove isUpgradeTargetDirectory and its root re-export; production boundary remains package-owned.                                                                                                                                                  | 5a04ba37                               | All OS                                       |
+| 44  | POSIX root allowlist leaks paths               | Covered by #2/#6/#7: generic original absolute-path matching covers /Volumes, /builds and /home2 with normalized repo containment.                                                                                                                         | acff0817                               | All OS                                       |
+| 45  | English suffix guesses upgrade severity        | Fixed: typed blockingIssues and evaluateCleanupTargetUpgradePlan determine exit status; every hard issue yields zero install commands.                                                                                                                     | 5a04ba37                               | All OS + Linux evidence                      |
+| 46  | Reader policy owned by caller platform fork    | Fixed: file boundary owns explicit artifact/runtime/historical purposes. Captured pure evidence decoder does not create verified-package snapshot.                                                                                                         | 1f0bc3be / 5a04ba37                    | All OS artifact; Linux trust                 |
+| 47  | Mix pure tests with IO platform wrapper        | Covered by #13: all-OS pure suites and portable verifier plus declared Linux IO suites. Inventory collector includes every declaration without treating collection as execution.                                                                           | 1f0bc3be / 5a04ba37                    | All OS inventory; actual OS results separate |
+
+Regression evidence uses the production request/record, file-boundary, handoff,
+upgrade and identity functions, plus real Node client/verifier pipes. The initial
+request/redaction/genesis regression run retained 16 failures; the file boundary
+run retained 6; the independent-review regression run retained 9 (including
+truthy result flags, unsafe evidence, directory permission drift and unlink
+durability). The last report SHA256 is
+`4de360813995a1fa9cd4779d70ba4faac6e8af4848a55ad043478330ddab9021`.
+The separately corrected malformed-report matcher was also run against the old
+parser and observed HANDOFF_IO_FAILED instead of HANDOFF_BUILD_MISMATCH.
+
+Final affected Linux runs passed three times consecutively: 501 passed, zero
+failed or skipped per run. Their JSON SHA256 values are, in order,
+`b04e7eaf7ea023a9e1fdf8b4fbec5fa901e7a572fbc41deaedebc7cc11e673ac`,
+`ec84be204ec445d03003878a5f82870824472a243bc481c3ecfac84053ecf3ea`, and
+`d0aeeffb75bbde12c9b691f3d29c1689bbd44f7eaf75dc497f8eb1da1f90c00d`.
+The new portable Node verifier cases use a clearly synthetic non-executable v1
+package; they do not claim real installed bytes or qualification. They verify
+fresh success, intact expiry, unknown gates and corrupt reports outside the
+checkout with empty PATH, without installed Git or credentials.
+
+Independent read-only agent rechecks confirmed the two discovered persistence
+defects were fixed and found no remaining demonstrated production blocker in
+the request, identity, file or handoff scope. Portable entry coverage was added
+after that review requested it. This is agent review, not a human approval.
+The exact-source-lock intersection of this round is empty: no bound digest,
+binding set, path or scope needs changing. No Workflow execution authority or
+Broker protocol changed. Full-run, build, inventory/projection, frozen artifact
+and hosted-head evidence follows separately; earlier passes are historical.
+
+The first complete Linux run of this round accidentally overlapped the native
+Windows complete run and inventory work. It retained 7,709 passes, six failures
+and six pre-existing platform skips (7,721 declared cases). The failed cases
+were MCP capability-change confirmation, the GS9-F2b profile harness, RunStore
+observation inventory, bounded effect-authority entries, CLI help subprocesses
+and Organization Graph generation. Their durations reached their existing
+5s/20s/90s/120s test budgets. This is failed evidence, not an accepted result;
+the complete JSON SHA256 is
+`61aeffa480cb774dd82cb89ab7847bd57f26796ad8e4f79c734798a15a9f26ba`.
+The inventory process was interrupted and did not update canonical counts.
+Final acceptance serializes native Windows and Linux complete runs and all
+heavy build/collection work, retaining unchanged test budgets and assertions.
+Only a subsequent complete run can close these six failures; isolated reruns
+cannot replace that result.
+
+The first native Windows run retained 7,465 passes, one failed actual-Go runtime
+case and 80 existing platform skips. Its JSON SHA256 is
+`829120aa322dd1c7431f33523d75dbb6becfba9c751015a71a12d6a0a8991e05`.
+The actual-Go case failed with `spawn go ENOENT`: my explicit child PATH omitted
+the installed `C:/Program Files/Go/bin/go.exe`, whose measured version is
+Go 1.26.5. The same complete run exposed empty Linux-only describe groups in
+the durability file despite its three all-platform denial cases passing.
+A shared suite-registration helper now declares those groups only for genuine
+Linux execution or complete inventory collection; test bodies, deadlines and
+platform-denial assertions are unchanged. Independent read-only review checked
+the six-case platform/inventory matrix and found no remaining registration
+issue. These failures are not closed by the environment correction or review:
+a fresh complete native Windows run must supply the execution evidence.
+The PowerShell Qoder case passed in that first full run under intentionally
+polluted PSModulePath, including required PowerShell 5.1 and discovered pwsh 7.
+
+After suite-registration repair `df9d9314`, all 501 affected Linux cases passed
+three more consecutive times with zero failures/skips. Their JSON digests are
+`59b07124a24444160109fd3ddc1a360ff82beed00daa3fc1ff4afa7168b11f22`,
+`adc2d09ce397c11df5b28ac221f960e9442b81f8f59e4bd033e8d0de82e8fb98`,
+and `c6a124309c25f8e4f3e2c19ae5cba2fdba373130329160f4684435e86550d332`.
+The final complete Linux run passed 7,715 cases, zero failures, with the same
+six pre-existing platform skips (7,721 total); JSON SHA256
+`9bc837b65915e7e68cb92bbbf854b03c90fb7e9a5939503e090d5331ec52be80`.
+All six earlier timeout cases passed in that complete run without changing
+their budgets or assertions. The separate serial checkpoint also passed the
+same complete inventory; its JSON digest is
+`b0d9a98fddebe7c2bae37ee15332b118a2df0398996cc1e4e853fb4b375b7463`.
+The production collector reports 7,721 declared cases in 541 files, including
+all qualified Linux declarations on every collecting host. Canonical numeric
+telemetry only is updated; module maturity is unchanged. A second status/docs
+generation is byte-identical. Documentation verification, migration,
+notification-document checks and status verification pass; Linux typecheck,
+build, workspace validation, golden 7/7 and genesis 5/5 also pass. The serial
+checkpoint's ESLint returned zero errors and zero warnings; the final check
+after test registration changes remains required. Complete native Windows execution and
+final frozen-source/hosted-head evidence are still separate pending layers at
+this checkpoint, not inferred from the Linux results.
+
+The final complete native Windows run closes both recorded Windows failures:
+7,466 passed, zero failed suites/cases, 80 pre-existing platform skips, with
+7,546 applicable cases. Its JSON SHA256 is
+`82ed949cc41be3620e98706f65dc09bd4c3550b32040b307009eea7942bd56e7`.
+The parent deliberately retains PowerShell 7 PSModulePath pollution; the full
+Qoder test verifies required Windows PowerShell 5.1 and available pwsh 7 using
+only the child-specific normalization. The actual-Go budget case passes with
+measured Go 1.26.5 on its unchanged production path. No empty-suite allowance,
+new skip, retry, timeout relaxation or weakened assertion is introduced.
+
+All three final affected native Windows runs pass 326 cases, zero failures or
+skips. Their JSON SHA256 values are, in order,
+`0fd63bf40087a829e04048ac93f20db1e11d5f9395344f14bb23b0030bc47684`,
+`2ade46a9d356edd024c3e904998606e63ff0ab35ba99469aec02638f1db27643`,
+and `f02641e8d859cbdff764625d707b89440046ddcd03ffc8e69002e9ba44643711`.
+The 175 descriptor-bound Linux IO cases are declared for Linux execution and
+full inventory collection, not reported as Windows execution; pure parsing,
+conflict, evaluator and zero-IO refusal assertions genuinely execute on both.
+The production inventory is 7,721 declarations, independently of the native
+execution total. Both negative complete-run reports remain preserved.
+
+Final lightweight independent agent review at `df9d9314` confirms the complete
+47-item mapping, retained decisions and numeric-only telemetry, with no new
+production or evidence blocker. Earlier approval, old-head hosted checks and
+historical build proofs do not approve this new candidate. The historical
+94,313-byte QA prefix remains byte-identical, SHA256
+`619c04209070ee49e14b4810c9c0df98c29f878df7da5eb633bbff5ae750bc97`.
+
+Final post-registration validation also passes: Linux and native Windows
+whole-repository typecheck, both incremental builds, workspace validation,
+golden 7/7, genesis 5/5, docs verification/migration/notification and status
+verification. ESLint is zero errors and zero warnings with max-warnings 0.
+The serialized command-summary SHA256 is
+`d9d741aaf4739d033fb6c343ea747bb171f96c73d6f1b2c2efce70ee5dde75ca`;
+the native typecheck/build log SHA256 is
+`26079810c0cab4298d35f926471071e71bdc75680563ab25a2ef8ad91d650000`.
+The two-pass generated-projection proof SHA256 is
+`d4b9fbbc1387a7d724dc4765ec7141f1dff60c09d65f1e794514a595ae07b20f`.
+Measured Git versions are Linux 2.43.0 and native Windows 2.49.0.windows.1;
+old Git/VCS-stamping failures remain historical, not a claim of compatibility
+with their original environment. No stamping flag, unknown ancestor Git
+metadata, required check or source binding is weakened or removed.
+
+Source freezing and the new double-clean-build proof are recorded outside this
+document in the current PR after this documentation commit, avoiding a commit
+whose embedded candidate SHA would invalidate itself. Final frozen-source Go
+race/integration/vet, exact-byte contracts and hosted checks must belong to
+that candidate. Without fresh genuine target evidence, only source build
+proof may be delivered: no installable target package, inherited approval,
+installation, service, activation, Permit or live deletion is asserted.
