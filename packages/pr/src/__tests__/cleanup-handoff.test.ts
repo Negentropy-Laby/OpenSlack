@@ -1412,7 +1412,125 @@ async function upgradeFixture(now = new Date(timestamp)) {
   return { f, input, write, pkg };
 }
 
+function replaceUpgradeTasks(
+  input: Awaited<ReturnType<typeof upgradeFixture>>['input'],
+  tasks: ReadonlyArray<Record<string, unknown>>,
+  byteLength?: number,
+) {
+  const viewPath = input.targetEvidence.taskViewPath;
+  const view = JSON.parse(readFileSync(viewPath, 'utf8')) as Record<string, unknown>;
+  let raw = Buffer.from(JSON.stringify({ ...view, tasks }));
+  if (byteLength !== undefined) {
+    raw = Buffer.concat([raw, Buffer.alloc(byteLength - raw.length, ' ')]);
+  }
+  replaceUpgradeTaskBytes(input, raw);
+}
+
+function replaceUpgradeTaskBytes(
+  input: Awaited<ReturnType<typeof upgradeFixture>>['input'],
+  raw: Buffer,
+) {
+  const viewPath = input.targetEvidence.taskViewPath;
+  writeFileSync(viewPath, raw);
+  const attestationPath = input.targetEvidence.taskAttestationPath;
+  const attestation = JSON.parse(readFileSync(attestationPath, 'utf8')) as Record<string, unknown>;
+  writeFileSync(
+    attestationPath,
+    JSON.stringify({ ...attestation, task_view_sha256: digest(readFileSync(viewPath)) }),
+  );
+  const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8')) as {
+    evidenceSHA256: Record<string, string>;
+  };
+  host.evidenceSHA256.taskViewPath = digest(readFileSync(viewPath));
+  host.evidenceSHA256.taskAttestationPath = digest(readFileSync(attestationPath));
+  writeFileSync(input.hostInspectionPath, JSON.stringify(host));
+}
+
 describeLinux('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
+  it.each(['1.0', '1e0'])(
+    'emits no installation command for the raw Issue token %s',
+    async (literal) => {
+      const { input } = await upgradeFixture();
+      replaceUpgradeTasks(input, [{ taskId: 'TASK-1', issueNumber: 1, state: 'pending' }]);
+      const viewPath = input.targetEvidence.taskViewPath;
+      replaceUpgradeTaskBytes(
+        input,
+        Buffer.from(
+          readFileSync(viewPath, 'utf8').replace('"issueNumber":1', `"issueNumber":${literal}`),
+        ),
+      );
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.packageVerified).toBe(true);
+      expect(plan.evidenceIssues).toContainEqual({
+        role: 'taskViewPath',
+        reason: 'EVIDENCE_INVALID',
+      });
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+    },
+  );
+
+  it.each([65536, 65537])('enforces the Broker task-view byte bound at %i bytes', async (size) => {
+    const { input } = await upgradeFixture();
+    replaceUpgradeTasks(input, [{ taskId: 'TASK-1', issueNumber: 1, state: 'pending' }], size);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.packageVerified).toBe(true);
+    if (size === 65536) {
+      expect(plan.evidenceIssues).toEqual([]);
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
+    } else {
+      expect(plan.evidenceIssues).toContainEqual({
+        role: 'taskViewPath',
+        reason: 'EVIDENCE_INVALID',
+      });
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+    }
+  });
+
+  it.each(['pending', 'claimed', 'in-progress', 'completed', 'released'])(
+    'plans an upgrade with the Broker task state %s',
+    async (state) => {
+      const { input } = await upgradeFixture();
+      replaceUpgradeTasks(input, [{ taskId: 'TASK-1', issueNumber: 1, state }]);
+      const plan = prepareCleanupTargetUpgradePlan(input);
+      expect(plan.packageVerified).toBe(true);
+      expect(plan.evidenceIssues).toEqual([]);
+      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
+    },
+  );
+
+  it.each([
+    { label: 'active', tasks: [{ taskId: 'TASK-1', issueNumber: 1, state: 'active' }] },
+    { label: 'blocked', tasks: [{ taskId: 'TASK-1', issueNumber: 1, state: 'blocked' }] },
+    { label: 'done', tasks: [{ taskId: 'TASK-1', issueNumber: 1, state: 'done' }] },
+    { label: 'cancelled', tasks: [{ taskId: 'TASK-1', issueNumber: 1, state: 'cancelled' }] },
+    { label: 'zero Issue', tasks: [{ taskId: 'TASK-1', issueNumber: 0, state: 'pending' }] },
+    {
+      label: 'unsafe Issue',
+      tasks: [{ taskId: 'TASK-1', issueNumber: Number.MAX_SAFE_INTEGER + 1, state: 'pending' }],
+    },
+    {
+      label: '4097 tasks',
+      tasks: Array.from({ length: 4097 }, (_, i) => ({
+        taskId: `T${i}`,
+        issueNumber: i + 1,
+        state: 'pending',
+      })),
+    },
+  ])('emits no installation command for $label', async ({ tasks }) => {
+    const { input } = await upgradeFixture();
+    replaceUpgradeTasks(input, tasks);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.packageVerified).toBe(true);
+    expect(plan.evidenceIssues).toContainEqual({
+      role: 'taskViewPath',
+      reason: 'EVIDENCE_INVALID',
+    });
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+    expect(plan.administratorCommands.filter((command) => command.includes("'install'"))).toEqual(
+      [],
+    );
+  });
+
   it.each([{ uid: -1 }, { uid: [0] }, { gid: 4294967295 }])(
     'refuses invalid observed owner facts $uid/$gid',
     async (patch) => {
