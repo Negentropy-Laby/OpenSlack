@@ -22,6 +22,10 @@ import type {
   CleanupHandoffBuildInput,
   PrepareCleanupHandoffDraftInput,
 } from '../../packages/pr/src/cleanup-handoff.js';
+import {
+  CLEANUP_ADMIN_TOOLKIT_FILES,
+  prepareCleanupAdminToolkit,
+} from '../../packages/pr/src/cleanup-admin-toolkit.js';
 
 // Orchestrates two clean builds; all draft construction/verification belongs to @openslack/pr.
 type BuildInput = Omit<PrepareCleanupHandoffDraftInput, 'builds' | 'verifierPath' | 'now'> & {
@@ -38,6 +42,7 @@ const captureArtifact = (path: string) => {
   };
 };
 const buildProofs = new Map<string, Record<string, { sha256: string; bytes: number }>>();
+const administratorBuilds: { reportPath: string; toolDirectory: string }[] = [];
 const run = (command: string, args: string[], cwd: string, env = process.env) =>
   execFileSync(command, args, {
     cwd,
@@ -142,6 +147,68 @@ try {
     };
     bundleTool('client.ts', 'cleanup-client.mjs');
     bundleTool('admin-upgrade.ts', 'admin-upgrade.mjs');
+    const toolDirectory = join(artifacts, 'admin-toolkit');
+    mkdirSync(toolDirectory);
+    for (const name of CLEANUP_ADMIN_TOOLKIT_FILES) {
+      const sourceName =
+        name.endsWith('.mjs') && name !== 'qualification-fixtures.mjs'
+          ? name.replace(/\.mjs$/, '.ts')
+          : name;
+      const entry = join(checkout, 'scripts/cleanup-broker/administration', sourceName);
+      if (name.endsWith('.mjs')) {
+        const result = Bun.spawnSync(
+          [
+            process.execPath,
+            'build',
+            entry,
+            '--target=node',
+            '--format=esm',
+            '--outfile',
+            join(toolDirectory, name),
+          ],
+          { cwd: checkout, stdout: 'pipe', stderr: 'pipe' },
+        );
+        if (result.exitCode !== 0) throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+      } else {
+        writeFileSync(join(toolDirectory, name), readCleanupArtifactFile(entry, 2 * 1024 * 1024), {
+          flag: 'wx',
+          mode: 0o644,
+        });
+      }
+    }
+    const administratorReport = join(artifacts, 'admin-toolkit-build-report.json');
+    writeFileSync(
+      administratorReport,
+      JSON.stringify(
+        {
+          schema: 'openslack.cleanup_admin_toolkit_build_report.v1',
+          candidateHead: input.candidateHead,
+          checkout,
+          checkoutCleanAfterBuild: run('git', ['status', '--porcelain'], checkout) === '',
+          independentCloneNoHardlinks: true,
+          tools: { ...tools, git: run('git', ['--version'], checkout) },
+          lockfileSHA256: hash(join(checkout, 'bun.lock')),
+          commands: [
+            'git clone --no-local --no-checkout <source> <checkout>',
+            `git checkout --detach ${input.candidateHead}`,
+            'bun install --frozen-lockfile --ignore-scripts',
+            ...CLEANUP_ADMIN_TOOLKIT_FILES.filter((name) => name.endsWith('.mjs')).map(
+              (name) =>
+                `bun build scripts/cleanup-broker/administration/${name === 'qualification-fixtures.mjs' ? name : name.replace(/\.mjs$/, '.ts')} --target=node --format=esm --outfile <tool-directory>/${name}`,
+            ),
+            'readCleanupArtifactFile and exclusive writeFileSync copy Python/shared/README bytes from the clean candidate checkout',
+          ],
+          artifacts: CLEANUP_ADMIN_TOOLKIT_FILES.map((name) => ({
+            path: name,
+            ...captureArtifact(join(toolDirectory, name)).proof,
+          })),
+        },
+        null,
+        2,
+      ) + '\n',
+      { flag: 'wx', mode: 0o644 },
+    );
+    administratorBuilds.push({ reportPath: administratorReport, toolDirectory });
     const brokerBuildMetadata = run('go', ['version', '-m', brokerPath], checkout).split('\n');
     if (
       !brokerBuildMetadata.some((line) => line.includes(`vcs.revision=${input.candidateHead}`)) ||
@@ -227,6 +294,12 @@ try {
       throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
     finalProofs[tool] = a.proof;
   }
+  const administratorToolkit = prepareCleanupAdminToolkit({
+    sourceRoot: source,
+    candidateHead: input.candidateHead,
+    outputDirectory: join(buildRoot, 'administrator-toolkit'),
+    builds: [administratorBuilds[0]!, administratorBuilds[1]!],
+  });
   if (sourceOnly) {
     const proof = {
       schema: 'openslack.cleanup_source_build_proof.v1',
@@ -235,6 +308,7 @@ try {
       sourceNodeSHA256: hash(node),
       builds,
       artifacts: finalProofs,
+      administratorToolkit,
       packageCreated: false,
       targetEvidenceVerified: false,
       installationAuthorized: false,
@@ -264,7 +338,7 @@ try {
       JSON.stringify(result, null, 2) + '\n',
       { flag: 'wx' },
     );
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...result, administratorToolkit }, null, 2) + '\n');
   }
 } catch (error) {
   process.stderr.write(
