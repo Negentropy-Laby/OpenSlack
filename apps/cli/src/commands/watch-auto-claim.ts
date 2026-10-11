@@ -1,8 +1,9 @@
 import { DEFAULT_CLAIM_TTL_MINUTES, DEFAULT_CLAIM_HEARTBEAT_MINUTES } from '@openslack/github';
 import type { AutoClaimFn, NormalizedIssueEvent } from '@openslack/github';
+import type { recordEvent } from '@openslack/collaboration';
 
 function recordBlockedEvent(
-  recEvt: (p: Parameters<typeof import('@openslack/collaboration').recordEvent>[0]) => void,
+  recEvt: (p: Parameters<typeof recordEvent>[0]) => void,
   event: NormalizedIssueEvent,
   agentId: string,
   reason: string,

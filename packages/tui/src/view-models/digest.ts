@@ -1,4 +1,4 @@
-import type { DigestSummary, DigestGroup, CollaborationEvent } from '@openslack/collaboration';
+import type { DigestSummary } from '@openslack/collaboration';
 import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface DigestEventViewModel {

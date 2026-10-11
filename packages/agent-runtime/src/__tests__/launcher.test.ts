@@ -1145,19 +1145,19 @@ describe('createOpenSlackAgentLauncher', () => {
       label: 'reviewer',
       phase: 'review',
     });
-    expect((reviewResult.data as any).review).toBeDefined();
+    expect((reviewResult.data as { review?: unknown }).review).toBeDefined();
 
     const researchResult = await launcher('research this topic', {
       label: 'researcher',
       phase: 'research',
     });
-    expect((researchResult.data as any).summary).toBeDefined();
+    expect((researchResult.data as { summary?: unknown }).summary).toBeDefined();
 
     const planResult = await launcher('plan this feature', {
       label: 'planner',
       phase: 'plan',
     });
-    expect((planResult.data as any).plan).toBeDefined();
+    expect((planResult.data as { plan?: unknown }).plan).toBeDefined();
   });
 
   it('does not allow per-run fake mode to bypass provider configuration', async () => {
@@ -1268,22 +1268,39 @@ describe('createOpenSlackAgentLauncher', () => {
       },
     });
 
-    expect((result.data as any).ok).toBe(true);
-    expect((result.data as any).payload.input).toEqual([{ role: 'user', content: 'hello bridge' }]);
-    expect((result.data as any).payload.runId).toBe(result.runId);
-    expect((result.data as any).payload.agentId).toBe('aby');
-    expect((result.data as any).payload.model).toBe('sonnet');
-    expect((result.data as any).payload.effort).toBe('high');
-    expect((result.data as any).payload.maxTurns).toBe(4);
-    expect((result.data as any).payload.allowedTools).toContain('Read');
-    expect((result.data as any).payload.permissionMode).toBe('plan');
-    expect((result.data as any).payload.mcp).toEqual({
+    const data = result.data as {
+      ok: boolean;
+      payload: {
+        input: Array<{ role: string; content: string }>;
+        runId: string;
+        agentId: string;
+        model: string;
+        effort: string;
+        maxTurns: number;
+        allowedTools: string[];
+        permissionMode: string;
+        mcp: { required: string[]; available: string[] };
+        metadata: { integrationId: string; resolvedConfig: { model: string } };
+      };
+      env: Record<string, unknown>;
+    };
+
+    expect(data.ok).toBe(true);
+    expect(data.payload.input).toEqual([{ role: 'user', content: 'hello bridge' }]);
+    expect(data.payload.runId).toBe(result.runId);
+    expect(data.payload.agentId).toBe('aby');
+    expect(data.payload.model).toBe('sonnet');
+    expect(data.payload.effort).toBe('high');
+    expect(data.payload.maxTurns).toBe(4);
+    expect(data.payload.allowedTools).toContain('Read');
+    expect(data.payload.permissionMode).toBe('plan');
+    expect(data.payload.mcp).toEqual({
       required: ['github'],
       available: ['github'],
     });
-    expect((result.data as any).payload.metadata.integrationId).toBe('openslack');
-    expect((result.data as any).payload.metadata.resolvedConfig.model).toBe('sonnet');
-    expect((result.data as any).env).toMatchObject({
+    expect(data.payload.metadata.integrationId).toBe('openslack');
+    expect(data.payload.metadata.resolvedConfig.model).toBe('sonnet');
+    expect(data.env).toMatchObject({
       prompt: null,
       anthropicKey: null,
       runner: 'fake',

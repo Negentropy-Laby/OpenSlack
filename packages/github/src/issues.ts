@@ -1,4 +1,3 @@
-import type { GitHubClient } from './client.js';
 import { getClient } from './client.js';
 
 export interface CreateIssueResult {
@@ -83,7 +82,7 @@ export interface ReadyTask {
 
 export async function queryReadyItems(
   projectNodeId: string,
-  agentType?: string,
+  _agentType?: string,
 ): Promise<ReadyTask[]> {
   const client = await getClient();
   if (client.isDryRun) {

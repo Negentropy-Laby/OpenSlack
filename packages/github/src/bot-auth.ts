@@ -370,7 +370,6 @@ export async function withBotGitHubInstallation<T>(
   options: BotGitHubAuthOptions,
   consumer: (context: BotGitHubInstallationContext) => T | Promise<T>,
 ): Promise<T> {
-  const env = options.env ?? process.env;
   const repoRoot = resolve(options.repoRoot ?? DEFAULT_REPO_ROOT);
   const target = resolveBotGitHubRepository(options);
   const identity = resolveBotIdentity(options, repoRoot);

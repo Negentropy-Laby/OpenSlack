@@ -202,7 +202,7 @@ export interface WorkflowSummary {
   /** Display name from manifest (JS modules) or template name (YAML) */
   displayName: string;
   /** Source type / where the workflow was discovered */
-  source: 'yaml-template' | 'js-module' | import('./types.js').WorkflowSource;
+  source: 'yaml-template' | 'js-module' | WorkflowSource;
   /** Number of phases */
   phases: number;
   /** Number of inputs (YAML templates) or 0 (JS modules) */

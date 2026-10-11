@@ -8,7 +8,7 @@
  *   and asserts no line's visual width exceeds maxWidth using stringWidth.
  */
 import { Writable } from 'stream';
-import React from 'react';
+import type React from 'react';
 import render from '../../ink/root.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import stripAnsi from 'strip-ansi';

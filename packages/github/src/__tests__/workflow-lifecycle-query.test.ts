@@ -6,6 +6,7 @@ vi.mock('../client.js', () => ({
 
 import { getClient } from '../client.js';
 import { fetchWorkflowLifecycleIssues } from '../workflow-lifecycle.js';
+import type { GitHubClient } from '../client.js';
 
 const mockGetClient = vi.mocked(getClient);
 
@@ -53,7 +54,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: {} as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: {} as unknown as GitHubClient['octokit'],
       authMode: 'dry_run',
       isDryRun: true,
     });
@@ -99,7 +100,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -148,7 +149,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -190,7 +191,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -226,7 +227,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -260,7 +261,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -286,7 +287,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -315,7 +316,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -345,7 +346,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -375,7 +376,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -419,7 +420,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -477,7 +478,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -538,7 +539,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -579,7 +580,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -613,7 +614,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });
@@ -636,7 +637,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
     mockGetClient.mockResolvedValue({
       owner: 'test',
       repo: 'repo',
-      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      octokit: octokit as unknown as GitHubClient['octokit'],
       authMode: 'token',
       isDryRun: false,
     });

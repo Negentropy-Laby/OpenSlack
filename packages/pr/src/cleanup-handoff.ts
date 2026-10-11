@@ -1,22 +1,28 @@
+import {
+  CLEANUP_SHA256 as HASH,
+  CLEANUP_HEAD as HEAD,
+  cleanupObject,
+  isSensitiveCleanupInput,
+} from './internal/cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
 /** Offline preparation only. This module does not import auth, delivery or cleanup execution. */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
-  closeSync,
-  constants,
   existsSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
-  openSync,
-  readFileSync,
   readdirSync,
   realpathSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import {
+  readCleanupArtifactFile,
+  readCleanupBoundedFile,
+  CleanupFileBoundaryError,
+} from './internal/cleanup-file-boundary.js';
 import { readCleanupBrokerBuildInfo } from './internal/cleanup-handoff-build-info.js';
 
 export type CleanupHandoffErrorCode =
@@ -41,10 +47,24 @@ export class CleanupHandoffError extends Error {
   }
 }
 
+/** Placeholder for a tool a v1 build does not prove. */
+const EMPTY = Buffer.alloc(0);
+
 export interface CleanupHandoffBuildInput {
   reportPath: string;
   brokerPath: string;
   executorPath: string;
+  /**
+   * Per-build tool artifacts.
+   *
+   * A v2 build report must prove the verifier, client and administrator tool it
+   * actually built, each bound by digest and size to the file on disk. They are
+   * required for a v2 report so the package's tools cannot be completed by an
+   * arbitrary third file supplied separately from the builds.
+   */
+  verifierPath?: string;
+  clientPath?: string;
+  adminToolPath?: string;
 }
 
 export interface CleanupHandoffTargetEvidence {
@@ -65,6 +85,14 @@ export interface PrepareCleanupHandoffDraftInput {
   builds: readonly [CleanupHandoffBuildInput, CleanupHandoffBuildInput];
   runtimeDirectory: string;
   verifierPath: string;
+  /**
+   * Broker-only client and administrator upgrade tooling. Supplying all three
+   * selects the v2 artifact profile; omitting them keeps the original profile,
+   * so existing callers and packages are unaffected.
+   */
+  clientPath?: string;
+  adminToolPath?: string;
+  clientDocPath?: string;
   nodeChecksumPath: string;
   nodeLicensePath: string;
   runtimeLicensePaths: readonly string[];
@@ -102,12 +130,25 @@ export interface VerifyCleanupHandoffPackageResult {
   fileCount: number;
   errors: CleanupHandoffErrorCode[];
   unmetGates: string[];
+  validityIssues: string[];
+  outstandingGates: string[];
+  unknownGates: string[];
   installationAuthorized: false;
   executionAuthorized: false;
 }
 
 export const CLEANUP_HANDOFF_SCHEMAS = Object.freeze({
   build: 'openslack.cleanup_handoff_build_report.v1',
+  /**
+   * The per-build tool proof profile.
+   *
+   * It is a distinct schema on purpose. `build` is already carried by packages
+   * built before tool proofs existed, and those reports bind only the broker and
+   * executor. Requiring tool proofs under the same name would retroactively
+   * invalidate every real package that previously verified, so the stricter
+   * requirement lives here and `build` stays readable.
+   */
+  buildV2: 'openslack.cleanup_handoff_build_report.v2',
   evidence: 'openslack.cleanup_handoff_evidence_index.v1',
 });
 const LEGACY_SCHEMAS = {
@@ -145,7 +186,7 @@ export function assertCleanupHandoffToolchain(
   actual: unknown,
   expected: CleanupHandoffToolchain,
 ): void {
-  const tools = object(actual);
+  const tools = object(actual, 'HANDOFF_BUILD_MISMATCH');
   check(
     tools.bun === expected.bun && tools.go === expected.go && tools.node === expected.node,
     'HANDOFF_BUILD_MISMATCH',
@@ -153,7 +194,7 @@ export function assertCleanupHandoffToolchain(
 }
 function verifiedToolchain(value: unknown): CleanupHandoffToolchain {
   if (value === undefined) return LEGACY_TOOLCHAIN;
-  const tools = object(value);
+  const tools = object(value, 'HANDOFF_BUILD_MISMATCH');
   check(
     typeof tools.bun === 'string' &&
       /^\d+\.\d+\.\d+$/.test(tools.bun) &&
@@ -197,6 +238,31 @@ const FILES = [
   'templates/install-manifest.template.json',
   'templates/task-dependencies.template.json',
 ].sort();
+/**
+ * Artifact profiles. A package is verified against whichever profile its own
+ * SHA256SUMS declares, so packages built before the Broker-only client and
+ * administrator tooling existed stay readable exactly as they are. There is no
+ * migration: an old package is still a valid package.
+ */
+const PROFILE_V1 = FILES;
+const PROFILE_V2 = [
+  ...FILES,
+  'tools/cleanup-client.mjs',
+  'tools/admin-upgrade.mjs',
+  'docs/client.md',
+].sort();
+const PROFILES: readonly (readonly string[])[] = [PROFILE_V1, PROFILE_V2];
+/** Every path any known profile may contain, used for the per-line check. */
+const KNOWN_FILES = [...new Set(PROFILES.flat())];
+/**
+ * The declared artifact profiles. `v1` is the original package; `v2` adds the
+ * Broker-only client and the administrator upgrade tooling. Verification
+ * accepts either, so an old package never needs migrating.
+ */
+export const CLEANUP_HANDOFF_PROFILES = Object.freeze({
+  v1: Object.freeze([...PROFILE_V1]),
+  v2: Object.freeze([...PROFILE_V2]),
+});
 const GATES = [
   'NEW_INPUT_REVIEW_REQUIRED',
   'REGISTRY_MAIN_DEPLOYMENT_NOT_VERIFIED',
@@ -207,8 +273,6 @@ const GATES = [
   'REAL_QUALIFICATION_NOT_RUN',
   'CURRENT_HEAD_HUMAN_APPROVAL_REQUIRED',
 ];
-const HASH = /^[a-f0-9]{64}$/;
-const HEAD = /^[a-f0-9]{40}$/;
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 type Digest = typeof sha;
 function ownByteDigests(): Digest {
@@ -230,16 +294,22 @@ function check(value: unknown, code: CleanupHandoffErrorCode): asserts value {
   if (!value) fail(code);
 }
 type ObjectValue = Record<string, unknown>;
-function object(value: unknown): ObjectValue {
-  check(value && typeof value === 'object' && !Array.isArray(value), 'HANDOFF_EVIDENCE_INVALID');
+function object(
+  value: unknown,
+  code: CleanupHandoffErrorCode = 'HANDOFF_EVIDENCE_INVALID',
+): ObjectValue {
+  check(cleanupObject(value), code);
   return value as ObjectValue;
 }
-function json(raw: Buffer): ObjectValue {
+function json(
+  raw: Buffer,
+  code: CleanupHandoffErrorCode = 'HANDOFF_EVIDENCE_INVALID',
+): ObjectValue {
   try {
-    return object(decodeStrictJSON(raw, 256 * 1024 * 1024));
+    return object(decodeStrictJSON(raw, 256 * 1024 * 1024), code);
   } catch (error) {
     if (error instanceof CleanupHandoffError) throw error;
-    return fail('HANDOFF_EVIDENCE_INVALID');
+    return fail(code);
   }
 }
 function timestamp(value: unknown): number {
@@ -259,11 +329,7 @@ function nowMs(now?: Date): number {
 function safePath(path: string): string {
   check(typeof path === 'string' && path.length > 0 && !path.includes('\0'), 'HANDOFF_PATH_UNSAFE');
   const absolute = resolve(path);
-  check(
-    !absolute.split(/[\\/]/).some((part) => /^(?:credentials|secrets|\.env)(?:\.|$)/i.test(part)) &&
-      !/\.(?:pem|key)$/i.test(absolute),
-    'HANDOFF_PATH_UNSAFE',
-  );
+  check(!isSensitiveCleanupInput(absolute), 'HANDOFF_PATH_UNSAFE');
   return absolute;
 }
 function ancestors(path: string): void {
@@ -273,30 +339,19 @@ function ancestors(path: string): void {
     if (dirname(current) === current) break;
   }
 }
-function safeRead(path: string): Buffer {
+function safeRead(path: string, purpose: 'artifact' | 'runtime-evidence' = 'artifact'): Buffer {
   path = safePath(path);
-  ancestors(path);
-  const before = lstatSync(path);
-  check(
-    before.isFile() && before.nlink === 1 && before.size <= 256 * 1024 * 1024,
-    'HANDOFF_PATH_UNSAFE',
-  );
-  const binding = (s: typeof before) =>
-    [s.dev, s.ino, s.mode, s.nlink, s.size, s.mtimeMs, s.ctimeMs].join(':');
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
-    check(binding(fstatSync(fd)) === binding(before), 'HANDOFF_SOURCE_CHANGED');
-    const raw = readFileSync(fd);
-    check(
-      binding(fstatSync(fd)) === binding(before) && binding(lstatSync(path)) === binding(before),
-      'HANDOFF_SOURCE_CHANGED',
-    );
-    ancestors(path);
-    return raw;
-  } finally {
-    closeSync(fd);
+    return purpose === 'artifact'
+      ? readCleanupArtifactFile(path, 256 * 1024 * 1024)
+      : readCleanupBoundedFile(path, 256 * 1024 * 1024);
+  } catch (error) {
+    if (error instanceof CleanupFileBoundaryError)
+      fail(error.code === 'FILE_CHANGED' ? 'HANDOFF_SOURCE_CHANGED' : 'HANDOFF_PATH_UNSAFE');
+    throw error;
   }
 }
+
 function git(root: string, args: string[]): string {
   return execFileSync('git', ['-C', root, ...args], {
     encoding: 'utf8',
@@ -316,7 +371,9 @@ export function assertCleanupHandoffRuntime(
   input: Pick<PrepareCleanupHandoffDraftInput, 'runtimeDirectory' | 'targetEvidence'>,
 ): string {
   const runtime = safePath(input.runtimeDirectory);
-  const manifest = json(safeRead(input.targetEvidence.installationManifestPath));
+  const manifest = json(
+    safeRead(input.targetEvidence.installationManifestPath, 'runtime-evidence'),
+  );
   check(
     manifest.schema === 'openslack.cleanup_installation.v1' && Array.isArray(manifest.files),
     'HANDOFF_EVIDENCE_INVALID',
@@ -328,9 +385,12 @@ export function assertCleanupHandoffRuntime(
     ['git-remote-https', '/usr/lib/openslack-cleanup/git-core/git-remote-https'],
   ]);
   for (const [name, path] of locations) {
-    const entries = manifest.files.map(object).filter((entry) => entry.path === path);
+    const entries = manifest.files
+      .map((value) => object(value))
+      .filter((entry) => entry.path === path);
     check(
-      entries.length === 1 && entries[0]!.sha256 === sha(safeRead(join(runtime, name))),
+      entries.length === 1 &&
+        entries[0]!.sha256 === sha(safeRead(join(runtime, name), 'runtime-evidence')),
       'HANDOFF_BUILD_MISMATCH',
     );
   }
@@ -429,19 +489,50 @@ function brokerIdentity(raw: Buffer, head: string, tools: CleanupHandoffToolchai
     fail('HANDOFF_BUILD_MISMATCH');
   }
 }
+/**
+ * Resolve the bytes for one tool artifact.
+ *
+ * A v2 report must bind its own tool, so only the per-build path is accepted — a
+ * separately supplied file must never satisfy a v2 proof. An earlier report binds
+ * only the broker and executor, so its tools come from the explicitly supplied
+ * top-level paths. Neither source present is an input error: a package must never
+ * ship an empty tool, because the verifier is the artifact an administrator runs
+ * against the package itself.
+ */
+function toolBytes(
+  requirePerBuild: boolean,
+  perBuild: string | undefined,
+  supplied: string | undefined,
+  capture: (path: string) => Buffer,
+): Buffer {
+  const bytes =
+    perBuild !== undefined
+      ? capture(perBuild)
+      : requirePerBuild || supplied === undefined
+        ? null
+        : capture(supplied);
+  if (bytes === null) throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  // A zero-byte tool is never legitimate. No digest check can catch it when the
+  // report honestly describes the empty artifact, so it is rejected outright:
+  // the verifier is the artifact an administrator runs against the package.
+  if (bytes.length === 0) throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
+  return bytes;
+}
 function buildReport(
-  raw: Buffer,
+  report: ObjectValue,
   broker: Buffer,
   executor: Buffer,
+  tools: readonly [Buffer, Buffer, Buffer],
   head: string,
   lock: string,
   goModule: string,
   expectedTools: CleanupHandoffToolchain,
   sha: Digest,
 ): ObjectValue {
-  const report = json(raw);
   check(
-    (report.schema === CLEANUP_HANDOFF_SCHEMAS.build || report.schema === LEGACY_SCHEMAS.build) &&
+    (report.schema === CLEANUP_HANDOFF_SCHEMAS.build ||
+      report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2 ||
+      report.schema === LEGACY_SCHEMAS.build) &&
       report.candidateHead === head &&
       report.checkoutCleanAfterBuild === true &&
       report.independentCloneNoHardlinks === true &&
@@ -451,11 +542,22 @@ function buildReport(
     'HANDOFF_BUILD_MISMATCH',
   );
   assertCleanupHandoffToolchain(report.tools, expectedTools);
-  for (const [name, rawBytes] of [
+  const proofs: Array<[string, Buffer]> = [
     ['broker', broker],
     ['executor', executor],
-  ] as const) {
-    const artifact = object(report[name]);
+  ];
+  // Only the v2 profile must prove the tools this build produced. Reports under
+  // the earlier schemas bind broker and executor only, and must keep verifying:
+  // requiring tool proofs of them would invalidate already-published packages.
+  if (report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2) {
+    check(
+      tools.every((raw) => raw.length > 0),
+      'HANDOFF_BUILD_MISMATCH',
+    );
+    proofs.push(['verifier', tools[0]], ['client', tools[1]], ['adminTool', tools[2]]);
+  }
+  for (const [name, rawBytes] of proofs) {
+    const artifact = object(report[name], 'HANDOFF_BUILD_MISMATCH');
     check(
       artifact.sha256 === sha(rawBytes) && artifact.bytes === rawBytes.length,
       'HANDOFF_BUILD_MISMATCH',
@@ -544,6 +646,17 @@ export function prepareCleanupHandoffDraft(
     );
     const { sourceRoot: root, outputDirectory: output } = assertCleanupHandoffStaging(input);
     const files = new Map<string, Buffer>();
+    // A partial v2 request must not silently omit its tools by selecting v1.
+    const wantsClientTools =
+      input.clientPath !== undefined ||
+      input.adminToolPath !== undefined ||
+      input.clientDocPath !== undefined;
+    const withClientTools =
+      input.clientPath !== undefined &&
+      input.adminToolPath !== undefined &&
+      input.clientDocPath !== undefined;
+    check(!wantsClientTools || withClientTools, 'HANDOFF_INPUT_INVALID');
+    const profile = withClientTools ? PROFILE_V2 : PROFILE_V1;
     const add = (name: string, bytes: Buffer) => {
       check(!files.has(name), 'HANDOFF_INPUT_INVALID');
       files.set(name, bytes);
@@ -621,15 +734,58 @@ export function prepareCleanupHandoffDraft(
     );
     const brokers: Buffer[] = [],
       executors: Buffer[] = [],
+      verifiers: Buffer[] = [],
+      clients: Buffer[] = [],
+      adminTools: Buffer[] = [],
       checkouts: string[] = [];
+    const toolCaptures = new Map<string, Buffer>();
+    const captureTool = (path: string): Buffer => {
+      const key = safePath(path);
+      const existing = toolCaptures.get(key);
+      if (existing) return existing;
+      const bytes = safeRead(key);
+      toolCaptures.set(key, bytes);
+      return bytes;
+    };
     input.builds.forEach((build, index) => {
       const broker = safeRead(build.brokerPath),
         executor = safeRead(build.executorPath),
         report = safeRead(build.reportPath);
+      // A v2 report must bind its own tools; an earlier report takes them from
+      // the explicitly supplied top-level paths. Reading the report first is what
+      // makes that choice, so a v1 package never ships an empty verifier.
+      const parsedReport = json(report, 'HANDOFF_BUILD_MISMATCH');
+      const declaredSchema = parsedReport.schema;
+      check(
+        !withClientTools || declaredSchema === CLEANUP_HANDOFF_SCHEMAS.buildV2,
+        'HANDOFF_BUILD_MISMATCH',
+      );
+      const requiresToolProofs = declaredSchema === CLEANUP_HANDOFF_SCHEMAS.buildV2;
+      const tools = [
+        toolBytes(requiresToolProofs, build.verifierPath, input.verifierPath, captureTool),
+        // The client and administrator tools are only in the v2 profile, so an
+        // earlier profile must not be required to supply them at all.
+        withClientTools
+          ? toolBytes(requiresToolProofs, build.clientPath, input.clientPath, captureTool)
+          : EMPTY,
+        withClientTools
+          ? toolBytes(requiresToolProofs, build.adminToolPath, input.adminToolPath, captureTool)
+          : EMPTY,
+      ] as const;
+      if (withClientTools) {
+        for (const [topLevel, captured] of [
+          [input.verifierPath, tools[0]],
+          [input.clientPath, tools[1]],
+          [input.adminToolPath, tools[2]],
+        ] as const)
+          if (topLevel !== undefined)
+            check(captureTool(topLevel).equals(captured), 'HANDOFF_BUILD_MISMATCH');
+      }
       const parsed = buildReport(
-        report,
+        parsedReport,
         broker,
         executor,
+        tools,
         input.candidateHead,
         lock,
         goModule,
@@ -639,12 +795,18 @@ export function prepareCleanupHandoffDraft(
       checkouts.push(parsed.checkout as string);
       brokers.push(broker);
       executors.push(executor);
+      verifiers.push(tools[0]);
+      clients.push(tools[1]);
+      adminTools.push(tools[2]);
       add(`evidence/build-report-${index === 0 ? 'a' : 'b'}.json`, report);
     });
     check(
       checkouts[0] !== checkouts[1] &&
         brokers[0]!.equals(brokers[1]!) &&
-        executors[0]!.equals(executors[1]!),
+        executors[0]!.equals(executors[1]!) &&
+        verifiers[0]!.equals(verifiers[1]!) &&
+        clients[0]!.equals(clients[1]!) &&
+        adminTools[0]!.equals(adminTools[1]!),
       'HANDOFF_BUILD_MISMATCH',
     );
     const gitDirectories = checkouts.map((path) =>
@@ -661,7 +823,7 @@ export function prepareCleanupHandoffDraft(
     add('artifacts/executor.mjs', executors[0]!);
     for (const name of ['node', 'git', 'sh', 'git-remote-https'])
       add(`artifacts/${name}`, safeRead(join(input.runtimeDirectory, name)));
-    add('tools/verify-handoff.mjs', safeRead(input.verifierPath));
+    add('tools/verify-handoff.mjs', verifiers[0]!);
     add('evidence/node-LICENSE', safeRead(input.nodeLicensePath));
     add('evidence/node-SHASUMS256.txt', safeRead(input.nodeChecksumPath));
     check(
@@ -685,11 +847,11 @@ export function prepareCleanupHandoffDraft(
       ['task-attestation', input.targetEvidence.taskAttestationPath],
       ['target-dependency-discovery', input.targetEvidence.dependencyInventoryPath],
     ]) {
-      const raw = safeRead(path!);
+      const raw = safeRead(path!, 'runtime-evidence');
       json(raw);
       add(`evidence/${name}.json`, raw);
     }
-    const taskRaw = safeRead(input.targetEvidence.taskViewPath),
+    const taskRaw = safeRead(input.targetEvidence.taskViewPath, 'runtime-evidence'),
       task = taskView(taskRaw, fields);
     const now = nowMs(input.now);
     check(
@@ -701,7 +863,9 @@ export function prepareCleanupHandoffDraft(
       'HANDOFF_EVIDENCE_INVALID',
     );
     add('draft/task-dependencies.DRAFT.json', taskRaw);
-    const manifest = json(safeRead(input.targetEvidence.installationManifestPath));
+    const manifest = json(
+      safeRead(input.targetEvidence.installationManifestPath, 'runtime-evidence'),
+    );
     check(
       manifest.schema === 'openslack.cleanup_installation.v1' && Array.isArray(manifest.files),
       'HANDOFF_EVIDENCE_INVALID',
@@ -827,13 +991,22 @@ export function prepareCleanupHandoffDraft(
     add('README.md', source('services/cleanup-broker/README.md'));
     add('handoff.md', source('services/cleanup-broker/handoff.md'));
     add('evidence/OpenSlack-LICENSE', source('LICENSE'));
+    if (withClientTools) {
+      // Both tools come from the builds that proved them, never from a
+      // separately supplied file that no build report binds.
+      add('tools/cleanup-client.mjs', clients[0]!);
+      add('tools/admin-upgrade.mjs', adminTools[0]!);
+      add('docs/client.md', safeRead(input.clientDocPath!));
+    }
     check(
-      JSON.stringify([...files.keys()].sort()) === JSON.stringify(FILES),
+      JSON.stringify([...files.keys()].sort()) === JSON.stringify(profile),
       'HANDOFF_FILE_SET_MISMATCH',
     );
     // Recheck before any output: a change while inputs were being read cannot publish a draft.
     cleanSource(root, input.candidateHead);
-    const sums = Buffer.from(FILES.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''));
+    const sums = Buffer.from(
+      profile.map((name) => `${sha(files.get(name)!)}  ./${name}\n`).join(''),
+    );
     const manifestSHA256 = sha(sums),
       packageDirectory = join(output, 'package');
     // Exclusive creation, never overwrite an old candidate. On I/O failure preserve partial
@@ -1008,6 +1181,9 @@ export function verifyCleanupHandoffPackage(
     fileCount: 0,
     errors: [],
     unmetGates: [...GATES],
+    validityIssues: [],
+    outstandingGates: [...GATES],
+    unknownGates: [],
     installationAuthorized: false,
     executionAuthorized: false,
   };
@@ -1025,18 +1201,19 @@ export function verifyCleanupHandoffPackage(
       if (line === '') continue;
       const match = /^([a-f0-9]{64})  \.\/([A-Za-z0-9._/-]+)$/.exec(line);
       check(
-        match && FILES.includes(match[2]!) && !entries.has(match[2]!),
+        match && KNOWN_FILES.includes(match[2]!) && !entries.has(match[2]!),
         'HANDOFF_MANIFEST_INVALID',
       );
       entries.set(match[2]!, match[1]!);
     }
-    check(
-      JSON.stringify([...entries.keys()].sort()) === JSON.stringify(FILES),
-      'HANDOFF_FILE_SET_MISMATCH',
-    );
+    const declared = JSON.stringify([...entries.keys()].sort());
+    const profile = PROFILES.find((candidate) => JSON.stringify(candidate) === declared);
+    check(profile !== undefined, 'HANDOFF_FILE_SET_MISMATCH');
     const observed: string[] = [],
       bytes = new Map<string, Buffer>();
-    const directories = new Set(FILES.map((path) => dirname(path)).filter((path) => path !== '.'));
+    const directories = new Set(
+      profile!.map((path) => dirname(path)).filter((path) => path !== '.'),
+    );
     const walk = (directory: string, prefix = '') => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const name = prefix + entry.name,
@@ -1053,7 +1230,7 @@ export function verifyCleanupHandoffPackage(
     };
     walk(root);
     check(
-      JSON.stringify(observed.sort()) === JSON.stringify([...FILES, 'SHA256SUMS'].sort()),
+      JSON.stringify(observed.sort()) === JSON.stringify([...profile!, 'SHA256SUMS'].sort()),
       'HANDOFF_FILE_SET_MISMATCH',
     );
     for (const [name, hash] of entries) {
@@ -1064,21 +1241,36 @@ export function verifyCleanupHandoffPackage(
     const locks = json(bytes.get('evidence/source-locks.json')!);
     check(
       locks.candidateHead === input.candidateHead &&
-        HASH.test(String(locks.lockfileSHA256)) &&
-        HASH.test(String(locks.goModuleSHA256)),
+        typeof locks.lockfileSHA256 === 'string' &&
+        HASH.test(locks.lockfileSHA256) &&
+        typeof locks.goModuleSHA256 === 'string' &&
+        HASH.test(locks.goModuleSHA256),
       'HANDOFF_CANDIDATE_MISMATCH',
     );
-    for (const id of ['a', 'b'])
+    check(bytes.get('tools/verify-handoff.mjs')!.length > 0, 'HANDOFF_BUILD_MISMATCH');
+    for (const id of ['a', 'b']) {
+      const report = json(bytes.get(`evidence/build-report-${id}.json`)!, 'HANDOFF_BUILD_MISMATCH');
+      if (profile === PROFILE_V2)
+        check(report.schema === CLEANUP_HANDOFF_SCHEMAS.buildV2, 'HANDOFF_BUILD_MISMATCH');
       buildReport(
-        bytes.get(`evidence/build-report-${id}.json`)!,
+        report,
         bytes.get('artifacts/cleanup-broker')!,
         bytes.get('artifacts/executor.mjs')!,
+        // Cross-check the tools against the bytes actually inside the package.
+        // A v1 package may carry neither tool file nor a tool proof; its report
+        // is not required to bind them, so it still verifies.
+        [
+          bytes.get('tools/verify-handoff.mjs') ?? EMPTY,
+          bytes.get('tools/cleanup-client.mjs') ?? EMPTY,
+          bytes.get('tools/admin-upgrade.mjs') ?? EMPTY,
+        ],
         input.candidateHead,
-        String(locks.lockfileSHA256),
-        String(locks.goModuleSHA256),
+        locks.lockfileSHA256 as string,
+        locks.goModuleSHA256 as string,
         verifiedToolchain(locks.toolchain),
         sha,
       );
+    }
     const index = json(bytes.get('evidence/qualification-index.json')!),
       draft = json(bytes.get('draft/inputs.DRAFT.json')!);
     check(
@@ -1099,14 +1291,115 @@ export function verifyCleanupHandoffPackage(
         object(draft.priorInput).sha256 === sha(bytes.get('evidence/prior-admin-inputs.md')!),
       'HANDOFF_EVIDENCE_INVALID',
     );
+    // Historical indexes may predate the declared gate list. Once present,
+    // the list is evidence: never silently discard an unfamiliar condition or
+    // let it remove the fixed administrator/authorization gates.
+    if (index.unmetGates !== undefined || index.schema !== LEGACY_SCHEMAS.evidence) {
+      const declaredGates = index.unmetGates;
+      check(
+        Array.isArray(declaredGates) &&
+          declaredGates.length <= 64 &&
+          declaredGates.every(
+            (gate) => typeof gate === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(gate),
+          ) &&
+          new Set(declaredGates).size === declaredGates.length,
+        'HANDOFF_EVIDENCE_INVALID',
+      );
+      const gates = declaredGates as string[];
+      result.outstandingGates = [
+        ...new Set([...GATES, ...gates.filter((gate) => GATES.includes(gate))]),
+      ];
+      const unknownGates = gates.filter((gate) => !GATES.includes(gate));
+      result.unknownGates = unknownGates;
+      if (unknownGates.length) result.validityIssues.push('HANDOFF_UNKNOWN_GATE');
+    }
     const task = verifyDraftRelations(bytes, sha);
     const now = nowMs(input.now);
     if (now < timestamp(task.notBefore) || now >= timestamp(task.expiresAt))
-      result.unmetGates.push('TASK_EVIDENCE_EXPIRED');
-    result.fileCount = FILES.length;
+      result.validityIssues.push('TASK_EVIDENCE_EXPIRED');
+    const suppliedSelected = object(draft.selected);
+    const selected = {
+      ...storedFields(bytes.get('evidence/prior-admin-inputs.md')!),
+      candidate_head: input.candidateHead,
+      approval_status: 'DRAFT',
+      approved_by: 'REQUIRED',
+      approved_at_utc: 'REQUIRED',
+    };
+    delete (selected as Record<string, string>).package_manifest_sha256;
+    check(
+      Object.keys(suppliedSelected).length === Object.keys(selected).length &&
+        Object.entries(selected).every(([field, value]) => suppliedSelected[field] === value),
+      'HANDOFF_EVIDENCE_INVALID',
+    );
+    const artifacts = Object.fromEntries(
+      [...entries]
+        .filter(([name]) => name.startsWith('artifacts/'))
+        .map(([name, hash]) => [name.slice('artifacts/'.length), hash]),
+    );
+    snapshots.set(
+      result,
+      Object.freeze({
+        selected: Object.freeze({ ...selected }),
+        artifactDigests: Object.freeze(artifacts),
+      }),
+    );
+    result.fileCount = profile.length;
     result.valid = true;
   } catch (error) {
     result.errors.push(error instanceof CleanupHandoffError ? error.code : 'HANDOFF_IO_FAILED');
   }
+  result.validityIssues.push(...result.errors);
+  result.unmetGates = [
+    ...result.outstandingGates,
+    ...result.validityIssues.filter((issue) => issue === 'TASK_EVIDENCE_EXPIRED'),
+  ];
   return result;
+}
+
+interface VerifiedHandoffSnapshot {
+  selected: Readonly<Record<string, string>>;
+  artifactDigests: Readonly<Record<string, string>>;
+}
+const snapshots = new WeakMap<VerifyCleanupHandoffPackageResult, VerifiedHandoffSnapshot>();
+/** Package-internal immutable projection from the same verification read. Not a root export. */
+export function verifiedCleanupHandoffSnapshot(
+  result: VerifyCleanupHandoffPackageResult,
+): VerifiedHandoffSnapshot | undefined {
+  return snapshots.get(result);
+}
+/** Integrity/time assessment is separate from the administrator's outstanding authorizations. */
+export function evaluateCleanupHandoffVerification(
+  result: VerifyCleanupHandoffPackageResult,
+): 0 | 2 {
+  const known = new Set(GATES);
+  if (
+    !cleanupObject(result) ||
+    typeof result.candidateHead !== 'string' ||
+    !HEAD.test(result.candidateHead) ||
+    typeof result.manifestSHA256 !== 'string' ||
+    !HASH.test(result.manifestSHA256) ||
+    !Number.isSafeInteger(result.fileCount) ||
+    result.fileCount <= 0
+  )
+    return 2;
+  if (
+    !cleanupObject(result) ||
+    result.installationAuthorized !== false ||
+    result.executionAuthorized !== false ||
+    !['errors', 'validityIssues', 'unmetGates', 'outstandingGates', 'unknownGates'].every(
+      (key) => Array.isArray(result[key]) && result[key].every((item) => typeof item === 'string'),
+    )
+  )
+    return 2;
+  if (
+    result.valid !== true ||
+    result.errors.length ||
+    result.validityIssues.length ||
+    !Array.isArray(result.unknownGates) ||
+    result.unknownGates.length ||
+    result.unmetGates.some((gate) => !known.has(gate)) ||
+    result.outstandingGates.some((gate) => !known.has(gate))
+  )
+    return 2;
+  return 0;
 }

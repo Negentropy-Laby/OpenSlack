@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -70,6 +70,65 @@ describeOnBashHosts('genesis validation Python selection', () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('[1/5] openslack.yaml ... FAIL (invalid YAML)');
+  });
+});
+
+describeOnBashHosts('genesis validation secret scan', () => {
+  it('reports secrets in tracked, untracked and binary files and honours exclusions', () => {
+    const fixture = createFixture();
+    seedSecretFixture(fixture.root);
+
+    const result = runGenesis(fixture);
+
+    expect(result.stdout).toContain('[4/5] secret scan ... FAIL (potential secret in:');
+    for (const reported of ['src/leak.ts', 'src/leak2.ts', 'untracked.ts', 'binary.bin']) {
+      expect(result.stdout).toContain(reported);
+    }
+    for (const excluded of [
+      'src/__tests__/allowed.test.ts',
+      'src/__tests__/deep/nested/deep.test.ts',
+      '__tests__/toplevel.test.ts',
+      'docs/security/collaboration-audit.md',
+      'ignored.ts',
+    ]) {
+      expect(result.stdout).not.toContain(excluded);
+    }
+  });
+
+  it('passes when only excluded locations contain the pattern', () => {
+    const fixture = createFixture();
+    writeSecret(fixture.root, 'src/__tests__/allowed.test.ts');
+    writeSecret(fixture.root, 'src/__tests__/deep/nested/deep.test.ts');
+    writeSecret(fixture.root, '__tests__/toplevel.test.ts');
+    writeSecret(fixture.root, 'docs/security/collaboration-audit.md');
+    addTrackedFiles(fixture.root);
+
+    const result = runGenesis(fixture);
+
+    expect(result.stdout).toContain('[4/5] secret scan ... PASS');
+  });
+
+  it('does not over-exclude near-miss directory names', () => {
+    const fixture = createFixture();
+    writeSecret(fixture.root, 'src/__tests__x/notexcluded.ts');
+    writeSecret(fixture.root, 'a__tests__/x.ts');
+    addTrackedFiles(fixture.root);
+
+    const result = runGenesis(fixture);
+
+    expect(result.stdout).toContain('src/__tests__x/notexcluded.ts');
+    expect(result.stdout).toContain('a__tests__/x.ts');
+  });
+
+  it('ignores files excluded by the repository ignore rules', () => {
+    const fixture = createFixture();
+    writeFileSync(join(fixture.root, '.gitignore'), 'ignored.ts\n', 'utf-8');
+    writeSecret(fixture.root, 'ignored.ts');
+    addTrackedFiles(fixture.root);
+
+    const result = runGenesis(fixture);
+
+    expect(result.stdout).toContain('[4/5] secret scan ... PASS');
   });
 });
 
@@ -146,4 +205,50 @@ function resolveExecutable(name: string): string {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error(`${name} is required for the genesis validation fixture.`);
+}
+
+const SECRET_TOKEN = 'sk-abcdefghijklmnopqrstuvwxyz012345';
+const SECRET_KEY_HEADER = '-----BEGIN RSA PRIVATE KEY-----';
+
+function writeSecret(
+  root: string,
+  relative: string,
+  contents = `const token = '${SECRET_TOKEN}';\n`,
+): void {
+  const path = join(root, relative);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, contents, 'utf-8');
+}
+
+/** Stage everything written so far so the fixture has tracked files. */
+function addTrackedFiles(root: string): void {
+  execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' });
+}
+
+/**
+ * Seed one location per scan rule. `untracked.ts` is written after staging so
+ * it stays untracked-but-not-ignored, which the scan must still report.
+ */
+function seedSecretFixture(root: string): void {
+  writeSecret(root, 'src/clean.ts', 'export const ok = 1;\n');
+  writeSecret(root, 'src/leak.ts');
+  writeSecret(root, 'src/leak2.ts', `/* ${SECRET_KEY_HEADER} */\n`);
+  writeSecret(root, 'src/__tests__/allowed.test.ts');
+  writeSecret(root, 'src/__tests__/deep/nested/deep.test.ts');
+  writeSecret(root, '__tests__/toplevel.test.ts');
+  writeSecret(root, 'src/__tests__x/notexcluded.ts');
+  writeSecret(root, 'a__tests__/x.ts');
+  writeSecret(root, 'docs/security/collaboration-audit.md');
+  writeSecret(root, 'ignored.ts');
+  writeFileSync(join(root, '.gitignore'), 'ignored.ts\n', 'utf-8');
+  writeFileSync(
+    join(root, 'binary.bin'),
+    Buffer.concat([
+      Buffer.from([0, 1, 2]),
+      Buffer.from(SECRET_KEY_HEADER, 'ascii'),
+      Buffer.from([0, 3]),
+    ]),
+  );
+  addTrackedFiles(root);
+  writeSecret(root, 'untracked.ts');
 }

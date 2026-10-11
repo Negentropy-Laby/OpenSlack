@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-10-09
+updated: 2026-10-10
 sources:
   - design/cdd/modules/pr-review-merge.md
   - services/cleanup-broker/README.md
@@ -671,3 +671,922 @@ installation and runtime identity, activation, exact Permit, real deletion,
 human approval and governed merge remain external unfinished gates. PR #418
 stays Draft and receives linear commits only. Existing evidence and review
 comments remain intact.
+
+## Historical failure re-verification — 2026-10-10
+
+The two failures recorded under the Bun 1.4.0 toolchain update and retained in
+the final full-suite rerun were re-verified against the current head. Each was
+reproduced as an environment condition rather than a code defect, and none was
+closed by weakening a check.
+
+### Linked-worktree Git-version case
+
+- Historical record: Git 2.34.1 rejects `worktree list --porcelain -z`, which
+  breaks the linked-worktree local-state fixture.
+- Re-verification: the local Git is 2.49.0.windows.1, and
+  `git worktree list --porcelain -z` succeeds, returning the NUL-separated
+  worktree list for this checkout and its linked worktrees.
+- Test result: `packages/github/src/__tests__/client.test.ts` passes, 17 passed
+  and 1 skipped, including
+  `resolves App local state from the primary workspace for a linked worktree`.
+- Boundary: the fix is the newer Git, not a change to the fixture. The assertion
+  and the implementation are unchanged.
+
+### Go VCS stamping
+
+- Historical record: Go's VCS stamping encountered invalid parent `/tmp/.git`
+  metadata. That metadata was not removed and stamping was not disabled.
+- Re-verification: the parent and grandparent directories of this checkout
+  contain no `.git` metadata. A live Linux build of the Broker was produced with
+  stamping **enabled**:
+
+  ```text
+  GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -buildvcs=true -o <out>/cleanup-broker ./cmd/cleanup-broker
+  ```
+
+  `go version -m` on the result reports `go1.26.5`, `-trimpath=true`, `vcs=git`,
+  `vcs.revision=<current head>`, `vcs.modified=false` and
+  `build CGO_ENABLED=0`.
+- Assertion integrity: the required settings in `cleanup-handoff.ts` still
+  demand `vcs.revision`, `vcs.modified=false`, `-trimpath=true`, `CGO_ENABLED=0`,
+  `GOOS=linux`, `GOARCH=amd64` and `vcs=git`. A diff of this work against
+  `94ca2d3f` shows no change to those assertions or to the build flags, so
+  nothing was disabled, deleted or relaxed to obtain this result.
+- Boundary: this is a local stamping verification, not the two-independent-build
+  package proof, which requires a Linux host and remains outstanding.
+
+### Retained
+
+Both items remain environment-dependent: a host with Git 2.34.1, or with `.git`
+metadata in an ancestor directory, would still reproduce them. They are recorded
+here as re-verified, not as resolved by a code change. No earlier evidence,
+comment or failure record was altered or removed.
+
+## Round 18 finding ledger — 2026-10-10
+
+### Source
+
+| Field | Value |
+| --- | --- |
+| Report | `/var/tmp/openslack-round18-acceptance-j68jq8k0/acceptance-result.json` |
+| SHA-256 | `a7794c359469d3034cde2786db98d36e9672e0f326d6941d882fd47f6ad855ad` |
+| Bytes | 10,466 |
+| Schema | `openslack.review_acceptance.v1` |
+| Reviewed head | `1fd9d81d34b433db8f4b3f33314608950ed94f47` |
+| Base | `94ca2d3f905bd06ca2e3b4156fce550b0ecdc40a` |
+| Commits reviewed | 19 |
+| Section 3 acceptance | `NEEDS_CHANGES` |
+| Approval | none |
+
+The digest was re-read from the live file and matched byte for byte. The report
+states that it performed no repository edits and read no credentials, and that
+it did not install, activate, issue a Permit, delete a branch, approve, push or
+comment.
+
+The report's own validation independently corroborates the local record at this
+head: lint 0 errors / 8 warnings; inventory 532 files and 7,394 declared cases;
+all 229 workflow-control locked inputs matching committed bytes with exactly
+five digest changes and unchanged inventories and scope; the executor artifact at
+1,742,010 bytes and SHA-256
+`0917d7634f869ecfd775cdac810399974bb1f714b6505563450a2ec7904be10d`; and both
+historical environment items passing (Git 2.43.0 linked-worktree case, and
+`CGO_ENABLED=0` `-trimpath` `-buildvcs=true` with `vcs.modified=false`).
+
+Its environment was an isolated Linux checkout with Node 24.18.1. That is the
+review host, not this session host; see the environment note below.
+
+### Findings
+
+| ID | Pri | Confirmed issue | Closure standard |
+| --- | --- | --- | --- |
+| R18-01 | P1 | Upgrade destinations unrestricted; administrator commands not safely quoted (a manifest path can inject an executable shell separator) | Fixed artifact-to-installation mapping; safely rendered arguments; unexpected destinations rejected |
+| R18-02 | P1 | CLI record publication bypasses production path authorization | Denial yields zero directory creation, zero record writes and zero sends |
+| R18-03 | P1 | Same-binding reuse bypasses a previously failed fsync | Re-verify the complete record and establish durability before reuse |
+| R18-04 | P1 | Record mode prints intent instead of querying the Broker; explicit conflicts ignored | Query the Broker; reject binding conflicts before querying |
+| R18-05 | P1 | Standalone client never publishes a record before execute, while its documentation claims it does | Share the authorized, durable, pre-send publication path |
+| R18-06 | P1 | Standalone exit codes disagree with the production evaluator | Share `evaluateCleanupBrokerResult`; cover the full outcome matrix |
+| R18-07 | P1 | Link, file-replacement and read-boundary protections incomplete | Bounded FD reads plus ancestor and file-identity checks, proven by regression |
+| R18-08 | P2 | Short write still reports publication success | Write all bytes or refuse; zero sends on failure |
+| R18-09 | P2 | Upgrade actions derive only from the old manifest and omit the Broker | Candidate fixed layout including a Broker install-or-replace action |
+| R18-10 | P2 | Target evidence checked only for existence; freshness gate lost | Strict evidence and validity checks; unmet gates preserved |
+| R18-11 | P2 | Unactivated startup blocked by the activation gate that needs its nonce | Obtain the real nonce first, then prepare activation |
+| R18-12 | P2 | v2 profile lacks complete two-build tool proof | Both reports and the package agree byte-for-byte on verifier, client and adminTool |
+| R18-13 | P3 | Early-exit codepoint check became a full-string allocation | Restore the two-codepoint check and fix the same allocation in `getEmojiWidth` |
+
+### Independently listed acceptance items
+
+These are not covered by the R18 numbering and are tracked separately.
+
+- **Keyboard event defect.** `packages/tui/src/ink/ink.tsx` uses the vendored
+  `KeyboardEvent` stub, which lacks the `TerminalEvent` contract; the real
+  dispatcher throws `event._setTarget is not a function`. Fix the dispatched
+  path (target, type, key, modifiers, `preventDefault`) and remove the `any` on
+  `Button`. Do not substitute another forced cast.
+- **Four omitted-field bindings.** Preserve all four omitted-field controls
+  using well-typed private copies or explicit projections, with source objects,
+  hashes, generated bytes and error classification unchanged.
+- **Three derived bindings.** Remove the unconsumed `TTL_MS` without enabling
+  expiry semantics; remove the unused `blockerOnly` and `stageCat` derivations
+  without changing filtering or rendering.
+- **Already committed and retained:** the redaction fix (Windows out-of-root
+  paths, similar-root prefixes, separators and path-segment boundaries, with
+  HTML/Markdown/JSON leak probes), the `NO_COLOR` diagnostic isolation, and the
+  doctor/genesis structured `executable`/`argv`/`cwd` invocation with its
+  unchanged 30-second budget.
+- **Historical environment items:** the Git-version linked-worktree case and Go
+  VCS stamping, re-verified above and retained as environment-dependent.
+
+### Accepted behaviour boundaries
+
+Recorded so that they are not later mistaken for oversights or for implemented
+controls.
+
+- **Dedupe has no time-based expiry.** The chat-gateway dedupe table has only a
+  10,000-entry capacity bound. An entry can remain effective until capacity
+  eviction, `clearStore()`, or process restart. Deleting `TTL_MS` is a
+  scope decision that preserves this behaviour; it must not be recorded as dead
+  code, and no expiry mechanism is added.
+- **No extra filtering layer.** Deleting `blockerOnly` adds no filtering; the
+  existing `filters` and blocker identification are retained as they are.
+- **No new detail colouring.** Deleting `stageCat` adds no colour behaviour to
+  the detail view; the existing display output is retained.
+
+### Environment note for the two-clean-checkout build
+
+The frozen package requires two independent clean-checkout builds. That step
+needs a Linux host. This session's WSL2 Ubuntu-24.04 provides Bun 1.4.0
+(`/home/openslack/.bun/bin/bun`), Go 1.26.5 and Git 2.43.0, but **no Node
+runtime is present anywhere on that filesystem** — `find` located no `node`
+binary and `~/.nvm/versions/node` is empty. The review host did have Node
+24.18.1; this session does not.
+
+The build driver is Bun (`process.execPath`) and the pinned Node 24.18.1 is
+supplied as the `runtimeDirectory` input artifact, so a system Node may not be
+required. That must be established by actually running the build rather than
+assumed. Until it succeeds, the two-independent-checkout package proof is an
+outstanding gate and no Windows result may be presented as a substitute.
+
+## Round 18 final acceptance record — 2026-10-10
+
+### Branch state
+
+`prms/pr418-followup-repair`, 29 commits ahead of `94ca2d3f`. Worktree clean at
+the time of these runs. Every finding R18-01…R18-13 is closed, together with the
+independently listed items (keyboard dispatch contract, four omitted-field
+projections, three derived bindings).
+
+### Results actually obtained
+
+| Check | Command | Result |
+|---|---|---|
+| Affected suites, pass 1 | `bunx vitest run <11 suites>` | 306 passed, 0 failed |
+| Affected suites, pass 2 | same | 306 passed, 0 failed |
+| Affected suites, pass 3 | same | 306 passed, 0 failed |
+| Typecheck | `bun run typecheck` | exit 0 |
+| Build | `bun run build` | exit 0 |
+| Lint | `bunx eslint . --format json` | 0 errors, 0 warnings |
+| Workspace | `openslack workspace validate` | PASS |
+| Golden evals | `openslack self eval --suite golden` | 7/7 passed |
+| Genesis | `bash scripts/genesis-validate.sh` | PASS (5/5) |
+| Go vet | `go vet ./...` (WSL2 Linux) | exit 0 |
+| Go race | `go test -race ./...` (WSL2 Linux) | exit 0, all packages ok |
+| Go contracts | `go test ./tests/contracts/` | ok |
+| Docs verify | `bun run docs:verify` | verified |
+| Docs migration | `bun run docs:migration-check` | 103 manifest entries passed |
+| Docs notification | `bun run docs:notification-verify` | passed |
+| Status | `openslack status verify` | no drift |
+
+### Go `-race` is not available on the Windows host
+
+`go test -race ./...` on Windows fails with `-race requires cgo`, and this host
+has no C compiler (`gcc`, `cc` and `clang` are all absent), so
+`CGO_ENABLED=1` cannot help: every package fails to build. The race suite was
+therefore run in **WSL2 Ubuntu-24.04**, where `gcc` 13.3.0 exists and
+`go env CGO_ENABLED` is `1`, against the same working tree through
+`/mnt/d/...`. It passed. A Windows-only session cannot satisfy this check, and
+no Windows result is presented as a substitute for it.
+
+### One environment-induced test failure, reproduced and explained
+
+The first complete Vitest run reported 7,405 passed and **1 failed**:
+`apps/mcp/src/__tests__/qoder-skill.test.ts` — *runs the PowerShell installer
+idempotently and rejects a relative override*.
+
+Cause, established by direct measurement rather than assumption:
+
+- The test spawns Windows PowerShell **5.1** (`powershell`), not `pwsh`.
+- This session's ambient `PSModulePath` is a **PowerShell 7** value
+  (`...\Documents\PowerShell\Modules;...\program files\powershell\7\Modules;...`).
+- 5.1 inherits it and consequently cannot resolve `Get-FileHash`, which comes
+  from `Microsoft.PowerShell.Utility`. Reproduced minimally: with the inherited
+  value, `Get-FileHash` reports MISSING under 5.1; with it cleared, FOUND.
+- `normalizeProcessEnvironment` deliberately normalises only `PATH`/`PATHEXT`,
+  so `PSModulePath` passes straight through to the child.
+
+The installer itself is correct: run directly it exits 0 and reports
+`already up to date` on the second run.
+
+Isolation, measured rather than inferred. Four spawns of
+`powershell -NoProfile -Command "Get-Command Get-FileHash"` from a Bun parent:
+
+| Child environment | `Get-FileHash` |
+|---|---|
+| full parent environment | MISSING |
+| parent minus **only** `PSModulePath` | FOUND |
+| `PATH` + `PATHEXT` only | FOUND |
+| `PATH` + `PATHEXT` + the parent `PSModulePath` | MISSING |
+
+So `PSModulePath` alone decides it. A vitest worker was probed directly as well:
+it sees the inherited value when the parent has one, and `<ABSENT>` when the
+parent's is removed. Running the MCP file alone with the parent's `PSModulePath`
+removed passes all four tests, reproducibly across two runs.
+
+Recorded limit: in the **full-suite** runs the file still failed, including one
+run where `PSModulePath` was removed in the same command, so the removal did not
+reliably reach that worker. This record therefore claims only what was measured —
+the cause is `PSModulePath`, and the isolated file passes without it. It does
+**not** claim the full-suite failure is resolved; the full-suite figure for this
+session stands at 7,405 passed / 1 failed.
+
+No commit on this branch touched `apps/mcp/**` or the installer —
+`git diff --name-only 94ca2d3f..HEAD` confirms it.
+
+This is recorded as an environment-induced failure of this session, **not** as a
+repository defect and **not** as a passing check for the shipped environment.
+
+### Exact-byte contract intersection, recomputed
+
+`services/workflow-control/integration/source-manifest.v2.json` locks 229 paths
+across `sourceInputs`, `contractInputs` and `legalInputs`. Intersecting them with
+the 150 files changed on this branch yields exactly five files, with no new
+members:
+
+- `apps/cli/src/commands/collaboration.ts`
+- `apps/cli/src/commands/tui.ts`
+- `packages/tui/src/views/render-shell.ts`
+- `packages/workflows/src/__tests__/workflow-run-projection.test.ts`
+- `packages/workflows/src/types.ts`
+
+All five recorded digests equal the current file content, so no digest update is
+required and the binding set, paths and scope are untouched.
+
+## Round 18 freeze and delivery record — 2026-10-10
+
+### Production collector, run twice
+
+`node scripts/verify-test-counts.mjs --update` was run twice against the frozen
+candidate. Both runs reported 7,486 declared cases in 536 files, and both
+generated files were byte-identical across runs:
+
+| File | SHA-256 after both runs |
+|---|---|
+| `.openslack/modules.yaml` | `e2e467e6f6dcb38e0ff8ff31ab66d8bdb12e5cebb7860935f46bfbf7a49accc5` |
+| `docs/status/current.md` | `5049b39a9314dd5e3c91689993e9ff415ba86705be69c3343adbdDD333fcc564` |
+
+The worktree was clean after each run, so the counts are stable and there is no
+generation drift.
+
+### New DRAFT input, in a new directory
+
+A fresh non-sensitive input was written outside the repository at
+`D:\Temp\openslack-r18-handoff-draft\`, with `inputs.DRAFT.json`, an `evidence/`
+directory, a `runtime/` directory and fresh `output/` and `build/` directories.
+It deliberately carries the **template** installation manifest
+(`REQUIRED_SHA256` placeholders) rather than a manifest with real digests: the
+manifest is the record of what an administrator actually installed on the
+qualification target, and generating one locally from downloaded bytes would
+manufacture the very evidence the design requires to come from that target.
+The input stays DRAFT and no approval is claimed for it.
+
+### The two-clean-checkout build fails closed
+
+Driving the frozen build in WSL2 Ubuntu-24.04:
+
+```sh
+bun scripts/cleanup-broker/build-handoff.ts --input .../inputs.DRAFT.json
+```
+
+Result: **exit code 2**, empty stdout, a single `HANDOFF_IO_FAILED` line on
+stderr, and **nothing written** — the output directory, the build directory and
+the whole draft tree contain no package and no `SHA256SUMS`, and the repository
+worktree stayed clean. That is the required fail-closed behaviour: invalid
+evidence produces no install instruction and no partial artifact.
+
+### What the build actually requires, and why it is still outstanding
+
+`assertCleanupHandoffRuntime` validates a `runtimeDirectory` containing `node`,
+`git`, `sh` and `git-remote-https` whose SHA-256 digests must equal the digests
+recorded in an `openslack.cleanup_installation.v1` manifest for
+`/usr/lib/openslack-cleanup/{node,git,sh,git-core/git-remote-https}`. The run
+passed the platform gate, the input parse, the staging checks and the manifest
+schema check, then failed reading those runtime bytes.
+
+Neither a frozen Linux Node 24.18.1 runtime directory nor a real installation
+manifest exists in this repository or this session — a recursive search found no
+`git-remote-https` file and no manifest carrying real digests, only the template.
+The same applies to the target evidence set (task view, task attestation, app
+scope, network, identity, dependency inventory), which the goal assigns to the
+administrator after deployment.
+
+**Correction to the earlier environment note.** The prior entry recorded "no Node
+runtime is present anywhere on that filesystem" as the concern for this step.
+Measurement shows that is *not* the blocker: the driver is Bun, the pinned Node
+24.18.1 is supplied as the `runtimeDirectory` input artifact, and the run reached
+the runtime-bytes check without any system Node. The real gate is the absent
+administrator-provisioned runtime and host evidence.
+
+**Status.** The two-independent-checkout package proof remains an **outstanding
+external gate**. No Windows result and no locally synthesised evidence is
+presented as a substitute for it.
+
+## Round 18 delivery PR — 2026-10-10
+
+The repair branch was pushed and the delivery PR created through the governed
+bot path (`scripts/bot-gh-pr-create.ps1` → `openslack delivery publish`), which
+pushes the branch with the bot installation token and verifies the remote SHA
+equals the branch SHA before reporting.
+
+| Field | Value |
+|---|---|
+| PR | **#420** — https://github.com/Negentropy-Laby/OpenSlack/pull/420 |
+| Author | `app/openslack-agent-operator` (`is_bot: true`) |
+| Branch | `prms/pr418-followup-repair` |
+| Base | `main` (`94ca2d3f`) |
+| PRMS decision at creation | `BLOCKED_DRAFT`, owner agent |
+| After `pr ready` | `isDraft: false`, `reviewDecision: REVIEW_REQUIRED`, `mergeStateStatus: BLOCKED` |
+
+The head is deliberately not pinned to one SHA here, because recording this
+section necessarily advanced the branch. The binding rule is that three values
+must agree at every point of review: `git ls-remote origin
+refs/heads/prms/pr418-followup-repair`, the local `HEAD`, and the PR
+`headRefOid` — with the check runs belonging to that same SHA. Re-running the
+delivery path after a further commit pushes the branch and **updates the same
+PR** rather than opening a second one, so the rule can always be restored.
+
+At the point the hosted checks were observed, all three agreed at
+`cde385304faee374a9b52d250d66d98478679a8a`: `canonical-base` had passed, and
+`classify`, `canary`, `validate / validate`, `tui-visual-gate`, both
+build-and-smoke jobs, the notification-delivery validation and the
+GS8-B/GS9-F2b Windows qualification were still pending.
+
+PRMS was re-run with live bot credentials (`scripts/openslack-bot.ps1 pr
+doctor 420`), reporting live GitHub evidence and **Risk Zone: RED**, because the
+branch touches `packages/kernel/src/**` via
+`packages/kernel/src/__tests__/agent-authorizer.test.ts`. That change removes an
+unused import binding only. CODEOWNERS resolves to `@wsman`; valid approvers
+excluding the author: none. There is no sole-author deadlock, because the PR is
+bot-authored.
+
+Pending hosted checks at the time of writing: `validate / macos-read-paths`,
+`validate / validate`, `tui-visual-gate`, `Build and smoke windows-x64`,
+`Qualify GS8-B and GS9-F2b runtime delivery boundaries on Windows`, `Validate
+notification delivery service`, `Build and smoke linux-x64`.
+
+**Human approval is required and has not been given.** The repository ruleset
+`Protect main` requires a CODEOWNER review and one approving review, so this PR
+cannot merge without an explicit human approval recorded as a GitHub review from
+the required human identity. No agent approval exists or will be originated.
+
+## Round 18 independent adversarial review — 2026-10-10
+
+An independent read-only review of the whole diff was obtained and it found five
+confirmed defects in this branch's own work. All five were verified against the
+code before being accepted, and all five are fixed with a regression that was
+shown to fail when the fix is reverted.
+
+**D1 — the standalone client sent the wrong principal id (most severe).**
+`scripts/cleanup-broker/client.ts` built the request with
+`principalId: principal.registry_id`. `AgentPrincipal` carries no `principal_id`
+field, so the agent id was sent as the principal id. Every real registry differs:
+`cleanup_qualification_pr418` has `principal_id: principal:cleanup_qualification_pr418`.
+Two consequences: the record the client publishes hashes to a different
+`requestDigest` than the same operation through the CLI, so a later status query
+hits `BINDING_CONFLICT`; and the Broker's own registry binding check rejects it.
+The `--principal-id` cross-check also compared against the registry id, so an
+administrator passing the correct value was refused. Fixed by reading
+`registry.identity.principal_id` through `parseAgentRegistry` and verifying the
+registry-to-principal binding. Regression: a real workspace with a registry whose
+principal id differs from its agent id, asserting the published record's
+`principalId`. Reverting the fix fails it with exactly
+`expected 'cleanup_identity_probe' to be 'principal:cleanup_identity_probe'`.
+
+**D2 — the v1/v2 compatibility work protected the wrong schema.**
+`CLEANUP_HANDOFF_SCHEMAS.build` was never renamed, yet `buildReport` began
+demanding tool proofs for it. `git show 94ca2d3f:scripts/cleanup-broker/build-handoff.ts`
+confirms the base wrote only broker and executor under that schema, so every
+previously valid package would now fail with `HANDOFF_EVIDENCE_INVALID`. The
+schema preserved as "v1", `openslack.pr418.clean-build-report.v1`, has no producer
+at all — only a test fixture. Fixed by introducing a distinct
+`openslack.cleanup_handoff_build_report.v2` for the tool-proof requirement and
+leaving `build` tolerant. Regression: a report under the pre-existing schema
+binding only broker and executor must still verify; reverting the fix fails it.
+
+**D3 — two new gates were computed and never enforced.**
+`TARGET_EVIDENCE_UNREADABLE` and `INSTALLATION_MANIFEST_UNREADABLE` were pushed to
+`unmetGates` but appeared in no step's `blockedBy`, so an administrator could run
+the controlled upgrade while evidence was unreadable — exactly the distinction
+R18-10 was meant to add. Fixed by blocking `controlled-upgrade` on both and the
+installation isolation check on the unreadable manifest. Two regressions;
+reverting the fix fails both. A third test fails if any future gate is computed
+but enforced nowhere.
+
+**D4/D5 — the comparison logic had no real coverage, and one test did not test
+its name.** No test could reach `current`, `replace`, `unverified`,
+`observed === 'present'` or `claimDisagrees === true`, because the layout
+destinations are absolute and never exist in a test environment, so the action was
+always `install`. The test named "reports a manifest claim that disagrees" passed
+while `claimDisagrees` was false by construction. Fixed by extracting the decision
+into a pure exported `classifyDestination` and covering every branch, and by
+renaming the misleading test to what it actually asserts.
+
+### Confirmed correct by the same review
+
+Every caller of all five changed signatures is updated; no `pr → runtime` cycle
+exists (the reverse edge does, so the dependency is strictly one-directional);
+`identifier` forbids `/`, `\` and a leading `.`, so no path escape is possible;
+the POSIX `'\''` quoting idiom is correct and the program name is quoted too; the
+publication and read primitives are correct (bound applied to the read, `fstat`
+on the descriptor, zero progress refused, `link`+`EEXIST` never overwrites);
+R18-02's gate admits the real production outbox path; and `remoteExplicit` is live
+rather than dead code.
+
+### Noted but not reproduced
+
+A TOCTOU window on ancestor directories between `assertSafeAncestry` and
+`openSync`, inherent to path-based POSIX APIs and not demonstrated exploitable.
+
+## Round 18 review rounds two and three — 2026-10-10
+
+Two further independent adversarial reviews were obtained. Between them they
+found four more defects, all in this branch's own work, and all four are fixed
+with a regression shown to fail when the fix is reverted.
+
+### Review two: D6
+
+The reviewer confirmed the five earlier fixes correct — reverting each itself and
+restoring every file byte-identically — but found a defect the earlier fix pass
+had masked.
+
+`PrepareCleanupHandoffDraftInput.verifierPath` was declared **required** and was
+**never read**. The packaged `tools/verify-handoff.mjs` took its bytes from the
+optional per-build path, defaulting to `Buffer.alloc(0)`, so the package shipped
+a **zero-byte verifier** while `verifyCleanupHandoffPackage` reported it
+**valid**. At base the line read `safeRead(input.verifierPath)`, so this branch
+introduced it; D2's tolerance fix then removed the accidental failure that had
+been catching it. The verifier is the artifact an administrator runs against the
+package, so an empty one that verifies is a silent integrity failure.
+
+Fixed by resolving tool bytes from the build that proved them (v2), else from the
+explicitly supplied path, and refusing when neither is present. A separately
+supplied file still cannot satisfy a v2 proof.
+
+### Review three: D7, D8, D9
+
+The reviewer confirmed the D6 fix correct, including that a v2 report cannot be
+satisfied by a top-level file and that `?? EMPTY` is not exploitable because
+verify requires the declared and observed file sets to match. It also checked
+**every field of all five interfaces by exact read pattern** — 16/16, 6/6, 5/5,
+2/2 and 11/11 — confirming the declared-but-unread failure mode is gone from
+those types. It then found three more defects:
+
+- **D7** — nothing rejected a **zero-byte** tool artifact at any schema level.
+  The D6 fix removed the default placeholder without adding a non-empty check, so
+  the same outcome remained reachable, including a v2 report that honestly
+  describes an empty artifact — which no digest check can catch. Fixed by
+  rejecting empty tool bytes outright.
+- **D8** — with the package unverified and all evidence missing, the plan still
+  generated **six runnable `install` commands**. They were guarded by `blockedBy`,
+  but the requirement is that an invalid package or evidence produces no install
+  instructions, and a guarded-but-runnable command is still an instruction. Fixed
+  by withholding the commands entirely while anything is invalid.
+- **D9** — `verify-handoff.ts` exited 2 only on `!result.valid`, while `valid` is
+  set `true` unconditionally after `TASK_EVIDENCE_EXPIRED` is pushed. An
+  expired-evidence package therefore verified with **exit 0** and a scripted flow
+  would proceed. Fixed by reporting unmet gates on stderr and exiting 2, with byte
+  integrity still reported separately.
+
+Also closed: `packageErrors` and `claimDisagrees` were computed but reached no
+consumer. The plan now exposes `manifestDisagreements`, and `admin-upgrade.ts`
+prints both the verifier's error codes and the destinations whose recorded
+manifest digest contradicts the target.
+
+### Regression discipline
+
+Every fix in all three rounds was validated the same way: revert the fix, observe
+the specific failure, restore, and confirm the file is byte-identical. The
+observed failures were concrete, for example
+`expected 'cleanup_identity_probe' to be 'principal:cleanup_identity_probe'`,
+`expected +0 to be 25` for the empty verifier, and
+`expected [ { program: 'install', …(1) }, …(5) ] to deeply equal []` for the six
+withheld commands. One revert probe of mine produced a syntax error and silently
+ran no tests; it was detected and redone rather than recorded as a pass.
+
+Across three review rounds, nine defects were found in this branch's own work,
+none of them visible to a green test suite.
+
+## PR #420 descriptor and upgrade acceptance checkpoint — 2026-10-10
+
+This append-only checkpoint supersedes the earlier narrow conclusions that
+ancestor TOCTOU had not been reproduced and that publication/read primitives
+were correct. The earlier runs and findings remain historical evidence. The
+current repair series starts at `8eac6d5e` and its implementation checkpoint is
+`e7c8212b`; final frozen head, source-build digests, hosted checks and PRMS are
+published on PR #420 so recording them does not change the candidate itself.
+This record is automated evidence, not approval, installation or qualification.
+
+### Ten finding definitions and dispositions
+
+| ID  | Confirmed defect                                                                          | Repair and behavioral evidence                                                                                                                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Pathname ancestry checks and recursive creation could escape through a replaced parent    | Linux root-to-leaf directory descriptors anchor every child operation. Static and raced parent links create no external directories or records; detected movement refuses sending. Writes already made in the original authorized directory cannot be revoked.                                |
+| Q2  | Existing-record reuse could read one inode and fsync another                              | One FD performs bounded decode, binding comparison, fsync and byte recheck. Final entry and directory-chain identities must still match; replacing the record between read and fsync refuses reuse.                                                                                           |
+| Q3  | Changing temporary-file size defeated owned-file cleanup and cleanup failures were hidden | Temporary ownership uses the created FD's dev/ino. Complete writes and file fsync precede no-overwrite link publication; owned unlink and directory fsync must complete. Short/zero-progress writes, cleanup and fsync failures refuse sending; unrelated replacement inodes are not removed. |
+| H1  | Seven evidence roles and current administrator/host inputs were not fully validated       | Mandatory closed schemas, strict decoding, actual byte digests, fixed bindings and observation validity windows are checked independently from a complete valid package. Current host evidence describes the six artifacts, identities, process and persistent state.                         |
+| H2  | Expired packages and invalid current evidence lost their specific installation gates      | All validity issues remain visible. Invalid, expired, missing, unreadable or unknown evidence generates zero installation commands. The upgrade consumes the verifier's private immutable byte snapshot rather than rereading an unbound manifest.                                            |
+| H3  | Ordinary outstanding approvals made the standalone verifier permanently fail              | Integrity remains `valid`; `validityIssues` and `outstandingGates` are distinct, with combined `unmetGates` compatibility. Actual Node subprocesses exit 0 for fresh intact packages and 2 for expired, corrupt or unknown gates.                                                             |
+| H4  | A v2 profile could use tools not proven by both builds                                    | Both v2 reports and each build's verifier/client/adminTool inputs are mandatory. Top-level paths only cross-check; partial proofs, downgraded reports and inconsistent bytes refuse preparation. Genuine v1 packages retain their profile.                                                    |
+| H5  | A required empty verifier was accepted                                                    | Preparation and independent verification require nonempty tools. A v2 profile additionally binds their actual digest/size across both reports and package bytes; genuine v1 retains its original report requirements. Empty required-tool regressions refuse.                                                                                                                |
+| H6  | Evidence could be unbounded, replaced or non-regular and block reads                      | Nonblocking, bounded FD reads reject FIFO, directory, symlink, hardlink, unsafe input permissions and replacement. Strict JSON rejects duplicate/unknown keys before evidence is trusted.                                                                                                     |
+| H7  | Activation planning depended on activation being complete                                 | Explicit prerequisite IDs are topologically ordered. Unactivated startup obtains the real nonce before governance preparation; graph tests reject cycles and later prerequisites.                                                                                                             |
+
+Record publication and historical record reads now explicitly require Linux
+descriptor capabilities. Windows/macOS and missing capabilities return stable
+`UNSUPPORTED_PLATFORM` before record writes or Broker sends; there is no weak
+pathname fallback. Historical status still needs no surviving registry or local
+runtime identity on a supported platform. The record schema, Broker protocol,
+fixed identity, authority reader and Workflow execution permissions are unchanged.
+
+### Additional findings from the independent acceptance review
+
+The read-only reviewer found further defects after the original ten-item scope.
+All effective findings were repaired rather than deferred:
+
+- A package-declared unknown gate was ignored. Declared gates are now validated
+  and retained; unknown gates refuse integrity evaluation with exit 2 and zero
+  install commands. Ordinary outstanding authorization gates remain informational.
+- Arrays could pass some digest checks by implicit string conversion. Source-lock
+  and evidence digests must be actual strings; selected binding fields are closed
+  and type-checked against the original administrator-input bytes.
+- Canonically equivalent explicit repository URLs conflicted with record status.
+  The CLI compares normalized `owner/name` bindings before querying the Broker.
+- Correct-byte targets with the wrong observed owner/mode were not repaired.
+  Verified observations now produce fixed root:root/0755 replacement actions.
+  Reported destination anomalies are distinct from unsafe evidence-file inputs;
+  invalid unsigned ownership values and malformed mode observations still refuse.
+- Invalid identity claims, impossible manifest paths and lost specific gate
+  reasons were repaired with semantic checks and complete issue propagation.
+
+The final read-only review of `e7c8212b` found no confirmed functional blocker.
+Its five independent synthetic probe suites passed. This was an agent review of
+non-sensitive fixtures, not a human approval or real target observation.
+
+### Failure-first proof index
+
+These non-secret JSON reports are preserved outside the repository in the
+session's acceptance directory; their exact byte digests bind the observed
+pre-fix failures. Collection failures and syntax errors are not behavioral proof.
+
+| Report                        | Observed pre-fix result | SHA256                                                             |
+| ----------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| `q-original-before.json`      | 5 failures              | `91301b0871dfb254443ef9174da698c4fa7826be91584eac5cced5d4e2807a2e` |
+| `h-proof-before.json`         | 4 failures, 57 passes   | `f10be53c5def97826bfbb41b3baff4834ce1aca57e853951c6504ec02913d4d1` |
+| `h-evidence-before.json`      | 15 failures, 1 pass     | `02b6694635542d9ddc998be0725fdd984b12211350d14ebf70a247f39a7a30a0` |
+| `index-gates-before.json`     | 10 failures             | `418b753154df7ff7929ac75da86767cc5e89a1fa9fd94f4abec721b2a79c4ba1` |
+| `source-locks-before.json`    | 2 failures              | `5841ab0d720cf6f3bb5d47113e6c9e2d1cf3e470039ae79e9199e1ca1c6c575b` |
+| `owner-before-corrected.json` | 4 failures, 3 passes    | `c6bad7db1c8f7703edc7c8db7af4719397b84dd42cb3dd778200a5ef4209cbf6` |
+
+The owner/mode cases pass 7/7 after repair. An earlier owner replay failed test
+collection because a package dependency was unavailable; the corrected replay
+above is the behavioral evidence. No production credential or deletion was used.
+
+### Current local validation and remaining gates
+
+The final ten affected suites passed three consecutive runs on both hosts:
+Linux 343 passed / 0 failed / 1 existing platform skip per run; native Windows
+344 passed / 0 failed / 0 skipped per run. Windows inherited a PowerShell 7
+`PSModulePath`; the test-only child environment removes every case variant,
+allowing Windows PowerShell 5.1 `Get-FileHash` and optional pwsh 7 to run with
+their own defaults. Discovery and execution share that environment. No test
+skip, retry or timeout increase was added to hide the original full-suite failure.
+Final full-suite results are a separate acceptance gate and are recorded in the
+live PR evidence after those runs complete.
+
+The final Linux full Vitest run completed with 7,601 passed, 0 failed and 6
+existing platform skips (7,607 collected). Native Windows full acceptance on
+the same final source remains in progress at this documentation checkpoint;
+the earlier Windows full run is retained but does not replace that result.
+
+Linux and native Windows typechecks passed. ESLint reports 0 errors and 0 warnings;
+build passes. The production collector reports 7,607 cases across 538 files.
+Status/document generation was run twice with byte-identical second outputs.
+The source-lock intersection for this repair series is empty; binding paths,
+scope and set are unchanged, and no unrelated digest was refreshed. Historical
+production lint-lock changes remain subject to their separate contract review.
+
+Source construction and target-evidence packaging are now separate stages.
+`build-handoff.ts --source-only` can produce two independent clean Linux builds
+without inventing a target installation manifest. Its proof records all five
+artifact digests/sizes, revision, `vcs.modified=false`, real tool versions and
+lock digests, and explicitly grants no package, installation or execution
+authorization. Full installable packaging still requires fresh genuine target
+inputs. Windows build output is not substituted for Linux Node 24.18.1 proof.
+
+The earlier Git 2.34.1 and malformed ancestor Git metadata failures remain
+environment-dependent historical records. Qualified Git/Go builds do not claim
+compatibility with those failing environments; no unknown parent metadata is
+removed and VCS stamping is not disabled.
+
+PR #418 and its registry are merged into `main`; the administrator selected
+code/registry merge before real qualification. Prior packages and approvals
+remain untouched. `OpenSlack-Cleanup-Qual` and UID/GID 44180/44181 remain external
+administrator bindings requiring fresh actual-host verification, not facts
+established by fixtures. Expired October 8 task evidence cannot authorize a new
+package or qualification batch. Credentials, deployment, fixed runtime identity,
+real nonce, governance activation/Permit and the full live qualification matrix
+are external uncompleted gates. No service was started and no branch was deleted.
+
+### Current-head hosted Windows qualification correction
+
+The first new-head hosted run at `722f4f05844e2717de25627db9ad062f3323fc68`
+did not pass packaging qualification. Workflow run `38062111125`, job
+`114242298031`, failed in **Qualify governed PR branch cleanup** with two
+5-second test timeouts: the supplied-verifier byte preservation regression
+(`cleanup-handoff.test.ts`) and the combined preview/apply/reapply CLI init
+case (`init.test.ts`). The job reported 2,900 passed, 2 failed and 12 skipped.
+The original masked hosted job log is retained outside the source checkout;
+its SHA256 is `085a79443da148b6e7c4b22221e7e3afc9dc04b30fa0ad878577c1120e244235`.
+
+Both failures are closed by test-structure changes, not relaxed checks or
+production timeouts. Handoff cases copy an immutable real committed Git source
+into their own directories and object stores; the existing bounded preparation
+hook creates that source once. Per-case source and object mutations remain
+isolated, and preparation responsiveness is still asserted at the end of the
+real asynchronous preparation. Candidate validation, no-hardlink checks,
+source rechecks, tool proofs and every negative assertion remain production
+calls. The verifier-byte regression still compares the supplied non-empty
+bytes with the packaged bytes.
+
+CLI init now independently asserts preview with no writes, explicit apply with
+validation, and repeated apply preserving the original workspace bytes. Git
+initialization and first-apply setup are separate from the single behavior
+under assertion. This adds two declared cases; the production collector,
+rather than a predicted increment, updates module telemetry and projections.
+No test skip, retry, timeout increase, workflow change or production init
+change is used. These two test files do not intersect the exact source lock.
+
+The completed native Windows full run before this hosted correction reported
+7,527 passed, 0 failed and 80 existing platform skips (7,607 collected), closing
+the inherited PowerShell module-path failure on that source. Its result is
+preserved; the post-correction complete runs, new candidate source-build proof,
+new head checks and PRMS are separate evidence and must be refreshed. Any
+remaining CI failure prevents an approval-ready claim.
+
+#### Acceptance orchestration correction
+
+The first post-correction Linux complete run is retained as failed: 7,602 passed,
+1 failed and 6 existing platform skips (7,609 collected). The unchanged
+Organization Graph deterministic generation/check case reached its existing
+120-second deadline. Its task started at 15:40:37 UTC on October 10, overlapping
+an 84.8-second typecheck and document/inventory workers started by this repair
+session. The previously accepted complete run took 86.0 seconds for that case.
+The negative complete-run JSON has SHA256 `632c686909dac07cccad5eaa74336cb2d15ffba5d2c87f8ea30394b301a41a78`.
+
+This result is not closed by a targeted rerun. Final acceptance orchestration is
+corrected to serialize heavy build/documentation checks and the native Windows
+and Linux complete runs. No Organization Graph code, test assertion, deadline,
+platform rule or automatic retry is changed. The new complete-run result must
+still pass before repository acceptance; the live PR evidence records it
+separately from the retained overlapping run.
+
+#### Post-correction complete acceptance
+
+The final implementation passed three consecutive affected runs on each host:
+Linux 346 passed, 0 failed and 1 existing platform skip; native Windows 347
+passed, 0 failed and 0 skipped, per run. The additional CLI init assertions
+retain independent preview, explicit apply and byte-preserving reapply behavior.
+
+Native Windows complete Vitest acceptance reports 7,529 passed, 0 failed and 80
+existing platform skips, with 7,609 collected; its JSON SHA256 is
+`b3089b4764209ee62f0b8dbe9b70ec46a044468cddb5c8c90f52542222690c31`. After that run and all heavy
+build/documentation workers completed, the separate Linux complete acceptance
+reports 7,603 passed, 0 failed and 6 existing platform skips, with 7,609
+collected; its JSON SHA256 is
+`0a2bc0934b0f6c0125b22c0d2834c6f60bbd0bed50bd94e228733db12320e1b7`. The unchanged Organization Graph
+deterministic generation/check case passed in 97.2 seconds at the
+same 120-second budget. The negative overlapping run remains retained; no
+narrow rerun is substituted for these complete-run results.
+
+ESLint remains 0 errors / 0 warnings. The production collector reports 7,609
+cases and 538 files; module-attributed counts are 10,631 across 772 files.
+Status and documentation generation are byte-identical on a second run, and
+the new test-only correction has an empty exact-source-lock intersection.
+The final documentation append is verified separately after these test runs.
+
+The independent read-only review found no blocker in the test correction. Its
+fixture probe established responsiveness, independent object stores without
+hardlinks/shared inodes, and mutation isolation. Timeout values, platform
+rules, required checks and all production negative controls are unchanged.
+This is agent review evidence and does not supply human/CODEOWNER approval.
+
+The final frozen SHA, double-clean-build artifact digests, current-head hosted
+checks and final PRMS outcome are recorded in the live PR #420 evidence after
+freezing. Source build qualification does not produce an installable package
+without fresh genuine target evidence, and cannot authorize deployment or live
+cleanup. The administrator gates stated above remain uncompleted.
+
+### PR #420 review 47 remediation and acceptance (2026-10-11)
+
+The source is the unchanged [47-item review comment](https://github.com/Negentropy-Laby/OpenSlack/pull/420#issuecomment-6100645679),
+21,312 UTF-8 bytes with SHA256
+`1249eac3efd0c833f4a85569fff44e72253aa8819fb0a047dfb22c33df304a76`.
+Items 1–24 retain its numbering; table rows continue in original order as
+25–30 (reuse), 31–35 (efficiency), 36–43 (simplification), and 44–47 (architecture).
+The three expressly excluded candidates remain closed: inner role shadowing,
+unknown-gate bypass through the previous administrator suffix matcher, and the
+asserted D:/ root-stripping failure. No new approval, credential, activation,
+Permit or deletion is created by this repair.
+
+| ID  | Reviewed issue                                 | Disposition and behavioral evidence                                                                                                                                                                                                                        | Repair commit                          | Qualification scope                          |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------- |
+| 1   | Published request disagrees with wire contract | Fixed: validateCleanupBrokerRequest runs before record construction or publication; malformed Permit/claims/repo refuse zero writes/send.                                                                                                                  | 1f0bc3be                               | All OS logic; Linux publish                  |
+| 2   | Relative Windows paths redacted twice          | Fixed: one original-token scan never rescans emitted relative paths.                                                                                                                                                                                       | acff0817                               | All OS                                       |
+| 3   | Ordinary artifacts inherit execution trust     | Fixed: readable ordinary artifacts use integrity policy; runtime tools and current evidence retain strict ownership/mode policy.                                                                                                                           | 1f0bc3be / 5a04ba37                    | Portable artifact tests; Linux trust         |
+| 4   | Root cannot inspect Agent records              | Fixed: historical-record purpose permits root read-only; Broker still rejects UID 0 and requires original Agent OS identity.                                                                                                                               | 1f0bc3be                               | Linux                                        |
+| 5   | Shared directory blocks execute                | Disposition: private publication directories below workspace remain mandatory; explicit diagnostic advises dedicated workspace. The claim that all ancestors require current-user ownership is not true. Permission changes during write/reuse now refuse. | 1f0bc3be                               | Linux                                        |
+| 6   | URL corruption                                 | Fixed: network URI tokens and HTML syntax preserved; file URIs handled as paths. Ambiguous single-letter x:/ tokens deliberately mean drive paths.                                                                                                         | acff0817                               | All OS                                       |
+| 7   | Windows path case mismatch                     | Fixed: Windows comparison is case-insensitive, POSIX remains case-sensitive, normalized segments prevent adjacent-root/traversal acceptance.                                                                                                               | acff0817                               | All OS                                       |
+| 8   | Expired intact package exit 2                  | Retained policy: valid describes byte integrity; expiry is a distinct validity issue and still exits 2. Old packages are preserved.                                                                                                                        | 5a04ba37                               | Portable real Node                           |
+| 9   | Revoked admission prevents status              | Fixed: resolveAgentStatusBinding preserves fixed uid/provider/run claims without active execute admission or bootstrap. Real client subprocess reaches transport after suspension.                                                                         | c923aefe                               | All OS; Linux transport                      |
+| 10  | Non-Linux record publication refuses           | Retained policy: Linux descriptor-bound records refuse unsupported platforms before IO/send. Main Broker transport was already Linux-only; broader portability attribution withdrawn.                                                                      | 1f0bc3be                               | All OS refusal; Linux IO                     |
+| 11  | Every process signal is TIMEOUT                | Fixed: actual non-timeout signal uses TERMINATED; ETIMEDOUT alone uses TIMEOUT, with no invented duration.                                                                                                                                                 | acff0817                               | All OS                                       |
+| 12  | Raw report JSON parse loses classification     | Fixed: strict single parse per build report retains HANDOFF_BUILD_MISMATCH and input role. Truncated report regression demonstrably failed before correction.                                                                                              | 5a04ba37                               | Linux prepare; portable verifier             |
+| 13  | Platform wrapper replaces real assertions      | Fixed: removed onCleanupRecordPlatform/onUpgradePlatform substitutions. Pure validation/conflicts/evaluators run all OS; genuine Linux IO has explicit qualification. Portable Node verifier has an independent full fixture.                              | c923aefe / 5a04ba37                    | All OS + Linux-specific IO                   |
+| 14  | Directory FD leakage                           | Fixed: each acquired FD is registered before fstat, including root/intermediate failure; injected failures assert no open owned FD.                                                                                                                        | 1f0bc3be                               | Linux                                        |
+| 15  | Sensitive paths and conflicts drift            | Fixed: common purpose-aware sensitive-path check and shared nine-field original-binding status builder. /private/var outside declared root is not a Black-path alias.                                                                                      | 1f0bc3be / c923aefe                    | All OS                                       |
+| 16  | Absent record reported as persistence failure  | Fixed: NOT_FOUND distinguishes missing path/ancestor; no repair or creation occurs.                                                                                                                                                                        | 1f0bc3be                               | Linux; pure classification                   |
+| 17  | Number coercion in client                      | Fixed: common canonical positive-decimal parser rejects hex, exponent, whitespace, fractional and unsafe integers before identity IO.                                                                                                                      | c923aefe                               | All OS real Node                             |
+| 18  | Record repo URL disagreement                   | Fixed: shared pure repo-spec parser normalizes supported GitHub URLs to owner/name for both entries.                                                                                                                                                       | c923aefe                               | All OS                                       |
+| 19  | Synchronous exit truncates pipe diagnostics    | Fixed: client input error uses exitCode and returns; real Node pipe regressions inspect complete stderr.                                                                                                                                                   | c923aefe                               | All OS real Node                             |
+| 20  | Cleanup error masks primary failure            | Fixed: preserve primary code/detail and separately report cleanupCode; no failed persistence may send.                                                                                                                                                     | 1f0bc3be                               | Linux                                        |
+| 21  | Errors mixed into gate vocabulary              | Fixed: derive known outstanding gates, validity issues and unknown gates separately; legacy unmetGates retains known vocabulary plus historical TASK_EVIDENCE_EXPIRED.                                                                                     | 5a04ba37                               | All OS + portable Node                       |
+| 22  | PowerShell mandatory on Windows                | Retained qualification policy: PowerShell 5.1 required; discovered pwsh additionally verified. Missing tools fail related qualification, without hiding unrelated collection.                                                                              | Existing policy; this round acceptance | Native Windows                               |
+| 23  | Help contradicts matching identity binding     | Fixed: help explicitly permits matching bindings; status sends original record request.                                                                                                                                                                    | c923aefe                               | All OS                                       |
+| 24  | Tautological bundle copy                       | Fixed: removed self-copy assertion; retained real bundle capability and subprocess behavior tests.                                                                                                                                                         | c923aefe                               | All OS                                       |
+| 25  | Duplicate record wire validator                | Covered by #1: one production request validator with unchanged protocol.                                                                                                                                                                                   | 1f0bc3be                               | All OS                                       |
+| 26  | Stable-read algorithm duplicated               | Fixed: Core owns bounded same-FD read and file identity; GitHub/PR retain their own link, ownership, UTF-8 and anchoring controls.                                                                                                                         | 1f0bc3be                               | All OS logic; Linux anchored IO              |
+| 27  | Client bounds disagree with transport          | Covered by #1/#17: provisional and resolved requests use exact production wire validator before publication.                                                                                                                                               | c923aefe                               | All OS                                       |
+| 28  | Duplicate digest/object/key validators         | Fixed: package-internal shared constants and strict object/key primitives; input-role errors remain distinct.                                                                                                                                              | 1f0bc3be / 5a04ba37                    | All OS                                       |
+| 29  | Handwritten permission snapshot fixture        | Fixed: CLI test uses the same production-validated snapshot factory, with isolated explicit binding.                                                                                                                                                       | c923aefe                               | All OS                                       |
+| 30  | Client and CLI duplicate business flow         | Fixed: shared record publication, original-binding status construction and result evaluator; Runtime identity resolution stays in application entries only.                                                                                                | c923aefe                               | All OS                                       |
+| 31  | Artifact proof repeats same-stage work         | Fixed: capture bytes/digest/size once per build phase, independently reread both builds at final race-check phase, then reuse final proof for source-only output.                                                                                          | 5a04ba37                               | Linux clean-build                            |
+| 32  | Same tool bytes repeatedly read                | Fixed: preparation captures its own bytes once per stage, reuses top/per-build tool reads, and preserves separate later verification.                                                                                                                      | 5a04ba37                               | Linux prepare                                |
+| 33  | Repeated verifier hash and report parse        | Partially disproved: same owned Buffer hashing already cached. Repeated report parsing fixed; digest-work regression retains measured one hash per owned bytes.                                                                                            | 5a04ba37                               | Linux prepare; portable verifier             |
+| 34  | Registry read twice                            | Fixed: resolved principalId comes from Runtime same registry read; entries do not parse registry again.                                                                                                                                                    | c923aefe                               | All OS                                       |
+| 35  | Repeated readonly fixture fsync                | Fixed: pure CLI conflict/result cases share immutable record bytes; dedicated publication/durability cases retain real isolated IO.                                                                                                                        | c923aefe                               | All OS + Linux IO                            |
+| 36  | Reduce evaluator to one array                  | Not adopted: require valid result shape, known gates, integrity/time and false authorization flags. Forged truthy success flags now explicitly refuse.                                                                                                     | 5a04ba37                               | All OS                                       |
+| 37  | Publish mutable authorization snapshot         | Not adopted: keep private immutable WeakMap snapshot from same verification; callers cannot forge install instructions through public result fields.                                                                                                       | 5a04ba37                               | All OS + Linux upgrade                       |
+| 38  | Nine repeated conflict conditions              | Covered by #15: one table-driven status binding comparison.                                                                                                                                                                                                | c923aefe                               | All OS                                       |
+| 39  | Repeated persistence checks                    | Disposition: removed redundant same-stage work while retaining before/after content/inode/lineage verification and file/directory fsync. Review found and repaired a failure-path unlink sync gap; pending changes are sealed before refusing.             | 1f0bc3be                               | Linux                                        |
+| 40  | Repeated identity shape parsing                | Fixed: one validated UpgradeIdentities shape with exact fields; each independent evidence object is parsed once then compared.                                                                                                                             | 5a04ba37                               | All OS pure capture; Linux IO                |
+| 41  | Remove public validApprovers argument          | Not adopted: retain three-argument public compatibility and separation of approver availability from CODEOWNER deadlock. Existing duty-separation regression retained.                                                                                     | Existing verified behavior             | All OS                                       |
+| 42  | Discarded input role label                     | Fixed: typed upgrade error includes safe input role.                                                                                                                                                                                                       | 5a04ba37                               | All OS                                       |
+| 43  | Unused new directory API                       | Fixed: remove isUpgradeTargetDirectory and its root re-export; production boundary remains package-owned.                                                                                                                                                  | 5a04ba37                               | All OS                                       |
+| 44  | POSIX root allowlist leaks paths               | Covered by #2/#6/#7: generic original absolute-path matching covers /Volumes, /builds and /home2 with normalized repo containment.                                                                                                                         | acff0817                               | All OS                                       |
+| 45  | English suffix guesses upgrade severity        | Fixed: typed blockingIssues and evaluateCleanupTargetUpgradePlan determine exit status; every hard issue yields zero install commands.                                                                                                                     | 5a04ba37                               | All OS + Linux evidence                      |
+| 46  | Reader policy owned by caller platform fork    | Fixed: file boundary owns explicit artifact/runtime/historical purposes. Captured pure evidence decoder does not create verified-package snapshot.                                                                                                         | 1f0bc3be / 5a04ba37                    | All OS artifact; Linux trust                 |
+| 47  | Mix pure tests with IO platform wrapper        | Covered by #13: all-OS pure suites and portable verifier plus declared Linux IO suites. Inventory collector includes every declaration without treating collection as execution.                                                                           | 1f0bc3be / 5a04ba37                    | All OS inventory; actual OS results separate |
+
+Regression evidence uses the production request/record, file-boundary, handoff,
+upgrade and identity functions, plus real Node client/verifier pipes. The initial
+request/redaction/genesis regression run retained 16 failures; the file boundary
+run retained 6; the independent-review regression run retained 9 (including
+truthy result flags, unsafe evidence, directory permission drift and unlink
+durability). The last report SHA256 is
+`4de360813995a1fa9cd4779d70ba4faac6e8af4848a55ad043478330ddab9021`.
+The separately corrected malformed-report matcher was also run against the old
+parser and observed HANDOFF_IO_FAILED instead of HANDOFF_BUILD_MISMATCH.
+
+Final affected Linux runs passed three times consecutively: 501 passed, zero
+failed or skipped per run. Their JSON SHA256 values are, in order,
+`b04e7eaf7ea023a9e1fdf8b4fbec5fa901e7a572fbc41deaedebc7cc11e673ac`,
+`ec84be204ec445d03003878a5f82870824472a243bc481c3ecfac84053ecf3ea`, and
+`d0aeeffb75bbde12c9b691f3d29c1689bbd44f7eaf75dc497f8eb1da1f90c00d`.
+The new portable Node verifier cases use a clearly synthetic non-executable v1
+package; they do not claim real installed bytes or qualification. They verify
+fresh success, intact expiry, unknown gates and corrupt reports outside the
+checkout with empty PATH, without installed Git or credentials.
+
+Independent read-only agent rechecks confirmed the two discovered persistence
+defects were fixed and found no remaining demonstrated production blocker in
+the request, identity, file or handoff scope. Portable entry coverage was added
+after that review requested it. This is agent review, not a human approval.
+The exact-source-lock intersection of this round is empty: no bound digest,
+binding set, path or scope needs changing. No Workflow execution authority or
+Broker protocol changed. Full-run, build, inventory/projection, frozen artifact
+and hosted-head evidence follows separately; earlier passes are historical.
+
+The first complete Linux run of this round accidentally overlapped the native
+Windows complete run and inventory work. It retained 7,709 passes, six failures
+and six pre-existing platform skips (7,721 declared cases). The failed cases
+were MCP capability-change confirmation, the GS9-F2b profile harness, RunStore
+observation inventory, bounded effect-authority entries, CLI help subprocesses
+and Organization Graph generation. Their durations reached their existing
+5s/20s/90s/120s test budgets. This is failed evidence, not an accepted result;
+the complete JSON SHA256 is
+`61aeffa480cb774dd82cb89ab7847bd57f26796ad8e4f79c734798a15a9f26ba`.
+The inventory process was interrupted and did not update canonical counts.
+Final acceptance serializes native Windows and Linux complete runs and all
+heavy build/collection work, retaining unchanged test budgets and assertions.
+Only a subsequent complete run can close these six failures; isolated reruns
+cannot replace that result.
+
+The first native Windows run retained 7,465 passes, one failed actual-Go runtime
+case and 80 existing platform skips. Its JSON SHA256 is
+`829120aa322dd1c7431f33523d75dbb6becfba9c751015a71a12d6a0a8991e05`.
+The actual-Go case failed with `spawn go ENOENT`: my explicit child PATH omitted
+the installed `C:/Program Files/Go/bin/go.exe`, whose measured version is
+Go 1.26.5. The same complete run exposed empty Linux-only describe groups in
+the durability file despite its three all-platform denial cases passing.
+A shared suite-registration helper now declares those groups only for genuine
+Linux execution or complete inventory collection; test bodies, deadlines and
+platform-denial assertions are unchanged. Independent read-only review checked
+the six-case platform/inventory matrix and found no remaining registration
+issue. These failures are not closed by the environment correction or review:
+a fresh complete native Windows run must supply the execution evidence.
+The PowerShell Qoder case passed in that first full run under intentionally
+polluted PSModulePath, including required PowerShell 5.1 and discovered pwsh 7.
+
+After suite-registration repair `df9d9314`, all 501 affected Linux cases passed
+three more consecutive times with zero failures/skips. Their JSON digests are
+`59b07124a24444160109fd3ddc1a360ff82beed00daa3fc1ff4afa7168b11f22`,
+`adc2d09ce397c11df5b28ac221f960e9442b81f8f59e4bd033e8d0de82e8fb98`,
+and `c6a124309c25f8e4f3e2c19ae5cba2fdba373130329160f4684435e86550d332`.
+The final complete Linux run passed 7,715 cases, zero failures, with the same
+six pre-existing platform skips (7,721 total); JSON SHA256
+`9bc837b65915e7e68cb92bbbf854b03c90fb7e9a5939503e090d5331ec52be80`.
+All six earlier timeout cases passed in that complete run without changing
+their budgets or assertions. The separate serial checkpoint also passed the
+same complete inventory; its JSON digest is
+`b0d9a98fddebe7c2bae37ee15332b118a2df0398996cc1e4e853fb4b375b7463`.
+The production collector reports 7,721 declared cases in 541 files, including
+all qualified Linux declarations on every collecting host. Canonical numeric
+telemetry only is updated; module maturity is unchanged. A second status/docs
+generation is byte-identical. Documentation verification, migration,
+notification-document checks and status verification pass; Linux typecheck,
+build, workspace validation, golden 7/7 and genesis 5/5 also pass. The serial
+checkpoint's ESLint returned zero errors and zero warnings; the final check
+after test registration changes remains required. Complete native Windows execution and
+final frozen-source/hosted-head evidence are still separate pending layers at
+this checkpoint, not inferred from the Linux results.
+
+The final complete native Windows run closes both recorded Windows failures:
+7,466 passed, zero failed suites/cases, 80 pre-existing platform skips, with
+7,546 applicable cases. Its JSON SHA256 is
+`82ed949cc41be3620e98706f65dc09bd4c3550b32040b307009eea7942bd56e7`.
+The parent deliberately retains PowerShell 7 PSModulePath pollution; the full
+Qoder test verifies required Windows PowerShell 5.1 and available pwsh 7 using
+only the child-specific normalization. The actual-Go budget case passes with
+measured Go 1.26.5 on its unchanged production path. No empty-suite allowance,
+new skip, retry, timeout relaxation or weakened assertion is introduced.
+
+All three final affected native Windows runs pass 326 cases, zero failures or
+skips. Their JSON SHA256 values are, in order,
+`0fd63bf40087a829e04048ac93f20db1e11d5f9395344f14bb23b0030bc47684`,
+`2ade46a9d356edd024c3e904998606e63ff0ab35ba99469aec02638f1db27643`,
+and `f02641e8d859cbdff764625d707b89440046ddcd03ffc8e69002e9ba44643711`.
+The 175 descriptor-bound Linux IO cases are declared for Linux execution and
+full inventory collection, not reported as Windows execution; pure parsing,
+conflict, evaluator and zero-IO refusal assertions genuinely execute on both.
+The production inventory is 7,721 declarations, independently of the native
+execution total. Both negative complete-run reports remain preserved.
+
+Final lightweight independent agent review at `df9d9314` confirms the complete
+47-item mapping, retained decisions and numeric-only telemetry, with no new
+production or evidence blocker. Earlier approval, old-head hosted checks and
+historical build proofs do not approve this new candidate. The historical
+94,313-byte QA prefix remains byte-identical, SHA256
+`619c04209070ee49e14b4810c9c0df98c29f878df7da5eb633bbff5ae750bc97`.
+
+Final post-registration validation also passes: Linux and native Windows
+whole-repository typecheck, both incremental builds, workspace validation,
+golden 7/7, genesis 5/5, docs verification/migration/notification and status
+verification. ESLint is zero errors and zero warnings with max-warnings 0.
+The serialized command-summary SHA256 is
+`d9d741aaf4739d033fb6c343ea747bb171f96c73d6f1b2c2efce70ee5dde75ca`;
+the native typecheck/build log SHA256 is
+`26079810c0cab4298d35f926471071e71bdc75680563ab25a2ef8ad91d650000`.
+The two-pass generated-projection proof SHA256 is
+`d4b9fbbc1387a7d724dc4765ec7141f1dff60c09d65f1e794514a595ae07b20f`.
+Measured Git versions are Linux 2.43.0 and native Windows 2.49.0.windows.1;
+old Git/VCS-stamping failures remain historical, not a claim of compatibility
+with their original environment. No stamping flag, unknown ancestor Git
+metadata, required check or source binding is weakened or removed.
+
+Source freezing and the new double-clean-build proof are recorded outside this
+document in the current PR after this documentation commit, avoiding a commit
+whose embedded candidate SHA would invalidate itself. Final frozen-source Go
+race/integration/vet, exact-byte contracts and hosted checks must belong to
+that candidate. Without fresh genuine target evidence, only source build
+proof may be delivered: no installable target package, inherited approval,
+installation, service, activation, Permit or live deletion is asserted.

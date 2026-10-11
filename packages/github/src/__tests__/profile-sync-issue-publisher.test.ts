@@ -16,6 +16,7 @@ import {
   publishProfileSyncImprovement,
   bootstrapProfileSyncLabels,
 } from '../profile-sync-issue-publisher.js';
+import type { GitHubClient } from '../client.js';
 
 const mockCreateTaskIssue = vi.mocked(createTaskIssue);
 const mockGetClient = vi.mocked(getClient);
@@ -108,7 +109,7 @@ describe('profile sync issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -130,7 +131,7 @@ describe('profile sync issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: mockOctokit as unknown as GitHubClient['octokit'],
         authMode: 'token',
         isDryRun: false,
       });
@@ -145,7 +146,7 @@ describe('profile sync issue publishers', () => {
       mockGetClient.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
-        octokit: {} as unknown as import('../client.js').GitHubClient['octokit'],
+        octokit: {} as unknown as GitHubClient['octokit'],
         authMode: 'dry_run',
         isDryRun: true,
       });

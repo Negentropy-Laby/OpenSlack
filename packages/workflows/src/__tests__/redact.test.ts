@@ -207,6 +207,42 @@ describe('stripTokensAndCredentials', () => {
 // ── Rule 4: Absolute path remapping ──────────────────────────────────────────
 
 describe('remapAbsolutePaths', () => {
+  it('does not rescan a Windows path after mapping it into a POSIX-looking relative path', () => {
+    expect(
+      remapAbsolutePaths(
+        'built C:/work/repo/data/db.json from C:/work/repo/src/build.ts',
+        'C:/work/repo',
+      ),
+    ).toBe('built /data/db.json from /src/build.ts');
+  });
+
+  it.each([
+    'https://registry.example.com/data/manifest.json',
+    'HTTPS://host/run/report',
+    'https://host/Volumes/example',
+  ])('preserves complete network URLs: %s', (url) => {
+    expect(remapAbsolutePaths(url, '/home/user/repo')).toBe(url);
+  });
+
+  it('compares Windows drive and component case using Windows semantics', () => {
+    expect(
+      remapAbsolutePaths('D:/Users/dev/OpenSlack/packages/pr/src/x.ts', 'd:/users/dev/openslack'),
+    ).toBe('/packages/pr/src/x.ts');
+  });
+
+  it.each(['/Volumes/private/x', '/builds/123/x', '/home2/private/x'])(
+    'redacts unenumerated absolute roots: %s',
+    (path) => {
+      expect(remapAbsolutePaths(path, '/home/user/repo')).toBe('[path redacted]');
+    },
+  );
+
+  it('normalizes traversal before judging containment', () => {
+    expect(remapAbsolutePaths('/home/user/repo/../../outside.txt', '/home/user/repo')).toBe(
+      '[path redacted]',
+    );
+  });
+
   it('remaps repo-root paths to relative', () => {
     const input = 'File changed: /home/user/project/src/index.ts';
     const result = remapAbsolutePaths(input, '/home/user/project');
@@ -229,6 +265,65 @@ describe('remapAbsolutePaths', () => {
   it('returns input unchanged when no repoRoot provided', () => {
     const input = '/home/user/project/src/index.ts';
     const result = remapAbsolutePaths(input);
+    expect(result).toBe(input);
+  });
+
+  // ── Regressions: paths that the root-prefix check must not treat as inside ──
+
+  it('redacts a sibling directory that shares the repo-root prefix', () => {
+    const input = 'File: /home/user/project-secrets/token.txt';
+    const result = remapAbsolutePaths(input, '/home/user/project');
+    expect(result).toContain('[path redacted]');
+    expect(result).not.toContain('project-secrets');
+  });
+
+  it('redacts a Windows sibling directory that shares the repo-root prefix', () => {
+    const input = 'File: C:\\Users\\dev\\project-secrets\\key.pem';
+    const result = remapAbsolutePaths(input, 'C:\\Users\\dev\\project');
+    expect(result).toContain('[path redacted]');
+    expect(result).not.toContain('project-secrets');
+  });
+
+  it('remaps the repository root itself to a bare separator', () => {
+    const input = 'Root: /home/user/project';
+    const result = remapAbsolutePaths(input, '/home/user/project');
+    expect(result).toBe('Root: /');
+  });
+
+  // ── Regressions: absolute paths outside the enumerated root alternation ─────
+
+  it('redacts Windows absolute paths outside the enumerated roots', () => {
+    const input = 'File: D:\\Projects\\private\\creds.pem';
+    const result = remapAbsolutePaths(input, 'C:\\Users\\dev\\project');
+    expect(result).toContain('[path redacted]');
+    expect(result).not.toContain('creds.pem');
+  });
+
+  it('redacts POSIX absolute paths outside the enumerated roots', () => {
+    const input = 'File: /srv/private/data.txt';
+    const result = remapAbsolutePaths(input, '/home/user/project');
+    expect(result).toContain('[path redacted]');
+    expect(result).not.toContain('/srv');
+  });
+
+  it('handles forward-slash Windows paths against a backslash repo root', () => {
+    const input = 'File: C:/Users/dev/project/src/main.ts';
+    const result = remapAbsolutePaths(input, 'C:\\Users\\dev\\project');
+    expect(result).toContain('/src/main.ts');
+    expect(result).not.toContain('C:/Users/dev/project');
+  });
+
+  // ── Boundary: broad matching must not damage HTML or URL fragments ──────────
+
+  it('does not redact closing HTML tags', () => {
+    const input = '<div class="x">value</div>';
+    const result = remapAbsolutePaths(input, '/home/user/project');
+    expect(result).toBe(input);
+  });
+
+  it('does not redact URL path segments', () => {
+    const input = 'See https://api.github.com/repos/owner/name/pulls/418';
+    const result = remapAbsolutePaths(input, '/home/user/project');
     expect(result).toBe(input);
   });
 });

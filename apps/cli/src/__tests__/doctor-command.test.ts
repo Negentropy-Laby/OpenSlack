@@ -27,6 +27,7 @@ vi.mock('@openslack/github', () => ({
 
 vi.mock('@openslack/runtime', () => ({
   detectGenesisShell: vi.fn(() => ({ command: 'echo genesis', detail: 'ok' })),
+  runGenesisValidation: vi.fn(() => ({ ok: true, detail: '5/5 checks passing' })),
   runGoldenEval: vi.fn(() =>
     Array.from({ length: 7 }, (_, index) => ({ caseId: `case-${index}`, passed: true })),
   ),
@@ -57,7 +58,7 @@ async function runDoctor(): Promise<string> {
     throw new Error('process.exit');
   });
 
-  const cmd = doctorCommands({ execSync: vi.fn(() => 'PASS') as never });
+  const cmd = doctorCommands();
   try {
     await cmd.parseAsync(['node', 'openslack doctor'], { from: 'node' });
   } finally {

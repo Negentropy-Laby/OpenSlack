@@ -14,5 +14,5 @@ export async function renderDoctorTui(
   options?: RenderDoctorTuiOptions,
 ): Promise<void> {
   const model = mapDoctorToViewModel(report, options);
-  const { unmount } = await renderTui(React.createElement(DoctorView, { model }));
+  await renderTui(React.createElement(DoctorView, { model }));
 }

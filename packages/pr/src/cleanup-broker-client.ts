@@ -1,10 +1,14 @@
+import {
+  CLEANUP_IDENTIFIER as identifier,
+  cleanupObject as record,
+  cleanupExactKeys,
+} from './internal/cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from 'node:http';
 import { PR_BRANCH_CLEANUP_STATES, type PRBranchCleanupState } from './cleanup-types.js';
 
 const SOCKET = '/run/openslack-cleanup/broker.sock';
 const MAX_RESPONSE_BYTES = 16 * 1024;
-const identifier = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const modes = ['preview', 'execute', 'status'] as const;
 
 export interface CleanupBrokerRequest {
@@ -98,19 +102,15 @@ export const CLEANUP_PERMIT_ONLY_CLAIM = Object.freeze({
 } as const);
 const states = new Set<string>(CLEANUP_BROKER_STATES);
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function exactKeys(value: Record<string, unknown>, keys: string[], operation: boolean): boolean {
   const expected = operation ? [...keys, 'operationId'] : keys;
-  return (
-    Object.keys(value).length === expected.length &&
-    expected.every((key) => Object.hasOwn(value, key))
-  );
+  return cleanupExactKeys(value, expected);
 }
 
-function validateRequest(value: unknown): asserts value is CleanupBrokerRequest {
+/** The single wire contract, used before either publication or transport. */
+export function validateCleanupBrokerRequest(
+  value: unknown,
+): asserts value is CleanupBrokerRequest {
   if (
     !record(value) ||
     !modes.includes(value.mode as CleanupBrokerRequest['mode']) ||
@@ -225,7 +225,7 @@ async function send(
   options: { timeoutMs?: number } = {},
   dependencies: { platform: NodeJS.Platform; request: typeof httpRequest },
 ): Promise<CleanupBrokerResponse> {
-  validateRequest(input);
+  validateCleanupBrokerRequest(input);
   if (!record(options) || Object.keys(options).some((key) => key !== 'timeoutMs'))
     throw new CleanupBrokerClientError('INVALID_REQUEST');
   const timeoutMs = options.timeoutMs ?? 60_000;

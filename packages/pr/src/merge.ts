@@ -1,5 +1,5 @@
 import { mergePR } from '@openslack/github';
-import type { PRReviewReport, PRReviewPolicy, PRReviewState } from './types.js';
+import type { PRReviewPolicy, PRReviewState } from './types.js';
 import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 import { authorizeAgentAction } from '@openslack/kernel';
 import { diagnosePR } from './doctor.js';

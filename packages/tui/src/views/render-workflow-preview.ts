@@ -6,5 +6,5 @@ import WorkflowPreviewView from './WorkflowPreviewView.js';
 
 export async function renderWorkflowPreviewTui(preview: WorkflowPreview): Promise<void> {
   const model = mapWorkflowPreviewToViewModel(preview);
-  const { unmount } = await renderTui(React.createElement(WorkflowPreviewView, { model }));
+  await renderTui(React.createElement(WorkflowPreviewView, { model }));
 }

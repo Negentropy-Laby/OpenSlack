@@ -1,4 +1,9 @@
-import { testBash, testProcessEnvironment } from '../../../../scripts/testing/process-fixture.mjs';
+import {
+  testBash,
+  testProcessEnvironment,
+  testPowerShellEnvironment,
+  testPowerShells,
+} from '../../../../scripts/testing/process-fixture.mjs';
 import {
   existsSync,
   lstatSync,
@@ -29,9 +34,12 @@ const skillRoot = join(
   'openslack-organization-control',
 );
 const temporaryRoots: string[] = [];
+const powershellEnvironment = testPowerShellEnvironment();
 const powershellAvailable =
+  process.platform === 'win32' ||
   spawnSync('powershell', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
     encoding: 'utf8',
+    env: powershellEnvironment,
   }).status === 0;
 
 afterEach(() => {
@@ -160,83 +168,88 @@ describe('Qoder Organization Control Skill qualification', () => {
   });
 
   it.runIf(powershellAvailable)(
-    'runs the PowerShell installer idempotently and rejects a relative override',
+    'runs PowerShell installers idempotently and rejects a relative override',
     () => {
-      const target = tempRoot();
-      const script = join(skillRoot, 'install', 'install.ps1');
-      const command = [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        script,
-        '-TargetRoot',
-        target,
-      ];
-      const first = spawnSync('powershell', command, {
-        encoding: 'utf8',
-        env: testProcessEnvironment(),
-      });
-      expect(first.status, first.stderr).toBe(0);
-      const second = spawnSync('powershell', command, {
-        encoding: 'utf8',
-        env: testProcessEnvironment(),
-      });
-      expect(second.status, second.stderr).toBe(0);
-      expect(second.stdout).toContain('already up to date');
-      const rejected = spawnSync(
-        'powershell',
-        [
+      // One declared case keeps the inventory stable across platforms/shell editions.
+      for (const shell of process.platform === 'win32'
+        ? testPowerShells(powershellEnvironment)
+        : ['powershell']) {
+        const target = tempRoot();
+        const script = join(skillRoot, 'install', 'install.ps1');
+        const command = [
           '-NoProfile',
           '-ExecutionPolicy',
           'Bypass',
           '-File',
           script,
           '-TargetRoot',
-          'relative/path',
-        ],
-        { encoding: 'utf8', env: testProcessEnvironment() },
-      );
-      expect(rejected.status).not.toBe(0);
+          target,
+        ];
+        const first = spawnSync(shell, command, {
+          encoding: 'utf8',
+          env: powershellEnvironment,
+        });
+        expect(first.status, first.stderr).toBe(0);
+        const second = spawnSync(shell, command, {
+          encoding: 'utf8',
+          env: powershellEnvironment,
+        });
+        expect(second.status, second.stderr).toBe(0);
+        expect(second.stdout).toContain('already up to date');
+        const rejected = spawnSync(
+          shell,
+          [
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            script,
+            '-TargetRoot',
+            'relative/path',
+          ],
+          { encoding: 'utf8', env: powershellEnvironment },
+        );
+        expect(rejected.status).not.toBe(0);
 
-      const filesystemRootAlias = `${join(parse(target).root, 'openslack-root-alias')}${sep}..`;
-      const broad = spawnSync(
-        'powershell',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          script,
-          '-TargetRoot',
-          filesystemRootAlias,
-        ],
-        { encoding: 'utf8', env: testProcessEnvironment() },
-      );
-      expect(broad.status).not.toBe(0);
-      expect(broad.stderr).toContain('broad directory');
+        const filesystemRootAlias = `${join(parse(target).root, 'openslack-root-alias')}${sep}..`;
+        const broad = spawnSync(
+          shell,
+          [
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            script,
+            '-TargetRoot',
+            filesystemRootAlias,
+          ],
+          { encoding: 'utf8', env: powershellEnvironment },
+        );
+        expect(broad.status).not.toBe(0);
+        expect(broad.stderr).toContain('broad directory');
 
-      const junctionRoot = tempRoot();
-      const real = join(junctionRoot, 'real');
-      const link = join(junctionRoot, 'link');
-      mkdirSync(real);
-      symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir');
-      expect(lstatSync(link).isSymbolicLink()).toBe(true);
-      const reparse = spawnSync(
-        'powershell',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          script,
-          '-TargetRoot',
-          join(link, 'nested'),
-        ],
-        { encoding: 'utf8', env: testProcessEnvironment() },
-      );
-      expect(reparse.status).not.toBe(0);
-      expect(reparse.stderr).toContain('reparse-point component');
+        const junctionRoot = tempRoot();
+        const real = join(junctionRoot, 'real');
+        const link = join(junctionRoot, 'link');
+        mkdirSync(real);
+        symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir');
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        const reparse = spawnSync(
+          shell,
+          [
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            script,
+            '-TargetRoot',
+            join(link, 'nested'),
+          ],
+          { encoding: 'utf8', env: powershellEnvironment },
+        );
+        expect(reparse.status).not.toBe(0);
+        expect(reparse.stderr).toContain('reparse-point component');
+      }
     },
     30_000,
   );

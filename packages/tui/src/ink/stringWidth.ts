@@ -103,13 +103,19 @@ function needsSegmentation(str: string): boolean {
   return false;
 }
 
-function getEmojiWidth(grapheme: string): number {
+/**
+ * Width of an emoji grapheme. Exported so the regional-indicator early-exit
+ * property can be asserted directly by iteration count.
+ */
+export function getEmojiWidth(grapheme: string): number {
   // Regional indicators: single = 1, pair = 2
   const first = grapheme.codePointAt(0)!;
   if (first >= 0x1f1e6 && first <= 0x1f1ff) {
-    let count = 0;
-    for (const _ of grapheme) count++;
-    return count === 1 ? 1 : 2;
+    // A single regional indicator is one cell; a pair is two. Read at most two
+    // code points rather than expanding the whole grapheme.
+    const iterator = grapheme[Symbol.iterator]();
+    const onlyOne = !iterator.next().done && iterator.next().done;
+    return onlyOne ? 1 : 2;
   }
 
   // Incomplete keycap: digit/symbol + VS16 without U+20E3

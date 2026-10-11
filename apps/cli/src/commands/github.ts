@@ -34,6 +34,7 @@ import {
 } from './github-app-diagnostic.js';
 const recordEvent = _recordEvent as unknown as RecordEventFn;
 import { buildAutoClaimFn } from './watch-auto-claim.js';
+import type { NormalizedIssueEvent } from '@openslack/github';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -745,7 +746,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .action(async (options: { config: string; poll?: boolean; pollInterval?: string }) => {
       const { WatchDaemon } = await import('@openslack/github');
       const { recordEvent: _rec } = await import('@openslack/collaboration');
-      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
+      const recordEvent = _rec as unknown as RecordEventFn;
       const result = loadWatchRuntimeConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');
@@ -832,8 +833,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       }) => {
         const { WatchDaemon } = await import('@openslack/github');
         const { recordEvent: _rec } = await import('@openslack/collaboration');
-        const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
-        type NormalizedIssueEvent = import('@openslack/github').NormalizedIssueEvent;
+        const recordEvent = _rec as unknown as RecordEventFn;
         const result = loadWatchRuntimeConfig(options.config);
         if (!result.valid) {
           console.error('Invalid watch config:');
@@ -880,7 +880,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .action(async (options: { config: string }) => {
       const { WatchDaemon } = await import('@openslack/github');
       const { recordEvent: _rec } = await import('@openslack/collaboration');
-      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
+      const recordEvent = _rec as unknown as RecordEventFn;
       const result = loadWatchRuntimeConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');

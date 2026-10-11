@@ -1,4 +1,7 @@
-import { verifyCleanupHandoffPackage } from '../../packages/pr/src/cleanup-handoff.js';
+import {
+  verifyCleanupHandoffPackage,
+  evaluateCleanupHandoffVerification,
+} from '../../packages/pr/src/cleanup-handoff.js';
 
 // This entry is bundled with its offline package implementation and YAML parser.
 // It has no checkout, node_modules, Git, auth or network dependency at verification time.
@@ -28,5 +31,7 @@ if (!process.exitCode) {
     manifestSHA256: options.get('--manifest-sha256') ?? '',
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-  if (!result.valid) process.exitCode = 2;
+  process.exitCode = evaluateCleanupHandoffVerification(result);
+  if (process.exitCode === 2)
+    process.stderr.write(`HANDOFF_INVALID: ${result.validityIssues.join(', ')}\n`);
 }

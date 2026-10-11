@@ -229,8 +229,12 @@ describe('local organization graph store', () => {
   it('rejects reopening a closed v1 node or edge through an upsert', async () => {
     const current = graphTransitionSnapshot('cursor-001');
     const reopen = <T extends { validTo?: string }>(record: T): Omit<T, 'validTo'> => {
-      const { validTo: _closedAt, ...openRecord } = record;
-      return openRecord;
+      // Private copy: the caller's record is never mutated. `validTo` is
+      // optional on every record this helper accepts, so it is removed by name
+      // rather than by omitting a rest-sibling binding.
+      const openRecord: Record<string, unknown> = { ...record };
+      delete openRecord.validTo;
+      return openRecord as Omit<T, 'validTo'>;
     };
 
     const nodeStore = await temporaryStore();

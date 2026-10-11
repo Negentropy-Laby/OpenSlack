@@ -10,17 +10,19 @@ import {
 } from '@openslack/github';
 import { authorizeAgentAction, isTaskRiskLevel } from '@openslack/kernel';
 import type { AgentPrincipal } from '@openslack/kernel';
+import type * as OpenSlackGitHubModule from '@openslack/github';
+import type * as OpenSlackWorkspaceModule from '@openslack/workspace';
 import { resolveAgentPrincipal } from './identity.js';
 
 type GitHubClaimModule = Pick<
-  typeof import('@openslack/github'),
+  typeof OpenSlackGitHubModule,
   'claimIssueTask' | 'getIssueTaskByNumber' | 'queryReadyIssueTasks' | 'runAutoClaimGates'
 >;
 
 export interface TickDependencies {
   resolveAgentPrincipal?: typeof resolveAgentPrincipal;
   authorizeAgentAction?: typeof authorizeAgentAction;
-  parseAgentRegistry?: (typeof import('@openslack/workspace'))['parseAgentRegistry'];
+  parseAgentRegistry?: (typeof OpenSlackWorkspaceModule)['parseAgentRegistry'];
   github?: GitHubClaimModule;
 }
 

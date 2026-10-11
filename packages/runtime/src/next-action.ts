@@ -125,15 +125,6 @@ export function recommendNextActions(ctx: NextActionContext): NextActionRecommen
 }
 
 /**
- * Map a numeric priority (from recommendNextActions) to a categorical label.
- */
-function toPriorityLabel(numeric: number): AttentionItem['priority'] {
-  if (numeric <= 1) return 'high';
-  if (numeric <= 3) return 'medium';
-  return 'low';
-}
-
-/**
  * Aggregate attention items across all modules: setup findings, blockers,
  * GitHub ops, and recommendations from the existing context.
  *

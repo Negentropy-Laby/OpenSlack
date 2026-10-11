@@ -51,13 +51,16 @@ function isEastAsianWide(codePoint: number): boolean {
   );
 }
 
-function hasMultipleCodepoints(str: string): boolean {
-  let count = 0;
-  for (const _ of str) {
-    count++;
-    if (count > 1) return true;
-  }
-  return false;
+/**
+ * True when the input holds more than one code point.
+ *
+ * Reads at most two code points: the iterator is advanced twice and never
+ * drained, so a long grapheme is not expanded into an array. Exported so the
+ * early-exit property can be asserted directly by iteration count.
+ */
+export function hasMultipleCodepoints(str: string): boolean {
+  const iterator = str[Symbol.iterator]();
+  return !iterator.next().done && !iterator.next().done;
 }
 
 function graphemeWidth(grapheme: string): 1 | 2 {

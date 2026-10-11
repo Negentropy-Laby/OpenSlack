@@ -12,7 +12,7 @@
  * 5. Rapid alternating states
  */
 import { describe, it, expect } from 'vitest';
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { render } from '@openslack/tui';
 import { NavigationProvider } from '../../navigation/context.js';
 import stripAnsi from 'strip-ansi';

@@ -19,6 +19,7 @@ export {
   loadRuntimeIdentity,
   parseRuntimeIdentityText,
   resolveAgentPrincipal,
+  resolveAgentStatusBinding,
 } from './identity.js';
 
 // Re-exports from git-sync (backward compat)
@@ -33,11 +34,18 @@ export {
   getNextSteps,
 } from './setup-report.js';
 export type {
+  SetupCommandExecution,
   SetupFinding,
   SetupFindingStatus,
   SetupReport,
   SetupNextStep,
 } from './setup-report.js';
+export { runGenesisValidation } from './genesis-shell.js';
+export type {
+  GenesisValidationFailure,
+  GenesisValidationOptions,
+  GenesisValidationResult,
+} from './genesis-shell.js';
 export {
   OnboardingStateError,
   OnboardingStore,

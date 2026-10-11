@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +12,7 @@ import {
 } from '../workflow-effect-approval.js';
 import { LocalWorkflowEffectApprovalStore } from '../workflow-effect-approval-store.js';
 import { createRuntimeWithHostAuthorities } from '../runtime.js';
-import { RunStore } from '../run-store.js';
+import type { RunStore } from '../run-store.js';
 import { productionJournalSecurity, writeExclusive } from '../workflow-control-shadow.js';
 import { canonicalWorkflowEffectControlJson } from '../workflow-effect-control-contract.js';
 import {
@@ -40,7 +40,6 @@ import {
   WORKFLOW_RUNNER_PROTOCOL_VERSION,
   type WorkflowRunnerEffectIntentMessage,
 } from '../workflow-runner-contract.js';
-import type { WorkflowRuntime } from '../types.js';
 import { platformTestTimeout } from '../../../../scripts/testing/process-fixture.mjs';
 
 const BUILD_HASH = '1'.repeat(64);

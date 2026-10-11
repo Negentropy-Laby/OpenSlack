@@ -6,5 +6,5 @@ import PrQueueView from './PrQueueView.js';
 
 export async function renderPrQueueTui(items: PrQueueInputItem[]): Promise<void> {
   const model = mapPrQueueToViewModel(items);
-  const { unmount } = await renderTui(React.createElement(PrQueueView, { model }));
+  await renderTui(React.createElement(PrQueueView, { model }));
 }

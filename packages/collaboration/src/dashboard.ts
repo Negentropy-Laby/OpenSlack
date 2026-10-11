@@ -1,4 +1,4 @@
-import type { CollaborationEvent, EventFilter, RiskLevel } from './types.js';
+import type { CollaborationEvent, EventFilter } from './types.js';
 import { readEvents } from './events.js';
 import { listHandoffs } from './handoff.js';
 import { listDecisions } from './decision.js';
@@ -75,15 +75,6 @@ export function buildDashboardProjection(
       return true;
     })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  const blockerOnly =
-    filters.severity === 'critical' ||
-    Boolean(
-      filters.type &&
-      (Array.isArray(filters.type) ? filters.type : [filters.type]).some((t) =>
-        BLOCKER_TYPES.has(t as string),
-      ),
-    );
 
   const taskCounts: Record<string, number> = {};
   const prCounts: Record<string, number> = {};

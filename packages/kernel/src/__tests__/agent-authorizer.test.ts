@@ -5,7 +5,6 @@ import type {
   AgentPrincipal,
   AgentRegistryEntry,
   AgentRuntimeIdentity,
-  AuthorizationResult,
 } from '../types.js';
 
 function makeSnapshot(

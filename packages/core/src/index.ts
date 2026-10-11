@@ -14,6 +14,11 @@ export {
 
 export { decodeStrictJSON } from './strict-json.js';
 export {
+  readStableDescriptor,
+  stableFileIdentity,
+  StableDescriptorError,
+} from './stable-descriptor.js';
+export {
   parseTaskLinkMarker,
   issueClaimRef,
   isReservedCleanupBranch,

@@ -144,46 +144,69 @@ export function parseRuntimeIdentityText(raw: string): AgentRuntimeIdentity | nu
   }
 }
 
-export function resolveAgentPrincipal(args: {
+interface AgentBindingInput {
   root: string;
   agentId: string;
   provider?: string;
-}): { principal: AgentPrincipal; snapshot: AgentPermissionSnapshot } | { error: string } {
-  const { root, agentId, provider = 'cli' } = args;
+}
+function readAgentBinding(
+  { root, agentId, provider = 'cli' }: AgentBindingInput,
+  requireActive: boolean,
+) {
   if (
     !SAFE_AGENT_ID.test(agentId) ||
     !RUNTIME_PROVIDERS.has(provider as AgentRuntimeIdentity['provider'])
-  ) {
+  )
     return { error: 'Agent reference or runtime provider is invalid' };
-  }
-
   const registry = parseAgentRegistry(root, agentId);
-  if (!registry) {
-    return { error: `Agent "${agentId}" not found in registry` };
-  }
-
-  if (registry.identity.status !== 'active') {
+  if (!registry) return { error: `Agent "${agentId}" not found in registry` };
+  if (requireActive && registry.identity.status !== 'active')
     return {
       error: `Agent "${agentId}" identity status is "${registry.identity.status}", expected "active"`,
     };
-  }
-
   const runtimeIdentity = loadRuntimeIdentity(root, agentId);
-  if (!runtimeIdentity) {
+  if (!runtimeIdentity)
     return {
       error: `No runtime identity for agent "${agentId}". Run: openslack agent bootstrap --agent-id ${agentId}`,
     };
-  }
   if (
     registry.agent_id !== agentId ||
     runtimeIdentity.agent_id !== agentId ||
     runtimeIdentity.agent_uid !== registry.identity.uid ||
     runtimeIdentity.provider !== provider
-  ) {
+  )
     return {
       error: `Runtime identity for agent "${agentId}" does not match the active registry binding`,
     };
-  }
+  return { registry, runtimeIdentity };
+}
+
+/** Historical query claims only: no admission, snapshot or bootstrap. */
+export function resolveAgentStatusBinding(
+  args: AgentBindingInput,
+): { principal: AgentPrincipal; principalId: string; snapshot?: never } | { error: string } {
+  const binding = readAgentBinding(args, false);
+  if ('error' in binding) return { error: binding.error! };
+  return {
+    principalId: binding.registry.identity.principal_id,
+    principal: {
+      registry_id: binding.registry.agent_id,
+      runtime_uid: binding.runtimeIdentity.agent_uid,
+      run_id: binding.runtimeIdentity.run_id,
+      provider: binding.runtimeIdentity.provider,
+    },
+  };
+}
+
+export function resolveAgentPrincipal(
+  args: AgentBindingInput,
+):
+  | { principal: AgentPrincipal; principalId: string; snapshot: AgentPermissionSnapshot }
+  | { error: string } {
+  const binding = readAgentBinding(args, true);
+  if ('error' in binding) return { error: binding.error! };
+  const { registry, runtimeIdentity } = binding;
+  const { agentId } = args;
 
   const snapshot = resolvePermissionSnapshot({ registry, runtimeIdentity });
   if (!snapshot) {
@@ -197,5 +220,9 @@ export function resolveAgentPrincipal(args: {
       ? Object.freeze({ ...snapshot, source: 'registry_v1' as const })
       : snapshot;
 
-  return { principal: effectiveSnapshot.principal, snapshot: effectiveSnapshot };
+  return {
+    principal: effectiveSnapshot.principal,
+    principalId: registry.identity.principal_id,
+    snapshot: effectiveSnapshot,
+  };
 }

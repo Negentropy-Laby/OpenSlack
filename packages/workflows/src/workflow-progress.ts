@@ -13,7 +13,6 @@ import {
   asWorkflowRunReadError,
   type WorkflowRunReadDiagnostic,
   renderWorkflowRunReadDiagnostic,
-  workflowRunReadDiagnostic,
 } from './workflow-run-read-errors.js';
 import {
   readWorkflowEvidenceText,

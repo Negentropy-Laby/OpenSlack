@@ -7,7 +7,6 @@ import Pane from '../design-system/Pane.js';
 import ThemedText from '../design-system/ThemedText.js';
 import ListItem from '../design-system/ListItem.js';
 import Divider from '../design-system/Divider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import { sanitizeTerminalText } from '../sanitize.js';
 import {
@@ -18,6 +17,7 @@ import {
   type ProfileGuidedStep,
   type ProfileCheckGroup,
 } from '../view-models/profile.js';
+import type { StatusCategory } from '../design-system/StatusIcon.js';
 
 export type ProfileViewProps = {
   model: ProfileViewModel;
@@ -38,7 +38,7 @@ function diffLineTheme(line: string): 'success' | 'error' | 'info' {
 
 function syncStatusIcon(
   status: ProfileViewModel['syncStatus'],
-): import('../design-system/StatusIcon.js').StatusCategory {
+): StatusCategory {
   if (status === 'synced') return 'pass';
   if (status === 'pending') return 'warn';
   if (status === 'failed') return 'fail';
@@ -47,7 +47,7 @@ function syncStatusIcon(
 
 function markerStatusIcon(
   status: ProfileViewModel['markerStatus'],
-): import('../design-system/StatusIcon.js').StatusCategory {
+): StatusCategory {
   if (status === 'present') return 'pass';
   if (status === 'missing') return 'fail';
   return 'info';

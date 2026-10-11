@@ -1,13 +1,11 @@
 import React from 'react';
 import Box from '../ink/components/Box.js';
-import Text from '../ink/components/Text.js';
 import useApp from '../ink/hooks/use-app.js';
 import useInput from '../ink/hooks/use-input.js';
 import Pane from '../design-system/Pane.js';
 import ThemedText from '../design-system/ThemedText.js';
 import ListItem from '../design-system/ListItem.js';
 import Divider from '../design-system/Divider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
 import type { RoomViewModel } from '../view-models/room.js';
 

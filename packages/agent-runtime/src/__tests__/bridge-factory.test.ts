@@ -13,6 +13,12 @@ import {
   createOpenSlackAgentLauncher,
   createRunStore,
 } from '../index.js';
+import type { BridgeMode } from '../index.js';
+
+/** Deliberately outside the BridgeMode union to exercise runtime validation. */
+function invalidBridgeMode(value: string): BridgeMode {
+  return value as unknown as BridgeMode;
+}
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-factory-test-'));
@@ -72,13 +78,13 @@ describe('createBridgeAdapter', () => {
   });
 
   it('throws for unknown mode', () => {
-    expect(() => createBridgeAdapter({ bridgeMode: 'unknown' as any })).toThrow(
+    expect(() => createBridgeAdapter({ bridgeMode: invalidBridgeMode('unknown') })).toThrow(
       /Unknown bridge mode/,
     );
   });
 
   it('error message includes valid modes', () => {
-    expect(() => createBridgeAdapter({ bridgeMode: 'bad' as any })).toThrow(
+    expect(() => createBridgeAdapter({ bridgeMode: invalidBridgeMode('bad') })).toThrow(
       /local.*external-command.*process.*fake/,
     );
   });

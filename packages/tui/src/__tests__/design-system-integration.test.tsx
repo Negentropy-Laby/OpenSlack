@@ -7,13 +7,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { Writable } from 'stream';
 import React from 'react';
-import { render, Text } from '@openslack/tui';
+import { render } from '@openslack/tui';
 import { ThemeProvider } from '../design-system/ThemeProvider.js';
-import StatusIcon from '../design-system/StatusIcon.js';
 import ProgressBar from '../design-system/ProgressBar.js';
 import ListItem from '../design-system/ListItem.js';
 import Pane from '../design-system/Pane.js';
-import ThemedText from '../design-system/ThemedText.js';
 
 describe('design-system integration render', () => {
   let instance: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null;

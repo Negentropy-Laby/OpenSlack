@@ -17,6 +17,10 @@
     "./cleanup-broker-internal": {
       "types": "./dist/internal/cleanup-broker.d.ts",
       "import": "./dist/internal/cleanup-broker.js"
+    },
+    "./repo-spec": {
+      "types": "./dist/repo-spec.d.ts",
+      "import": "./dist/repo-spec.js"
     }
   },
   "scripts": {

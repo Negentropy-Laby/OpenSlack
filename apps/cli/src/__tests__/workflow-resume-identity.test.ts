@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { collaborationCommands } from '../commands/collaboration.js';
 import * as workflows from '@openslack/workflows';
+import type * as OpenSlackGitHubModule from '@openslack/github';
 
 const state = vi.hoisted(() => ({
   bytes: new Uint8Array(),
@@ -12,8 +13,7 @@ const state = vi.hoisted(() => ({
   load: vi.fn(),
 }));
 vi.mock('@openslack/workflows', async () => {
-  const actual =
-    await vi.importActual<typeof import('@openslack/workflows')>('@openslack/workflows');
+  const actual = await vi.importActual<typeof workflows>('@openslack/workflows');
   return {
     ...actual,
     readWorkflowPolicy: vi.fn(() => ({ enabled: true })),
@@ -36,7 +36,7 @@ vi.mock('@openslack/workflows', async () => {
   };
 });
 vi.mock('@openslack/github', async () => ({
-  ...(await vi.importActual<typeof import('@openslack/github')>('@openslack/github')),
+  ...(await vi.importActual<typeof OpenSlackGitHubModule>('@openslack/github')),
   publishWorkflowRunAudit: vi.fn(async () => ({
     issueNumber: 1,
     url: 'https://example.test/audit',

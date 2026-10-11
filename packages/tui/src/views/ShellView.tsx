@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import Box from '../ink/components/Box.js';
-import Text from '../ink/components/Text.js';
-import useApp from '../ink/hooks/use-app.js';
 import useInput from '../ink/hooks/use-input.js';
 import ThemedText from '../design-system/ThemedText.js';
 import Divider from '../design-system/Divider.js';
-import Pane from '../design-system/Pane.js';
-import ListItem from '../design-system/ListItem.js';
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
-import { NavigationProvider, useNavigation, HOME_ROUTE } from '../navigation/context.js';
+import { NavigationProvider, useNavigation } from '../navigation/context.js';
 import type { Route } from '../navigation/router.js';
 import { mapHomeToViewModel } from '../view-models/home.js';
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js';
 import { mapWorkflowGalleryToViewModel } from '../view-models/workflow-gallery.js';
 import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js';
-import { mapDigestToViewModel } from '../view-models/digest.js';
-import { mapHandoffListToViewModel } from '../view-models/handoff.js';
-import { mapDecisionListToViewModel } from '../view-models/decision.js';
 import { mapRoomToViewModel } from '../view-models/room.js';
 import type { RoomViewModel } from '../view-models/room.js';
 import { mapProfileToViewModel } from '../view-models/profile.js';
-import type { ProfileViewModel } from '../view-models/profile.js';
 import {
   mapConversationListToViewModel,
   mapThreadToViewModel,
@@ -30,7 +22,7 @@ import { mapAgentRunToViewModel } from '../view-models/agent-run.js';
 import { mapWorkflowRunsToViewModel } from '../view-models/workflow-runs.js';
 import type { SubagentDefinition } from '@openslack/kernel';
 import { createRunStore } from '@openslack/agent-runtime';
-import type { ShellViewData, TuiActionHandlers } from './render-shell.js';
+import type { ShellViewData } from './render-shell.js';
 
 import HomeView from './HomeView.js';
 import ApprovalCenterView from './ApprovalCenterView.js';
@@ -52,6 +44,7 @@ import SubagentDetailView from './SubagentDetailView.js';
 import AgentRunDetailView from './AgentRunDetailView.js';
 import AgentRuntimeDiagnosticsView from './AgentRuntimeDiagnosticsView.js';
 import WorkflowRunsView from './WorkflowRunsView.js';
+import type { AgentRunState } from '@openslack/agent-runtime';
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -375,7 +368,7 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     }
     case 'agent-run-detail': {
       const runState = current.params?.runState as
-        | import('@openslack/agent-runtime').AgentRunState
+        | AgentRunState
         | undefined;
       const runId = current.params?.runId as string | undefined;
       const resolvedRunState =

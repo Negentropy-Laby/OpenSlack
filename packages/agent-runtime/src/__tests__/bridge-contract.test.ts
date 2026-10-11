@@ -7,9 +7,7 @@ import {
   validateBridgeEnvelope,
 } from '../bridge-contract.js';
 import type {
-  BridgeEnvelope,
   BridgeEnvelopeKind,
-  BridgeCapabilityDescriptor,
 } from '../bridge-contract.js';
 
 describe('BRIDGE_PROTOCOL_VERSION', () => {

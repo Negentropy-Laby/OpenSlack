@@ -1,4 +1,4 @@
-import type { Intent, ActionPlan, PlanStep, MissingParam } from './types.js';
+import type { Intent, ActionPlan, PlanStep } from './types.js';
 import { identifyMissingParams } from './clarify.js';
 import { assessRisk, hasSideEffects } from './risk.js';
 import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registry.js';

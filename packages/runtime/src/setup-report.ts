@@ -1,4 +1,9 @@
-import { bashCandidates, normalizeProcessEnvironment, probeBash } from '@openslack/core';
+import {
+  bashCandidates,
+  executableCandidates,
+  normalizeProcessEnvironment,
+  probeBash,
+} from '@openslack/core';
 import { execFileSync, execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,13 +17,26 @@ export type SetupFindingStatus =
   | 'requires_human_approval'
   | 'informational';
 
+export interface SetupCommandExecution {
+  /**
+   * Executable to launch directly, resolved through Core's discovery. It is
+   * never forwarded to a shell, so spaces and quoting characters in the path
+   * are not reinterpreted.
+   */
+  executable: string;
+  args: string[];
+}
+
 export interface SetupFinding {
   id: string;
   title: string;
   status: SetupFindingStatus;
   detail: string;
   nextAction?: string;
+  /** Human-facing command text. Display only; never forward this to a shell. */
   command?: string;
+  /** Authoritative structured invocation. Launch this directly. */
+  exec?: SetupCommandExecution;
 }
 
 export interface SetupReport {
@@ -69,6 +87,13 @@ export function detectGenesisShell(root = findRepoRoot()): SetupFinding {
     };
   }
 
+  // The script is invoked relative to the workspace root: a relative path
+  // avoids embedding a Windows path that WSL would not resolve, and it keeps
+  // spaces in the checkout path out of the argument entirely. It is a literal
+  // forward-slash path on every platform because a backslash is an escape
+  // character to bash, not a separator.
+  const relativeScript = 'scripts/genesis-validate.sh';
+
   if (process.platform === 'win32') {
     const env = normalizeProcessEnvironment();
     const gitBash = bashCandidates(env).find(
@@ -81,15 +106,20 @@ export function detectGenesisShell(root = findRepoRoot()): SetupFinding {
         status: 'ok',
         detail: `Git Bash detected: ${gitBash}`,
         command: `"${gitBash}" scripts/genesis-validate.sh`,
+        exec: { executable: gitBash, args: [relativeScript] },
       };
     }
-    if (hasExecutable('wsl', ['--status'])) {
+    // Prefer a discovered absolute wsl.exe so a polluted PATH cannot select a
+    // different launcher; fall back to the bare name when discovery finds none.
+    const wsl = executableCandidates('wsl', env).find((candidate) => existsSync(candidate));
+    if (hasExecutable(wsl ?? 'wsl', ['--status'])) {
       return {
         id: 'genesis-shell',
         title: 'Genesis validation shell',
         status: 'ok',
         detail: 'WSL detected.',
         command: 'wsl bash scripts/genesis-validate.sh',
+        exec: { executable: wsl ?? 'wsl', args: ['bash', relativeScript] },
       };
     }
     return {
@@ -108,6 +138,7 @@ export function detectGenesisShell(root = findRepoRoot()): SetupFinding {
     status: bashAvailable ? 'ok' : 'fixable_by_command',
     detail: bashAvailable ? 'bash detected.' : 'bash was not found on PATH.',
     command: bashAvailable ? 'bash scripts/genesis-validate.sh' : undefined,
+    exec: bashAvailable ? { executable: 'bash', args: [relativeScript] } : undefined,
   };
 }
 

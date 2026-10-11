@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
 import {
   readModules,
   resolveWorkspaceContext,
@@ -12,7 +11,12 @@ import { getClient } from '@openslack/github';
 import { describeLLMRoutingConfig } from '@openslack/operator';
 import type { LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import { NativeKeychainBackend } from '@openslack/credentials';
-import { detectGenesisShell, renderFindingsPlain, runGoldenEval } from '@openslack/runtime';
+import {
+  detectGenesisShell,
+  renderFindingsPlain,
+  runGenesisValidation,
+  runGoldenEval,
+} from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 
 type CheckState = 'PASS' | 'WARN' | 'FAIL';
@@ -24,13 +28,11 @@ interface CheckResult {
 }
 
 interface DoctorCommandDependencies {
-  execSync?: typeof execSync;
   llmProviderRegistry?: LLMPlannerProviderRegistryPort;
 }
 
 export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Command {
   const cmd = new Command('doctor').description('OpenSlack multi-module health check');
-  const runExecSync = dependencies.execSync ?? execSync;
 
   cmd
     .option('--format <format>', 'Output format: standard or plain', 'standard')
@@ -246,19 +248,19 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
         });
       }
 
-      // Genesis check (uses detectGenesisShell for Windows compatibility)
+      // Genesis check: the runtime package resolves a structured invocation
+      // and classifies the outcome, so a cold shell timeout is reported as a
+      // timeout rather than as a failing repository check. The check still
+      // fails closed; only the diagnosis is more precise.
       if (context.sourceCheckout) {
-        try {
-          const genesis = detectGenesisShell(root);
-          if (!genesis.command) throw new Error(genesis.detail);
-          runExecSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-          checks.push({ name: 'Genesis validate', state: 'PASS', detail: '5/5 checks passing' });
-        } catch (err) {
-          const detail = (err as Error).message || 'Genesis checks failed';
+        const outcome = runGenesisValidation(detectGenesisShell(root), { cwd: root });
+        if (outcome.ok) {
+          checks.push({ name: 'Genesis validate', state: 'PASS', detail: outcome.detail });
+        } else {
           checks.push({
             name: 'Genesis validate',
             state: 'FAIL',
-            detail: `Genesis validation failed: ${detail}`,
+            detail: `Genesis validation ${outcome.failure ?? 'FAILED'}: ${outcome.detail}`,
           });
         }
       }

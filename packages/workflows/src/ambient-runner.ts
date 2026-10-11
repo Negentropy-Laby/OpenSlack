@@ -1,5 +1,5 @@
 import { createContext, Script } from 'node:vm';
-import type { AnthropicCompatSandbox } from './anthropic-compat.js';
+import type { WorkflowRuntime } from './types.js';
 
 /**
  * Find and remove the `export const meta = { ... }` declaration from source.
@@ -160,7 +160,7 @@ export interface AmbientExecutionOptions {
  */
 export async function executeAmbientWorkflow(
   sourceBody: string,
-  runtime: import('./types.js').WorkflowRuntime,
+  runtime: WorkflowRuntime,
   args: Record<string, unknown>,
 ): Promise<unknown> {
   const { createAnthropicCompatSandbox } = await import('./anthropic-compat.js');

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runPipeline } from '../pipeline-runner.js';
 import type { PipelineCacheStore } from '../pipeline-runner.js';
-import type { BudgetState, PipelineOptions } from '../types.js';
+import type { BudgetState } from '../types.js';
 
 function makeCache(
   overrides: Partial<{
@@ -79,7 +79,7 @@ describe('runPipeline', () => {
     const items = ['a', 'b', 'c'];
     const fn = vi.fn(async (item: string) => `processed-${item}`);
 
-    const result = await runPipeline('run1', 'Scan', items, fn, undefined, cache);
+    await runPipeline('run1', 'Scan', items, fn, undefined, cache);
 
     // Items must be contiguous from start, so gap at 0 means replay nothing
     expect(fn).toHaveBeenCalledTimes(3);

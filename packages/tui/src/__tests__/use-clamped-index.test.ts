@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { useClampedIndex } from '../hooks/use-clamped-index.js';
 
 // Simple shim to test the hook's logic without @testing-library/react
 function createTestHarness(initialLength: number) {

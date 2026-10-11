@@ -12,6 +12,7 @@ import type { DecisionListViewModel } from '../view-models/decision.js';
 import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecycle.js';
 import type { ProfileViewModel } from '../view-models/profile.js';
 import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runtime.js';
+import type { WorkflowRunProgressViewModel } from '../view-models/workflow-runs.js';
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration';
 import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js';
 import type { ConversationActionCard, TuiAskResult } from '@openslack/operator';
@@ -99,7 +100,7 @@ export interface ShellViewData {
   workflowLifecycle?: WorkflowLifecycleViewModel;
   workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>;
   workflowLifecycleLoader?: WorkflowLifecycleLoader;
-  workflowRuns?: import('../view-models/workflow-runs.js').WorkflowRunProgressViewModel;
+  workflowRuns?: WorkflowRunProgressViewModel;
   workflowRunProgress?: WorkflowRunProgressItem[];
   profile?: ProfileViewModel;
   agentRuntime?: AgentRuntimeDiagnosticsViewModel;
@@ -111,5 +112,5 @@ export interface ShellViewData {
 }
 
 export async function renderShellTui(data?: ShellViewData): Promise<void> {
-  const { unmount } = await renderTui(React.createElement(ShellView, { data }));
+  await renderTui(React.createElement(ShellView, { data }));
 }

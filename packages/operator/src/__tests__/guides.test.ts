@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { getRoleGuide, listRoles, renderGuide } from '../guides.js';
-import type { RoleGuide } from '../guides.js';
 
 describe('guides', () => {
   const ALL_ROLES = ['operator', 'reviewer', 'agent-maintainer', 'lead'];

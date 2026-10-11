@@ -11,6 +11,9 @@ if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--update
 process.env.TEST = 'true';
 process.env.VITEST = 'true';
 process.env.NODE_ENV ??= 'test';
+// Include OS-specific declarations in inventory without executing their I/O.
+// Native executions retain their actual platform and never inherit this subprocess-only marker.
+process.env.OPENSLACK_TEST_INVENTORY = 'collect';
 const { createVitest } = await import('vitest/node');
 const vitest = await createVitest('test', { root, run: true, watch: false, reporters: [] });
 try {

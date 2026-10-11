@@ -1,3 +1,4 @@
+import { posix, win32 } from 'node:path';
 import type { RunStatus, PhaseCheckpoint } from './types.js';
 
 // ── Redaction Rules ─────────────────────────────────────────────────────────
@@ -44,13 +45,28 @@ const TOKEN_PATTERNS = [
  */
 const URL_WITH_QUERY = /https?:\/\/[^\s"'<>]+\?[^\s"'<>]+/g;
 
-/**
- * Absolute path patterns for common OS paths (Rule 4).
+/** Match original tokens once; emitted relative paths are never scanned again.
+ * Single-letter x:/ tokens are drive paths, even when they resemble a URI.
  */
-const ABSOLUTE_PATH_PATTERN =
-  /(?:[A-Z]:\\|\/)(?:Users|home|tmp|var|etc|opt|Users)[\/\\][^\s"'<>),;\]]+/gi;
-const WIN_ABSOLUTE_PATH = /[A-Z]:\\(?:Users|home|tmp)[\/\\][^\s"'<>),;\]]+/gi;
-const POSIX_ABSOLUTE_PATH = /\/(?:home|tmp|var|etc|opt|Users)\/[^\s"'<>),;\]]+/gi;
+const PATH_OR_URI =
+  /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'<>),;\]]+|\b[A-Za-z]:[\\/][^\s"'<>),;\]]+|\/[^\s"'<>),;\]]+/g;
+
+function normalizedPath(value: string): { path: string; windows: boolean } {
+  const windows = /^[A-Za-z]:[\\/]/.test(value);
+  const path = windows ? win32.normalize(value).replace(/\\/g, '/') : posix.normalize(value);
+  return { path: path.replace(/\/+$/, '') || '/', windows };
+}
+
+function toRepoRelative(value: string, root: ReturnType<typeof normalizedPath>): string {
+  const candidate = normalizedPath(value);
+  if (candidate.windows !== root.windows) return '[path redacted]';
+  const compare = candidate.windows ? candidate.path.toLowerCase() : candidate.path;
+  const boundary = root.windows ? root.path.toLowerCase() : root.path;
+  if (compare === boundary) return '/';
+  if (boundary === '/') return candidate.path;
+  if (compare.startsWith(`${boundary}/`)) return candidate.path.slice(root.path.length);
+  return '[path redacted]';
+}
 
 // ── Redaction API ────────────────────────────────────────────────────────────
 
@@ -181,27 +197,23 @@ export function stripTokensAndCredentials(value: string): string {
 export function remapAbsolutePaths(value: string, repoRoot?: string): string {
   if (!repoRoot) return value;
 
-  // Normalize separators for comparison
-  const normalizedRoot = repoRoot.replace(/\\/g, '/');
-
-  // Handle Windows-style absolute paths
-  let result = value.replace(WIN_ABSOLUTE_PATH, (match) => {
-    const normalized = match.replace(/\\/g, '/');
-    if (normalized.startsWith(normalizedRoot)) {
-      return normalized.slice(normalizedRoot.length) || '/';
+  const root = normalizedPath(repoRoot);
+  return value.replace(PATH_OR_URI, (token: string, offset: number) => {
+    // Closing HTML tags are syntax, not filesystem paths.
+    if (value[offset - 1] === '<' && /^\/[A-Za-z][A-Za-z0-9:-]*$/.test(token)) return token;
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(token) && !/^[A-Za-z]:/.test(token)) {
+      if (!/^file:/i.test(token)) return token;
+      try {
+        const uri = new URL(token);
+        if (uri.hostname && uri.hostname !== 'localhost') return '[path redacted]';
+        const path = decodeURIComponent(uri.pathname);
+        return toRepoRelative(/^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path, root);
+      } catch {
+        return '[path redacted]';
+      }
     }
-    return '[path redacted]';
+    return toRepoRelative(token, root);
   });
-
-  // Handle POSIX-style absolute paths
-  result = result.replace(POSIX_ABSOLUTE_PATH, (match) => {
-    if (match.startsWith(normalizedRoot)) {
-      return match.slice(normalizedRoot.length) || '/';
-    }
-    return '[path redacted]';
-  });
-
-  return result;
 }
 
 /**

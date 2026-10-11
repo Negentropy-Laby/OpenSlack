@@ -2,16 +2,12 @@ import { BUILTIN_ACTION_REGISTRY, planActions, executePlan } from '@openslack/op
 import type { ActionRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
-import { formatResultAsMarkdown, formatError } from './formatter.js';
+import { formatError } from './formatter.js';
 import {
-  buildPRCard,
   cardToText,
-  toSlackBlocks,
   buildHandoffCard,
   buildDecisionCard,
-  buildWorkflowCard,
 } from './cards.js';
-import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
 import {
   recordEvent,
   acceptHandoff,
@@ -20,10 +16,6 @@ import {
   getDecision,
 } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
-
-interface ActionContext {
-  message: ChatMessage;
-}
 
 function chatProvider(message: ChatMessage): 'slack' | 'webhook' {
   return message.channel.type === 'webhook' ? 'webhook' : 'slack';
@@ -475,7 +467,7 @@ async function handlePreviewTask(issueNumber: string): Promise<ChatResponse> {
   };
 }
 
-async function handleClaimTask(issueNumber: string, message: ChatMessage): Promise<ChatResponse> {
+async function handleClaimTask(issueNumber: string, _message: ChatMessage): Promise<ChatResponse> {
   return {
     text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\``,
   };

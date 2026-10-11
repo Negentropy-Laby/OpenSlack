@@ -1,4 +1,4 @@
-import type { BudgetState, ClaudeBudgetAPI, PipelineOptions } from './types.js';
+import type { BudgetState, PipelineOptions } from './types.js';
 
 /**
  * Cache store interface for pipeline item checkpointing.
@@ -143,7 +143,7 @@ export async function runMultiStagePipeline<T, R>(
         prev = await stage(prev, items[index], index);
       }
       results[index] = prev as R;
-    } catch (err) {
+    } catch {
       results[index] = null;
     }
     settled.add(index);

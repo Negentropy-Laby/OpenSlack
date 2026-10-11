@@ -9,7 +9,7 @@
  * AR-2.5E: Worktree Contract
  */
 
-import { resolve as pathResolve, sep as pathSep } from 'node:path';
+import { resolve as pathResolve } from 'node:path';
 import type { BridgeWorktreeConfig } from './bridge-contract.js';
 import type { RunRecorder } from './recorder.js';
 

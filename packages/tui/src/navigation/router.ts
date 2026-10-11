@@ -55,6 +55,6 @@ export function routerReplace(state: RouterState, route: Route): RouterState {
   };
 }
 
-export function routerReset(state: RouterState): RouterState {
+export function routerReset(_state: RouterState): RouterState {
   return createInitialRouterState();
 }

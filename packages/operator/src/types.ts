@@ -1,3 +1,4 @@
+import type { AgentPrincipal } from '@openslack/kernel';
 export interface OperatorRequest {
   text: string;
   source: 'cli' | 'webhook' | 'slack';
@@ -10,7 +11,7 @@ export interface OperatorRequest {
     id: string;
     type: 'terminal' | 'dm' | 'channel' | 'webhook';
   };
-  principal?: import('@openslack/kernel').AgentPrincipal;
+  principal?: AgentPrincipal;
 }
 
 export type IntentKind =

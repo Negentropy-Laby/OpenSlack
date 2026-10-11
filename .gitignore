@@ -27,6 +27,10 @@ Thumbs.db
 .openslack/self/scorecards/
 .openslack/self/evolution_backlog/
 
+# Cleanup operation query records — published locally by execute, never committed.
+# Only this subdirectory is ignored so the rest of .openslack/outbox/ stays visible.
+.openslack/outbox/cleanup-operations/
+
 # Local agent state
 .claude/
 

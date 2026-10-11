@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { runParallel } from '../parallel-runner.js';
 import type { BudgetState } from '../types.js';
 

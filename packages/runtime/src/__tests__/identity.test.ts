@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   generateRuntimeIdentity,
   loadRuntimeIdentity,
   resolveAgentPrincipal,
+  resolveAgentStatusBinding,
 } from '../identity.js';
 
 const AGENT_ID = 'test_agent';
@@ -106,6 +107,22 @@ describe('loadRuntimeIdentity', () => {
 });
 
 describe('resolveAgentPrincipal', () => {
+  it('returns a principal ID from the same registry read and preserves historical status after suspension', () => {
+    generateRuntimeIdentity({ root: fixtureRoot, agentId: AGENT_ID, provider: 'cli' });
+    const active = resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID });
+    expect(active).toMatchObject({ principalId: expect.any(String) });
+    const registryPath = join(fixtureRoot, '.openslack', 'agents', 'registry', `${AGENT_ID}.yaml`);
+    writeRegistry();
+    const registry = readFileSync(registryPath, 'utf8');
+    writeFileSync(registryPath, registry.replace('status: active', 'status: paused'));
+    expect(resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID })).toMatchObject({
+      error: expect.any(String),
+    });
+    expect(resolveAgentStatusBinding({ root: fixtureRoot, agentId: AGENT_ID })).toMatchObject({
+      principalId: expect.any(String),
+      principal: { registry_id: AGENT_ID },
+    });
+  });
   it('fails closed when runtime identity is missing', () => {
     const result = resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID, provider: 'cli' });
 

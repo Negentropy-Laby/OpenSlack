@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Stub for ErrorOverview — the full version depends on code-excerpt

@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { executePreview, PreviewModeError } from '../preview.js';
-import { createRuntime } from '../runtime.js';
 import type { AgentLauncher } from '../agent-shim.js';
-import type { WorkflowMeta, PreviewResult, RunResult, WorkflowRuntime } from '../types.js';
+import type { WorkflowMeta, WorkflowRuntime } from '../types.js';
 
 const testManifest: WorkflowMeta = {
   name: 'test-preview-workflow',
@@ -18,7 +17,7 @@ describe('executePreview', () => {
     it('returns preview result for workflow with preview function', async () => {
       const workflow = {
         meta: testManifest,
-        preview: vi.fn(async (ctx: WorkflowRuntime, args: Record<string, unknown>) => {
+        preview: vi.fn(async (ctx: WorkflowRuntime, _args: Record<string, unknown>) => {
           ctx.phase('Scan');
           ctx.log('Preview scan starting');
           return {

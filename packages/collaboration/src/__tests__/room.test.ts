@@ -9,7 +9,6 @@ import {
   renderRoomPlain,
   renderRoomChat,
 } from '../room.js';
-import { recordEvent } from '../events.js';
 import { createHandoff } from '../handoff.js';
 import { recordDecision } from '../decision.js';
 import type { CollaborationEvent } from '../types.js';

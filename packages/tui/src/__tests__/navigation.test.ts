@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import React from 'react';
 import {
   routerPush,
   routerPop,
@@ -8,7 +7,7 @@ import {
   createInitialRouterState,
   HOME_ROUTE,
 } from '../navigation/router.js';
-import type { Route, RouterState } from '../navigation/router.js';
+import type { Route } from '../navigation/router.js';
 
 describe('navigation router', () => {
   describe('createInitialRouterState', () => {

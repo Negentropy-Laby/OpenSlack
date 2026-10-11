@@ -1,36 +1,54 @@
 import { testTemporaryDirectory } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFileSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 import { initCommand } from '../commands/init.js';
 
 describe('openslack init', () => {
-  it('is preview-first and applies an idempotent workspace only with --apply', async () => {
-    const root = testTemporaryDirectory('openslack-cli-init-');
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
-      await initCommand().parseAsync(
-        ['node', 'openslack', '--root', root, '--repo', 'acme/example'],
-        { from: 'node' },
-      );
-      expect(existsSync(join(root, 'openslack.yaml'))).toBe(false);
+  let root: string;
+  let log: MockInstance<typeof console.log>;
+  beforeEach(() => {
+    root = testTemporaryDirectory('openslack-cli-init-');
+    log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+  });
+  afterEach(() => {
+    log.mockRestore();
+    rmSync(root, { recursive: true, force: true });
+  });
+  const apply = () =>
+    initCommand().parseAsync(
+      ['node', 'openslack', '--root', root, '--repo', 'acme/example', '--apply'],
+      { from: 'node' },
+    );
 
-      await initCommand().parseAsync(
-        ['node', 'openslack', '--root', root, '--repo', 'acme/example', '--apply'],
-        { from: 'node' },
-      );
-      expect(existsSync(join(root, 'openslack.yaml'))).toBe(true);
+  it('previews without creating workspace files', async () => {
+    await initCommand().parseAsync(
+      ['node', 'openslack', '--root', root, '--repo', 'acme/example'],
+      { from: 'node' },
+    );
+    expect(existsSync(join(root, 'openslack.yaml'))).toBe(false);
+    expect(log).not.toHaveBeenCalledWith('Workspace initialized and validated.');
+  });
 
-      await initCommand().parseAsync(
-        ['node', 'openslack', '--root', root, '--repo', 'acme/example', '--apply'],
-        { from: 'node' },
-      );
+  it('creates and validates workspace files only with --apply', async () => {
+    await apply();
+    expect(existsSync(join(root, 'openslack.yaml'))).toBe(true);
+    expect(log).toHaveBeenCalledWith('Workspace initialized and validated.');
+  });
+
+  describe('an initialized workspace', () => {
+    beforeEach(async () => {
+      await apply();
+      log.mockClear();
+    });
+    it('preserves existing workspace bytes on repeated --apply', async () => {
+      const original = readFileSync(join(root, 'openslack.yaml'));
+      await apply();
+      expect(readFileSync(join(root, 'openslack.yaml'))).toEqual(original);
       expect(log).toHaveBeenCalledWith('Workspace initialized and validated.');
-    } finally {
-      log.mockRestore();
-      rmSync(root, { recursive: true, force: true });
-    }
+    });
   });
 });

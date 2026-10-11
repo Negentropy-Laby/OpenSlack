@@ -62,7 +62,7 @@ describe('frame height transition', () => {
 
     // Render tall content first
     function Container() {
-      const [tall, setTall] = useState(true);
+      const [tall] = useState(true);
       return React.createElement(
         Box,
         { flexDirection: 'column' },

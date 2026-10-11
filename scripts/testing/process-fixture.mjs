@@ -15,6 +15,12 @@ const {
 } = tsxRequire('../../packages/core/src/process-discovery.ts', import.meta.url);
 
 export const testProcessEnvironment = normalizeProcessEnvironment;
+// Shell editions must construct their own module search path, never inherit another edition's.
+export function testPowerShellEnvironment(parent = process.env, platform = process.platform) {
+  const env = testProcessEnvironment(parent, platform);
+  for (const key of Object.keys(env)) if (key.toLowerCase() === 'psmodulepath') delete env[key];
+  return env;
+}
 export const createTestProcessResolver = createProcessResolver;
 export function testTemporaryDirectory(prefix, parent = tmpdir()) {
   // Windows TEMP may use an 8.3 alias; fixtures pass canonical owned paths

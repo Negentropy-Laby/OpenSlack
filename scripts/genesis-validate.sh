@@ -68,24 +68,30 @@ else
   FAILED=1
 fi
 
-# 4. No secrets leaked
+# 4. No secrets leaked.
+#
+# One `git grep` covers the same file set as an explicit per-file `grep` loop
+# (tracked files plus untracked-unignored files) with the same pattern and the
+# same exclusions. It avoids forking one process per file, which dominates the
+# runtime on MSYS/Git Bash where process creation is expensive. Binary files are
+# still searched, and a scan error fails closed instead of reporting a clean
+# result. `git grep` exits 1 when nothing matches, so that case is separated
+# from a real failure before the check is judged.
 echo -n "[4/5] secret scan ... "
+SECRET_PATTERN='(sk-[a-zA-Z0-9]{20,})|(-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----)'
+SCAN_STATUS=0
 SECRETS_FOUND=$(
-  while IFS= read -r -d '' file; do
-    case "$file" in
-      */__tests__/*|__tests__/*)
-        continue
-        ;;
-      docs/security/collaboration-audit.md)
-        continue
-        ;;
-    esac
-    if grep -qE '(sk-[a-zA-Z0-9]{20,})|(-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----)' "$ROOT/$file" 2>/dev/null; then
-      printf '%s\n' "$file"
-    fi
-  done < <(git -C "$ROOT" ls-files --cached --others --exclude-standard -z)
-)
-if [ -n "$SECRETS_FOUND" ]; then
+  git -C "$ROOT" grep -l -E --untracked --full-name \
+    -e "$SECRET_PATTERN" \
+    -- ':(exclude,glob)**/__tests__/**' \
+    ':(exclude,glob)__tests__/**' \
+    ':(exclude)docs/security/collaboration-audit.md' \
+    2>/dev/null
+) || SCAN_STATUS=$?
+if [ "$SCAN_STATUS" -gt 1 ]; then
+  echo "FAIL (secret scan could not run)"
+  FAILED=1
+elif [ -n "$SECRETS_FOUND" ]; then
   echo "FAIL (potential secret in: $SECRETS_FOUND)"
   FAILED=1
 else

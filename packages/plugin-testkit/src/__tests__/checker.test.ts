@@ -275,7 +275,10 @@ describe('plugin testkit', () => {
       name: 'missing entry field',
       code: 'PLUGIN_LOCK_FIELD_REQUIRED',
       lock: () => {
-        const { version: _version, ...entry } = lockEntry();
+        // Invalid fixture: the entry must genuinely lack `version`. Built as a
+        // private copy so the shared lock entry is never mutated.
+        const entry: Record<string, unknown> = { ...lockEntry() };
+        delete entry.version;
         return { schema: 'openslack.plugins_lock.v1', plugins: [entry] };
       },
     },
