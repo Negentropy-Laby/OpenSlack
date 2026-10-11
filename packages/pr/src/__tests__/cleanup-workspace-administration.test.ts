@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -143,21 +144,45 @@ function fixture() {
     args,
   };
 }
+// The hosted runner is not the dedicated qualification Agent: it may have sudo,
+// docker or other supplementary groups. Model only this OS fact in the child
+// fixture; production CLI options never accept it, and rejection is tested below.
+const dedicatedGroupFixture = `
+  if (process.platform === 'linux') process.getgroups = () => [process.getgid()];
+`;
 function invoke(args: string[]) {
-  const result = spawnSync(process.execPath, [tool, ...args], {
-    cwd: bundleRoot,
-    encoding: 'utf8',
-    timeout: 10_000,
-    env: { PATH: process.env.PATH },
-  });
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      dedicatedGroupFixture +
+        `
+      import { pathToFileURL } from 'node:url';
+      await import(pathToFileURL(process.argv[1]).href);
+    `,
+      tool,
+      ...args,
+    ],
+    {
+      cwd: bundleRoot,
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: { PATH: process.env.PATH },
+    },
+  );
   return { ...result, value: result.stdout.trim() ? JSON.parse(result.stdout) : undefined };
 }
 function faultScript(code: string, args: string[]) {
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', code, tool, ...args], {
-    cwd: bundleRoot,
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', dedicatedGroupFixture + code, tool, ...args],
+    {
+      cwd: bundleRoot,
+      encoding: 'utf8',
+      timeout: 10_000,
+    },
+  );
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout);
 }
@@ -203,7 +228,7 @@ describe('standalone read-only fixed workspace acceptance', () => {
     });
   });
 
-  if (process.platform === 'linux') {
+  if (declareLinuxCleanupTests) {
     describe('Linux owned-descriptor workspace IO', () => {
       it('refuses root before reading selection or workspace', () => {
         const report = faultScript(
@@ -227,6 +252,38 @@ describe('standalone read-only fixed workspace acceptance', () => {
           code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
           role: 'osIdentity',
         });
+      });
+
+      it('refuses supplementary privileges instead of treating a shared runner as an isolated Agent', () => {
+        const value = fixture();
+        const report = faultScript(
+          `
+          import fs from 'node:fs';
+          import { syncBuiltinESMExports } from 'node:module';
+          import { pathToFileURL } from 'node:url';
+          const target = process.argv[1]; process.argv[1] = 'fixture-driver.mjs';
+          const mod = await import(pathToFileURL(target).href);
+          process.getgroups = () => [process.getgid(), process.getgid() + 1];
+          const real = fs.openSync;
+          let workspaceOpens = 0;
+          fs.openSync = (path, ...options) => {
+            if (String(path).includes('fixed workspace')) workspaceOpens++;
+            return real(path, ...options);
+          };
+          syncBuiltinESMExports();
+          const result = mod.verifyCleanupWorkspace(mod.parseVerifyWorkspaceArguments(process.argv.slice(2)));
+          process.stdout.write(JSON.stringify({ result, workspaceOpens }));
+        `,
+          value.args(),
+        );
+        expect(report.result.status).toBe('BLOCKED');
+        expect(report.result.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
+          role: 'osIdentity',
+        });
+        expect(report.result.identity.state).toBe('NOT_OBSERVED');
+        expect(report.workspaceOpens).toBe(0);
+        expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
       });
 
       it('parses real production identity/registry and authorizes a non-created record path without writes', () => {

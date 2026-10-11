@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -15,6 +16,7 @@ import type * as FileSystem from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { testExecutable } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   prepareCleanupEvidenceDraft,
   readCleanupEvidenceDraftInput,
@@ -593,7 +595,7 @@ describe('cleanup evidence preparation', () => {
     expect(result.blockingIssues[0]?.code).toBe('EVIDENCE_UNSUPPORTED_PLATFORM');
     expect(fault.openedFiles).toBe(0);
   });
-  if (process.platform === 'linux') {
+  if (declareLinuxCleanupTests) {
     it('completes short writes with file and directory fsync', () => {
       const f = fixture();
       fault.shortWrite = true;
@@ -907,11 +909,10 @@ describe('cleanup evidence preparation', () => {
           import.meta.url,
         ),
       );
-      execFileSync(
-        '/home/openslack/.bun/bin/bun',
-        ['build', entry, '--target=node', '--outfile=' + tool],
-        { cwd: f.root, stdio: 'pipe' },
-      );
+      execFileSync(testExecutable('bun'), ['build', entry, '--target=node', '--outfile=' + tool], {
+        cwd: f.root,
+        stdio: 'pipe',
+      });
       const result = spawnSync(process.execPath, [tool, '--input', recipe.path], {
         cwd: f.root,
         encoding: 'utf8',

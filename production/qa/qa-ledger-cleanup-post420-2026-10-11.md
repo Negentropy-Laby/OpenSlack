@@ -273,3 +273,49 @@ build evidence, not proof for the repaired source. The new frozen head, fresh du
 builds and complete native Windows result are published with the synchronized PR
 evidence. No source proof becomes target installation, administrator approval or
 real cleanup qualification.
+
+### Hosted runner fixture corrections
+
+The `6a3bc0a8` hosted Linux validation run `38150650795` and Linux release
+qualification run `38150650475` expose 14 failures in two new test files. The
+original failed checks are retained as pre-fix evidence, not retried to manufacture
+a passing result. One Node-entry test hardcodes the developer's Bun installation;
+it now resolves and probes Bun through the existing shared process fixture.
+
+Thirteen workspace tests assume the runner has only its primary group. A shared
+hosted runner can have additional privileged groups and the production verifier
+correctly rejects that identity before reaching the intended filesystem controls.
+Only the test child now models the dedicated Agent's supplementary-group fact.
+Real UID/GID, files, descriptor anchoring, production parsing, path authorization
+and permission checks remain unchanged. A separate negative regression supplies
+an additional group and asserts OS-identity refusal, zero workspace opens, no
+identity observation and no outbox creation. No production option supplies this
+fixture fact, and deployed tools still reject extra groups.
+
+The two corrected suites pass 79/79 locally; their report SHA-256 is
+`3f2d29da1909ffe9da539941bd0d3d4769ee65db32f2f4dc83aa52c70614758d`.
+This is fixture portability evidence, not target isolation or administrator
+qualification. New candidate, dual-build and current-head CI evidence replaces
+acceptance claims for `6a3bc0a8`; its earlier source proofs and toolkits remain
+unchanged historical records.
+
+The new Linux IO suites also consume the existing collection-only platform
+marker. Windows native execution still declares only its pure/platform-refusal
+cases; the production counter collects Linux declarations without executing
+them, so Windows status validation does not silently undercount Linux coverage.
+No runtime invocation sets the collection marker, and no conditional test body
+is replaced by an empty result. Independent review confirms the two portability
+fixes retain every prior assertion and add one extra-group refusal regression.
+
+After these fixture corrections, three consecutive combined acceptance runs each
+pass 1,016/1,016 with zero failed or pending cases. The production inventory is
+7,965 declared cases in 546 files; the single additional Linux case is the
+supplementary-privilege refusal. Independent read-only review separately runs
+146/146 across the three corrected suites and verifies the unchanged production
+controls and collector-only declaration matrix.
+
+| Revised affected evidence | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| Consecutive pass 1        | `6e9b04e8acf29847bab12698886c34b71458404fe5a82ae589bac86e3e1992e5` |
+| Consecutive pass 2        | `26f352245c2b0a1c44d7b24199a74ed64fb16aa21bebf6c206075547c2bf9fd5` |
+| Consecutive pass 3        | `5d98f96e9507dca69bc2d72c55cec46e47c13954e75017812402246aaef3979c` |

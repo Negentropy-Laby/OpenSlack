@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import {
   appendFileSync,
   chmodSync,
@@ -278,7 +279,7 @@ describe('admin toolkit closed pure contracts, on every platform', () => {
   );
 });
 
-if (process.platform === 'linux') {
+if (declareLinuxCleanupTests) {
   describe('real descriptor-bound independent toolkit on Linux', () => {
     let base: string,
       source: string,
