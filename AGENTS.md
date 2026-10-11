@@ -307,7 +307,7 @@ All non-trivial changes follow this path:
 3. Keep logic in packages; CLI commands should orchestrate package functions.
 4. Add or update tests for package behavior.
 5. Run validation.
-6. Open a PR targeting `main` under the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
+6. Update the existing PR for repairs and follow-ups. Open a new PR targeting `main` only for a new delivery or when the user explicitly requests a new repair PR; use the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
 7. Use PRMS to diagnose merge readiness.
 8. Human approval is collected and recorded when required.
 9. Required review conversations are resolved after the blocking findings are fixed.
@@ -332,6 +332,38 @@ bun run openslack pr doctor <PR_NUMBER>
 bun run openslack governance audit --count 20
 ```
 
+### Existing PR Continuity for Repairs
+
+Repairs default to the existing PR. This is a mandatory planning and delivery rule,
+not a suggestion to create a separate PR when convenient.
+
+1. Every repair plan must name the existing PR, head repository, head branch and
+   canonical `main` target. Review findings, failing checks and supporting tests,
+   documentation and generated evidence belong to that PR.
+2. Append repair commits to its existing branch. Preserve published history; do
+   not split repairs into a new PR for scope, risk, review convenience or cleanup.
+   When the user requests linear incorporation from another PR, append its changes
+   as linear commits; do not add a merge commit or rewrite the destination history.
+3. Do not plan, create or recreate a repair PR unless the user explicitly requests
+   that delivery route. Approval of repair work, a generic instruction to continue,
+   or a suggested split in a review does not authorize a new PR. This requirement
+   also applies to recreation mentioned in the identity and synchronization rules.
+4. Before publishing, verify that the named PR is open and that its head repository
+   and branch match the destination. Use an update-only path for repairs: a missing,
+   ambiguous or failed lookup must stop publication, not fall back to PR creation.
+5. If the associated PR is already closed or merged, report that commits cannot be
+   appended to its active review and obtain explicit delivery instructions. Do not
+   silently create a replacement PR, push to `main` or bypass authorship and approval
+   gates. Unrelated new work and separately requested governance PRs retain their
+   own delivery scope.
+6. If repairs were mistakenly split, verify their changes have reached the intended
+   PR before closing the superseded PR. Preserve its history and evidence, then run
+   PR Update Synchronization and the required checks on the destination head.
+
+PR reuse does not waive bot authorship, independent review, CODEOWNER review,
+human approval, required checks or review-thread authority. An identity deadlock
+must still be diagnosed; any necessary recreation requires explicit user direction.
+
 ### PR Update Synchronization
 
 After every push, force-push, or bot-authored repair commit to an open PR, verify
@@ -355,7 +387,7 @@ If the branch SHA and PR head SHA differ after a short retry window:
 
 1. Confirm the PR head repo/ref with `gh pr view <PR_NUMBER> --json headRepository,headRefName,headRefOid`.
 2. Confirm `refs/pull/<PR_NUMBER>/head` is the same commit you expect.
-3. Push a new repair/no-op commit through the correct bot-authenticated PR branch, or close and recreate the PR from the current branch head.
+3. Push a new repair/no-op commit through the correct bot-authenticated PR branch. If the existing PR cannot be synchronized, report the blocker; do not close and recreate it unless the user explicitly requests recreation.
 4. Re-run the synchronization checks before requesting review again.
 
 ### Review Thread Resolution Gate
@@ -413,7 +445,7 @@ OpenSlack separates PR authorship from human approval.
 - OpenSlack-authored work and delegated agent work must be submitted as a PR authored by the configured bot/agent GitHub identity, not by the human reviewer or CODEOWNER account.
 - The human GitHub identity is reserved for review, approval, and final accountability. The same human identity must not both author and approve the PR.
 - If local work was produced under a human account but is intended to be agent-delivered, stop before opening the PR and switch to the configured bot/agent author identity.
-- If a PR has already been opened by the human who must approve it, recreate it as bot/agent-authored or have a different independent human approve it.
+- If a PR has already been opened by the human who must approve it, have a different independent human approve it or obtain explicit user direction before recreating it as bot/agent-authored.
 - Bot/agent authorship does not make bot/app/agent approval valid. Approval still requires an explicit human decision and, when GitHub requires it, a GitHub review from the required human identity.
 - PR descriptions should name the acting agent or automation path, the requesting human when applicable, risk zone, validation run, rollback plan, and whether human approval is required.
 
@@ -438,11 +470,11 @@ Before opening an agent-delivered PR:
 3. Confirm the PR author will be the GitHub account that opens the PR. A bot-authored commit inside a human-opened PR is still a human-authored PR for governance.
 4. Include the acting agent or automation path, risk zone, validation, rollback plan, and human-approval requirement in the PR body.
 
-If a PR is opened under the wrong human identity, do not merge it as-is when that human is the required reviewer or approval authority. Close or abandon the PR and recreate it under the configured bot/agent identity, or obtain approval from a different independent human who is valid for the affected paths.
+If a PR is opened under the wrong human identity, do not merge it as-is when that human is the required reviewer or approval authority. Obtain approval from a different independent human who is valid for the affected paths, or obtain explicit user direction before closing and recreating the PR under the configured bot/agent identity.
 
 ### Bot-Authenticated PR Creation
 
-All PRs created by agents or automation must use the bot-authenticated wrapper scripts. Never use `gh pr create` directly — the `gh` CLI defaults to the human OAuth identity.
+All PRs created by agents or automation must use the bot-authenticated wrapper scripts. These creation commands are for authorized new deliveries; repairs must use the update-only route in Existing PR Continuity for Repairs. Never use `gh pr create` directly — the `gh` CLI defaults to the human OAuth identity.
 
 **Bash / Git Bash / WSL:**
 
