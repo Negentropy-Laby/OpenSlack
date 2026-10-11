@@ -23,6 +23,7 @@ export {
   CleanupOperationRecordError,
   cleanupOperationRecordPath,
   assertCleanupOperationRecord,
+  decodeCleanupOperationRecord,
   buildCleanupOperationRecord,
   readCleanupOperationRecord,
   readCleanupOperationRecordFor,
@@ -150,3 +151,11 @@ export {
   evaluateCleanupBrokerResult,
   evaluatePRBranchCleanupResult,
 } from './cleanup-result.js';
+
+export { validateCleanupBrokerRequest } from './cleanup-broker-client.js';
+export {
+  buildCleanupStatusRequest,
+  parseCleanupPositiveInteger,
+  parseCleanupRepository,
+  CleanupRequestInputError,
+} from './cleanup-request.js';

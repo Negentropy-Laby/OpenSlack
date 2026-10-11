@@ -733,7 +733,7 @@ export function prCommands(): Command {
     .option('--operation-status', 'Read existing broker operation; never retry deletion')
     .option(
       '--operation-record <path>',
-      'Read a published cleanup operation record; requires --operation-status and no --agent-id',
+      'Query a published record with --operation-status; matching explicit bindings are allowed',
     )
     .option('--repo <owner/name>', 'Target GitHub repository')
     .option('--auth <mode>', 'Live evidence auth: auto, app, or token', 'auto')

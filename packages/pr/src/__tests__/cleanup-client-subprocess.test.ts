@@ -1,4 +1,4 @@
-import { onCleanupRecordPlatform } from './helpers/cleanup-record-platform.js';
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -92,6 +92,30 @@ function record(): CleanupOperationQueryRecord {
 }
 
 describe('bundled client subprocess', () => {
+  it.each(['0x1a1', '4.17e2', ' 417 ', '417.0'])(
+    'rejects non-decimal PR input %s before identity or IO',
+    (pr) => {
+      const result = runClient([
+        '--mode',
+        'preview',
+        '--workspace',
+        '/not-a-workspace',
+        '--agent-id',
+        'worker',
+        '--repo',
+        'owner/repo',
+        '--remote',
+        'origin',
+        '--pr',
+        pr,
+        '--permit-id',
+        'PERMIT-1',
+      ]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('PR number must be a positive safe integer');
+      expect(result.stderr).not.toContain('workspace identity');
+    },
+  );
   it('bundles without any process-execution capability', () => {
     // The client must not be able to shell out to Git on its own.
     expect(bundleBytes).not.toContain('child_process');
@@ -126,9 +150,8 @@ describe('bundled client subprocess', () => {
     expect(result.stderr).toContain('--operation-record is only valid with --mode status');
   });
 
-  it(
-    'refuses an explicit binding that conflicts with the record',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('refuses an explicit binding that conflicts with the record', () => {
       const root = temporaryRoot('cleanup-client-record-');
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -145,12 +168,11 @@ describe('bundled client subprocess', () => {
       ]);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain('--operation-record conflicts with --repo');
-    }),
-  );
+    });
+  }
 
-  it(
-    'queries the broker from a record instead of only printing it',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('queries the broker from a record instead of only printing it', () => {
       const root = temporaryRoot('cleanup-client-query-');
       const saved = saveCleanupOperationRecord(record(), {
         rootDir: root,
@@ -164,8 +186,8 @@ describe('bundled client subprocess', () => {
       expect(result.stdout).toContain('"operationId": "OP-1"');
       expect(result.code).toBe(1);
       expect(result.stderr).toMatch(/UNSUPPORTED_PLATFORM|BROKER_UNAVAILABLE/);
-    }),
-  );
+    });
+  }
 
   it('rejects an unknown argument', () => {
     const result = runClient(['--mode', 'status', '--bogus', 'x']);
@@ -180,7 +202,7 @@ describe('client identity binding', () => {
    * real registry is written. `AgentPrincipal` carries only the registry id, so
    * a client that reads the principal from it sends the agent id instead.
    */
-  function workspaceWithDistinctPrincipal(agentId: string): string {
+  function workspaceWithDistinctPrincipal(agentId: string, status = 'active'): string {
     const root = temporaryRoot('cleanup-client-workspace-');
     const principalId = `principal:${agentId}`;
     const registryDirectory = join(root, '.openslack', 'agents', 'registry');
@@ -192,7 +214,7 @@ describe('client identity binding', () => {
         agent_id: agentId,
         display_name: 'Client Identity Probe',
         employee_type: 'ai_agent',
-        identity: { uid: agentId, principal_id: principalId, status: 'active' },
+        identity: { uid: agentId, principal_id: principalId, status },
         vendor: { provider: 'openai', runtime: 'codex' },
         employment: { status: 'active', hired_at: '2026-10-08T09:33:53.927Z' },
         capabilities: { primary: ['branch_cleanup_qualification'] },
@@ -236,9 +258,62 @@ describe('client identity binding', () => {
     return root;
   }
 
-  it(
-    'sends the registry principal id, not the agent id',
-    onCleanupRecordPlatform(() => {
+  it('allows revoked admission to query the original binding without bootstrapping', () => {
+    const workspace = workspaceWithDistinctPrincipal('worker', 'suspended');
+    const identity = join(workspace, '.openslack.local/agents/worker/identity.yaml');
+    const before = readFileSync(identity);
+    const result = runClient([
+      '--mode',
+      'status',
+      '--workspace',
+      workspace,
+      '--agent-id',
+      'worker',
+      '--repo',
+      'https://github.com/Negentropy-Laby/openslack-cleanup-qualification',
+      '--remote',
+      'origin',
+      '--pr',
+      '417',
+      '--permit-id',
+      'PERMIT-1',
+      '--operation-id',
+      'OP-1',
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/UNSUPPORTED_PLATFORM|BROKER_UNAVAILABLE/);
+    expect(result.stderr).not.toContain('expected "active"');
+    expect(readFileSync(identity)).toEqual(before);
+  });
+  it.each(['..invalid', 'PERMIT.1', 'x'.repeat(129)])(
+    'refuses invalid Permit %s before workspace access',
+    (permit) => {
+      const result = runClient([
+        '--mode',
+        'execute',
+        '--workspace',
+        '/not-a-workspace',
+        '--agent-id',
+        'worker',
+        '--repo',
+        'owner/repo',
+        '--remote',
+        'origin',
+        '--pr',
+        '417',
+        '--permit-id',
+        permit,
+        '--operation-id',
+        'OP-1',
+      ]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('CLIENT_INPUT_INVALID');
+      expect(result.stderr).not.toContain('No runtime identity');
+    },
+  );
+
+  if (declareLinuxCleanupTests) {
+    it('sends the registry principal id, not the agent id', () => {
       const agentId = 'cleanup_identity_probe';
       const workspace = workspaceWithDistinctPrincipal(agentId);
       const result = runClient([
@@ -279,12 +354,11 @@ describe('client identity binding', () => {
       // the Broker's own registry binding check.
       expect(published.request.principalId).toBe(`principal:${agentId}`);
       expect(result.code).toBe(1);
-    }),
-  );
+    });
+  }
 
-  it(
-    'accepts an explicit --principal-id that matches the registry',
-    onCleanupRecordPlatform(() => {
+  if (declareLinuxCleanupTests) {
+    it('accepts an explicit --principal-id that matches the registry', () => {
       const agentId = 'cleanup_identity_probe2';
       const workspace = workspaceWithDistinctPrincipal(agentId);
       const result = runClient([
@@ -309,14 +383,6 @@ describe('client identity binding', () => {
       ]);
       // Must not be refused as a mismatch: the value is correct.
       expect(result.stderr).not.toContain('does not match the fixed workspace identity');
-    }),
-  );
-});
-
-// Keep a written copy so a failing run leaves inspectable evidence.
-it('leaves the bundle readable for inspection', () => {
-  const dir = temporaryRoot('cleanup-client-copy-');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'client.mjs'), bundleBytes);
-  expect(readFileSync(join(dir, 'client.mjs'), 'utf8')).toBe(bundleBytes);
+    });
+  }
 });

@@ -19,6 +19,7 @@ export {
   loadRuntimeIdentity,
   parseRuntimeIdentityText,
   resolveAgentPrincipal,
+  resolveAgentStatusBinding,
 } from './identity.js';
 
 // Re-exports from git-sync (backward compat)

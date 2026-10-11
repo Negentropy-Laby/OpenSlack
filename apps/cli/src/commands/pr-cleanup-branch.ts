@@ -11,6 +11,10 @@ import {
   readCleanupOperationRecord,
   CleanupOperationRecordError,
   saveCleanupOperationRecord,
+  buildCleanupStatusRequest,
+  parseCleanupPositiveInteger,
+  CleanupRequestInputError,
+  validateCleanupBrokerRequest,
 } from '@openslack/pr';
 import type { CleanupBrokerRequest } from '@openslack/pr';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
@@ -32,16 +36,6 @@ interface CleanupCommandOptions {
 
 class CleanupInputError extends Error {}
 
-function positiveInteger(value: string, name: string, maximum = Number.MAX_SAFE_INTEGER): number {
-  const parsed = Number(value);
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(parsed) || parsed > maximum) {
-    throw new CleanupInputError(
-      `${name} must be a positive safe integer no greater than ${maximum}.`,
-    );
-  }
-  return parsed;
-}
-
 export async function runPRBranchCleanupCommand(
   number: string | undefined,
   options: CleanupCommandOptions,
@@ -51,8 +45,9 @@ export async function runPRBranchCleanupCommand(
   try {
     // The PR positional is optional so record status mode can run without one;
     // every other mode requires it, checked once the record branch has passed.
-    const parsedNumber = number === undefined ? undefined : positiveInteger(number, 'PR number');
-    const timeoutMs = positiveInteger(options.timeout, '--timeout', 600) * 1000;
+    const parsedNumber =
+      number === undefined ? undefined : parseCleanupPositiveInteger(number, 'PR number');
+    const timeoutMs = parseCleanupPositiveInteger(options.timeout, '--timeout', 600) * 1000;
     const deadline = startedAt + timeoutMs;
     const remainingMs = () => {
       const remaining = deadline - Date.now();
@@ -91,28 +86,15 @@ export async function runPRBranchCleanupCommand(
       // The record carries the original validated binding. An explicit argument
       // that matches it is allowed; a conflict is refused before the query so a
       // mistyped argument cannot silently query a different operation.
-      const conflicts: string[] = [];
-      if (options.agentId !== undefined && options.agentId !== request.agentId)
-        conflicts.push('--agent-id');
-      if (options.permitId !== undefined && options.permitId !== request.permitId)
-        conflicts.push('--permit-id');
-      if (options.operationId !== undefined && options.operationId !== request.operationId)
-        conflicts.push('--operation-id');
-      if (repository !== undefined && repository !== request.repo) conflicts.push('--repo');
-      if (options.remoteExplicit === true && options.remote !== request.remote)
-        conflicts.push('--remote');
-      if (parsedNumber !== undefined && parsedNumber !== request.prNumber)
-        conflicts.push('PR number');
-      if (conflicts.length > 0) {
-        throw new CleanupInputError(`--operation-record conflicts with ${conflicts.join(', ')}.`);
-      }
-
-      // Status uses the recorded binding, so it needs no workspace, agent
-      // registry, local identity or PR positional argument.
-      const result = await sendCleanupBrokerRequest(
-        { ...request, mode: 'status' },
-        { timeoutMs: remainingMs() },
-      );
+      const statusRequest = buildCleanupStatusRequest(record, {
+        agentId: options.agentId,
+        permitId: options.permitId,
+        operationId: options.operationId,
+        repo: repository,
+        remote: options.remoteExplicit ? options.remote : undefined,
+        prNumber: parsedNumber,
+      });
+      const result = await sendCleanupBrokerRequest(statusRequest, { timeoutMs: remainingMs() });
       console.log(
         `Record: ${record.schema}\nCreated: ${record.createdAt}\nDigest: ${record.requestDigest}\nOperation: ${request.operationId}\nRepository: ${request.repo}\nRemote: ${request.remote}\nPR: #${request.prNumber}\nPermit: ${request.permitId}\nAgent: ${request.agentId}\nPrincipal: ${request.principalId}\nRuntime UID: ${request.runtimeUid}\nRun: ${request.runId}`,
       );
@@ -168,60 +150,28 @@ export async function runPRBranchCleanupCommand(
           'Execute/status requires --operation-id; preview prohibits --operation-id.',
         );
       }
-      const { resolveAgentPrincipal, loadRuntimeIdentity } = await import('@openslack/runtime');
-      const { parseAgentRegistry } = await import('@openslack/workspace');
-      const registry = parseAgentRegistry(rootDir, options.agentId);
-      let principal: { registry_id: string; runtime_uid: string; run_id: string };
-      // Resolved permission snapshot for the execute path. Publication is
-      // authorized against it before any record directory is created.
-      let snapshot: AgentPermissionSnapshot | null = null;
-      if (mode === 'status') {
-        // A historical receipt remains readable after admission is revoked.
-        // Preserve the original local identity claims; never fabricate them
-        // from current authority, environment variables or a human fallback.
-        const identity = loadRuntimeIdentity(rootDir, options.agentId);
-        if (
-          !registry ||
-          !identity ||
-          identity.agent_id !== options.agentId ||
-          identity.provider !== 'cli'
-        ) {
-          throw new CleanupInputError(
-            'BLOCKED_AUTHORIZATION: STATUS_IDENTITY_UNAVAILABLE; original local identity and registry claims are required for status.',
-          );
-        }
-        principal = {
-          registry_id: identity.agent_id,
-          runtime_uid: identity.agent_uid,
-          run_id: identity.run_id,
-        };
-      } else {
-        const resolved = resolveAgentPrincipal({
-          root: rootDir,
-          agentId: options.agentId,
-          provider: 'cli',
-        });
-        if ('error' in resolved)
-          throw new CleanupInputError('BLOCKED_AUTHORIZATION: agent identity resolution failed.');
-        principal = resolved.principal;
-        // Retained, not discarded: publishing the query record is authorized
-        // against this resolved snapshot before anything is created.
-        snapshot = resolved.snapshot;
-      }
-      if (
-        !registry ||
-        registry.agent_id !== principal.registry_id ||
-        registry.identity.uid !== principal.runtime_uid
-      ) {
-        throw new CleanupInputError('BLOCKED_AUTHORIZATION: local identity binding changed.');
-      }
+      const { resolveAgentPrincipal, resolveAgentStatusBinding } =
+        await import('@openslack/runtime');
+      const resolved =
+        mode === 'status'
+          ? resolveAgentStatusBinding({ root: rootDir, agentId: options.agentId, provider: 'cli' })
+          : resolveAgentPrincipal({ root: rootDir, agentId: options.agentId, provider: 'cli' });
+      if ('error' in resolved)
+        throw new CleanupInputError(
+          mode === 'status'
+            ? 'BLOCKED_AUTHORIZATION: STATUS_IDENTITY_UNAVAILABLE; original local identity and registry claims are required for status.'
+            : 'BLOCKED_AUTHORIZATION: agent identity resolution failed.',
+        );
+      const principal = resolved.principal;
+      const snapshot: AgentPermissionSnapshot | null =
+        'snapshot' in resolved ? (resolved.snapshot ?? null) : null;
       // These fields are claims, not authenticated identity. The broker binds
       // its kernel peer to administrator-controlled authority independently.
       const brokerRequest: CleanupBrokerRequest = {
         schema: 'openslack.cleanup_request.v1',
         mode,
         agentId: principal.registry_id,
-        principalId: registry.identity.principal_id,
+        principalId: resolved.principalId,
         runtimeUid: principal.runtime_uid,
         runId: principal.run_id,
         repo: repository!,
@@ -230,6 +180,7 @@ export async function runPRBranchCleanupCommand(
         permitId: options.permitId!,
         ...(mode !== 'preview' ? { operationId: options.operationId! } : {}),
       };
+      validateCleanupBrokerRequest(brokerRequest);
       if (mode === 'execute') {
         // Publish the historical query record before the request is sent. The
         // resolved permission snapshot authorizes the real record path first, so
@@ -304,6 +255,7 @@ export async function runPRBranchCleanupCommand(
   } catch (error) {
     console.error(
       error instanceof CleanupInputError ||
+        error instanceof CleanupRequestInputError ||
         error instanceof CleanupBrokerClientError ||
         error instanceof CleanupOperationRecordError
         ? error.message
