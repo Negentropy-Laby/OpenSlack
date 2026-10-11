@@ -40,7 +40,7 @@ export {
   CLEANUP_TARGET_UPGRADE_GATES,
   CleanupTargetUpgradeError,
   prepareCleanupTargetUpgradePlan,
-  isUpgradeTargetDirectory,
+  evaluateCleanupTargetUpgradePlan,
 } from './cleanup-target-upgrade.js';
 export type {
   PrepareCleanupTargetUpgradePlanInput,

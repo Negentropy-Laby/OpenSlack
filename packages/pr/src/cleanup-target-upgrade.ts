@@ -1,4 +1,10 @@
-import { lstatSync, statSync } from 'node:fs';
+import {
+  CLEANUP_SHA256 as HASH,
+  CLEANUP_HEAD as HEAD,
+  isSensitiveCleanupInput,
+  cleanupObject,
+} from './internal/cleanup-validation.js';
+import { lstatSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
   verifyCleanupHandoffPackage,
@@ -26,18 +32,6 @@ import {
  */
 export const CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA = 'openslack.cleanup_target_upgrade_plan.v1';
 
-const HASH = /^[0-9a-f]{64}$/;
-const HEAD = /^[0-9a-f]{40}$/;
-
-/** Paths that must never be read as plan input. */
-const sensitive = [
-  /(^|[/\\])\.env(\.[^/\\]*)?$/i,
-  /\.pem$/i,
-  /\.key$/i,
-  /(^|[/\\])secrets([/\\]|$)/i,
-  /(^|[/\\])credentials([/\\]|$)/i,
-];
-
 export type CleanupTargetUpgradeErrorCode =
   | 'UPGRADE_INPUT_INVALID'
   | 'UPGRADE_PATH_SENSITIVE'
@@ -45,8 +39,13 @@ export type CleanupTargetUpgradeErrorCode =
   | 'UPGRADE_PACKAGE_UNREADABLE';
 
 export class CleanupTargetUpgradeError extends Error {
-  constructor(public readonly code: CleanupTargetUpgradeErrorCode) {
-    super(`${code}: stop; preserve existing state and review the upgrade inputs.`);
+  constructor(
+    public readonly code: CleanupTargetUpgradeErrorCode,
+    public readonly role?: string,
+  ) {
+    super(
+      `${code}${role ? ` (${role})` : ''}: stop; preserve existing state and review the upgrade inputs.`,
+    );
     this.name = 'CleanupTargetUpgradeError';
   }
 }
@@ -203,6 +202,11 @@ export interface PrepareCleanupTargetUpgradePlanResult {
   manifestSHA256: string;
   packageVerified: boolean;
   packageErrors: CleanupHandoffErrorCode[];
+  blockingIssues: {
+    kind: 'package' | 'target-evidence' | 'destination';
+    reason: string;
+    role?: string;
+  }[];
   evidenceIssues: { role: string; reason: string }[];
   files: CleanupTargetUpgradeFileAction[];
   steps: CleanupTargetUpgradeStep[];
@@ -244,12 +248,11 @@ export const CLEANUP_TARGET_UPGRADE_GATES = Object.freeze({
 
 function assertSafePath(path: string, what: string): void {
   if (typeof path !== 'string' || path.length === 0 || !isAbsolute(path)) {
-    throw new CleanupTargetUpgradeError('UPGRADE_INPUT_INVALID');
+    throw new CleanupTargetUpgradeError('UPGRADE_INPUT_INVALID', what);
   }
-  if (sensitive.some((pattern) => pattern.test(path))) {
-    throw new CleanupTargetUpgradeError('UPGRADE_PATH_SENSITIVE');
+  if (isSensitiveCleanupInput(path)) {
+    throw new CleanupTargetUpgradeError('UPGRADE_PATH_SENSITIVE', what);
   }
-  void what;
 }
 
 /**
@@ -280,10 +283,16 @@ export function prepareCleanupTargetUpgradePlan(
     manifestSHA256: input.manifestSHA256,
     now: input.now,
   });
-  unmetGates.push(...verified.validityIssues);
+  const blockingIssues: PrepareCleanupTargetUpgradePlanResult['blockingIssues'] = [];
+  for (const reason of verified.validityIssues) blockingIssues.push({ kind: 'package', reason });
+  unmetGates.push(...verified.unmetGates.filter((gate) => gate === 'TASK_EVIDENCE_EXPIRED'));
+  for (const gate of verified.unknownGates)
+    blockingIssues.push({ kind: 'package', reason: 'UNKNOWN_GATE', role: gate });
   const snapshot = verifiedCleanupHandoffSnapshot(verified);
-  if (evaluateCleanupHandoffVerification(verified) !== 0 || !snapshot)
+  if (evaluateCleanupHandoffVerification(verified) !== 0 || !snapshot) {
     unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.packageUnverified);
+    blockingIssues.push({ kind: 'package', reason: 'CANDIDATE_PACKAGE_UNVERIFIED' });
+  }
   const artifacts = snapshot?.artifactDigests ?? {};
   const paths: Record<string, string | undefined> = {
     ...Object.fromEntries(UPGRADE_EVIDENCE_ROLES.map((role) => [role, evidence?.[role]])),
@@ -384,6 +393,16 @@ export function prepareCleanupTargetUpgradePlan(
   });
   if (files.some((file) => file.action === 'unverified' || !file.candidateSHA256))
     unmetGates.push(CLEANUP_TARGET_UPGRADE_GATES.destinationUnverified);
+  blockingIssues.push(
+    ...evidenceIssues.map((issue) => ({ kind: 'target-evidence' as const, ...issue })),
+  );
+  for (const file of files)
+    if (file.action === 'unverified' || !file.candidateSHA256)
+      blockingIssues.push({
+        kind: 'destination',
+        role: file.path,
+        reason: 'DESTINATION_STATE_UNVERIFIED',
+      });
   const installable =
     evaluateCleanupHandoffVerification(verified) === 0 &&
     capture !== undefined &&
@@ -587,6 +606,7 @@ export function prepareCleanupTargetUpgradePlan(
     manifestSHA256: input.manifestSHA256,
     packageVerified: verified.valid,
     packageErrors: verified.errors,
+    blockingIssues,
     evidenceIssues,
     manifestDisagreements: files.filter((file) => file.claimDisagrees).map((file) => file.path),
     files,
@@ -602,11 +622,51 @@ export function prepareCleanupTargetUpgradePlan(
   };
 }
 
-/** True when the directory exists and is a directory (used by callers, not the plan). */
-export function isUpgradeTargetDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
+/** Expected administrator authorization gates do not make an otherwise useful plan fail. */
+export function evaluateCleanupTargetUpgradePlan(
+  result: PrepareCleanupTargetUpgradePlanResult,
+): 0 | 2 {
+  if (
+    !cleanupObject(result) ||
+    result.schema !== CLEANUP_TARGET_UPGRADE_PLAN_SCHEMA ||
+    typeof result.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(result.createdAt)) ||
+    typeof result.candidateHead !== 'string' ||
+    !HEAD.test(result.candidateHead) ||
+    typeof result.manifestSHA256 !== 'string' ||
+    !HASH.test(result.manifestSHA256) ||
+    !['files', 'steps', 'administratorCommands', 'manifestDisagreements'].every((key) =>
+      Array.isArray(result[key]),
+    ) ||
+    !result.administratorCommands.every((command) => typeof command === 'string') ||
+    !result.manifestDisagreements.every((path) => typeof path === 'string') ||
+    result.installationPerformed !== false ||
+    result.directHumanDeletionAvailable !== false
+  )
+    return 2;
+  if (
+    !cleanupObject(result) ||
+    !Array.isArray(result.packageErrors) ||
+    !Array.isArray(result.evidenceIssues) ||
+    !Array.isArray(result.unmetGates) ||
+    !Array.isArray(result.blockingIssues) ||
+    result.deploymentAuthorized !== false ||
+    result.executionAuthorized !== false
+  )
+    return 2;
+  const expected: Set<string> = new Set([
+    CLEANUP_TARGET_UPGRADE_GATES.adminApproval,
+    CLEANUP_TARGET_UPGRADE_GATES.qualificationTargets,
+    CLEANUP_TARGET_UPGRADE_GATES.governanceAuthority,
+    CLEANUP_TARGET_UPGRADE_GATES.brokerActivation,
+  ]);
+  if (
+    result.packageVerified !== true ||
+    result.packageErrors.length ||
+    result.evidenceIssues.length ||
+    result.blockingIssues.length ||
+    result.unmetGates.some((gate) => typeof gate !== 'string' || !expected.has(gate))
+  )
+    return 2;
+  return 0;
 }

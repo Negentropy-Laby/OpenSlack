@@ -1,6 +1,11 @@
+import {
+  readCleanupArtifactFile,
+  readCleanupBoundedFile,
+} from '../../packages/pr/src/internal/cleanup-file-boundary.js';
+import { isSensitiveCleanupInput } from '../../packages/pr/src/internal/cleanup-validation.js';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import {
   CleanupHandoffError,
@@ -25,6 +30,14 @@ type BuildInput = Omit<PrepareCleanupHandoffDraftInput, 'builds' | 'verifierPath
   nodePath?: string;
 };
 const hash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const captureArtifact = (path: string) => {
+  const raw = readCleanupArtifactFile(path, 256 * 1024 * 1024);
+  return {
+    raw,
+    proof: { sha256: createHash('sha256').update(raw).digest('hex'), bytes: raw.length },
+  };
+};
+const buildProofs = new Map<string, Record<string, { sha256: string; bytes: number }>>();
 const run = (command: string, args: string[], cwd: string, env = process.env) =>
   execFileSync(command, args, {
     cwd,
@@ -57,12 +70,13 @@ try {
     (typeof input.nodePath !== 'string' ||
       !isAbsolute(input.nodePath) ||
       /[\r\n\0]/.test(input.nodePath) ||
-      /(?:^|[\\/])(?:credentials|secrets|\.env)(?:[\\/.]|$)|\.(?:pem|key)$/i.test(input.nodePath))
+      isSensitiveCleanupInput(input.nodePath, source))
   )
     throw new CleanupHandoffError('HANDOFF_INPUT_INVALID');
   const node = sourceOnly
     ? realpathSync.native(input.nodePath!)
     : assertCleanupHandoffRuntime(input);
+  if (sourceOnly) readCleanupBoundedFile(node, 256 * 1024 * 1024);
   const tools = {
     bun: Bun.version,
     go: run('go', ['version'], source),
@@ -134,6 +148,16 @@ try {
       !brokerBuildMetadata.some((line) => line.includes('vcs.modified=false'))
     )
       throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+    const captured = Object.fromEntries(
+      [
+        'cleanup-broker',
+        'executor.mjs',
+        'verify-handoff.mjs',
+        'cleanup-client.mjs',
+        'admin-upgrade.mjs',
+      ].map((name) => [name, captureArtifact(join(artifacts, name)).proof]),
+    );
+    buildProofs.set(id, captured);
     const reportPath = join(artifacts, 'build-report.json');
     writeFileSync(
       reportPath,
@@ -159,22 +183,11 @@ try {
             'bun build scripts/cleanup-broker/client.ts --target=node --format=esm --outfile <artifact-directory>/cleanup-client.mjs',
             'bun build scripts/cleanup-broker/admin-upgrade.ts --target=node --format=esm --outfile <artifact-directory>/admin-upgrade.mjs',
           ],
-          broker: { sha256: hash(brokerPath), bytes: statSync(brokerPath).size },
-          executor: { sha256: hash(executorPath), bytes: statSync(executorPath).size },
-          // Every tool this build produced is proven by digest and size, so the
-          // package's tools cannot be completed by a file no build bound.
-          verifier: {
-            sha256: hash(join(artifacts, 'verify-handoff.mjs')),
-            bytes: statSync(join(artifacts, 'verify-handoff.mjs')).size,
-          },
-          client: {
-            sha256: hash(join(artifacts, 'cleanup-client.mjs')),
-            bytes: statSync(join(artifacts, 'cleanup-client.mjs')).size,
-          },
-          adminTool: {
-            sha256: hash(join(artifacts, 'admin-upgrade.mjs')),
-            bytes: statSync(join(artifacts, 'admin-upgrade.mjs')).size,
-          },
+          broker: captured['cleanup-broker'],
+          executor: captured['executor.mjs'],
+          verifier: captured['verify-handoff.mjs'],
+          client: captured['cleanup-client.mjs'],
+          adminTool: captured['admin-upgrade.mjs'],
           scope: 'Clean build and byte integrity only; not installation or execution authority.',
         },
         null,
@@ -200,9 +213,19 @@ try {
     'cleanup-client.mjs',
     'admin-upgrade.mjs',
   ];
+  // A separate final read detects drift since the report. Its owned bytes and
+  // digest are also the source-only proof; there is no third file/hash pass.
+  const finalProofs: Record<string, { sha256: string; bytes: number }> = {};
   for (const tool of identicalTools) {
-    if (hash(join(buildRoot, 'build-a', tool)) !== hash(join(buildRoot, 'build-b', tool)))
+    const a = captureArtifact(join(buildRoot, 'build-a', tool)),
+      b = captureArtifact(join(buildRoot, 'build-b', tool));
+    if (
+      !a.raw.equals(b.raw) ||
+      a.proof.sha256 !== buildProofs.get('a')![tool]!.sha256 ||
+      b.proof.sha256 !== buildProofs.get('b')![tool]!.sha256
+    )
       throw new CleanupHandoffError('HANDOFF_BUILD_MISMATCH');
+    finalProofs[tool] = a.proof;
   }
   if (sourceOnly) {
     const proof = {
@@ -211,15 +234,7 @@ try {
       tools,
       sourceNodeSHA256: hash(node),
       builds,
-      artifacts: Object.fromEntries(
-        identicalTools.map((name) => [
-          name,
-          {
-            sha256: hash(join(buildRoot, 'build-a', name)),
-            bytes: statSync(join(buildRoot, 'build-a', name)).size,
-          },
-        ]),
-      ),
+      artifacts: finalProofs,
       packageCreated: false,
       targetEvidenceVerified: false,
       installationAuthorized: false,

@@ -1,3 +1,4 @@
+import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { createHash } from 'node:crypto';
 import type * as Crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
@@ -27,7 +28,12 @@ import {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,
 } from '../cleanup-handoff.js';
-import { prepareCleanupTargetUpgradePlan } from '../cleanup-target-upgrade.js';
+import {
+  evaluateCleanupTargetUpgradePlan,
+  prepareCleanupTargetUpgradePlan,
+} from '../cleanup-target-upgrade.js';
+import type { PrepareCleanupTargetUpgradePlanResult } from '../cleanup-target-upgrade.js';
+import type { VerifyCleanupHandoffPackageResult } from '../cleanup-handoff.js';
 import type { PrepareCleanupHandoffDraftInput } from '../cleanup-handoff.js';
 
 const digestWork = vi.hoisted(() => [] as Buffer[]);
@@ -46,6 +52,10 @@ vi.mock('node:crypto', async (original) => {
     },
   };
 });
+// Genuine execution-trust I/O suites; pure decoding and portable verifier entrypoints have separate all-OS suites.
+function describeLinux(name: string, run: () => void): void {
+  if (declareLinuxCleanupTests) describe(name, run);
+}
 const roots: string[] = [];
 let sourceSeed: { root: string; source: string; candidateHead: string } | undefined;
 let respondedAtPreparationEnd = false;
@@ -112,6 +122,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 beforeAll(async () => {
+  if (process.platform !== 'linux') return;
   let responded = false;
   setImmediate(() => {
     responded = true;
@@ -130,6 +141,110 @@ beforeAll(async () => {
 }, platformTestTimeout(30_000));
 afterAll(() => {
   if (sourceSeed) rmSync(sourceSeed.root, { recursive: true, force: true });
+});
+
+describe('review 47 handoff dispositions', () => {
+  it.each(['yes', 1, {}, undefined])('rejects malformed integrity success flag %s', (valid) => {
+    const result = {
+      valid,
+      candidateHead: 'a'.repeat(40),
+      manifestSHA256: 'b'.repeat(64),
+      fileCount: 1,
+      errors: [],
+      validityIssues: [],
+      unmetGates: [],
+      outstandingGates: [],
+      unknownGates: [],
+      installationAuthorized: false,
+      executionAuthorized: false,
+    };
+    expect(
+      evaluateCleanupHandoffVerification(result as unknown as VerifyCleanupHandoffPackageResult),
+    ).toBe(2);
+  });
+  it.each(['yes', 1, {}, undefined])(
+    'rejects malformed upgrade success flag %s',
+    (packageVerified) => {
+      const result = {
+        schema: 'openslack.cleanup_target_upgrade_plan.v1',
+        createdAt: timestamp,
+        candidateHead: 'a'.repeat(40),
+        manifestSHA256: 'b'.repeat(64),
+        files: [],
+        steps: [],
+        administratorCommands: [],
+        manifestDisagreements: [],
+        installationPerformed: false,
+        directHumanDeletionAvailable: false,
+        packageVerified,
+        packageErrors: [],
+        evidenceIssues: [],
+        unmetGates: [],
+        blockingIssues: [],
+        deploymentAuthorized: false,
+        executionAuthorized: false,
+      };
+      expect(
+        evaluateCleanupTargetUpgradePlan(
+          result as unknown as PrepareCleanupTargetUpgradePlanResult,
+        ),
+      ).toBe(2);
+    },
+  );
+  if (declareLinuxCleanupTests) {
+    if (declareLinuxCleanupTests) {
+      it('refuses writable current evidence while allowing shared packaged copies', async () => {
+        const { input } = await fixture();
+        chmodSync(input.targetEvidence.networkPath, 0o664);
+        expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+          expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+        );
+      });
+    }
+    if (declareLinuxCleanupTests) {
+      it('refuses writable executable inputs at runtime preflight', async () => {
+        const { input } = await fixture();
+        chmodSync(join(input.runtimeDirectory, 'node'), 0o664);
+        expect(() => assertCleanupHandoffRuntime(input)).toThrowError(
+          expect.objectContaining({ code: 'HANDOFF_PATH_UNSAFE' }),
+        );
+      });
+    }
+  }
+  if (declareLinuxCleanupTests) {
+    it('reports malformed build JSON as a build failure with its input role', async () => {
+      const { input } = await fixture();
+      writeFileSync(input.builds[0].reportPath, '{"schema":');
+      expect(() => prepareCleanupHandoffDraft(input)).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_BUILD_MISMATCH' }),
+      );
+    });
+  }
+  if (declareLinuxCleanupTests) {
+    it('accepts readable shared ordinary artifacts without asserting execution trust', async () => {
+      const { input } = await fixture();
+      chmodSync(input.builds[0].executorPath, 0o664);
+      const prepared = await prepareCleanupHandoffDraft(input);
+      chmodSync(join(prepared.packageDirectory, 'README.md'), 0o664);
+      expect(verifyCleanupHandoffPackage({ ...prepared, now: input.now }).valid).toBe(true);
+    });
+  }
+  if (declareLinuxCleanupTests) {
+    it('keeps error codes and unknown gates out of the legacy gate vocabulary', async () => {
+      const { input } = await fixture();
+      const prepared = await prepareCleanupHandoffDraft(input);
+      const path = join(prepared.packageDirectory, 'evidence/qualification-index.json');
+      const index = JSON.parse(readFileSync(path, 'utf8'));
+      index.unmetGates.push('EXTERNAL_CONDITION_UNKNOWN');
+      writeFileSync(path, JSON.stringify(index));
+      rehashPackage(prepared);
+      const result = verifyCleanupHandoffPackage({ ...prepared, now: input.now });
+      expect(result).toMatchObject({ valid: true, unknownGates: ['EXTERNAL_CONDITION_UNKNOWN'] });
+      expect(result.unmetGates).not.toContain('EXTERNAL_CONDITION_UNKNOWN');
+      expect(result.unmetGates).not.toContain('HANDOFF_UNKNOWN_GATE');
+      expect(evaluateCleanupHandoffVerification(result)).toBe(2);
+    });
+  }
 });
 
 async function fixture() {
@@ -326,7 +441,7 @@ function verify(result: ReturnType<typeof prepareCleanupHandoffDraft>, now = new
   });
 }
 
-describe('offline cleanup handoff preparation', () => {
+describeLinux('offline cleanup handoff preparation', () => {
   describe('real Git preparation responsiveness', () => {
     it('keeps real Git fixture preparation responsive to worker task updates', () => {
       expect(respondedAtPreparationEnd).toBe(true);
@@ -587,7 +702,7 @@ describe('offline cleanup handoff preparation', () => {
   });
 });
 
-describe('runtime preflight before tool execution', () => {
+describeLinux('runtime preflight before tool execution', () => {
   it('selects only the ordinary runtime matching the previous reviewed manifest', async () => {
     const { input } = await fixture();
     expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));
@@ -623,7 +738,7 @@ describe('runtime preflight before tool execution', () => {
   );
 });
 
-describe('R18-12 per-build tool proof', () => {
+describeLinux('R18-12 per-build tool proof', () => {
   /** Switch both build reports to the current schema and bind real tool bytes. */
   async function v2Fixture() {
     const f = await fixture();
@@ -860,7 +975,7 @@ describe('R18-12 per-build tool proof', () => {
   });
 });
 
-describe('standalone package integrity contract', () => {
+describeLinux('standalone package integrity contract', () => {
   it.each(['lockfileSHA256', 'goModuleSHA256'])(
     'refuses array coercion of the %s source proof',
     async (field) => {
@@ -893,7 +1008,8 @@ describe('standalone package integrity contract', () => {
     rehashPackage(result);
     const checked = verify(result);
     expect(checked.valid).toBe(true);
-    expect(checked.outstandingGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    expect(checked.unknownGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    expect(checked.outstandingGates).not.toContain('UNRECOGNIZED_PACKAGE_GATE');
     expect(checked.validityIssues).toContain('HANDOFF_UNKNOWN_GATE');
     expect(evaluateCleanupHandoffVerification(checked)).toBe(2);
   });
@@ -1060,7 +1176,7 @@ describe('standalone package integrity contract', () => {
     } catch (error) {
       const failure = error as { status: number; stdout: string };
       expect(failure.status).toBe(2);
-      expect(JSON.parse(failure.stdout).unmetGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+      expect(JSON.parse(failure.stdout).unknownGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
     }
   });
 
@@ -1296,21 +1412,10 @@ async function upgradeFixture(now = new Date(timestamp)) {
   return { f, input, write, pkg };
 }
 
-function onUpgradePlatform<A extends unknown[]>(run: (...args: A) => void | Promise<void>) {
-  return async (...args: A) => {
-    if (process.platform === 'linux') return run(...args);
-    const { input } = await upgradeFixture();
-    const plan = prepareCleanupTargetUpgradePlan(input);
-    expect(plan.packageVerified).toBe(true);
-    expect(plan.unmetGates).toContain('TARGET_FILE_BOUNDARY_UNSUPPORTED');
-    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-  };
-}
-
-describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
+describeLinux('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () => {
   it.each([{ uid: -1 }, { uid: [0] }, { gid: 4294967295 }])(
     'refuses invalid observed owner facts $uid/$gid',
-    onUpgradePlatform(async (patch) => {
+    async (patch) => {
       const { input, write } = await upgradeFixture();
       const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
       Object.assign(
@@ -1325,11 +1430,11 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
         reason: 'EVIDENCE_INVALID',
       });
       expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
+    },
   );
   it.each([{ uid: 44181 }, { gid: 44181 }, { mode: '0666' }, { mode: '0777' }])(
     'plans to repair observed artifact ownership or mode drift $uid/$gid/$mode',
-    onUpgradePlatform(async (patch) => {
+    async (patch) => {
       const { input, write } = await upgradeFixture();
       const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
       const file = host.files.find(
@@ -1363,7 +1468,7 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
           '/usr/lib/openslack-cleanup/node',
         ],
       });
-    }),
+    },
   );
   it('emits zero installation commands for an unknown package-declared gate', async () => {
     const { input } = await upgradeFixture();
@@ -1383,7 +1488,9 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
       writeFileSync(path, JSON.stringify(value));
     }
     const plan = prepareCleanupTargetUpgradePlan(input);
-    expect(plan.unmetGates).toContain('UNRECOGNIZED_PACKAGE_GATE');
+    expect(plan.blockingIssues).toContainEqual(
+      expect.objectContaining({ reason: 'UNKNOWN_GATE', role: 'UNRECOGNIZED_PACKAGE_GATE' }),
+    );
     expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
   });
   it('runs the actual Node administrator tool outside the checkout without installing anything', async () => {
@@ -1430,7 +1537,12 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
     let output = '',
       status = 0;
     try {
-      output = execFileSync(process.execPath, args, { cwd, env, encoding: 'utf8', stdio: 'pipe' });
+      output = execFileSync(process.execPath, args, {
+        cwd,
+        env,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
     } catch (error) {
       const failure = error as { status: number; stdout: string };
       status = failure.status;
@@ -1446,15 +1558,12 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
       plan.steps.find((step: { id: string }) => step.id === 'controlled-upgrade').commands,
     ).toHaveLength(process.platform === 'linux' ? 6 : 0);
   });
-  it(
-    'plans six artifacts only from a verified candidate and complete current evidence',
-    onUpgradePlatform(async () => {
-      const { input } = await upgradeFixture();
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.packageVerified).toBe(true);
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
-    }),
-  );
+  it('plans six artifacts only from a verified candidate and complete current evidence', async () => {
+    const { input } = await upgradeFixture();
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.packageVerified).toBe(true);
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
+  });
   it.each([
     'installationManifestPath',
     'taskViewPath',
@@ -1463,20 +1572,17 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
     'networkPath',
     'identityPath',
     'dependencyInventoryPath',
-  ] as const)(
-    'refuses missing %s even with a verified package',
-    onUpgradePlatform(async (role) => {
-      const { input } = await upgradeFixture();
-      delete (input.targetEvidence as Partial<typeof input.targetEvidence>)[role];
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.packageVerified).toBe(true);
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-      expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INCOMPLETE');
-    }),
-  );
+  ] as const)('refuses missing %s even with a verified package', async (role) => {
+    const { input } = await upgradeFixture();
+    delete (input.targetEvidence as Partial<typeof input.targetEvidence>)[role];
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.packageVerified).toBe(true);
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+    expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INCOMPLETE');
+  });
   it.each(['malformed', 'directory', 'unknown-key', 'duplicate-key', 'expired', 'wrong-identity'])(
     'refuses %s evidence without concealing the valid candidate',
-    onUpgradePlatform(async (mode) => {
+    async (mode) => {
       const { input, write } = await upgradeFixture();
       const path =
         mode === 'wrong-identity' ? input.hostInspectionPath : input.targetEvidence.taskViewPath;
@@ -1495,28 +1601,22 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
       const plan = prepareCleanupTargetUpgradePlan(input);
       expect(plan.packageVerified).toBe(true);
       expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
+    },
   );
-  it(
-    'preserves package expiry as a validity failure and emits no install commands',
-    onUpgradePlatform(async () => {
-      const { input } = await upgradeFixture();
-      input.now = new Date('2026-10-10T00:00:00Z');
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.unmetGates).toContain('TASK_EVIDENCE_EXPIRED');
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
-  );
-  it(
-    'governance preparation consumes a nonce without requiring its own activation output',
-    onUpgradePlatform(async () => {
-      const { input } = await upgradeFixture();
-      const plan = prepareCleanupTargetUpgradePlan(input),
-        governance = plan.steps.find((step) => step.id === 'prepare-governance-pr')!;
-      expect(governance.blockedBy).not.toContain('BROKER_ACTIVATION_REQUIRED');
-      expect(governance).toHaveProperty('dependsOn', ['start-unactivated']);
-    }),
-  );
+  it('preserves package expiry as a validity failure and emits no install commands', async () => {
+    const { input } = await upgradeFixture();
+    input.now = new Date('2026-10-10T00:00:00Z');
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.unmetGates).toContain('TASK_EVIDENCE_EXPIRED');
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+  });
+  it('governance preparation consumes a nonce without requiring its own activation output', async () => {
+    const { input } = await upgradeFixture();
+    const plan = prepareCleanupTargetUpgradePlan(input),
+      governance = plan.steps.find((step) => step.id === 'prepare-governance-pr')!;
+    expect(governance.blockedBy).not.toContain('BROKER_ACTIVATION_REQUIRED');
+    expect(governance).toHaveProperty('dependsOn', ['start-unactivated']);
+  });
   it.each([
     'host-hash',
     'host-mode',
@@ -1527,96 +1627,87 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
     'manifest-hash',
     'proxy-hash',
     'task-state',
-  ])(
-    'rejects array-valued %s rather than coercing strict evidence',
-    onUpgradePlatform(async (kind) => {
-      const { input, write } = await upgradeFixture();
-      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
-      let role: keyof typeof input.targetEvidence | undefined;
-      if (kind.startsWith('host-')) {
+  ])('rejects array-valued %s rather than coercing strict evidence', async (kind) => {
+    const { input, write } = await upgradeFixture();
+    const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+    let role: keyof typeof input.targetEvidence | undefined;
+    if (kind.startsWith('host-')) {
+      host.files[0] = {
+        ...host.files[0],
+        state: 'present',
+        sha256: digest('file'),
+        uid: 0,
+        gid: 0,
+        mode: '0755',
+      };
+      if (kind === 'host-hash') host.files[0].sha256 = [host.files[0].sha256];
+      if (kind === 'host-mode') host.files[0].mode = ['0755'];
+      if (kind === 'host-state')
         host.files[0] = {
           ...host.files[0],
-          state: 'present',
-          sha256: digest('file'),
-          uid: 0,
-          gid: 0,
-          mode: '0755',
+          state: ['missing'],
+          sha256: null,
+          uid: null,
+          gid: null,
+          mode: null,
         };
-        if (kind === 'host-hash') host.files[0].sha256 = [host.files[0].sha256];
-        if (kind === 'host-mode') host.files[0].mode = ['0755'];
-        if (kind === 'host-state')
-          host.files[0] = {
-            ...host.files[0],
-            state: ['missing'],
-            sha256: null,
-            uid: null,
-            gid: null,
-            mode: null,
-          };
-      } else if (kind === 'journal-hash') host.persistentState.journalSHA256 = [digest('journal')];
-      else {
-        role = kind.startsWith('inventory-')
-          ? 'dependencyInventoryPath'
-          : kind === 'manifest-hash'
-            ? 'installationManifestPath'
-            : kind === 'proxy-hash'
-              ? 'networkPath'
-              : 'taskViewPath';
-        const value = JSON.parse(readFileSync(input.targetEvidence[role], 'utf8'));
-        if (kind === 'inventory-hash' || kind === 'manifest-hash')
-          value.files[0].sha256 = [value.files[0].sha256];
-        if (kind === 'inventory-mode') value.files[0].mode = ['0644'];
-        if (kind === 'proxy-hash') value.executableSHA256 = [value.executableSHA256];
-        if (kind === 'task-state')
-          value.tasks = [{ taskId: 'TASK-1', issueNumber: 1, state: ['pending'] }];
-        write(input.targetEvidence[role], value);
-        host.evidenceSHA256[role] = digest(readFileSync(input.targetEvidence[role]));
-        if (role === 'taskViewPath') {
-          const attestation = JSON.parse(
-            readFileSync(input.targetEvidence.taskAttestationPath, 'utf8'),
-          );
-          attestation.task_view_sha256 = host.evidenceSHA256.taskViewPath;
-          write(input.targetEvidence.taskAttestationPath, attestation);
-          host.evidenceSHA256.taskAttestationPath = digest(
-            readFileSync(input.targetEvidence.taskAttestationPath),
-          );
-        }
+    } else if (kind === 'journal-hash') host.persistentState.journalSHA256 = [digest('journal')];
+    else {
+      role = kind.startsWith('inventory-')
+        ? 'dependencyInventoryPath'
+        : kind === 'manifest-hash'
+          ? 'installationManifestPath'
+          : kind === 'proxy-hash'
+            ? 'networkPath'
+            : 'taskViewPath';
+      const value = JSON.parse(readFileSync(input.targetEvidence[role], 'utf8'));
+      if (kind === 'inventory-hash' || kind === 'manifest-hash')
+        value.files[0].sha256 = [value.files[0].sha256];
+      if (kind === 'inventory-mode') value.files[0].mode = ['0644'];
+      if (kind === 'proxy-hash') value.executableSHA256 = [value.executableSHA256];
+      if (kind === 'task-state')
+        value.tasks = [{ taskId: 'TASK-1', issueNumber: 1, state: ['pending'] }];
+      write(input.targetEvidence[role], value);
+      host.evidenceSHA256[role] = digest(readFileSync(input.targetEvidence[role]));
+      if (role === 'taskViewPath') {
+        const attestation = JSON.parse(
+          readFileSync(input.targetEvidence.taskAttestationPath, 'utf8'),
+        );
+        attestation.task_view_sha256 = host.evidenceSHA256.taskViewPath;
+        write(input.targetEvidence.taskAttestationPath, attestation);
+        host.evidenceSHA256.taskAttestationPath = digest(
+          readFileSync(input.targetEvidence.taskAttestationPath),
+        );
       }
-      write(input.hostInspectionPath, host);
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INVALID');
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
-  );
-  it(
-    'compares validated identities independently of JSON field order',
-    onUpgradePlatform(async () => {
-      const { input, write } = await upgradeFixture();
-      const identity = JSON.parse(readFileSync(input.targetEvidence.identityPath, 'utf8'));
-      identity.identities = Object.fromEntries(Object.entries(identity.identities).reverse());
-      write(input.targetEvidence.identityPath, identity);
-      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
-      host.evidenceSHA256.identityPath = digest(readFileSync(input.targetEvidence.identityPath));
-      write(input.hostInspectionPath, host);
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
-    }),
-  );
-  it(
-    'returns stages in dependency order',
-    onUpgradePlatform(async () => {
-      const { input } = await upgradeFixture();
-      const plan = prepareCleanupTargetUpgradePlan(input),
-        preceding = new Set<string>();
-      for (const step of plan.steps) {
-        expect(step.dependsOn.every((id) => preceding.has(id))).toBe(true);
-        preceding.add(step.id);
-      }
-    }),
-  );
+    }
+    write(input.hostInspectionPath, host);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INVALID');
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+  });
+  it('compares validated identities independently of JSON field order', async () => {
+    const { input, write } = await upgradeFixture();
+    const identity = JSON.parse(readFileSync(input.targetEvidence.identityPath, 'utf8'));
+    identity.identities = Object.fromEntries(Object.entries(identity.identities).reverse());
+    write(input.targetEvidence.identityPath, identity);
+    const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+    host.evidenceSHA256.identityPath = digest(readFileSync(input.targetEvidence.identityPath));
+    write(input.hostInspectionPath, host);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toHaveLength(6);
+  });
+  it('returns stages in dependency order', async () => {
+    const { input } = await upgradeFixture();
+    const plan = prepareCleanupTargetUpgradePlan(input),
+      preceding = new Set<string>();
+    for (const step of plan.steps) {
+      expect(step.dependsOn.every((id) => preceding.has(id))).toBe(true);
+      preceding.add(step.id);
+    }
+  });
   it.each(['nul-library', 'nul-manifest', 'relative-proxy'])(
     'refuses impossible host paths: %s',
-    onUpgradePlatform(async (kind) => {
+    async (kind) => {
       const { input, write } = await upgradeFixture();
       const role =
         kind === 'nul-library'
@@ -1634,11 +1725,11 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
       const plan = prepareCleanupTargetUpgradePlan(input);
       expect(plan.unmetGates).toContain('TARGET_EVIDENCE_INVALID');
       expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
+    },
   );
   it.each(['symlink', 'hardlink', 'writable', 'fifo', 'oversize'])(
     'refuses unsafe evidence file %s before producing installation instructions',
-    onUpgradePlatform(async (kind) => {
+    async (kind) => {
       const { input, f } = await upgradeFixture();
       const path = input.targetEvidence.networkPath;
       if (kind === 'symlink' || kind === 'hardlink') {
@@ -1656,27 +1747,24 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
       const plan = prepareCleanupTargetUpgradePlan(input);
       expect(plan.evidenceIssues.length).toBeGreaterThan(0);
       expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
+    },
   );
-  it(
-    'attributes a corrupt installation manifest to its role',
-    onUpgradePlatform(async () => {
-      const { input, write } = await upgradeFixture();
-      writeFileSync(input.targetEvidence.installationManifestPath, '{');
-      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
-      host.evidenceSHA256.installationManifestPath = digest(
-        readFileSync(input.targetEvidence.installationManifestPath),
-      );
-      write(input.hostInspectionPath, host);
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.evidenceIssues).toContainEqual({
-        role: 'installationManifestPath',
-        reason: 'EVIDENCE_INVALID',
-      });
-      expect(plan.unmetGates).toContain('INSTALLATION_MANIFEST_UNREADABLE');
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
-  );
+  it('attributes a corrupt installation manifest to its role', async () => {
+    const { input, write } = await upgradeFixture();
+    writeFileSync(input.targetEvidence.installationManifestPath, '{');
+    const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+    host.evidenceSHA256.installationManifestPath = digest(
+      readFileSync(input.targetEvidence.installationManifestPath),
+    );
+    write(input.hostInspectionPath, host);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.evidenceIssues).toContainEqual({
+      role: 'installationManifestPath',
+      reason: 'EVIDENCE_INVALID',
+    });
+    expect(plan.unmetGates).toContain('INSTALLATION_MANIFEST_UNREADABLE');
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+  });
   it.each([
     'installationManifestPath',
     'taskViewPath',
@@ -1685,18 +1773,15 @@ describe('H1/H2/H6/H7 upgrade acceptance with a verified positive package', () =
     'networkPath',
     'identityPath',
     'dependencyInventoryPath',
-  ] as const)(
-    'strictly validates %s after matching its actual byte digest',
-    onUpgradePlatform(async (role) => {
-      const { input, write } = await upgradeFixture();
-      const value = JSON.parse(readFileSync(input.targetEvidence[role], 'utf8'));
-      write(input.targetEvidence[role], { ...value, unexpected: true });
-      const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
-      host.evidenceSHA256[role] = digest(readFileSync(input.targetEvidence[role]));
-      write(input.hostInspectionPath, host);
-      const plan = prepareCleanupTargetUpgradePlan(input);
-      expect(plan.evidenceIssues).toContainEqual({ role, reason: 'EVIDENCE_INVALID' });
-      expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
-    }),
-  );
+  ] as const)('strictly validates %s after matching its actual byte digest', async (role) => {
+    const { input, write } = await upgradeFixture();
+    const value = JSON.parse(readFileSync(input.targetEvidence[role], 'utf8'));
+    write(input.targetEvidence[role], { ...value, unexpected: true });
+    const host = JSON.parse(readFileSync(input.hostInspectionPath, 'utf8'));
+    host.evidenceSHA256[role] = digest(readFileSync(input.targetEvidence[role]));
+    write(input.hostInspectionPath, host);
+    const plan = prepareCleanupTargetUpgradePlan(input);
+    expect(plan.evidenceIssues).toContainEqual({ role, reason: 'EVIDENCE_INVALID' });
+    expect(plan.steps.find((step) => step.id === 'controlled-upgrade')!.commands).toEqual([]);
+  });
 });

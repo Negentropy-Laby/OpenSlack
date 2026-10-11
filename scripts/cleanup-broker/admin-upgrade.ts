@@ -1,4 +1,7 @@
-import { prepareCleanupTargetUpgradePlan } from '../../packages/pr/src/cleanup-target-upgrade.js';
+import {
+  prepareCleanupTargetUpgradePlan,
+  evaluateCleanupTargetUpgradePlan,
+} from '../../packages/pr/src/cleanup-target-upgrade.js';
 import type { CleanupHandoffTargetEvidence } from '../../packages/pr/src/cleanup-handoff.js';
 
 /**
@@ -87,13 +90,7 @@ if (!process.exitCode) {
     }
     // An unverified candidate is a hard stop for the administrator; outstanding
     // gates are expected and do not by themselves make the plan unusable.
-    if (
-      !plan.packageVerified ||
-      plan.unmetGates.some((gate) =>
-        /(?:UNVERIFIED|UNREADABLE|INCOMPLETE|INVALID|EXPIRED|MISSING|UNSUPPORTED)$/.test(gate),
-      )
-    )
-      process.exitCode = 2;
+    process.exitCode = evaluateCleanupTargetUpgradePlan(plan);
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error ? error.message : 'UPGRADE_INPUT_INVALID: the plan could not be produced.'}\n`,

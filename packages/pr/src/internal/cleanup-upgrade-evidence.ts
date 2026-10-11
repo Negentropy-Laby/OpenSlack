@@ -1,3 +1,4 @@
+import { CLEANUP_SHA256 as HASH, cleanupObject, cleanupExactKeys } from './cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
 import { createHash } from 'node:crypto';
 import { posix, win32 } from 'node:path';
@@ -22,7 +23,6 @@ export const UPGRADE_EVIDENCE_ROLES = Object.freeze([
   'identityPath',
   'dependencyInventoryPath',
 ] as const);
-const HASH = /^[a-f0-9]{64}$/;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 type ObjectValue = Record<string, unknown>;
 class EvidenceValidationFailure extends Error {}
@@ -50,12 +50,12 @@ const absoluteFilePath = (value: unknown): value is string =>
   (posix.isAbsolute(value) || win32.isAbsolute(value)) &&
   !value.split(/[/\\]/).includes('..');
 function object(value: unknown): ObjectValue {
-  insist(value && typeof value === 'object' && !Array.isArray(value));
+  insist(cleanupObject(value));
   return value as ObjectValue;
 }
 function exact(value: unknown, keys: readonly string[]): ObjectValue {
   const v = object(value);
-  insist(Object.keys(v).length === keys.length && keys.every((key) => Object.hasOwn(v, key)));
+  insist(cleanupExactKeys(v, keys));
   return v;
 }
 function time(value: unknown): number {
@@ -70,10 +70,6 @@ function window(v: ObjectValue, now: number): void {
   insist(end > start);
   insist(start <= now && now < end, 'EVIDENCE_EXPIRED');
 }
-function json(path: string): { bytes: Buffer; value: ObjectValue } {
-  const bytes = readCleanupBoundedFile(path, 1024 * 1024);
-  return { bytes, value: object(decodeStrictJSON(bytes, 1024 * 1024)) };
-}
 const common = [
   'schema',
   'target',
@@ -83,6 +79,31 @@ const common = [
   'recordedAt',
   'expiresAt',
 ];
+interface UpgradeIdentities {
+  broker: { uid: number; gid: number };
+  agent: { uid: number; gid: number };
+  principalId: string;
+  runtimeUid: string;
+  runId: string;
+}
+function parseIdentities(value: unknown): UpgradeIdentities {
+  const v = exact(value, ['broker', 'agent', 'principalId', 'runtimeUid', 'runId']);
+  for (const role of ['broker', 'agent'] as const) {
+    const id = exact(v[role], ['uid', 'gid']);
+    insist(
+      Number.isSafeInteger(id.uid) &&
+        Number(id.uid) > 0 &&
+        Number.isSafeInteger(id.gid) &&
+        Number(id.gid) > 0,
+    );
+  }
+  insist(
+    (['principalId', 'runtimeUid', 'runId'] as const).every(
+      (field) => typeof v[field] === 'string',
+    ),
+  );
+  return v as unknown as UpgradeIdentities;
+}
 function bound(v: ObjectValue, selected: Readonly<Record<string, string>>, now: number): void {
   insist(
     v.target === selected.target_distro &&
@@ -118,7 +139,7 @@ export interface ValidatedUpgradeEvidence {
 }
 
 /** Strict, read-only capture. A historical installation manifest is never an observation. */
-export function validateUpgradeEvidence(input: {
+export interface UpgradeEvidenceInput {
   adminInputPath: string;
   hostInspectionPath: string;
   targetEvidence: CleanupHandoffTargetEvidence;
@@ -127,7 +148,19 @@ export function validateUpgradeEvidence(input: {
   now: number;
   selected: Readonly<Record<string, string>>;
   layout: readonly { path: string; mode: string }[];
-}): ValidatedUpgradeEvidence {
+}
+
+/** Pure strict decoding: these bytes are not an installation authorization or verified package snapshot. */
+export function validateCapturedUpgradeEvidence(
+  input: UpgradeEvidenceInput,
+  captured: ReadonlyMap<string, Buffer>,
+): ValidatedUpgradeEvidence {
+  const json = (path: string): { bytes: Buffer; value: ObjectValue } => {
+    const raw = captured.get(path);
+    insist(raw !== undefined, 'EVIDENCE_MISSING');
+    const bytes = Buffer.from(raw!);
+    return { bytes, value: object(decodeStrictJSON(bytes, 1024 * 1024)) };
+  };
   const { selected, now } = input;
   let role = 'adminInputPath';
   try {
@@ -178,15 +211,9 @@ export function validateUpgradeEvidence(input: {
         host.manifestSHA256 === input.manifestSHA256,
     );
     bound(host, selected, now);
-    const identities = exact(host.identities, [
-      'broker',
-      'agent',
-      'principalId',
-      'runtimeUid',
-      'runId',
-    ]);
-    for (const role of ['broker', 'agent']) {
-      const identity = exact(identities[role], ['uid', 'gid']);
+    const identities = parseIdentities(host.identities);
+    for (const role of ['broker', 'agent'] as const) {
+      const identity = identities[role];
       insist(
         identity.uid === Number(selected[`${role}_uid`]) &&
           identity.gid === Number(selected[`${role}_gid`]) &&
@@ -389,20 +416,14 @@ export function validateUpgradeEvidence(input: {
         identity.brokerId === selected.broker_id,
     );
     bound(identity, selected, now);
-    const selectedIdentity = exact(identity.identities, [
-      'broker',
-      'agent',
-      'principalId',
-      'runtimeUid',
-      'runId',
-    ]);
-    for (const role of ['broker', 'agent']) {
-      const observed = exact(selectedIdentity[role], ['uid', 'gid']),
-        expected = object(identities[role]);
+    const selectedIdentity = parseIdentities(identity.identities);
+    for (const role of ['broker', 'agent'] as const) {
+      const observed = selectedIdentity[role],
+        expected = identities[role];
       insist(observed.uid === expected.uid && observed.gid === expected.gid);
     }
     insist(
-      ['principalId', 'runtimeUid', 'runId'].every(
+      (['principalId', 'runtimeUid', 'runId'] as const).every(
         (field) => selectedIdentity[field] === identities[field],
       ),
     );
@@ -446,4 +467,25 @@ export function validateUpgradeEvidence(input: {
           : 'EVIDENCE_INVALID',
     );
   }
+}
+
+/** Capture current evidence with the strict file boundary, then validate the same owned bytes. */
+export function validateUpgradeEvidence(input: UpgradeEvidenceInput): ValidatedUpgradeEvidence {
+  const paths = {
+    adminInputPath: input.adminInputPath,
+    hostInspectionPath: input.hostInspectionPath,
+    ...input.targetEvidence,
+  };
+  const captured = new Map<string, Buffer>();
+  for (const [role, path] of Object.entries(paths)) {
+    try {
+      captured.set(path, readCleanupBoundedFile(path, 1024 * 1024));
+    } catch (error) {
+      throw new UpgradeEvidenceError(
+        role,
+        error instanceof CleanupFileBoundaryError ? error.code : 'EVIDENCE_INVALID',
+      );
+    }
+  }
+  return validateCapturedUpgradeEvidence(input, captured);
 }
