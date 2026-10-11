@@ -203,11 +203,11 @@ describe('standalone read-only fixed workspace acceptance', () => {
     });
   });
 
-  it.runIf(process.platform === 'linux')(
-    'refuses root before reading selection or workspace',
-    () => {
-      const report = faultScript(
-        `
+  if (process.platform === 'linux') {
+    describe('Linux owned-descriptor workspace IO', () => {
+      it('refuses root before reading selection or workspace', () => {
+        const report = faultScript(
+          `
       import fs from 'node:fs';
       import {syncBuiltinESMExports} from 'node:module';
       import {pathToFileURL} from 'node:url';
@@ -220,232 +220,211 @@ describe('standalone read-only fixed workspace acceptance', () => {
       const value=mod.verifyCleanupWorkspace({workspace:'/missing',selectedBindings:'/missing',selectedBindingsSHA256:'1'.repeat(64)});
       process.stdout.write(JSON.stringify({opens,value}));
     `,
-        [],
-      );
-      expect(report.opens).toBe(0);
-      expect(report.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
-        role: 'osIdentity',
+          [],
+        );
+        expect(report.opens).toBe(0);
+        expect(report.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
+          role: 'osIdentity',
+        });
       });
-    },
-  );
 
-  it.runIf(process.platform === 'linux')(
-    'parses real production identity/registry and authorizes a non-created record path without writes',
-    () => {
-      const value = fixture();
-      const before = readdirSync(join(value.workspace, '.openslack'));
-      const result = invoke(value.args());
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.value).toMatchObject({
-        schema: 'openslack.cleanup_workspace_observation.v1',
-        status: 'PASS',
-        scope: 'readonly-parsed-identity-and-path-evidence',
-        identity: { state: 'MATCHED', runId: fixed.run_id },
-        osIdentity: { matched: true },
-        pathAuthorization: {
-          decision: 'allow',
-          immutableSnapshot: true,
-          executionContextCreated: false,
+      it('parses real production identity/registry and authorizes a non-created record path without writes', () => {
+        const value = fixture();
+        const before = readdirSync(join(value.workspace, '.openslack'));
+        const result = invoke(value.args());
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.value).toMatchObject({
+          schema: 'openslack.cleanup_workspace_observation.v1',
+          status: 'PASS',
+          scope: 'readonly-parsed-identity-and-path-evidence',
+          identity: { state: 'MATCHED', runId: fixed.run_id },
+          osIdentity: { matched: true },
+          pathAuthorization: {
+            decision: 'allow',
+            immutableSnapshot: true,
+            executionContextCreated: false,
+          },
+          outbox: { state: 'NOT_CREATED' },
+          effects: {
+            filesystemWrites: false,
+            identityCreated: false,
+            brokerQueried: false,
+            approvalRecorded: false,
+          },
+        });
+        expect(result.value.blockingIssues).toEqual([]);
+        expect(readdirSync(join(value.workspace, '.openslack'))).toEqual(before);
+        expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+        expect(readFileSync(value.identity)).toEqual(
+          Buffer.from(JSON.stringify(value.identityValue) + '\n'),
+        );
+      });
+
+      it('accepts existing Agent-owned private record directories', () => {
+        const value = fixture();
+        for (const part of ['.openslack/outbox', '.openslack/outbox/cleanup-operations'])
+          mkdirSync(join(value.workspace, part), { mode: 0o700 });
+        const result = invoke(value.args());
+        expect(result.status).toBe(0);
+        expect(result.value.outbox.state).toBe('PRESENT');
+        expect(readdirSync(join(value.workspace, '.openslack/outbox/cleanup-operations'))).toEqual(
+          [],
+        );
+      });
+
+      it.each([
+        ['run_id', 'unexpected-run'],
+        ['agent_uid', 'unexpected-uid'],
+        ['agent_id', 'unexpected-agent'],
+        ['provider', 'github'],
+        ['started_at', 'not-a-canonical-timestamp'],
+      ])('refuses identity mutation %s without bootstrap', (field, replacement) => {
+        const value = fixture();
+        value.put(value.identity, { ...value.identityValue, [field]: replacement });
+        const before = readFileSync(value.identity);
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(result.value.identity.state).not.toBe('MATCHED');
+        expect(result.value.effects.identityCreated).toBe(false);
+        expect(readFileSync(value.identity)).toEqual(before);
+      });
+
+      it('reports missing identity instead of generating another run', () => {
+        const value = fixture();
+        rmSync(value.identity);
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(result.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_IDENTITY_MISSING',
+          role: 'identity',
+        });
+        expect(existsSync(value.identity)).toBe(false);
+      });
+
+      it('refuses a different actual OS identity before opening the workspace', () => {
+        const value = fixture();
+        value.selectedValue.selected.agent_uid = String(process.getuid!() + 7);
+        value.put(value.selected, value.selectedValue);
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(result.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
+          role: 'osIdentity',
+        });
+        expect(result.value.identity.state).toBe('NOT_OBSERVED');
+      });
+
+      it('refuses bytes differing from the historical selected registry and preserves deny precedence', () => {
+        const value = fixture();
+        const registry = JSON.parse(registryBytes.toString()) as {
+          permissions: { paths: { deny: string[] } };
+        };
+        registry.permissions.paths.deny.push('.openslack/outbox/**');
+        value.put(value.registry, registry);
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(result.value.pathAuthorization).toMatchObject({
+          decision: 'deny',
+          rule: 'path_denied',
+        });
+        expect(result.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_REGISTRY_BYTES_MISMATCH',
+          role: 'registry',
+        });
+        expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
+      });
+
+      it.each([
+        ['workspace_id', 'wrong-workspace'],
+        [
+          'canonical_remote',
+          { provider: 'github', owner: 'Other', repo: 'Repo', default_branch: 'main' },
+        ],
+        ['workspace', { root: '.', state_root: '../escape' }],
+      ])('refuses workspace production config mutation %s', (field, replacement) => {
+        const value = fixture();
+        value.put(join(value.workspace, 'openslack.yaml'), {
+          ...value.config,
+          [field]: replacement,
+        });
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(
+          result.value.blockingIssues.some((issue: { role: string }) => issue.role === 'workspace'),
+        ).toBe(true);
+      });
+
+      it.each(['workspace', '.openslack', '.openslack.local', '.openslack/outbox'])(
+        'refuses writable/private-directory mismatch at %s',
+        (part) => {
+          const value = fixture();
+          const path = part === 'workspace' ? value.workspace : join(value.workspace, part);
+          if (!existsSync(path)) mkdirSync(path, { mode: 0o700 });
+          chmodSync(path, 0o770);
+          const result = invoke(value.args());
+          expect(result.status).toBe(2);
+          expect(
+            result.value.blockingIssues.some(
+              (issue: { code: string }) => issue.code === 'WORKSPACE_DIRECTORY_UNSAFE',
+            ),
+          ).toBe(true);
         },
-        outbox: { state: 'NOT_CREATED' },
-        effects: {
-          filesystemWrites: false,
-          identityCreated: false,
-          brokerQueried: false,
-          approvalRecorded: false,
+      );
+
+      it.each(['link', 'hardlink', 'fifo'])(
+        'refuses %s identity without hanging or reading alternate data',
+        (kind) => {
+          const value = fixture();
+          const ordinary = join(value.container, 'identity-source.json');
+          value.put(ordinary, value.identityValue);
+          rmSync(value.identity);
+          if (kind === 'link') symlinkSync(ordinary, value.identity);
+          else if (kind === 'hardlink') linkSync(ordinary, value.identity);
+          else execFileSync('mkfifo', [value.identity]);
+          const result = invoke(value.args());
+          expect(result.status).toBe(2);
+          expect(result.value.identity.state).not.toBe('MATCHED');
         },
-      });
-      expect(result.value.blockingIssues).toEqual([]);
-      expect(readdirSync(join(value.workspace, '.openslack'))).toEqual(before);
-      expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
-      expect(readFileSync(value.identity)).toEqual(
-        Buffer.from(JSON.stringify(value.identityValue) + '\n'),
       );
-    },
-  );
 
-  it.runIf(process.platform === 'linux')(
-    'accepts existing Agent-owned private record directories',
-    () => {
-      const value = fixture();
-      for (const part of ['.openslack/outbox', '.openslack/outbox/cleanup-operations'])
-        mkdirSync(join(value.workspace, part), { mode: 0o700 });
-      const result = invoke(value.args());
-      expect(result.status).toBe(0);
-      expect(result.value.outbox.state).toBe('PRESENT');
-      expect(readdirSync(join(value.workspace, '.openslack/outbox/cleanup-operations'))).toEqual(
-        [],
-      );
-    },
-  );
-
-  it.runIf(process.platform === 'linux').each([
-    ['run_id', 'unexpected-run'],
-    ['agent_uid', 'unexpected-uid'],
-    ['agent_id', 'unexpected-agent'],
-    ['provider', 'github'],
-    ['started_at', 'not-a-canonical-timestamp'],
-  ])('refuses identity mutation %s without bootstrap', (field, replacement) => {
-    const value = fixture();
-    value.put(value.identity, { ...value.identityValue, [field]: replacement });
-    const before = readFileSync(value.identity);
-    const result = invoke(value.args());
-    expect(result.status).toBe(2);
-    expect(result.value.identity.state).not.toBe('MATCHED');
-    expect(result.value.effects.identityCreated).toBe(false);
-    expect(readFileSync(value.identity)).toEqual(before);
-  });
-
-  it.runIf(process.platform === 'linux')(
-    'reports missing identity instead of generating another run',
-    () => {
-      const value = fixture();
-      rmSync(value.identity);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(result.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_IDENTITY_MISSING',
-        role: 'identity',
+      it('refuses a symlink parent with no changes to the linked directory', () => {
+        const value = fixture();
+        const old = join(value.workspace, '.openslack/agents');
+        const other = join(value.container, 'external');
+        mkdirSync(other, { mode: 0o700 });
+        rmSync(old, { recursive: true });
+        symlinkSync(other, old);
+        const result = invoke(value.args());
+        expect(result.status).toBe(2);
+        expect(readdirSync(other)).toEqual([]);
       });
-      expect(existsSync(value.identity)).toBe(false);
-    },
-  );
 
-  it.runIf(process.platform === 'linux')(
-    'refuses a different actual OS identity before opening the workspace',
-    () => {
-      const value = fixture();
-      value.selectedValue.selected.agent_uid = String(process.getuid!() + 7);
-      value.put(value.selected, value.selectedValue);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(result.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_OS_IDENTITY_MISMATCH',
-        role: 'osIdentity',
+      it('rejects selected-source digest conflicts and duplicate JSON keys before workspace reads', () => {
+        const value = fixture();
+        const wrong = value.args();
+        wrong[5] = '0'.repeat(64);
+        const digest = invoke(wrong);
+        expect(digest.status).toBe(2);
+        expect(digest.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_SELECTION_DIGEST_MISMATCH',
+          role: 'selection',
+        });
+        value.put(value.selected, Buffer.from('{"schema":"x","schema":"y"}'));
+        const duplicate = invoke(value.args());
+        expect(duplicate.status).toBe(2);
+        expect(duplicate.value.blockingIssues).toContainEqual({
+          code: 'WORKSPACE_SELECTION_INVALID',
+          role: 'selection',
+        });
       });
-      expect(result.value.identity.state).toBe('NOT_OBSERVED');
-    },
-  );
 
-  it.runIf(process.platform === 'linux')(
-    'refuses bytes differing from the historical selected registry and preserves deny precedence',
-    () => {
-      const value = fixture();
-      const registry = JSON.parse(registryBytes.toString()) as {
-        permissions: { paths: { deny: string[] } };
-      };
-      registry.permissions.paths.deny.push('.openslack/outbox/**');
-      value.put(value.registry, registry);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(result.value.pathAuthorization).toMatchObject({
-        decision: 'deny',
-        rule: 'path_denied',
-      });
-      expect(result.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_REGISTRY_BYTES_MISMATCH',
-        role: 'registry',
-      });
-      expect(existsSync(join(value.workspace, '.openslack/outbox'))).toBe(false);
-    },
-  );
-
-  it.runIf(process.platform === 'linux').each([
-    ['workspace_id', 'wrong-workspace'],
-    [
-      'canonical_remote',
-      { provider: 'github', owner: 'Other', repo: 'Repo', default_branch: 'main' },
-    ],
-    ['workspace', { root: '.', state_root: '../escape' }],
-  ])('refuses workspace production config mutation %s', (field, replacement) => {
-    const value = fixture();
-    value.put(join(value.workspace, 'openslack.yaml'), { ...value.config, [field]: replacement });
-    const result = invoke(value.args());
-    expect(result.status).toBe(2);
-    expect(
-      result.value.blockingIssues.some((issue: { role: string }) => issue.role === 'workspace'),
-    ).toBe(true);
-  });
-
-  it
-    .runIf(process.platform === 'linux')
-    .each(['workspace', '.openslack', '.openslack.local', '.openslack/outbox'])(
-    'refuses writable/private-directory mismatch at %s',
-    (part) => {
-      const value = fixture();
-      const path = part === 'workspace' ? value.workspace : join(value.workspace, part);
-      if (!existsSync(path)) mkdirSync(path, { mode: 0o700 });
-      chmodSync(path, 0o770);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(
-        result.value.blockingIssues.some(
-          (issue: { code: string }) => issue.code === 'WORKSPACE_DIRECTORY_UNSAFE',
-        ),
-      ).toBe(true);
-    },
-  );
-
-  it.runIf(process.platform === 'linux').each(['link', 'hardlink', 'fifo'])(
-    'refuses %s identity without hanging or reading alternate data',
-    (kind) => {
-      const value = fixture();
-      const ordinary = join(value.container, 'identity-source.json');
-      value.put(ordinary, value.identityValue);
-      rmSync(value.identity);
-      if (kind === 'link') symlinkSync(ordinary, value.identity);
-      else if (kind === 'hardlink') linkSync(ordinary, value.identity);
-      else execFileSync('mkfifo', [value.identity]);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(result.value.identity.state).not.toBe('MATCHED');
-    },
-  );
-
-  it.runIf(process.platform === 'linux')(
-    'refuses a symlink parent with no changes to the linked directory',
-    () => {
-      const value = fixture();
-      const old = join(value.workspace, '.openslack/agents');
-      const other = join(value.container, 'external');
-      mkdirSync(other, { mode: 0o700 });
-      rmSync(old, { recursive: true });
-      symlinkSync(other, old);
-      const result = invoke(value.args());
-      expect(result.status).toBe(2);
-      expect(readdirSync(other)).toEqual([]);
-    },
-  );
-
-  it.runIf(process.platform === 'linux')(
-    'rejects selected-source digest conflicts and duplicate JSON keys before workspace reads',
-    () => {
-      const value = fixture();
-      const wrong = value.args();
-      wrong[5] = '0'.repeat(64);
-      const digest = invoke(wrong);
-      expect(digest.status).toBe(2);
-      expect(digest.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_SELECTION_DIGEST_MISMATCH',
-        role: 'selection',
-      });
-      value.put(value.selected, Buffer.from('{"schema":"x","schema":"y"}'));
-      const duplicate = invoke(value.args());
-      expect(duplicate.status).toBe(2);
-      expect(duplicate.value.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_SELECTION_INVALID',
-        role: 'selection',
-      });
-    },
-  );
-
-  it.runIf(process.platform === 'linux').each(['inode', 'parent'])(
-    'refuses identity %s replacement during descriptor reads',
-    (kind) => {
-      const value = fixture();
-      const report = faultScript(
-        `
+      it.each(['inode', 'parent'])(
+        'refuses identity %s replacement during descriptor reads',
+        (kind) => {
+          const value = fixture();
+          const report = faultScript(
+            `
       import fs from 'node:fs';
       import {syncBuiltinESMExports} from 'node:module';
       import {pathToFileURL} from 'node:url';
@@ -469,24 +448,24 @@ describe('standalone read-only fixed workspace acceptance', () => {
       const result=mod.verifyCleanupWorkspace(mod.parseVerifyWorkspaceArguments(process.argv.slice(2)));
       process.stdout.write(JSON.stringify({changed,result}));
     `,
-        value.args(),
+            value.args(),
+          );
+          expect(report.changed).toBe(true);
+          expect(report.result.status).toBe('BLOCKED');
+          expect(report.result.blockingIssues).toContainEqual({
+            code: 'WORKSPACE_FILE_CHANGED',
+            role: 'identity',
+          });
+          expect(report.result.effects.executionContextCreated).toBe(false);
+        },
       );
-      expect(report.changed).toBe(true);
-      expect(report.result.status).toBe('BLOCKED');
-      expect(report.result.blockingIssues).toContainEqual({
-        code: 'WORKSPACE_FILE_CHANGED',
-        role: 'identity',
-      });
-      expect(report.result.effects.executionContextCreated).toBe(false);
-    },
-  );
 
-  it.runIf(process.platform === 'linux').each([5, 20, 50])(
-    'closes all directory descriptors after failing fstat %s',
-    (failureAt) => {
-      const value = fixture();
-      const report = faultScript(
-        `
+      it.each([5, 20, 50])(
+        'closes all directory descriptors after failing fstat %s',
+        (failureAt) => {
+          const value = fixture();
+          const report = faultScript(
+            `
       import fs from 'node:fs';
       import {syncBuiltinESMExports} from 'node:module';
       import {pathToFileURL} from 'node:url';
@@ -503,10 +482,12 @@ describe('standalone read-only fixed workspace acceptance', () => {
       const after=fs.readdirSync('/proc/self/fd').length;
       process.stdout.write(JSON.stringify({before,after,value}));
     `,
-        value.args(),
+            value.args(),
+          );
+          expect(report.value.status).toBe('BLOCKED');
+          expect(report.after).toBe(report.before);
+        },
       );
-      expect(report.value.status).toBe('BLOCKED');
-      expect(report.after).toBe(report.before);
-    },
-  );
+    });
+  }
 });

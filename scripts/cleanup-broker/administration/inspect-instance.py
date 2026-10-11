@@ -49,8 +49,12 @@ def utc_ns(value, *, ceil=False):
     return datetime.fromtimestamp(seconds, timezone.utc) + timedelta(microseconds=micros)
 
 
-def start_interval(start_ticks, ticks_per_second, *, clock=time.clock_gettime_ns):
-    common.require(hasattr(time, 'CLOCK_BOOTTIME') and hasattr(time, 'CLOCK_REALTIME'),
+def start_interval(start_ticks, ticks_per_second, *, clock=None):
+    # Windows must be able to import the pure decoder and reach the platform
+    # refusal without resolving a Linux-only API at function-definition time.
+    if clock is None:
+        clock = getattr(time, 'clock_gettime_ns', None)
+    common.require(callable(clock) and hasattr(time, 'CLOCK_BOOTTIME') and hasattr(time, 'CLOCK_REALTIME'),
         'PROCESS_CLOCK_CAPABILITY_REQUIRED')
     before = clock(time.CLOCK_BOOTTIME)
     wall = clock(time.CLOCK_REALTIME)

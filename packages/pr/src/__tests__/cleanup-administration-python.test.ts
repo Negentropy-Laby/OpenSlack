@@ -72,8 +72,9 @@ describe('cleanup administrator Python tools', () => {
     try {
       const output = join(owned, 'never-created.json');
       const code = [
-        'import builtins,runpy,sys',
+        'import builtins,runpy,sys,time',
         "sys.platform='win32'",
+        "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
         'original=builtins.__import__',
         'def audited(name,*args,**kwargs):',
         " if name in ('pwd','grp'): raise AssertionError('Linux import before platform refusal')",

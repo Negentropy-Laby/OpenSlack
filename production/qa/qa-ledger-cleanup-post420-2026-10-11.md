@@ -241,3 +241,35 @@ part of these fixture and source checks.
 | Go race                    | `93b828336959a18fc440cab162a188a03d8a30775e279b899e9ea95c686349d8` |
 | Go vet                     | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | Linux executor integration | `68cb65d6ef9b13baa73c6630def9da1cd89c29ff96c83e039ebd4763205cb9bd` |
+
+### Native Windows follow-up and candidate replacement
+
+The first native Windows attempt on `b144463a` exposed a validation-host PATH
+prerequisite: the shell could locate Bun by its absolute application path while
+`cmd.exe` could not find `bun`. The repaired driver normalizes only its child
+process PATH/PATHEXT and explicitly waits for native exit codes; it changes no
+machine or production environment. Typecheck then passes. The original launch
+and typecheck logs are retained rather than counted as successful acceptance.
+
+That native targeted run then reports three failures with one actual cause:
+`inspect-instance.py` resolved `time.clock_gettime_ns` in a default argument while
+importing. Windows has no such API, so it crashed before the deliberate platform
+refusal. A strengthened regression removes the API on Linux and first fails;
+the fix resolves it only inside the Linux timing helper and checks capability.
+No BOOTTIME/UTC interval, kernel-tick, PID/executable/identity binding or clock-drift
+assertion is weakened. Independent read-only review separately removes all Linux
+clock APIs, observes explicit refusal with `nonce=null`, and verifies the original
+Linux timing/instance assertions.
+
+New Linux-only IO tests are explicitly separate from all-platform parsing and
+zero-IO refusal tests. Conditional declaration replaces the new `runIf` wrappers;
+no skip, swallowed body or synthetic Linux PASS is used on Windows. The reviewer
+compared test bodies and assertions before/after and confirmed they are unchanged.
+The Linux production inventory remains 7,964 cases in 546 files; actual Windows
+collection is reported separately rather than forced to match Linux IO cases.
+
+The `b144463a` source proof and 15-file toolkit are preserved as original-candidate
+build evidence, not proof for the repaired source. The new frozen head, fresh dual
+builds and complete native Windows result are published with the synchronized PR
+evidence. No source proof becomes target installation, administrator approval or
+real cleanup qualification.

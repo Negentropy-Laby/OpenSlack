@@ -610,7 +610,9 @@ class MoreBoundaryTests(unittest.TestCase):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as own:
                 evidence = Path(own) / 'never created.json'
                 script = BASE / (name + '.py')
-                code = "import runpy,sys;sys.platform='darwin';sys.argv=[sys.argv[1]];runpy.run_path(sys.argv[0],run_name='__main__')"
+                code = "\n".join(["import runpy,sys,time", "sys.platform='darwin'",
+                    "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
+                    "sys.argv=[sys.argv[1]];runpy.run_path(sys.argv[0],run_name='__main__')"])
                 result = subprocess.run([sys.executable,'-I','-B','-c',code,str(script)], capture_output=True,text=True)
                 self.assertEqual(result.returncode,2,result.stderr)
                 self.assertRegex(result.stderr,'LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED')
