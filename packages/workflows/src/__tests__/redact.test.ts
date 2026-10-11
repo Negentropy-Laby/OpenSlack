@@ -207,6 +207,42 @@ describe('stripTokensAndCredentials', () => {
 // ── Rule 4: Absolute path remapping ──────────────────────────────────────────
 
 describe('remapAbsolutePaths', () => {
+  it('does not rescan a Windows path after mapping it into a POSIX-looking relative path', () => {
+    expect(
+      remapAbsolutePaths(
+        'built C:/work/repo/data/db.json from C:/work/repo/src/build.ts',
+        'C:/work/repo',
+      ),
+    ).toBe('built /data/db.json from /src/build.ts');
+  });
+
+  it.each([
+    'https://registry.example.com/data/manifest.json',
+    'HTTPS://host/run/report',
+    'https://host/Volumes/example',
+  ])('preserves complete network URLs: %s', (url) => {
+    expect(remapAbsolutePaths(url, '/home/user/repo')).toBe(url);
+  });
+
+  it('compares Windows drive and component case using Windows semantics', () => {
+    expect(
+      remapAbsolutePaths('D:/Users/dev/OpenSlack/packages/pr/src/x.ts', 'd:/users/dev/openslack'),
+    ).toBe('/packages/pr/src/x.ts');
+  });
+
+  it.each(['/Volumes/private/x', '/builds/123/x', '/home2/private/x'])(
+    'redacts unenumerated absolute roots: %s',
+    (path) => {
+      expect(remapAbsolutePaths(path, '/home/user/repo')).toBe('[path redacted]');
+    },
+  );
+
+  it('normalizes traversal before judging containment', () => {
+    expect(remapAbsolutePaths('/home/user/repo/../../outside.txt', '/home/user/repo')).toBe(
+      '[path redacted]',
+    );
+  });
+
   it('remaps repo-root paths to relative', () => {
     const input = 'File changed: /home/user/project/src/index.ts';
     const result = remapAbsolutePaths(input, '/home/user/project');

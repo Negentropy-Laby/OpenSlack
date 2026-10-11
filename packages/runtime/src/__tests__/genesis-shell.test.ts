@@ -29,7 +29,10 @@ describe('runGenesisValidation', () => {
   it('launches the structured invocation without a shell', () => {
     spawn.mockReturnValue(result({ status: 0 }));
     const outcome = runGenesisValidation(
-      { detail: 'ok', exec: { executable: 'C:/fixture Git/bin/bash.exe', args: ['scripts/genesis-validate.sh'] } },
+      {
+        detail: 'ok',
+        exec: { executable: 'C:/fixture Git/bin/bash.exe', args: ['scripts/genesis-validate.sh'] },
+      },
       { cwd: '/fixture' },
     );
     expect(outcome).toEqual({ ok: true, detail: '5/5 checks passing' });
@@ -73,14 +76,15 @@ describe('runGenesisValidation', () => {
     expect(outcome.detail).toContain('30000ms');
   });
 
-  it('reports TIMEOUT when the launcher is killed by a signal', () => {
+  it('reports TERMINATED without inventing elapsed time when the launcher is killed by a signal', () => {
     spawn.mockReturnValue(result({ status: null, signal: 'SIGKILL' }));
     const outcome = runGenesisValidation(
       { detail: 'ok', exec: { executable: 'wsl', args: ['bash', 'scripts/genesis-validate.sh'] } },
       { cwd: '/fixture' },
     );
-    expect(outcome.failure).toBe('TIMEOUT');
+    expect(outcome.failure).toBe('TERMINATED');
     expect(outcome.detail).toContain('SIGKILL');
+    expect(outcome.detail).not.toContain('30000ms');
   });
 
   it('reports SCRIPT_FAILED with a bounded diagnostic on a non-zero exit', () => {

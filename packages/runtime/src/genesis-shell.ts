@@ -13,6 +13,7 @@ export type GenesisValidationFailure =
   | 'SHELL_UNAVAILABLE'
   | 'TOOL_MISSING'
   | 'TIMEOUT'
+  | 'TERMINATED'
   | 'SCRIPT_FAILED';
 
 export interface GenesisValidationResult {
@@ -87,8 +88,8 @@ export function runGenesisValidation(
   if (result.signal) {
     return {
       ok: false,
-      failure: 'TIMEOUT',
-      detail: `genesis shell was terminated by ${result.signal} after ${timeout}ms`,
+      failure: 'TERMINATED',
+      detail: `genesis shell was terminated by ${result.signal}`,
     };
   }
 
