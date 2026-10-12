@@ -486,3 +486,13 @@ now reads the same complete real file in 1 MiB blocks, reducing that avoidable
 I/O overhead while retaining the real 257 MiB read, digest/output checks and
 existing deadline. The failed report remains preserved; a targeted rerun cannot
 close final acceptance, which requires three new passes and complete runs.
+
+The third 96e804c6 affected run passed 1,335 and failed the separate runtime
+257 MiB case at 5,830 ms. An instrumented isolated run measured fixture setup
+83 ms, expected-digest construction 1,003 ms and production admission 716 ms.
+The expected digest buffered the entire file and the counting mock retained it.
+Runtime-only cases now use private four-tool/manifest fixtures rather than
+unrelated source/build fixtures. The large-file expectation streams all bytes
+through independent unmocked crypto, avoiding retention by the counting mock.
+All runtime rejection, full-file digest and size-bound assertions and the
+existing test deadline remain; final three-pass and complete acceptance restart.

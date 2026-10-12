@@ -22,6 +22,7 @@ import {
   openSync,
   closeSync,
   ftruncateSync,
+  createReadStream,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -705,9 +706,51 @@ describeLinux('offline cleanup handoff preparation', () => {
   });
 });
 
+function runtimeFixture() {
+  // Runtime byte admission consumes only the four ordinary tools and manifest.
+  // Keep Git builds/source qualification in the full handoff fixtures above.
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'cleanup runtime '));
+  roots.push(root);
+  const put = (name: string, raw: string) => {
+    const path = join(root, name);
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, raw);
+    return path;
+  };
+  const names = ['node', 'git', 'sh', 'git-remote-https'] as const;
+  for (const name of names) put(`runtime/${name}`, `fixture ${name}`);
+  const installationManifestPath = put(
+    'manifest.json',
+    JSON.stringify({
+      schema: 'openslack.cleanup_installation.v1',
+      files: names.map((name) => ({
+        path:
+          name === 'git-remote-https'
+            ? '/usr/lib/openslack-cleanup/git-core/git-remote-https'
+            : `/usr/lib/openslack-cleanup/${name}`,
+        sha256: digest(`fixture ${name}`),
+      })),
+    }),
+  );
+  const unused = join(root, 'not-consumed-by-runtime-preflight.json');
+  const input = {
+    runtimeDirectory: join(root, 'runtime'),
+    targetEvidence: {
+      installationManifestPath,
+      taskViewPath: unused,
+      taskAttestationPath: unused,
+      appScopePath: unused,
+      networkPath: unused,
+      identityPath: unused,
+      dependencyInventoryPath: unused,
+    },
+  } satisfies Parameters<typeof assertCleanupHandoffRuntime>[0];
+  return { input, put };
+}
+
 describeLinux('runtime preflight before tool execution', () => {
   it('uses the shared 512 MiB Node bound above the former 256 MiB limit', async () => {
-    const { input } = await fixture();
+    const { input } = runtimeFixture();
     const node = join(input.runtimeDirectory, 'node');
     const fd = openSync(node, 'r+');
     try {
@@ -717,20 +760,25 @@ describeLinux('runtime preflight before tool execution', () => {
     }
     const manifestPath = input.targetEvidence.installationManifestPath;
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256 = digest(
-      readFileSync(node),
-    );
+    // Independent crypto avoids the digest-counting mock retaining a 257 MiB
+    // expected buffer. The same complete real file is still read and hashed.
+    const original = await vi.importActual<typeof Crypto>('node:crypto');
+    const expected = original.createHash('sha256');
+    for await (const block of createReadStream(node, { highWaterMark: 1024 * 1024 }))
+      expected.update(block);
+    manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256 =
+      expected.digest('hex');
     writeFileSync(manifestPath, JSON.stringify(manifest));
     expect(assertCleanupHandoffRuntime(input)).toBe(node);
   });
 
   it('selects only the ordinary runtime matching the previous reviewed manifest', async () => {
-    const { input } = await fixture();
+    const { input } = runtimeFixture();
     expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));
   });
 
   it('binds a relative runtime directory to the validated absolute executable, avoiding PATH lookup', async () => {
-    const { input } = await fixture();
+    const { input } = runtimeFixture();
     const reviewedNode = join(input.runtimeDirectory, 'node');
     input.runtimeDirectory = relative(process.cwd(), input.runtimeDirectory);
     expect(assertCleanupHandoffRuntime(input)).toBe(reviewedNode);
@@ -739,7 +787,7 @@ describeLinux('runtime preflight before tool execution', () => {
   it.each(['tamper', 'symlink', 'credentials'])(
     'rejects %s before returning an executable path',
     async (mode) => {
-      const { input, put } = await fixture();
+      const { input, put } = runtimeFixture();
       const path = join(input.runtimeDirectory, 'node');
       if (mode === 'tamper') writeFileSync(path, 'unreviewed executable');
       if (mode === 'symlink') {
