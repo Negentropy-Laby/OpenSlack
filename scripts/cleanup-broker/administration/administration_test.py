@@ -830,6 +830,19 @@ class MoreBoundaryTests(LinuxTests):
                 tool.process_record(123,root=root)
 
 class PortableLogicTests(PortableTests):
+    def test_direct_dependency_refusal_without_B_does_not_write_bytecode(self):
+        with tempfile.TemporaryDirectory(prefix='cleanup-no-bytecode-') as own:
+            directory = Path(own)
+            for name in ('dependency-inventory.py', '_safety.py'):
+                (directory / name).write_bytes((BASE / name).read_bytes())
+            code = "import runpy,sys;sys.platform='darwin';sys.argv=[sys.argv[1]];runpy.run_path(sys.argv[0],run_name='__main__')"
+            result = subprocess.run([sys.executable, '-I', '-c', code, str(directory / 'dependency-inventory.py')],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn('LINUX_ROOT_OBSERVER_REQUIRED', result.stderr)
+            self.assertEqual(sorted(path.name for path in directory.iterdir()),
+                ['_safety.py', 'dependency-inventory.py'])
+
     def test_instance_decoder_is_closed_and_requires_selected_bindings(self):
         tool=load('inspect-instance')
         record=dict(schema='openslack.cleanup_broker_instance.v1',brokerId='cleanup-broker-pr418',

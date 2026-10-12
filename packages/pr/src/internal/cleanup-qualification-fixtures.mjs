@@ -25,9 +25,12 @@ import { isSensitiveCleanupInput, cleanupExactKeys, cleanupObject } from './clea
 import { CleanupDirectoryAnchor, CleanupCapturedFile } from './cleanup-file-boundary.js';
 
 export const BINDINGS = Object.freeze({
-  ...CLEANUP_FIXTURE_OPERATOR,
+  host: CLEANUP_FIXTURE_OPERATOR.host,
   repository: CLEANUP_ADMIN_BINDINGS.repository,
   repositoryId: Number(CLEANUP_ADMIN_BINDINGS.repositoryId),
+  defaultBranch: CLEANUP_FIXTURE_OPERATOR.defaultBranch,
+  login: CLEANUP_FIXTURE_OPERATOR.login,
+  userId: CLEANUP_FIXTURE_OPERATOR.userId,
 });
 const REPO = BINDINGS.repository;
 const API = `repos/${REPO}`;
@@ -1374,7 +1377,14 @@ async function registerFork(runtime, batch) {
     batch,
     batch.manifest.phase,
     async () => {
-      batch.manifest.fork = { state: 'OBSERVED_EXISTING_MERGED_FORK', observedPR: actual };
+      await preflight(runtime);
+      const latest = await prObservation(runtime, actual.prNumber);
+      required(
+        JSON_BYTES(latest).equals(JSON_BYTES(actual)),
+        'FIXTURE_FORK_TARGET_CHANGED',
+        'fork resource changed during confirmation; do not publish stale qualification evidence',
+      );
+      batch.manifest.fork = { state: 'OBSERVED_EXISTING_MERGED_FORK', observedPR: latest };
     },
     { retainOnFailure: true },
   );

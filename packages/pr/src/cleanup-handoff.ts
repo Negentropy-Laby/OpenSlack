@@ -6,7 +6,10 @@ import {
 } from './internal/cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
 /** Offline preparation only. This module does not import auth, delivery or cleanup execution. */
-import { createHash } from 'node:crypto';
+import {
+  cleanupByteDigest,
+  cleanupDocumentBytes as jsonBytes,
+} from './internal/cleanup-document-bytes.js';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -273,8 +276,8 @@ const GATES = [
   'REAL_QUALIFICATION_NOT_RUN',
   'CURRENT_HEAD_HUMAN_APPROVAL_REQUIRED',
 ];
-const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
-type Digest = typeof sha;
+type Digest = (bytes: Buffer | string) => string;
+const sha: Digest = cleanupByteDigest;
 function ownByteDigests(): Digest {
   const hashes = new WeakMap<Buffer, string>();
   return (bytes) => {
@@ -286,7 +289,6 @@ function ownByteDigests(): Digest {
     return hash;
   };
 }
-const jsonBytes = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const fail = (code: CleanupHandoffErrorCode): never => {
   throw new CleanupHandoffError(code);
 };

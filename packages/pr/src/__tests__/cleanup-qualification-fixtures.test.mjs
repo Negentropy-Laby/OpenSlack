@@ -23,6 +23,30 @@ const sha = (number) => number.toString(16).padStart(40, '0');
 const load = (directory) =>
   JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json'), 'utf8'));
 const write = (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+test('loads an existing v1 fixture plan with its original binding field order without migration', async () => {
+  const f = fixture(),
+    batch = await f.plan(),
+    planPath = path.join(batch, 'plan.json');
+  const plan = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+  plan.bindings = {
+    host: BINDINGS.host,
+    repository: BINDINGS.repository,
+    repositoryId: BINDINGS.repositoryId,
+    defaultBranch: BINDINGS.defaultBranch,
+    login: BINDINGS.login,
+    userId: BINDINGS.userId,
+  };
+  write(planPath, plan);
+  const record = load(batch);
+  record.planSHA256 = createHash('sha256').update(fs.readFileSync(planPath)).digest('hex');
+  write(path.join(batch, 'manifest.json'), record);
+  const planBefore = fs.readFileSync(planPath),
+    manifestBefore = fs.readFileSync(path.join(batch, 'manifest.json'));
+  await f.run('inspect', batch);
+  assert.deepEqual(f.state.mutations, []);
+  assert(fs.readFileSync(planPath).equals(planBefore));
+  assert(fs.readFileSync(path.join(batch, 'manifest.json')).equals(manifestBefore));
+});
 test('command diagnostics preserve status, signal and actual error while bounding redacted UTF-8 bytes', () => {
   const stderr =
     'failed: ghp_fixtureSecret123\nAuthorization: Bearer fixture-secret\n' + 'é'.repeat(40_000);
@@ -692,6 +716,47 @@ test('later human-authorised drift is forward-only and preserves its initial Per
   assert.equal(load(batch).permitIssued, false);
   assert.equal(load(batch).qualificationRun, false);
 });
+test.each(['operator', 'repository', 'target'])(
+  'fork registration revalidates %s after confirmation before recording evidence',
+  async (kind) => {
+    const f = fixture(),
+      batch = await f.plan();
+    f.state.prs.set(999, {
+      number: 999,
+      node_id: 'PR_existing_fork',
+      state: 'closed',
+      merged: true,
+      merged_at: NOW,
+      head: {
+        ref: 'human-existing-fork',
+        sha: sha(888),
+        repo: { id: 888, full_name: 'wsman/independently-authorised-fork' },
+      },
+      base: {
+        ref: 'main',
+        repo: {
+          id: BINDINGS.repositoryId,
+          full_name: BINDINGS.repository,
+        },
+      },
+    });
+    f.dependencies.confirm = async () => {
+      if (kind === 'operator') f.state.user.login = 'foreign-human';
+      if (kind === 'repository') f.state.repository.delete_branch_on_merge = true;
+      if (kind === 'target') f.state.prs.get(999).head.sha = sha(777);
+      return true;
+    };
+    const code = {
+      operator: 'FIXTURE_HUMAN_IDENTITY_REQUIRED',
+      repository: 'FIXTURE_AUTO_DELETION_ENABLED',
+      target: 'FIXTURE_FORK_TARGET_CHANGED',
+    }[kind];
+    await assert.rejects(f.run('register-existing-fork', batch), { code });
+    assert.deepEqual(f.state.mutations, []);
+    assert.equal(load(batch).fork.state, 'BLOCKED_SEPARATE_FORK_AUTHORIZATION_REQUIRED');
+  },
+);
+
 test('fork registration leaves missing cross-repository preparation blocked without mutation', async (t) => {
   const f = fixture(t);
   const batch = await f.plan();

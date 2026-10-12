@@ -177,7 +177,8 @@ and exact SHA256 values for all seven proof files. Missing or unreadable files
 must be reported as such, never inferred from an old manifest.
 
 An observed destination with the correct bytes but the wrong owner or mode is
-planned for repair to root:root and 0755. Those observed values describe the
+planned for repair to root:root and its fixed artifact mode: executor.mjs uses
+0644; the other five program destinations use 0755. Those observed values describe the
 target; they do not relax the separate requirement that evidence input files
 have safe ownership and permissions. Invalid numeric ownership or mode syntax
 still refuses the plan.

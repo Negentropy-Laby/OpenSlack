@@ -16,9 +16,9 @@ import stat
 import struct
 import subprocess
 import sys
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent))
 import _safety as common
-sys.dont_write_bytecode = True
 import time
 import types
 
