@@ -193,6 +193,8 @@ try {
             'git clone --no-local --no-checkout <source> <checkout>',
             `git checkout --detach ${input.candidateHead}`,
             'bun install --frozen-lockfile --ignore-scripts',
+            'python3 -I -B scripts/cleanup-broker/generate-administration-contract.py --check',
+            'bun x tsc --build packages/pr/tsconfig.json packages/runtime/tsconfig.json',
             ...CLEANUP_ADMIN_TOOLKIT_FILES.filter((name) => name.endsWith('.mjs')).map(
               (name) =>
                 `bun build scripts/cleanup-broker/administration/${name === 'qualification-fixtures.mjs' ? name : name.replace(/\.mjs$/, '.ts')} --target=node --format=esm --outfile <tool-directory>/${name}`,
@@ -245,6 +247,8 @@ try {
             'git clone --no-local --no-checkout <source> <checkout>',
             `git checkout --detach ${input.candidateHead}`,
             'bun install --frozen-lockfile --ignore-scripts',
+            'python3 -I -B scripts/cleanup-broker/generate-administration-contract.py --check',
+            'bun x tsc --build packages/pr/tsconfig.json packages/runtime/tsconfig.json',
             'GOWORK=off CGO_ENABLED=0 go build -trimpath -buildvcs=true -o <artifact-directory>/cleanup-broker ./cmd/cleanup-broker',
             'bun scripts/cleanup-broker/build-executor.ts --outdir <artifact-directory>',
             'bun build scripts/cleanup-broker/verify-handoff.ts --target=node --format=esm --outfile <artifact-directory>/verify-handoff.mjs',

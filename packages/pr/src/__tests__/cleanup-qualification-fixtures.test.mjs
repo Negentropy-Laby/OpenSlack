@@ -767,6 +767,8 @@ test('fork registration leaves missing cross-repository preparation blocked with
 test('only an actually observed merged canonical-base fork PR can be recorded read-only', async (t) => {
   const f = fixture(t);
   const batch = await f.plan();
+  let ticks = 0;
+  f.dependencies.now = () => new Date(Date.parse(NOW) + ++ticks).toISOString();
   f.state.prs.set(999, {
     number: 999,
     node_id: 'PR_real_observed_fixture',

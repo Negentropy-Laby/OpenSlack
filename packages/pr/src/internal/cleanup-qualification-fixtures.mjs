@@ -1379,8 +1379,14 @@ async function registerFork(runtime, batch) {
     async () => {
       await preflight(runtime);
       const latest = await prObservation(runtime, actual.prNumber);
+      // Collection times advance even when the GitHub resource is unchanged.
+      // Compare private copies; retain the new timestamp in published evidence.
+      const currentResource = { ...latest },
+        previousResource = { ...actual };
+      delete currentResource.observedAt;
+      delete previousResource.observedAt;
       required(
-        JSON_BYTES(latest).equals(JSON_BYTES(actual)),
+        JSON_BYTES(currentResource).equals(JSON_BYTES(previousResource)),
         'FIXTURE_FORK_TARGET_CHANGED',
         'fork resource changed during confirmation; do not publish stale qualification evidence',
       );
