@@ -496,3 +496,13 @@ unrelated source/build fixtures. The large-file expectation streams all bytes
 through independent unmocked crypto, avoiding retention by the counting mock.
 All runtime rejection, full-file digest and size-bound assertions and the
 existing test deadline remain; final three-pass and complete acceptance restart.
+
+The complete 96e804c6 native Windows attempt exited 1 without a complete JSON
+report. Preserved logs contain PowerShell OutOfMemoryException/0x800705af, Go
+"cannot allocate memory" and Node worker/IPC failure. Subsequent OS counters
+measured 62,234,603,520 committed bytes against a 69,694,619,648-byte commit limit
+(89 percent); no live owned runner or known clone-specific worker remained.
+This is a failed acceptance, not a PASS inferred from its targeted run or CI.
+The final native run uses one file worker to fit the observed host commit budget;
+all cases and each case's explicit concurrency remain unchanged. No deadline,
+retry, skip, heap/pagefile setting or production permission is changed.
