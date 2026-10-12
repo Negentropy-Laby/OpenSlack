@@ -22,6 +22,9 @@ const publicationFault = vi.hoisted(() => ({
   active: false,
   lockFstat: false,
   lockPublicationSync: false,
+  terminalLockRequired: false,
+  terminalFailure: false,
+  concurrentTerminalObservation: false,
   lockFds: new Set(),
 }));
 vi.mock('node:fs', async (original) => {
@@ -29,6 +32,29 @@ vi.mock('node:fs', async (original) => {
   return {
     ...actual,
     openSync: (...args) => {
+      if (
+        publicationFault.concurrentTerminalObservation &&
+        /[\\/]mutation\.lock$/.test(String(args[0]))
+      ) {
+        const directory = path.dirname(String(args[0]));
+        const recordPath = path.join(directory, 'manifest.json');
+        if (actual.existsSync(recordPath)) {
+          const record = JSON.parse(actual.readFileSync(recordPath, 'utf8'));
+          if (
+            record.phase === 'MERGE_TARGETS_PARTIAL' &&
+            record.fixtures
+              .filter((item) => item.disposition.startsWith('human-merge'))
+              .every((item) => item.pr.merged)
+          ) {
+            record.fork = {
+              state: 'BLOCKED_SEPARATE_FORK_AUTHORIZATION_REQUIRED',
+              concurrentObservation: true,
+            };
+            actual.writeFileSync(recordPath, JSON.stringify(record, null, 2) + '\n');
+            publicationFault.concurrentTerminalObservation = false;
+          }
+        }
+      }
       const fd = actual.openSync(...args);
       if (/[\\/]mutation\.lock$/.test(String(args[0]))) publicationFault.lockFds.add(fd);
       return fd;
@@ -53,6 +79,17 @@ vi.mock('node:fs', async (original) => {
       return actual.fsyncSync(fd);
     },
     renameSync: (source, target) => {
+      if (/manifest\.json\.owned-/.test(String(source))) {
+        const record = JSON.parse(actual.readFileSync(source, 'utf8'));
+        if (record.phase === 'MERGED_TARGETS' && publicationFault.terminalLockRequired)
+          assert.equal(
+            publicationFault.lockFds.size,
+            1,
+            'terminal publication requires an owned lock',
+          );
+        if (record.phase === 'MERGED_TARGETS' && publicationFault.terminalFailure)
+          throw Object.assign(new Error('terminal publication failed'), { code: 'EIO' });
+      }
       if (publicationFault.active && /manifest\.json\.owned-/.test(String(source)))
         throw Object.assign(new Error('fixture terminal-state publication failed'), {
           code: 'EIO',
@@ -65,7 +102,44 @@ afterEach(() => {
   publicationFault.active = false;
   publicationFault.lockFstat = false;
   publicationFault.lockPublicationSync = false;
+  publicationFault.terminalLockRequired = false;
+  publicationFault.terminalFailure = false;
+  publicationFault.concurrentTerminalObservation = false;
   for (const fd of publicationFault.lockFds) fs.closeSync(fd);
+});
+
+test('terminal merge bookkeeping is locked without an extra remote mutation or confirmation', async () => {
+  const f = fixture();
+  const batch = await f.plan();
+  await f.run('create', batch);
+  await f.run('close-case', batch);
+  publicationFault.terminalLockRequired = true;
+  await f.run('merge-targets', batch);
+  assert.equal(load(batch).phase, 'MERGED_TARGETS');
+  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+});
+
+test('terminal bookkeeping publication failure retains recovery lock', async () => {
+  const f = fixture();
+  const batch = await f.plan();
+  await f.run('create', batch);
+  await f.run('close-case', batch);
+  publicationFault.terminalFailure = true;
+  await assert.rejects(f.run('merge-targets', batch), { code: 'EIO' });
+  assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+});
+
+test('terminal bookkeeping refuses a concurrently recorded observation instead of overwriting it', async () => {
+  const f = fixture();
+  const batch = await f.plan();
+  await f.run('create', batch);
+  await f.run('close-case', batch);
+  publicationFault.concurrentTerminalObservation = true;
+  await assert.rejects(f.run('merge-targets', batch), { code: 'FIXTURE_LOCAL_RECORD_CHANGED' });
+  assert.equal(load(batch).fork.concurrentObservation, true);
+  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+  assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
 });
 
 test.each(['lockFstat', 'lockPublicationSync'])(

@@ -57,8 +57,9 @@ def default_observers():
     return helper.observe_processes, helper.observe_locks
 
 
-def offline_guard(root, owner, process_observer, lock_observer):
+def offline_guard(root, owner, process_observer, lock_observer, absent=()):
     process = process_observer(root)
+    check_absent_optional(absent)
     common.require(isinstance(process, dict) and process.get('state') == 'stopped',
         'BROKER_PROCESS_NOT_CONFIRMED_STOPPED')
     state = observed_directory(root, '/var/lib/openslack-cleanup', owner)
@@ -70,7 +71,21 @@ def offline_guard(root, owner, process_observer, lock_observer):
     common.require(not runtime['entries'], 'UNEXPECTED_RUNTIME_OBJECT')
     common.require(runtime['state'] == 'missing' or (runtime['uid'], runtime['gid'], runtime['mode'])
         == (*expected, '0755'), 'RUNTIME_DIRECTORY_OWNER_OR_MODE')
-    locks = lock_observer(root, [])
+    objects = []
+    # Include fixed installed inodes even when there is no ledger, journal or
+    # socket yet. A non-Broker process can still hold a lock on an executable.
+    for logical in [*ALLOWLIST, *(f'/var/lib/openslack-cleanup/{name}' for name in HISTORY),
+                    '/run/openslack-cleanup/broker.sock']:
+        try:
+            with common.Anchor(root, logical, owners={0, owner[0], common.BROKER_UID},
+                               sticky_evidence=True) as anchor:
+                info = os.stat(anchor.name, dir_fd=anchor.parent, follow_symlinks=False)
+                common.require(not stat.S_ISLNK(info.st_mode), 'LOCK_TARGET_UNSAFE')
+                objects.append(dict(path=logical, dev=str(info.st_dev), ino=str(info.st_ino)))
+                anchor.check()
+        except FileNotFoundError:
+            continue
+    locks = lock_observer(root, objects)
     common.require(isinstance(locks, dict) and locks.get('state') == 'none-observed', 'LOCKS_NOT_CONFIRMED_ABSENT')
     return dict(process=process, state=state, runtime=runtime, locks=locks)
 
@@ -252,7 +267,8 @@ def prepare_backup(*, root=Path('/'), output, owner=(0, 0), process_observer=Non
                 check_absent_optional(absent)
                 os.fsync(files_fd)
                 os.fsync(restore_fd)
-                after = offline_guard(root, owner, process_observer, lock_observer)
+                check_absent_optional(absent)
+                after = offline_guard(root, owner, process_observer, lock_observer, absent)
                 report['targetAfter'] = after
                 common.require(before == after, 'OFFLINE_TARGET_CHANGED')
                 check_created_directories(directories)

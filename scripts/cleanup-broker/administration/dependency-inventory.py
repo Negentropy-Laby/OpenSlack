@@ -16,12 +16,14 @@ import stat
 import struct
 import subprocess
 import sys
+sys.path.insert(0, str(Path(__file__).parent))
+import _safety as common
 sys.dont_write_bytecode = True
 import time
 import types
 
 HELPER_NAME = 'target-observation.py'
-HELPER_SHA256 = '0ecee7c1c0804efa79f655c634e6c6d0ea70af901915b31e1ba8cdd994e0d280'
+HELPER_SHA256 = 'c94fa232f6f1b04d91e3a0163c02db429f49c1ddc3f6876a48a66178cbb6c1bd'
 BINDINGS = dict(target='OpenSlack-Cleanup-Qual', workspaceId='openslack-self',
     repository='Negentropy-Laby/openslack-cleanup-qualification', repositoryId='1380965476')
 INSTALLED = {
@@ -662,9 +664,11 @@ def main():
     require(all(hasattr(os, key) for key in ('O_DIRECTORY', 'O_NOFOLLOW', 'O_NONBLOCK', 'O_CLOEXEC')),
         'LINUX_DESCRIPTOR_CAPABILITY_REQUIRED')
     require(args.raw_output != args.inventory_output, 'DISTINCT_EVIDENCE_OUTPUTS_REQUIRED')
-    require(all(path.is_absolute() and '..' not in path.parts and not any(part in ('credentials', 'secrets', '.env')
-        or part.endswith(('.pem', '.key')) for part in path.parts)
-        for path in (args.observation, args.raw_output, args.inventory_output, args.helper)), 'EVIDENCE_PATH_INVALID_OR_SENSITIVE')
+    for path in (args.observation, args.raw_output, args.inventory_output, args.helper):
+        try:
+            common.safe_path(path)
+        except common.Refusal as error:
+            raise Refusal(error.code) from error
     require(not args.raw_output.exists() and not args.inventory_output.exists()
         and not args.raw_output.is_symlink() and not args.inventory_output.is_symlink(), 'EVIDENCE_OUTPUT_ALREADY_EXISTS')
     helper = load_frozen_helper(args.helper)

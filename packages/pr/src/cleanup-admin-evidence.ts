@@ -360,6 +360,7 @@ function selection(raw: Buffer, head: string): Readonly<Record<string, string>> 
       'EVIDENCE_PRIOR_APPROVAL_INVALID',
       'selectedBindings',
     );
+    insist(v.candidateHead === head, 'EVIDENCE_CANDIDATE_MISMATCH', 'selectedBindings');
   } else {
     exact(v, ['schema', 'selected', 'priorInput'], 'selectedBindings');
     insist(
@@ -418,6 +419,7 @@ function selection(raw: Buffer, head: string): Readonly<Record<string, string>> 
     'qualification_repository_name',
     'qualification_repository_numeric_id',
     'qualification_repository_default_branch',
+    'automatic_branch_deletion',
     'deletion_app_id',
     'deletion_app_installation_id',
     'approved_https_proxy',

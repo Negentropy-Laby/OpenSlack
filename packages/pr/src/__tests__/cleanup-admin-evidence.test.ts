@@ -596,6 +596,41 @@ describe('cleanup evidence preparation', () => {
     expect(fault.openedFiles).toBe(0);
   });
   if (declareLinuxCleanupTests) {
+    it('refuses a candidate-bound DRAFT from another candidate before publication', () => {
+      const f = fixture();
+      f.input.sources.selectedBindings = f.put('selected.json', {
+        schema: 'openslack.cleanup_handoff_draft.v1',
+        candidateHead: '5'.repeat(40),
+        approvalStatus: 'DRAFT',
+        selected: f.selected,
+        priorInput: { source: 'fixture', sha256: 'a'.repeat(64), approvalNotInherited: true },
+        installationAuthorized: false,
+        executionAuthorized: false,
+      });
+      const result = prepareCleanupEvidenceDraft(f.input);
+      expect(result.blockingIssues).toContainEqual({
+        code: 'EVIDENCE_CANDIDATE_MISMATCH',
+        role: 'selectedBindings',
+      });
+      expect(result.published).toBe(false);
+      expect(existsSync(f.input.outputDirectory)).toBe(false);
+    });
+    it('reports missing automatic branch deletion by its field name before publication', () => {
+      const f = fixture();
+      const { automatic_branch_deletion: omitted, ...selected } = f.selected;
+      expect(omitted).toBe('false');
+      f.input.sources.selectedBindings = f.put('selected.json', {
+        schema: 'openslack.cleanup_admin_selected_bindings.v1',
+        selected,
+        priorInput: { source: 'fixture', sha256: 'a'.repeat(64), approvalNotInherited: true },
+      });
+      const result = prepareCleanupEvidenceDraft(f.input);
+      expect(result.blockingIssues).toContainEqual({
+        code: 'EVIDENCE_BINDING_MISSING',
+        role: 'automatic_branch_deletion',
+      });
+      expect(existsSync(f.input.outputDirectory)).toBe(false);
+    });
     it('completes short writes with file and directory fsync', () => {
       const f = fixture();
       fault.shortWrite = true;

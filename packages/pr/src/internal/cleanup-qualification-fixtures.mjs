@@ -612,6 +612,9 @@ async function authorisedPhase(runtime, batch, name, phrase, explanation, body) 
     'FIXTURE_CONFIRMATION_DECLINED',
     'no mutation authorised',
   );
+  return lockedPhase(runtime, batch, name, body, { phrase });
+}
+async function lockedPhase(runtime, batch, name, body, { phrase, retainOnFailure = false } = {}) {
   const release = lockPhase(batch.directory, batch.anchor);
   let preserveLock = false;
   batch.manifestPath = path.join(batch.directory, 'manifest.json');
@@ -627,17 +630,20 @@ async function authorisedPhase(runtime, batch, name, phrase, explanation, body) 
       'FIXTURE_RECOVERY_REQUIRED',
       'inspect the partial batch; do not re-run mutation',
     );
-    batch.manifest.confirmations.push({
-      phase: name,
-      phrase,
-      actor: BINDINGS.login,
-      observedAt: runtime.now(),
-    });
-    saveBatch(batch);
+    if (phrase !== undefined) {
+      batch.manifest.confirmations.push({
+        phase: name,
+        phrase,
+        actor: BINDINGS.login,
+        observedAt: runtime.now(),
+      });
+      saveBatch(batch);
+    }
     await body();
     batch.manifest.phase = name;
     saveBatch(batch);
   } catch (error) {
+    preserveLock = retainOnFailure;
     batch.manifest.phase = 'FAILED_RECONCILE_REQUIRED';
     batch.manifest.failure = {
       code: error.code ?? 'FIXTURE_LOCAL_OR_REMOTE_FAILURE',
@@ -1089,8 +1095,7 @@ async function mergeTargets(runtime, batch) {
       },
     );
   }
-  batch.manifest.phase = 'MERGED_TARGETS';
-  saveBatch(batch);
+  await lockedPhase(runtime, batch, 'MERGED_TARGETS', async () => {}, { retainOnFailure: true });
 }
 async function inspectBatch(runtime, batch) {
   const preflightResult = await preflight(runtime);
@@ -1329,14 +1334,15 @@ async function registerFork(runtime, batch) {
     'FIXTURE_CONFIRMATION_DECLINED',
     'fork evidence was not selected',
   );
-  const release = lockPhase(batch.directory, batch.anchor);
-  batch.manifestPath = path.join(batch.directory, 'manifest.json');
-  try {
-    batch.manifest.fork = { state: 'OBSERVED_EXISTING_MERGED_FORK', observedPR: actual };
-    saveBatch(batch);
-  } finally {
-    release();
-  }
+  await lockedPhase(
+    runtime,
+    batch,
+    batch.manifest.phase,
+    async () => {
+      batch.manifest.fork = { state: 'OBSERVED_EXISTING_MERGED_FORK', observedPR: actual };
+    },
+    { retainOnFailure: true },
+  );
 }
 
 export async function main(argv, dependencies = {}) {

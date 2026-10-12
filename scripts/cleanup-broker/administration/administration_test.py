@@ -114,6 +114,47 @@ class BackupFixtureTests(unittest.TestCase):
         self.fixture = OwnedInstallation()
         self.addCleanup(self.fixture.close)
 
+    def test_installed_binary_flock_blocks_backup_without_history(self):
+        import fcntl
+        helper = load('target-observation')
+        binary = self.fixture.root / 'usr/lib/openslack-cleanup/node'
+        with binary.open('rb') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Capture actual kernel metadata into the isolated /proc fixture;
+            # absence of /proc/locks must not accidentally pass this regression.
+            proc = self.fixture.root / 'proc'
+            proc.mkdir(mode=0o755)
+            (proc / 'locks').write_text(Path('/proc/locks').read_text())
+            info = os.fstat(handle.fileno())
+            observed = helper.observe_locks(self.fixture.root, [dict(
+                path='/usr/lib/openslack-cleanup/node', dev=str(info.st_dev), ino=str(info.st_ino))])
+            self.assertEqual(observed['state'], 'held', observed)
+            self.fixture.locks = helper.observe_locks
+            result = self.fixture.run()
+        self.assertEqual(result['result'], 'BLOCKED', result)
+        self.assertIn('LOCKS_NOT_CONFIRMED_ABSENT', result['blockingReasons'])
+        self.assertFalse((self.fixture.parent / 'new backup').exists())
+
+    def test_observer_rejects_nonprivate_output_parent_without_creation(self):
+        helper = load('target-observation')
+        parent = self.fixture.outer / 'shared-observation'
+        parent.mkdir(mode=0o750)
+        output = parent / 'observation.json'
+        with self.assertRaises(helper.ObservationFailure):
+            helper.publish(output, b'{}\n')
+        self.assertFalse(output.exists())
+
+    def test_dependency_cli_refuses_sensitive_inputs_before_helper_read(self):
+        tool = load('dependency-inventory')
+        for name in ['.ssh', '.AWS', '.env.local', '.ENV']:
+            with self.subTest(name=name), patch.object(os, 'geteuid', return_value=0), \
+                    patch.object(sys, 'argv', ['dependency-inventory', '--observation',
+                        f'/var/tmp/{name}/input.json', '--raw-output', '/var/tmp/raw.json',
+                        '--inventory-output', '/var/tmp/inventory.json']), \
+                    patch.object(tool, 'load_frozen_helper', side_effect=AssertionError('input opened')):
+                with self.assertRaises(tool.Refusal):
+                    tool.main()
+
     def test_complete_fixed_allowlist_dual_sync_and_backup_local_restore(self):
         real_sync = os.fsync
         calls = []

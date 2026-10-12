@@ -360,7 +360,7 @@ def publish(output,data):
         raise ObservationFailure('OUTPUT_ACTIVE_PATH_FORBIDDEN')
     with AnchoredPath(Path('/'),str(output)) as anchor,ExitStack() as owned:
         parent=os.fstat(anchor.parent)
-        if parent.st_uid not in (0,os.geteuid()) or stat.S_IMODE(parent.st_mode)&0o022:
+        if parent.st_uid != os.geteuid() or stat.S_IMODE(parent.st_mode) != 0o700:
             raise ObservationFailure('OUTPUT_DIRECTORY_NOT_PRIVATE')
         fd=os.open(anchor.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=anchor.parent)
         owned.callback(os.close,fd)

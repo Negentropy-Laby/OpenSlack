@@ -191,7 +191,7 @@ describe('R18-09 the fixed layout includes the Broker', () => {
       CLEANUP_INSTALL_LAYOUT.map((entry) => entry.artifact).sort(),
     );
     for (const file of result.files) {
-      expect(file.mode).toBe('0755');
+      expect(file.mode).toBe(file.artifact === 'executor.mjs' ? '0644' : '0755');
       expect(file.owner).toBe('root:root');
     }
   });

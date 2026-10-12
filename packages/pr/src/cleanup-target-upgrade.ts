@@ -84,7 +84,13 @@ export const CLEANUP_INSTALL_LAYOUT = Object.freeze(
       artifact: 'git-remote-https',
       path: '/usr/lib/openslack-cleanup/git-core/git-remote-https',
     },
-  ].map((entry) => Object.freeze({ ...entry, mode: '0755', owner: 'root:root' })),
+  ].map((entry) =>
+    Object.freeze({
+      ...entry,
+      mode: entry.artifact === 'executor.mjs' ? '0644' : '0755',
+      owner: 'root:root',
+    }),
+  ),
 );
 
 /** A command is built as a program plus arguments, never as a shell string. */
