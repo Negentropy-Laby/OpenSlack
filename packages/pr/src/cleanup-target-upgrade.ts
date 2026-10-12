@@ -73,19 +73,8 @@ export interface PrepareCleanupTargetUpgradePlanInput {
  * The Broker is a member of the layout like any other artifact, so it is planned
  * whether or not an old manifest ever mentioned it.
  */
-export const CLEANUP_INSTALL_LAYOUT = Object.freeze(
-  [
-    { artifact: 'cleanup-broker', path: '/usr/lib/openslack-cleanup/cleanup-broker' },
-    { artifact: 'executor.mjs', path: '/usr/lib/openslack-cleanup/executor.mjs' },
-    { artifact: 'node', path: '/usr/lib/openslack-cleanup/node' },
-    { artifact: 'git', path: '/usr/lib/openslack-cleanup/git' },
-    { artifact: 'sh', path: '/usr/lib/openslack-cleanup/sh' },
-    {
-      artifact: 'git-remote-https',
-      path: '/usr/lib/openslack-cleanup/git-core/git-remote-https',
-    },
-  ].map((entry) => Object.freeze({ ...entry, mode: '0755', owner: 'root:root' })),
-);
+export { CLEANUP_INSTALL_LAYOUT } from './internal/cleanup-administration-contract.js';
+import { CLEANUP_INSTALL_LAYOUT } from './internal/cleanup-administration-contract.js';
 
 /** A command is built as a program plus arguments, never as a shell string. */
 export interface CleanupUpgradeCommand {

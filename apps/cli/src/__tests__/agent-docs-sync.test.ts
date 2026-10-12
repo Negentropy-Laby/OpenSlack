@@ -49,11 +49,30 @@ describe('cross-document sync', () => {
   const cliReference = readFile('docs/user/cli-reference.md');
   const prCommand = readFile('apps/cli/src/commands/pr.ts');
 
-  it('keeps agent docs byte-identical with the default unbound-merge rule', () => {
+  it('keeps agent docs byte-identical with repair continuity and the default unbound-merge rule', () => {
     // Normalize CRLF to LF for cross-platform comparison
     const agentsNormalized = agentsMd.replace(/\r\n/g, '\n');
     const claudeNormalized = claudeMd.replace(/\r\n/g, '\n');
     expect(agentsNormalized).toBe(claudeNormalized);
+    const repairGate = extractSectionBody(
+      agentsNormalized,
+      'Existing PR Continuity for Repairs',
+    ).replace(/\s+/g, ' ');
+    expect(repairGate).toContain('Repairs default to the existing PR');
+    expect(repairGate).toContain(
+      'Do not plan, create or recreate a repair PR unless the user explicitly requests that delivery route',
+    );
+    expect(repairGate).toContain('Every repair plan must name the existing PR');
+    expect(repairGate).toContain('Use an update-only path for repairs');
+    expect(repairGate).toContain('must stop publication, not fall back to PR creation');
+    const synchronizationGate = extractSectionBody(
+      agentsNormalized,
+      'PR Update Synchronization',
+    ).replace(/\s+/g, ' ');
+    expect(synchronizationGate).toContain(
+      'do not close and recreate it unless the user explicitly requests recreation',
+    );
+    expect(synchronizationGate).not.toContain('or close and recreate the PR');
     const mergeGate = extractSectionBody(agentsNormalized, 'Review Thread Resolution Gate').replace(
       /\s+/g,
       ' ',

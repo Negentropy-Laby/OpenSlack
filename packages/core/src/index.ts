@@ -15,6 +15,8 @@ export {
 export { decodeStrictJSON } from './strict-json.js';
 export {
   readStableDescriptor,
+  digestStableDescriptor,
+  capturePortableDirectoryChain,
   stableFileIdentity,
   StableDescriptorError,
 } from './stable-descriptor.js';

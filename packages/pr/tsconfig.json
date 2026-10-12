@@ -2,14 +2,25 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "allowJs": true
   },
-  "include": ["src"],
+  "include": ["src/**/*.ts", "src/internal/cleanup-qualification-fixtures.mjs"],
   "references": [
-    { "path": "../workspace" },
-    { "path": "../core" },
-    { "path": "../kernel" },
-    { "path": "../github" },
-    { "path": "../delivery" }
+    {
+      "path": "../workspace"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../kernel"
+    },
+    {
+      "path": "../github"
+    },
+    {
+      "path": "../delivery"
+    }
   ]
 }

@@ -8,7 +8,8 @@
     "apps/*"
   ],
   "dependencies": {
-    "@openslack/collaboration": "workspace:*"
+    "@openslack/collaboration": "workspace:*",
+    "@openslack/pr": "workspace:*"
   },
   "scripts": {
     "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/cleanup-broker/tsconfig.json && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/qualification-capstone/tsconfig.json && tsc --noEmit -p scripts/contract-delivery-rehearsal/tsconfig.json && tsc --noEmit -p scripts/organization-graph-contracts/tsconfig.json && tsc --noEmit -p scripts/governance-control-contracts/tsconfig.json && bun run workflow:contract-families -- --typecheck && bun run workflow:contract-families -- --check && tsc --noEmit -p scripts/qualification/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",

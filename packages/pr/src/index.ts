@@ -1,4 +1,42 @@
+export { verifyCleanupWorkspace } from './cleanup-workspace.js';
+export type {
+  VerifyCleanupWorkspaceInput,
+  CleanupWorkspaceObservation,
+} from './cleanup-workspace.js';
 export { fetchPRDetails } from './fetch.js';
+export {
+  prepareCleanupEvidenceDraft,
+  readCleanupEvidenceDraftInput,
+  CLEANUP_ADMIN_EVIDENCE_INPUT_SCHEMA,
+} from './cleanup-admin-evidence.js';
+export type {
+  CleanupEvidenceSource,
+  CleanupEvidenceTargetSources,
+  CleanupEvidenceBlockingIssue,
+  PrepareCleanupTargetEvidenceDraftInput,
+  PrepareCleanupPackageEvidenceDraftInput,
+  PrepareCleanupEvidenceDraftInput,
+  PrepareCleanupEvidenceDraftResult,
+} from './cleanup-admin-evidence.js';
+export {
+  prepareCleanupAdminToolkit,
+  verifyCleanupAdminToolkit,
+  readCleanupAdminToolkitPreparationInput,
+  CLEANUP_ADMIN_TOOLKIT_FILES,
+  CLEANUP_ADMIN_TOOLKIT_SCHEMAS,
+  CleanupAdminToolkitError,
+} from './cleanup-admin-toolkit.js';
+export type {
+  CleanupAdminToolkitErrorCode,
+  CleanupAdminToolkitFileRecord,
+  CleanupAdminToolkitBuildReport,
+  CleanupAdminToolkitManifest,
+  CleanupAdminToolkitBuildInput,
+  PrepareCleanupAdminToolkitInput,
+  PrepareCleanupAdminToolkitResult,
+  VerifyCleanupAdminToolkitInput,
+  VerifyCleanupAdminToolkitResult,
+} from './cleanup-admin-toolkit.js';
 export {
   prepareCleanupHandoffDraft,
   verifyCleanupHandoffPackage,

@@ -85,3 +85,5 @@ export type {
 } from './attach.js';
 
 export { isSafeAgentId } from './agent-id.js';
+
+export { parseRuntimeIdentityText } from './runtime-identity.js';

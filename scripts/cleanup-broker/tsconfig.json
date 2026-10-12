@@ -8,5 +8,5 @@
     "strict": true,
     "types": ["node", "bun-types"]
   },
-  "include": ["./*.ts"]
+  "include": ["./**/*.ts"]
 }

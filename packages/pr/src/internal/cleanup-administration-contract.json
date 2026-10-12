@@ -1,0 +1,88 @@
+{
+  "schema": "openslack.cleanup_administration_contract.v1",
+  "bindings": {
+    "target": "OpenSlack-Cleanup-Qual",
+    "workspaceId": "openslack-self",
+    "repository": "Negentropy-Laby/openslack-cleanup-qualification",
+    "repositoryId": "1380965476"
+  },
+  "identities": {
+    "broker": {
+      "name": "openslack-cleanup-broker",
+      "uid": 44180,
+      "gid": 44180,
+      "id": "cleanup-broker-pr418"
+    },
+    "agent": {
+      "name": "openslack-cleanup-agent",
+      "uid": 44181,
+      "gid": 44181,
+      "id": "cleanup_qualification_pr418"
+    }
+  },
+  "registrySHA256": "33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc",
+  "taskStates": ["pending", "claimed", "in-progress", "completed", "released"],
+  "taskLimit": 4096,
+  "layout": [
+    {
+      "artifact": "cleanup-broker",
+      "path": "/usr/lib/openslack-cleanup/cleanup-broker",
+      "mode": "0755",
+      "owner": "root:root",
+      "maxBytes": 67108864
+    },
+    {
+      "artifact": "executor.mjs",
+      "path": "/usr/lib/openslack-cleanup/executor.mjs",
+      "mode": "0644",
+      "owner": "root:root",
+      "maxBytes": 67108864
+    },
+    {
+      "artifact": "node",
+      "path": "/usr/lib/openslack-cleanup/node",
+      "mode": "0755",
+      "owner": "root:root",
+      "maxBytes": 536870912
+    },
+    {
+      "artifact": "git",
+      "path": "/usr/lib/openslack-cleanup/git",
+      "mode": "0755",
+      "owner": "root:root",
+      "maxBytes": 67108864
+    },
+    {
+      "artifact": "sh",
+      "path": "/usr/lib/openslack-cleanup/sh",
+      "mode": "0755",
+      "owner": "root:root",
+      "maxBytes": 16777216
+    },
+    {
+      "artifact": "git-remote-https",
+      "path": "/usr/lib/openslack-cleanup/git-core/git-remote-https",
+      "mode": "0755",
+      "owner": "root:root",
+      "maxBytes": 67108864
+    }
+  ],
+  "runtimeBinding": {
+    "agent_id": "cleanup_qualification_pr418",
+    "principal_id": "principal:cleanup_qualification_pr418",
+    "runtime_uid_claim": "cleanup_qualification_pr418",
+    "run_id": "cleanup-pr418-f8db249a48c8492587e4515a31c60c45",
+    "workspace_id": "openslack-self"
+  },
+  "fixtureOperator": {
+    "host": "github.com",
+    "login": "wsman",
+    "userId": 21962212,
+    "defaultBranch": "main"
+  },
+  "governance": {
+    "repository": "Negentropy-Laby/OpenSlack",
+    "repositoryId": "1239520892",
+    "defaultBranch": "main"
+  }
+}

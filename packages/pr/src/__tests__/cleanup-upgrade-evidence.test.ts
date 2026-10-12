@@ -161,6 +161,161 @@ function fixture() {
   return { input, bytes, write, seal };
 }
 
+function taskFixture(tasks: unknown[]) {
+  const f = fixture();
+  const view = JSON.parse(f.bytes.get('taskViewPath')!.toString()) as Record<string, unknown>;
+  f.write('taskViewPath', { ...view, tasks });
+  const attestation = JSON.parse(f.bytes.get('taskAttestationPath')!.toString()) as Record<
+    string,
+    unknown
+  >;
+  f.write('taskAttestationPath', {
+    ...attestation,
+    task_view_sha256: sha(f.bytes.get('taskViewPath')!),
+  });
+  f.seal();
+  return f;
+}
+
+function replaceTaskBytes(f: ReturnType<typeof fixture>, raw: Buffer) {
+  f.bytes.set('taskViewPath', raw);
+  const attestation = JSON.parse(f.bytes.get('taskAttestationPath')!.toString()) as Record<
+    string,
+    unknown
+  >;
+  f.write('taskAttestationPath', { ...attestation, task_view_sha256: sha(raw) });
+  f.seal();
+}
+
+describe('upgrade task evidence matches the Broker task contract', () => {
+  it.each(['1.0', '1e0', '1E+0', '9007199254740991.1'])(
+    'refuses the non-uint64 JSON Issue token %s',
+    (literal) => {
+      const f = taskFixture([{ taskId: 'TASK-1', issueNumber: 1, state: 'pending' }]);
+      const raw = f.bytes.get('taskViewPath')!.toString();
+      replaceTaskBytes(f, Buffer.from(raw.replace('"issueNumber":1', `"issueNumber":${literal}`)));
+      expect(() => validateCapturedUpgradeEvidence(f.input, f.bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+    },
+  );
+
+  it.each(['1', '1e0'])('checks escaped Issue keys with token %s', (literal) => {
+    const f = taskFixture([{ taskId: 'TASK-1', issueNumber: 1, state: 'pending' }]);
+    const raw = f.bytes.get('taskViewPath')!.toString();
+    replaceTaskBytes(
+      f,
+      Buffer.from(raw.replace('"issueNumber":1', `"issue\\u004eumber":${literal}`)),
+    );
+    if (literal === '1')
+      expect(() => validateCapturedUpgradeEvidence(f.input, f.bytes)).not.toThrow();
+    else
+      expect(() => validateCapturedUpgradeEvidence(f.input, f.bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+  });
+
+  it.each(['pending', 'claimed', 'in-progress', 'completed', 'released'])(
+    'accepts the production state %s',
+    (state) => {
+      const { input, bytes } = taskFixture([{ taskId: 'TASK-1', issueNumber: 1, state }]);
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).not.toThrow();
+    },
+  );
+
+  it.each(['active', 'blocked', 'done', 'cancelled'])(
+    'refuses the non-production state %s even with matching evidence hashes',
+    (state) => {
+      const { input, bytes } = taskFixture([{ taskId: 'TASK-1', issueNumber: 1, state }]);
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+    },
+  );
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null])(
+    'refuses the invalid Issue number %j',
+    (issueNumber) => {
+      const { input, bytes } = taskFixture([{ taskId: 'TASK-1', issueNumber, state: 'pending' }]);
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+    },
+  );
+
+  it('accepts the largest safe positive Issue number', () => {
+    const { input, bytes } = taskFixture([
+      { taskId: 'TASK-1', issueNumber: Number.MAX_SAFE_INTEGER, state: 'pending' },
+    ]);
+    expect(() => validateCapturedUpgradeEvidence(input, bytes)).not.toThrow();
+  });
+
+  it.each([1024, 4096, 4097])('preserves production limits at %i entries', (count) => {
+    const { input, bytes } = taskFixture(
+      Array.from({ length: count }, (_, i) => ({
+        taskId: `T${i}`,
+        issueNumber: i + 1,
+        state: 'pending',
+      })),
+    );
+    // Go permit.Decode's 64 KiB limit also applies to task views. The count
+    // ceiling does not promise that a 4096-entry representation fits that limit.
+    if (count === 1024) expect(() => validateCapturedUpgradeEvidence(input, bytes)).not.toThrow();
+    else
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+  });
+
+  it.each([65536, 65537])('uses the production task-view byte bound at %i bytes', (size) => {
+    const f = taskFixture([{ taskId: 'TASK-1', issueNumber: 1, state: 'pending' }]);
+    const raw = f.bytes.get('taskViewPath')!;
+    f.bytes.set('taskViewPath', Buffer.concat([raw, Buffer.alloc(size - raw.length, ' ')]));
+    const attestation = JSON.parse(f.bytes.get('taskAttestationPath')!.toString()) as Record<
+      string,
+      unknown
+    >;
+    f.write('taskAttestationPath', {
+      ...attestation,
+      task_view_sha256: sha(f.bytes.get('taskViewPath')!),
+    });
+    f.seal();
+    if (size === 65536)
+      expect(() => validateCapturedUpgradeEvidence(f.input, f.bytes)).not.toThrow();
+    else
+      expect(() => validateCapturedUpgradeEvidence(f.input, f.bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+  });
+
+  it.each(['', '../TASK-1', 'TASK/1', 'TASK:1', 'T'.repeat(129)])(
+    'preserves the selected strict task identifier rule for %j',
+    (taskId) => {
+      const { input, bytes } = taskFixture([{ taskId, issueNumber: 1, state: 'pending' }]);
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+        expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+      );
+    },
+  );
+
+  it('continues to refuse duplicate task identities', () => {
+    const task = { taskId: 'TASK-1', issueNumber: 1, state: 'pending' };
+    const { input, bytes } = taskFixture([task, { ...task, issueNumber: 2 }]);
+    expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+      expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+    );
+  });
+
+  it('continues to refuse unknown fields in individual tasks', () => {
+    const { input, bytes } = taskFixture([
+      { taskId: 'TASK-1', issueNumber: 1, state: 'pending', unexpected: true },
+    ]);
+    expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+      expect.objectContaining({ role: 'taskViewPath', reason: 'EVIDENCE_INVALID' }),
+    );
+  });
+});
+
 describe('captured upgrade evidence parsing on every platform', () => {
   it('validates complete captured facts without asserting deployment or touching files', () => {
     const { input, bytes } = fixture();

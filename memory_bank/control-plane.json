@@ -61,6 +61,11 @@
       "status": "active"
     },
     {
+      "id": "qa-ledger-cleanup-post420-2026-10-11",
+      "path": "production/qa/qa-ledger-cleanup-post420-2026-10-11.md",
+      "status": "active"
+    },
+    {
       "id": "service-cleanup-broker",
       "path": "services/cleanup-broker/README.md",
       "status": "active"

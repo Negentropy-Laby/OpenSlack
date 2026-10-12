@@ -177,7 +177,8 @@ and exact SHA256 values for all seven proof files. Missing or unreadable files
 must be reported as such, never inferred from an old manifest.
 
 An observed destination with the correct bytes but the wrong owner or mode is
-planned for repair to root:root and 0755. Those observed values describe the
+planned for repair to root:root and its fixed artifact mode: executor.mjs uses
+0644; the other five program destinations use 0755. Those observed values describe the
 target; they do not relax the separate requirement that evidence input files
 have safe ownership and permissions. Invalid numeric ownership or mode syntax
 still refuses the plan.
@@ -330,6 +331,21 @@ The Agent must not belong to BrokerGID. Configuration and installation hashes
 must match exact final bytes, not the placeholder templates.
 
 ## Startup, activation and qualification
+
+The independent administrator toolkit is documented in
+[`scripts/cleanup-broker/administration/README.md`](../../scripts/cleanup-broker/administration/README.md).
+It accompanies, rather than extends, the fixed v1/v2 handoff file collections.
+Its source-only build does not require target observations. Formal evidence
+conversion and installable-package preparation still require fresh actual target
+facts and the separate administrator decisions. Toolkit integrity is not an
+installation, approval, activation or deletion authorization.
+
+For an existing never-started installation, use its bounded non-secret offline
+backup and explicit pre-start/post-start isolation phases. Do not use fresh-host
+commands to remove existing accounts or make installed paths absent. Unexpected
+history or an uninspectable process stops that offline route. The instance
+inspection entry consumes an actual observed PID after supervised unactivated
+startup; it does not create a nonce or start the Broker itself.
 
 Launch the Broker in foreground under a reviewed supervisor, or administrator
 terminal, with its dedicated primary group and no inherited privileged groups:
