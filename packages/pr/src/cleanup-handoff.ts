@@ -1258,7 +1258,9 @@ export function verifyCleanupHandoffPackage(
       const raw = safeRead(
         join(root, name),
         'artifact',
-        name.startsWith('artifacts/') ? artifactBound(name.slice('artifacts/'.length)) : undefined,
+        // Integrity verification must keep existing v1/v2 read compatibility.
+        // Execution admission separately enforces the current per-role limits.
+        name === 'artifacts/node' ? artifactBound('node') : undefined,
       );
       check(sha(raw) === hash, 'HANDOFF_DIGEST_MISMATCH');
       bytes.set(name, raw);

@@ -73,11 +73,8 @@ try {
   const node = sourceOnly
     ? realpathSync.native(input.nodePath!)
     : assertCleanupHandoffRuntime(input);
-  if (sourceOnly)
-    digestCleanupBoundedFile(
-      node,
-      CLEANUP_INSTALL_LAYOUT.find((entry) => entry.artifact === 'node')!.maxBytes,
-    );
+  const nodeBound = CLEANUP_INSTALL_LAYOUT.find((entry) => entry.artifact === 'node')!.maxBytes;
+  const sourceNodeProof = sourceOnly ? digestCleanupBoundedFile(node, nodeBound) : undefined;
   const tools = {
     bun: Bun.version,
     go: run('go', ['version'], source),
@@ -311,11 +308,17 @@ try {
     builds: [administratorBuilds[0]!, administratorBuilds[1]!],
   });
   if (sourceOnly) {
+    const finalNodeProof = digestCleanupBoundedFile(node, nodeBound);
+    if (
+      finalNodeProof.sha256 !== sourceNodeProof!.sha256 ||
+      finalNodeProof.bytes !== sourceNodeProof!.bytes
+    )
+      throw new CleanupHandoffError('HANDOFF_SOURCE_CHANGED');
     const proof = {
       schema: 'openslack.cleanup_source_build_proof.v1',
       candidateHead: input.candidateHead,
       tools,
-      sourceNodeSHA256: hash(node),
+      sourceNodeSHA256: finalNodeProof.sha256,
       builds,
       artifacts: finalProofs,
       administratorToolkit,

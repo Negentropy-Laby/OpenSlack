@@ -997,6 +997,30 @@ describeLinux('R18-12 per-build tool proof', () => {
 });
 
 describeLinux('standalone package integrity contract', () => {
+  it('keeps the original v1 artifact read cap for sealed historical shell bytes', async () => {
+    const { input } = await fixture();
+    const result = prepareCleanupHandoffDraft(input);
+    const path = join(result.packageDirectory, 'artifacts/sh');
+    const fd = openSync(path, 'r+');
+    try {
+      ftruncateSync(fd, 17 * 1024 * 1024);
+    } finally {
+      closeSync(fd);
+    }
+    const installPath = join(result.packageDirectory, 'draft/install-manifest.DRAFT.json');
+    const manifest = JSON.parse(readFileSync(installPath, 'utf8'));
+    manifest.files.find((entry: { path: string }) => entry.path.endsWith('/sh')).sha256 = digest(
+      readFileSync(path),
+    );
+    writeFileSync(installPath, JSON.stringify(manifest));
+    const brokerPath = join(result.packageDirectory, 'draft/broker.DRAFT.json');
+    const broker = JSON.parse(readFileSync(brokerPath, 'utf8'));
+    broker.artifacts.installManifestSHA256 = digest(readFileSync(installPath));
+    writeFileSync(brokerPath, JSON.stringify(broker));
+    rehashPackage(result);
+    expect(verify(result)).toMatchObject({ valid: true, errors: [] });
+  });
+
   it.each(['lockfileSHA256', 'goModuleSHA256'])(
     'refuses array coercion of the %s source proof',
     async (field) => {
