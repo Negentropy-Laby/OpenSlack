@@ -5,6 +5,7 @@ import {
   isSensitiveCleanupInput,
 } from './internal/cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
+import { CLEANUP_INSTALL_LAYOUT } from './internal/cleanup-administration-contract.js';
 /** Offline preparation only. This module does not import auth, delivery or cleanup execution. */
 import {
   cleanupByteDigest,
@@ -25,6 +26,7 @@ import {
   readCleanupArtifactFile,
   readCleanupBoundedFile,
   CleanupFileBoundaryError,
+  digestCleanupBoundedFile,
 } from './internal/cleanup-file-boundary.js';
 import { readCleanupBrokerBuildInfo } from './internal/cleanup-handoff-build-info.js';
 
@@ -341,17 +343,26 @@ function ancestors(path: string): void {
     if (dirname(current) === current) break;
   }
 }
-function safeRead(path: string, purpose: 'artifact' | 'runtime-evidence' = 'artifact'): Buffer {
+function safeRead(
+  path: string,
+  purpose: 'artifact' | 'runtime-evidence' = 'artifact',
+  maxBytes = 256 * 1024 * 1024,
+): Buffer {
   path = safePath(path);
   try {
     return purpose === 'artifact'
-      ? readCleanupArtifactFile(path, 256 * 1024 * 1024)
-      : readCleanupBoundedFile(path, 256 * 1024 * 1024);
+      ? readCleanupArtifactFile(path, maxBytes)
+      : readCleanupBoundedFile(path, maxBytes);
   } catch (error) {
     if (error instanceof CleanupFileBoundaryError)
       fail(error.code === 'FILE_CHANGED' ? 'HANDOFF_SOURCE_CHANGED' : 'HANDOFF_PATH_UNSAFE');
     throw error;
   }
+}
+function artifactBound(name: string): number {
+  return (
+    CLEANUP_INSTALL_LAYOUT.find((entry) => entry.artifact === name)?.maxBytes ?? 256 * 1024 * 1024
+  );
 }
 
 function git(root: string, args: string[]): string {
@@ -390,11 +401,16 @@ export function assertCleanupHandoffRuntime(
     const entries = manifest.files
       .map((value) => object(value))
       .filter((entry) => entry.path === path);
-    check(
-      entries.length === 1 &&
-        entries[0]!.sha256 === sha(safeRead(join(runtime, name), 'runtime-evidence')),
-      'HANDOFF_BUILD_MISMATCH',
-    );
+    check(entries.length === 1, 'HANDOFF_BUILD_MISMATCH');
+    let proof: { sha256: string; bytes: number };
+    try {
+      proof = digestCleanupBoundedFile(safePath(join(runtime, name)), artifactBound(name));
+    } catch (error) {
+      if (error instanceof CleanupFileBoundaryError)
+        fail(error.code === 'FILE_CHANGED' ? 'HANDOFF_SOURCE_CHANGED' : 'HANDOFF_PATH_UNSAFE');
+      throw error;
+    }
+    check(entries[0]!.sha256 === proof.sha256, 'HANDOFF_BUILD_MISMATCH');
   }
   // Execute the exact absolute file whose bytes were validated, never a PATH lookup.
   return join(runtime, 'node');
@@ -824,7 +840,10 @@ export function prepareCleanupHandoffDraft(
     add('artifacts/cleanup-broker', brokers[0]!);
     add('artifacts/executor.mjs', executors[0]!);
     for (const name of ['node', 'git', 'sh', 'git-remote-https'])
-      add(`artifacts/${name}`, safeRead(join(input.runtimeDirectory, name)));
+      add(
+        `artifacts/${name}`,
+        safeRead(join(input.runtimeDirectory, name), 'artifact', artifactBound(name)),
+      );
     add('tools/verify-handoff.mjs', verifiers[0]!);
     add('evidence/node-LICENSE', safeRead(input.nodeLicensePath));
     add('evidence/node-SHASUMS256.txt', safeRead(input.nodeChecksumPath));
@@ -1236,7 +1255,11 @@ export function verifyCleanupHandoffPackage(
       'HANDOFF_FILE_SET_MISMATCH',
     );
     for (const [name, hash] of entries) {
-      const raw = safeRead(join(root, name));
+      const raw = safeRead(
+        join(root, name),
+        'artifact',
+        name.startsWith('artifacts/') ? artifactBound(name.slice('artifacts/'.length)) : undefined,
+      );
       check(sha(raw) === hash, 'HANDOFF_DIGEST_MISMATCH');
       bytes.set(name, raw);
     }

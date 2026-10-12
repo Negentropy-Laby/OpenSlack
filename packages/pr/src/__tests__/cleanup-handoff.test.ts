@@ -19,6 +19,9 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  openSync,
+  closeSync,
+  ftruncateSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -703,6 +706,24 @@ describeLinux('offline cleanup handoff preparation', () => {
 });
 
 describeLinux('runtime preflight before tool execution', () => {
+  it('uses the shared 512 MiB Node bound above the former 256 MiB limit', async () => {
+    const { input } = await fixture();
+    const node = join(input.runtimeDirectory, 'node');
+    const fd = openSync(node, 'r+');
+    try {
+      ftruncateSync(fd, 257 * 1024 * 1024);
+    } finally {
+      closeSync(fd);
+    }
+    const manifestPath = input.targetEvidence.installationManifestPath;
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256 = digest(
+      readFileSync(node),
+    );
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    expect(assertCleanupHandoffRuntime(input)).toBe(node);
+  });
+
   it('selects only the ordinary runtime matching the previous reviewed manifest', async () => {
     const { input } = await fixture();
     expect(assertCleanupHandoffRuntime(input)).toBe(join(input.runtimeDirectory, 'node'));

@@ -1,6 +1,7 @@
 import {
   readCleanupArtifactFile,
-  readCleanupBoundedFile,
+  digestCleanupBoundedFile,
+  CLEANUP_INSTALL_LAYOUT,
   assertCleanupHandoffStaging,
   assertCleanupHandoffRuntime,
   readCleanupHandoffInputFile,
@@ -72,7 +73,11 @@ try {
   const node = sourceOnly
     ? realpathSync.native(input.nodePath!)
     : assertCleanupHandoffRuntime(input);
-  if (sourceOnly) readCleanupBoundedFile(node, 256 * 1024 * 1024);
+  if (sourceOnly)
+    digestCleanupBoundedFile(
+      node,
+      CLEANUP_INSTALL_LAYOUT.find((entry) => entry.artifact === 'node')!.maxBytes,
+    );
   const tools = {
     bun: Bun.version,
     go: run('go', ['version'], source),

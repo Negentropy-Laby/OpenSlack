@@ -349,6 +349,25 @@ export function readCleanupBoundedFile(path: string, maxBytes: number): Buffer {
   return withCleanupFile(path, maxBytes, (bytes) => bytes);
 }
 
+/** Execution-trusted streaming capture; never buffers an entire program. */
+export function digestCleanupBoundedFile(
+  path: string,
+  maxBytes: number,
+): { sha256: string; bytes: number } {
+  const capture = CleanupCapturedFile.open(path, maxBytes, 'runtime-evidence');
+  let failure: unknown;
+  try {
+    const result = capture.digest();
+    capture.verify();
+    return result;
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    capture.close(failure);
+  }
+}
+
 /** Offline artifact integrity is portable and does not assert execution trust. */
 export function readCleanupArtifactFile(path: string, maxBytes: number): Buffer {
   if (process.platform === 'linux')
