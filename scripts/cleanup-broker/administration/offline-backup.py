@@ -64,7 +64,7 @@ def offline_guard(root, owner, process_observer, lock_observer, absent=()):
         'BROKER_PROCESS_NOT_CONFIRMED_STOPPED')
     state = observed_directory(root, '/var/lib/openslack-cleanup', owner)
     common.require(not state['entries'], 'UNEXPECTED_PERSISTENT_HISTORY')
-    expected = owner if owner != (0, 0) else (44180, 44180)
+    expected = owner if owner != (0, 0) else (common.BROKER_UID, common.BROKER_GID)
     common.require((state['uid'], state['gid'], state['mode']) == (*expected, '0700'),
         'PERSISTENT_DIRECTORY_OWNER_OR_MODE')
     runtime = observed_directory(root, '/run/openslack-cleanup', owner, missing=True)
@@ -180,7 +180,7 @@ def prepare_backup(*, root=Path('/'), output, owner=(0, 0), process_observer=Non
         if root == Path('/') and owner == (0, 0):
             helper = common.load_source(Path(__file__).with_name('target-observation.py'), 'backup_identity_observer')
             actual_ids = helper.identities()
-            for role, uid, gid in [('broker', 44180, 44180), ('agent', 44181, 44181)]:
+            for role, uid, gid in [('broker', common.BROKER_UID, common.BROKER_GID), ('agent', common.AGENT_UID, common.AGENT_GID)]:
                 entry = actual_ids.get(role, {})
                 common.require(entry.get('state') == 'present' and (entry.get('uid'), entry.get('gid')) == (uid, gid)
                     and entry.get('groupIds') == [gid] and entry.get('shell') == '/usr/sbin/nologin',
@@ -232,10 +232,9 @@ def prepare_backup(*, root=Path('/'), output, owner=(0, 0), process_observer=Non
                     digest = copy_checked(source, copied, metadata, mode)
                     # Read the backup itself as the restoration source, not the original target again.
                     os.lseek(copied, 0, os.SEEK_SET)
-                    restored_hash, restored_size = hashlib.sha256(), 0
+                    restored_size = 0
                     while block := os.read(copied, 1024 * 1024):
                         common.write_all(restored, block)
-                        restored_hash.update(block)
                         restored_size += len(block)
                     info = os.fstat(restored)
                     if (info.st_uid, info.st_gid) != metadata:
@@ -245,7 +244,7 @@ def prepare_backup(*, root=Path('/'), output, owner=(0, 0), process_observer=Non
                     restore_info = os.fstat(restored)
                     common.require((restore_info.st_uid, restore_info.st_gid, stat.S_IMODE(restore_info.st_mode),
                         restore_info.st_size, restore_info.st_nlink) == (*metadata, mode, source.info.st_size, 1)
-                        and restored_size == source.info.st_size and restored_hash.hexdigest() == digest,
+                        and restored_size == source.info.st_size,
                         'RESTORE_VERIFICATION_MISMATCH')
                     os.lseek(restored, 0, os.SEEK_SET)
                     restored_actual = hashlib.sha256()

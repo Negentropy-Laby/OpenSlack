@@ -14,7 +14,10 @@ import stat
 import struct
 import tempfile
 import unittest
+import sys
 from unittest.mock import patch
+sys.path.insert(0, str(Path(__file__).parent))
+from _test_runner import LinuxTests, run as run_tests
 
 BASE = Path(__file__).parent
 spec = importlib.util.spec_from_file_location('fixture_dependency_collector', BASE / 'dependency-inventory.py')
@@ -129,6 +132,10 @@ class OwnedFixtures:
                 return self
             def peek(self, offset, length):
                 return self.real.peek(offset, length)
+            def check_identity(self):
+                if fixture.handle_change is not None:
+                    fixture.handle_change(logical, self)
+                self.real.check_identity()
             def unchanged(self):
                 if fixture.handle_change is not None:
                     fixture.handle_change(logical, self)
@@ -173,7 +180,7 @@ class OwnedFixtures:
                 expected_owner=OWNER))
 
 
-class DependencyCollectorTests(unittest.TestCase):
+class DependencyCollectorTests(LinuxTests):
     def setUp(self):
         self.fixture = OwnedFixtures()
         self.addCleanup(self.fixture.close)
@@ -665,4 +672,4 @@ class DependencyCollectorTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    run_tests(sys.modules[__name__])

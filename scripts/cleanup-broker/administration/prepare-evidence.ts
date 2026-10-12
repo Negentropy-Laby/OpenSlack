@@ -1,7 +1,4 @@
-import {
-  prepareCleanupEvidenceDraft,
-  readCleanupEvidenceDraftInput,
-} from '../../../packages/pr/src/cleanup-admin-evidence.js';
+import { prepareCleanupEvidenceDraft, readCleanupEvidenceDraftInput } from '@openslack/pr';
 
 const args = process.argv.slice(2);
 if (args.length !== 2 || args[0] !== '--input' || !args[1] || args[1].startsWith('--')) {

@@ -1,3 +1,8 @@
+import {
+  CLEANUP_TASK_STATES,
+  CLEANUP_TASK_LIMIT,
+  type CleanupTaskState,
+} from './cleanup-administration-contract.js';
 import { validateGitHubNetwork, githubProxyBypassed, isValidCleanupBranch } from '@openslack/core';
 import { cleanupBrokerExecutionDigest } from './cleanup-broker-digest.js';
 import { Agent, ProxyAgent, fetch as networkFetch } from 'undici';
@@ -40,7 +45,7 @@ interface TaskView {
   tasks: Array<{
     taskId: string;
     issueNumber: number;
-    state: 'pending' | 'claimed' | 'in-progress' | 'completed' | 'released';
+    state: CleanupTaskState;
   }>;
 }
 export interface CleanupExecutorBootstrap {
@@ -223,7 +228,7 @@ export function checkTaskView(view: TaskView, target: CleanupBrokerSendBinding['
     now < begin ||
     now >= end ||
     !Array.isArray(view.tasks) ||
-    view.tasks.length > 4096
+    view.tasks.length > CLEANUP_TASK_LIMIT
   )
     deny();
   const seen = new Set<string>();
@@ -235,7 +240,7 @@ export function checkTaskView(view: TaskView, target: CleanupBrokerSendBinding['
       seen.has(t.taskId) ||
       !Number.isSafeInteger(t.issueNumber) ||
       Number(t.issueNumber) <= 0 ||
-      !['pending', 'claimed', 'in-progress', 'completed', 'released'].includes(t.state as string)
+      !(CLEANUP_TASK_STATES as readonly unknown[]).includes(t.state)
     )
       deny();
     seen.add(t.taskId);

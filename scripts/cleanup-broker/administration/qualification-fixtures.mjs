@@ -1,4 +1,4 @@
-import { main } from '../../../packages/pr/src/internal/cleanup-qualification-fixtures.mjs';
+import { runCleanupQualificationFixtures as main } from '@openslack/pr/cleanup-administration-internal';
 
 try {
   await main(process.argv.slice(2));

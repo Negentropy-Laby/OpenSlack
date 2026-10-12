@@ -1,5 +1,13 @@
+import { cleanupEvidenceTimestamp, cleanupEvidenceWindow } from './internal/cleanup-time.js';
+import {
+  parseCleanupSelectedBindings,
+  CleanupSelectedBindingsError,
+} from './internal/cleanup-selected-bindings.js';
 import { decodeStrictJSON } from '@openslack/core';
-import { createHash } from 'node:crypto';
+import {
+  cleanupDocumentBytes as jsonBytes,
+  cleanupByteDigest as hash,
+} from './internal/cleanup-document-bytes.js';
 import {
   closeSync,
   constants,
@@ -21,6 +29,7 @@ import { CLEANUP_INSTALL_LAYOUT } from './cleanup-target-upgrade.js';
 import {
   assertCleanupDescriptorSupport,
   CleanupDirectoryAnchor,
+  CleanupCapturedFile,
   CleanupFileBoundaryError,
   inodeIdentity,
   readCleanupArtifactFile,
@@ -101,8 +110,6 @@ export interface PrepareCleanupEvidenceDraftResult {
 }
 type ObjectValue = Record<string, unknown>;
 const MAX_EVIDENCE = 1024 * 1024;
-const hash = (raw: Buffer) => createHash('sha256').update(raw).digest('hex');
-const jsonBytes = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const COMMON = [
   'schema',
   'target',
@@ -214,19 +221,15 @@ function list(value: unknown, role: string, max = 4096): unknown[] {
   return value;
 }
 function time(value: unknown, role: string): number {
-  insist(
-    typeof value === 'string' && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value),
-    'EVIDENCE_TIME_INVALID',
-    role,
-  );
-  const parsed = Date.parse(value);
-  insist(Number.isFinite(parsed), 'EVIDENCE_TIME_INVALID', role);
+  const parsed = cleanupEvidenceTimestamp(value);
+  insist(parsed !== undefined, 'EVIDENCE_TIME_INVALID', role);
   return parsed;
 }
+
 function window(value: ObjectValue, now: number, role: string): { start: number; end: number } {
   const start = time(value.recordedAt ?? value.notBefore, role),
     end = time(value.expiresAt, role);
-  insist(start < end && start <= now && now < end, 'EVIDENCE_EXPIRED', role);
+  insist(cleanupEvidenceWindow(start, end, now), 'EVIDENCE_EXPIRED', role);
   return { start, end };
 }
 function safePath(value: unknown, role: string): string {
@@ -263,14 +266,56 @@ function decode(raw: Buffer, role: string): ObjectValue {
     throw new EvidencePreparationFailure('EVIDENCE_JSON_INVALID', role);
   }
 }
-function capture(ref: CleanupEvidenceSource, role: string, artifact = false): Buffer {
-  const path = safePath(ref.path, role);
-  const raw = artifact
-    ? readCleanupArtifactFile(path, 256 * MAX_EVIDENCE)
-    : readCleanupBoundedFile(path, MAX_EVIDENCE);
-  insist(hash(raw) === ref.sha256, 'EVIDENCE_DIGEST_MISMATCH', role);
-  return raw;
+class EvidenceCaptures {
+  private readonly entries = new Map<
+    string,
+    { file: CleanupCapturedFile; raw?: Buffer; sha256?: string }
+  >();
+  private held(ref: CleanupEvidenceSource, role: string, bound = MAX_EVIDENCE, artifact = false) {
+    const path = safePath(ref.path, role),
+      key = `${artifact}:${bound}:${path}`;
+    let entry = this.entries.get(key);
+    if (!entry) {
+      const file = CleanupCapturedFile.open(
+        path,
+        bound,
+        artifact ? 'artifact' : 'runtime-evidence',
+      );
+      entry = { file };
+      this.entries.set(key, entry);
+    }
+    entry.file.verify();
+    return entry;
+  }
+  read(ref: CleanupEvidenceSource, role: string): Buffer {
+    const entry = this.held(ref, role);
+    const raw = (entry.raw ??= entry.file.read());
+    const digest = (entry.sha256 ??= hash(raw));
+    insist(digest === ref.sha256, 'EVIDENCE_DIGEST_MISMATCH', role);
+    return raw;
+  }
+  artifact(ref: CleanupEvidenceSource, role: string, bound: number): string {
+    const entry = this.held(ref, role, bound, true);
+    const digest = (entry.sha256 ??= entry.file.digest().sha256);
+    insist(digest === ref.sha256, 'EVIDENCE_DIGEST_MISMATCH', role);
+    return digest;
+  }
+  verify(): void {
+    for (const entry of this.entries.values()) entry.file.verify();
+  }
+  close(primary?: unknown): void {
+    let failure: unknown;
+    for (const entry of [...this.entries.values()].reverse()) {
+      try {
+        entry.file.close(primary);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure) throw failure;
+  }
 }
+
 function parseRecipe(value: unknown): PrepareCleanupEvidenceDraftInput {
   insist(cleanupObject(value), 'EVIDENCE_INPUT_INVALID', 'input');
   const keys =
@@ -336,74 +381,21 @@ export function readCleanupEvidenceDraftInput(path: string): PrepareCleanupEvide
   );
 }
 function selection(raw: Buffer, head: string): Readonly<Record<string, string>> {
-  const v = decode(raw, 'selectedBindings');
-  if (v.schema === 'openslack.cleanup_handoff_draft.v1') {
-    exact(
-      v,
-      [
-        'schema',
-        'candidateHead',
-        'approvalStatus',
-        'priorInput',
-        'selected',
-        'installationAuthorized',
-        'executionAuthorized',
-      ],
-      'selectedBindings',
-    );
-    insist(
-      v.approvalStatus === 'DRAFT' &&
-        v.installationAuthorized === false &&
-        v.executionAuthorized === false &&
-        typeof v.candidateHead === 'string' &&
-        CLEANUP_HEAD.test(v.candidateHead),
-      'EVIDENCE_PRIOR_APPROVAL_INVALID',
-      'selectedBindings',
-    );
-    insist(v.candidateHead === head, 'EVIDENCE_CANDIDATE_MISMATCH', 'selectedBindings');
-  } else {
-    exact(v, ['schema', 'selected', 'priorInput'], 'selectedBindings');
-    insist(
-      v.schema === 'openslack.cleanup_admin_selected_bindings.v1',
-      'EVIDENCE_SCHEMA_INVALID',
-      'selectedBindings',
-    );
-  }
-  const prior = exact(
-    v.priorInput,
-    ['source', 'sha256', 'approvalNotInherited'],
-    'selectedBindings',
-  );
-  insist(
-    typeof prior.source === 'string' &&
-      prior.source.length > 0 &&
-      prior.source.length <= 4096 &&
-      typeof prior.sha256 === 'string' &&
-      CLEANUP_SHA256.test(prior.sha256) &&
-      prior.approvalNotInherited === true,
-    'EVIDENCE_PRIOR_APPROVAL_INVALID',
-    'selectedBindings',
-  );
-  insist(
-    cleanupObject(v.selected) && Object.keys(v.selected).length <= 128,
-    'EVIDENCE_SCHEMA_INVALID',
-    'selectedBindings',
-  );
-  const chosen: Record<string, string> = {};
-  for (const [key, text] of Object.entries(v.selected)) {
-    const statusOnly =
-      /^(?:governance_read_credential_provisioned|deletion_app_key_provisioned)$/.test(key) &&
-      (text === 'no' || text === 'yes');
-    insist(
-      /^[a-z][a-z0-9_]{0,127}$/.test(key) &&
-        typeof text === 'string' &&
-        text.length <= 8192 &&
-        !/[\u0000-\u001f\u007f]/.test(text) &&
-        (!/(?:password|private_key|token|credential)/i.test(key) || statusOnly),
-      'EVIDENCE_SELECTED_INVALID',
-      'selectedBindings',
-    );
-    chosen[key] = text;
+  let chosen: Readonly<Record<string, string>>;
+  try {
+    chosen = parseCleanupSelectedBindings(raw, MAX_EVIDENCE, head).selected;
+  } catch (error) {
+    const code =
+      error instanceof CleanupSelectedBindingsError
+        ? {
+            JSON: 'EVIDENCE_JSON_INVALID',
+            SCHEMA: 'EVIDENCE_SCHEMA_INVALID',
+            PRIOR: 'EVIDENCE_PRIOR_APPROVAL_INVALID',
+            SELECTED: 'EVIDENCE_SELECTED_INVALID',
+            CANDIDATE: 'EVIDENCE_CANDIDATE_MISMATCH',
+          }[error.reason]
+        : 'EVIDENCE_SCHEMA_INVALID';
+    throw new EvidencePreparationFailure(code, 'selectedBindings');
   }
   for (const key of [
     'target_distro',
@@ -783,6 +775,7 @@ function dependencyProof(
   hostHash: string,
   selected: Readonly<Record<string, string>>,
   now: number,
+  inventory: ObjectValue,
 ): ObjectValue {
   const role = 'dependencyObservation',
     v = exact(decode(raw, role), DEPENDENCY_KEYS, role);
@@ -792,11 +785,7 @@ function dependencyProof(
     role,
   );
   bound(v, selected, now, role);
-  const inventory = exact(
-    decode(inventoryRaw, 'dependencyInventory'),
-    [...COMMON, 'files'],
-    'dependencyInventory',
-  );
+  exact(inventory, [...COMMON, 'files'], 'dependencyInventory');
   bound(inventory, selected, now, 'dependencyInventory');
   const proof = exact(v.productionInventory, ['schema', 'sha256', 'bytes', 'fileCount'], role);
   const files = list(inventory.files, role);
@@ -959,7 +948,7 @@ function dependencyProof(
     elf(c.elf, role);
     insist(
       typeof c.input === 'string' &&
-        inputs.includes(c.input) &&
+        (inputs as readonly string[]).includes(c.input) &&
         !called.has(c.input) &&
         c.installedSHA256 ===
           (host.files as ObjectValue[]).find((f) => f.path === c.input)?.sha256 &&
@@ -1097,16 +1086,21 @@ function validatePrepared(captured: TargetCapture, packageDigest: string, now: n
   );
   return { admin, host };
 }
-function captureTarget(input: PrepareCleanupTargetEvidenceDraftInput, now: number): TargetCapture {
+function captureTarget(
+  input: PrepareCleanupTargetEvidenceDraftInput,
+  now: number,
+  context: EvidenceCaptures,
+): TargetCapture {
   const sources = input.sources as unknown as Record<string, CleanupEvidenceSource | undefined>,
     captured = new Map<string, Buffer>();
   for (const role of SOURCE_KEYS) {
     const ref = sources[role];
     insist(ref !== undefined, 'EVIDENCE_SOURCE_MISSING', role);
-    captured.set(role, capture(source(ref, role), role));
+    captured.set(role, context.read(source(ref, role), role));
   }
   const selected = selection(captured.get('selectedBindings')!, input.candidateHead),
-    host = observation(captured.get('observation')!, selected, now);
+    host = observation(captured.get('observation')!, selected, now),
+    inventory = decode(captured.get('dependencyInventory')!, 'dependencyInventory');
   const dependency = dependencyProof(
     captured.get('dependencyObservation')!,
     captured.get('dependencyInventory')!,
@@ -1114,18 +1108,19 @@ function captureTarget(input: PrepareCleanupTargetEvidenceDraftInput, now: numbe
     hash(captured.get('observation')!),
     selected,
     now,
+    inventory,
   );
   const times = [
     bound(host, selected, now, 'observation'),
     bound(dependency, selected, now, 'dependencyObservation'),
   ];
-  for (const role of ['appScope', 'network', 'taskAttestation', 'dependencyInventory'])
+  for (const role of ['appScope', 'network', 'taskAttestation'])
     times.push(bound(decode(captured.get(role)!, role), selected, now, role));
   const task = decode(captured.get('taskView')!, 'taskView');
   times.push(window(task, now, 'taskView'));
+  times.push(bound(inventory, selected, now, 'dependencyInventory'));
   const recordedAt = new Date(Math.max(...times.map((t) => t.start))).toISOString(),
     expiresAt = new Date(Math.min(...times.map((t) => t.end))).toISOString();
-  const inventory = decode(captured.get('dependencyInventory')!, 'dependencyInventory');
   const files = list(inventory.files, 'dependencyInventory').map((f) =>
     exact(f, ['path', 'sha256', 'uid', 'gid', 'mode'], 'dependencyInventory'),
   );
@@ -1133,9 +1128,12 @@ function captureTarget(input: PrepareCleanupTargetEvidenceDraftInput, now: numbe
   const plannedFiles: { path: string; sha256: string }[] = [];
   for (const entry of CLEANUP_INSTALL_LAYOUT) {
     const artifact = input.artifacts.find((v) => v.artifact === entry.artifact)!;
-    const raw = capture(source(artifact.source, entry.artifact), entry.artifact, true);
-    insist(raw.length > 0, 'EVIDENCE_ARTIFACT_EMPTY', entry.artifact);
-    plannedFiles.push({ path: entry.path, sha256: hash(raw) });
+    const digest = context.artifact(
+      source(artifact.source, entry.artifact),
+      entry.artifact,
+      entry.maxBytes,
+    );
+    plannedFiles.push({ path: entry.path, sha256: digest });
   }
   for (const file of files) {
     insist(
@@ -1177,9 +1175,6 @@ function captureTarget(input: PrepareCleanupTargetEvidenceDraftInput, now: numbe
     expiresAt,
     sourceDigests: Object.fromEntries([...captured].map(([role, raw]) => [role, hash(raw)])),
   };
-  // These in-memory DRAFT inputs are validation scaffolding, never written as
-  // package-bound evidence. A package digest is available only in phase two.
-  validatePrepared(result, '0'.repeat(64), now);
   return result;
 }
 function publish(output: string, files: ReadonlyMap<string, Buffer>): void {
@@ -1189,7 +1184,7 @@ function publish(output: string, files: ReadonlyMap<string, Buffer>): void {
   try {
     const parentStamp = lstatSync(parent.absolute);
     insist(
-      parentStamp.uid === process.getuid!() && (parentStamp.mode & 0o022) === 0,
+      parentStamp.uid === process.getuid!() && (parentStamp.mode & 0o7777) === 0o700,
       'EVIDENCE_OUTPUT_UNSAFE',
       'outputDirectory',
     );
@@ -1259,6 +1254,7 @@ function targetPhase(
   input: PrepareCleanupTargetEvidenceDraftInput,
   now: number,
   result: PrepareCleanupEvidenceDraftResult,
+  context: EvidenceCaptures,
 ): void {
   const missing = SOURCE_KEYS.filter((role) => !(input.sources as unknown as ObjectValue)[role]);
   for (const role of missing) {
@@ -1267,11 +1263,14 @@ function targetPhase(
       result.missingAdministratorDecisions.push(role);
   }
   if (missing.length) return;
-  const captured = captureTarget(input, now),
+  const captured = captureTarget(input, now, context),
     targetEvidence = evidencePaths(input.outputDirectory),
     files = new Map<string, Buffer>();
   for (const [role, raw] of captured.evidence)
     files.set(ROLE_FILES[role as keyof typeof ROLE_FILES], raw);
+  // Target-stage scaffolding is validated once here; the package phase instead
+  // validates its real digest after independently recapturing the sources.
+  validatePrepared(captured, '0'.repeat(64), now);
   const index = {
     schema: 'openslack.cleanup_target_evidence_draft.v1',
     candidateHead: input.candidateHead,
@@ -1303,6 +1302,7 @@ function targetPhase(
     Date.now(),
     'publication',
   );
+  context.verify();
   publish(input.outputDirectory, files);
   result.published = true;
   result.targetEvidence = targetEvidence;
@@ -1316,8 +1316,9 @@ function packagePhase(
   input: PrepareCleanupPackageEvidenceDraftInput,
   now: number,
   result: PrepareCleanupEvidenceDraftResult,
+  context: EvidenceCaptures,
 ): void {
-  const indexRaw = capture(source(input.targetDraft, 'targetDraft'), 'targetDraft'),
+  const indexRaw = context.read(source(input.targetDraft, 'targetDraft'), 'targetDraft'),
     index = exact(
       decode(indexRaw, 'targetDraft'),
       [
@@ -1355,7 +1356,7 @@ function packagePhase(
     'EVIDENCE_BINDING_MISMATCH',
     'targetDraft',
   );
-  const captured = captureTarget(recipe, now);
+  const captured = captureTarget(recipe, now, context);
   insist(
     equal(index.selected, captured.selected) &&
       equal(index.sourceDigests, captured.sourceDigests) &&
@@ -1375,7 +1376,7 @@ function packagePhase(
     const ref = source(evidence[role], role);
     insist(
       ref.path === targetEvidence[role] &&
-        hash(capture(ref, role)) === hash(captured.evidence.get(role)!),
+        hash(context.read(ref, role)) === hash(captured.evidence.get(role)!),
       'EVIDENCE_BINDING_MISMATCH',
       role,
     );
@@ -1451,6 +1452,7 @@ function packagePhase(
     Date.now(),
     'publication',
   );
+  context.verify();
   publish(
     input.outputDirectory,
     new Map([
@@ -1488,8 +1490,17 @@ export function prepareCleanupEvidenceDraft(
     result.candidateHead = recipe.candidateHead;
     assertCleanupDescriptorSupport();
     const now = Date.now();
-    if (recipe.phase === 'target') targetPhase(recipe, now, result);
-    else packagePhase(recipe, now, result);
+    const context = new EvidenceCaptures();
+    let failure: unknown;
+    try {
+      if (recipe.phase === 'target') targetPhase(recipe, now, result, context);
+      else packagePhase(recipe, now, result, context);
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      context.close(failure);
+    }
   } catch (error) {
     const issue =
       error instanceof EvidencePreparationFailure

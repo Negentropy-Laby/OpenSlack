@@ -1,7 +1,10 @@
 /** An independent offline toolkit. Handoff profiles and execution authority are unchanged. */
 import { decodeStrictJSON, stableFileIdentity } from '@openslack/core';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import {
+  cleanupDocumentBytes as bytes,
+  cleanupByteDigest as digest,
+} from './internal/cleanup-document-bytes.js';
 import {
   closeSync,
   constants,
@@ -14,19 +17,20 @@ import {
   statSync,
   writeSync,
 } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import {
   assertCleanupDescriptorSupport,
   CleanupDirectoryAnchor,
+  CleanupCapturedFile,
   CleanupFileBoundaryError,
-  readCleanupDescriptor,
 } from './internal/cleanup-file-boundary.js';
 import {
   CLEANUP_HEAD,
   CLEANUP_SHA256,
   cleanupExactKeys,
   cleanupObject,
+  cleanupPathOutside,
   isSensitiveCleanupInput,
 } from './internal/cleanup-validation.js';
 
@@ -139,8 +143,6 @@ const CHECKSUM_FILES = [...CONTENT, 'manifest.json'].sort();
 const ALL_FILES = [...CHECKSUM_FILES, 'SHA256SUMS'].sort();
 const TOOL_BOUND = 16 * 1024 * 1024,
   JSON_BOUND = 256 * 1024;
-const bytes = (value: unknown): Buffer => Buffer.from(JSON.stringify(value, null, 2) + '\n');
-const digest = (raw: Buffer): string => createHash('sha256').update(raw).digest('hex');
 const fail = (code: CleanupAdminToolkitErrorCode): never => {
   throw new CleanupAdminToolkitError(code);
 };
@@ -308,62 +310,31 @@ function classify(error: unknown): CleanupAdminToolkitError {
   return new CleanupAdminToolkitError('ADMIN_TOOLKIT_IO_FAILED');
 }
 class Capture {
-  readonly anchor: CleanupDirectoryAnchor;
-  readonly fd: number;
-  readonly identity: string;
+  private readonly handle: CleanupCapturedFile;
   readonly data: Buffer;
   readonly sha256: string;
   constructor(
     readonly path: string,
     bound: number,
   ) {
-    this.anchor = CleanupDirectoryAnchor.open(dirname(path));
-    let fd: number | undefined;
+    this.handle = CleanupCapturedFile.open(path, bound, 'artifact');
     try {
-      this.anchor.verify();
-      const leaf = this.anchor.path(basename(path)),
-        before = lstatSync(leaf);
-      insist(
-        before.isFile() && !before.isSymbolicLink() && before.nlink === 1,
-        'ADMIN_TOOLKIT_FILE_UNSAFE',
-      );
-      fd = openSync(leaf, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-      this.fd = fd;
-      this.identity = stableFileIdentity(fstatSync(fd));
-      insist(this.identity === stableFileIdentity(before), 'ADMIN_TOOLKIT_FILE_CHANGED');
-      this.data = readCleanupDescriptor(fd, bound, 'artifact');
+      this.data = this.handle.read();
       this.sha256 = digest(this.data);
       this.verify();
     } catch (error) {
-      try {
-        if (fd !== undefined) closeSync(fd);
-      } catch {
-        /* Preserve the read failure. */
-      }
-      try {
-        this.anchor.close();
-      } catch {
-        /* Preserve the read failure. */
-      }
+      this.handle.close(error);
       throw error;
     }
   }
   verify(): void {
-    this.anchor.verify();
-    insist(
-      stableFileIdentity(fstatSync(this.fd)) === this.identity &&
-        stableFileIdentity(lstatSync(this.anchor.path(basename(this.path)))) === this.identity,
-      'ADMIN_TOOLKIT_FILE_CHANGED',
-    );
+    this.handle.verify();
   }
   close(): void {
-    try {
-      closeSync(this.fd);
-    } finally {
-      this.anchor.close();
-    }
+    this.handle.close();
   }
 }
+
 function closeCaptured(files: readonly Capture[]): CleanupAdminToolkitError | undefined {
   let error: CleanupAdminToolkitError | undefined;
   for (const file of [...files].reverse()) {
@@ -536,9 +507,8 @@ export function prepareCleanupAdminToolkit(
     platform();
     const root = safePath(input.sourceRoot),
       output = safePath(input.outputDirectory);
-    const outside = relative(root, output);
     insist(
-      outside.startsWith('../') &&
+      cleanupPathOutside(root, output) &&
         ![
           '/etc/openslack-cleanup',
           '/usr/lib/openslack-cleanup',
@@ -613,8 +583,8 @@ export function prepareCleanupAdminToolkit(
       'ADMIN_TOOLKIT_BUILD_MISMATCH',
     );
     insist(
-      checkouts.every((checkout) => relative(checkout, output).startsWith('../')) &&
-        toolDirectories.every((tools) => relative(tools, output).startsWith('../')),
+      checkouts.every((checkout) => cleanupPathOutside(checkout, output)) &&
+        toolDirectories.every((tools) => cleanupPathOutside(tools, output)),
       'ADMIN_TOOLKIT_PATH_UNSAFE',
     );
     const manifest = {
@@ -685,7 +655,7 @@ export function prepareCleanupAdminToolkit(
       try {
         for (const [path, data] of files) {
           verifyDestination();
-          recheck();
+          captured.forEach((file) => file.verify());
           const anchor = path.startsWith('evidence/') ? evidence : destination;
           anchor.verify();
           const internal = anchor.path(basename(path));

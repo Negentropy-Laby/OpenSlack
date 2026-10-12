@@ -24,32 +24,32 @@ import _safety as common
 RUNTIME_IDS = {'read:ledger', 'read:worker-journal', 'read:instance', 'access:socket'}
 PROBES = [
     dict(id='read:credentials-directory', path='/etc/openslack-cleanup/credentials', access=os.R_OK | os.X_OK,
-         expected='deny', kind='directory', owner=(0, 44180), mode=0o750, sensitive=True),
+         expected='deny', kind='directory', owner=(0, common.BROKER_GID), mode=0o750, sensitive=True),
     dict(id='read:broker-config', path='/etc/openslack-cleanup/broker.json', access=os.R_OK,
-         expected='deny', kind='regular', owner=(0, 44180), mode=0o640),
+         expected='deny', kind='regular', owner=(0, common.BROKER_GID), mode=0o640),
     dict(id='read:task-view', path='/etc/openslack-cleanup/task-dependencies.json', access=os.R_OK,
-         expected='deny', kind='regular', owner=(0, 44180), mode=0o640),
+         expected='deny', kind='regular', owner=(0, common.BROKER_GID), mode=0o640),
     dict(id='read:governance-credential', path='/etc/openslack-cleanup/credentials/governance', access=os.R_OK,
-         expected='deny', kind='regular', owner=(0, 44180), mode=0o640, sensitive=True),
+         expected='deny', kind='regular', owner=(0, common.BROKER_GID), mode=0o640, sensitive=True),
     dict(id='read:app-credential', path='/etc/openslack-cleanup/credentials/github-app-private-key', access=os.R_OK,
-         expected='deny', kind='regular', owner=(0, 44180), mode=0o640, sensitive=True),
+         expected='deny', kind='regular', owner=(0, common.BROKER_GID), mode=0o640, sensitive=True),
     dict(id='read:state-directory', path='/var/lib/openslack-cleanup', access=os.R_OK | os.X_OK,
-         expected='deny', kind='directory', owner=(44180, 44180), mode=0o700),
+         expected='deny', kind='directory', owner=(common.BROKER_UID, common.BROKER_GID), mode=0o700),
     *[dict(id='read:' + name, path='/var/lib/openslack-cleanup/' + file, access=os.R_OK,
-           expected='deny', kind='regular', owner=(44180, 44180), mode=0o600)
+           expected='deny', kind='regular', owner=(common.BROKER_UID, common.BROKER_GID), mode=0o600)
       for name, file in [('ledger', 'ledger.jsonl'), ('worker-journal', 'workers.jsonl'), ('instance', 'instance.json')]],
     dict(id='access:socket', path='/run/openslack-cleanup/broker.sock', access=os.R_OK | os.W_OK,
-         expected='allow', kind='socket', owner=(44180, 44180), mode=0o666),
+         expected='allow', kind='socket', owner=(common.BROKER_UID, common.BROKER_GID), mode=0o666),
     *[dict(id='read:' + path.rsplit('/', 1)[-1], path=path, access=os.R_OK, expected='allow',
            kind='regular', owner=(0, 0), mode=mode) for path, (_, mode) in common.LAYOUT.items()],
     *[dict(id='modify:' + path.rsplit('/', 1)[-1], path=path, access=os.W_OK, expected='deny',
            kind='regular', owner=(0, 0), mode=mode) for path, (_, mode) in common.LAYOUT.items()],
     *[dict(id='write:' + name, path=path, access=os.W_OK | os.X_OK, expected='deny', kind='directory',
            owner=owner, mode=mode) for name, path, owner, mode in (
-        ('config-directory', '/etc/openslack-cleanup', (0, 44180), 0o750),
+        ('config-directory', '/etc/openslack-cleanup', (0, common.BROKER_GID), 0o750),
         ('program-directory', '/usr/lib/openslack-cleanup', (0, 0), 0o755),
-        ('state-directory', '/var/lib/openslack-cleanup', (44180, 44180), 0o700),
-        ('run-directory', '/run/openslack-cleanup', (44180, 44180), 0o755))],
+        ('state-directory', '/var/lib/openslack-cleanup', (common.BROKER_UID, common.BROKER_GID), 0o700),
+        ('run-directory', '/run/openslack-cleanup', (common.BROKER_UID, common.BROKER_GID), 0o755))],
 ]
 CONTAINER_PATHS = ('/run/docker.sock', '/run/podman/podman.sock', '/run/containerd/containerd.sock',
     '/run/lxd/unix.socket', '/var/snap/lxd/common/lxd/unix.socket')
@@ -71,7 +71,7 @@ def identities():
 
 def validate_identities(value):
     common.require(isinstance(value, dict) and set(value) == {'broker', 'agent'}, 'IDENTITY_EVIDENCE_MISSING')
-    for role, uid, gid in [('broker', 44180, 44180), ('agent', 44181, 44181)]:
+    for role, uid, gid in [('broker', common.BROKER_UID, common.BROKER_GID), ('agent', common.AGENT_UID, common.AGENT_GID)]:
         item = value[role]
         common.require(isinstance(item, dict) and (item.get('uid'), item.get('gid')) == (uid, gid),
             'IDENTITY_MAPPING_MISMATCH')
@@ -81,7 +81,7 @@ def validate_identities(value):
 
 def metadata(root, spec):
     try:
-        with common.Anchor(root, spec['path'], owners={0, os.geteuid(), 44180},
+        with common.Anchor(root, spec['path'], owners={0, os.geteuid(), common.BROKER_UID},
             sticky_evidence=True, sensitive_metadata=spec.get('sensitive', False)) as anchor:
             info = os.stat(anchor.name, dir_fd=anchor.parent, follow_symlinks=False)
             kind = 'directory' if stat.S_ISDIR(info.st_mode) else 'regular' if stat.S_ISREG(info.st_mode) \
@@ -99,7 +99,7 @@ def metadata(root, spec):
         return dict(path=spec['path'], state='unverified', reason=common.error_code(error))
 
 
-def dropped_access(paths, uid=44181, gid=44181):
+def dropped_access(paths, uid=common.AGENT_UID, gid=common.AGENT_UID):
     """Owned child drops all real/effective/saved IDs; access checks do not open any file."""
     common.administrator_required()
     with common.Owned() as owned:
@@ -250,7 +250,7 @@ def privilege_scope(*, root=Path('/'), access=dropped_access, sudo_runner=sudo_c
             checked = access(paths)
             common.require(not any(checked['access'].values()), 'AGENT_CONTAINER_INTERFACE_ACCESS')
         # Unknown/custom endpoints cannot be assumed denied when an active daemon is observed.
-        with common.Anchor(root, '/proc/sentinel', owners={0, os.geteuid(), 44180, 44181},
+        with common.Anchor(root, '/proc/sentinel', owners={0, os.geteuid(), common.BROKER_UID, common.AGENT_UID},
                            sticky_evidence=Path(root) != Path('/')) as anchor:
             names = os.listdir(anchor.parent)
             common.require(len(names) <= 16384, 'PROC_ENTRY_LIMIT')
@@ -320,7 +320,7 @@ def observe(phase, *, root=Path('/'), identity_source=identities, access=dropped
                   for item in PROBES if before[item['id']]['state'] == 'present']
     try:
         checked = access(candidates)
-        common.require(checked['uid'] == [44181] * 4 and checked['gid'] == [44181] * 4
+        common.require(checked['uid'] == [common.AGENT_UID] * 4 and checked['gid'] == [common.AGENT_UID] * 4
             and checked['supplementaryGroups'] == [], 'DROPPED_IDENTITY_MISMATCH')
         permission = checked['access']
         after = {item['id']: metadata_source(root, item) for item in PROBES}

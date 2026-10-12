@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 BASE = Path(__file__).parent
+sys.path.insert(0, str(BASE))
+from _test_runner import PortableTests, LinuxTests, run as run_tests
 
 def load(name):
     spec = importlib.util.spec_from_file_location('test_' + name.replace('-', '_'), BASE / (name + '.py'))
@@ -17,7 +19,7 @@ def load(name):
     spec.loader.exec_module(module)
     return module
 
-class PlatformBoundaryTests(unittest.TestCase):
+class PlatformBoundaryTests(PortableTests):
     def test_target_refuses_before_linux_only_imports(self):
         code = '''import builtins,runpy,sys
 sys.platform='win32'
@@ -38,7 +40,21 @@ runpy.run_path(sys.argv[0],run_name='__main__')
             self.assertNotIn('Linux-only import attempted', result.stderr)
             self.assertFalse(output.exists())
 
-class AdministrationBehaviorTests(unittest.TestCase):
+    def test_all_linux_entries_refuse_before_reads_writes_or_commands(self):
+        for name in ['target-observation','dependency-inventory','offline-backup','isolation','inspect-instance']:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as own:
+                evidence = Path(own) / 'never created.json'
+                script = BASE / (name + '.py')
+                code = "\n".join(["import runpy,sys,time", "sys.platform='darwin'",
+                    "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
+                    "sys.argv=[sys.argv[1]];runpy.run_path(sys.argv[0],run_name='__main__')"])
+                result = subprocess.run([sys.executable,'-I','-B','-c',code,str(script)], capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertRegex(result.stderr,'LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED')
+                self.assertFalse(evidence.exists())
+
+
+class AdministrationBehaviorTests(LinuxTests):
     def test_backup_refuses_history_before_output_creation(self):
         backup = load('offline-backup')
         with tempfile.TemporaryDirectory() as own:
@@ -109,7 +125,44 @@ class OwnedInstallation:
     def close(self):
         self.temporary.cleanup()
 
-class BackupFixtureTests(unittest.TestCase):
+class ProcessObservationTests(LinuxTests):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='cleanup-process-', dir='/var/tmp')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.proc = self.root / 'proc'
+        self.pid = self.proc / '123'
+        self.pid.mkdir(parents=True, mode=0o700)
+        (self.pid / 'comm').write_text('cleanup-broker\n')
+        (self.pid / 'status').write_text('Uid:\t1000 1000 1000 1000\nGid:\t1000 1000 1000 1000\n')
+        self.helper = load('target-observation')
+
+    def test_one_root_anchor_per_independent_scan_and_no_arguments_or_environment(self):
+        original, roots = os.open, []
+        def opened(path, *args, **kwargs):
+            if path == '/':
+                roots.append(path)
+            self.assertNotIn(path, ('cmdline', 'environ'))
+            return original(path, *args, **kwargs)
+        with patch.object(os, 'open', side_effect=opened):
+            for _ in range(2):
+                result = self.helper.observe_processes(self.root)
+                self.assertEqual(result['state'], 'running', result)
+                self.assertEqual(result['pid'], 123)
+        self.assertEqual(len(roots), 2)
+
+    def test_disappeared_process_is_unverified_not_stopped(self):
+        (self.pid / 'comm').unlink()
+        result = self.helper.observe_processes(self.root)
+        self.assertEqual(result['state'], 'unverified', result)
+        self.assertEqual(result['uninspectableCount'], 1)
+
+    def test_ambiguous_status_is_unverified(self):
+        with (self.pid / 'status').open('a') as file:
+            file.write('Uid:\t0 0 0 0\n')
+        self.assertEqual(self.helper.observe_processes(self.root)['state'], 'unverified')
+
+class BackupFixtureTests(LinuxTests):
     def setUp(self):
         self.fixture = OwnedInstallation()
         self.addCleanup(self.fixture.close)
@@ -402,7 +455,7 @@ class BackupFixtureTests(unittest.TestCase):
                 finally:
                     fixture.close()
 
-class SafetyFixtureTests(unittest.TestCase):
+class SafetyFixtureTests(LinuxTests):
     def setUp(self):
         self.common = load('_safety')
 
@@ -496,7 +549,7 @@ class SafetyFixtureTests(unittest.TestCase):
                     self.common.publish(Path(path), {'nonsecret':'fixture'})
                 opened.assert_not_called()
 
-class IsolationFixtureTests(unittest.TestCase):
+class IsolationFixtureTests(LinuxTests):
     def setUp(self):
         self.tool = load('isolation')
         self.ids = {'broker':{'uid':44180,'gid':44180,'groupIds':[44180],'shell':'/usr/sbin/nologin'},
@@ -558,7 +611,7 @@ class IsolationFixtureTests(unittest.TestCase):
         self.assertEqual(report['result'], 'BLOCKED')
         self.assertIn('DROPPED_IDENTITY_MISMATCH', report['blockingReasons'])
 
-class InstanceFixtureTests(unittest.TestCase):
+class InstanceFixtureTests(LinuxTests):
     def setUp(self):
         self.tool = load('inspect-instance')
         self.record = dict(schema='openslack.cleanup_broker_instance.v1', brokerId='cleanup-broker-pr418',
@@ -645,20 +698,7 @@ class InstanceFixtureTests(unittest.TestCase):
 
 # unittest.main must run after all class definitions.
 
-class MoreBoundaryTests(unittest.TestCase):
-    def test_all_linux_entries_refuse_before_reads_writes_or_commands(self):
-        for name in ['target-observation','dependency-inventory','offline-backup','isolation','inspect-instance']:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as own:
-                evidence = Path(own) / 'never created.json'
-                script = BASE / (name + '.py')
-                code = "\n".join(["import runpy,sys,time", "sys.platform='darwin'",
-                    "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
-                    "sys.argv=[sys.argv[1]];runpy.run_path(sys.argv[0],run_name='__main__')"])
-                result = subprocess.run([sys.executable,'-I','-B','-c',code,str(script)], capture_output=True,text=True)
-                self.assertEqual(result.returncode,2,result.stderr)
-                self.assertRegex(result.stderr,'LINUX_(DESCRIPTOR_CAPABILITY|ROOT_OBSERVER)_REQUIRED')
-                self.assertFalse(evidence.exists())
-
+class MoreBoundaryTests(LinuxTests):
     def test_untrusted_output_parent_and_directory_replacement_are_refused(self):
         common = load('_safety')
         with tempfile.TemporaryDirectory(prefix='cleanup-output-',dir='/var/tmp') as own:
@@ -789,7 +829,7 @@ class MoreBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(tool.common.Refusal,'PROCESS_EXECUTABLE_PATH_MISMATCH'):
                 tool.process_record(123,root=root)
 
-class PortableLogicTests(unittest.TestCase):
+class PortableLogicTests(PortableTests):
     def test_instance_decoder_is_closed_and_requires_selected_bindings(self):
         tool=load('inspect-instance')
         record=dict(schema='openslack.cleanup_broker_instance.v1',brokerId='cleanup-broker-pr418',
@@ -818,13 +858,5 @@ class PortableLogicTests(unittest.TestCase):
         self.assertEqual(result['result'],'BLOCKED')
         self.assertIn('RUNTIME_OBJECT_MISSING',result['blockingReasons'])
 
-if __name__ == "__main__":
-    if '--portable' in sys.argv:
-        sys.argv.remove('--portable')
-        suite=unittest.TestSuite()
-        for cls in [PlatformBoundaryTests,PortableLogicTests]:
-            suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
-        suite.addTest(MoreBoundaryTests('test_all_linux_entries_refuse_before_reads_writes_or_commands'))
-        result=unittest.TextTestRunner(verbosity=2).run(suite)
-        raise SystemExit(0 if result.wasSuccessful() else 1)
-    unittest.main(verbosity=2)
+if __name__ == '__main__':
+    run_tests(sys.modules[__name__])

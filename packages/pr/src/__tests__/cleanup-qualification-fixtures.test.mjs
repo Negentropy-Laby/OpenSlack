@@ -10,7 +10,12 @@ import {
   testExecutable,
   testProcessEnvironment,
 } from '../../../../scripts/testing/process-fixture.mjs';
-import { BINDINGS, main, humanGhEnvironment } from '../internal/cleanup-qualification-fixtures.mjs';
+import {
+  BINDINGS,
+  main,
+  humanGhEnvironment,
+  fixtureCommandDiagnostic,
+} from '../internal/cleanup-qualification-fixtures.mjs';
 
 const NOW = '2026-10-11T12:34:56.000Z';
 const API = `repos/${BINDINGS.repository}`;
@@ -18,6 +23,22 @@ const sha = (number) => number.toString(16).padStart(40, '0');
 const load = (directory) =>
   JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json'), 'utf8'));
 const write = (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+test('command diagnostics preserve status, signal and actual error while bounding redacted UTF-8 bytes', () => {
+  const stderr =
+    'failed: ghp_fixtureSecret123\nAuthorization: Bearer fixture-secret\n' + 'é'.repeat(40_000);
+  const result = fixtureCommandDiagnostic({
+    status: null,
+    signal: 'SIGTERM',
+    error: { code: 'EIO' },
+    stderr,
+  });
+  assert.equal(result.status, null);
+  assert.equal(result.signal, 'SIGTERM');
+  assert.equal(result.error, 'EIO');
+  assert(Buffer.byteLength(result.stderr) <= 32 * 1024);
+  assert(!result.stderr.includes('fixtureSecret') && !result.stderr.includes('fixture-secret'));
+  assert(!result.stderr.includes('\uFFFD'));
+});
 const publicationFault = vi.hoisted(() => ({
   active: false,
   lockFstat: false,
@@ -113,10 +134,15 @@ test('terminal merge bookkeeping is locked without an extra remote mutation or c
   const batch = await f.plan();
   await f.run('create', batch);
   await f.run('close-case', batch);
+  f.state.calls.length = 0;
   publicationFault.terminalLockRequired = true;
   await f.run('merge-targets', batch);
   assert.equal(load(batch).phase, 'MERGED_TARGETS');
   assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+  // One initial identity/repository/main observation, plus one fresh admission
+  // after each of the five human confirmations; none is treated as permanent.
+  assert.equal(f.state.calls.filter((x) => x.args.at(-1) === 'user').length, 6);
+  assert.equal(f.state.calls.filter((x) => x.args.at(-1) === API).length, 6);
 });
 
 test('terminal bookkeeping publication failure retains recovery lock', async () => {

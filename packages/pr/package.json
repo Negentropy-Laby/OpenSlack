@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./cleanup-administration-internal": {
+      "types": "./dist/internal/cleanup-administration.d.ts",
+      "import": "./dist/internal/cleanup-administration.js"
     }
   },
   "scripts": {

@@ -1,5 +1,6 @@
 import {
   readStableDescriptor,
+  digestStableDescriptor,
   stableFileIdentity as fileIdentity,
   StableDescriptorError,
 } from '@openslack/core';
@@ -35,6 +36,26 @@ function refuse(code: CleanupFileBoundaryCode): never {
   throw new CleanupFileBoundaryError(code);
 }
 export const inodeIdentity = (s: Stats): string => `${s.dev}:${s.ino}`;
+function retainCleanupFailure(primary: unknown, failure: unknown): void {
+  if (primary instanceof Error) {
+    const value = primary as Error & { cleanupFailures?: string[] };
+    (value.cleanupFailures ??= []).push(
+      (failure as NodeJS.ErrnoException).code ?? 'FD_CLOSE_FAILED',
+    );
+  }
+}
+function closeOwnedDescriptors(fds: readonly number[], primary?: unknown): void {
+  let first: unknown;
+  for (const fd of fds) {
+    try {
+      closeSync(fd);
+    } catch (error) {
+      first ??= error;
+      retainCleanupFailure(primary ?? first, error);
+    }
+  }
+  if (first && primary === undefined) throw first;
+}
 
 /** There is deliberately no path-check fallback on a platform without these primitives. */
 export function assertCleanupDescriptorSupport(): void {
@@ -140,7 +161,10 @@ export class CleanupDirectoryAnchor {
       }
       return anchor;
     } catch (error) {
-      for (const directory of directories.reverse()) closeSync(directory.fd);
+      closeOwnedDescriptors(
+        directories.reverse().map((directory) => directory.fd),
+        error,
+      );
       throw error;
     }
   }
@@ -177,18 +201,16 @@ export class CleanupDirectoryAnchor {
     fsyncSync(this.directories.at(-1)!.fd);
     this.verify();
   }
-  close(): void {
-    for (const directory of [...this.directories].reverse()) closeSync(directory.fd);
+  close(primary?: unknown): void {
+    closeOwnedDescriptors(
+      [...this.directories].reverse().map((directory) => directory.fd),
+      primary,
+    );
   }
 }
 
 type ReadPurpose = 'runtime-evidence' | 'historical-record' | 'artifact';
-export function readCleanupDescriptor(
-  fd: number,
-  maxBytes: number,
-  purpose: ReadPurpose = 'runtime-evidence',
-): Buffer {
-  const stamp = fstatSync(fd);
+function assertFilePurpose(stamp: Stats, purpose: ReadPurpose): void {
   if (
     !stamp.isFile() ||
     stamp.nlink !== 1 ||
@@ -199,6 +221,100 @@ export function readCleanupDescriptor(
           !(purpose === 'historical-record' && process.getuid!() === 0))))
   )
     refuse('UNSAFE_FILE');
+}
+/** Owned capture held across one preparation stage. No caller-provided FD path. */
+export class CleanupCapturedFile {
+  private constructor(
+    readonly anchor: CleanupDirectoryAnchor,
+    readonly fd: number,
+    private readonly leaf: string,
+    private readonly identity: string,
+    private readonly maxBytes: number,
+    private readonly purpose: ReadPurpose,
+  ) {}
+  static open(
+    path: string,
+    maxBytes: number,
+    purpose: ReadPurpose = 'runtime-evidence',
+  ): CleanupCapturedFile {
+    const anchor = CleanupDirectoryAnchor.open(dirname(path));
+    const leaf = path.slice(path.lastIndexOf('/') + 1);
+    let fd: number | undefined;
+    try {
+      const before = lstatSync(anchor.path(leaf));
+      if (before.isSymbolicLink()) refuse('SYMLINK_REJECTED');
+      assertFilePurpose(before, purpose);
+      fd = openSync(
+        anchor.path(leaf),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      const stamp = fstatSync(fd);
+      if (fileIdentity(before) !== fileIdentity(stamp)) refuse('FILE_CHANGED');
+      const capture = new CleanupCapturedFile(
+        anchor,
+        fd,
+        leaf,
+        fileIdentity(stamp),
+        maxBytes,
+        purpose,
+      );
+      capture.verify();
+      return capture;
+    } catch (error) {
+      if (fd !== undefined) closeOwnedDescriptors([fd], error);
+      anchor.close(error);
+      throw error;
+    }
+  }
+  verify(): void {
+    this.anchor.verify();
+    const stamp = fstatSync(this.fd),
+      entry = lstatSync(this.anchor.path(this.leaf));
+    assertFilePurpose(stamp, this.purpose);
+    assertFilePurpose(entry, this.purpose);
+    if (fileIdentity(stamp) !== this.identity || fileIdentity(entry) !== this.identity)
+      refuse('FILE_CHANGED');
+  }
+  read(): Buffer {
+    this.verify();
+    const bytes = readCleanupDescriptor(this.fd, this.maxBytes, this.purpose);
+    this.verify();
+    return bytes;
+  }
+  digest(): { sha256: string; bytes: number } {
+    this.verify();
+    try {
+      const result = digestStableDescriptor(this.fd, this.maxBytes, false);
+      this.verify();
+      return result;
+    } catch (error) {
+      if (error instanceof StableDescriptorError)
+        refuse(error.code === 'SIZE_INVALID' ? 'TOO_LARGE' : 'FILE_CHANGED');
+      throw error;
+    }
+  }
+  close(primary?: unknown): void {
+    let failure = primary;
+    try {
+      closeOwnedDescriptors([this.fd], primary);
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      this.anchor.close(failure);
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure !== undefined && primary === undefined) throw failure;
+  }
+}
+export function readCleanupDescriptor(
+  fd: number,
+  maxBytes: number,
+  purpose: ReadPurpose = 'runtime-evidence',
+): Buffer {
+  const stamp = fstatSync(fd);
+  assertFilePurpose(stamp, purpose);
   try {
     return readStableDescriptor(fd, maxBytes);
   } catch (error) {
@@ -215,30 +331,17 @@ export function withCleanupFile<T>(
   consume: (bytes: Buffer, fd: number, anchor: CleanupDirectoryAnchor) => T,
   purpose: ReadPurpose = 'runtime-evidence',
 ): T {
-  const anchor = CleanupDirectoryAnchor.open(dirname(path));
-  const leaf = path.slice(path.lastIndexOf('/') + 1);
-  let fd: number | undefined;
+  const capture = CleanupCapturedFile.open(path, maxBytes, purpose);
+  let failure: unknown;
   try {
-    anchor.verify();
-    const internal = anchor.path(leaf),
-      before = lstatSync(internal);
-    if (before.isSymbolicLink()) refuse('SYMLINK_REJECTED');
-    if (!before.isFile()) refuse('UNSAFE_FILE');
-    fd = openSync(internal, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    const stamp = fstatSync(fd);
-    if (fileIdentity(before) !== fileIdentity(stamp)) refuse('FILE_CHANGED');
-    const bytes = readCleanupDescriptor(fd, maxBytes, purpose);
-    const result = consume(bytes, fd, anchor);
-    if (
-      fileIdentity(fstatSync(fd)) !== fileIdentity(stamp) ||
-      fileIdentity(lstatSync(internal)) !== fileIdentity(stamp)
-    )
-      refuse('FILE_CHANGED');
-    anchor.verify();
+    const result = consume(capture.read(), capture.fd, capture.anchor);
+    capture.verify();
     return result;
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    if (fd !== undefined) closeSync(fd);
-    anchor.close();
+    capture.close(failure);
   }
 }
 

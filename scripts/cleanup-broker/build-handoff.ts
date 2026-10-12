@@ -1,31 +1,22 @@
 import {
   readCleanupArtifactFile,
   readCleanupBoundedFile,
-} from '../../packages/pr/src/internal/cleanup-file-boundary.js';
-import { isSensitiveCleanupInput } from '../../packages/pr/src/internal/cleanup-validation.js';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
-import { join, resolve, isAbsolute } from 'node:path';
-import {
-  CleanupHandoffError,
   assertCleanupHandoffStaging,
   assertCleanupHandoffRuntime,
   readCleanupHandoffInputFile,
-  prepareCleanupHandoffDraft,
   CLEANUP_HANDOFF_SCHEMAS,
   cleanupHandoffToolchain,
   assertCleanupHandoffToolchain,
   assertCleanupHandoffObjects,
-} from '../../packages/pr/src/cleanup-handoff.js';
-import type {
-  CleanupHandoffBuildInput,
-  PrepareCleanupHandoffDraftInput,
-} from '../../packages/pr/src/cleanup-handoff.js';
-import {
-  CLEANUP_ADMIN_TOOLKIT_FILES,
-  prepareCleanupAdminToolkit,
-} from '../../packages/pr/src/cleanup-admin-toolkit.js';
+} from '@openslack/pr/cleanup-administration-internal';
+import { isSensitiveCleanupInput } from '@openslack/pr/cleanup-administration-internal';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { join, resolve, isAbsolute } from 'node:path';
+import { CleanupHandoffError, prepareCleanupHandoffDraft } from '@openslack/pr';
+import type { CleanupHandoffBuildInput, PrepareCleanupHandoffDraftInput } from '@openslack/pr';
+import { CLEANUP_ADMIN_TOOLKIT_FILES, prepareCleanupAdminToolkit } from '@openslack/pr';
 
 // Orchestrates two clean builds; all draft construction/verification belongs to @openslack/pr.
 type BuildInput = Omit<PrepareCleanupHandoffDraftInput, 'builds' | 'verifierPath' | 'now'> & {
@@ -100,6 +91,16 @@ try {
     const objectFiles = run('git', ['rev-parse', '--git-path', 'objects'], checkout);
     assertCleanupHandoffObjects(resolve(checkout, objectFiles));
     run(process.execPath, ['install', '--frozen-lockfile', '--ignore-scripts'], checkout);
+    run(
+      'python3',
+      ['-I', '-B', 'scripts/cleanup-broker/generate-administration-contract.py', '--check'],
+      checkout,
+    );
+    run(
+      process.execPath,
+      ['x', 'tsc', '--build', 'packages/pr/tsconfig.json', 'packages/runtime/tsconfig.json'],
+      checkout,
+    );
     mkdirSync(artifacts);
     const brokerPath = join(artifacts, 'cleanup-broker'),
       executorPath = join(artifacts, 'executor.mjs');
@@ -333,12 +334,13 @@ try {
       adminToolPath,
       clientDocPath,
     });
+    const publishedResult = { ...result, administratorToolkit };
     writeFileSync(
       join(buildRoot, 'preparation-result.DRAFT.json'),
-      JSON.stringify(result, null, 2) + '\n',
+      JSON.stringify(publishedResult, null, 2) + '\n',
       { flag: 'wx' },
     );
-    process.stdout.write(JSON.stringify({ ...result, administratorToolkit }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify(publishedResult, null, 2) + '\n');
   }
 } catch (error) {
   process.stderr.write(

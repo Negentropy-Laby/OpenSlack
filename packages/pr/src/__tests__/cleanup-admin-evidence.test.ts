@@ -3,6 +3,7 @@ import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualificati
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  createReadStream,
   existsSync,
   linkSync,
   mkdirSync,
@@ -10,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import type * as FileSystem from 'node:fs';
@@ -596,6 +598,32 @@ describe('cleanup evidence preparation', () => {
     expect(fault.openedFiles).toBe(0);
   });
   if (declareLinuxCleanupTests) {
+    it('captures a Node artifact above 256 MiB through the 512 MiB streaming contract', async () => {
+      const f = fixture(),
+        node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
+      truncateSync(node.source.path, 257 * 1024 * 1024);
+      const expected = createHash('sha256');
+      for await (const block of createReadStream(node.source.path)) expected.update(block);
+      node.source.sha256 = expected.digest('hex');
+      const result = prepareCleanupEvidenceDraft(f.input);
+      expect(result.blockingIssues).toEqual([]);
+      expect(result.published).toBe(true);
+      const manifest = JSON.parse(
+        readFileSync(result.targetEvidence!.installationManifestPath, 'utf8'),
+      );
+      expect(
+        manifest.files.find((entry: { path: string }) => entry.path.endsWith('/node')).sha256,
+      ).toBe(node.source.sha256);
+    });
+    it('rejects Node above 512 MiB before publication', () => {
+      const f = fixture(),
+        node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
+      truncateSync(node.source.path, 512 * 1024 * 1024 + 1);
+      const result = prepareCleanupEvidenceDraft(f.input);
+      expect(result.published).toBe(false);
+      expect(result.blockingIssues[0]?.code).toBe('EVIDENCE_TOO_LARGE');
+      expect(existsSync(f.input.outputDirectory)).toBe(false);
+    });
     it('refuses a candidate-bound DRAFT from another candidate before publication', () => {
       const f = fixture();
       f.input.sources.selectedBindings = f.put('selected.json', {

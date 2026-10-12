@@ -1,3 +1,8 @@
+export { verifyCleanupWorkspace } from './cleanup-workspace.js';
+export type {
+  VerifyCleanupWorkspaceInput,
+  CleanupWorkspaceObservation,
+} from './cleanup-workspace.js';
 export { fetchPRDetails } from './fetch.js';
 export {
   prepareCleanupEvidenceDraft,

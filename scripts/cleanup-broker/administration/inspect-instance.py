@@ -81,8 +81,8 @@ def process_record(pid, *, root=Path('/')):
         uid, gid = ([int(value) for value in status[key].split()] for key in ('Uid', 'Gid'))
         groups = [int(value) for value in status['Groups'].split()]
         caps = {key:status[key] for key in ('CapEff', 'CapPrm', 'CapAmb')}
-        common.require(uid == [44180] * 4 and gid == [44180] * 4, 'PROCESS_UID_GID_MISMATCH')
-        common.require(set(groups) <= {44180}, 'PROCESS_SUPPLEMENTARY_GROUPS_INVALID')
+        common.require(uid == [common.BROKER_UID] * 4 and gid == [common.BROKER_GID] * 4, 'PROCESS_UID_GID_MISMATCH')
+        common.require(set(groups) <= {common.BROKER_GID}, 'PROCESS_SUPPLEMENTARY_GROUPS_INVALID')
         common.require(all(int(value, 16) == 0 for value in caps.values()), 'PROCESS_CAPABILITIES_INVALID')
     except (KeyError, ValueError) as error:
         raise common.Refusal('PROCESS_STATUS_INVALID') from error
@@ -92,7 +92,7 @@ def process_record(pid, *, root=Path('/')):
     ticks_per_second = os.sysconf('SC_CLK_TCK')
     common.require(type(ticks_per_second) is int and ticks_per_second > 0, 'PROCESS_CLOCK_TICKS_INVALID')
     interval = start_interval(start, ticks_per_second)
-    with common.Anchor(root, f'/proc/{pid}/exe', owners={0, os.geteuid(), 44180},
+    with common.Anchor(root, f'/proc/{pid}/exe', owners={0, os.geteuid(), common.BROKER_UID},
                        sticky_evidence=Path(root) != Path('/')) as anchor:
         link = os.stat(anchor.name, dir_fd=anchor.parent, follow_symlinks=False)
         common.require(stat.S_ISLNK(link.st_mode), 'PROCESS_EXE_LINK_INVALID')
@@ -115,7 +115,7 @@ def alive(fd):
 def process_executable(pid, *, root=Path('/'), owner=(0, 0)):
     # This is the single allowed kernel-proc symlink follow. The target is not supplied by a caller.
     # Bind the actual process executable's dev/ino to the separately verified installed Broker FD.
-    with common.Anchor(root, f'/proc/{pid}/exe', owners={0, os.geteuid(), 44180},
+    with common.Anchor(root, f'/proc/{pid}/exe', owners={0, os.geteuid(), common.BROKER_UID},
                        sticky_evidence=Path(root) != Path('/')) as anchor, common.Owned() as owned:
         common.require(os.readlink(anchor.name, dir_fd=anchor.parent) == BROKER, 'PROCESS_EXECUTABLE_PATH_MISMATCH')
         fd = owned.add(os.open(anchor.name, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=anchor.parent))
@@ -173,7 +173,7 @@ def validate_clock_continuity(before, after):
 
 
 def inspect(pid, expected_sha256, *, first_start=True, root=Path('/'), owner=(0, 0),
-            broker_owner=(44180, 44180), process_reader=process_record, executable_reader=process_executable,
+            broker_owner=(common.BROKER_UID, common.BROKER_GID), process_reader=process_record, executable_reader=process_executable,
             pidfd_factory=None, pidfd_alive=alive):
     report = common.base_report('openslack.cleanup_instance_observation.v1')
     report.update(result='BLOCKED', pid=pid, firstStart=first_start, selectedBrokerId=common.BROKER_ID,
@@ -192,8 +192,8 @@ def inspect(pid, expected_sha256, *, first_start=True, root=Path('/'), owner=(0,
             before = process_reader(pid, root=root)
             report['process'] = before
             # The process reader is internally injected for fixtures; production binds all identities here too.
-            common.require(before.get('pid') == pid and before.get('uid') == [44180] * 4
-                and before.get('gid') == [44180] * 4 and before.get('executable') == BROKER
+            common.require(before.get('pid') == pid and before.get('uid') == [common.BROKER_UID] * 4
+                and before.get('gid') == [common.BROKER_GID] * 4 and before.get('executable') == BROKER
                 and before.get('comm') == 'cleanup-broker', 'PROCESS_BINDING_MISMATCH')
             broker = held.enter_context(common.ReadFile(root, BROKER, 64 * 1024 * 1024,
                 owners={owner}, mode=0o755, sticky_evidence=True))

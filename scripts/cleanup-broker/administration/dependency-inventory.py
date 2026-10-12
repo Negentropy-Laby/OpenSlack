@@ -23,19 +23,11 @@ import time
 import types
 
 HELPER_NAME = 'target-observation.py'
-HELPER_SHA256 = 'c94fa232f6f1b04d91e3a0163c02db429f49c1ddc3f6876a48a66178cbb6c1bd'
-BINDINGS = dict(target='OpenSlack-Cleanup-Qual', workspaceId='openslack-self',
-    repository='Negentropy-Laby/openslack-cleanup-qualification', repositoryId='1380965476')
-INSTALLED = {
-    '/usr/lib/openslack-cleanup/cleanup-broker': 64 * 1024 * 1024,
-    '/usr/lib/openslack-cleanup/executor.mjs': 64 * 1024 * 1024,
-    '/usr/lib/openslack-cleanup/node': 512 * 1024 * 1024,
-    '/usr/lib/openslack-cleanup/git': 64 * 1024 * 1024,
-    '/usr/lib/openslack-cleanup/sh': 16 * 1024 * 1024,
-    '/usr/lib/openslack-cleanup/git-core/git-remote-https': 64 * 1024 * 1024,
-}
+HELPER_SHA256 = 'd1c9ad04a1012809945e65a332fa9b53979faf3cf89d6986dd39b032a7e05f68'
+BINDINGS = common.BINDINGS
+INSTALLED = {path: bound for path, (bound, _) in common.LAYOUT.items()}
 LDD_INPUTS = tuple(p for p in INSTALLED if p.rsplit('/', 1)[-1] in ('node', 'git', 'sh', 'git-remote-https'))
-INSTALLED_MODES = {path: '0644' if path.endswith('/executor.mjs') else '0755' for path in INSTALLED}
+INSTALLED_MODES = {path: f'{mode:04o}' for path, (_, mode) in common.LAYOUT.items()}
 BROKER = '/usr/lib/openslack-cleanup/cleanup-broker'
 LIBRARY_BOUND = 256 * 1024 * 1024
 MINIMAL_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}
@@ -53,22 +45,14 @@ def require(value, code):
 
 
 def strict_json(data):
-    def object_pairs(pairs):
-        result = {}
-        for key, value in pairs:
-            require(key not in result, 'DUPLICATE_JSON_KEY')
-            result[key] = value
-        return result
-    def constant(_):
-        raise Refusal('NON_JSON_CONSTANT')
     try:
-        return json.loads(data.decode('utf-8', errors='strict'), object_pairs_hook=object_pairs, parse_constant=constant)
-    except (UnicodeError, ValueError) as error:
-        raise Refusal('INVALID_JSON_OR_UTF8') from error
+        return common.strict_json(data)
+    except common.Refusal as error:
+        raise Refusal(error.code) from error
 
 
 def evidence_bytes(value):
-    return (json.dumps(value, indent=2, allow_nan=False) + '\n').encode('utf-8')
+    return common.encode(value)
 
 
 def load_frozen_helper(file):
@@ -176,6 +160,16 @@ class VerifiedFile:
         result = self.helper.metadata(self.path, current)
         result['sha256'] = digest.hexdigest()
         return result
+
+    def check_identity(self):
+        # Cheap same-stage checkpoint; permissions and ancestors are rechecked.
+        # Executed tools and the final proof still use a complete byte snapshot.
+        current = os.fstat(self.fd)
+        entry = os.stat(self.anchor.name, dir_fd=self.anchor.parent, follow_symlinks=False)
+        require(self.helper.file_stamp(self.initial) == self.helper.file_stamp(current)
+            == self.helper.file_stamp(entry), 'OPEN_FILE_OR_ENTRY_CHANGED')
+        self.anchor.check()
+        self.trusted_ancestors()
 
     def unchanged(self):
         after = self.snapshot()
@@ -612,9 +606,9 @@ def collect(observation, observation_digest, helper, root=Path('/'), now=None, h
                 require(set(elf['needed']).issubset(local_names), 'EXECUTABLE_DT_NEEDED_UNRESOLVED')
                 for canonical in local_paths:
                     require(set(metadata[canonical]['needed']).issubset(local_names), 'TRANSITIVE_DT_NEEDED_UNRESOLVED')
-                installed[logical].unchanged()
-                ldd.unchanged()
-                shell.unchanged()
+                installed[logical].check_identity()
+                ldd.check_identity()
+                shell.check_identity()
             for alias, before in all_aliases.items():
                 require(resolver(root, alias, helper) == before, 'LIBRARY_ALIAS_CHANGED')
             raw['aliases'] = [all_aliases[alias] for alias in sorted(all_aliases)]

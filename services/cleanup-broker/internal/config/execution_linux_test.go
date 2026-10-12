@@ -204,6 +204,40 @@ func TestTaskViewRejectsMalformedBinding(t *testing.T) {
 		})
 	}
 }
+
+func TestAdministratorTaskStatesMatchIndependentProductionParser(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "packages", "pr", "src", "internal", "cleanup-administration-contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		TaskStates []string `json:"taskStates"`
+	}
+	if err = json.Unmarshal(raw, &contract); err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.TaskStates) != 5 {
+		t.Fatal("unexpected administration state set")
+	}
+	for _, state := range contract.TaskStates {
+		t.Run(state, func(t *testing.T) {
+			spec, _, _, view := executionFixture(t)
+			view.Tasks[0].State = state
+			writeExecutionJSON(t, spec, TaskViewPath, view, 0640)
+			snapshot, err := load(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer snapshot.Close()
+			if _, err = snapshot.LoadExecution(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = snapshot.ReadTaskView(); err != nil {
+				t.Fatalf("administrator state %q rejected: %v", state, err)
+			}
+		})
+	}
+}
 func TestTaskViewTimeAndRepositoryIDRequireRequestLevelChecks(t *testing.T) {
 	// This component checks shape, not a request clock or Permit repository ID.
 	// Resource preflight and final-send MUST reject this expired but well-formed view.

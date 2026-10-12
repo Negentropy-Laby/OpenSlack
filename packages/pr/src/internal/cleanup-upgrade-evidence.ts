@@ -1,6 +1,8 @@
+import { cleanupEvidenceTimestamp, cleanupEvidenceWindow } from './cleanup-time.js';
+import { CLEANUP_TASK_STATES, CLEANUP_TASK_LIMIT } from './cleanup-administration-contract.js';
 import { CLEANUP_SHA256 as HASH, cleanupObject, cleanupExactKeys } from './cleanup-validation.js';
 import { decodeStrictJSON } from '@openslack/core';
-import { createHash } from 'node:crypto';
+import { cleanupByteDigest as hash } from './cleanup-document-bytes.js';
 import { posix, win32 } from 'node:path';
 import { CleanupFileBoundaryError, readCleanupBoundedFile } from './cleanup-file-boundary.js';
 import type { CleanupHandoffTargetEvidence } from '../cleanup-handoff.js';
@@ -23,7 +25,6 @@ export const UPGRADE_EVIDENCE_ROLES = Object.freeze([
   'identityPath',
   'dependencyInventoryPath',
 ] as const);
-const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 type ObjectValue = Record<string, unknown>;
 class EvidenceValidationFailure extends Error {}
 export class UpgradeEvidenceError extends Error {
@@ -59,16 +60,16 @@ function exact(value: unknown, keys: readonly string[]): ObjectValue {
   return v;
 }
 function time(value: unknown): number {
-  insist(typeof value === 'string' && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value));
-  const n = Date.parse(value as string);
-  insist(Number.isFinite(n));
-  return n;
+  const parsed = cleanupEvidenceTimestamp(value);
+  insist(parsed !== undefined);
+  return parsed;
 }
+
 function window(v: ObjectValue, now: number): void {
   const start = time(v.recordedAt),
     end = time(v.expiresAt);
   insist(end > start);
-  insist(start <= now && now < end, 'EVIDENCE_EXPIRED');
+  insist(cleanupEvidenceWindow(start, end, now), 'EVIDENCE_EXPIRED');
 }
 const common = [
   'schema',
@@ -340,7 +341,7 @@ export function validateCapturedUpgradeEvidence(
         time(task.notBefore) <= now &&
         now < time(task.expiresAt) &&
         Array.isArray(task.tasks) &&
-        task.tasks.length <= 4096,
+        task.tasks.length <= CLEANUP_TASK_LIMIT,
     );
     const tasks = new Set<string>();
     for (const raw of task.tasks as unknown[]) {
@@ -352,7 +353,7 @@ export function validateCapturedUpgradeEvidence(
           Number.isSafeInteger(t.issueNumber) &&
           Number(t.issueNumber) > 0 &&
           typeof t.state === 'string' &&
-          ['pending', 'claimed', 'in-progress', 'completed', 'released'].includes(t.state),
+          (CLEANUP_TASK_STATES as readonly unknown[]).includes(t.state),
       );
       tasks.add(String(t.taskId));
     }

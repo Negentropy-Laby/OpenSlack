@@ -247,6 +247,12 @@ function sha256(bytes: Buffer): string {
 }
 
 describe('Organization Graph generated contract freeze', () => {
+  it('keeps graph:golden wired to the verified generator entry', async () => {
+    const rootPackage = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'));
+    expect(rootPackage.scripts['graph:golden']).toBe(
+      'bun scripts/organization-graph-contracts/index.ts',
+    );
+  });
   it('settles a cancelled fixture continuation before removing its directory', async ({
     signal,
   }) => {

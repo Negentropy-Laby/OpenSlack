@@ -6,6 +6,7 @@
       "name": "openslack",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
+        "@openslack/pr": "workspace:*",
       },
       "devDependencies": {
         "@modelcontextprotocol/sdk": "1.29.0",

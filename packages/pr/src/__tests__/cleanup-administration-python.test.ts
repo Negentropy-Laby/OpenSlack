@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,7 +67,46 @@ function run(args: string[]) {
   });
 }
 
+function expectPythonReport(stdout: string, portableOnly: boolean): void {
+  const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!);
+  expect(report.schema).toBe('openslack.cleanup_python_test_run.v1');
+  expect(report.portableOnly).toBe(portableOnly);
+  expect(report.selected).toBeGreaterThan(0);
+  expect(report.discovered).toBeGreaterThanOrEqual(report.selected);
+  expect(report.executed).toBe(report.selected);
+  expect(report.failures + report.errors + report.skipped).toBe(0);
+  expect(report.successful).toBe(true);
+}
+
 describe('cleanup administrator Python tools', () => {
+  it('keeps generated Python and TS contracts synchronized on every platform without regeneration', () => {
+    const result = run([
+      join(repositoryRoot, 'scripts/cleanup-broker/generate-administration-contract.py'),
+      '--check',
+    ]);
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+  });
+  it('keeps the reviewed registry and actual helper bytes pinned on every platform', () => {
+    const contract = JSON.parse(
+      readFileSync(
+        join(repositoryRoot, 'packages/pr/src/internal/cleanup-administration-contract.json'),
+        'utf8',
+      ),
+    );
+    const sha = (raw: Buffer) => createHash('sha256').update(raw).digest('hex');
+    expect(
+      sha(
+        readFileSync(
+          join(repositoryRoot, '.openslack/agents/registry/cleanup_qualification_pr418.yaml'),
+        ),
+      ),
+    ).toBe(contract.registrySHA256);
+    const dependency = readFileSync(join(tools, 'dependency-inventory.py'), 'utf8');
+    expect(/HELPER_SHA256 = '([a-f0-9]{64})'/.exec(dependency)?.[1]).toBe(
+      sha(readFileSync(join(tools, 'target-observation.py'))),
+    );
+  });
   it.each(entries)('%s refuses an unsupported platform before target IO', (entry) => {
     const owned = mkdtempSync(join(tmpdir(), 'cleanup-python-platform-'));
     try {
@@ -100,7 +140,7 @@ describe('cleanup administrator Python tools', () => {
     const result = run([join(tools, 'administration_test.py'), '--portable']);
     expect(result.error).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain('Ran 5 tests');
+    expectPythonReport(result.stdout, true);
     expect(result.stderr).toContain('OK');
   });
 
@@ -111,7 +151,7 @@ describe('cleanup administrator Python tools', () => {
     ]);
     expect(result.error).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toMatch(/Ran \d+ tests/);
+    expectPythonReport(result.stdout, process.platform !== 'linux');
     expect(result.stderr).toContain('OK');
   });
 
@@ -120,7 +160,7 @@ describe('cleanup administrator Python tools', () => {
       const result = run([join(tools, 'dependency_inventory_test.py')]);
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
-      expect(result.stderr).toContain('Ran 42 tests');
+      expectPythonReport(result.stdout, false);
       expect(result.stderr).toContain('OK');
       return;
     }

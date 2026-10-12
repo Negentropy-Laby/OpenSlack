@@ -4,6 +4,7 @@ The CLI tools are read-only except an explicitly new evidence/backup destination
 Fixture roots and OS-call injection are function parameters, never CLI options.
 """
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 import errno
 import hashlib
 import json
@@ -14,18 +15,34 @@ import stat
 import sys
 import types
 
-BINDINGS = dict(target='OpenSlack-Cleanup-Qual', workspaceId='openslack-self',
-    repository='Negentropy-Laby/openslack-cleanup-qualification', repositoryId='1380965476')
-BROKER_UID, BROKER_GID, AGENT_UID, AGENT_GID = 44180, 44180, 44181, 44181
-BROKER_ID, AGENT_ID = 'cleanup-broker-pr418', 'cleanup_qualification_pr418'
-LAYOUT = {
-    '/usr/lib/openslack-cleanup/cleanup-broker': (64 * 1024 * 1024, 0o755),
-    '/usr/lib/openslack-cleanup/executor.mjs': (64 * 1024 * 1024, 0o644),
-    '/usr/lib/openslack-cleanup/node': (512 * 1024 * 1024, 0o755),
-    '/usr/lib/openslack-cleanup/git': (64 * 1024 * 1024, 0o755),
-    '/usr/lib/openslack-cleanup/sh': (16 * 1024 * 1024, 0o755),
-    '/usr/lib/openslack-cleanup/git-core/git-remote-https': (64 * 1024 * 1024, 0o755),
-}
+# BEGIN GENERATED ADMINISTRATION CONTRACT
+BINDINGS = {'target': 'OpenSlack-Cleanup-Qual',
+ 'workspaceId': 'openslack-self',
+ 'repository': 'Negentropy-Laby/openslack-cleanup-qualification',
+ 'repositoryId': '1380965476'}
+BROKER_UID = 44180
+BROKER_GID = 44180
+BROKER_ID = 'cleanup-broker-pr418'
+AGENT_UID = 44181
+AGENT_GID = 44181
+AGENT_ID = 'cleanup_qualification_pr418'
+EXPECTED_IDENTITIES = {'broker': ('openslack-cleanup-broker', 44180, 44180),
+ 'agent': ('openslack-cleanup-agent', 44181, 44181)}
+LAYOUT = {'/usr/lib/openslack-cleanup/cleanup-broker': (67108864, 493),
+ '/usr/lib/openslack-cleanup/executor.mjs': (67108864, 420),
+ '/usr/lib/openslack-cleanup/node': (536870912, 493),
+ '/usr/lib/openslack-cleanup/git': (67108864, 493),
+ '/usr/lib/openslack-cleanup/sh': (16777216, 493),
+ '/usr/lib/openslack-cleanup/git-core/git-remote-https': (67108864, 493)}
+RUNTIME_BINDING = {'agent_id': 'cleanup_qualification_pr418',
+ 'principal_id': 'principal:cleanup_qualification_pr418',
+ 'runtime_uid_claim': 'cleanup_qualification_pr418',
+ 'run_id': 'cleanup-pr418-f8db249a48c8492587e4515a31c60c45',
+ 'workspace_id': 'openslack-self'}
+TASK_STATES = ('pending', 'claimed', 'in-progress', 'completed', 'released')
+TASK_LIMIT = 4096
+REGISTRY_SHA256 = '33a9b46866fedd768cb859abfd36341159fc0f3a3e306462575f1f34af7e7ebc'
+# END GENERATED ADMINISTRATION CONTRACT
 ACTIVE = ('/etc/openslack-cleanup', '/usr/lib/openslack-cleanup',
     '/var/lib/openslack-cleanup', '/run/openslack-cleanup')
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
@@ -181,6 +198,46 @@ class Anchor:
         self.owned.close(primary)
 
 
+class MetadataAnchor:
+    """Every ancestor is opened from /; owned descriptors are registered immediately."""
+    def __init__(self, root, path):
+        self.path=path
+        self.physical=Path(root) / path.lstrip('/')
+        if not self.physical.is_absolute() or '..' in self.physical.parts:
+            raise Refusal('UNSAFE_PATH')
+        self.stack=ExitStack()
+        self.chain=[]
+
+    def __enter__(self):
+        try:
+            fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+            self.stack.callback(os.close,fd)
+            self.root_fd=fd
+            self.root_stamp=directory_stamp(os.fstat(fd))
+            for name in self.physical.parent.parts[1:]:
+                new=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=fd)
+                self.stack.callback(os.close,new)
+                info=os.fstat(new)
+                self.chain.append((fd,name,new,directory_stamp(info)))
+                fd=new
+            self.parent=fd
+            self.name=self.physical.name
+            return self
+        except BaseException:
+            self.stack.close()
+            raise
+
+    def check(self):
+        if directory_stamp(os.fstat(self.root_fd))!=self.root_stamp:
+            raise Refusal('ROOT_DIRECTORY_CHANGED')
+        for parent,name,fd,expected in self.chain:
+            if directory_stamp(os.fstat(fd)) != expected or directory_stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)) != expected:
+                raise Refusal('DIRECTORY_CHANGED')
+
+    def __exit__(self,*_):
+        self.stack.close()
+
+
 class ReadFile:
     def __init__(self, root, logical, bound, owners=None, mode=None, empty=False, sticky_evidence=False):
         self.anchor = Anchor(root, logical, owners={0, os.geteuid(), BROKER_UID} if owners is None else
@@ -285,10 +342,10 @@ def write_all(fd, data):
 
 def publish(output, value):
     output = output_path(output)
-    data = encode(value)
+    data = value if isinstance(value, bytes) else encode(value)
     with Anchor(Path('/'), output, sticky_evidence=True) as anchor, Owned() as owned:
         info = os.fstat(anchor.parent)
-        require(info.st_uid in (0, os.geteuid()) and stat.S_IMODE(info.st_mode) == 0o700,
+        require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
             'OUTPUT_PARENT_NOT_PRIVATE')
         fd = owned.add(os.open(anchor.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
             0o600, dir_fd=anchor.parent))

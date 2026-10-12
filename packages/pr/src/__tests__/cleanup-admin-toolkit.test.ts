@@ -473,6 +473,11 @@ if (declareLinuxCleanupTests) {
       expect(readFileSync(join(input.outputDirectory, 'keep'), 'utf8')).toBe('existing evidence');
       expect(readdirSync(input.outputDirectory)).toEqual(['keep']);
     });
+    it('classifies the existing source parent as an existing output, never a fresh install directory', () => {
+      const value = { ...input, outputDirectory: dirname(source) };
+      expect(caught(() => prepareCleanupAdminToolkit(value))).toBe('ADMIN_TOOLKIT_OUTPUT_EXISTS');
+      expect(statSync(source).isDirectory()).toBe(true);
+    });
     it('rejects the actual dirty source despite both reports claiming clean', () => {
       const path = join(source, 'unexpected');
       writeFileSync(path, 'untracked');

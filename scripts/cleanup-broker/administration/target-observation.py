@@ -19,32 +19,26 @@ import pwd
 import stat
 import sys
 
-LAYOUT = (
-    ('/usr/lib/openslack-cleanup/cleanup-broker', 64 * 1024 * 1024),
-    ('/usr/lib/openslack-cleanup/executor.mjs', 64 * 1024 * 1024),
-    ('/usr/lib/openslack-cleanup/node', 512 * 1024 * 1024),
-    ('/usr/lib/openslack-cleanup/git', 64 * 1024 * 1024),
-    ('/usr/lib/openslack-cleanup/sh', 16 * 1024 * 1024),
-    ('/usr/lib/openslack-cleanup/git-core/git-remote-https', 64 * 1024 * 1024),
-)
+sys.path.insert(0, str(Path(__file__).parent))
+import _safety as common
+
+LAYOUT = tuple((path, bound) for path, (bound, _) in common.LAYOUT.items())
 DIRECTORIES = ('/etc/openslack-cleanup', '/etc/openslack-cleanup/credentials',
                '/usr/lib/openslack-cleanup', '/run/openslack-cleanup', '/var/lib/openslack-cleanup')
 HISTORY = ('ledger.jsonl', 'workers.jsonl', 'instance.json')
 INSTALL_MANIFEST = '/usr/lib/openslack-cleanup/install-manifest.json'
-EXPECTED = {'broker':('openslack-cleanup-broker',44180,44180),
-            'agent':('openslack-cleanup-agent',44181,44181)}
+EXPECTED = common.EXPECTED_IDENTITIES
 
 
-class ObservationFailure(Exception):
-    pass
+ObservationFailure = common.Refusal
 
 
 def stamp(info):
-    return (info.st_dev,info.st_ino,info.st_uid,info.st_gid,info.st_mode)
+    return common.directory_stamp(info)
 
 
 def file_stamp(info):
-    return stamp(info) + (info.st_nlink,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+    return common.file_stamp(info)
 
 
 def kind(mode):
@@ -64,45 +58,7 @@ def metadata(path, info, state='present', reason=None):
         sha256=None,reason=reason)
 
 
-class AnchoredPath:
-    """Every ancestor is opened from /; owned descriptors are registered immediately."""
-    def __init__(self, root, path):
-        self.path=path
-        self.physical=Path(root) / path.lstrip('/')
-        if not self.physical.is_absolute() or '..' in self.physical.parts:
-            raise ObservationFailure('UNSAFE_PATH')
-        self.stack=ExitStack()
-        self.chain=[]
-
-    def __enter__(self):
-        try:
-            fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
-            self.stack.callback(os.close,fd)
-            self.root_fd=fd
-            self.root_stamp=stamp(os.fstat(fd))
-            for name in self.physical.parent.parts[1:]:
-                new=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=fd)
-                self.stack.callback(os.close,new)
-                info=os.fstat(new)
-                self.chain.append((fd,name,new,stamp(info)))
-                fd=new
-            self.parent=fd
-            self.name=self.physical.name
-            return self
-        except BaseException:
-            self.stack.close()
-            raise
-
-    def check(self):
-        if stamp(os.fstat(self.root_fd))!=self.root_stamp:
-            raise ObservationFailure('ROOT_DIRECTORY_CHANGED')
-        for parent,name,fd,expected in self.chain:
-            if stamp(os.fstat(fd)) != expected or stamp(os.stat(name,dir_fd=parent,follow_symlinks=False)) != expected:
-                raise ObservationFailure('DIRECTORY_CHANGED')
-
-    def __exit__(self,*_):
-        self.stack.close()
-
+AnchoredPath = common.MetadataAnchor
 
 def observed_metadata(root,path):
     try:
@@ -214,32 +170,60 @@ def identities():
     return result
 
 
+def relative_system_text(parent, name, bound):
+    with common.Owned() as owned:
+        fd = owned.add(os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent))
+        info = os.fstat(fd)
+        common.require(stat.S_ISREG(info.st_mode) and info.st_size <= bound, 'UNSAFE_SYSTEM_METADATA')
+        data = bytearray()
+        while len(data) <= bound:
+            block = os.read(fd, min(4096, bound + 1 - len(data)))
+            if not block:
+                break
+            data.extend(block)
+        common.require(len(data) <= bound, 'SYSTEM_METADATA_TOO_LARGE')
+        common.require(file_stamp(info) == file_stamp(os.fstat(fd)) ==
+            file_stamp(os.stat(name, dir_fd=parent, follow_symlinks=False)), 'SYSTEM_METADATA_CHANGED')
+        return bytes(data).decode('utf-8', errors='strict')
+
+
 def observe_processes(root):
-    matches=[]
-    unavailable=0
+    matches, unavailable = [], 0
     try:
-        names=list_directory(root,'/proc')
-        for name in names:
-            if not name.isdecimal():
-                continue
-            try:
-                comm=bounded_system_text(root,f'/proc/{name}/comm',128).strip()
-                if comm=='cleanup-broker':
-                    status=bounded_system_text(root,f'/proc/{name}/status',65536)
-                    fields={line.split(':',1)[0]:line.split(':',1)[1].strip() for line in status.splitlines() if ':' in line}
-                    matches.append(dict(pid=int(name),uid=[int(v) for v in fields['Uid'].split()],
-                                        gid=[int(v) for v in fields['Gid'].split()]))
-            except FileNotFoundError:
-                # A process exited during scanning; no surviving PID was hidden.
-                continue
-            except (OSError,ObservationFailure,UnicodeError,KeyError,ValueError):
-                unavailable+=1
+        # Anchor /proc once for this scan; each PID stays relative to that FD.
+        with AnchoredPath(root, '/proc/scan-sentinel') as proc:
+            with os.scandir(proc.parent) as entries:
+                names = []
+                for entry in entries:
+                    common.require(len(names) < 100000, 'DIRECTORY_ENTRY_LIMIT')
+                    names.append(entry.name)
+            for name in names:
+                if not name.isdecimal():
+                    continue
+                try:
+                    with common.Owned() as owned:
+                        pid = owned.add(os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=proc.parent))
+                        before = stamp(os.fstat(pid))
+                        comm = relative_system_text(pid, 'comm', 128).strip()
+                        if comm == 'cleanup-broker':
+                            status = relative_system_text(pid, 'status', 65536)
+                            fields = common.process_status(status)
+                            matches.append(dict(pid=int(name), uid=[int(v) for v in fields['Uid'].split()],
+                                gid=[int(v) for v in fields['Gid'].split()]))
+                        common.require(before == stamp(os.fstat(pid)) ==
+                            stamp(os.stat(name, dir_fd=proc.parent, follow_symlinks=False)), 'PROCESS_DIRECTORY_CHANGED')
+                    proc.check()
+                except (OSError, ObservationFailure, UnicodeError, KeyError, ValueError):
+                    # Disappearance is uncertainty, never evidence of a stopped Broker.
+                    unavailable += 1
+            proc.check()
         return dict(state='unverified' if unavailable else 'running' if matches else 'stopped',
-                    pid=matches[0]['pid'] if len(matches)==1 else None,pids=matches,
-                    uninspectableCount=unavailable,argumentsRead=False,environmentRead=False)
-    except (OSError,ObservationFailure):
-        return dict(state='unverified',pid=None,pids=[],uninspectableCount=None,
-                    argumentsRead=False,environmentRead=False)
+            pid=matches[0]['pid'] if len(matches)==1 else None, pids=matches,
+            uninspectableCount=unavailable, argumentsRead=False, environmentRead=False)
+    except (OSError, ObservationFailure):
+        return dict(state='unverified', pid=None, pids=[], uninspectableCount=None,
+            argumentsRead=False, environmentRead=False)
 
 
 def observe_locks(root,objects):
@@ -307,7 +291,7 @@ def observe(root=Path('/'),identity_source=identities,expected_owner=(0,0),hours
     if installed_manifest['state'] not in ('present','missing') or (installed_manifest['state']=='present'
             and installed_manifest['kind']!='regular'):
         problems.append('INSTALLED_MANIFEST_METADATA_REQUIRES_REVIEW')
-    locks=observe_locks(root,history+[socket])
+    locks=observe_locks(root,files+history+[socket,installed_manifest])
     if locks['state']!='none-observed':
         problems.append('KERNEL_LOCK_OBSERVATION_REQUIRES_REVIEW')
     # Observe again after hashing; an intervening startup does not leave a stale "stopped" claim.
@@ -329,9 +313,9 @@ def observe(root=Path('/'),identity_source=identities,expected_owner=(0,0),hours
         problems.append('RUNTIME_ENTRIES_REQUIRE_REVIEW')
     uname=os.uname()
     return dict(schema='openslack.cleanup_target_observation.v1',
-        target='OpenSlack-Cleanup-Qual',targetLabelSource='externally selected; caller must verify distribution routing',
-        workspaceId='openslack-self',repository='Negentropy-Laby/openslack-cleanup-qualification',
-        repositoryId='1380965476',bindingSource='prior selection; no GitHub authority query performed',
+        target=common.BINDINGS['target'],targetLabelSource='externally selected; caller must verify distribution routing',
+        workspaceId=common.BINDINGS['workspaceId'],repository=common.BINDINGS['repository'],
+        repositoryId=common.BINDINGS['repositoryId'],bindingSource='prior selection; no GitHub authority query performed',
         recordedAt=start.isoformat(),expiresAt=(start+timedelta(hours=hours)).isoformat(),
         host=dict(hostname=uname.nodename,kernel=uname.release,arch=uname.machine,system=uname.sysname),
         observer=dict(uid=os.geteuid(),gid=os.getegid()),identities=ids,directories=dirs,files=files,
@@ -351,34 +335,9 @@ def observe(root=Path('/'),identity_source=identities,expected_owner=(0,0),hours
 
 
 def publish(output,data):
-    if not output.is_absolute() or '..' in output.parts:
-        raise ObservationFailure('OUTPUT_PATH_INVALID')
-    if any(p in ('credentials','secrets','.env') or p.endswith(('.pem','.key')) for p in output.parts):
-        raise ObservationFailure('OUTPUT_PATH_SENSITIVE')
-    if any(str(output)==p or str(output).startswith(p+'/') for p in
-        ('/etc/openslack-cleanup','/usr/lib/openslack-cleanup','/run/openslack-cleanup','/var/lib/openslack-cleanup')):
-        raise ObservationFailure('OUTPUT_ACTIVE_PATH_FORBIDDEN')
-    with AnchoredPath(Path('/'),str(output)) as anchor,ExitStack() as owned:
-        parent=os.fstat(anchor.parent)
-        if parent.st_uid != os.geteuid() or stat.S_IMODE(parent.st_mode) != 0o700:
-            raise ObservationFailure('OUTPUT_DIRECTORY_NOT_PRIVATE')
-        fd=os.open(anchor.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=anchor.parent)
-        owned.callback(os.close,fd)
-        info=os.fstat(fd)
-        if stat.S_IMODE(info.st_mode)!=0o600 or not stat.S_ISREG(info.st_mode) or info.st_nlink!=1:
-            raise ObservationFailure('OUTPUT_FILE_UNSAFE')
-        view=memoryview(data)
-        while view:
-            n=os.write(fd,view)
-            if n<=0:
-                raise ObservationFailure('OUTPUT_WRITE_NO_PROGRESS')
-            view=view[n:]
-        os.fsync(fd)
-        os.fsync(anchor.parent)
-        current=os.stat(anchor.name,dir_fd=anchor.parent,follow_symlinks=False)
-        if (current.st_dev,current.st_ino)!=(info.st_dev,info.st_ino):
-            raise ObservationFailure('OUTPUT_REPLACED')
-        anchor.check()
+    # The shared output contract validates paths and exact private parent mode
+    # before opening the exclusive destination.
+    return common.publish(output, data)
 
 
 def main():

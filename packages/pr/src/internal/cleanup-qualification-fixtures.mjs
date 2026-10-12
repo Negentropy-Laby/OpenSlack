@@ -1,45 +1,46 @@
 #!/usr/bin/env node
+import {
+  CLEANUP_ADMIN_BINDINGS,
+  CLEANUP_FIXTURE_OPERATOR,
+} from './cleanup-administration-contract.js';
 /** Administrator-only qualification fixture preparation. Never invoked by the qualification Agent. */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import {
+  cleanupByteDigest as HASH,
+  cleanupDocumentBytes as JSON_BYTES,
+} from './cleanup-document-bytes.js';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
-import { decodeStrictJSON, readStableDescriptor, stableFileIdentity } from '@openslack/core';
-import { isSensitiveCleanupInput } from './cleanup-validation.ts';
-import { CleanupDirectoryAnchor } from './cleanup-file-boundary.ts';
+import {
+  decodeStrictJSON,
+  readStableDescriptor,
+  stableFileIdentity,
+  createProcessResolver,
+  normalizeProcessEnvironment,
+  capturePortableDirectoryChain,
+} from '@openslack/core';
+import { isSensitiveCleanupInput, cleanupExactKeys, cleanupObject } from './cleanup-validation.js';
+import { CleanupDirectoryAnchor, CleanupCapturedFile } from './cleanup-file-boundary.js';
 
 export const BINDINGS = Object.freeze({
-  host: 'github.com',
-  repository: 'Negentropy-Laby/openslack-cleanup-qualification',
-  repositoryId: 1380965476,
-  defaultBranch: 'main',
-  login: 'wsman',
-  userId: 21962212,
+  ...CLEANUP_FIXTURE_OPERATOR,
+  repository: CLEANUP_ADMIN_BINDINGS.repository,
+  repositoryId: Number(CLEANUP_ADMIN_BINDINGS.repositoryId),
 });
 const REPO = BINDINGS.repository;
 const API = `repos/${REPO}`;
 const SHA = /^[a-f0-9]{40}$/;
 const PLAN_SCHEMA = 'openslack.cleanup_fixture_plan.v1';
 const MANIFEST_SCHEMA = 'openslack.cleanup_fixture_manifest.v1';
-const HASH = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const JSON_BYTES = (object) => Buffer.from(`${JSON.stringify(object, null, 2)}\n`);
 const refusal = (code, detail) => Object.assign(new Error(`${code}: ${detail}`), { code });
 const required = (value, code, detail) => {
   if (!value) throw refusal(code, detail);
 };
-const closed = (value, keys) =>
-  value &&
-  typeof value === 'object' &&
-  !Array.isArray(value) &&
-  Object.keys(value).length === keys.length &&
-  Object.keys(value).every((key) => keys.includes(key));
+const closed = (value, keys) => cleanupObject(value) && cleanupExactKeys(value, keys);
 const closedOptional = (value, requiredKeys, optionalKeys = []) =>
-  value &&
-  typeof value === 'object' &&
-  !Array.isArray(value) &&
-  requiredKeys.every((key) => Object.hasOwn(value, key)) &&
-  Object.keys(value).every((key) => requiredKeys.includes(key) || optionalKeys.includes(key));
+  cleanupObject(value) && cleanupExactKeys(value, requiredKeys, optionalKeys);
 
 // Linux writes remain pinned to our actual private directory throughout human
 // confirmation and remote awaits. Other platforms retain only the declared local
@@ -77,24 +78,16 @@ function fixtureDirectory(directory, create = false) {
     pending.unshift(current);
     current = path.dirname(current);
   }
-  for (let parent = current; ; parent = path.dirname(parent)) {
-    const info = fs.lstatSync(parent);
-    required(
-      info.isDirectory() && !info.isSymbolicLink(),
-      'FIXTURE_DIRECTORY_INVALID',
-      'real parent directories are required',
-    );
-    parents.push({ path: parent, dev: info.dev, ino: info.ino });
-    if (path.dirname(parent) === parent) break;
+  try {
+    parents.push(capturePortableDirectoryChain(current));
+  } catch {
+    throw refusal('FIXTURE_DIRECTORY_INVALID', 'real parent directories are required');
   }
   const verify = () => {
-    for (const parent of parents) {
-      const info = fs.lstatSync(parent.path);
-      required(
-        info.isDirectory() &&
-          !info.isSymbolicLink() &&
-          info.dev === parent.dev &&
-          info.ino === parent.ino,
+    try {
+      for (const parent of parents) parent.verify();
+    } catch {
+      throw refusal(
         'FIXTURE_DIRECTORY_CHANGED',
         'preserve the original batch; a directory changed',
       );
@@ -103,8 +96,7 @@ function fixtureDirectory(directory, create = false) {
   for (const directory of pending) {
     verify();
     fs.mkdirSync(directory, { mode: 0o700 });
-    const info = fs.lstatSync(directory);
-    parents.push({ path: directory, dev: info.dev, ino: info.ino });
+    parents.push(capturePortableDirectoryChain(directory));
     verify();
   }
   return {
@@ -147,22 +139,27 @@ function exclusiveWrite(file, bytes, directory) {
   else syncDirectory(path.dirname(file));
 }
 function readLocal(file, directory) {
+  if (process.platform === 'linux') {
+    let capture;
+    try {
+      capture = CleanupCapturedFile.open(file, 1024 * 1024);
+      const bytes = capture.read(),
+        value = decodeStrictJSON(bytes, 1024 * 1024);
+      capture.verify();
+      directory?.verify();
+      return { value, sha256: HASH(bytes) };
+    } catch {
+      throw refusal(
+        'FIXTURE_LOCAL_RECORD_INVALID',
+        'a stable, bounded, strictly decoded local record is required',
+      );
+    } finally {
+      capture?.close();
+    }
+  }
   let descriptor;
   try {
-    const parents = [];
-    let walked = path.dirname(file);
-    for (;;) {
-      const stamp = fs.lstatSync(walked);
-      required(
-        stamp.isDirectory() && !stamp.isSymbolicLink(),
-        'FIXTURE_LOCAL_RECORD_INVALID',
-        'real parent directories are required',
-      );
-      parents.push({ directory: walked, dev: stamp.dev, ino: stamp.ino });
-      const parent = path.dirname(walked);
-      if (parent === walked) break;
-      walked = parent;
-    }
+    const parents = capturePortableDirectoryChain(path.dirname(file));
     const metadata = fs.lstatSync(file);
     required(
       metadata.isFile() && !metadata.isSymbolicLink() && metadata.nlink === 1,
@@ -187,17 +184,7 @@ function readLocal(file, directory) {
       'FIXTURE_LOCAL_RECORD_INVALID',
       'local evidence changed while reading',
     );
-    for (const parent of parents) {
-      const stamp = fs.lstatSync(parent.directory);
-      required(
-        stamp.isDirectory() &&
-          !stamp.isSymbolicLink() &&
-          stamp.dev === parent.dev &&
-          stamp.ino === parent.ino,
-        'FIXTURE_LOCAL_RECORD_INVALID',
-        'a parent directory changed while reading',
-      );
-    }
+    parents.verify();
     directory?.verify();
     return { value, sha256: HASH(bytes) };
   } catch {
@@ -285,7 +272,7 @@ function lockPhase(directory, anchor) {
 
 export function humanGhEnvironment(parent = process.env) {
   const result = {
-    ...parent,
+    ...normalizeProcessEnvironment(parent),
     GH_PROMPT_DISABLED: '1',
     GH_PAGER: 'cat',
     GH_NO_UPDATE_NOTIFIER: '1',
@@ -301,24 +288,47 @@ export function humanGhEnvironment(parent = process.env) {
   }
   return result;
 }
-function realRun(args, input) {
-  const result = spawnSync(process.platform === 'win32' ? 'gh.exe' : 'gh', args, {
-    input,
-    encoding: 'utf8',
-    env: humanGhEnvironment(),
-    shell: false,
-    timeout: 120_000,
-    maxBuffer: 4 * 1024 * 1024,
-    windowsHide: true,
-  });
+export function fixtureCommandDiagnostic(result) {
+  const redacted = String(result.stderr ?? '')
+    .replace(/(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)/g, '[REDACTED]')
+    .replace(
+      /\b(?:authorization|password|access[_-]?token|client[_-]?secret)\s*[:=]\s*[^\r\n]+/gi,
+      '[REDACTED]',
+    )
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
+  // Bound persisted UTF-8 bytes, not JS code units.
+  const raw = Buffer.from(redacted);
+  let end = Math.min(raw.length, 32 * 1024);
+  while (end < raw.length && (raw[end] & 0xc0) === 0x80) end--;
   return {
-    status: result.status,
-    stdout: result.stdout ?? '',
-    stderr: '',
-    signal: result.signal,
-    error: result.error?.code,
+    status: result.status ?? null,
+    signal: result.signal ?? null,
+    error: result.error?.code ?? result.error ?? null,
+    stderr: raw.subarray(0, end).toString('utf8'),
   };
 }
+function createRealRunner() {
+  const resolver = createProcessResolver(humanGhEnvironment());
+  return (args, input) => {
+    const result = spawnSync(resolver.executable('gh'), args, {
+      input,
+      encoding: 'utf8',
+      env: resolver.env,
+      shell: false,
+      timeout: 120_000,
+      maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
+    });
+    return {
+      status: result.status,
+      stdout: result.stdout ?? '',
+      stderr: fixtureCommandDiagnostic(result).stderr,
+      signal: result.signal,
+      error: result.error?.code,
+    };
+  };
+}
+
 async function realConfirmation(phrase, explanation) {
   required(
     process.stdin.isTTY && process.stdout.isTTY,
@@ -338,7 +348,7 @@ async function realConfirmation(phrase, explanation) {
   }
 }
 function createRuntime(dependencies) {
-  const runCommand = dependencies.runCommand ?? realRun;
+  const runCommand = dependencies.runCommand ?? createRealRunner();
   const runtime = {
     now: dependencies.now ?? (() => new Date().toISOString()),
     log: dependencies.log ?? console.log,
@@ -349,12 +359,16 @@ function createRuntime(dependencies) {
         args,
         payload === undefined ? undefined : JSON.stringify(payload),
       );
+      runtime.lastCommand = fixtureCommandDiagnostic(result);
       runtime.directory?.verify();
-      required(
-        result.status === 0 && !result.signal && !result.error,
-        'FIXTURE_GH_FAILED',
-        `gh failed or its result is unknown (exit ${result.status ?? 'unknown'}); no automatic retry; inspect saved intent`,
-      );
+      if (result.status !== 0 || result.signal || result.error)
+        throw Object.assign(
+          refusal(
+            'FIXTURE_GH_FAILED',
+            `gh failed or its result is unknown (exit ${result.status ?? 'unknown'}); no automatic retry; inspect saved intent`,
+          ),
+          { commandResult: runtime.lastCommand },
+        );
       return result.stdout;
     },
     async api(method, endpoint, payload) {
@@ -677,7 +691,23 @@ async function mutate(runtime, batch, kind, args, payload, callback) {
     },
     batch.anchor,
   );
-  const result = await callback();
+  let result;
+  try {
+    result = await callback();
+  } catch (error) {
+    appendJournal(
+      batch.directory,
+      {
+        schema: 'openslack.cleanup_fixture_action.v1',
+        stage: 'RESPONSE',
+        kind,
+        observedAt: runtime.now(),
+        result: error.commandResult ?? { error: error.code ?? 'FIXTURE_FAILED' },
+      },
+      batch.anchor,
+    );
+    throw error;
+  }
   appendJournal(
     batch.directory,
     {
@@ -686,6 +716,7 @@ async function mutate(runtime, batch, kind, args, payload, callback) {
       kind,
       observedAt: runtime.now(),
       result,
+      command: runtime.lastCommand,
     },
     batch.anchor,
   );
@@ -1037,11 +1068,11 @@ async function mergeTargets(runtime, batch) {
     'FIXTURE_PHASE_INVALID',
     'close the dedicated unmerged case before normal human merges',
   );
+  await preflight(runtime);
   for (const item of batch.manifest.fixtures.filter((fixture) =>
     fixture.disposition.startsWith('human-merge'),
   )) {
     if (item.pr.merged === true) continue;
-    await preflight(runtime);
     const observed = await prObservation(runtime, item.pr.prNumber);
     required(
       !observed.merged &&
@@ -1097,6 +1128,23 @@ async function mergeTargets(runtime, batch) {
   }
   await lockedPhase(runtime, batch, 'MERGED_TARGETS', async () => {}, { retainOnFailure: true });
 }
+async function* pullPages(runtime, endpoint, invalidCode, incompleteCode) {
+  for (let page = 1; page <= 100; page++) {
+    const rows = await runtime.api('GET', `${endpoint}&page=${page}`);
+    required(
+      Array.isArray(rows) && rows.every((row) => cleanupObject(row)),
+      invalidCode,
+      'complete structured PR pagination required',
+    );
+    yield rows;
+    if (rows.length < 100) return;
+    required(
+      page !== 100,
+      incompleteCode,
+      'pagination cap reached; incomplete evidence is refused',
+    );
+  }
+}
 async function inspectBatch(runtime, batch) {
   const preflightResult = await preflight(runtime);
   const observations = [];
@@ -1119,18 +1167,14 @@ async function inspectBatch(runtime, batch) {
       else if (item.base !== null && observation.actualRefSha) {
         // A completed PR creation can lose its acknowledgement. Discover it read-only, never retry the POST.
         const matches = [];
-        for (let page = 1; page <= 100; page++) {
-          const head = encodeURIComponent(`Negentropy-Laby:${item.head}`);
-          const base = encodeURIComponent(item.base);
-          const rows = await runtime.api(
-            'GET',
-            `${API}/pulls?state=all&head=${head}&base=${base}&per_page=100&page=${page}`,
-          );
-          required(
-            Array.isArray(rows),
-            'FIXTURE_PARTIAL_DISCOVERY_INVALID',
-            'partial PR discovery did not return an array',
-          );
+        const head = encodeURIComponent(`${REPO.split('/')[0]}:${item.head}`),
+          base = encodeURIComponent(item.base);
+        for await (const rows of pullPages(
+          runtime,
+          `${API}/pulls?state=all&head=${head}&base=${base}&per_page=100`,
+          'FIXTURE_PARTIAL_DISCOVERY_INVALID',
+          'FIXTURE_PARTIAL_DISCOVERY_INCOMPLETE',
+        )) {
           for (const row of rows) {
             if (
               row.head?.repo?.id === BINDINGS.repositoryId &&
@@ -1140,12 +1184,6 @@ async function inspectBatch(runtime, batch) {
             )
               matches.push(row.number);
           }
-          if (rows.length < 100) break;
-          required(
-            page !== 100,
-            'FIXTURE_PARTIAL_DISCOVERY_INCOMPLETE',
-            'partial PR discovery hit its pagination cap',
-          );
         }
         required(
           matches.length < 2,
@@ -1289,9 +1327,12 @@ async function advanceDrift(runtime, batch, permitId, approvedSha) {
 async function registerFork(runtime, batch) {
   await preflight(runtime);
   const candidates = [];
-  for (let page = 1; page <= 100; page++) {
-    const rows = await runtime.api('GET', `${API}/pulls?state=all&per_page=100&page=${page}`);
-    required(Array.isArray(rows), 'FIXTURE_FORK_LIST_INVALID', 'complete PR pagination required');
+  for await (const rows of pullPages(
+    runtime,
+    `${API}/pulls?state=all&per_page=100`,
+    'FIXTURE_FORK_LIST_INVALID',
+    'FIXTURE_FORK_LIST_INCOMPLETE',
+  )) {
     for (const row of rows) {
       if (
         row.merged_at &&
@@ -1302,12 +1343,6 @@ async function registerFork(runtime, batch) {
       )
         candidates.push(row.number);
     }
-    if (rows.length < 100) break;
-    required(
-      page !== 100,
-      'FIXTURE_FORK_LIST_INCOMPLETE',
-      'pagination cap reached; do not select from incomplete evidence',
-    );
   }
   if (candidates.length === 0) {
     runtime.log(
