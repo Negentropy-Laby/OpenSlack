@@ -471,3 +471,18 @@ real GitHub cleanup. Fresh target evidence remains required for an installable
 handoff; historical evidence and approvals are never automatically inherited.
 
 The final compatibility review additionally reproduced rejection of a correctly sealed original v1 package containing a 17 MiB shell fixture with all draft and manifest bindings updated consistently. Offline package reads now retain their historical 256 MiB cap for non-Node artifacts, while Node reads allow 512 MiB. Current execution admission still applies the stricter role limits. Package integrity is not execution eligibility. Repair `17eb0953` retains that compatibility and uses independent streaming Node checks before and after source builds.
+
+### Final fixture provenance and bounded I/O corrections
+
+A real Linux run with a symlinked TMPDIR passed four Core descriptor cases but
+failed the directory-capture case with NOT_REGULAR before correction. Resolving
+only the system temporary base fixes fixture provenance; the production capture
+still rejects links in supplied paths. No boundary, timeout or assertion changes.
+
+The second 852e81b5 affected run passed 1,335 cases and failed the 257 MiB Node
+case at 5,093 ms. Its independent expected digest used the stream's default
+64 KiB buffer, producing thousands of asynchronous read callbacks. That fixture
+now reads the same complete real file in 1 MiB blocks, reducing that avoidable
+I/O overhead while retaining the real 257 MiB read, digest/output checks and
+existing deadline. The failed report remains preserved; a targeted rerun cannot
+close final acceptance, which requires three new passes and complete runs.

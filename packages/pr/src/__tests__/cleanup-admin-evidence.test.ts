@@ -603,7 +603,10 @@ describe('cleanup evidence preparation', () => {
         node = f.input.artifacts.find((entry) => entry.artifact === 'node')!;
       truncateSync(node.source.path, 257 * 1024 * 1024);
       const expected = createHash('sha256');
-      for await (const block of createReadStream(node.source.path)) expected.update(block);
+      // Read all real bytes for the independent expected digest, without
+      // thousands of default 64 KiB async I/O callbacks inside the test budget.
+      for await (const block of createReadStream(node.source.path, { highWaterMark: 1024 * 1024 }))
+        expected.update(block);
       node.source.sha256 = expected.digest('hex');
       const result = prepareCleanupEvidenceDraft(f.input);
       expect(result.blockingIssues).toEqual([]);

@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { closeSync, mkdtempSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -16,7 +24,8 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function file(raw: Buffer) {
-  const root = mkdtempSync(join(tmpdir(), 'stable-descriptor-'));
+  // Canonical fixture provenance; supplied input links still refuse.
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'stable-descriptor-'));
   roots.push(root);
   const path = join(root, 'owned.bin');
   writeFileSync(path, raw);
