@@ -1,4 +1,4 @@
-import { it as test, onTestFinished, afterEach, vi } from 'vitest';
+import { it as test, onTestFinished, afterEach, beforeEach, describe, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import path from 'node:path';
@@ -6,9 +6,11 @@ import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { setImmediate } from 'node:timers/promises';
 import {
   testExecutable,
   testProcessEnvironment,
+  platformTestTimeout,
 } from '../../../../scripts/testing/process-fixture.mjs';
 import {
   BINDINGS,
@@ -72,6 +74,7 @@ const publicationFault = vi.hoisted(() => ({
   concurrentTerminalObservation: false,
   lockFds: new Set(),
 }));
+const fixtureTasks = new Set();
 vi.mock('node:fs', async (original) => {
   const actual = await original();
   return {
@@ -143,7 +146,11 @@ vi.mock('node:fs', async (original) => {
     },
   };
 });
-afterEach(() => {
+afterEach(async () => {
+  // Vitest deadlines do not cancel application promises. Stop and drain them
+  // before changing shared fault injection or allowing onTestFinished cleanup.
+  await Promise.all([...fixtureTasks].map((fixture) => fixture.stop()));
+  fixtureTasks.clear();
   publicationFault.active = false;
   publicationFault.lockFstat = false;
   publicationFault.lockPublicationSync = false;
@@ -153,43 +160,43 @@ afterEach(() => {
   for (const fd of publicationFault.lockFds) fs.closeSync(fd);
 });
 
-test('terminal merge bookkeeping is locked without an extra remote mutation or confirmation', async () => {
-  const f = fixture();
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  f.state.calls.length = 0;
-  publicationFault.terminalLockRequired = true;
-  await f.run('merge-targets', batch);
-  assert.equal(load(batch).phase, 'MERGED_TARGETS');
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
-  // One initial identity/repository/main observation, plus one fresh admission
-  // after each of the five human confirmations; none is treated as permanent.
-  assert.equal(f.state.calls.filter((x) => x.args.at(-1) === 'user').length, 6);
-  assert.equal(f.state.calls.filter((x) => x.args.at(-1) === API).length, 6);
-});
+describe('terminal merge bookkeeping', () => {
+  let f;
+  let batch;
+  // Build the real nine-PR disk fixture as setup, separately from the terminal
+  // transition being tested. Each case retains its own directory and state;
+  // the merge operation, real persistence and five-second assertion budget stay.
+  beforeEach(async () => {
+    ({ f, batch } = await createdFixture());
+    await f.run('close-case', batch);
+  }, platformTestTimeout(30_000));
 
-test('terminal bookkeeping publication failure retains recovery lock', async () => {
-  const f = fixture();
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  publicationFault.terminalFailure = true;
-  await assert.rejects(f.run('merge-targets', batch), { code: 'EIO' });
-  assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
-});
+  test('terminal merge bookkeeping is locked without an extra remote mutation or confirmation', async () => {
+    f.state.calls.length = 0;
+    publicationFault.terminalLockRequired = true;
+    await f.run('merge-targets', batch);
+    assert.equal(load(batch).phase, 'MERGED_TARGETS');
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+    // One initial identity/repository/main observation, plus one fresh admission
+    // after each of the five human confirmations; none is treated as permanent.
+    assert.equal(f.state.calls.filter((x) => x.args.at(-1) === 'user').length, 6);
+    assert.equal(f.state.calls.filter((x) => x.args.at(-1) === API).length, 6);
+  });
 
-test('terminal bookkeeping refuses a concurrently recorded observation instead of overwriting it', async () => {
-  const f = fixture();
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  publicationFault.concurrentTerminalObservation = true;
-  await assert.rejects(f.run('merge-targets', batch), { code: 'FIXTURE_LOCAL_RECORD_CHANGED' });
-  assert.equal(load(batch).fork.concurrentObservation, true);
-  assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
-  assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+  test('terminal bookkeeping publication failure retains recovery lock', async () => {
+    publicationFault.terminalFailure = true;
+    await assert.rejects(f.run('merge-targets', batch), { code: 'EIO' });
+    assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+  });
+
+  test('terminal bookkeeping refuses a concurrently recorded observation instead of overwriting it', async () => {
+    publicationFault.concurrentTerminalObservation = true;
+    await assert.rejects(f.run('merge-targets', batch), { code: 'FIXTURE_LOCAL_RECORD_CHANGED' });
+    assert.equal(load(batch).fork.concurrentObservation, true);
+    assert.equal(f.state.mutations.filter((x) => x.args?.[1] === 'merge').length, 5);
+    assert.equal(fs.existsSync(path.join(batch, 'mutation.lock')), true);
+  });
 });
 
 test.each(['lockFstat', 'lockPublicationSync'])(
@@ -271,7 +278,36 @@ test('directory replacement during confirmation refuses every remote mutation an
 
 function fixture(t, changes = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup fixture with spaces-'));
-  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const controller = new AbortController();
+  const pending = new Set();
+  const active = () => {
+    if (controller.signal.aborted) throw controller.signal.reason;
+  };
+  const lifetime = {
+    async stop() {
+      controller.abort(
+        Object.assign(new Error('fixture execution finished'), { code: 'FIXTURE_TEST_CANCELLED' }),
+      );
+      await Promise.allSettled([...pending]);
+    },
+  };
+  fixtureTasks.add(lifetime);
+  onTestFinished(async () => {
+    await lifetime.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const track = (operation) => {
+    const task = Promise.resolve().then(() => {
+      active();
+      return operation();
+    });
+    pending.add(task);
+    task.then(
+      () => pending.delete(task),
+      () => pending.delete(task),
+    );
+    return task;
+  };
   let counter = 10;
   const state = {
     calls: [],
@@ -308,6 +344,12 @@ function fixture(t, changes = {}) {
       return !state.denied;
     },
     runCommand: async (args, input) => {
+      // Deliver the fake process result on an I/O turn. A fully synchronous
+      // promise chain of real fsync calls otherwise starves Vitest's reporter
+      // RPC and cancellation timers during a complete fixture lifecycle.
+      active();
+      await setImmediate();
+      active();
       state.calls.push({ args, input });
       assert.equal(args.includes('--admin'), false);
       assert.equal(args.includes('--auto'), false);
@@ -411,15 +453,50 @@ function fixture(t, changes = {}) {
   };
   return {
     root,
+    stop: () => lifetime.stop(),
     state,
     dependencies,
     async plan() {
-      return main(['plan', '--scratch-root', path.join(root, 'human batches')], dependencies);
+      return track(() =>
+        main(['plan', '--scratch-root', path.join(root, 'human batches')], dependencies),
+      );
     },
     async run(command, batch, extra = []) {
-      return main([command, '--batch', batch, ...extra], dependencies);
+      return track(() => main([command, '--batch', batch, ...extra], dependencies));
     },
   };
+}
+
+test('fixture cancellation drains a yielded command before directory cleanup or another call', async () => {
+  const f = fixture();
+  const original = f.dependencies.runCommand;
+  let started;
+  const inFlight = new Promise((resolve) => {
+    started = resolve;
+  });
+  f.dependencies.runCommand = (...args) => {
+    const result = original(...args);
+    started();
+    return result;
+  };
+  const operation = f.plan();
+  const refusal = assert.rejects(operation, { code: 'FIXTURE_TEST_CANCELLED' });
+  await inFlight;
+  await f.stop();
+  await refusal;
+  fs.rmSync(f.root, { recursive: true, force: true });
+  await setImmediate();
+  await assert.rejects(f.plan(), { code: 'FIXTURE_TEST_CANCELLED' });
+  assert.equal(fs.existsSync(f.root), false);
+  assert.deepEqual(f.state.calls, []);
+  assert.deepEqual(f.state.mutations, []);
+});
+
+async function createdFixture() {
+  const f = fixture();
+  const batch = await f.plan();
+  await f.run('create', batch);
+  return { f, batch };
 }
 
 test('read-only plan uses fixed User/repository checks, a unique batch, and no remote mutation', async (t) => {
@@ -566,40 +643,45 @@ test('lost PR acknowledgement stops mutation and discovers the actual partial PR
   assert.equal(report.fixtures[0].pr.prNumber, 101);
   assert.equal(f.state.mutations.length, mutations);
 });
-test('close and each merge require observed PR-number confirmation and preserve source refs', async (t) => {
-  const f = fixture(t);
-  const batch = await f.plan();
-  await f.run('create', batch);
-  await f.run('close-case', batch);
-  await f.run('merge-targets', batch);
-  const manifest = load(batch);
-  assert.equal(manifest.phase, 'MERGED_TARGETS');
-  const closed = manifest.fixtures.find((x) => x.id === 'closed-unmerged');
-  assert.equal(closed.pr.state, 'closed');
-  assert.equal(closed.pr.merged, false);
-  const merged = manifest.fixtures.filter((x) => x.disposition.startsWith('human-merge'));
-  assert.equal(merged.length, 5);
-  assert(merged.every((x) => x.pr.merged));
-  for (const item of merged) assert.equal(f.state.refs.get(item.head), item.publishedSha);
-  assert.equal(
-    f.state.confirmations.filter((x) => /^MERGE PR \d+ HEAD .+ SHA [a-f0-9]{40}$/.test(x.phrase))
-      .length,
-    5,
-  );
-  assert.equal(
-    f.state.confirmations.filter((x) => /^CLOSE PR \d+ WITHOUT MERGE SHA /.test(x.phrase)).length,
-    1,
-  );
-  const head = manifest.fixtures.find((x) => x.id === 'head-dependency-blocker');
-  const base = manifest.fixtures.find((x) => x.id === 'base-dependency-blocker');
-  assert.equal(head.pr.state, 'open');
-  assert.equal(base.pr.state, 'open');
-  assert.equal(head.head, manifest.fixtures.find((x) => x.id === 'head-dependency-target').head);
-  assert.equal(base.base, manifest.fixtures.find((x) => x.id === 'base-dependency-target').head);
-  assert.equal(
-    f.state.mutations.some((x) => x.args?.[1] === 'review'),
-    false,
-  );
+describe('close and merge transitions', () => {
+  let f;
+  let batch;
+  beforeEach(async () => {
+    ({ f, batch } = await createdFixture());
+  }, platformTestTimeout(30_000));
+
+  test('close and each merge require observed PR-number confirmation and preserve source refs', async () => {
+    await f.run('close-case', batch);
+    await f.run('merge-targets', batch);
+    const manifest = load(batch);
+    assert.equal(manifest.phase, 'MERGED_TARGETS');
+    const closed = manifest.fixtures.find((x) => x.id === 'closed-unmerged');
+    assert.equal(closed.pr.state, 'closed');
+    assert.equal(closed.pr.merged, false);
+    const merged = manifest.fixtures.filter((x) => x.disposition.startsWith('human-merge'));
+    assert.equal(merged.length, 5);
+    assert(merged.every((x) => x.pr.merged));
+    for (const item of merged) assert.equal(f.state.refs.get(item.head), item.publishedSha);
+    assert.equal(
+      f.state.confirmations.filter((x) => /^MERGE PR \d+ HEAD .+ SHA [a-f0-9]{40}$/.test(x.phrase))
+        .length,
+      5,
+    );
+    assert.equal(
+      f.state.confirmations.filter((x) => /^CLOSE PR \d+ WITHOUT MERGE SHA /.test(x.phrase)).length,
+      1,
+    );
+    const head = manifest.fixtures.find((x) => x.id === 'head-dependency-blocker');
+    const base = manifest.fixtures.find((x) => x.id === 'base-dependency-blocker');
+    assert.equal(head.pr.state, 'open');
+    assert.equal(base.pr.state, 'open');
+    assert.equal(head.head, manifest.fixtures.find((x) => x.id === 'head-dependency-target').head);
+    assert.equal(base.base, manifest.fixtures.find((x) => x.id === 'base-dependency-target').head);
+    assert.equal(
+      f.state.mutations.some((x) => x.args?.[1] === 'review'),
+      false,
+    );
+  });
 });
 test('normal fixture merge failure is not bypassed or re-tried', async (t) => {
   const f = fixture(t);

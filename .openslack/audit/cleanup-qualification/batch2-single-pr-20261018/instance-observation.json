@@ -1,0 +1,139 @@
+{
+  "activationIssued": false,
+  "actualProcessExecutable": {
+    "bytes": 10491581,
+    "dev": "2112",
+    "gid": 0,
+    "ino": "21235",
+    "mode": "0755",
+    "nlink": 1,
+    "path": "/usr/lib/openslack-cleanup/cleanup-broker",
+    "sha256": "36ba52c576d4ecd6e104ab5c62cd238359ea89a7dfedd9d9890261e1d32a10a1",
+    "uid": 0
+  },
+  "approvalRecorded": false,
+  "blockingReasons": [],
+  "brokerStarted": false,
+  "cleanupErrors": [],
+  "credentialContentsRead": false,
+  "expiresAt": "2026-10-19T08:02:19.362295+00:00",
+  "firstStart": true,
+  "installationPerformed": false,
+  "installedBroker": {
+    "bytes": 10491581,
+    "dev": "2112",
+    "gid": 0,
+    "ino": "21235",
+    "mode": "0755",
+    "nlink": 1,
+    "path": "/usr/lib/openslack-cleanup/cleanup-broker",
+    "sha256": "36ba52c576d4ecd6e104ab5c62cd238359ea89a7dfedd9d9890261e1d32a10a1",
+    "uid": 0
+  },
+  "instance": {
+    "bootNonce": "2e7c4b3966ba14c6b61d565382b2f2022064524b90f11cb212cba04876b97251",
+    "brokerId": "cleanup-broker-pr418",
+    "generation": "",
+    "schema": "openslack.cleanup_broker_instance.v1",
+    "startedAt": "2026-10-18T04:40:37.548362984Z",
+    "workspaceId": "openslack-self"
+  },
+  "instanceMetadata": {
+    "bytes": 254,
+    "dev": "2112",
+    "gid": 44180,
+    "ino": "21280",
+    "mode": "0600",
+    "nlink": 1,
+    "path": "/var/lib/openslack-cleanup/instance.json",
+    "sha256": "52dd5300d66aa87a1b32bb47fce227ca594aee1eee37c5e7262a97dfc6109ade",
+    "uid": 44180
+  },
+  "instanceSHA256": "52dd5300d66aa87a1b32bb47fce227ca594aee1eee37c5e7262a97dfc6109ade",
+  "networkExecuted": false,
+  "observer": {
+    "gid": 0,
+    "uid": 0
+  },
+  "permitIssued": false,
+  "pid": 1020,
+  "process": {
+    "argumentsRead": false,
+    "bootEpochLowerNs": "1792287236698589849",
+    "bootEpochUpperNs": "1792287236698590651",
+    "capabilities": {
+      "CapAmb": "0000000000000000",
+      "CapEff": "0000000000000000",
+      "CapPrm": "0000000000000000"
+    },
+    "clockTicksPerSecond": 100,
+    "comm": "cleanup-broker",
+    "environmentRead": false,
+    "executable": "/usr/lib/openslack-cleanup/cleanup-broker",
+    "gid": [
+      44180,
+      44180,
+      44180,
+      44180
+    ],
+    "pid": 1020,
+    "startTicks": "1117490",
+    "startTimePrecision": "CLOCK_BOOTTIME/UTC bracketing plus a full kernel clock tick; an instance inside the uncertainty interval is refused",
+    "startTimeUpperUtc": "2026-10-18T04:40:11.608591+00:00",
+    "startedAtUtc": "2026-10-18T04:40:11.598589+00:00",
+    "supplementaryGroups": [
+      44180
+    ],
+    "uid": [
+      44180,
+      44180,
+      44180,
+      44180
+    ]
+  },
+  "processAfter": {
+    "argumentsRead": false,
+    "bootEpochLowerNs": "1792287236698589849",
+    "bootEpochUpperNs": "1792287236698590751",
+    "capabilities": {
+      "CapAmb": "0000000000000000",
+      "CapEff": "0000000000000000",
+      "CapPrm": "0000000000000000"
+    },
+    "clockTicksPerSecond": 100,
+    "comm": "cleanup-broker",
+    "environmentRead": false,
+    "executable": "/usr/lib/openslack-cleanup/cleanup-broker",
+    "gid": [
+      44180,
+      44180,
+      44180,
+      44180
+    ],
+    "pid": 1020,
+    "startTicks": "1117490",
+    "startTimePrecision": "CLOCK_BOOTTIME/UTC bracketing plus a full kernel clock tick; an instance inside the uncertainty interval is refused",
+    "startTimeUpperUtc": "2026-10-18T04:40:11.608591+00:00",
+    "startedAtUtc": "2026-10-18T04:40:11.598589+00:00",
+    "supplementaryGroups": [
+      44180
+    ],
+    "uid": [
+      44180,
+      44180,
+      44180,
+      44180
+    ]
+  },
+  "processStartedByTool": false,
+  "realNonce": "2e7c4b3966ba14c6b61d565382b2f2022064524b90f11cb212cba04876b97251",
+  "recordedAt": "2026-10-18T08:02:19.362295+00:00",
+  "repository": "Negentropy-Laby/openslack-cleanup-qualification",
+  "repositoryId": "1380965476",
+  "result": "PASS",
+  "schema": "openslack.cleanup_instance_observation.v1",
+  "scope": "current process/instance binding only; not activation, Permit or qualification evidence",
+  "selectedBrokerId": "cleanup-broker-pr418",
+  "target": "OpenSlack-Cleanup-Qual",
+  "workspaceId": "openslack-self"
+}

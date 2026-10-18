@@ -68,6 +68,19 @@ function makeSnapshot(actionVerdict: 'allow' | 'ask' | 'deny'): AgentPermissionS
 }
 
 describe('mergeIfReady', () => {
+  it('never calls the merge API when the required audit context is absent', async () => {
+    const { fetchPRDetails } = await import('../fetch.js');
+    const { mergePR } = await import('@openslack/github');
+    vi.mocked(fetchPRDetails).mockResolvedValue(makeReport());
+    const callsBefore = vi.mocked(mergePR).mock.calls.length;
+    const result = await mergeIfReady(423, {
+      ...DEFAULT_POLICY,
+      required_check_contexts: { green: ['validate / validate'] },
+    });
+    expect(result.merged).toBe(false);
+    expect(result.decision).toBe('CHECKS_PENDING');
+    expect(vi.mocked(mergePR).mock.calls.length).toBe(callsBefore);
+  });
   it('blocks black zone PRs', async () => {
     const { fetchPRDetails } = await import('../fetch.js');
     vi.mocked(fetchPRDetails).mockResolvedValue(makeReport({ riskZone: 'black' }));

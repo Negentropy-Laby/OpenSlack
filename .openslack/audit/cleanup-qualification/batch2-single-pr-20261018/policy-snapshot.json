@@ -1,0 +1,11 @@
+{
+  "schema": "openslack.cleanup_policy.v1",
+  "basis": "permit_only",
+  "action": "pr.cleanup_branch_scoped.v1",
+  "issuerTrustDomain": "Negentropy-Laby:OpenSlack:cleanup-admin",
+  "activeInstance": {
+    "brokerId": "cleanup-broker-pr418",
+    "generation": "1",
+    "bootNonce": "2e7c4b3966ba14c6b61d565382b2f2022064524b90f11cb212cba04876b97251"
+  }
+}

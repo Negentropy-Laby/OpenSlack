@@ -4,11 +4,14 @@ approval_matrix:
   green_zone_merge:
     required_approvals: 0
     auto_merge: true
+    required_checks: [workspace-validate, self-eval, security-scan]
 
   yellow_zone_merge:
     required_agent_reviews: 2
     required_human_approvals: 0
     auto_merge: false
+    required_checks:
+      [workspace-validate, typecheck, unit-tests, integration-tests, self-eval, security-scan]
 
   red_zone_merge:
     required_agent_reviews: 2
@@ -26,6 +29,46 @@ approval_matrix:
   black_zone_merge:
     allowed: false
     auto_reject: true
+
+# These are logical controls, not seven invented GitHub check-run names. PRMS
+# resolves every required control to its real aggregate producer and requires a
+# completed success. Tests verify that each named step exists and is mandatory.
+check_bindings:
+  workspace-validate:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Workspace validate
+  typecheck:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Typecheck
+  unit-tests:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Tests
+  integration-tests:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Tests
+  self-eval:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Self eval
+  security-scan:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Security scan (black zone check)
+  policy-audit:
+    context: validate / validate
+    workflow: .github/workflows/openslack-reusable-validate.yml
+    job: validate
+    step: Committed cleanup policy audit
 
 events_requiring_human_approval:
   - 'merge_to_main'

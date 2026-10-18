@@ -79,6 +79,15 @@ administrative scope, not a live claim/lease. Future Go/PostgreSQL Task Claim v2
 is tracked by its [C0 contract](../../docs/architecture/contracts/task-claim-v2-c0.md)
 and does not gate this route. Source-branch task dependencies still block cleanup.
 
+`taskRef` is an administrative audit correlation label. It does not prove that
+a task exists or grant task ownership, and renaming or withdrawing a task label
+does not revoke a Permit. The reviewed scope evidence records the selected label,
+exact target and administrator-confirmed task-view bytes; the committed-record
+audit checks that association. Runtime source-task/claim/dependency checks are
+independent. Revoke execution through the governed Permit's `revoked` flag or
+policy/instance removal, or let its validity end; do not treat an audit label as
+a dynamic task-state control.
+
 Map the Unix peer UID through an administrator-owned mapping to an independent
 principal, runtime UID and run. Never trust caller-supplied identity fields as
 authentication. Broker configuration, mapping, ledger, installation credentials
@@ -110,6 +119,32 @@ broker ID/generation/boot nonce, validity window, revocation state and
 `maxUses: 1`. No glob, target array or caller-provided wildcard is an equivalent
 permit. The implementation-owned schema must reject unknown/ambiguous fields;
 this document does not substitute for that exact parser contract.
+
+The trust anchor is the fixed governance repository ID and reviewed live `main`,
+not the spelling of `issuerTrustDomain`. Its selected administrative value is
+independently pinned by the administration contract and input-selection evidence,
+so changing both policy and grant to the same typo fails the offline audit.
+`maxUses` is a required literal `1`, not an operator-adjustable retry budget.
+Permit IDs are opaque: the batch-2 `-r1` suffix denotes its first issuance label,
+not replacement of an `r0`, a revision protocol, or permission to reissue.
+
+`notBefore` is an admission lower bound, not an issuance timestamp or a claim
+that authority already existed at that time. A proposal on a feature branch
+cannot authorize anything: the fixed reader acquires only the reviewed records
+published on governance `main`. The merge/authority commit and actual admission
+time are separate audit facts. Backdating that lower bound cannot authorize a
+send before publication, revive a consumed operation, or bypass the boot/expiry
+checks. The batch-2 audit additionally checks that its lower bound is no earlier
+than the observed boot and administrator task-view window.
+
+Expiry and restart are deliberate availability limits. Admission at or after
+`expiresAt` is refused; a new boot never inherits the old activation. Recheck
+the live nonce, target and earliest evidence deadline immediately before merge
+and before admission. If they changed, stop this batch and revise the existing
+open governance PR only after fresh evidence and an explicit human decision;
+do not merge an unusable grant merely to finish review. Keep expired grants as
+historical records. Their structural CI check is time-independent and does not
+require every retained grant to match today's active instance.
 
 Before a send, durably reserve the operation ID and canonical request digest.
 The same operation and digest returns its stored receipt; changed bytes under
@@ -254,8 +289,8 @@ with reviewed evidence; do not remove fields to bypass validation.
 ```json
 {
   "schema": "openslack.cleanup_broker_config.v2",
-  "brokerId": "qualification-broker",
-  "workspaceId": "qualification-workspace",
+  "brokerId": "ADMINISTRATOR_REGISTERED_BROKER_ID",
+  "workspaceId": "ADMINISTRATOR_REGISTERED_WORKSPACE_ID",
   "uid": 21001,
   "gid": 21001,
   "peerBindings": [

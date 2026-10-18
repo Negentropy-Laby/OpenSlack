@@ -1,0 +1,31 @@
+{
+  "schema": "openslack.cleanup_permit.v1",
+  "permitId": "permit-batch2-single-pr-20261018-r1",
+  "action": "pr.cleanup_branch_scoped.v1",
+  "issuerTrustDomain": "Negentropy-Laby:OpenSlack:cleanup-admin",
+  "subject": {
+    "principalId": "principal:cleanup_qualification_pr418",
+    "runtimeUid": "cleanup_qualification_pr418",
+    "runId": "cleanup-pr418-f8db249a48c8492587e4515a31c60c45"
+  },
+  "target": {
+    "workspaceId": "openslack-self",
+    "host": "github.com",
+    "repositoryId": "1380965476",
+    "repository": "Negentropy-Laby/openslack-cleanup-qualification",
+    "prNodeId": "PR_kwDOUk_cZM8AAAABJHi3eQ",
+    "prNumber": 1,
+    "ref": "refs/heads/cleanup-qualification/batch2-single-pr-20261018",
+    "expectedSha": "7d7d3c6e41a4ce43111d91061be7decb11d79eea"
+  },
+  "taskRef": "batch2-single-pr-20261018",
+  "instance": {
+    "brokerId": "cleanup-broker-pr418",
+    "generation": "1",
+    "bootNonce": "2e7c4b3966ba14c6b61d565382b2f2022064524b90f11cb212cba04876b97251"
+  },
+  "notBefore": "2026-10-18T06:13:05Z",
+  "expiresAt": "2026-10-18T23:23:00Z",
+  "revoked": false,
+  "maxUses": 1
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "openslack.cleanup_governance_scope_evidence.v1",
+  "permitId": "permit-batch2-single-pr-20261018-r1",
+  "taskRef": "batch2-single-pr-20261018",
+  "taskRefSemantics": "administrative_audit_correlation_not_live_task_authority",
+  "issuerTrustDomain": "Negentropy-Laby:OpenSlack:cleanup-admin",
+  "proposedGeneration": "1",
+  "generationRationale": "first governed activation of this observed unactivated boot; generation 1 is an explicit policy selection, not an observed active generation",
+  "instanceObservation": {
+    "file": "instance-observation.json",
+    "sha256": "e53787c2770e9e3cd2c2bda0e06d2b5565e7a0aa6b1e65d8c8ff6e5b1a85a556"
+  },
+  "taskViewObservation": {
+    "file": "task-view-observation.json",
+    "sha256": "ce363a8d43a52584d204ad9f059c23d6b12311bd463681828cb89fb30091c3b1"
+  },
+  "taskScopeConfirmation": {
+    "file": "task-scope-confirmation.json",
+    "sha256": "c75cf7146085a6e2fcab61ece51c0493502901f32b7ffa8e6c42d8e2d2b82d60"
+  },
+  "targetPRObservation": {
+    "file": "target-pr-observation.json",
+    "sha256": "c9fcc8d9b523edbfffa4594000d818ea9ab820929d005cc079e32bad504e2f2b"
+  },
+  "administratorSelection": {
+    "file": "administrator-selection.json",
+    "sha256": "f94fc51aa082154b3a3245c32dd301b7f4ec110494645ea13acaeb13c4b573f3"
+  },
+  "stateObservation": {
+    "file": "state-observation.json",
+    "sha256": "7d5170989d7ae031369bf5fd83fa9715cac6238e0999f517822754530db13104"
+  },
+  "policySnapshot": {
+    "file": "policy-snapshot.json",
+    "sha256": "dde5ed8d7797e5d86483e6ed51b1bb0830cad11c5935a8ffb010e94d686a2bd2"
+  }
+}

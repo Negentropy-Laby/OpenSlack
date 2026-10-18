@@ -1,0 +1,26 @@
+{
+  "schema": "openslack.cleanup_governance_state_observation.v1",
+  "observedAt": "2026-10-18T08:11:02.989275+00:00",
+  "files": [
+    {
+      "path": "/var/lib/openslack-cleanup/ledger.jsonl",
+      "bytes": 0,
+      "uid": 44180,
+      "gid": 44180,
+      "mode": "0600",
+      "dev": "2112",
+      "ino": "21278"
+    },
+    {
+      "path": "/var/lib/openslack-cleanup/workers.jsonl",
+      "bytes": 0,
+      "uid": 44180,
+      "gid": 44180,
+      "mode": "0600",
+      "dev": "2112",
+      "ino": "21279"
+    }
+  ],
+  "contentsRead": false,
+  "targetWritten": false
+}

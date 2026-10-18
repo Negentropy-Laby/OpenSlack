@@ -1,12 +1,12 @@
 import {
   testPowerShells,
-  testProcessEnvironment,
+  testPowerShellEnvironment,
   platformTestTimeout,
 } from '../../../../scripts/testing/process-fixture.mjs';
 import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -32,7 +32,7 @@ function scriptPath(name: string): string {
 }
 
 function shimEnvironment(root: string, parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env = testProcessEnvironment(parent);
+  const env = testPowerShellEnvironment(parent);
   return { ...env, PATH: root + ';' + env.PATH };
 }
 
@@ -408,13 +408,21 @@ describe('bot-auth wrapper scripts', () => {
     // Async child I/O also lets Vitest deliver task updates while shells start.
     beforeAll(async () => {
       const run = promisify(execFile);
-      const contaminated = shimEnvironment('fixture', { Path: 'base', PATH: 'duplicate' });
+      const contaminated = shimEnvironment('fixture', {
+        Path: 'base',
+        PATH: 'duplicate',
+        PsMoDuLePaTh: 'another-edition-module-path',
+      });
       expect(Object.keys(contaminated).filter((key) => key.toLowerCase() === 'path')).toEqual([
         'PATH',
       ]);
       expect(contaminated.PATH).toBe('fixture;base');
       expect(contaminated.PATHEXT).toContain('.CMD');
-      const shells = testPowerShells();
+      expect(Object.keys(contaminated).some((key) => key.toLowerCase() === 'psmodulepath')).toBe(
+        false,
+      );
+      const shellEnvironment = testPowerShellEnvironment();
+      const shells = testPowerShells(shellEnvironment);
       expectedRenderings = shells.length * 3;
       for (const shell of shells) {
         for (const installations of [
@@ -435,6 +443,7 @@ describe('bot-auth wrapper scripts', () => {
               join(root, 'node.cmd'),
               '@echo off\r\necho shim-executed 1>&2\r\necho ' + envelope + '\r\nexit /b 0\r\n',
             );
+            const started = performance.now();
             const result = await run(
               shell,
               [
@@ -451,19 +460,27 @@ describe('bot-auth wrapper scripts', () => {
                 // assertions below keep the ordinary five-second budget.
                 timeout: platformTestTimeout(5_000, 20_000),
                 env: shimEnvironment(root, {
-                  ...process.env,
-                  Path: process.env.Path ?? process.env.PATH ?? '',
+                  ...shellEnvironment,
+                  Path: shellEnvironment.Path ?? shellEnvironment.PATH ?? '',
                   PATH: 'unusable-duplicate-path',
                   PATHEXT: undefined,
                 }),
               },
-            ).catch((error: NodeJS.ErrnoException & { killed?: boolean; signal?: string }) => {
-              const code = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'UNKNOWN';
-              const signal = /^[A-Z0-9]+$/.test(error.signal ?? '') ? error.signal : 'NONE';
-              throw new Error(
-                `TEST_SHELL_RENDER_FAILED: phase=launch; code=${code}; killed=${error.killed === true}; signal=${signal}; installations=${installations.length}.`,
-              );
-            });
+            ).catch(
+              (
+                error: NodeJS.ErrnoException & {
+                  killed?: boolean;
+                  signal?: string;
+                  stderr?: string;
+                },
+              ) => {
+                const code = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'UNKNOWN';
+                const signal = /^[A-Z0-9]+$/.test(error.signal ?? '') ? error.signal : 'NONE';
+                throw new Error(
+                  `TEST_SHELL_RENDER_FAILED: phase=launch; shell=${basename(shell)}; code=${code}; killed=${error.killed === true}; signal=${signal}; shimReached=${String(error.stderr ?? '').includes('shim-executed')}; elapsedMs=${Math.round(performance.now() - started)}; installations=${installations.length}.`,
+                );
+              },
+            );
             // execFile rejects nonzero exits/timeouts, so no failed launch can
             // become a successful rendering fixture.
             rendered.push({ ...result, count: installations.length });

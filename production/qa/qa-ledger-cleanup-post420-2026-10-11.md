@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: qa
-updated: 2026-10-12
+updated: 2026-10-18
 sources:
   - production/qa/qa-plan-cleanup-permit-2026-09-21.md
   - services/cleanup-broker/handoff.md
@@ -15,6 +15,13 @@ sources:
 ---
 
 # QA Ledger: cleanup handoff after PR #420
+
+The original batch sections below are historical observations, including their
+then-unmet administrator gates. They do not describe the current deployed host.
+The appended **2026-10-18 PR #423 governance review** records the later approved
+installation, real unactivated boot and still-proposed activation/Permit. It
+supersedes current-status readings of the earlier “not started/not issued” rows
+without rewriting those historical results.
 
 This is a QA ledger and evidence index. It is not a PASS record, not an approval, and
 not deployment evidence. It records what was measured, what failed, and what remains
@@ -506,3 +513,185 @@ This is a failed acceptance, not a PASS inferred from its targeted run or CI.
 The final native run uses one file worker to fit the observed host commit budget;
 all cases and each case's explicit concurrency remain unchanged. No deadline,
 retry, skip, heap/pagefile setting or production permission is changed.
+
+## 2026-10-18 PR #423 governance review
+
+This follow-up remains on `governance/cleanup-batch2-activation-20261018` in
+[PR #423](https://github.com/Negentropy-Laby/OpenSlack/pull/423). The initial
+review baseline is `e86ea433eda0b589f66f42e16d4362f6335e5b2b`; its predecessor
+is `553eebeca51ce976eec4af7fb582fdff23bd0177`. This is an authorization delivery,
+not a replacement repair PR for merged #421. Review analysis is not approval.
+
+### Current evidence and remaining gates
+
+The installed software remains frozen candidate
+`8eaea5fb55115c82df1bb926f4e61b11a4f73778`. S05's explicit deployment-input
+approval, recorded at `2026-10-18T03:51:55Z`, authorized the S06 offline upgrade;
+it did not authorize this PR, activation, a Permit or deletion. Its retained
+non-secret input record has SHA-256
+`93751751abc5dcc5f3019f0bba5c1811d83ef55cd317e94b7af08430dd6ab14e`.
+Only the selected issuer and provenance are published here, never credentials.
+
+The live, hash-verified `inspect-instance.py` observation at
+`2026-10-18T08:02:19.362295Z` found Broker PID `1020`, real OS identity
+`44180:44180`, the expected executable inode and SHA-256
+`36ba52c576d4ecd6e104ab5c62cd238359ea89a7dfedd9d9890261e1d32a10a1`,
+and boot nonce
+`2e7c4b3966ba14c6b61d565382b2f2022064524b90f11cb212cba04876b97251`.
+The instance started at `2026-10-18T04:40:37.548362984Z` and its generation is
+still empty. A separate metadata-only observation found zero-byte ledger and
+worker journal, each Broker-owned `0600`. Proposed generation `1` is an explicit
+first-activation policy selection, not an assertion that the live instance is
+already activated. No Broker request was sent by this review.
+
+The checked-in [scope evidence](../../.openslack/audit/cleanup-qualification/batch2-single-pr-20261018/scope-evidence.json)
+hashes the actual instance report, state observation, exact task-view bytes,
+explicit human task-scope confirmation, earlier issuer selection and the bounded
+qualification PR tuple. The task-view wrapper preserves CRLF bytes as escaped
+UTF-8 text, so its recomputed source SHA-256 remains
+`401a838468266ed5c13fe542df4df7675b8e3d05d678c8259821759b30da7157`.
+No normalized JSON hash is substituted for the installed file's digest.
+The administrator response was: “确认范围完整，无外部关联任务；沿用空视图及现有效期”.
+This attests the task scope only; it is not PR approval or deletion authorization.
+
+| Layer                                              | Current claim                                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Earlier package/input approval and offline upgrade | Completed in S04–S06; original records retained externally, not retrospectively approved here                                                 |
+| Workspace and installation isolation               | S07–S09 administrator execution evidence previously reviewed; this review does not rerun or inflate that claim                                |
+| Current Broker                                     | Observed running and unactivated; same nonce, empty generation                                                                                |
+| Qualification target                               | The sole qualification PR #1 is open, Draft and unmerged at `7d7d3c6e41a4ce43111d91061be7decb11d79eea`; no positive cleanup result is claimed |
+| Activation and Permit                              | Proposed in #423 only; not yet published on governed `main` or consumed                                                                       |
+| Human/CODEOWNER approval                           | Required on the final synchronized head; task/deployment consent does not count                                                               |
+| Real branch deletion and full matrix               | NOT_RUN / remaining per-case BLOCKED boundaries; this review performs no activation, merge or deletion                                        |
+
+Both the task view and proposed grant expire at `2026-10-18T23:23:00Z`.
+Recheck actual boot, target and earliest deadline before merge and admission.
+If evidence expires or the process/target changes, stop that batch, retain all
+history, and refresh evidence plus explicit human review on this open PR; do
+not extend records automatically. CI deliberately validates retained record
+structure without a wall-clock test that would break all later PRs after expiry.
+
+### Review dispositions
+
+| Item                               | Disposition and concrete control                                                                                                                                                                                                                                                          | Regression / evidence                                                                                                                                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — taskRef                        | Runtime syntax-only handling confirmed, but live task authority was never the approved model: README A0/A1 already specifies administrative scope. Clarify its audit-only semantics and bind the exact selected label to retained scope evidence. Task renaming is not Permit revocation. | `TestCommittedCleanupActivationEvidence/task-ref-typo`; exact task-view bytes and explicit human scope provenance. Existing source-task and claim dependency controls remain independent.                   |
+| 2 — same-day expiry                | Preserve the explicitly confirmed hard deadline; no automatic extension. The original claim that all later reauthorization is forbidden misreads the unknown-outcome recovery rule. Stop an expired batch and keep its grant as history.                                                  | Production `TestExactPermitBinding/expiry-inclusive`; committed audit bounds the grant by observed task-view and instance-evidence windows.                                                                 |
+| 3 — real boot / generation         | Publish the actual hash-verified observer report, PID/executable/UID binding and empty-history observation. Keep deliberate restart invalidation. Generation 1 is an explicit first-activation selection.                                                                                 | `paired-nonce-typo`, `generation-guess`; `TestFreshBootDoesNotInheritActivation`; live observer PASS, no request or restart.                                                                                |
+| 4 — stale QA / missing evidence    | Scope earlier statements as historical and append this current record. Commit non-secret evidence rather than relying on inaccessible local paths or PR-body assertions. Proposal is not issuance.                                                                                        | Hashed scope-evidence references; actual task-view source digest; target PR node/ref/SHA and confirmation provenance.                                                                                       |
+| 5 — issuer                         | Pin the previously selected issuer in the administration contract and input-selection evidence; reject a paired transcription error. Correct the claim of no authority anchor: fixed repository ID/live main remains the actual runtime trust root.                                       | `paired-issuer-typo`; production strict registry YAML validator with exact subject/repository. No new runtime trust source.                                                                                 |
+| 6 — committed-byte validation      | Retain e86ea433's strict production decoding and filename/ID checks, invoke them on every aggregate validation, and add evidence/registry cross-checks. Correct the added test's unintended demand that every historical grant match today's policy.                                      | `TestCommittedCleanupPolicy`, `TestCommittedCleanupPermits`, `TestCommittedCleanupActivationEvidence`, `TestHistoricalGrantSurvivesPolicyRotationWithoutExecutionRights`; no silent root/grant skips.       |
+| 7 — logical checks / real CI       | Preserve all seven logical Red controls, map each to its real mandatory producer step, add an actual committed-policy audit, and enforce mapped successful contexts in PRMS/Steward. Refute the claimed pre-existing permanent PRMS block: the old loader ignored these lists.            | Failing-before missing/neutral/skipped/ambiguous-context regressions; producer/mapping tests; merge API zero-call assertion when a required result is absent. CI still requires actual new-head completion. |
+| 8 — brokerId example               | Mark generic template IDs explicitly as administrator placeholders. The selected installation keeps `cleanup-broker-pr418`; no host reconfiguration.                                                                                                                                      | README B3 and committed evidence/contract identity checks.                                                                                                                                                  |
+| 9 — notBefore                      | Clarify lower-bound versus issuance/publication facts. Feature-branch bytes cannot grant authority: fixed acquisition is from reviewed main only. Do not claim or manufacture an earlier issuance.                                                                                        | Existing fixed-main source acquisition tests; committed audit additionally rejects a lower bound before the actual boot/task-view window.                                                                   |
+| 10 — maxUses                       | Keep the required literal 1. It is an explicit single-use contract, not a configurable retry knob; deleting it would break the published record format.                                                                                                                                   | Production `TestExactPermitBinding/multi-use`; documentation says literal 1.                                                                                                                                |
+| 11 — r1 label                      | Keep the existing opaque ID, documented as this batch's first issuance label, with no r0 prerequisite or automatic supersession/reissue protocol.                                                                                                                                         | Filename/ID and exact evidence-reference checks.                                                                                                                                                            |
+| Minor — retained-record cost       | Historical records remain intentionally retained; today's two records do not justify an optimization or cleanup gate.                                                                                                                                                                     | No history pruning or new performance gate.                                                                                                                                                                 |
+| Minor — external expectedSha       | Publish the observed exact PR tuple and keep live exact-SHA CAS; an offline snapshot is not a promise of current GitHub state.                                                                                                                                                            | `target` mismatch regression and existing final-send/CAS tests.                                                                                                                                             |
+| Refuted — drift / consumed history | Preserve fail-closed drift, durable one-use accounting and revocation/history retention.                                                                                                                                                                                                  | Existing handler/ledger/source regression suites; no weaker retry or reset route.                                                                                                                           |
+
+The required-check repair changes PRMS policy consumption and CI audit coverage.
+It does not replace the installed Broker or executor, change their protocol/ledger
+format, or modify installed credentials, identity, registry bytes or active process.
+The installed software candidate remains the previously approved frozen candidate. Any current-head
+CI result, independent review and PRMS outcome is published after synchronization
+in #423; earlier head results do not qualify these changes. Rollback is a governed
+revert retaining all operation and Permit-consumption evidence.
+
+### Local source acceptance for the #423 repair
+
+- Three consecutive affected-suite runs: **104/104 PASS** each. The initial
+  missing-required-context regression first failed 11 of 13 cases; independent
+  review then exposed malformed-declaration fallback and misleading duplicate
+  reporting, whose additional regression run failed 7 cases before repair.
+- Final direct Linux Vitest: **8,031 PASS, 0 FAIL, 6 existing conditional cases
+  not run**, from 8,037 declarations in 549 files. The six are Windows-specific
+  archive/PowerShell/DACL/path cases and the opt-in real-provider bridge smoke;
+  none was newly skipped or counted as passing. Native/platform evidence remains
+  assigned to the current-head hosted workflows or its separately authorized run.
+- Typecheck, build, ESLint (0 errors / 0 lint warnings), workspace/self validation,
+  golden, Genesis, docs verify/migration/notification checks and status verify:
+  **PASS** in an isolated Linux checkout installed with the frozen lockfile.
+- An initial shared-checkout typecheck failed because root workspace links were
+  missing. That failure is retained; fresh `bun install --frozen-lockfile` in the
+  isolated checkout restores the links and the unchanged source passes.
+- Go 1.26.5 race suite and vet: **PASS**. Go-to-executor integration also **PASS**
+  with the separately built test executor
+  `87ff8fd4f05448027649368edfa608976336c23e034fa2ea829d331aaf2845d4`.
+  This is not the installed frozen executor
+  `1e8b5ced4aa45054edee30449bebf248f775cd6412fc40decb9bcc0f286eecb3`;
+  no target artifact was replaced and no old byte-identity claim is transferred
+  to this repair-head component build.
+- Production counting and two generation passes: **idempotent**. Six tracked
+  source-manifest candidates were checked against the modified paths: **no lock
+  intersections**, no binding-set/path/scope edits. The only post-full-run source
+  formatting difference emits byte-identical JavaScript and is recorded separately.
+- Two independent read-only agent/security reviewers examined the final safety
+  changes. Their findings were repaired and rechecked; neither analysis is human
+  approval. Current-head hosted CI and PRMS evidence is published with the PR
+  after the final head synchronizes, rather than reusing baseline checks.
+
+The observer's `brokerStarted: false` and other effect flags mean that the observer
+performed no such action. They do not negate its positive pidfd/process observation
+that the target Broker was already running. This repair has not issued a Broker
+request, installed software, activated a process, merged a PR or deleted a ref.
+
+### Windows qualification failure on the first repair head
+
+Hosted Windows release qualification at `27e00029` failed: 3,008 cases passed,
+two terminal-bookkeeping tests exceeded their five-second test budget, and the
+installation-list preparation hook's first PowerShell child exceeded its existing
+20-second launch bound. The failed job and logs are retained; local Linux success
+does not close that failure. The same seven-package scope under real native
+Windows/pwsh 7 subsequently passed 3,011 cases with 12 existing platform-conditional
+cases not run, across 224 files. That local baseline is evidence of variability,
+not proof of the exact cause of the hosted launch timeout.
+
+The rendering fixture now uses the existing PowerShell-specific environment
+builder for discovery and execution, removing every inherited case variant of
+`PSModulePath` so each shell edition constructs its own defaults. An added
+contaminated-key assertion fails on native Windows when the old generic builder
+is restored. Both mandatory Windows PowerShell 5.1 and discovered pwsh 7 still
+render all three envelopes; neither the 20-second child bound nor the enclosing
+hook budget is increased. Failure diagnostics now retain the actual shell,
+elapsed time, signal and whether the fixture shim was reached, without raw
+environment or credential output.
+
+The three terminal-bookkeeping cases now prepare their independent real-disk
+plan/create/close fixture in a setup hook with the existing platform setup budget.
+Their actual merge transitions and assertions retain the ordinary five-second
+budget, all five merge calls, live rechecks, fsync, CAS, retained recovery locks
+and concurrent-observation assertions. No production code, global timeout,
+automatic retry, skip or assertion removal is used. Final affected runs, complete
+acceptance and new-head hosted results are recorded on #423 after synchronization;
+the failed hosted run is not silently replaced by a targeted local pass.
+
+The third expanded Linux affected run then exposed the same preparation-budget
+problem in the combined close/merge case (5,229 ms), plus an `onTaskUpdate` RPC
+timeout while the disk-heavy fixture file ran. That failure is retained and the
+three-pass acceptance restarts. The close/merge case now likewise prepares its
+created batch separately, retaining real close and merge transitions under the
+ordinary business budget. The fake asynchronous process adapter yields an I/O
+turn before delivering each response, allowing reporter/cancellation callbacks
+to run between synchronous disk operations. This adds no sleep, retry, timeout
+increase or production change; it does not omit any filesystem safety check.
+
+Read-only review of the yielding adapter identified a teardown requirement:
+Vitest timeout alone does not cancel its underlying promise. Fixtures now guard
+their lifetime and drain all tracked plan/run promises before fault reset,
+descriptor cleanup and directory removal. A dedicated in-flight cancellation
+regression checks that a yielded command cannot resume into a later test or
+recreate a removed fixture. Removing the post-yield lifetime fence makes that
+regression fail on native Windows. This additional case is included in the
+production test inventory; final acceptance restarts after the correction.
+
+Latest correction-source acceptance: the expanded affected suites passed
+**185/185 executed cases in each of three runs**, with one existing Windows-only
+case not run on Linux. Full Linux execution passed **8,032**, failed **0**, with
+**6** existing conditional cases not run. Native Windows/pwsh 7 release-scope
+execution passed **3,012**, failed **0**, with **12** existing conditional cases
+not run, across **224 files**; its PowerShell rendering hook also executes
+Windows PowerShell 5.1. The production collector measured **8,038 declarations
+in 549 files** and two generation passes were identical. These local results
+qualify the corrected source, not the earlier failing hosted head; new-head
+hosted checks and PRMS remain separate publication gates.
