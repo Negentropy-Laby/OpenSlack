@@ -635,3 +635,63 @@ The observer's `brokerStarted: false` and other effect flags mean that the obser
 performed no such action. They do not negate its positive pidfd/process observation
 that the target Broker was already running. This repair has not issued a Broker
 request, installed software, activated a process, merged a PR or deleted a ref.
+
+### Windows qualification failure on the first repair head
+
+Hosted Windows release qualification at `27e00029` failed: 3,008 cases passed,
+two terminal-bookkeeping tests exceeded their five-second test budget, and the
+installation-list preparation hook's first PowerShell child exceeded its existing
+20-second launch bound. The failed job and logs are retained; local Linux success
+does not close that failure. The same seven-package scope under real native
+Windows/pwsh 7 subsequently passed 3,011 cases with 12 existing platform-conditional
+cases not run, across 224 files. That local baseline is evidence of variability,
+not proof of the exact cause of the hosted launch timeout.
+
+The rendering fixture now uses the existing PowerShell-specific environment
+builder for discovery and execution, removing every inherited case variant of
+`PSModulePath` so each shell edition constructs its own defaults. An added
+contaminated-key assertion fails on native Windows when the old generic builder
+is restored. Both mandatory Windows PowerShell 5.1 and discovered pwsh 7 still
+render all three envelopes; neither the 20-second child bound nor the enclosing
+hook budget is increased. Failure diagnostics now retain the actual shell,
+elapsed time, signal and whether the fixture shim was reached, without raw
+environment or credential output.
+
+The three terminal-bookkeeping cases now prepare their independent real-disk
+plan/create/close fixture in a setup hook with the existing platform setup budget.
+Their actual merge transitions and assertions retain the ordinary five-second
+budget, all five merge calls, live rechecks, fsync, CAS, retained recovery locks
+and concurrent-observation assertions. No production code, global timeout,
+automatic retry, skip or assertion removal is used. Final affected runs, complete
+acceptance and new-head hosted results are recorded on #423 after synchronization;
+the failed hosted run is not silently replaced by a targeted local pass.
+
+The third expanded Linux affected run then exposed the same preparation-budget
+problem in the combined close/merge case (5,229 ms), plus an `onTaskUpdate` RPC
+timeout while the disk-heavy fixture file ran. That failure is retained and the
+three-pass acceptance restarts. The close/merge case now likewise prepares its
+created batch separately, retaining real close and merge transitions under the
+ordinary business budget. The fake asynchronous process adapter yields an I/O
+turn before delivering each response, allowing reporter/cancellation callbacks
+to run between synchronous disk operations. This adds no sleep, retry, timeout
+increase or production change; it does not omit any filesystem safety check.
+
+Read-only review of the yielding adapter identified a teardown requirement:
+Vitest timeout alone does not cancel its underlying promise. Fixtures now guard
+their lifetime and drain all tracked plan/run promises before fault reset,
+descriptor cleanup and directory removal. A dedicated in-flight cancellation
+regression checks that a yielded command cannot resume into a later test or
+recreate a removed fixture. Removing the post-yield lifetime fence makes that
+regression fail on native Windows. This additional case is included in the
+production test inventory; final acceptance restarts after the correction.
+
+Latest correction-source acceptance: the expanded affected suites passed
+**185/185 executed cases in each of three runs**, with one existing Windows-only
+case not run on Linux. Full Linux execution passed **8,032**, failed **0**, with
+**6** existing conditional cases not run. Native Windows/pwsh 7 release-scope
+execution passed **3,012**, failed **0**, with **12** existing conditional cases
+not run, across **224 files**; its PowerShell rendering hook also executes
+Windows PowerShell 5.1. The production collector measured **8,038 declarations
+in 549 files** and two generation passes were identical. These local results
+qualify the corrected source, not the earlier failing hosted head; new-head
+hosted checks and PRMS remain separate publication gates.
