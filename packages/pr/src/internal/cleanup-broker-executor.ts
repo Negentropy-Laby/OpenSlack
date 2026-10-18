@@ -15,7 +15,10 @@ import {
   inspectInstallationRepositoryAccess,
 } from '@openslack/github';
 import { readRemoteBranchSha, deleteRemoteBranchIfAt } from '@openslack/delivery';
-import { createGitHubAppJwt } from '@openslack/github/cleanup-broker-internal';
+import {
+  createCleanupExecutorJsonRequest,
+  acquireCleanupExecutorToken,
+} from './cleanup-executor-auth.js';
 import {
   createCleanupBrokerClient,
   withCleanupBrokerClient,
@@ -287,76 +290,12 @@ async function run(
     });
     return response as unknown as Response;
   };
-  const json = async (
-    path: string,
-    token: string,
-    method = 'GET',
-    body?: unknown,
-  ): Promise<Record<string, unknown>> => {
-    const response = await fetchBound('https://api.github.com' + path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (!response.ok) throw new Error('CLEANUP_EXECUTOR_API_FAILED');
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('CLEANUP_EXECUTOR_API_FAILED');
-    let n = 0;
-    const chunks: Uint8Array[] = [];
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      n += next.value.length;
-      if (n > 2 * 1024 * 1024) {
-        await reader.cancel();
-        throw new Error('CLEANUP_EXECUTOR_API_FAILED');
-      }
-      chunks.push(next.value);
-    }
-    const result: unknown = JSON.parse(
-      new TextDecoder('utf8', { fatal: true }).decode(Buffer.concat(chunks)),
-    );
-    if (!object(result)) throw new Error('CLEANUP_EXECUTOR_API_FAILED');
-    return result;
-  };
+  const json = createCleanupExecutorJsonRequest(fetchBound);
   try {
-    const jwt = createGitHubAppJwt(String(bootstrap.app.appId), bootstrap.app.privateKey);
-    const installation = await json(`/repos/${r.repo}/installation`, jwt);
-    if (
-      installation.id !== bootstrap.app.installationId ||
-      installation.app_id !== bootstrap.app.appId ||
-      installation.suspended_at !== null
-    )
-      throw new Error('CLEANUP_EXECUTOR_INSTALLATION_MISMATCH');
-    const token = await json(
-      `/app/installations/${bootstrap.app.installationId}/access_tokens`,
-      jwt,
-      'POST',
-      {
-        repositories: [r.repo.split('/')[1]],
-        permissions: {
-          contents: 'write',
-          pull_requests: 'read',
-          issues: 'read',
-          metadata: 'read',
-        },
-      },
+    const token = await acquireCleanupExecutorToken(
+      { repository: r.repo, ...bootstrap.app, deadlineMs: bootstrap.deadlineMs },
+      json,
     );
-    if (
-      typeof token.token !== 'string' ||
-      !token.token ||
-      typeof token.expires_at !== 'string' ||
-      !Number.isFinite(Date.parse(token.expires_at)) ||
-      Date.parse(token.expires_at) <= bootstrap.deadlineMs ||
-      !object(token.permissions) ||
-      token.permissions.contents !== 'write'
-    )
-      throw new Error('CLEANUP_EXECUTOR_TOKEN_INVALID');
     const [owner, repo] = r.repo.split('/') as [string, string];
     const client = createCleanupBrokerClient(token.token, owner, repo, fetchBound, signal);
     client.tokenExpiresAt = token.expires_at;

@@ -1,3 +1,4 @@
+import { CLEANUP_APP_PERMISSIONS } from './cleanup-app-permissions.js';
 import { cleanupEvidenceTimestamp, cleanupEvidenceWindow } from './cleanup-time.js';
 import { CLEANUP_TASK_STATES, CLEANUP_TASK_LIMIT } from './cleanup-administration-contract.js';
 import { CLEANUP_SHA256 as HASH, cleanupObject, cleanupExactKeys } from './cleanup-validation.js';
@@ -391,12 +392,9 @@ export function validateCapturedUpgradeEvidence(
     insist(
       repository.repository === app.repository && repository.repositoryId === app.repositoryId,
     );
-    const permissions = exact(app.permissions, ['contents', 'metadata', 'issues', 'pull_requests']);
+    const permissions = exact(app.permissions, Object.keys(CLEANUP_APP_PERMISSIONS));
     insist(
-      permissions.contents === 'write' &&
-        permissions.metadata === 'read' &&
-        permissions.issues === 'read' &&
-        permissions.pull_requests === 'read',
+      Object.entries(CLEANUP_APP_PERMISSIONS).every(([name, level]) => permissions[name] === level),
     );
     role = 'networkPath';
     const proxy = exact(proof.get('networkPath'), [

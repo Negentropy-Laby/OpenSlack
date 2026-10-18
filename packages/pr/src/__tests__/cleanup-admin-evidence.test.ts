@@ -1,3 +1,4 @@
+import { CLEANUP_APP_PERMISSIONS } from '../internal/cleanup-app-permissions.js';
 import { createHash } from 'node:crypto';
 import { declareLinuxCleanupTests } from './helpers/cleanup-platform-qualification.js';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -398,7 +399,7 @@ function fixture() {
         selectedRepositories: [
           { repository: common.repository, repositoryId: common.repositoryId },
         ],
-        permissions: { contents: 'write', metadata: 'read', issues: 'read', pull_requests: 'read' },
+        permissions: { ...CLEANUP_APP_PERMISSIONS },
       }),
       network: put('network.json', {
         schema: 'openslack.cleanup_network_evidence.v1',

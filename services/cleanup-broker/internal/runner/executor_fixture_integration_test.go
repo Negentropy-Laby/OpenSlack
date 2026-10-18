@@ -128,6 +128,37 @@ func TestRealRunnerFixtureExecutorAndBareGit(t *testing.T) {
 				}
 				return strings.Count(string(bytes), "push\n")
 			}
+			countTokenRequests := func() int {
+				bytes, err := os.ReadFile(log)
+				if err != nil {
+					t.Fatal(err)
+				}
+				count := 0
+				for _, line := range strings.Split(string(bytes), "\n") {
+					if !strings.HasPrefix(line, "http:") {
+						continue
+					}
+					var call struct {
+						Method string `json:"method"`
+						Path   string `json:"path"`
+						Status int    `json:"status"`
+					}
+					if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "http:")), &call); err != nil {
+						t.Fatal("invalid fixture HTTP diagnostic")
+					}
+					if call.Method == "POST" {
+						if !strings.HasPrefix(call.Path, "/app/installations/") || !strings.HasSuffix(call.Path, "/access_tokens") || call.Status != 201 {
+							t.Fatal("unexpected fixture token request")
+						}
+						count++
+					}
+				}
+				return count
+			}
+			preflightTokens := countTokenRequests()
+			if preflightTokens != 1 {
+				t.Fatalf("preflight worker token requests %d want 1", preflightTokens)
+			}
 			if countPush() != 0 {
 				t.Fatal("preview pushed")
 			}
@@ -143,6 +174,10 @@ func TestRealRunnerFixtureExecutorAndBareGit(t *testing.T) {
 					}
 					return nil
 				})
+				// Preflight and execute are separate workers, each with its own mint.
+				if got := countTokenRequests() - preflightTokens; got != 1 {
+					t.Fatalf("execute worker token requests %d want 1", got)
+				}
 				if calls != 1 {
 					t.Fatalf("admission count %d", calls)
 				}
