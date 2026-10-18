@@ -31,7 +31,7 @@ func repoRoot(t *testing.T) string {
 		}
 		dir = parent
 	}
-	t.Skip("repository root with .openslack/policies not found (run from a full checkout)")
+	t.Fatal("repository root with .openslack/policies not found (run from a full checkout)")
 	return ""
 }
 
@@ -59,16 +59,32 @@ func TestCommittedCleanupPolicy(t *testing.T) {
 	if !validInstance(policy.ActiveInstance) {
 		t.Fatalf("committed policy activeInstance is malformed: %+v", policy.ActiveInstance)
 	}
+	// Audit today's activation independently of historical evidence snapshots.
+	// Retained old grants need not equal it, but the selected instance/issuer
+	// must have a structurally valid committed grant rather than a paired typo
+	// in an otherwise unreferenced policy. Runtime still enforces time/revocation.
+	entries, err := os.ReadDir(filepath.Join(repoRoot(t), ".openslack/policies/pr-cleanup-grants"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := false
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(repoRoot(t), ".openslack/policies/pr-cleanup-grants", entry.Name()))
+		var p Permit
+		if err != nil || Decode(data, &p) != nil || validateCommittedRecord(p, strings.TrimSuffix(entry.Name(), ".json")) != nil {
+			t.Fatal("current policy audit found an invalid committed grant")
+		}
+		matched = matched || (p.Instance == policy.ActiveInstance && p.IssuerTrustDomain == policy.IssuerTrustDomain)
+	}
+	if !matched {
+		t.Fatal("current policy does not select any structurally valid committed grant")
+	}
 }
 
 func TestCommittedCleanupPermits(t *testing.T) {
-	policy := loadCommittedPolicy(t)
 	grantsDir := filepath.Join(repoRoot(t), ".openslack", "policies", "pr-cleanup-grants")
 	entries, err := os.ReadDir(grantsDir)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			t.Skip("no committed permit directory yet")
-		}
 		t.Fatal(err)
 	}
 	checked := 0
@@ -92,26 +108,45 @@ func TestCommittedCleanupPermits(t *testing.T) {
 		// The reader builds the grant path from the requested permit ID and
 		// requires the record to carry the same ID, so the two copies written
 		// into the tree must agree.
-		if p.ID != permitID {
-			t.Fatalf("%s carries permitId %q; it must match the file name", name, p.ID)
+		if err := validateCommittedRecord(p, permitID); err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
-		// Structural conjuncts of Check that need no live host state. Expired
-		// or revoked grants stay valid records, so no wall clock is consulted.
-		if p.Schema != Schema || p.Action != Action || p.MaxUses != 1 ||
-			!id.MatchString(p.IssuerTrustDomain) || !ValidSubject(p.Subject) || !validTarget(p.Target) ||
-			!validInstance(p.Instance) || !id.MatchString(p.TaskRef) ||
-			p.NotBefore.IsZero() || p.ExpiresAt.IsZero() || !p.NotBefore.Before(p.ExpiresAt) {
-			t.Fatalf("%s violates the permit record contract: %+v", name, p)
-		}
-		if policy.IssuerTrustDomain != p.IssuerTrustDomain {
-			t.Fatalf("%s issuerTrustDomain %q diverges from the committed policy %q", name, p.IssuerTrustDomain, policy.IssuerTrustDomain)
-		}
-		if policy.ActiveInstance != p.Instance {
-			t.Fatalf("%s instance diverges from the committed policy activeInstance: %+v", name, p.Instance)
-		}
+		// Retained expired/consumed/revoked grants are historical data, not
+		// active grants. A new policy must not force their boot or issuer to
+		// be rewritten. The independently evidenced grant below is cross-bound
+		// to the current policy; runtime Check still rejects an old instance.
 		checked++
 	}
 	if checked == 0 {
-		t.Skip("no committed permits yet")
+		t.Fatal("no committed permits found")
+	}
+}
+
+func validateCommittedRecord(p Permit, permitID string) error {
+	if p.ID != permitID {
+		return errors.New("permitId must match the file name")
+	}
+	// Invoke the production validator at this record's own lower time bound,
+	// with its own instance. This validates historical structure without
+	// extending its runtime authority or rewriting revoked/expired history.
+	q := p
+	q.Revoked = false
+	policy := Policy{PolicySchema, Basis, Action, p.IssuerTrustDomain, p.Instance}
+	return Check(q, policy, p.Subject, p.Target, p.Instance, p.NotBefore)
+}
+
+func TestHistoricalGrantSurvivesPolicyRotationWithoutExecutionRights(t *testing.T) {
+	p, policy, now := fixture()
+	policy.ActiveInstance.Generation = "2"
+	policy.ActiveInstance.BootNonce = strings.Repeat("c", 64)
+	if err := validateCommittedRecord(p, p.ID); err != nil {
+		t.Fatalf("retained history must remain valid record data: %v", err)
+	}
+	if err := Check(p, policy, p.Subject, p.Target, policy.ActiveInstance, now); err == nil || err.Error() != "BROKER_NOT_ACTIVATED" {
+		t.Fatalf("old grant regained authority after rotation: %v", err)
+	}
+	p.Revoked = true
+	if err := validateCommittedRecord(p, p.ID); err != nil {
+		t.Fatalf("revoked record cannot be retained: %v", err)
 	}
 }

@@ -393,6 +393,17 @@ reviewed consistent backup. Preserve consumed and reconciliation records and
 revalidate ownership, modes and history before startup. A new boot cannot
 restore the old Permit's authority.
 
+This prohibition concerns retrying an uncertain or consumed operation. It is not
+a blanket prohibition on a later, independently reviewed authorization after an
+unused grant expires or an instance is deliberately replaced. First prove the
+old operation's disposition from the retained ledger/journal. Never infer
+"unused" from an absent ref alone, reuse an operation/Permit ID for a new
+authorization or execution, extend expiry
+automatically or erase the old record. A changed task view requires controlled
+shutdown, a new boot/nonce and new governed activation; it is not hot-replaced.
+If the current authorization PR remains open, put necessary corrections there
+and repeat current-head evidence, checks and human review.
+
 To stop, signal the exact supervised Broker process with SIGTERM, allowing its
 bounded worker shutdown and durable receipt handling. Do not use `pkill` by
 name, kill a reused PID or delete a stuck lock. A recovery-poisoned Broker may

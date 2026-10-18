@@ -90,7 +90,8 @@ const contract = {
   "governance": {
     "repository": "Negentropy-Laby/OpenSlack",
     "repositoryId": "1239520892",
-    "defaultBranch": "main"
+    "defaultBranch": "main",
+    "issuerTrustDomain": "Negentropy-Laby:OpenSlack:cleanup-admin"
   }
 } as const;
 export const CLEANUP_ADMIN_BINDINGS = Object.freeze(contract.bindings);

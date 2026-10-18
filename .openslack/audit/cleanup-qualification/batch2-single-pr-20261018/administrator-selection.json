@@ -1,0 +1,9 @@
+{
+  "schema": "openslack.cleanup_governance_administrator_selection.v1",
+  "sourceSHA256": "93751751abc5dcc5f3019f0bba5c1811d83ef55cd317e94b7af08430dd6ab14e",
+  "source": "S05/admin-inputs.APPROVED.md, explicit deployment input decision retained outside the repository",
+  "approvedBy": "github:wsman",
+  "approvedAt": "2026-10-18T03:51:55Z",
+  "issuerTrustDomain": "Negentropy-Laby:OpenSlack:cleanup-admin",
+  "scope": "prior non-secret deployment input selection only; not PR423 approval, activation, Permit issuance or deletion authorization"
+}

@@ -1,0 +1,9 @@
+{
+  "schema": "openslack.cleanup_task_view_observation.v1",
+  "observedAt": "2026-10-18T08:02:19.423749+00:00",
+  "sourcePath": "/etc/openslack-cleanup/task-dependencies.json",
+  "sha256": "401a838468266ed5c13fe542df4df7675b8e3d05d678c8259821759b30da7157",
+  "exactBytesUTF8": "{\r\n  \"schema\": \"openslack.cleanup_task_view.v1\",\r\n  \"workspaceId\": \"openslack-self\",\r\n  \"repository\": \"Negentropy-Laby/openslack-cleanup-qualification\",\r\n  \"repositoryId\": \"1380965476\",\r\n  \"notBefore\": \"2026-10-18T03:21:00Z\",\r\n  \"expiresAt\": \"2026-10-18T23:23:00Z\",\r\n  \"tasks\": []\r\n}\r\n",
+  "credentialContentsRead": false,
+  "targetWritten": false
+}

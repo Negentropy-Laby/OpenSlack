@@ -1,0 +1,19 @@
+{
+  "schema": "openslack.cleanup_target_pr_observation.v1",
+  "observedAt": "2026-10-18T07:59:14.878250+00:00",
+  "url": "https://github.com/Negentropy-Laby/openslack-cleanup-qualification/pull/1",
+  "repository": "Negentropy-Laby/openslack-cleanup-qualification",
+  "repositoryId": "1380965476",
+  "number": 1,
+  "nodeId": "PR_kwDOUk_cZM8AAAABJHi3eQ",
+  "headRepositoryId": "1380965476",
+  "headRef": "cleanup-qualification/batch2-single-pr-20261018",
+  "headSha": "7d7d3c6e41a4ce43111d91061be7decb11d79eea",
+  "baseRef": "main",
+  "state": "open",
+  "draft": true,
+  "merged": false,
+  "createdAt": "2026-10-18T06:10:46Z",
+  "author": "openslack-agent-operator[bot]",
+  "noLiveFreshnessClaim": true
+}
