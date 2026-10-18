@@ -332,6 +332,17 @@ describe.runIf(process.platform === 'linux')(
         finalPreviewState,
       };
     }
+    it('uses the selected App permissions without requesting administration access', async () => {
+      const result = await run('preview');
+      expect(result.calls).toContain(
+        'token-permissions:contents=write,issues=read,metadata=read,pull_requests=read',
+      );
+      expect(result.frames).toEqual([
+        expect.objectContaining({ type: 'result', state: 'CLEANUP_READY', attempted: false }),
+      ]);
+      expect(result.calls).not.toContain('push');
+      expect(result.ref).toBe(result.sha);
+    });
     it('preview reaches CLEANUP_READY through real PRMS without admission or push', async () => {
       const result = await run('preview');
       expect(result.frames).toHaveLength(1);

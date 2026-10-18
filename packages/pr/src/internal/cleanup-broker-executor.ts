@@ -343,7 +343,6 @@ async function run(
           contents: 'write',
           pull_requests: 'read',
           issues: 'read',
-          administration: 'read',
           metadata: 'read',
         },
       },
