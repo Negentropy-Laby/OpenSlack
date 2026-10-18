@@ -9,25 +9,31 @@ export function generateDoctorReport(report: PRReviewReport, codeowners: string[
   const botApprovals = report.reviews.filter((r) => r.state === 'APPROVED' && isBotUser(r.user));
 
   const checkSummary =
-    report.checks.length === 0
-      ? 'none'
-      : report.checks.every(
-            (c) =>
-              c.status === 'completed' &&
-              (c.conclusion === 'success' ||
-                c.conclusion === 'neutral' ||
-                c.conclusion === 'skipped'),
-          )
-        ? 'pass'
-        : report.checks.some(
-              (c) =>
-                c.conclusion &&
-                c.conclusion !== 'success' &&
-                c.conclusion !== 'neutral' &&
-                c.conclusion !== 'skipped',
-            )
+    report.requiredCheckIssue?.decision === 'BLOCKED_POLICY'
+      ? 'fail'
+      : report.decision === 'CHECKS_PENDING'
+        ? 'pending'
+        : report.decision === 'CHECKS_FAILED'
           ? 'fail'
-          : 'pending';
+          : report.checks.length === 0
+            ? 'none'
+            : report.checks.every(
+                  (c) =>
+                    c.status === 'completed' &&
+                    (c.conclusion === 'success' ||
+                      c.conclusion === 'neutral' ||
+                      c.conclusion === 'skipped'),
+                )
+              ? 'pass'
+              : report.checks.some(
+                    (c) =>
+                      c.conclusion &&
+                      c.conclusion !== 'success' &&
+                      c.conclusion !== 'neutral' &&
+                      c.conclusion !== 'skipped',
+                  )
+                ? 'fail'
+                : 'pending';
 
   const lines: string[] = [
     '## PR Governance Doctor Report',

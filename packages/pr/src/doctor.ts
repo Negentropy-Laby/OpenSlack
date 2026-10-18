@@ -4,12 +4,14 @@ import { detectDeadlock } from './deadlock.js';
 import { evaluateWorkflowGate, isCoreWorkflowArtifactPath } from './workflow-gate.js';
 import { evaluateProfileSyncGate } from './profile-sync-gate.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
+import { requiredCheckBlocker } from './required-checks.js';
 
 export function diagnosePR(
   report: PRReviewReport,
   policy: PRReviewPolicy,
   codeowners: string[],
 ): PRReviewReport {
+  report = { ...report, requiredCheckIssue: undefined };
   let decision: PRReviewState = report.decision;
   let reason = report.reason;
   let recommendation = report.recommendation;
@@ -136,6 +138,16 @@ export function diagnosePR(
     recommendation = 'Fix failing checks before merge.';
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
+
+  const requiredBlocker = requiredCheckBlocker(report, policy);
+  if (requiredBlocker)
+    return {
+      ...report,
+      ...requiredBlocker,
+      requiredCheckIssue: requiredBlocker,
+      workflowGate,
+      profileSyncGate,
+    };
 
   // 10. Deadlock detection (author is sole CODEOWNER / single maintainer)
   const deadlock = detectDeadlock(report.author, codeowners, validApprovers);

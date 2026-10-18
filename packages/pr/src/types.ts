@@ -94,6 +94,7 @@ export interface ProfileSyncGateResult {
 }
 
 export interface PRReviewReport {
+  requiredCheckIssue?: Pick<PRReviewReport, 'decision' | 'reason'>;
   merged?: boolean;
   headRepoFullName?: string;
   baseRepoFullName?: string;
@@ -130,4 +131,6 @@ export interface PRReviewPolicy {
   black_zone_never_merge: boolean;
   required_base_ref: string;
   effective_after_pr: number;
+  /** Logical controls resolved to real GitHub check contexts, by risk zone. */
+  required_check_contexts?: Readonly<Partial<Record<RiskZone, readonly string[]>>>;
 }

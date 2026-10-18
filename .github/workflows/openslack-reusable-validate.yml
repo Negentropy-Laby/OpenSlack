@@ -72,6 +72,14 @@ jobs:
       - name: Policy validate
         run: bun run openslack self validate
 
+      # Every policy-only PR must exercise the strict production Go decoder.
+      # The release workflow's source-path filter is not sufficient for grants.
+      - name: Committed cleanup policy audit
+        working-directory: services/cleanup-broker
+        env:
+          GOWORK: 'off'
+        run: go test ./internal/permit -count=1
+
       - name: Typecheck
         run: bun run typecheck
 

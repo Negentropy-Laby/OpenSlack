@@ -525,18 +525,31 @@ export function prCommands(): Command {
               c.conclusion !== 'skipped',
           );
           const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
-          if (pending.length > 0) {
+          if (diagnosed.requiredCheckIssue) {
+            findings.push({
+              status: diagnosed.requiredCheckIssue.decision === 'CHECKS_PENDING' ? 'WARN' : 'FAIL',
+              title: 'CI Checks',
+              detail: diagnosed.requiredCheckIssue.reason,
+              nextAction: diagnosed.recommendation,
+            });
+          } else if (diagnosed.decision === 'CHECKS_PENDING' || pending.length > 0) {
             findings.push({
               status: 'WARN',
               title: 'CI Checks',
-              detail: `${pending.length} pending`,
+              detail:
+                diagnosed.decision === 'CHECKS_PENDING'
+                  ? diagnosed.reason
+                  : `${pending.length} pending`,
               nextAction: 'Wait for checks',
             });
-          } else if (failing.length > 0) {
+          } else if (diagnosed.decision === 'CHECKS_FAILED' || failing.length > 0) {
             findings.push({
               status: 'FAIL',
               title: 'CI Checks',
-              detail: `${failing.length} failing`,
+              detail:
+                diagnosed.decision === 'CHECKS_FAILED'
+                  ? diagnosed.reason
+                  : `${failing.length} failing`,
               nextAction: 'Fix failing checks',
             });
           } else {

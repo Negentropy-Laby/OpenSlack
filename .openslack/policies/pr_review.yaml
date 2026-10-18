@@ -22,5 +22,6 @@ rules:
     enabled: true
     checks:
       - classify
-      - validate
+      - validate / validate
       - canary
+      - canonical-base

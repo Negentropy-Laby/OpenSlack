@@ -100,6 +100,54 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function checkNames(value: unknown): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > 64 ||
+    value.some(
+      (name) =>
+        typeof name !== 'string' ||
+        name.length === 0 ||
+        name.length > 200 ||
+        name.trim() !== name ||
+        /[\u0000-\u001f\u007f]/.test(name),
+    ) ||
+    new Set(value).size !== value.length
+  )
+    policyUnavailable();
+  return value as string[];
+}
+
+function approvalCheckContexts(
+  root: string,
+  maxBytes: number,
+): PRReviewPolicy['required_check_contexts'] {
+  // Optional for other workspaces. Once a workspace declares an approval matrix,
+  // broken mappings are fatal even for non-strict callers, never defaulted away.
+  const raw = readPolicySnapshot(join(root, '.openslack', 'policies', 'approvals.yaml'), maxBytes);
+  if (raw === null) return undefined;
+  const document = record(parse(raw, { maxAliasCount: 0, uniqueKeys: true }));
+  const matrix = record(document?.approval_matrix);
+  const bindings = record(document?.check_bindings);
+  if (document?.schema !== 'openslack.approval_policy.v1' || !matrix || !bindings)
+    policyUnavailable();
+  const result: Partial<Record<'green' | 'yellow' | 'red', readonly string[]>> = {};
+  for (const zone of ['green', 'yellow', 'red'] as const) {
+    const controls = checkNames(record(matrix[`${zone}_zone_merge`])?.required_checks);
+    result[zone] = Object.freeze([
+      ...new Set(
+        controls.map((control) => {
+          const binding = record(bindings[control]);
+          if (!binding || typeof binding.context !== 'string') policyUnavailable();
+          return checkNames([binding.context])[0]!;
+        }),
+      ),
+    ]);
+  }
+  return Object.freeze(result);
+}
+
 function strictPolicyRules(parsed: unknown): Record<string, Record<string, unknown>> {
   const document = record(parsed);
   const rules = record(document?.rules);
@@ -139,14 +187,38 @@ export function loadPRReviewPolicy(
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 2 * 1024 * 1024) {
     throw new TypeError('maxBytes must be an integer between 1 and 2097152.');
   }
+  // A declared control cannot disappear through the legacy permissive fallback.
+  let approvalContexts: PRReviewPolicy['required_check_contexts'];
+  try {
+    approvalContexts = approvalCheckContexts(root, maxBytes);
+  } catch {
+    policyUnavailable();
+  }
+  const defaults = {
+    ...DEFAULT_POLICY,
+    ...(approvalContexts && { required_check_contexts: approvalContexts }),
+  };
   try {
     const raw = readPolicySnapshot(policyPath, maxBytes);
     if (raw === null) {
       if (options.strict) policyUnavailable();
-      return DEFAULT_POLICY;
+      return defaults;
     }
-    const parsed = parse(raw);
+    const parsed = parse(raw, { maxAliasCount: 0, uniqueKeys: true });
+    if (!record(parsed) || !record(record(parsed)?.rules)) policyUnavailable();
     const rules = options.strict ? strictPolicyRules(parsed) : record(record(parsed)?.rules) || {};
+    const parsedRules = record(record(parsed)?.rules);
+    const checkRuleDeclared =
+      parsedRules !== undefined && Object.hasOwn(parsedRules, 'required_checks');
+    const requiredRule = record(parsedRules?.required_checks);
+    if (checkRuleDeclared && (!requiredRule || requiredRule.enabled !== true)) policyUnavailable();
+    const required = requiredRule ? checkNames(requiredRule.checks) : [];
+    const requiredContexts = Object.fromEntries(
+      (['green', 'yellow', 'red'] as const).map((zone) => [
+        zone,
+        Object.freeze([...new Set([...required, ...(approvalContexts?.[zone] ?? [])])]),
+      ]),
+    );
     return {
       no_auto_approval: record(rules.no_auto_approval)?.enabled !== false,
       no_self_review: record(rules.no_self_review)?.enabled !== false,
@@ -154,9 +226,13 @@ export function loadPRReviewPolicy(
       black_zone_never_merge: record(rules.black_zone_never_merge)?.enabled !== false,
       required_base_ref: CANONICAL_PR_BASE_REF,
       effective_after_pr: CANONICAL_PR_BASE_EFFECTIVE_AFTER_PR,
+      ...((requiredRule || approvalContexts) && {
+        required_check_contexts: Object.freeze(requiredContexts),
+      }),
     };
   } catch {
-    if (options.strict) policyUnavailable();
-    return DEFAULT_POLICY;
+    // Only a genuinely absent file can use defaults. An unreadable, malformed
+    // or ambiguous declaration must not silently discard its required controls.
+    policyUnavailable();
   }
 }

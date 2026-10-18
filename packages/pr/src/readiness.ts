@@ -1,10 +1,12 @@
 import type { PRReviewReport, PRReviewPolicy, PRReviewState } from './types.js';
 import { evaluatePRBasePolicy } from './base-policy.js';
+import { requiredCheckBlocker } from './required-checks.js';
 
 export function checkMergeReadiness(
   report: PRReviewReport,
   policy: PRReviewPolicy,
 ): PRReviewReport {
+  report = { ...report, requiredCheckIssue: undefined };
   let decision: PRReviewState = report.decision;
   let reason = report.reason;
   let recommendation = report.recommendation;
@@ -50,6 +52,10 @@ export function checkMergeReadiness(
     recommendation = 'Fix failing checks before merge.';
     return { ...report, decision, reason, recommendation };
   }
+
+  const requiredBlocker = requiredCheckBlocker(report, policy);
+  if (requiredBlocker)
+    return { ...report, ...requiredBlocker, requiredCheckIssue: requiredBlocker };
 
   // Red zone human approval gate. This lightweight pre-check does not load
   // immutable CODEOWNERS; diagnosePR enforces assigned-owner membership.

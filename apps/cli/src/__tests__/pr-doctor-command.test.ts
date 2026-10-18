@@ -162,6 +162,37 @@ async function runPrCommand(args: string[]) {
 }
 
 describe('pr doctor command live evidence gate', () => {
+  it('prints an ambiguous required context as CI failure', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+    });
+    hoisted.mockFetchPRDetails.mockResolvedValue(
+      makeReport({
+        checks: [
+          { name: 'validate / validate', status: 'completed', conclusion: 'success' },
+          { name: 'validate / validate', status: 'completed', conclusion: 'success' },
+        ],
+        decision: 'BLOCKED_POLICY',
+        reason: 'Required check context is ambiguous: validate / validate',
+        requiredCheckIssue: {
+          decision: 'BLOCKED_POLICY',
+          reason: 'Required check context is ambiguous: validate / validate',
+        },
+      }),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runPrCommand(['doctor', '423', '--format', 'plain']);
+      const output = log.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(output).toContain('Required check context is ambiguous: validate / validate');
+      expect(output).not.toContain('All 2 passed');
+    } finally {
+      log.mockRestore();
+    }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     process.exitCode = undefined;
@@ -171,6 +202,30 @@ describe('pr doctor command live evidence gate', () => {
       entries: [],
     });
   });
+
+  it.each(['CHECKS_PENDING', 'CHECKS_FAILED'])(
+    'prints the required-control %s diagnosis despite unrelated green checks',
+    async (decision) => {
+      hoisted.mockGetClient.mockResolvedValue({
+        owner: 'Negentropy-Laby',
+        repo: 'OpenSlack',
+        authMode: 'github_app_installation',
+        isDryRun: false,
+      });
+      hoisted.mockFetchPRDetails.mockResolvedValue(
+        makeReport({ decision, reason: 'Required check did not succeed: validate / validate' }),
+      );
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await runPrCommand(['doctor', '423', '--format', 'plain']);
+        const output = log.mock.calls.map((args) => args.join(' ')).join('\n');
+        expect(output).toContain('Required check did not succeed: validate / validate');
+        expect(output).not.toContain('All 1 passed');
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
 
   it('fails closed when live GitHub credentials are missing', async () => {
     hoisted.mockGetClient.mockRejectedValue(
