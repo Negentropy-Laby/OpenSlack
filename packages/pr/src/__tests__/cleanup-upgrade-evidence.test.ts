@@ -1,3 +1,4 @@
+import { CLEANUP_APP_PERMISSIONS } from '../internal/cleanup-app-permissions.js';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
@@ -93,7 +94,7 @@ function fixture() {
     appId: 123,
     installationId: 456,
     selectedRepositories: [{ repository: common.repository, repositoryId: common.repositoryId }],
-    permissions: { contents: 'write', metadata: 'read', issues: 'read', pull_requests: 'read' },
+    permissions: { ...CLEANUP_APP_PERMISSIONS },
   });
   write('networkPath', {
     ...common,
@@ -317,6 +318,22 @@ describe('upgrade task evidence matches the Broker task contract', () => {
 });
 
 describe('captured upgrade evidence parsing on every platform', () => {
+  it.each(['extra', 'missing', 'level'])(
+    'keeps installation evidence permissions exact after sharing the ceiling (%s)',
+    (kind) => {
+      const { input, bytes, write, seal } = fixture();
+      const app = JSON.parse(bytes.get('appScopePath')!.toString()) as Record<string, unknown>;
+      const permissions: Record<string, string> = { ...CLEANUP_APP_PERMISSIONS };
+      if (kind === 'extra') permissions.administration = 'read';
+      if (kind === 'missing') delete permissions.issues;
+      if (kind === 'level') permissions.contents = 'read';
+      write('appScopePath', { ...app, permissions });
+      seal();
+      expect(() => validateCapturedUpgradeEvidence(input, bytes)).toThrowError(
+        expect.objectContaining({ role: 'appScopePath', reason: 'EVIDENCE_INVALID' }),
+      );
+    },
+  );
   it('validates complete captured facts without asserting deployment or touching files', () => {
     const { input, bytes } = fixture();
     expect(validateCapturedUpgradeEvidence(input, bytes).files[0]!.state).toBe('missing');

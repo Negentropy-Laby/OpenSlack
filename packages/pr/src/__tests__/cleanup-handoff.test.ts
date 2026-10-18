@@ -1,3 +1,4 @@
+import { CLEANUP_APP_PERMISSIONS } from '../internal/cleanup-app-permissions.js';
 import {
   declareLinuxCleanupTests,
   describeLinuxCleanup as describeLinux,
@@ -1419,7 +1420,7 @@ async function upgradeFixture(now = new Date(timestamp)) {
     appId: 123,
     installationId: 456,
     selectedRepositories: [{ repository: common.repository, repositoryId: common.repositoryId }],
-    permissions: { contents: 'write', metadata: 'read', issues: 'read', pull_requests: 'read' },
+    permissions: { ...CLEANUP_APP_PERMISSIONS },
   });
   write(evidence.networkPath, {
     ...common,

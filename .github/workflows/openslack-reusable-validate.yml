@@ -119,5 +119,9 @@ jobs:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - name: Native APFS identity and query boundaries
-        run: node node_modules/vitest/vitest.mjs run packages/workflows/src/__tests__/workflow-read-path.test.ts packages/workflows/src/__tests__/workflow-run-read-query.test.ts
+      - name: Native APFS and portable cleanup request boundaries
+        run: >-
+          node node_modules/vitest/vitest.mjs run
+          packages/workflows/src/__tests__/workflow-read-path.test.ts
+          packages/workflows/src/__tests__/workflow-run-read-query.test.ts
+          packages/pr/src/__tests__/cleanup-executor-auth.test.ts

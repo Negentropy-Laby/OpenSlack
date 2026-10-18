@@ -1,14 +1,6 @@
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import {
-  mkdtempSync,
-  openSync,
-  closeSync,
-  constants,
-  readFileSync,
-  readSync,
-  writeSync,
-} from 'node:fs';
+import { mkdtempSync, openSync, closeSync, constants, readSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, beforeAll } from 'vitest';
@@ -17,6 +9,13 @@ import {
   checkTaskView,
 } from '../internal/cleanup-broker-executor.js';
 import { cleanupPRBranchThroughBroker } from '../cleanup-branch.js';
+import { CLEANUP_APP_PERMISSIONS } from '../internal/cleanup-app-permissions.js';
+import { CLEANUP_FIXTURE_REPOSITORY as repository } from './fixtures/cleanup-executor-repository.js';
+import {
+  readCleanupFixtureLog,
+  cleanupFixtureHttpCalls,
+  cleanupFixtureFailure,
+} from './fixtures/cleanup-executor-diagnostics.js';
 
 function fixture() {
   const request = {
@@ -26,7 +25,7 @@ function fixture() {
     principalId: 'principal:cleanup',
     runtimeUid: 'runtime-1',
     runId: 'run-1',
-    repo: 'example/qualification',
+    repo: repository.fullName,
     remote: 'qualification',
     prNumber: 1,
     permitId: 'permit-1',
@@ -35,11 +34,11 @@ function fixture() {
   const target = {
     workspaceId: 'qualification',
     host: 'github.com',
-    repositoryId: '123',
+    repositoryId: String(repository.id),
     repository: request.repo,
     prNodeId: 'PR_test',
     prNumber: 1,
-    ref: 'refs/heads/fixture',
+    ref: `refs/heads/${repository.branch}`,
     expectedSha: 'a'.repeat(40),
   };
   return {
@@ -79,7 +78,11 @@ function fixture() {
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       tasks: [],
     },
-    app: { appId: 1, installationId: 2, privateKey: 'fixture-not-a-key' },
+    app: {
+      appId: repository.appId,
+      installationId: repository.installationId,
+      privateKey: 'fixture-not-a-key',
+    },
     network: { httpsProxy: '', noProxy: '' },
     deadlineMs: Date.now() + 30_000,
   };
@@ -189,7 +192,14 @@ describe.runIf(process.platform === 'linux')(
         'fixture',
       );
       const sha = git('-C', 'work', 'rev-parse', 'HEAD');
-      git('-C', 'work', 'push', join(directory, 'remote.git'), 'HEAD:refs/heads/fixture');
+      git(
+        '-C',
+        'work',
+        'push',
+        join(directory, 'remote.git'),
+        `HEAD:refs/heads/${repository.branch}`,
+        `HEAD:refs/heads/${repository.defaultBranch}`,
+      );
       const input = join(directory, 'input'),
         output = join(directory, 'output');
       expect(spawnSync('mkfifo', [input, output]).status).toBe(0);
@@ -229,7 +239,7 @@ describe.runIf(process.platform === 'linux')(
         capabilities: { primary: ['typescript'] },
         repositories: {
           workspace_repo: { owner: 'Negentropy-Laby', repo: 'OpenSlack', default_branch: 'main' },
-          allowed_product_repos: ['example/qualification'],
+          allowed_product_repos: [repository.fullName],
         },
         permissions: {
           paths: { allow: [], deny: [] },
@@ -263,7 +273,7 @@ describe.runIf(process.platform === 'linux')(
       });
       let stderr = '';
       child.stderr!.on('data', (data) => {
-        stderr += data;
+        stderr = (stderr + data).slice(0, 32 * 1024);
       });
       const frames: Record<string, unknown>[] = [];
       let finalPreviewState: unknown;
@@ -316,8 +326,18 @@ describe.runIf(process.platform === 'linux')(
       closeSync(writeFd);
       closeSync(readFd);
       if (responseFailure) throw responseFailure;
-      expect(code, stderr).toBe(0);
-      const calls = readFileSync(log, 'utf8').split('\n');
+      const outcome = readCleanupFixtureLog(log);
+      expect(code, cleanupFixtureFailure(directory, outcome, stderr)).toBe(0);
+      const { calls } = outcome;
+      const tokenCalls = cleanupFixtureHttpCalls(calls).filter((call) => call.method === 'POST');
+      expect(tokenCalls).toEqual([
+        expect.objectContaining({
+          path: `/app/installations/${repository.installationId}/access_tokens`,
+          status: 201,
+          permissions: CLEANUP_APP_PERMISSIONS,
+          repositories: [repository.name],
+        }),
+      ]);
       return {
         frames,
         calls,
@@ -326,7 +346,7 @@ describe.runIf(process.platform === 'linux')(
           'remote.git',
           'for-each-ref',
           '--format=%(objectname)',
-          'refs/heads/fixture',
+          `refs/heads/${repository.branch}`,
         ),
         sha,
         finalPreviewState,
@@ -340,8 +360,11 @@ describe.runIf(process.platform === 'linux')(
         state: 'CLEANUP_READY',
         attempted: false,
       });
-      expect(result.calls).toContain('protected');
-      expect(result.calls).toContain('dependencies');
+      expect(result.calls).toContain(`api:${repository.apiPath}/branches/${repository.branch}`);
+      expect(result.calls).toContain(
+        `api:${repository.apiPath}/rules/branches/${repository.branch}`,
+      );
+      expect(result.calls.filter((c) => c === `api:${repository.apiPath}/pulls`)).toHaveLength(2);
       expect(result.calls).not.toContain('push');
       expect(result.ref).toBe(result.sha);
     });
@@ -350,9 +373,7 @@ describe.runIf(process.platform === 'linux')(
       expect(result.frames.map((f) => f.type)).toEqual(['admit', 'result']);
       expect(result.frames[1]).toMatchObject({ state: 'DELETED', attempted: true });
       expect(result.calls.filter((c) => c === 'push')).toHaveLength(1);
-      expect(
-        result.calls.filter((c) => c === 'api:/repos/example/qualification/pulls/1'),
-      ).toHaveLength(1);
+      expect(result.calls.filter((c) => c === `api:${repository.apiPath}/pulls/1`)).toHaveLength(1);
       expect(result.ref).toBe('');
     });
     it('final broker rejection produces zero pushes and preserves ref', async () => {
@@ -367,9 +388,7 @@ describe.runIf(process.platform === 'linux')(
       expect(result.frames[1]).toMatchObject({ attempted: true });
       expect(result.frames[1]?.state).not.toBe('DELETED');
       expect(result.calls.filter((c) => c === 'push')).toHaveLength(1);
-      expect(
-        result.calls.filter((c) => c === 'api:/repos/example/qualification/pulls/1'),
-      ).toHaveLength(1);
+      expect(result.calls.filter((c) => c === `api:${repository.apiPath}/pulls/1`)).toHaveLength(1);
     });
   },
 );
