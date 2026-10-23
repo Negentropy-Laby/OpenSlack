@@ -103,3 +103,75 @@ Corrected evidence is retained separately; a PASS from the forbidden-path filter
 never granted write authority. Remaining fixture/count/timeout failures are real
 delivery blockers for an appropriately authorized owner, not reasons to weaken
 the lifecycle/source checks.
+
+
+## PR #425 review repair: 32 candidates — local authorized subset
+
+This section addresses the later 32-candidate report, not the earlier 33-item
+Issue #415 list. Earlier results and failures above are preserved.
+
+The local implementation commit is `f346cd5ea5a8813f2b955365258a6456531d3c19`. It has NOT been
+published. The last observed remote/PR head remains `4327aa58`. All rows referencing
+that local commit have Linux evidence only; current-head hosted Windows, macOS,
+packaging and full acceptance remain NOT_RUN/BLOCKED. Independent agent review
+is analysis, never human approval. No all-findings-closed claim is made.
+
+| No. | Original candidate | Disposition | Handling and boundary | Regression/evidence | Local implementation |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Embedded profile-sync cannot execute | CORRECTED ATTRIBUTION / PATCHED | Explicit SOURCE_KIND_UNSUPPORTED and accurate TUI/user guidance; file snapshots and sealed Go execution remain mandatory. | execution-client and TUI regressions | `f346cd5e` |
+| 2 | TUI finalize with governance N/A | PATCHED / BOUNDARY RETAINED | PASS with N/A returns an explicit no-write result. No automatic proposal/review/phase selection; CLI keeps explicit targets. | real-gate TUI N/A and binding regressions | `f346cd5e` |
+| 3 | Weak historical audit rejected | PATCHED | Persisted weak unknown identity uses explicitly legacy/unverified v1, same run ID; raw/v2/function-source diagnostic evidence remains v2. Never consult current source or grant execution. | audit RED 2 then GREEN; four-domain renderer matrix | `f346cd5e` |
+| 4 | Unbound resume refuses | INTENTIONAL / DOCUMENTED | Keep opaque run-bound handles; document validated Go context -> bind -> prepare. Copy, forged and cross-run refusal remains. | formal binding and resume regressions | `f346cd5e` |
+| 5 | Credential-free finalize preview unreachable | PATCHED | Shared early preview precedes live PR reads in both frontends; live reads are inside error handling. Preview never verifies merge or writes. | shared-preview and CLI/TUI zero-query tests | `f346cd5e` |
+| 6 | Old CLI fixtures fail | BLOCKED_PRINCIPAL_SCOPE | The exact command-test path is task-authorized but principal-denied. Its gate/report/evidence fixtures and new preview mock must be migrated without weakening production. | full run: 4 failures in this file; no file modification | Pending authorization |
+| 7 | Tests import stale ignored dist | BLOCKED_PRINCIPAL_SCOPE | Controlled Workflows internal subpath plus build-first root/CLI/Workflows test scripts require the pending package.json permissions. No weak alias or constructor re-export workaround. | direct Vitest ran only after explicit build; fresh-entry acceptance pending | Pending authorization |
+| 8 | Count registry stale | BLOCKED_PRINCIPAL_SCOPE | Production collector measured 8188 declared cases against unchanged 8077. Modules/status updates remain denied. | test-count-drift-latest.log; no --update | Pending authorization |
+| 9 | Finalize errors erase failure cause | PATCHED | Typed failure codes distinguish query/unmerged/evidence/drift/comment uncertainty and individual write stages; legacy errors[] retained. | lifecycle failure and zero-write tests | `f346cd5e` |
+| 10 | Loader errors lose safe path/fields/cause | PATCHED | Bounded relative path and whitelisted field names retained with internal cause; frontend diagnostic never expands raw parser/source text. | loader and frontend RED->GREEN; sentinel tests | `f346cd5e` |
+| 11 | Bind drift relabeled as loader mismatch | PATCHED | Preserve the source evidence reason and actual identity comparison on recovery errors. | SOURCE_DRIFT binding regression | `f346cd5e` |
+| 12 | Unchanged digest described as hash mismatch | PATCHED | SOURCE_IDENTITY_DRIFT identifies stat/inode change with identical bytes; hash drift and manifest drift stay distinct. | real after-import file replacement RED 2->GREEN | `f346cd5e` |
+| 13 | Missing metadata called weak legacy identity | PATCHED | Missing durable metadata is EVIDENCE_INVALID; historical classification uses persisted domain/provenance consistently. | missing-meta and persisted identity matrix | `f346cd5e` |
+| 14 | Partial failure hides confirmed comment | PATCHED | Record each confirmed effect immediately. Lookup exact evidence-marked comments before posting again; unknown POST stops the batch for reconciliation. | partial labels failure, comment reuse, unknown-result zero-followup tests | `f346cd5e` |
+| 15 | TUI optional Issue dereference | PATCHED | All binding reads use optional access; absent binding returns the domain refusal. | missing queried Issue TUI regression | `f346cd5e` |
+| 16 | Number and parseInt disagree | PATCHED | One strict positive decimal safe-integer parse for PR and all Issue options; noncanonical values refuse before preview/live reads. | CLI input matrix and zero-query assertions | `f346cd5e` |
+| 17 | Clone exceptions escape typed recovery | PATCHED | Guard capture/clone; reject Proxy, accessor, function and nonplain evidence without traversal side effects. | invalid-store evidence RED->GREEN | `f346cd5e` |
+| 18 | Live base recheck rejects changed evidence | RETAINED / DIAGNOSED | Keep independent final head/base check. Drift produces PR_EVIDENCE_DRIFT and requires re-evaluation; never silently adopt another base. | live drift zero-write lifecycle test | `f346cd5e` |
+| 19 | Redundant TUI PR lookup | PATCHED | Remove middle getPR; preserve report observation and publisher write-boundary live lookup. | TUI asserts no middle lookup; publisher recheck tests | `f346cd5e` |
+| 20 | Repeated resume clones/comparison | PATCHED | Own observations once, clone only public results, and let CLI prepare once. Confirmation reread and final authority checks remain independent. | preflight ownership and CLI resume regressions; no timing claim | `f346cd5e` |
+| 21 | Repeated worker drift hashes | PATCHED | Capture current source and manifest hashes once after import and reuse actual evidence. | worker drift and sealed bundle tests; no timing claim | `f346cd5e` |
+| 22 | Governance binding duplicated in frontends | BLOCKED_PRINCIPAL_SCOPE | Add governanceRequired/verifiedGovernanceIssue to the PR gate only after its exact paths are authorized; current strict predicates remain. | PR gate/types/test paths denied; not rewritten through CLI | Pending authorization |
+| 23 | Repeated diagnostic presentation | PATCHED | Use one bounded diagnostic/render helper with explicit per-frontend recovery guidance. | mutable-field/accessor/sentinel and frontend tests | `f346cd5e` |
+| 24 | Identity/reason unions drift | PARTIAL / BLOCKED_PRINCIPAL_SCOPE | Worker consumes shared reason/domain lists and hash pattern; function-source audit rendering works. Core identity authority and package aliases require denied Core paths. | reason and diagnostic identity tests; Core work NOT_RUN | `f346cd5e` |
+| 25 | Untyped persisted audit identity mapping | PATCHED | runMetaWorkflowIdentity owns classification for audit/resume. Untagged records remain unknown, not guessed raw. | three persisted-domain cases; unchanged input assertion | `f346cd5e` |
+| 26 | manifestMatch duplicates canResume | COMPATIBILITY RETAINED | Keep the public field and derive it from the same comparison for identity-check results. Private state eligibility is not a verified resume result. | resume public API regressions | `f346cd5e` |
+| 27 | Internal thin match wrapper | PATCHED | Internal consumer uses full comparison.matches and retains mismatch evidence; unused internal wrapper removed. | Go execution/identity tests | `f346cd5e` |
+| 28 | Public snapshot-byte accessor | COMPATIBILITY RETAINED | Retain public accessor and owned-copy behavior; no public snapshot constructor restored. | snapshot copy/forgery tests | `f346cd5e` |
+| 29 | Unused TUI root argument | PATCHED | Remove private executor argument and update handler wiring/tests. | TUI registry and executor tests | `f346cd5e` |
+| 30 | Published commit subjects | HISTORICAL DISPOSITION | Preserve published history. New local subjects follow module-prefix rule. PR title correction remains part of authorized update-only publication. | published commits unchanged; no rebase/force-push | `f346cd5e` |
+| 31 | Count rule violation (same as 8) | BLOCKED / SHARED | Same pending canonical count/projection reconciliation as #8; no duplicate finding count or hidden exemption. | production collector failure retained | Pending authorization |
+| 32 | CLI business classifications | PARTIAL / BLOCKED_PRINCIPAL_SCOPE | Persisted identity classification moved to Workflows. PR gate decision projection remains pending the exact PR package permissions. | shared #22/#25 evidence | `f346cd5e` |
+
+### Additional observed gates
+
+- MCP-1: full Linux run reached a second legitimate blocked active-execution
+  projection, `GOVERNED_MUTATION_EXECUTION_ACTIVE`, while its unchanged test
+  accepts only `GOVERNED_PLAN_EXECUTION_ACTIVE`. The single-file rerun passed
+  20/20; it does not close the aggregate failure. Read-only independent tracing
+  and an in-memory invocation confirmed the alternate production projection.
+  Minimal test-only repair must preserve exactly-one executor/completion and
+  durable state assertions; both task and principal currently exclude
+  `apps/mcp/src/__tests__/mutation-tools.test.ts`. No MCP code/test was edited.
+- SCOPE-1: live Issue #415 includes the twelve requested paths, but the principal
+  still excludes all twelve. The additional MCP path is absent from both layers.
+  Static production parser/glob checks found no out-of-scope changed file; these
+  checks are not a runtime permission snapshot.
+- IDENTITY-1: `resolveAgentPrincipal` against the current product checkout reports
+  no local runtime identity for this fixed agent. Known original worktree paths
+  likewise did not contain it. Do not follow the generic bootstrap suggestion:
+  a maintainer must identify or restore the existing approved identity/run. No
+  identity, registry or credential was created, copied or changed. Remote
+  publication and task synchronization are stopped until the binding is valid.
+
+Required remaining repairs are not deferred as optional optimization. Pending
+Core/PR/test-entry/fixture/count work, MCP regression correction, final full tests,
+current-head hosted checks and PRMS still prevent task acceptance.
