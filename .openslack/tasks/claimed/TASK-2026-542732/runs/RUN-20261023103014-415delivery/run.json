@@ -6,7 +6,7 @@
   "run_id": "RUN-20261023103014-415delivery",
   "record_kind": "initial_validation_snapshot_with_additive_followup",
   "initial_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
-  "top_level_validation_scope": "Initial snapshot for initial_candidate_sha; current_validation below supersedes candidate-specific results without replacing the historical evidence.",
+  "top_level_validation_scope": "Initial snapshot for initial_candidate_sha; current_validation below supersedes candidate-specific results without replacing the historical evidence. review_repair_20261023 records the later local authorized subset and supersedes no historical result silently.",
   "observation_anchor_at": "2026-10-23T10:58:29.698Z",
   "phase_at_recording": "validated_for_independent_draft_publication",
   "base_sha": "184adb088c6157ceec148061a6b8cef5f8444377",
@@ -133,5 +133,111 @@
     "tag_release": "SKIPPED, zero steps executed"
   },
   "findings": "findings.md",
-  "validation": "validation.md"
+  "validation": "validation.md",
+  "review_repair_20261023": {
+    "observed_at": "2026-10-23T15:59:03.250230Z",
+    "record_kind": "local_reviewable_authorized_subset_not_published",
+    "parent_pr_head": "4327aa58009a3919b89212dbc21c458589454b12",
+    "local_implementation_commit": "f346cd5ea5a8813f2b955365258a6456531d3c19",
+    "source_diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+    "branch": "agent/codex_runtime_source-repair/TASK-2026-542732/RUN-20261023103014-415delivery",
+    "existing_pr": 425,
+    "draft": true,
+    "remote_publication": "NOT_RUN_RUNTIME_BINDING_MISSING",
+    "implementation_files": 30,
+    "scope": {
+      "static_changed_path_intersection": "PASS",
+      "requested_extra_paths": 12,
+      "task_amendment": "LIVE_VERIFIED",
+      "principal_amendment": "NOT_EFFECTIVE",
+      "runtime_identity": "MISSING_DO_NOT_BOOTSTRAP",
+      "additional_mcp_test": "TASK_AND_PRINCIPAL_PATH_NOT_ALLOWED",
+      "fresh_runtime_permission_snapshot": "NOT_AVAILABLE"
+    },
+    "verification": {
+      "focused": {
+        "status": "PASS",
+        "files": 11,
+        "cases": 351,
+        "log": "focused-owned-copy-final.log"
+      },
+      "full_linux": {
+        "status": "FAIL",
+        "passed": 8171,
+        "failed": 5,
+        "skipped": 6,
+        "total": 8182,
+        "log": "full-vitest-authorized.log",
+        "scope_note": "Executed before six additional identity compatibility cases; those six passed in the final focused run. No full final-tree PASS is claimed."
+      },
+      "known_cli_fixture_failures": 4,
+      "mcp_aggregate_failure": {
+        "status": "UNRESOLVED_OUTSIDE_SCOPE",
+        "isolated_cases": 20,
+        "isolated_result": "PASS",
+        "log": "mcp-failure-isolated.log",
+        "classification": "Both active blockers are legitimate; no baseline/flakiness fix claimed."
+      },
+      "build": "PASS",
+      "typecheck": "PASS",
+      "eslint": "0_ERRORS_0_WARNINGS",
+      "workflow_control_go_race": "PASS",
+      "workflow_control_go_vet": "PASS",
+      "sealed_runner_bundle": {
+        "status": "PASS_LOCAL_DEFAULT_OFF_AND_BYTE_VALIDATION",
+        "sha256": "41eae08d50f3d013a278f62ff27873000fe901d8a89226a46cd5ece7e80fdc94",
+        "bytes": 3046811,
+        "qualification": "No real PostgreSQL/container qualification implied"
+      },
+      "workspace": "PASS",
+      "golden": "7_OF_7_PASS",
+      "genesis": "5_OF_5_PASS",
+      "documentation": "PASS",
+      "status_projection_consistency": "PASS_WITH_OLD_8077_REGISTRY_ONLY",
+      "production_test_collector": {
+        "status": "FAIL_DRIFT",
+        "registered": 8077,
+        "collected": 8188,
+        "module_changes": {
+          "1": [1392, 1416],
+          "2": [2091, 2120],
+          "3": [2139, 2163],
+          "4": [4683, 4765]
+        },
+        "updated": false
+      },
+      "source_lock": {
+        "status": "PASS",
+        "bindings": 229,
+        "changed_existing_digests": 14,
+        "inventory_and_authority_unchanged": true
+      },
+      "new_head_hosted_windows_linux_packaging": "NOT_RUN_NOT_PUBLISHED",
+      "new_head_prms": "NOT_RUN_NOT_PUBLISHED"
+    },
+    "independent_readonly_review": {
+      "scope": "30-file source subset plus read-only diagnosis of MCP blocker",
+      "result": "NO_CONCRETE_NEW_DEFECT_IN_SOURCE_SUBSET",
+      "diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+      "limitations": "Not human approval, full acceptance, or review of permission-blocked implementation."
+    },
+    "claim_heartbeat": {
+      "result": "PASS_EXACT_OWNER_REF",
+      "expires_at": "2026-10-23T17:45:42.439Z",
+      "log": "claim-heartbeat-direct-native.log"
+    },
+    "evidence_root": "/var/tmp/openslack-pr425-repair-evidence-20261023",
+    "remaining": [
+      "Maintainer applies governed principal amendment and restores/identifies original fixed runtime binding without bootstrap",
+      "Core identity shared authority and PR gate binding projection",
+      "Controlled internal package subpath and build-first test entries",
+      "Old CLI fixture migration and canonical count/projection regeneration",
+      "Additional authorized MCP test-only correction and complete final full suite",
+      "Update-only #425 publication, exact-head hosted checks and PRMS"
+    ],
+    "acceptance": "NOT_COMPLETE",
+    "human_approval": "NOT_REQUESTED",
+    "merge": "NOT_AUTHORIZED",
+    "deployment": "NOT_RUN"
+  }
 }

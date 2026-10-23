@@ -171,3 +171,88 @@ and principal receipts are alongside them. The 38-file delivery set is unchanged
 This is an additive update to the same Draft PR #425, not a second PR or a history
 rewrite. #415 stays open/review; no APPROVE, ready-state transition, merge,
 completeClaim, automatic merge, #411, GS10–GS13, production operation or release.
+
+
+## PR #425 32-candidate review repair — local subset, acceptance BLOCKED
+
+The implementation commit is `f346cd5ea5a8813f2b955365258a6456531d3c19`,
+locally appended to the existing #425 branch. The reviewed source diff against
+`4327aa58` is SHA-256 `9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7`.
+No replacement PR, rebase, force-push, main edit, approval, merge or deployment
+was performed. Remote publication is NOT_RUN, for the binding reasons below.
+
+### Actual local checks
+
+Logs are preserved in `/var/tmp/openslack-pr425-repair-evidence-20261023`.
+Earlier RED logs are not replaced by the GREEN results. Their counts overlap and
+are not added together. RED behavior included eight lifecycle/resume/loader
+failures, two real worker file-replacement failures, two historical audit
+failures, one frontend diagnostic failure and three presentation failures.
+
+| Check | Observed result | Evidence |
+| --- | --- | --- |
+| Final affected suites | PASS, 11 files / 351 cases | focused-owned-copy-final.log |
+| Full Linux Vitest, 4 workers | FAIL: 8171 passed / 5 failed / 6 skipped, 8182 cases | full-vitest-authorized.log |
+| MCP isolated rerun | PASS 20/20; does not close full-run failure | mcp-failure-isolated.log |
+| Build / full typecheck | PASS | build-final-authorized.log; typecheck-presentation-final.log |
+| ESLint | 0 errors / 0 warnings | lint-latest-authorized.log |
+| Workflow Control Go race / vet | PASS | workflow-control-race.log; workflow-control-vet.log |
+| Independent source bytes | PASS, 229 bindings, only 14 actual existing source digests changed | source-lock-independent-final.json |
+| Sealed runner independent bundle | PASS local byte/default-off checks, 3046811 bytes | sealed-runner-verify-local.log |
+| Workspace / golden / Genesis | PASS / 7 of 7 / 5 of 5 | workspace-authorized.log; golden-authorized.log; genesis-authorized.log |
+| Docs / migration / notification docs | PASS | docs-*-final.log |
+| Status projection | PASS against unchanged old registry; not test-count reconciliation | status-verify-authorized.log |
+| Production test collection | FAIL, 8077 registered / 8188 collected | test-count-drift-latest.log |
+| New-head hosted CI / PRMS | NOT_RUN; local repair is not published | existing PR remains Draft |
+
+The full run preceded six additional persisted/diagnostic identity compatibility
+cases. Those six passed in the final 351-case focused run; the final full tree
+has not passed. Four full-run failures require the exact command-test fixture
+migration (including its new preview mock), still principal-denied. The fifth
+full-run failure is the MCP active-blocker assertion explained in findings.md.
+Its isolated PASS is retained separately and is not described as an aggregate fix.
+No tests, assertions, workers or timeouts were relaxed to hide these failures.
+
+The source manifest retains all inventory keys, paths and authority fields.
+The Go source-lock test is an independent exact-byte expectation, updated only
+for the same actual changed sources. The local Go invocation does not establish
+real PostgreSQL/container integration: no daemon or production authority was
+provisioned for this repair. The sealed bundle SHA-256 is
+`41eae08d50f3d013a278f62ff27873000fe901d8a89226a46cd5ece7e80fdc94`;
+it is a local code check, not an installation or execution grant.
+
+A separate-context read-only agent reviewed the exact 30-file subset, checked
+all 208 primary source hashes and Go expectations, and exercised boundary
+projections in memory. It found no concrete remaining defect within that subset
+after the sanitized diagnostic-field fix. It did not implement, approve or
+validate the still-blocked Core/PR/test-entry/count changes. This is not an
+independent human or hosted approval.
+
+### Authorization and publication stop
+
+Issue #415 was independently re-read: the requested twelve exact paths are now
+in task scope. The actual principal registry still excludes all twelve; the
+new MCP test-only path is excluded by task and principal. Static production
+registry/task parser and glob checks found all changed paths within the original
+intersection. This is explicitly **not** a live runtime authorization receipt.
+
+The actual `resolveAgentPrincipal` call against the current checkout reports
+missing fixed local runtime identity. Known original checkout paths also lack
+it. No bootstrap, identity copy, new run ID, own registry edit or prompt edit was
+performed. A maintainer must identify/restore the original approved binding and
+apply its governed scope amendment before a fresh live permission snapshot and
+remote task publication can be claimed.
+
+The supported native bot heartbeat did verify the exact existing claim ref and
+owner and extended it to `2026-10-23T17:45:42.439Z`. Earlier native-launch probes
+failed before the wrapper ran; their empty/non-authoritative exit statuses were
+not counted as heartbeat success. The final receipt is
+`claim-heartbeat-direct-native.log`; credentials were neither printed nor read
+by the repair worker. Lease continuity is not a substitute for runtime identity
+or path authorization.
+
+The 1-32 table in findings.md distinguishes fixes, corrected attributions,
+compatibility decisions and blocked work. Task acceptance remains NOT_COMPLETE.
+Next publication must be update-only for open Draft #425, verify head/ref/check
+SHAs, retain all failures, and wait for final full checks and PRMS. Human approval
+and merge remain outside this execution.
