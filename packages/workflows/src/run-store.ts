@@ -159,6 +159,7 @@ export interface RunMeta {
   workflowName: string;
   mode: ExecutionMode;
   manifestHash: string;
+  manifestHashDomain?: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2';
   argsEncoding?: typeof WORKFLOW_ARGUMENTS_SCHEMA;
   args: Record<string, unknown> | WorkflowArgumentsEnvelope;
   startedAt: string;
@@ -2372,7 +2373,7 @@ function validateRunMeta(value: unknown, expectedRunId: string): RunMeta {
   const record = closedRecordWithOptional(
     value,
     ['runId', 'workflowName', 'mode', 'manifestHash', 'args', 'startedAt'],
-    ['argsEncoding', 'budget', 'budgetPolicy'],
+    ['argsEncoding', 'budget', 'budgetPolicy', 'manifestHashDomain'],
     'workflow run metadata',
   );
   if (record.runId !== expectedRunId) {
@@ -2392,6 +2393,15 @@ function validateRunMeta(value: unknown, expectedRunId: string): RunMeta {
     WORKFLOW_CONTROL_CONTRACT_LIMITS.maxWorkflowNameBytes,
   );
   const startedAt = canonicalTimestamp(record.startedAt, 'workflow run metadata startedAt');
+  const manifestHashDomain = record.manifestHashDomain;
+  if (
+    manifestHashDomain !== undefined &&
+    ((manifestHashDomain !== 'raw-sha256' &&
+      manifestHashDomain !== 'openslack.workflow-runner.workflow-source.v2') ||
+      !WORKFLOW_BINDING_HASH_REGEX.test(manifestHash))
+  ) {
+    throw new Error('Workflow run metadata identity domain or tagged digest is invalid.');
+  }
   const argsEncoding = record.argsEncoding;
   let args: RunMeta['args'];
   if (argsEncoding === undefined) {
@@ -2417,6 +2427,7 @@ function validateRunMeta(value: unknown, expectedRunId: string): RunMeta {
     workflowName,
     mode: record.mode as ExecutionMode,
     manifestHash,
+    ...(manifestHashDomain === undefined ? {} : { manifestHashDomain }),
     ...(argsEncoding === WORKFLOW_ARGUMENTS_SCHEMA ? { argsEncoding } : {}),
     args,
     startedAt,

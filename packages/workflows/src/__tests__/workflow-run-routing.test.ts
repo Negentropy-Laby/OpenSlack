@@ -779,6 +779,7 @@ describe('Go-owned worker recovery projection', () => {
       workflowName: route.workflowId,
       mode: 'execute',
       manifestHash: descriptor.workflowSourceHash,
+      manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
       args: {},
       startedAt: NOW,
       budget: { tokens: 100, costUsd: 1 },

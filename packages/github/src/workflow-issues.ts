@@ -33,6 +33,7 @@ export interface WorkflowRunStatusShape {
   updatedAt?: string;
   actor?: string;
   workflowHash?: string;
+  workflowIdentity?: WorkflowRunIdentityEvidence;
   currentPhase?: string;
   phases?: Array<{ phase: string; timestamp: string; status: string; result?: unknown }>;
   pendingApprovals?: Array<{ id: string; operation: string; detail: string; status: string }>;
@@ -201,16 +202,26 @@ export function workflowReviewLabels(trustLevel: string): string[] {
 
 // ── Workflow Run Issue ────────────────────────────────────────────────────────
 
-export interface WorkflowRunIssue {
-  schema: 'openslack.workflow_run.v1';
+export interface WorkflowRunIdentityEvidence {
+  digest: string;
+  domain: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2' | 'unknown';
+  provenance: 'recorded' | 'inferred' | 'unknown';
+}
+
+interface WorkflowRunIssueBase {
   runId: string;
   workflowId: string;
-  workflowHash: string;
   mode: string;
   actor: string;
   startedAt: string;
   status: string;
 }
+
+export type WorkflowRunIssue = WorkflowRunIssueBase &
+  (
+    | { schema: 'openslack.workflow_run.v1'; workflowHash: string }
+    | { schema: 'openslack.workflow_run.v2'; workflowIdentity: WorkflowRunIdentityEvidence }
+  );
 
 export function renderWorkflowRunBody(run: WorkflowRunIssue): string {
   const lines: string[] = [];
@@ -220,7 +231,25 @@ export function renderWorkflowRunBody(run: WorkflowRunIssue): string {
   lines.push(`schema: ${JSON.stringify(run.schema)}`);
   lines.push(`run_id: ${JSON.stringify(run.runId)}`);
   lines.push(`workflow_id: ${JSON.stringify(run.workflowId)}`);
-  lines.push(`workflow_hash: ${JSON.stringify(run.workflowHash)}`);
+  if (run.schema === 'openslack.workflow_run.v1') {
+    lines.push(`workflow_hash: ${JSON.stringify(run.workflowHash)}`);
+  } else {
+    const identity = run.workflowIdentity;
+    if (
+      !identity ||
+      !/^[a-f0-9]{64}$/.test(identity.digest) ||
+      !['raw-sha256', 'openslack.workflow-runner.workflow-source.v2', 'unknown'].includes(
+        identity.domain,
+      ) ||
+      !['recorded', 'inferred', 'unknown'].includes(identity.provenance) ||
+      (identity.domain === 'unknown') !== (identity.provenance === 'unknown')
+    ) {
+      throw new TypeError('Workflow run audit requires valid identity evidence.');
+    }
+    lines.push(
+      `workflow_identity: ${JSON.stringify({ digest: identity.digest, domain: identity.domain, provenance: identity.provenance })}`,
+    );
+  }
   lines.push(`mode: ${JSON.stringify(run.mode)}`);
   lines.push(`actor: ${JSON.stringify(run.actor)}`);
   lines.push(`started_at: ${JSON.stringify(run.startedAt)}`);

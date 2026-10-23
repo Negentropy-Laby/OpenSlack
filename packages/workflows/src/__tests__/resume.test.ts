@@ -2,16 +2,21 @@ import {
   bindGoWorkflowResumeIdentity,
   validateGoWorkflowResumeContext,
   checkResumeEligibility,
+  createWorkflowResumePreflight,
 } from '../resume.js';
 import {
   createWorkflowSourceSnapshot,
   workflowSourceSnapshotBytes,
   verifyWorkflowSourceSnapshot,
 } from '../internal/workflow-source-snapshot.js';
-import { resolveWorkflowIdentityHash } from '../internal/workflow-identity.js';
+import { resolveWorkflowIdentityHash, hashWorkflowSource } from '../internal/workflow-identity.js';
+import {
+  boundResumeIdentityFixture,
+  routeReceiptFixture,
+} from './workflow-runner-v2-test-fixture.js';
 import { validateWorkflowRunRouteReceipt } from '../workflow-run-routing.js';
 import type { WorkflowModule } from '../types.js';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { checkResumable, prepareResume, replayCachedPhases } from '../resume.js';
 import type { WorkflowResumeIdentity } from '../resume.js';
 import { RunStore } from '../run-store.js';
@@ -64,18 +69,13 @@ const TEST_MANIFEST: WorkflowMeta = {
   ],
 };
 
-const TEST_HASH = 'a'.repeat(64);
+const TEST_HASH = hashWorkflowSource('a'.repeat(64));
 
 function identity(
   manifest: WorkflowMeta = TEST_MANIFEST,
-  hash: string = TEST_HASH,
+  source: string = 'a'.repeat(64),
 ): WorkflowResumeIdentity {
-  return {
-    meta: manifest,
-    format: 'openslack-native',
-    hash,
-    run: async () => ({ status: 'completed' }),
-  };
+  return boundResumeIdentityFixture(manifest, source);
 }
 
 function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): RunMeta {
@@ -115,9 +115,54 @@ async function initPausedRun(
 }
 
 describe('checkResumable', () => {
+  it('reuses one owned preflight without accepting observations at another store or run', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const exists = vi.spyOn(store, 'runExists');
+    const status = vi.spyOn(store, 'getRunStatus');
+    const meta = vi.spyOn(store, 'loadMeta');
+    const observation = await createWorkflowResumePreflight(store, 'run-001');
+    // RunStore.getRunStatus performs its own metadata integrity read.
+    const initialMetaReads = meta.mock.calls.length;
+    const loaded = observation.meta!;
+    loaded.manifestHash = '0'.repeat(64);
+    observation.eligibility.eligible = false;
+    expect(await observation.check(identity())).toMatchObject({ canResume: true });
+    expect(await observation.prepare(identity())).toMatchObject({
+      runId: 'run-001',
+      meta: { manifestHash: TEST_HASH },
+    });
+    expect(exists).toHaveBeenCalledTimes(1);
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(initialMetaReads).toBe(2);
+    expect(meta).toHaveBeenCalledTimes(initialMetaReads);
+    const otherIdentity = boundResumeIdentityFixture(TEST_MANIFEST, 'a'.repeat(64), 'another-run');
+    expect(await observation.check(otherIdentity)).toMatchObject({
+      canResume: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
+    });
+    const other = makeStore();
+    expect(await checkResumable(other.store, 'run-001', identity())).toMatchObject({
+      canResume: false,
+    });
+  });
+
+  it('does not reuse a prior observation in a fresh public resume check', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const observation = await createWorkflowResumePreflight(store, 'run-001');
+    vi.spyOn(store, 'getRunStatus').mockResolvedValue({ status: 'completed' } as Awaited<
+      ReturnType<typeof store.getRunStatus>
+    >);
+    expect(await observation.check(identity())).toMatchObject({ canResume: true });
+    expect(await checkResumable(store, 'run-001', identity())).toMatchObject({
+      canResume: false,
+      reasonCode: 'STATUS_NOT_RESUMABLE',
+    });
+  });
   it('returns false for non-existent run', async () => {
     const { store } = makeStore();
-    const result = await checkResumable(store, 'nope', TEST_MANIFEST);
+    const result = await checkResumable(store, 'nope', identity());
     expect(result.canResume).toBe(false);
     expect(result.reason).toContain('not found');
   });
@@ -139,7 +184,7 @@ describe('checkResumable', () => {
     await store.initRun('run-001', meta);
     await store.transitionStatus('run-001', 'completed');
 
-    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-001', identity());
     expect(result.canResume).toBe(false);
     expect(result.reason).toContain('completed');
   });
@@ -154,14 +199,14 @@ describe('checkResumable', () => {
     expect(result.reason).toBeUndefined();
   });
 
-  it('keeps the manifest-only compatibility entrypoint fail-closed', async () => {
+  it('rejects a manifest-only JavaScript caller despite a forced type cast', async () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST);
 
-    const result = await checkResumable(store, 'run-001', TEST_MANIFEST);
+    const result = await checkResumable(store, 'run-001', TEST_MANIFEST as never);
     expect(result.canResume).toBe(false);
     expect(result.reason).toContain('full executable SHA-256 identity');
-    await expect(prepareResume(store, 'run-001', TEST_MANIFEST)).rejects.toMatchObject({
+    await expect(prepareResume(store, 'run-001', TEST_MANIFEST as never)).rejects.toMatchObject({
       code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED',
     });
   });
@@ -183,9 +228,19 @@ describe('checkResumable', () => {
     expect(result.canResume).toBe(false);
     expect(result.manifestMatch).toBe(false);
     expect(result.reason).toContain('Manifest hash mismatch');
-    expect(result.storedManifestHash).toBeDefined();
-    expect(result.currentManifestHash).toBeDefined();
-    expect(result.storedManifestHash).not.toBe(result.currentManifestHash);
+    expect(result.storedIdentity?.digest).toBeDefined();
+    expect(result.currentIdentity?.digest).toBeDefined();
+    expect(result.storedIdentity?.digest).not.toBe(result.currentIdentity?.digest);
+    expect(result.storedIdentity).toMatchObject({ domain: 'unknown', provenance: 'unknown' });
+    expect(result.currentIdentity).toMatchObject({
+      domain: 'openslack.workflow-runner.workflow-source.v2',
+      provenance: 'inferred',
+    });
+    await expect(
+      prepareResume(store, 'run-001', identity(modifiedManifest, 'b'.repeat(64))),
+    ).rejects.toMatchObject({
+      identities: { stored: result.storedIdentity, current: result.currentIdentity },
+    });
   });
 
   it('includes status in result', async () => {
@@ -195,6 +250,19 @@ describe('checkResumable', () => {
     const result = await checkResumable(store, 'run-001', identity());
     expect(result.status).not.toBeNull();
     expect(result.status!.status).toBe('paused');
+  });
+
+  it('rejects manifest-only mutation after formal binding', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const meta = structuredClone(TEST_MANIFEST);
+    const bound = identity(meta);
+    meta.description = 'changed after binding';
+    expect(await checkResumable(store, 'run-001', bound)).toMatchObject({
+      canResume: false,
+      reasonCode: 'IDENTITY_UNVERIFIED',
+      cause: { reasonCode: 'MANIFEST_DRIFT' },
+    });
   });
 });
 
@@ -246,13 +314,13 @@ describe('prepareResume', () => {
 
   it('throws for non-existent run', async () => {
     const { store } = makeStore();
-    await expect(prepareResume(store, 'nope', TEST_MANIFEST)).rejects.toThrow('not found');
+    await expect(prepareResume(store, 'nope', identity())).rejects.toThrow('not found');
   });
 
   it('throws for running status', async () => {
     const { store } = makeStore();
     await store.initRun('run-001', makeMeta(TEST_MANIFEST));
-    await expect(prepareResume(store, 'run-001', TEST_MANIFEST)).rejects.toThrow();
+    await expect(prepareResume(store, 'run-001', identity())).rejects.toThrow();
   });
 
   it('throws for manifest hash mismatch', async () => {
@@ -336,29 +404,15 @@ describe('verified Go source identities', () => {
     const bytes = Buffer.from('exact workflow source');
     const sourceSnapshot = createWorkflowSourceSnapshot(bytes, TEST_MANIFEST);
     const loaded: WorkflowModule = {
-      ...identity(TEST_MANIFEST, sourceSnapshot.rawHash),
+      meta: TEST_MANIFEST,
+      format: 'openslack-native',
+      hash: sourceSnapshot.rawHash,
       sourceSnapshot,
     } as WorkflowModule;
-    const route = validateWorkflowRunRouteReceipt({
-      schema: 'openslack.workflow_run_route_receipt.v1',
-      workspaceId: 'workspace.test',
-      runId: 'run-001',
+    const route = routeReceiptFixture({
       workflowId: TEST_MANIFEST.name,
-      workflowVersion: '0.0.0',
       workflowSourceHash: sourceSnapshot.workflowSourceHash,
       manifestHash: sourceSnapshot.manifestHash,
-      inputHash: 'a'.repeat(64),
-      route: {
-        backend: 'go',
-        authority: 'workflow-control',
-        routingEpoch: 1,
-        authorityBuildHash: 'b'.repeat(64),
-      },
-      policyHash: 'c'.repeat(64),
-      correlationId: 'correlation.test',
-      qualificationEnvironmentId: 'test',
-      selectedAt: '2020-01-01T00:00:00.000Z',
-      expiresAt: '2020-01-02T00:00:00.000Z',
     });
     return { bytes, loaded, route, sourceSnapshot };
   }
@@ -387,6 +441,38 @@ describe('verified Go source identities', () => {
       });
       expect(await prepareResume(store, 'run-001', bound)).toMatchObject({
         meta: { manifestHash: hash },
+      });
+      expect(fs.files).toEqual(before);
+    },
+  );
+  it.each([
+    ['raw-sha256', 'raw', true],
+    ['raw-sha256', 'v2', false],
+    ['openslack.workflow-runner.workflow-source.v2', 'v2', true],
+    ['openslack.workflow-runner.workflow-source.v2', 'raw', false],
+  ] as const)(
+    'matches tagged %s with %s digest: %s',
+    async (manifestHashDomain, source, canResume) => {
+      const { bytes, loaded, route, sourceSnapshot } = fixture();
+      const { store, fs } = makeStore();
+      await store.initRun(
+        'run-001',
+        makeMeta(TEST_MANIFEST, {
+          manifestHashDomain,
+          manifestHash:
+            source === 'raw' ? sourceSnapshot.rawHash : sourceSnapshot.workflowSourceHash,
+        }),
+      );
+      await store.transitionStatus('run-001', 'paused');
+      const before = new Map(fs.files);
+      const bound = bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        loaded,
+        bytes,
+      );
+      expect(await checkResumable(store, 'run-001', bound)).toMatchObject({
+        canResume,
+        storedIdentity: { domain: manifestHashDomain, provenance: 'recorded' },
       });
       expect(fs.files).toEqual(before);
     },
@@ -490,5 +576,23 @@ describe('verified Go source identities', () => {
     expect(await checkResumeEligibility(store, 'run-001')).toMatchObject({
       reasonCode: 'STATUS_NOT_RESUMABLE',
     });
+  });
+  it('does not report verified resumability from a status-only eligibility observation', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const result = await checkResumeEligibility(store, 'run-001');
+    expect(result).toHaveProperty('eligible', true);
+    expect(result).not.toHaveProperty('canResume');
+    expect(result).not.toHaveProperty('manifestMatch');
+  });
+  it('rejects missing file-loader evidence without diagnosing unchanged builtin source as tampering', () => {
+    const { bytes, loaded, route } = fixture();
+    expect(() =>
+      bindGoWorkflowResumeIdentity(
+        validateGoWorkflowResumeContext('run-001', route, 'workspace.test'),
+        { ...loaded, sourceSnapshot: undefined },
+        bytes,
+      ),
+    ).toThrow(expect.objectContaining({ reasonCode: 'SOURCE_EVIDENCE_MISSING' }));
   });
 });

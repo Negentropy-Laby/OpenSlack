@@ -86,6 +86,7 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       meta.runId !== runId ||
       meta.workflowName !== this.#descriptor.workflowId ||
       meta.manifestHash !== this.#descriptor.workflowSourceHash ||
+      meta.manifestHashDomain !== 'openslack.workflow-runner.workflow-source.v2' ||
       hashWorkflowRunnerV2Input(decodeRunMetaArguments(meta)) !== this.#descriptor.inputHash
     )
       throw new WorkflowRunReadError([
@@ -113,6 +114,12 @@ export class WorkflowRunnerV2GoProjectionRunStore extends RunStore {
       if (
         existingMeta?.runId !== meta.runId ||
         existingMeta.workflowName !== meta.workflowName ||
+        existingMeta.manifestHash !== meta.manifestHash ||
+        // Older partial initialization files have no domain tag. Only accept
+        // the exact v2 digest independently anchored above; never rewrite them
+        // or fall back to a raw digest during this initialization path.
+        (existingMeta.manifestHashDomain !== undefined &&
+          existingMeta.manifestHashDomain !== meta.manifestHashDomain) ||
         status?.status !== 'running'
       ) {
         throw projectionFailure(

@@ -3,6 +3,8 @@ import { RunStore } from '../../run-store.js';
 import { createWorkflowRunStoreRecoveryAccess } from '../../internal/workflow-run-store-recovery-access.js';
 import type { RunStoreFs, RunMeta } from '../../run-store.js';
 import { checkResumable, prepareResume, replayCachedPhases } from '../../resume.js';
+import { boundResumeIdentityFixture } from '../workflow-runner-v2-test-fixture.js';
+import { hashWorkflowSource } from '../../internal/workflow-identity.js';
 import type { WorkflowMeta, PhaseCheckpoint, ExecutionMode } from '../../types.js';
 
 // ── In-memory filesystem ────────────────────────────────────────────────────
@@ -52,13 +54,9 @@ const TEST_MANIFEST: WorkflowMeta = {
   risk: 'low',
 };
 
-const TEST_HASH = 'a'.repeat(64);
-const identity = (manifest: WorkflowMeta = TEST_MANIFEST, hash = TEST_HASH) => ({
-  meta: manifest,
-  format: 'openslack-native' as const,
-  hash,
-  run: async () => ({ status: 'completed' }),
-});
+const TEST_HASH = hashWorkflowSource('a'.repeat(64));
+const identity = (manifest: WorkflowMeta = TEST_MANIFEST, source = 'a'.repeat(64)) =>
+  boundResumeIdentityFixture(manifest, source, 'run-resume-001');
 
 function makeMeta(manifest: WorkflowMeta, overrides: Partial<RunMeta> = {}): RunMeta {
   return {
@@ -95,6 +93,25 @@ async function initPausedRun(
 }
 
 describe('resume with run store integration', () => {
+  it('rejects an unbound module, copied handle, and a binding for another run', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const bound = identity();
+    expect(Reflect.deleteProperty(bound, 'workflowIdentity')).toBe(false);
+    expect(Reflect.set(bound, 'hash', 'b'.repeat(64))).toBe(false);
+    for (const candidate of [
+      { meta: TEST_MANIFEST, hash: TEST_HASH, format: 'openslack-native' },
+      { ...bound },
+      boundResumeIdentityFixture(TEST_MANIFEST, 'a'.repeat(64), 'run.other'),
+    ]) {
+      expect(
+        await checkResumable(store, 'run-resume-001', candidate as typeof bound),
+      ).toMatchObject({
+        canResume: false,
+        reasonCode: 'IDENTITY_UNVERIFIED',
+      });
+    }
+  });
   it('checkResumable works with in-memory store', async () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST, ['Scan']);

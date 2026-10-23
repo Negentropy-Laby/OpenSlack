@@ -1,7 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { collaborationCommands } from '../commands/collaboration.js';
 import * as workflows from '@openslack/workflows';
+import * as pr from '@openslack/pr';
+import * as github from '@openslack/github';
+import {
+  createWorkflowEvidence,
+  evaluateWorkflowGate as evaluateRealWorkflowGate,
+} from '../../../../packages/pr/src/workflow-gate.js';
 import type * as OpenSlackGitHubModule from '@openslack/github';
+import { createHash } from 'node:crypto';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { routeReceiptFixture } from '../../../../packages/workflows/src/__tests__/workflow-runner-v2-test-fixture.js';
+// CLI consumes the built package: its internal fixture must share that ownership registry.
+import { createWorkflowSourceSnapshot } from '../../../../packages/workflows/dist/internal/workflow-source-snapshot.js';
 
 const state = vi.hoisted(() => ({
   bytes: new Uint8Array(),
@@ -16,6 +29,11 @@ vi.mock('@openslack/workflows', async () => {
   const actual = await vi.importActual<typeof workflows>('@openslack/workflows');
   return {
     ...actual,
+    createWorkflowRunRouteJournal: vi.fn(() => ({})),
+    inspectWorkflowRunReadOnly: vi.fn(async () => ({
+      ownership: 'typescript-historical',
+      disposition: 'evidence-only',
+    })),
     readWorkflowPolicy: vi.fn(() => ({ enabled: true })),
     loadWorkflowRunnerControlConfig: vi.fn(() => ({ workspaceId: 'workspace.test' })),
     loadWorkflowRunRoutingConfig: vi.fn(() => ({})),
@@ -41,6 +59,18 @@ vi.mock('@openslack/github', async () => ({
     issueNumber: 1,
     url: 'https://example.test/audit',
   })),
+  finalizeWorkflowPR: vi.fn(async () => ({
+    closedIssues: [],
+    commentedIssues: [],
+    updatedLabels: [],
+    errors: [],
+  })),
+}));
+vi.mock('@openslack/pr', async () => ({
+  ...(await vi.importActual<typeof pr>('@openslack/pr')),
+  fetchPRDetails: vi.fn(),
+  loadPRCodeownerEvidence: vi.fn(async () => ({ owners: [] })),
+  evaluateWorkflowGate: vi.fn(),
 }));
 const originalExitCode = process.exitCode;
 beforeEach(() => {
@@ -52,7 +82,7 @@ beforeEach(() => {
     description: 'Resume test',
     phases: [{ title: 'Run', detail: 'Run' }],
   };
-  const snapshot = workflows.createWorkflowSourceSnapshot(state.bytes, meta);
+  const snapshot = createWorkflowSourceSnapshot(state.bytes, meta);
   state.meta = {
     runId: 'run.test',
     workflowName: meta.name,
@@ -61,26 +91,11 @@ beforeEach(() => {
     args: {},
     startedAt: '2020-01-01T00:00:00.000Z',
   };
-  state.route = workflows.validateWorkflowRunRouteReceipt({
-    schema: 'openslack.workflow_run_route_receipt.v1',
-    workspaceId: 'workspace.test',
+  state.route = routeReceiptFixture({
     runId: 'run.test',
     workflowId: meta.name,
-    workflowVersion: '0.0.0',
     workflowSourceHash: snapshot.workflowSourceHash,
     manifestHash: snapshot.manifestHash,
-    inputHash: 'a'.repeat(64),
-    route: {
-      backend: 'go',
-      authority: 'workflow-control',
-      routingEpoch: 1,
-      authorityBuildHash: 'b'.repeat(64),
-    },
-    policyHash: 'c'.repeat(64),
-    correlationId: 'correlation.test',
-    qualificationEnvironmentId: 'test',
-    selectedAt: '2020-01-01T00:00:00.000Z',
-    expiresAt: '2020-01-02T00:00:00.000Z',
   });
   state.find.mockResolvedValue({ path: 'resume-test.mjs', source: 'openslack-project' });
   state.load.mockResolvedValue({
@@ -101,7 +116,156 @@ afterEach(() => {
 });
 const resume = () =>
   collaborationCommands().parseAsync(['workflow', 'resume', 'run.test', '--yes'], { from: 'user' });
+describe('workflow finalize CLI binding', () => {
+  it.each([false, true])(
+    'does not auto-select an unbound body issue (explicit=%s)',
+    async (explicit) => {
+      const path = '.openslack/workflows/existing.mjs';
+      const report = {
+        workflowEvidence: createWorkflowEvidence({
+          baseSha: 'base',
+          headSha: 'head',
+          baseTree: [{ path, sha: 'old', mode: '100644', type: 'blob' }],
+          headTree: [{ path, sha: 'new', mode: '100644', type: 'blob' }],
+        }),
+        changedFiles: [path],
+        body: 'Historical discussion: Workflow governance #999',
+        author: 'author',
+        baseSha: 'base',
+        headSha: 'head',
+        reviews: [
+          {
+            user: 'human-reviewer',
+            state: 'APPROVED',
+            commitOid: 'head',
+            body: 'Workflow-Trust: trusted',
+          },
+        ],
+      };
+      const gate = evaluateRealWorkflowGate(report);
+      expect(gate.overall).toBe('PASS');
+      vi.mocked(pr.fetchPRDetails).mockResolvedValue(report as never);
+      vi.mocked(pr.evaluateWorkflowGate).mockReturnValue(gate);
+      await collaborationCommands().parseAsync(
+        [
+          'workflow',
+          'finalize-pr',
+          '42',
+          '--proposal-issue',
+          '888',
+          ...(explicit ? ['--governance-issue', '999'] : []),
+        ],
+        { from: 'user' },
+      );
+      if (explicit) {
+        expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+        expect(process.exitCode).toBe(1);
+      } else {
+        expect(github.finalizeWorkflowPR).toHaveBeenCalledWith(
+          42,
+          expect.objectContaining({
+            governanceIssue: undefined,
+            proposalIssue: 888,
+            expectedHeadSha: 'head',
+            expectedBaseSha: 'base',
+          }),
+        );
+      }
+    },
+  );
+  it.each(['headSha', 'baseSha'])('refuses writes without reviewed %s', async (missing) => {
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue({
+      headSha: 'head',
+      baseSha: 'base',
+      [missing]: undefined,
+    } as never);
+    await collaborationCommands().parseAsync(
+      ['workflow', 'finalize-pr', '42', '--proposal-issue', '888'],
+      { from: 'user' },
+    );
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+});
 describe('Go resume CLI boundary', () => {
+  it.each(['modified', 'deleted', 'unloadable'])(
+    'historical audit identity survives a %s current source file',
+    async (scenario) => {
+      const { publishWorkflowRunAudit } = await import('@openslack/github');
+      const directory = await mkdtemp(join(tmpdir(), 'openslack-audit-history-'));
+      const sourcePath = join(directory, 'current.mjs');
+      const metaPath = join(directory, 'meta.json');
+      try {
+        await writeFile(sourcePath, 'export const version = 1;');
+        const originalMeta = JSON.stringify(state.meta, null, 3);
+        await writeFile(metaPath, originalMeta);
+        const historicalStore = {
+          loadMeta: async () => JSON.parse(await readFile(metaPath, 'utf8')),
+          getRunStatus: async () => ({ status: 'completed' }),
+        } as never;
+        vi.mocked(workflows.openWorkflowRunReadOnly)
+          .mockReturnValueOnce(historicalStore)
+          .mockReturnValueOnce(historicalStore);
+        state.find.mockResolvedValue({ path: sourcePath, source: 'openslack-project' });
+        state.load.mockImplementation(async () => {
+          throw new Error('historical audit must not import today’s source');
+        });
+        const audit = () =>
+          collaborationCommands().parseAsync(
+            ['workflow', 'audit-run', 'run.test', '--create-issue'],
+            { from: 'user' },
+          );
+        await audit();
+        if (scenario === 'deleted') await rm(sourcePath);
+        else
+          await writeFile(
+            sourcePath,
+            scenario === 'modified' ? 'export const version = 2;' : 'invalid module syntax !!!',
+          );
+        await audit();
+        expect(publishWorkflowRunAudit).toHaveBeenCalledTimes(2);
+        const calls = vi.mocked(publishWorkflowRunAudit).mock.calls;
+        expect(calls[1]![0].workflowIdentity).toEqual(calls[0]![0].workflowIdentity);
+        expect(await readFile(metaPath, 'utf8')).toBe(originalMeta);
+        expect(state.find).not.toHaveBeenCalled();
+        expect(state.load).not.toHaveBeenCalled();
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+  it('historical audit never consults or imports current source', async () => {
+    const { publishWorkflowRunAudit } = await import('@openslack/github');
+    state.find.mockRejectedValue(new Error('current file must not be consulted'));
+    state.load.mockRejectedValue(new Error('current module must not be imported'));
+    await collaborationCommands().parseAsync(
+      ['workflow', 'audit-run', 'run.test', '--create-issue'],
+      { from: 'user' },
+    );
+    expect(state.find).not.toHaveBeenCalled();
+    expect(state.load).not.toHaveBeenCalled();
+    expect(publishWorkflowRunAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowIdentity: {
+          digest: (state.meta as { manifestHash: string }).manifestHash,
+          domain: 'unknown',
+          provenance: 'unknown',
+        },
+      }),
+      { issueNumber: undefined, createIssue: true },
+    );
+  });
+  it('rejects absent loader evidence before runner submission or audit publication', async () => {
+    const loaded = await state.load();
+    state.load.mockResolvedValue({ ...loaded, sourceSnapshot: undefined });
+    const { publishWorkflowRunAudit } = await import('@openslack/github');
+    await resume();
+    expect(state.submit).not.toHaveBeenCalled();
+    expect(publishWorkflowRunAudit).not.toHaveBeenCalled();
+    expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toContain(
+      'SOURCE_EVIDENCE_MISSING',
+    );
+  });
   it('submits verified historical identity using the final source snapshot', async () => {
     await resume();
     expect(state.submit).toHaveBeenCalledOnce();
@@ -113,15 +277,44 @@ describe('Go resume CLI boundary', () => {
     });
     expect(process.exitCode).toBeUndefined();
   });
-  it('rejects confirmation-time drift before runner submission', async () => {
+  it('passes the confirmation reread to the client and renders its typed drift rejection', async () => {
+    // Real client zero-write rejection is covered by its integration-style suite.
+    state.submit.mockImplementationOnce(async (input) => {
+      try {
+        workflows.verifyWorkflowSourceSnapshot(
+          input.sourceSnapshot,
+          input.workflowSourceBytes,
+          input.manifest,
+        );
+      } catch (cause) {
+        throw new workflows.WorkflowResumeRecoveryRequiredError(
+          'run.test',
+          'source changed',
+          { cause },
+          'SOURCE_DRIFT',
+          (cause as workflows.WorkflowSourceEvidenceError).identities,
+        );
+      }
+    });
     vi.mocked(console.log).mockImplementation((message) => {
       if (String(message).includes('[UNATTENDED-ADMISSION]'))
         state.bytes = Buffer.from('changed during confirmation');
     });
     await resume();
-    expect(state.submit).not.toHaveBeenCalled();
+    expect(state.submit).toHaveBeenCalledOnce();
     expect(process.exitCode).toBe(1);
     expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toContain('SOURCE_DRIFT');
+    const diagnostics = vi.mocked(console.error).mock.calls.flat().join('\n');
+    expect(diagnostics).toContain('runner-v2-source');
+    expect(diagnostics).toContain(
+      (state.route as workflows.WorkflowRunRouteReceipt).workflowSourceHash,
+    );
+    expect(diagnostics).toContain(
+      createHash('sha256')
+        .update('openslack.workflow-runner.workflow-source.v2\0')
+        .update('changed during confirmation')
+        .digest('hex'),
+    );
     expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toContain(
       'runs inspect run.test',
     );
@@ -156,7 +349,11 @@ describe('Go resume CLI boundary', () => {
     );
     expect(publishWorkflowRunAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        workflowHash: state.submit.mock.calls[0][0].sourceSnapshot.workflowSourceHash,
+        workflowIdentity: {
+          digest: state.submit.mock.calls[0][0].sourceSnapshot.workflowSourceHash,
+          domain: 'openslack.workflow-runner.workflow-source.v2',
+          provenance: 'inferred',
+        },
       }),
       { createIssue: true },
     );
