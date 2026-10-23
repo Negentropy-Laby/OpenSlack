@@ -85,3 +85,21 @@ These are local read-only code reviews, not GitHub APPROVE, human acceptance,
 container qualification, or permission to merge. All original NO CHANGE decisions
 remain explicit; no Go protocol, SQL, frozen inventory, policy, registry, or #417
 PostgreSQL gate rollback was introduced.
+
+## Hosted diagnostic followup
+
+RECOVERY-3 (fixed): the initial full hosted suite found that typed invalid-manifest
+translation had removed the existing safe missing-meta hint. Restore that fixed
+hint in the authorized loader implementation without raw exception/source text,
+without importing invalid code, and without changing the excluded old test.
+The expanded 28-file suite passed 581 cases. Both reviewers rechecked the fix;
+current 35-file content/diff hashes and retained initial CI failures are recorded
+in validation.md and run.json.
+
+Scope clarification: the initial `filterByPath` probe checked forbidden paths
+only. Explicit live `allowed_paths` membership also excludes the count/status
+and old CLI fixture paths, while the principal independently denies them.
+Corrected evidence is retained separately; a PASS from the forbidden-path filter
+never granted write authority. Remaining fixture/count/timeout failures are real
+delivery blockers for an appropriately authorized owner, not reasons to weaken
+the lifecycle/source checks.

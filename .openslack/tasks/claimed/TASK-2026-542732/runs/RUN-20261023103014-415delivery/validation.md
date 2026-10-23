@@ -1,5 +1,9 @@
 # Issue #415 recovery validation snapshot
 
+The initial sections describe candidate `6d68634e5970f3737a31b294b29b971f4c4a5377`.
+The additive continuation at the end records the newer implementation and tests;
+earlier PASS/FAIL results remain bound to their own candidate.
+
 Date: 2026-10-23 UTC. Run: `RUN-20261023103014-415delivery`.
 Base: `184adb088c6157ceec148061a6b8cef5f8444377` (fresh origin/main).
 This is the pre-publication snapshot included in the candidate commit. Live GitHub
@@ -94,9 +98,11 @@ Both final code reviews bind to the implementation diff hash above.
   real PostgreSQL/restart, container/sealed-worker and native Windows boundaries.
   Check run head SHA, PR head SHA and remote branch SHA must be identical.
 - Test-count registry drift is an actual failure. Both
-  `.openslack/modules.yaml` and `docs/status/current.md` pass the live task path
-  filter, but the verified agent principal denies them with `path_not_allowed`.
-  They are outside the effective task/identity intersection. A separate
+  `.openslack/modules.yaml` and `docs/status/current.md` are absent from the live
+  task's explicit `allowed_paths`, and the verified principal denies them with
+  `path_not_allowed`. The first probe's `filterByPath` result only checked
+  forbidden paths; it was not allowed-path authorization. The explicit corrected
+  probe is preserved as `scope-gaps-explicit.json`. A separate
   appropriately authorized owner must reconcile counts and generated status;
   this run did not modify registry permissions, update those files, or weaken checks.
 - Original external plan file is missing:
@@ -110,3 +116,58 @@ Both final code reviews bind to the implementation diff hash above.
 Rollback is an ordinary reviewed additive revert of the candidate's commit after
 separate authorization; do not reset history, delete the original worktree or
 alter the claim ref. Old and new evidence remain independently reviewable.
+
+## Additive continuation after initial hosted CI — 2026-10-23
+
+Initial candidate `6d68634e` reached real hosted execution. Its full root suite
+reported 8,140 passed / 3 failed / 6 skipped. The loader missing-meta diagnostic
+regression is fixed within the existing authorized implementation/test paths:
+the error remains `WorkflowSourceEvidenceError / MANIFEST_INVALID`, is thrown
+before dynamic import, and exposes only a fixed safe missing-export hint, never
+source or the original exception. The excluded `claude-loader.test.ts` was not
+edited; its existing assertion now passes.
+
+Current 35-file content:
+`f6998535ae0ca6c3d40b4e036a387fe9698fc9f35d9d86c813b3d08a3d45c9be`.
+Current 35-file implementation diff relative to `184adb08`:
+`9ac563a825d26a0e3e736ed0981c4f742990fd2d51effb52ea56dcdc1c976ec1`.
+Both independent reviewers verified these hashes and all 229 source bindings;
+no new P1/P2 was found in the followup. Lifecycle code is unchanged from the
+previous reviewed candidate.
+
+Fresh local results for this implementation:
+
+- PASS: expanded suite, 28 files / 581 tests, 102.50 seconds, exit 0,
+  `followup-focused.log`. Same original paths plus the read-only execution of
+  existing `claude-loader.test.ts`; no test was moved or copied to avoid scope.
+- RED then GREEN: loader pair had 2 diagnostic failures, then passed all 76 cases
+  in `loader-diagnostic-{red,green}.log`. These overlap the 581-case suite.
+- PASS: build, full typecheck, lint (same 2 warnings/0 errors), docs verification,
+  workspace validation and all Go contracts; logs use the `followup-` prefix.
+- Source lock: PASS, 229 bindings. One actual loader digest and the independent
+  Go fixed expectation changed. Frozen inventories, SQL and protocols did not.
+
+Remaining observed failures are not hidden:
+
+1. The excluded `apps/cli/src/commands/__tests__/collaboration-workflow-issues.test.ts`
+   has two stale fixtures: mocked PASS omits mandatory `criteria`, report omits
+   queried `workflowGovernanceIssue`, and its positive exact assertion also omits
+   `expectedHeadSha/expectedBaseSha`. Local execution reproduced 2 failed / 16
+   passed. A read-only independent review confirmed fixture migration is needed;
+   relaxing production evidence checks would reopen the repaired P1.
+2. Initial Windows artifact tests additionally reported a suite-launch failure
+   and two 5-second fixture timeouts in excluded bot/process/cleanup tests.
+   Those files are unchanged. This is an observation, not proof of baseline
+   failure or flakiness; no timeout/check was relaxed.
+3. Count/status reconciliation is still excluded by both task and principal.
+   The measured 8,149 inventory belongs to the initial candidate; this followup
+   adds one declared case and requires its own hosted current-head result.
+4. Initial Windows runtime qualification passed. Initial Linux Go/container
+   qualification was still running at this snapshot. Neither result may be
+   reused as qualification for the additive commit.
+
+The original scope probe and logs are retained; corrected explicit allowed-path
+and principal receipts are alongside them. The 38-file delivery set is unchanged.
+This is an additive update to the same Draft PR #425, not a second PR or a history
+rewrite. #415 stays open/review; no APPROVE, ready-state transition, merge,
+completeClaim, automatic merge, #411, GS10–GS13, production operation or release.
