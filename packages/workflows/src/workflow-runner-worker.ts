@@ -2,8 +2,12 @@ import {
   bindWorkflowSourceIdentity,
   compareWorkflowBinding,
 } from './internal/workflow-identity.js';
-import { createWorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 import { createHash } from 'node:crypto';
+import {
+  WorkflowSourceEvidenceError,
+  WORKFLOW_SOURCE_EVIDENCE_REASONS,
+  WORKFLOW_SOURCE_EVIDENCE_DOMAINS,
+} from './internal/workflow-source-snapshot.js';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -457,7 +461,11 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
         throw new Error(policy.messages.changedRoot);
       }
       if (policy.hashSource(source.bytes) !== descriptor.workflowSourceHash) {
-        throw new Error(policy.messages.sourceHash);
+        throw new WorkflowSourceEvidenceError('SOURCE_DRIFT', policy.messages.sourceHash, {
+          domain: 'runner-v2-source',
+          stored: descriptor.workflowSourceHash,
+          current: policy.hashSource(source.bytes),
+        });
       }
       assertWorkflowRunnerSourceIsSelfContained(source.bytes);
       return Object.freeze({
@@ -475,7 +483,11 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
         !beforeImport.bytes.equals(prepared.bytes) ||
         policy.hashSource(beforeImport.bytes) !== descriptor.workflowSourceHash
       ) {
-        throw new Error(policy.messages.changedSource);
+        throw new WorkflowSourceEvidenceError('SOURCE_DRIFT', policy.messages.changedSource, {
+          domain: 'runner-v2-source',
+          stored: descriptor.workflowSourceHash,
+          current: policy.hashSource(beforeImport.bytes),
+        });
       }
       const workflow = await loadWorkflowFile(prepared.path, {
         moduleCacheKey: descriptor.workflowSourceHash,
@@ -484,9 +496,15 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       // on every supported platform. Re-verify immediately after import and
       // fail closed if the path or bytes crossed that residual boundary.
       const afterImport = await readSealedWorkflowSource(prepared.path);
-      if (
-        sourceIdentity(afterImport.stat) !== prepared.identity ||
+      const currentManifestHash = policy.hashManifest(workflow.meta);
+      const currentSourceHash = policy.hashSource(afterImport.bytes);
+      const sourceIdentityChanged = sourceIdentity(afterImport.stat) !== prepared.identity;
+      const sourceChanged =
         !afterImport.bytes.equals(prepared.bytes) ||
+        currentSourceHash !== descriptor.workflowSourceHash;
+      if (
+        sourceIdentityChanged ||
+        sourceChanged ||
         compareWorkflowBinding(
           {
             workflowId: descriptor.workflowId,
@@ -497,18 +515,31 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
           {
             workflowId: workflow.meta.name,
             workflowVersion: workflow.meta.version ?? '0.0.0',
-            manifestHash: policy.hashManifest(workflow.meta),
-            workflowSourceHash: policy.hashSource(afterImport.bytes),
+            manifestHash: currentManifestHash,
+            workflowSourceHash: currentSourceHash,
           },
         ) !== undefined
       ) {
-        throw new Error(policy.messages.loadedIdentity);
+        const manifestChanged = currentManifestHash !== descriptor.manifestHash;
+        throw new WorkflowSourceEvidenceError(
+          manifestChanged
+            ? 'MANIFEST_DRIFT'
+            : sourceChanged
+              ? 'SOURCE_DRIFT'
+              : sourceIdentityChanged
+                ? 'SOURCE_IDENTITY_DRIFT'
+                : 'LOADER_SOURCE_MISMATCH',
+          sourceIdentityChanged && !sourceChanged && !manifestChanged
+            ? 'Workflow file identity changed after import, although its source digest is unchanged.'
+            : policy.messages.loadedIdentity,
+          {
+            domain: manifestChanged ? 'runner-v2-manifest' : 'runner-v2-source',
+            stored: manifestChanged ? descriptor.manifestHash : descriptor.workflowSourceHash,
+            current: manifestChanged ? currentManifestHash : currentSourceHash,
+          },
+        );
       }
-      return bindWorkflowSourceIdentity(
-        workflow,
-        afterImport.bytes,
-        workflow.sourceSnapshot ?? createWorkflowSourceSnapshot(afterImport.bytes, workflow.meta),
-      );
+      return bindWorkflowSourceIdentity(workflow, afterImport.bytes, workflow.sourceSnapshot);
     },
   });
 }
@@ -548,7 +579,29 @@ function installProtocolOnlyStreams(): void {
   console.error = (..._values: unknown[]) => undefined;
 }
 
-function boundedDiagnostic(error: unknown): string {
+/** @internal Safe stderr representation; does not extend the frozen runner wire protocol. */
+export function boundedDiagnostic(error: unknown): string {
+  if (error instanceof WorkflowSourceEvidenceError) {
+    // Never emit module messages, source text or provider replies to stderr.
+    const safeHash = (value: unknown) =>
+      typeof value === 'string' && WORKFLOW_BINDING_HASH_REGEX.test(value) ? value : undefined;
+    return (
+      JSON.stringify({
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: WORKFLOW_SOURCE_EVIDENCE_REASONS.includes(error.reasonCode)
+          ? error.reasonCode
+          : 'SOURCE_EVIDENCE_UNRECOGNIZED',
+        domain: WORKFLOW_SOURCE_EVIDENCE_DOMAINS.some(
+          (domain) => domain === error.identities?.domain,
+        )
+          ? error.identities?.domain
+          : undefined,
+        stored: safeHash(error.identities?.stored),
+        current: safeHash(error.identities?.current),
+        guidance: 'Reload the reviewed workflow and reconcile the run before retrying.',
+      }) + '\n'
+    );
+  }
   const name = error instanceof Error ? error.name : 'Error';
   const code =
     error instanceof Error && typeof (error as Error & { code?: unknown }).code === 'string'

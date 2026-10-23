@@ -1,17 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fileLoader from '../internal/workflow-file-loader.js';
 import {
   createSealedWorkflowRunnerV2SourceLoader,
+  boundedDiagnostic,
   loadWorkflowRunnerV2WorkerConfig,
   prepareWorkflowRunnerV2BudgetReserveSource,
   createWorkflowRunnerV2ProviderAttemptPort,
   executeWorkflowRunnerV2AuthorityJob,
   type WorkflowRunnerV2BudgetAuthorityBoundary,
 } from '../workflow-runner-worker.js';
+import { WorkflowSourceEvidenceError } from '../internal/workflow-source-snapshot.js';
 import {
   parseWorkflowBudgetAuthorityBytes,
   type WorkflowBudgetAccount,
@@ -203,6 +206,7 @@ function mutableRunAuthority(
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -1046,9 +1050,73 @@ describe('GS8-B workflow runner worker', () => {
     const prepared = await loader.prepare(v2Descriptor(0, first));
     await writeFile(sourcePath, workflowSource(2));
 
-    await expect(loader.load(prepared, v2Descriptor(0, first))).rejects.toThrow(
-      'changed after lease acceptance',
+    await expect(loader.load(prepared, v2Descriptor(0, first))).rejects.toMatchObject({
+      code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+      reasonCode: 'SOURCE_DRIFT',
+      identities: { domain: 'runner-v2-source', stored: v2Descriptor(0, first).workflowSourceHash },
+    });
+  });
+
+  it('reports imported manifest mismatch as typed evidence without source content', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-worker-manifest-'));
+    roots.push(workspaceRoot);
+    const directory = join(workspaceRoot, '.openslack', 'workflows');
+    await mkdir(directory, { recursive: true });
+    const source = workflowSource(1);
+    await writeFile(join(directory, 'sealed-test.mjs'), source);
+    const descriptor = { ...v2Descriptor(0, source), manifestHash: 'f'.repeat(64) };
+    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+    const prepared = await loader.prepare(descriptor);
+    await expect(loader.load(prepared, descriptor)).rejects.toMatchObject({
+      reasonCode: 'MANIFEST_DRIFT',
+      identities: { domain: 'runner-v2-manifest', stored: 'f'.repeat(64) },
+    });
+  });
+
+  it.each([false, true])(
+    'diagnoses file replacement after import (identical bytes: %s)',
+    async (identical) => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-worker-after-import-'));
+      roots.push(workspaceRoot);
+      const directory = join(workspaceRoot, '.openslack', 'workflows');
+      await mkdir(directory, { recursive: true });
+      const path = join(directory, 'sealed-test.mjs');
+      const source = workflowSource(1);
+      await writeFile(path, source);
+      const original = fileLoader.loadWorkflowFile;
+      vi.spyOn(fileLoader, 'loadWorkflowFile').mockImplementationOnce(async (...args) => {
+        const loaded = await original(...args);
+        const replacement = join(directory, 'replacement.mjs');
+        await writeFile(replacement, identical ? source : workflowSource(2));
+        await rename(replacement, path);
+        return loaded;
+      });
+      const descriptor = v2Descriptor(0, source);
+      const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+      const prepared = await loader.prepare(descriptor);
+      await expect(loader.load(prepared, descriptor)).rejects.toMatchObject({
+        reasonCode: identical ? 'SOURCE_IDENTITY_DRIFT' : 'SOURCE_DRIFT',
+      });
+    },
+  );
+
+  it('bounds source-error stderr to fixed classifications and valid digests', () => {
+    const error = new WorkflowSourceEvidenceError(
+      'SOURCE_DRIFT',
+      'private source or provider reply',
+      {
+        domain: 'runner-v2-source',
+        stored: 'a'.repeat(64),
+        current: 'private reply',
+      },
     );
+    const diagnostic = boundedDiagnostic(error);
+    expect(JSON.parse(diagnostic)).toMatchObject({
+      reasonCode: 'SOURCE_DRIFT',
+      stored: 'a'.repeat(64),
+    });
+    expect(diagnostic).not.toContain('private');
+    expect(JSON.parse(diagnostic)).not.toHaveProperty('current');
   });
 
   it('initializes a Go-owned run from the real sealed loader identity', async () => {

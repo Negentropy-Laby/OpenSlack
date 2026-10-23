@@ -453,6 +453,7 @@ export {
   bindGoWorkflowResumeIdentity,
   validateGoWorkflowResumeContext,
   checkResumeEligibility,
+  createWorkflowResumePreflight,
   checkResumable,
   prepareResume,
   replayCachedPhases,
@@ -461,6 +462,7 @@ export {
 export type {
   GoWorkflowResumeContext,
   ResumeCheckResult,
+  ResumeEligibilityResult,
   ResumeState,
   WorkflowResumeIdentity,
 } from './resume.js';
@@ -1125,9 +1127,15 @@ export {
 
 export {
   workflowSourceSnapshotBytes,
-  createWorkflowSourceSnapshot,
   verifyWorkflowSourceSnapshot,
+  verifyWorkflowSourceManifest,
+  requireWorkflowSourceSnapshot,
+  WorkflowSourceEvidenceError,
+  workflowSourceEvidenceCause,
+  renderWorkflowSourceEvidence,
+  workflowSourceEvidenceDiagnostic,
 } from './internal/workflow-source-snapshot.js';
+export { runMetaWorkflowIdentity } from './internal/workflow-run-identity.js';
 export type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 
-export type { WorkflowIdentity } from './types.js';
+export type { WorkflowIdentity, WorkflowIdentityEvidence } from './types.js';

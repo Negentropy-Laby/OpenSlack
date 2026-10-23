@@ -1,6 +1,19 @@
 import { SAFE_IDENTIFIER_PATTERN, SAFE_IDENTIFIER_REGEX } from './workflow-binding-field-rules.js';
+import type { RunMeta } from '../run-store.js';
+import type { WorkflowIdentityEvidence } from '../types.js';
 export const WORKFLOW_RUN_ID_PATTERN = SAFE_IDENTIFIER_PATTERN;
 export const WORKFLOW_RUN_ID_REGEX = SAFE_IDENTIFIER_REGEX;
+
+/** Historical classification has no authority to infer an unrecorded source domain. */
+export function runMetaWorkflowIdentity(
+  meta: Pick<RunMeta, 'manifestHash' | 'manifestHashDomain'>,
+): WorkflowIdentityEvidence {
+  return {
+    digest: meta.manifestHash,
+    domain: meta.manifestHashDomain ?? 'unknown',
+    provenance: meta.manifestHashDomain === undefined ? 'unknown' : 'recorded',
+  };
+}
 
 /** Wire identity is platform-independent; historical path reads follow the host. */
 export function isWorkflowRunId(value: unknown): value is string {

@@ -1,0 +1,243 @@
+{
+  "schema": "openslack.issue415.delivery_run.v1",
+  "task_id": "TASK-2026-542732",
+  "issue_number": 415,
+  "agent_id": "codex_runtime_source-repair",
+  "run_id": "RUN-20261023103014-415delivery",
+  "record_kind": "initial_validation_snapshot_with_additive_followup",
+  "initial_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+  "top_level_validation_scope": "Initial snapshot for initial_candidate_sha; current_validation below supersedes candidate-specific results without replacing the historical evidence. review_repair_20261023 records the later local authorized subset and supersedes no historical result silently.",
+  "observation_anchor_at": "2026-10-23T10:58:29.698Z",
+  "phase_at_recording": "validated_for_independent_draft_publication",
+  "base_sha": "184adb088c6157ceec148061a6b8cef5f8444377",
+  "base_source": "freshly fetched origin/main; remote main equality checked before isolated worktree creation",
+  "branch": "agent/codex_runtime_source-repair/TASK-2026-542732/RUN-20261023103014-415delivery",
+  "worktree": ".worktrees/RUN-20261023103014-415delivery",
+  "original_run_id": "RUN-20260919113827-kv682q",
+  "original_base_sha": "06a680c69b0a7c38c003701ec4e7896bb45a2476",
+  "original_changed_file_count": 35,
+  "original_ledger_count": 3,
+  "original_content_sha256": "77685c2ce9b2112f01bc141086f706dc8f4c039a837aa74c84fde3748c4a2eb3",
+  "validated_content_sha256": "b711a753c10fc8a9147d544b1ab1dae1a813d454401c2f4e461213a62e7a6189",
+  "content_hash_algorithm": "sort 35 source paths; join path + NUL + SHA256(file bytes) with LF; SHA256",
+  "implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9",
+  "candidate_binding": "The commit containing this snapshot binds its files. Publication must verify local HEAD = remote branch = PR head = queried check head; the live bot receipt and PR carry the exact commit SHA.",
+  "recovery_archive": "/mnt/d/users/wsman/desktop/coding task/openslack-recovery/issue-415/RUN-20261023103014-415delivery",
+  "recovery_manifest_sha256": "01f5e9f95b7add05f85ab208d4d9e30317b9b737432f55e5d4178d42307d079d",
+  "recovery_patch_sha256": "33ae423ecf7d61d8e35d0158dd558f5ffa75dd6e4a075190fc0d7d3dde2dafb8",
+  "preservation": "All 35 original source files and 3 historical ledgers rehashed against the manifest and both backup copies. Original branch remains at 06a680c6. No credentials, runtime identity or dependencies copied; no worktree prune or claim cleanup.",
+  "principal_binding": "Existing primary-checkout codex_runtime_source-repair principal revalidated. Its bootstrap run identity is retained; the new run is a recorded continuation, not a copied or modified runtime identity.",
+  "claim_ref": "refs/heads/openslack/claims/issue-415",
+  "claim_id": "203e550c-ee33-4dc3-9304-c7c437c1d8da",
+  "claim_evidence": "https://github.com/Negentropy-Laby/OpenSlack/issues/415#issuecomment-5741602873",
+  "lease_at_recording": {
+    "operation": "supported heartbeat and readback",
+    "owner": "codex_runtime_source-repair",
+    "outcome": "completed",
+    "expires_at": "2026-10-23T12:58:29.698Z",
+    "next_heartbeat_at": "2026-10-23T11:13:29.698Z",
+    "heartbeat_minutes": 15,
+    "background_renewal": false
+  },
+  "publication_preconditions": "Revalidate live owner, lease, Issue scope, principal permission, exact 38 paths and configured bot identity before pushing. Bot service enforces installation permissions and synchronized head; preserve Draft and prohibit approval/merge.",
+  "scope_validation": "PASS: live manifest, capability, risk, forbidden-path and principal checks for 35 source files plus these 3 records; no registry/policy/config changes",
+  "repair_tests": {
+    "status": "PASS",
+    "files": 27,
+    "tests": 554,
+    "duration_seconds": 140.9,
+    "log": "focused-regression.log"
+  },
+  "build": "PASS",
+  "typecheck": "PASS",
+  "lint": "PASS_0_ERRORS_2_UNUSED_VARIABLE_WARNINGS",
+  "documentation": "PASS_161_ACTIVE_DOCUMENTS_103_MIGRATION_ENTRIES",
+  "workspace": "PASS",
+  "go_contracts": "PASS",
+  "source_lock": "PASS_229_BINDINGS_NO_INVENTORY_OR_AUTHORITY_CHANGE",
+  "test_inventory": {
+    "status": "FAIL_COUNTS_DRIFT_OUTSIDE_PRINCIPAL_SCOPE",
+    "registered_cases": 8077,
+    "collected_declared_cases": 8149,
+    "module_deltas": [
+      "modules.1:1392->1406",
+      "modules.2:2091->2104",
+      "modules.3:2139->2153",
+      "modules.4:4683->4742"
+    ],
+    "scope_evidence": "CORRECTION: the initial filterByPath probe checked forbidden paths, not allowed_paths membership. Explicit live membership excludes .openslack/modules.yaml and docs/status/current.md, and the verified principal also denies both. The effective intersection excludes them; no changes were made.",
+    "log": "test-inventory.log",
+    "scope_receipt": "scope-gaps-explicit.json"
+  },
+  "independent_reviews": [
+    {
+      "reviewer": "review415_identity",
+      "scope": "identity, source ownership, opaque resume, historical initialization and worker boundaries",
+      "result": "NO_REMAINING_P1_P2_AFTER_RECOVERY_2_FIX",
+      "reviewed_implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9"
+    },
+    {
+      "reviewer": "review415_lifecycle",
+      "scope": "audit v1/v2, persisted identity, finalize targets and zero-write boundaries, source pins and #417 retention",
+      "result": "NO_REMAINING_P1_P2_AFTER_RECOVERY_1_FIX",
+      "reviewed_implementation_diff_sha256": "e1b7a61f79dc936a632ecdd4ab0101684b92fc2bd42b5c4a36448bed71f10ea9"
+    }
+  ],
+  "container_qualification": "BLOCKED_LOCAL_DOCKER_DAEMON_UNAVAILABLE",
+  "hosted_ci_at_recording": "PENDING_DRAFT_PUBLICATION_QUERY_SAME_HEAD_LINUX_AND_WINDOWS_AFTER_PUBLICATION",
+  "historical_test_evidence": "Old 546-test PASS remains historical and is not reused as this run's result",
+  "external_plan_file": "MISSING: C:/Users/WSMAN/.claude/plans/23e6c168-pr-shimmering-meerkat.md; not reconstructed from archives",
+  "task_acceptance": "NOT_COMPLETE",
+  "human_approval": "NOT_REQUESTED_OR_GRANTED_BY_AGENT",
+  "merge": "NOT_AUTHORIZED",
+  "provider_calls": 0,
+  "r_ext": "NOT_RUN",
+  "excluded": ["#411", "GS10", "GS11", "GS12", "GS13", "production operations", "release"],
+  "current_validation": {
+    "observed_at": "2026-10-23T11:19:12Z",
+    "parent_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "reason": "Hosted full tests exposed lost safe missing-meta diagnostic compatibility; restore the fixed hint while retaining typed MANIFEST_INVALID and pre-import rejection.",
+    "source_content_sha256": "f6998535ae0ca6c3d40b4e036a387fe9698fc9f35d9d86c813b3d08a3d45c9be",
+    "implementation_diff_sha256": "9ac563a825d26a0e3e736ed0981c4f742990fd2d51effb52ea56dcdc1c976ec1",
+    "delivery_binding": "The additive commit containing this continuation is the next candidate; bot publication must recheck local/remote/PR/check SHAs. Previous candidate PASS is not inherited.",
+    "focused_tests": {
+      "status": "PASS",
+      "files": 28,
+      "tests": 581,
+      "duration_seconds": 102.5,
+      "log": "followup-focused.log"
+    },
+    "loader_red_green": "Two failing loader diagnostics reproduced, then 76 cases passed. The 581-case run includes these cases; counts are not added.",
+    "build": "PASS",
+    "typecheck": "PASS",
+    "lint": "PASS_0_ERRORS_2_WARNINGS",
+    "documentation": "PASS_161_ACTIVE_DOCUMENTS",
+    "workspace": "PASS",
+    "go_contracts": "PASS",
+    "source_lock": "PASS_229_BINDINGS_INVENTORY_UNCHANGED",
+    "independent_reviews": "review415_identity and review415_lifecycle both re-reviewed the four-file followup and exact 35-file hashes; no new P1/P2",
+    "scope_correction": "Explicit allowed_paths membership, forbidden filter and principal authorization are separate. CLI fixture, count/status paths, Windows timeout fixture paths and claude-loader.test.ts are outside the effective intersection. No excluded file was edited, moved or copied into another test path to bypass the scope.",
+    "remaining": [
+      "Two legacy CLI fixture failures require the exact excluded commands/__tests__/collaboration-workflow-issues.test.ts path; retain production verified-binding checks",
+      "Initial Windows artifact run also reported timeout and suite-launch failures in excluded fixtures; no unsupported baseline/flakiness claim",
+      "Initial inventory measured 8077 registered vs 8149 collected; this followup adds one declared case, so it is not a fresh current-head count result",
+      "Local Docker remains blocked; current-head hosted Linux/Windows must rerun after this push",
+      "Human approval, merge, task completion and release remain unperformed"
+    ]
+  },
+  "initial_hosted_observations": {
+    "head": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "full_tests": "8140 passed, 3 failed, 6 skipped; failure logs preserved. One loader failure is addressed by this followup; two excluded CLI fixtures remain.",
+    "windows_runtime": "PASS on the initial head only, not inherited by the followup",
+    "linux_runtime": "Still running at the continuation snapshot",
+    "tag_release": "SKIPPED, zero steps executed"
+  },
+  "findings": "findings.md",
+  "validation": "validation.md",
+  "review_repair_20261023": {
+    "observed_at": "2026-10-23T15:59:03.250230Z",
+    "record_kind": "local_reviewable_authorized_subset_not_published",
+    "parent_pr_head": "4327aa58009a3919b89212dbc21c458589454b12",
+    "local_implementation_commit": "f346cd5ea5a8813f2b955365258a6456531d3c19",
+    "source_diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+    "branch": "agent/codex_runtime_source-repair/TASK-2026-542732/RUN-20261023103014-415delivery",
+    "existing_pr": 425,
+    "draft": true,
+    "remote_publication": "NOT_RUN_RUNTIME_BINDING_MISSING",
+    "implementation_files": 30,
+    "scope": {
+      "static_changed_path_intersection": "PASS",
+      "requested_extra_paths": 12,
+      "task_amendment": "LIVE_VERIFIED",
+      "principal_amendment": "NOT_EFFECTIVE",
+      "runtime_identity": "MISSING_DO_NOT_BOOTSTRAP",
+      "additional_mcp_test": "TASK_AND_PRINCIPAL_PATH_NOT_ALLOWED",
+      "fresh_runtime_permission_snapshot": "NOT_AVAILABLE"
+    },
+    "verification": {
+      "focused": {
+        "status": "PASS",
+        "files": 11,
+        "cases": 351,
+        "log": "focused-owned-copy-final.log"
+      },
+      "full_linux": {
+        "status": "FAIL",
+        "passed": 8171,
+        "failed": 5,
+        "skipped": 6,
+        "total": 8182,
+        "log": "full-vitest-authorized.log",
+        "scope_note": "Executed before six additional identity compatibility cases; those six passed in the final focused run. No full final-tree PASS is claimed."
+      },
+      "known_cli_fixture_failures": 4,
+      "mcp_aggregate_failure": {
+        "status": "UNRESOLVED_OUTSIDE_SCOPE",
+        "isolated_cases": 20,
+        "isolated_result": "PASS",
+        "log": "mcp-failure-isolated.log",
+        "classification": "Both active blockers are legitimate; no baseline/flakiness fix claimed."
+      },
+      "build": "PASS",
+      "typecheck": "PASS",
+      "eslint": "0_ERRORS_0_WARNINGS",
+      "workflow_control_go_race": "PASS",
+      "workflow_control_go_vet": "PASS",
+      "sealed_runner_bundle": {
+        "status": "PASS_LOCAL_DEFAULT_OFF_AND_BYTE_VALIDATION",
+        "sha256": "41eae08d50f3d013a278f62ff27873000fe901d8a89226a46cd5ece7e80fdc94",
+        "bytes": 3046811,
+        "qualification": "No real PostgreSQL/container qualification implied"
+      },
+      "workspace": "PASS",
+      "golden": "7_OF_7_PASS",
+      "genesis": "5_OF_5_PASS",
+      "documentation": "PASS",
+      "status_projection_consistency": "PASS_WITH_OLD_8077_REGISTRY_ONLY",
+      "production_test_collector": {
+        "status": "FAIL_DRIFT",
+        "registered": 8077,
+        "collected": 8188,
+        "module_changes": {
+          "1": [1392, 1416],
+          "2": [2091, 2120],
+          "3": [2139, 2163],
+          "4": [4683, 4765]
+        },
+        "updated": false
+      },
+      "source_lock": {
+        "status": "PASS",
+        "bindings": 229,
+        "changed_existing_digests": 14,
+        "inventory_and_authority_unchanged": true
+      },
+      "new_head_hosted_windows_linux_packaging": "NOT_RUN_NOT_PUBLISHED",
+      "new_head_prms": "NOT_RUN_NOT_PUBLISHED"
+    },
+    "independent_readonly_review": {
+      "scope": "30-file source subset plus read-only diagnosis of MCP blocker",
+      "result": "NO_CONCRETE_NEW_DEFECT_IN_SOURCE_SUBSET",
+      "diff_sha256": "9c50e9807f64ba9e0bc94dc628375f0e4c4688e0b7dc5910597207912d1d78d7",
+      "limitations": "Not human approval, full acceptance, or review of permission-blocked implementation."
+    },
+    "claim_heartbeat": {
+      "result": "PASS_EXACT_OWNER_REF",
+      "expires_at": "2026-10-23T17:45:42.439Z",
+      "log": "claim-heartbeat-direct-native.log"
+    },
+    "evidence_root": "/var/tmp/openslack-pr425-repair-evidence-20261023",
+    "remaining": [
+      "Maintainer applies governed principal amendment and restores/identifies original fixed runtime binding without bootstrap",
+      "Core identity shared authority and PR gate binding projection",
+      "Controlled internal package subpath and build-first test entries",
+      "Old CLI fixture migration and canonical count/projection regeneration",
+      "Additional authorized MCP test-only correction and complete final full suite",
+      "Update-only #425 publication, exact-head hosted checks and PRMS"
+    ],
+    "acceptance": "NOT_COMPLETE",
+    "human_approval": "NOT_REQUESTED",
+    "merge": "NOT_AUTHORIZED",
+    "deployment": "NOT_RUN"
+  }
+}

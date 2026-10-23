@@ -1,4 +1,6 @@
 import type * as MockModule2 from '@openslack/workflows';
+// Fixture ownership must use the same built module as the CLI package consumer.
+import { createWorkflowSourceSnapshot } from '../../../../packages/workflows/dist/internal/workflow-source-snapshot.js';
 import type * as MockModule1 from '@openslack/collaboration';
 import type * as MockModule0 from '@openslack/operator';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -9,6 +11,7 @@ import {
   executeApproval,
   executeTrustChange,
   executeWorkflowRun,
+  finalizeWorkflowPr,
   recordWorkbenchActionFromTui,
   saveWorkflowRunScriptFromTui,
   splitWorkflowIntoIssues,
@@ -23,6 +26,10 @@ import type { ActionRegistryPort } from '@openslack/operator';
 import * as collaboration from '@openslack/collaboration';
 import * as pr from '@openslack/pr';
 import * as github from '@openslack/github';
+import {
+  createWorkflowEvidence,
+  evaluateWorkflowGate as evaluateRealWorkflowGate,
+} from '../../../../packages/pr/src/workflow-gate.js';
 
 // ── Module-level mocks ──────────────────────────────────────────────────────────
 
@@ -47,10 +54,17 @@ vi.mock('@openslack/collaboration', async () => {
 
 vi.mock('@openslack/pr', () => ({
   mergeIfReady: vi.fn(),
+  fetchPRDetails: vi.fn(),
+  loadPRCodeownerEvidence: vi.fn(),
+  evaluateWorkflowGate: vi.fn(),
 }));
 
 vi.mock('@openslack/github', () => ({
   publishWorkflowSplit: vi.fn(),
+  finalizeWorkflowPR: vi.fn(),
+  previewWorkflowFinalization: vi.fn(),
+  fetchWorkflowLifecycleIssues: vi.fn(),
+  getPR: vi.fn(),
 }));
 
 vi.mock('@openslack/workflows', async () => {
@@ -189,6 +203,176 @@ function githubReviewParams(overrides?: Partial<ApprovalExecutionParams>): Appro
 }
 
 // ── executeApproval ─────────────────────────────────────────────────────────────
+
+describe('finalizeWorkflowPr evidence', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(github.previewWorkflowFinalization).mockResolvedValue(undefined);
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue({
+      workflowEvidence: {},
+      workflowGovernanceIssue: { issueNumber: 41, prNumber: 42 },
+      changedFiles: [],
+      reviews: [],
+      baseSha: 'base',
+      headSha: 'head',
+      author: 'author',
+    } as never);
+    vi.mocked(pr.loadPRCodeownerEvidence).mockResolvedValue({ owners: ['reviewer'] } as never);
+    vi.mocked(pr.evaluateWorkflowGate).mockReturnValue({
+      overall: 'PASS',
+      criteria: [{ name: 'Governance issue', status: 'PASS' }],
+      evidenceHash: 'sha256:artifact',
+      trustDecision: 'trusted',
+      governanceIssue: 41,
+      trustReviewer: 'reviewer',
+      trustReviewCommitOid: 'head',
+    } as never);
+    vi.mocked(github.finalizeWorkflowPR).mockResolvedValue({
+      closedIssues: [41],
+      commentedIssues: [41],
+      updatedLabels: [41],
+      errors: [],
+      failures: [],
+    });
+  });
+
+  it('returns every confirmed partial receipt and the typed failure to the caller', async () => {
+    vi.mocked(github.finalizeWorkflowPR).mockResolvedValueOnce({
+      closedIssues: [],
+      commentedIssues: [41],
+      updatedLabels: [41],
+      errors: ['write failed'],
+      failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close', issueNumber: 41 }],
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: false,
+      data: {
+        closed: [],
+        commented: [41],
+        updatedLabels: [41],
+        failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close' }],
+      },
+    });
+  });
+
+  it('does not select an arbitrary body Issue when governance is not required', async () => {
+    const path = '.openslack/workflows/existing.mjs';
+    const report = {
+      workflowEvidence: createWorkflowEvidence({
+        baseSha: 'base',
+        headSha: 'head',
+        baseTree: [{ path, sha: 'old', mode: '100644', type: 'blob' }],
+        headTree: [{ path, sha: 'new', mode: '100644', type: 'blob' }],
+      }),
+      changedFiles: [path],
+      body: 'Historical discussion: Workflow governance #999',
+      author: 'author',
+      baseSha: 'base',
+      headSha: 'head',
+      reviews: [
+        {
+          user: 'human-reviewer',
+          state: 'APPROVED',
+          commitOid: 'head',
+          body: 'Workflow-Trust: trusted',
+        },
+      ],
+    };
+    const gate = evaluateRealWorkflowGate(report);
+    expect(gate.overall).toBe('PASS');
+    expect(gate.governanceIssue).toBe(999);
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue(report as never);
+    vi.mocked(pr.evaluateWorkflowGate).mockReturnValue(gate);
+    expect(await finalizeWorkflowPr('existing', 42)).toMatchObject({
+      success: true,
+      data: { governanceRequired: false },
+      message: expect.stringContaining('no lifecycle writes'),
+    });
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    expect(github.fetchWorkflowLifecycleIssues).not.toHaveBeenCalled();
+  });
+
+  it('reaches credential-free preview before a live repository query', async () => {
+    vi.mocked(github.previewWorkflowFinalization).mockResolvedValueOnce({
+      dryRun: true,
+      errors: [],
+      closedIssues: [],
+      commentedIssues: [],
+      updatedLabels: [],
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: true,
+      data: { dryRun: true },
+      message: expect.stringContaining('preview only'),
+    });
+    expect(pr.fetchPRDetails).not.toHaveBeenCalled();
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without repository artifact evidence', async () => {
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue({} as never);
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({ success: false });
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+  });
+
+  it('forwards reviewed head/base once and does not perform an intermediate PR lookup', async () => {
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({ success: true });
+    expect(github.finalizeWorkflowPR).toHaveBeenCalledExactlyOnceWith(
+      42,
+      expect.objectContaining({
+        governanceIssue: 41,
+        expectedHeadSha: 'head',
+        expectedBaseSha: 'base',
+      }),
+    );
+    expect(github.getPR).not.toHaveBeenCalled();
+    expect(github.fetchWorkflowLifecycleIssues).not.toHaveBeenCalled();
+  });
+
+  it.each(['PR_NOT_MERGED', 'PR_EVIDENCE_DRIFT', 'PR_QUERY_FAILED'])(
+    'reports the shared publisher refusal %s',
+    async (code) => {
+      vi.mocked(github.finalizeWorkflowPR).mockResolvedValueOnce({
+        closedIssues: [],
+        commentedIssues: [],
+        updatedLabels: [],
+        errors: [code],
+        failures: [{ code: code as 'PR_NOT_MERGED', stage: 'preflight' }],
+      });
+      expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+        success: false,
+        message: expect.stringContaining(code),
+      });
+      expect(github.getPR).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['missing', 'wrong-pr', 'wrong-issue'])(
+    'refuses %s queried governance evidence without throwing a TypeError',
+    async (kind) => {
+      vi.mocked(pr.fetchPRDetails).mockResolvedValueOnce({
+        workflowEvidence: {},
+        workflowGovernanceIssue:
+          kind === 'missing'
+            ? undefined
+            : {
+                issueNumber: kind === 'wrong-issue' ? 99 : 41,
+                prNumber: kind === 'wrong-pr' ? 99 : 42,
+              },
+        changedFiles: [],
+        reviews: [],
+        baseSha: 'base',
+        headSha: 'head',
+        author: 'author',
+      } as never);
+      expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+        success: false,
+        message: expect.stringContaining('governance issue is missing'),
+      });
+      expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe('executeApproval', () => {
   beforeEach(() => {
@@ -627,6 +811,33 @@ describe('executeWorkflowRun', () => {
     vi.clearAllMocks();
   });
 
+  it('returns a bounded typed loader refusal without leaking message or identity sentinels', async () => {
+    const { findWorkflow, loadWorkflow, WorkflowSourceEvidenceError } =
+      await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValueOnce({
+      name: 'test',
+      path: '/test/invalid.mjs',
+      source: 'openslack-project',
+    });
+    vi.mocked(loadWorkflow).mockRejectedValueOnce(
+      new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE_SENTINEL', {
+        domain: 'runner-v2-source',
+        stored: 'a'.repeat(64),
+        current: 'PRIVATE_CURRENT_SENTINEL',
+      }),
+    );
+    const result = await executeWorkflowRun('test', 'preview', ROOT);
+    expect(result).toMatchObject({
+      success: false,
+      data: {
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'SOURCE_DRIFT',
+        identities: { stored: 'a'.repeat(64) },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+  });
+
   it('returns not found for missing workflow', async () => {
     const result = await executeWorkflowRun('deploy-production', 'preview', process.cwd());
 
@@ -671,6 +882,12 @@ describe('executeWorkflowRun', () => {
       },
       format: 'openslack-native',
       hash: 'hash123',
+      sourceSnapshot: createWorkflowSourceSnapshot(new Uint8Array([1, 2, 3]), {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'medium',
+      }),
     });
     vi.mocked(TrustStore).mockImplementation(
       () =>
@@ -723,7 +940,6 @@ describe('executeWorkflowRun', () => {
       executeWorkflowThroughRunner,
       buildApprovalManifest,
       readWorkflowRunnerSourceBytes,
-      createWorkflowSourceSnapshot,
     } = await import('@openslack/workflows');
     const meta = {
       name: 'test-wf',
@@ -755,7 +971,10 @@ describe('executeWorkflowRun', () => {
     });
     const result = await executeWorkflowRun('test-wf', 'run', ROOT);
     expect(result.success).toBe(false);
-    expect(result.message).toContain('changed since its snapshot');
+    expect(result.data).toMatchObject({
+      code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+      reasonCode: 'SOURCE_DRIFT',
+    });
     expect(buildApprovalManifest).not.toHaveBeenCalled();
     expect(executeWorkflowThroughRunner).not.toHaveBeenCalled();
   });
@@ -815,6 +1034,12 @@ describe('executeWorkflowRun', () => {
       },
       format: 'openslack-native',
       hash: 'hash123',
+      sourceSnapshot: createWorkflowSourceSnapshot(new Uint8Array([1, 2, 3]), {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'low',
+      }),
     });
     vi.mocked(executeDryRun).mockResolvedValue({
       dryRun: true,

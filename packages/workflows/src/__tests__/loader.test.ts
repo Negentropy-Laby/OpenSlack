@@ -375,6 +375,74 @@ export const meta: WorkflowMeta = {
 });
 
 describe('loadWorkflow integration', () => {
+  it('reports safe path and field diagnostics while keeping source out of the message', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-fields-'));
+    const path = join(directory, 'invalid-name.mjs');
+    writeFileSync(
+      path,
+      'export const meta = { name: 42, description: "PRIVATE_SOURCE_SENTINEL", phases: [] };',
+    );
+    try {
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        reasonCode: 'MANIFEST_INVALID',
+        message: expect.stringContaining('invalid-name.mjs'),
+        cause: expect.any(Error),
+      });
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        message: expect.stringContaining('name'),
+      });
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        message: expect.not.stringContaining('PRIVATE_SOURCE_SENTINEL'),
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it.each([
+    'static',
+    'static-missing-meta',
+    'runtime',
+    'static-null-input',
+    'runtime-null-input',
+    'runtime-bigint',
+  ])('classifies invalid %s manifests without exposing source content', async (kind) => {
+    const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-invalid-'));
+    const path = join(directory, 'invalid.mjs');
+    let source =
+      kind === 'static'
+        ? 'export const meta = { name: 42 };'
+        : 'export const meta = { name: "invalid-runtime", description: "test", phases: [{ title: "Run", detail: "Run" }] }; meta.name = 42; export async function run() {}';
+    if (kind === 'static-missing-meta') {
+      source = 'throw new Error("PRIVATE_SOURCE_MUST_NOT_BE_IMPORTED");';
+    }
+    if (kind.endsWith('null-input') || kind === 'runtime-bigint') {
+      const inputs = kind === 'static-null-input' ? 'inputs: { x: null },' : '';
+      const mutation =
+        kind === 'runtime-null-input'
+          ? 'meta.inputs = { x: null };'
+          : kind === 'runtime-bigint'
+            ? 'meta.inputs = { x: { type: "string", description: "test", default: 1n } };'
+            : '';
+      source = `export const meta = { name: 'invalid-input', description: 'test', ${inputs} phases: [{title: 'Run', detail: 'Run'}] }; ${mutation} export async function run() {}`;
+    }
+    writeFileSync(path, source);
+    try {
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'MANIFEST_INVALID',
+      });
+      if (kind === 'static-missing-meta') {
+        await expect(loadWorkflow(path)).rejects.toMatchObject({
+          message: expect.stringContaining('no "export const meta'),
+        });
+        await expect(loadWorkflow(path)).rejects.toMatchObject({
+          message: expect.not.stringContaining('PRIVATE_SOURCE'),
+        });
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('detects format of a valid module object', () => {
     // Test detectFormat directly since loadWorkflow requires file I/O
     const nativeModule = {
@@ -409,9 +477,15 @@ export async function run() { return { status: 'complete' }; }
     );
 
     try {
-      await expect(loadWorkflow(workflowPath)).rejects.toThrow(
-        /runtime manifest does not match its statically analyzed manifest/u,
-      );
+      await expect(loadWorkflow(workflowPath)).rejects.toMatchObject({
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'MANIFEST_DRIFT',
+        identities: {
+          domain: 'runner-v2-manifest',
+          stored: expect.any(String),
+          current: expect.any(String),
+        },
+      });
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
