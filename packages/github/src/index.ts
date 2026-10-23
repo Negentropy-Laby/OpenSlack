@@ -543,6 +543,7 @@ export type {
   WorkflowGovernanceIssue,
   WorkflowReviewIssue,
   WorkflowRunIssue,
+  WorkflowRunIdentityEvidence,
   WorkflowImprovementIssue,
   WorkflowSplitIssue,
 } from './workflow-issues.js';

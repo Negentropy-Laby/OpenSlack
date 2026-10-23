@@ -495,6 +495,13 @@ export interface WorkflowIdentity {
   readonly digest: string;
 }
 
+/** A diagnostic identity is evidence, not an execution capability. */
+export interface WorkflowIdentityEvidence {
+  readonly digest: string;
+  readonly domain: WorkflowIdentity['domain'] | 'function-source-sha256' | 'unknown';
+  readonly provenance: 'recorded' | 'inferred' | 'unknown';
+}
+
 export interface WorkflowModule {
   meta: WorkflowMeta;
   preview?: OpenSlackWorkflow['preview'];

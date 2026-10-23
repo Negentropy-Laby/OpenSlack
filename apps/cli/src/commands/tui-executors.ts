@@ -1,4 +1,4 @@
-import { createWorkflowSourceSnapshot, verifyWorkflowSourceSnapshot } from '@openslack/workflows';
+import { requireWorkflowSourceSnapshot, workflowSourceEvidenceCause } from '@openslack/workflows';
 import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui';
 import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import {
@@ -369,9 +369,7 @@ export async function executeWorkflowRun(
       discoveredPath: found.path,
       source: found.source,
     });
-    const sourceSnapshot = mod.sourceSnapshot
-      ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
-      : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
+    const sourceSnapshot = requireWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta);
     // Step 2: Build approval manifest from dry-run simulated effects
     const inputHash = hashString(JSON.stringify({}));
     const approvalManifest = buildApprovalManifest(
@@ -408,6 +406,18 @@ export async function executeWorkflowRun(
       data: { status: result.status, dryRunEffects: dryResult.simulatedEffects },
     };
   } catch (error: unknown) {
+    const sourceError = workflowSourceEvidenceCause(error);
+    if (sourceError) {
+      return {
+        success: false,
+        message: `${sourceError.reasonCode}: ${sourceError.message} Reload the workflow and repeat dry-run before approval.`,
+        data: {
+          code: sourceError.code,
+          reasonCode: sourceError.reasonCode,
+          identities: sourceError.identities,
+        },
+      };
+    }
     if (error instanceof WorkflowPausedError) {
       return {
         success: false,
@@ -496,27 +506,77 @@ export async function requestWorkflowReview(
 export async function finalizeWorkflowPr(
   workflowName: string,
   prNumber: number,
-  root: string,
+  _root: string,
 ): Promise<TuiActionResult> {
   try {
-    const { findWorkflow, loadWorkflow, TrustStore } = await import('@openslack/workflows');
-    const found = await findWorkflow(workflowName);
-    if (!found) {
-      return { success: false, message: `Workflow "${workflowName}" not found.` };
+    const { fetchPRDetails, loadPRCodeownerEvidence, evaluateWorkflowGate } =
+      await import('@openslack/pr');
+    const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
+    if (!report.workflowEvidence) {
+      return {
+        success: false,
+        message: 'Repository-derived Workflow artifact evidence is unavailable.',
+      };
     }
-    const mod = await loadWorkflow(found.path);
-    const trustStore = new TrustStore({ rootDir: root });
-    const trustDecision = trustStore.get(workflowName) ?? 'untrusted';
+    const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
+      requireLive: true,
+      strictEvidence: true,
+    });
+    const gate = evaluateWorkflowGate({
+      changedFiles: report.changedFiles,
+      body: report.body ?? '',
+      author: report.author,
+      baseSha: report.baseSha,
+      headSha: report.headSha,
+      reviews: report.reviews,
+      workflowEvidence: report.workflowEvidence,
+      governanceIssue: report.workflowGovernanceIssue,
+      codeowners,
+    });
+    if (
+      gate.overall !== 'PASS' ||
+      !gate.evidenceHash ||
+      !gate.trustDecision ||
+      !gate.governanceIssue ||
+      !gate.criteria.some(
+        (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
+      ) ||
+      report.workflowGovernanceIssue?.issueNumber !== gate.governanceIssue ||
+      report.workflowGovernanceIssue.prNumber !== prNumber
+    ) {
+      return {
+        success: false,
+        message:
+          gate.overall !== 'PASS'
+            ? `Cannot finalize Workflow artifact: gate is ${gate.overall}.`
+            : 'Cannot finalize Workflow artifact: repository evidence hash, trust decision, or verified bound governance issue is missing.',
+      };
+    }
 
-    const { finalizeWorkflowPR, fetchWorkflowLifecycleIssues } = await import('@openslack/github');
-    const lifecycle = await fetchWorkflowLifecycleIssues(workflowName);
+    const { finalizeWorkflowPR, getPR } = await import('@openslack/github');
+    const current = await getPR(prNumber, { requireLive: true, strictEvidence: true });
+    if (
+      !current?.merged ||
+      !report.headSha ||
+      !report.baseSha ||
+      current.head.sha !== report.headSha ||
+      current.base.sha !== report.baseSha
+    ) {
+      return {
+        success: false,
+        message:
+          'Workflow finalization requires a merged PR matching the reviewed repository evidence.',
+      };
+    }
 
     const result = await finalizeWorkflowPR(prNumber, {
-      proposalIssue: lifecycle.proposalIssue?.number,
-      reviewIssue: lifecycle.reviewIssue?.number,
-      phaseIssues: lifecycle.phaseIssues.map((p) => p.number),
-      workflowHash: mod.hash,
-      trustDecision: trustDecision as 'trusted' | 'untrusted' | 'core',
+      governanceIssue: gate.governanceIssue,
+      workflowHash: gate.evidenceHash,
+      trustDecision: gate.trustDecision,
+      trustReviewer: gate.trustReviewer,
+      trustReviewCommitOid: gate.trustReviewCommitOid,
+      expectedHeadSha: report.headSha,
+      expectedBaseSha: report.baseSha,
     });
 
     if (result.errors.length > 0) {
@@ -533,7 +593,9 @@ export async function finalizeWorkflowPr(
 
     return {
       success: true,
-      message: `Workflow PR #${prNumber} finalized. Closed ${result.closedIssues.length} issue(s), updated ${result.commentedIssues.length}.`,
+      message: result.dryRun
+        ? `Workflow ${workflowName} PR #${prNumber}: preview only; live publication verification and lifecycle writes were not performed.`
+        : `Workflow ${workflowName} PR #${prNumber} governance finalized. Unbound lifecycle issues were left unchanged.`,
       data: { closed: result.closedIssues, commented: result.commentedIssues },
     };
   } catch (error: unknown) {

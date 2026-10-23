@@ -1,7 +1,8 @@
 import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
+import { createWorkflowRunStoreRecoveryAccess } from '../internal/workflow-run-store-recovery-access.js';
 import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
 import { resolveWorkflowRunProjectionRoot } from '../workflow-run-projection.js';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -123,6 +124,7 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
       workflowName: meta.name,
       mode: 'execute',
       manifestHash: descriptor.workflowSourceHash,
+      manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
       args: {},
       startedAt: descriptor.createdAt,
       budget,
@@ -182,22 +184,97 @@ async function execution(mode: 'run' | 'resume', meta = manifest, historicalRunI
 
 // Real recovery files include Windows owner-only ACL checks on each write.
 describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
-  it('actually resumes a historical raw Go projection without rewriting its metadata', async () => {
+  it.each(['v2', 'raw', 'different'] as const)(
+    'recovers only an anchored historical partial initialization with %s metadata',
+    async (identity) => {
+      const fixture = await execution('run');
+      const meta = {
+        runId: fixture.runId,
+        workflowName: fixture.descriptor.workflowId,
+        mode: 'execute' as const,
+        startedAt: fixture.descriptor.createdAt,
+        args: {},
+        manifestHash: fixture.descriptor.workflowSourceHash,
+        manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2' as const,
+      };
+      // Model the older worker's local-first crash window: the files are running
+      // but the independently accepted Go authority still has its created head.
+      const legacyWriter = new RunStore({
+        baseDir: fixture.baseDir,
+        access: createWorkflowRunStoreRecoveryAccess(),
+      });
+      const { manifestHashDomain: _domain, ...legacyMeta } = meta;
+      await legacyWriter.initRun(fixture.runId, {
+        ...legacyMeta,
+        manifestHash:
+          identity === 'v2'
+            ? fixture.descriptor.workflowSourceHash
+            : identity === 'raw'
+              ? fixture.sourceSnapshot.rawHash
+              : 'f'.repeat(64),
+      });
+      const path = fixture.reader.metaPath(fixture.runId);
+      const before = await readFile(path);
+      expect(await fixture.store.runExists(fixture.runId)).toBe(false);
+      const transition = vi.spyOn(fixture.authority, 'transition');
+      if (identity === 'v2') {
+        await expect(fixture.store.initRun(fixture.runId, meta)).resolves.toBeUndefined();
+        expect(transition).toHaveBeenCalledTimes(1);
+        expect(
+          await fixture.authority.read(fixture.runId, fixture.descriptor.authorityRoute),
+        ).toMatchObject({ state: 'running' });
+      } else {
+        await expect(fixture.store.initRun(fixture.runId, meta)).rejects.toMatchObject({
+          code: 'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
+        });
+        expect(transition).not.toHaveBeenCalled();
+      }
+      expect(await readFile(path)).toEqual(before);
+    },
+  );
+  it('rejects execution-manifest drift before resuming the workflow', async () => {
     const fixture = await execution('resume');
-    const oldMeta = (await fixture.reader.loadMeta(fixture.runId))!;
-    const historicalMeta = { ...oldMeta, manifestHash: fixture.sourceSnapshot.rawHash };
-    await writeFile(fixture.reader.metaPath(fixture.runId), JSON.stringify(historicalMeta));
+    let launched = false;
     await expect(
-      fixture.execute(async () => ({ status: 'completed', resumed: true })),
-    ).resolves.toMatchObject({ status: 'completed' });
-    expect(await fixture.reader.loadMeta(fixture.runId)).toEqual(historicalMeta);
-    expect(
-      await fixture.authority.read(fixture.runId, fixture.descriptor.authorityRoute),
-    ).toMatchObject({
-      state: 'completed',
-      workflowSourceHash: fixture.descriptor.workflowSourceHash,
-    });
+      fixture.execute(
+        async () => {
+          launched = true;
+          return { status: 'completed' };
+        },
+        { manifest: { ...fixture.options.manifest, description: 'drifted execution manifest' } },
+      ),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_RESUME_RECOVERY_REQUIRED' });
+    expect(launched).toBe(false);
   });
+  it.each(['raw', 'v2'] as const)(
+    'actually resumes a historical %s Go projection without rewriting its metadata',
+    async (domain) => {
+      const fixture = await execution('resume');
+      const oldMeta = (await fixture.reader.loadMeta(fixture.runId))!;
+      const { manifestHashDomain: _domain, ...untaggedMeta } = oldMeta;
+      const historicalMeta = {
+        ...untaggedMeta,
+        manifestHash:
+          domain === 'raw'
+            ? fixture.sourceSnapshot.rawHash
+            : fixture.sourceSnapshot.workflowSourceHash,
+      };
+      const path = fixture.reader.metaPath(fixture.runId);
+      await writeFile(path, JSON.stringify(historicalMeta, null, 3) + '\n');
+      const before = await readFile(path);
+      await expect(
+        fixture.execute(async () => ({ status: 'completed', resumed: true })),
+      ).resolves.toMatchObject({ status: 'completed' });
+      expect(await fixture.reader.loadMeta(fixture.runId)).toEqual(historicalMeta);
+      expect(await readFile(path)).toEqual(before);
+      expect(
+        await fixture.authority.read(fixture.runId, fixture.descriptor.authorityRoute),
+      ).toMatchObject({
+        state: 'completed',
+        workflowSourceHash: fixture.descriptor.workflowSourceHash,
+      });
+    },
+  );
 
   it.runIf(process.platform !== 'win32')(
     'reconstructs an accepted historical POSIX run without registering authority',
@@ -209,6 +286,7 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
         mode: 'execute',
         startedAt: fixture.descriptor.createdAt,
         manifestHash: fixture.descriptor.workflowSourceHash,
+        manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
         args: {},
       });
       expect(fixture.authority.accept).not.toHaveBeenCalled();
@@ -243,6 +321,7 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
           mode: 'execute',
           startedAt: fixture.descriptor.createdAt,
           manifestHash: fixture.descriptor.workflowSourceHash,
+          manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
           args: mismatch === 'input' ? { changed: true } : {},
         }),
       ).rejects.toMatchObject({
@@ -253,6 +332,70 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
       });
       expect(transition).not.toHaveBeenCalled();
       await expect(fixture.reader.runExists(fixture.runId)).resolves.toBe(false);
+    },
+  );
+  it.each(['missing-domain', 'raw-domain', 'wrong-digest'] as const)(
+    'rejects new projection %s before authority or file writes',
+    async (kind) => {
+      const fixture = await execution('run');
+      const transition = vi.spyOn(fixture.authority, 'transition');
+      await expect(
+        fixture.store.initRun(fixture.runId, {
+          runId: fixture.runId,
+          workflowName: fixture.descriptor.workflowId,
+          mode: 'execute',
+          startedAt: fixture.descriptor.createdAt,
+          args: {},
+          manifestHash:
+            kind === 'wrong-digest' ? 'f'.repeat(64) : fixture.descriptor.workflowSourceHash,
+          ...(kind === 'missing-domain'
+            ? {}
+            : {
+                manifestHashDomain:
+                  kind === 'raw-domain'
+                    ? ('raw-sha256' as const)
+                    : ('openslack.workflow-runner.workflow-source.v2' as const),
+              }),
+        }),
+      ).rejects.toMatchObject({ code: 'WORKFLOW_RUN_EVIDENCE_INVALID' });
+      expect(transition).not.toHaveBeenCalled();
+      expect(await fixture.reader.runExists(fixture.runId)).toBe(false);
+    },
+  );
+
+  it.each(['domain', 'digest'] as const)(
+    'rejects existing projection %s drift without writes',
+    async (kind) => {
+      const fixture = await execution('run');
+      const meta = {
+        runId: fixture.runId,
+        workflowName: fixture.descriptor.workflowId,
+        mode: 'execute' as const,
+        startedAt: fixture.descriptor.createdAt,
+        args: {},
+        manifestHash: fixture.descriptor.workflowSourceHash,
+        manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2' as const,
+      };
+      await fixture.store.initRun(fixture.runId, meta);
+      const path = fixture.reader.metaPath(fixture.runId);
+      const recorded = (await fixture.reader.loadMeta(fixture.runId))!;
+      await writeFile(
+        path,
+        JSON.stringify({
+          ...recorded,
+          ...(kind === 'domain'
+            ? { manifestHashDomain: 'raw-sha256' }
+            : { manifestHash: 'f'.repeat(64) }),
+        }),
+      );
+      const before = await readFile(path);
+      const transition = vi.spyOn(fixture.authority, 'transition');
+      transition.mockClear();
+      await expect(fixture.store.initRun(fixture.runId, meta)).rejects.toMatchObject({
+        code: 'WORKFLOW_RUNNER_GO_PROJECTION_RECONCILIATION_REQUIRED',
+      });
+      expect(transition).not.toHaveBeenCalled();
+      expect(await readFile(path)).toEqual(before);
     },
   );
   it.each(['run', 'resume'] as const)(

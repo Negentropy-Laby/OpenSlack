@@ -1,4 +1,65 @@
 import { WORKFLOW_RUNNER_CAPABILITIES } from '../workflow-runner-contract.js';
+import { bindGoWorkflowResumeIdentity, validateGoWorkflowResumeContext } from '../resume.js';
+import { createWorkflowSourceSnapshot } from '../internal/workflow-source-snapshot.js';
+import type { WorkflowMeta } from '../types.js';
+import {
+  validateWorkflowRunRouteReceipt,
+  type WorkflowRunRouteReceipt,
+} from '../workflow-run-routing.js';
+
+export function routeReceiptFixture(
+  overrides: Partial<WorkflowRunRouteReceipt> = {},
+): WorkflowRunRouteReceipt {
+  return validateWorkflowRunRouteReceipt({
+    schema: 'openslack.workflow_run_route_receipt.v1',
+    workspaceId: 'workspace.test',
+    runId: 'run-001',
+    workflowId: 'test-scan',
+    workflowVersion: '0.0.0',
+    workflowSourceHash: 'a'.repeat(64),
+    manifestHash: 'b'.repeat(64),
+    inputHash: 'c'.repeat(64),
+    route: {
+      backend: 'go',
+      authority: 'workflow-control',
+      routingEpoch: 1,
+      authorityBuildHash: 'd'.repeat(64),
+    },
+    policyHash: 'e'.repeat(64),
+    correlationId: 'correlation.test',
+    qualificationEnvironmentId: 'test',
+    selectedAt: '2020-01-01T00:00:00.000Z',
+    expiresAt: '2020-01-02T00:00:00.000Z',
+    ...overrides,
+  });
+}
+
+export function boundResumeIdentityFixture(
+  meta: WorkflowMeta,
+  source = 'a'.repeat(64),
+  runId = 'run-001',
+) {
+  const bytes = Buffer.from(source);
+  const snapshot = createWorkflowSourceSnapshot(bytes, meta);
+  const route = routeReceiptFixture({
+    runId,
+    workflowId: meta.name,
+    workflowVersion: meta.version ?? '0.0.0',
+    workflowSourceHash: snapshot.workflowSourceHash,
+    manifestHash: snapshot.manifestHash,
+  });
+  return bindGoWorkflowResumeIdentity(
+    validateGoWorkflowResumeContext(runId, route, route.workspaceId),
+    {
+      meta,
+      format: 'openslack-native',
+      hash: snapshot.rawHash,
+      sourceSnapshot: snapshot,
+      run: async () => ({ status: 'completed' }),
+    },
+    bytes,
+  );
+}
 import {
   createWorkflowRunnerV2ExecutionDescriptor,
   type CreateWorkflowRunnerV2ExecutionDescriptorInput,

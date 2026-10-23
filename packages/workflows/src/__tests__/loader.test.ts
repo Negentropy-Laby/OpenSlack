@@ -375,6 +375,36 @@ export const meta: WorkflowMeta = {
 });
 
 describe('loadWorkflow integration', () => {
+  it.each(['static', 'runtime', 'static-null-input', 'runtime-null-input', 'runtime-bigint'])(
+    'classifies invalid %s manifests without exposing source content',
+    async (kind) => {
+      const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-invalid-'));
+      const path = join(directory, 'invalid.mjs');
+      let source =
+        kind === 'static'
+          ? 'export const meta = { name: 42 };'
+          : 'export const meta = { name: "invalid-runtime", description: "test", phases: [{ title: "Run", detail: "Run" }] }; meta.name = 42; export async function run() {}';
+      if (kind.endsWith('null-input') || kind === 'runtime-bigint') {
+        const inputs = kind === 'static-null-input' ? 'inputs: { x: null },' : '';
+        const mutation =
+          kind === 'runtime-null-input'
+            ? 'meta.inputs = { x: null };'
+            : kind === 'runtime-bigint'
+              ? 'meta.inputs = { x: { type: "string", description: "test", default: 1n } };'
+              : '';
+        source = `export const meta = { name: 'invalid-input', description: 'test', ${inputs} phases: [{title: 'Run', detail: 'Run'}] }; ${mutation} export async function run() {}`;
+      }
+      writeFileSync(path, source);
+      try {
+        await expect(loadWorkflow(path)).rejects.toMatchObject({
+          code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+          reasonCode: 'MANIFEST_INVALID',
+        });
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
   it('detects format of a valid module object', () => {
     // Test detectFormat directly since loadWorkflow requires file I/O
     const nativeModule = {
@@ -409,9 +439,15 @@ export async function run() { return { status: 'complete' }; }
     );
 
     try {
-      await expect(loadWorkflow(workflowPath)).rejects.toThrow(
-        /runtime manifest does not match its statically analyzed manifest/u,
-      );
+      await expect(loadWorkflow(workflowPath)).rejects.toMatchObject({
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'MANIFEST_DRIFT',
+        identities: {
+          domain: 'runner-v2-manifest',
+          stored: expect.any(String),
+          current: expect.any(String),
+        },
+      });
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

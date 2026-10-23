@@ -256,6 +256,7 @@ async function initializeRun(options: {
     workflowName: options.manifest.name,
     mode: options.mode,
     manifestHash: options.manifestHash,
+    manifestHashDomain: 'openslack.workflow-runner.workflow-source.v2',
     argsEncoding: WORKFLOW_ARGUMENTS_SCHEMA,
     args: options.args,
     startedAt,
@@ -635,8 +636,14 @@ export async function executeGoAuthorityResume(
       'legacy pending agent controls are read-only evidence and cannot authorize Go execution',
     );
   }
+  let storedIdentity;
   try {
-    resolveWorkflowIdentityHash(workflow, manifest);
+    storedIdentity = matchStoredWorkflowIdentity(
+      meta.manifestHash,
+      workflow,
+      manifest,
+      meta.manifestHashDomain,
+    );
   } catch (error) {
     throw new WorkflowResumeRecoveryRequiredError(
       runId,
@@ -650,7 +657,7 @@ export async function executeGoAuthorityResume(
     meta.runId !== runId ||
     meta.workflowName !== manifest.name ||
     meta.mode !== 'execute' ||
-    !matchStoredWorkflowIdentity(meta.manifestHash, workflow)
+    !storedIdentity
   ) {
     throw new WorkflowResumeRecoveryRequiredError(runId, 'identity or workflow hash has drifted');
   }

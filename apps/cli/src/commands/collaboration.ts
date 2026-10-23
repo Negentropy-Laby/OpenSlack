@@ -89,13 +89,10 @@ import {
   decodeRunMetaArguments,
   bindGoWorkflowResumeIdentity,
   validateGoWorkflowResumeContext,
-  checkResumeEligibility,
+  createWorkflowResumePreflight,
   WorkflowResumeRecoveryRequiredError,
-  workflowSourceSnapshotBytes,
-  verifyWorkflowSourceSnapshot,
-  createWorkflowSourceSnapshot,
-  checkResumable,
-  prepareResume,
+  requireWorkflowSourceSnapshot,
+  workflowSourceEvidenceCause,
   renderRunHtml,
   renderRunJson,
   renderRunMarkdown,
@@ -2136,9 +2133,11 @@ export function collaborationCommands(): Command {
             discoveredPath: found.path,
             source: found.source,
           });
-          const sourceSnapshot = mod.sourceSnapshot
-            ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
-            : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
+          const sourceSnapshot = requireWorkflowSourceSnapshot(
+            mod.sourceSnapshot,
+            sourceBytes,
+            mod.meta,
+          );
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
             workflowRunId: runId,
@@ -2169,7 +2168,11 @@ export function collaborationCommands(): Command {
                 {
                   runId: ((result as Record<string, unknown>).runId as string) ?? 'unknown',
                   workflowName: mod.meta.name,
-                  workflowHash: sourceSnapshot.workflowSourceHash,
+                  workflowIdentity: {
+                    digest: sourceSnapshot.workflowSourceHash,
+                    domain: 'openslack.workflow-runner.workflow-source.v2',
+                    provenance: 'inferred',
+                  },
                   mode: 'execute',
                   status: result.status,
                   startedAt: new Date().toISOString(),
@@ -2187,6 +2190,14 @@ export function collaborationCommands(): Command {
             }
           }
         } catch (err) {
+          const sourceError = workflowSourceEvidenceCause(err);
+          if (sourceError) {
+            console.error(`${sourceError.reasonCode}: ${sourceError.message}`);
+            if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
+            console.error('Reload the workflow and repeat dry-run before approval.');
+            process.exitCode = 1;
+            return;
+          }
           if (err instanceof WorkflowPausedError) {
             console.log(`Workflow paused for approval: ${err.operation}`);
             console.log(`  Run ID: ${err.runId}`);
@@ -2240,8 +2251,9 @@ export function collaborationCommands(): Command {
       const store = openWorkflowRunReadOnly(root, 'go');
 
       try {
-        const eligibility = await checkResumeEligibility(store, runId);
-        if (!eligibility.canResume) {
+        const preflight = await createWorkflowResumePreflight(store, runId);
+        const eligibility = preflight.eligibility;
+        if (!eligibility.eligible) {
           throw new WorkflowResumeRecoveryRequiredError(
             runId,
             eligibility.reason ?? 'run cannot be resumed',
@@ -2255,7 +2267,7 @@ export function collaborationCommands(): Command {
           composition.config.workspaceId,
         );
         // Load run metadata
-        const meta = await store.loadMeta(runId);
+        const meta = preflight.meta;
         if (!meta) {
           console.log(`Run ${runId} not found.`);
           process.exitCode = 1;
@@ -2277,31 +2289,26 @@ export function collaborationCommands(): Command {
           return;
         }
 
-        const workflowSourceBytes = loaded.sourceSnapshot
-          ? workflowSourceSnapshotBytes(loaded.sourceSnapshot)
-          : await readWorkflowRunnerSourceBytes({
-              workflowName: loaded.meta.name,
-              discoveredPath: found.path,
-              source: found.source,
-            });
+        // Compare the loaded evidence with a fresh disk read, not its own bytes.
+        const workflowSourceBytes = await readWorkflowRunnerSourceBytes({
+          workflowName: loaded.meta.name,
+          discoveredPath: found.path,
+          source: found.source,
+        });
         const mod = bindGoWorkflowResumeIdentity(resumeContext, loaded, workflowSourceBytes);
         // Check resumability
-        const check = await checkResumable(store, runId, mod);
+        const check = await preflight.check(mod);
         if (!check.canResume) {
           console.error(
             `${check.reasonCode ?? 'WORKFLOW_RESUME_RECOVERY_REQUIRED'}: Cannot resume run ${runId}: ${check.reason}`,
           );
           console.error(historicalExportGuidance(runId));
-          if (
-            check.manifestMatch === false &&
-            check.storedManifestHash &&
-            check.currentManifestHash
-          ) {
+          if (check.manifestMatch === false && check.storedIdentity && check.currentIdentity) {
             console.log(
-              `  Stored hash (${check.storedIdentity?.domain ?? 'unverified legacy domain'}): ${check.storedManifestHash}`,
+              `  Stored hash (${check.storedIdentity.domain}, ${check.storedIdentity.provenance}): ${check.storedIdentity.digest}`,
             );
             console.log(
-              `  Current hash (${check.currentIdentity?.domain ?? 'unknown domain'}): ${check.currentManifestHash}`,
+              `  Current hash (${check.currentIdentity.domain}, ${check.currentIdentity.provenance}): ${check.currentIdentity.digest}`,
             );
             console.log(
               '  Automatic resume is fail-closed; inspect or repair the durable run state.',
@@ -2312,7 +2319,7 @@ export function collaborationCommands(): Command {
         }
 
         // Prepare resume state
-        const resumeState = await prepareResume(store, runId, mod);
+        const resumeState = await preflight.prepare(mod);
 
         console.log(`Resuming: ${mod.meta.name}`);
         console.log(`  Run ID: ${runId}`);
@@ -2356,16 +2363,8 @@ export function collaborationCommands(): Command {
           discoveredPath: found.path,
           source: found.source,
         });
-        try {
-          verifyWorkflowSourceSnapshot(mod.sourceSnapshot!, confirmedBytes, mod.meta);
-        } catch (cause) {
-          throw new WorkflowResumeRecoveryRequiredError(
-            runId,
-            'workflow source changed during confirmation',
-            { cause },
-            'SOURCE_DRIFT',
-          );
-        }
+        // The client verifies this fresh read against loader evidence before
+        // any authority/descriptor writes and maps drift to recovery diagnostics.
         const result = await executeWorkflowThroughRunner({
           workspaceRoot: root,
           workflowRunId: runId,
@@ -2387,14 +2386,28 @@ export function collaborationCommands(): Command {
       } catch (err) {
         if (err instanceof WorkflowResumeRecoveryRequiredError) {
           console.error(`${err.code} [${err.reasonCode}]: ${err.message}`);
-          if (err.identities?.stored)
+          for (const side of ['stored', 'current'] as const) {
+            const evidence = err.identities?.[side];
+            if (!evidence) continue;
+            const label = side === 'stored' ? 'Stored' : 'Current';
+            const domain =
+              typeof evidence === 'string'
+                ? ((err.identities && 'domain' in err.identities
+                    ? err.identities.domain
+                    : undefined) ?? 'unknown')
+                : `${evidence.domain}, ${evidence.provenance}`;
             console.error(
-              `  Stored hash (${err.identities.domain ?? 'persisted executable identity'}): ${err.identities.stored}`,
+              `  ${label} hash (${domain}): ${typeof evidence === 'string' ? evidence : evidence.digest}`,
             );
-          if (err.identities?.current)
-            console.error(
-              `  Current hash (${err.identities.domain ?? 'loaded executable identity'}): ${err.identities.current}`,
-            );
+          }
+          console.error(historicalExportGuidance(runId));
+          process.exitCode = 1;
+          return;
+        }
+        const sourceError = workflowSourceEvidenceCause(err);
+        if (sourceError) {
+          console.error(`${sourceError.code} [${sourceError.reasonCode}]: ${sourceError.message}`);
+          if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
           console.error(historicalExportGuidance(runId));
           process.exitCode = 1;
           return;
@@ -2750,18 +2763,12 @@ export function collaborationCommands(): Command {
           process.exit(1);
         }
 
-        // Load workflow module to get the current hash for correlation
-        let workflowHash = '';
-        try {
-          const found = await findJsWorkflow(meta.workflowName);
-          if (found) {
-            const mod = await loadWorkflow(found.path);
-            workflowHash = mod.hash;
-          }
-        } catch {
-          // Ignore workflow lookup failure; workflowHash stays empty
-        }
-
+        // Historical evidence comes only from the durable run, never today's source file.
+        const workflowIdentity = {
+          digest: meta.manifestHash,
+          domain: meta.manifestHashDomain ?? ('unknown' as const),
+          provenance: meta.manifestHashDomain ? ('recorded' as const) : ('unknown' as const),
+        };
         try {
           const issueNum = options.issue ? parseInt(options.issue, 10) : undefined;
           if (options.issue !== undefined && !Number.isFinite(issueNum)) {
@@ -2771,7 +2778,7 @@ export function collaborationCommands(): Command {
           const result = await publishWorkflowRunAudit(
             {
               ...runStatus,
-              workflowHash,
+              workflowIdentity,
               actor: options.agentId ?? 'openslack-agent-operator',
             },
             {
@@ -2946,6 +2953,11 @@ export function collaborationCommands(): Command {
         let trustReviewCommitOid: string | undefined;
 
         const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true });
+        if (!report.headSha || !report.baseSha) {
+          console.log('Cannot finalize without the reviewed repository head and base.');
+          process.exitCode = 1;
+          return;
+        }
         if (report.workflowEvidence) {
           const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
             requireLive: true,
@@ -2979,14 +2991,24 @@ export function collaborationCommands(): Command {
             process.exitCode = 1;
             return;
           }
-          if (options.governanceIssue && Number(options.governanceIssue) !== gate.governanceIssue) {
+          // A body reference survives even when the governance criterion is
+          // N/A. It is not permission to select that Issue for automatic writes.
+          const boundGovernanceIssue =
+            gate.criteria.some(
+              (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
+            ) &&
+            report.workflowGovernanceIssue?.issueNumber === gate.governanceIssue &&
+            report.workflowGovernanceIssue?.prNumber === pr
+              ? gate.governanceIssue
+              : undefined;
+          if (options.governanceIssue && Number(options.governanceIssue) !== boundGovernanceIssue) {
             console.log(
               'Cannot override the governance issue bound to this workflow artifact change.',
             );
             process.exitCode = 1;
             return;
           }
-          governanceIssue = gate.governanceIssue;
+          governanceIssue = boundGovernanceIssue;
           workflowHash = gate.evidenceHash;
           validTrust = gate.trustDecision;
           trustReviewer = gate.trustReviewer;
@@ -3009,6 +3031,8 @@ export function collaborationCommands(): Command {
             trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
             trustReviewer,
             trustReviewCommitOid,
+            expectedHeadSha: report.headSha,
+            expectedBaseSha: report.baseSha,
           });
 
           if (result.errors.length > 0) {
@@ -3018,6 +3042,12 @@ export function collaborationCommands(): Command {
             return;
           }
 
+          if (result.dryRun) {
+            console.log(
+              `Workflow PR #${pr}: preview only; live merge verification and lifecycle writes were not performed.`,
+            );
+            return;
+          }
           console.log(`Workflow PR finalize complete for #${pr}:`);
           console.log(
             `  Closed issues: ${result.closedIssues.length > 0 ? result.closedIssues.join(', ') : 'none'}`,
@@ -3279,9 +3309,11 @@ export function collaborationCommands(): Command {
             discoveredPath: found.path,
             source: found.source,
           });
-          const sourceSnapshot = mod.sourceSnapshot
-            ? verifyWorkflowSourceSnapshot(mod.sourceSnapshot, sourceBytes, mod.meta)
-            : createWorkflowSourceSnapshot(sourceBytes, mod.meta);
+          const sourceSnapshot = requireWorkflowSourceSnapshot(
+            mod.sourceSnapshot,
+            sourceBytes,
+            mod.meta,
+          );
           const result = await executeWorkflowThroughRunner({
             workspaceRoot: root,
             workflowRunId: runId,
@@ -3308,6 +3340,14 @@ export function collaborationCommands(): Command {
 
           console.log(JSON.stringify(result, null, 2));
         } catch (err) {
+          const sourceError = workflowSourceEvidenceCause(err);
+          if (sourceError) {
+            console.error(`${sourceError.reasonCode}: ${sourceError.message}`);
+            if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
+            console.error('Reload the workflow and repeat dry-run before approval.');
+            process.exitCode = 1;
+            return;
+          }
           console.log(`Run failed: ${(err as Error).message}`);
           process.exit(1);
         }
@@ -3372,9 +3412,7 @@ export function collaborationCommands(): Command {
 
 // ── Profile Sync helpers ──────────────────────────────────────────────────────
 
-function renderProfileSyncPreviewMarkdown(
-  result: ProfileSyncPreviewResult,
-): string {
+function renderProfileSyncPreviewMarkdown(result: ProfileSyncPreviewResult): string {
   const lines: string[] = [];
   lines.push('# Profile Sync Preview');
   lines.push('');

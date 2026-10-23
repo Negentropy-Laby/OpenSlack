@@ -10,6 +10,9 @@ export interface FinalizeWorkflowPROpts {
   trustDecision?: 'trusted' | 'untrusted' | 'core';
   trustReviewer?: string;
   trustReviewCommitOid?: string;
+  /** Repository evidence observed by the gate, rechecked immediately before writes. */
+  expectedHeadSha?: string;
+  expectedBaseSha?: string;
 }
 
 export async function finalizeWorkflowPR(
@@ -20,6 +23,7 @@ export async function finalizeWorkflowPR(
   commentedIssues: number[];
   updatedLabels: number[];
   errors: string[];
+  dryRun?: boolean;
 }> {
   const client = await getClient();
   const closedIssues: number[] = [];
@@ -28,7 +32,41 @@ export async function finalizeWorkflowPR(
   const errors: string[] = [];
 
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would finalize workflow PR #${prNumber}`);
+    console.log(
+      `[DRY RUN] Preview only for workflow PR #${prNumber}; live merge and evidence checks not performed.`,
+    );
+    return { closedIssues, commentedIssues, updatedLabels, errors, dryRun: true };
+  }
+
+  // The shared write boundary must protect every caller, not just the TUI.
+  // Do not perform any lifecycle write if live evidence cannot be established.
+  try {
+    const { data: pr } = await client.octokit.pulls.get({
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+    });
+    if (pr.merged !== true) throw new Error('PR is not merged');
+    if (
+      opts.governanceIssue &&
+      (!opts.expectedHeadSha ||
+        !opts.expectedBaseSha ||
+        !opts.workflowHash ||
+        !opts.trustReviewer ||
+        !opts.trustDecision ||
+        opts.trustReviewCommitOid !== opts.expectedHeadSha)
+    )
+      throw new Error('repository governance evidence is incomplete');
+    if (
+      (opts.expectedHeadSha !== undefined && pr.head.sha !== opts.expectedHeadSha) ||
+      (opts.expectedBaseSha !== undefined && pr.base.sha !== opts.expectedBaseSha)
+    ) {
+      throw new Error('PR head/base differs from reviewed repository evidence');
+    }
+  } catch {
+    errors.push(
+      'Cannot finalize: live merged PR and matching repository evidence are required. Re-run the repository gate.',
+    );
     return { closedIssues, commentedIssues, updatedLabels, errors };
   }
 

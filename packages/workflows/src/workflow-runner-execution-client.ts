@@ -3,7 +3,9 @@ import {
   createWorkflowSourceSnapshot,
   verifyWorkflowSourceSnapshot,
   type WorkflowSourceSnapshot,
+  WorkflowSourceEvidenceError,
 } from './internal/workflow-source-snapshot.js';
+import { WorkflowResumeRecoveryRequiredError } from './resume.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -485,9 +487,10 @@ export async function executeWorkflowThroughRunnerWithRuntime(
   // route is eligible. Missing source data must not mask a retired TS route.
   input = {
     ...input,
-    workflowSourceBytes: input.workflowSourceBytes === undefined
-      ? input.workflowSourceBytes
-      : Buffer.from(input.workflowSourceBytes),
+    workflowSourceBytes:
+      input.workflowSourceBytes === undefined
+        ? input.workflowSourceBytes
+        : Buffer.from(input.workflowSourceBytes),
     manifest: structuredClone(input.manifest),
   };
   const wholeTimeoutMs = input.wholeTimeoutMs ?? 60 * 60_000;
@@ -538,9 +541,40 @@ export async function executeWorkflowThroughRunnerWithRuntime(
         : 'New workflow execution requires an explicit Go authority route.',
     );
   }
-  const sourceSnapshot = input.sourceSnapshot
-    ? verifyWorkflowSourceSnapshot(input.sourceSnapshot, input.workflowSourceBytes, input.manifest)
-    : createWorkflowSourceSnapshot(input.workflowSourceBytes, input.manifest);
+  if (input.workflowSourceBytes === undefined) {
+    throw new WorkflowRunnerControlError(
+      'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
+      'Go workflow execution requires source bytes.',
+    );
+  }
+  let sourceSnapshot: WorkflowSourceSnapshot;
+  try {
+    // Internal raw-byte submissions own their bytes before await. Loaded-module
+    // frontends must supply the loader snapshot, never a synthesized substitute.
+    sourceSnapshot = input.sourceSnapshot
+      ? verifyWorkflowSourceSnapshot(
+          input.sourceSnapshot,
+          input.workflowSourceBytes,
+          input.manifest,
+        )
+      : createWorkflowSourceSnapshot(input.workflowSourceBytes, input.manifest);
+  } catch (cause) {
+    if (!(cause instanceof WorkflowSourceEvidenceError)) throw cause;
+    if (existingRoute) {
+      throw new WorkflowResumeRecoveryRequiredError(
+        workflowRunId,
+        cause.message,
+        { cause },
+        cause.reasonCode,
+        cause.identities,
+      );
+    }
+    throw new WorkflowRunnerControlError(
+      'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
+      `${cause.reasonCode}: ${cause.message} Reload the workflow and repeat dry-run before approval.`,
+      { cause },
+    );
+  }
   const correlationId =
     existingRoute?.correlationId ?? input.correlationId ?? safeGeneratedId('correlation');
   const selectedAt = existingRoute?.selectedAt ?? created.toISOString();

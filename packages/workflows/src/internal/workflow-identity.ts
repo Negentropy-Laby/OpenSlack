@@ -1,6 +1,7 @@
 import {
-  workflowSourceSnapshotBytes,
+  verifyWorkflowSourceManifest,
   verifyWorkflowSourceSnapshot,
+  WorkflowSourceEvidenceError,
   type WorkflowSourceSnapshot,
 } from './workflow-source-snapshot.js';
 import { createHash } from 'node:crypto';
@@ -11,6 +12,7 @@ import type {
   WorkflowRuntime,
   WorkflowModule,
   WorkflowIdentity,
+  WorkflowIdentityEvidence,
 } from '../types.js';
 import { canonicalJson } from './canonical-json.js';
 import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
@@ -42,7 +44,7 @@ export function resolveWorkflowIdentityHash(
     ) {
       throw new TypeError('Go workflow identity requires verified source evidence.');
     }
-    verifyWorkflowSourceSnapshot(proof, workflowSourceSnapshotBytes(proof), manifest);
+    verifyWorkflowSourceManifest(proof, manifest);
     return proof.workflowSourceHash;
   }
   if (workflow.hash !== undefined) {
@@ -90,7 +92,11 @@ export function bindWorkflowSourceIdentity(
 ): WorkflowModule {
   verifyWorkflowSourceSnapshot(snapshot, bytes, workflow.meta);
   if (workflow.hash !== snapshot.rawHash)
-    throw new TypeError('Loaded workflow differs from source snapshot.');
+    throw new WorkflowSourceEvidenceError(
+      'LOADER_SOURCE_MISMATCH',
+      'Loaded workflow differs from source snapshot.',
+      { domain: 'raw-sha256', stored: workflow.hash, current: snapshot.rawHash },
+    );
   const bound = {
     ...workflow,
     sourceSnapshot: snapshot,
@@ -107,17 +113,63 @@ export function bindWorkflowSourceIdentity(
 export function matchStoredWorkflowIdentity(
   stored: string | undefined,
   workflow: WorkflowIdentitySource,
+  manifest: WorkflowMeta = workflow.meta,
+  recordedDomain?: WorkflowIdentity['domain'],
 ): WorkflowIdentity | undefined {
-  if (!stored || !SHA256.test(stored)) return undefined;
-  const current = resolveWorkflowIdentityHash(workflow);
+  const comparison = compareStoredWorkflowIdentity(stored, workflow, manifest, recordedDomain);
+  return comparison.matches ? (comparison.stored as WorkflowIdentity) : undefined;
+}
+
+/** Resolve once against the execution manifest; unknown historical domains stay unknown. */
+export function compareStoredWorkflowIdentity(
+  stored: string | undefined,
+  workflow: WorkflowIdentitySource,
+  manifest: WorkflowMeta = workflow.meta,
+  recordedDomain?: WorkflowIdentity['domain'],
+): { matches: boolean; stored?: WorkflowIdentityEvidence; current: WorkflowIdentityEvidence } {
+  const digest = resolveWorkflowIdentityHash(workflow, manifest);
   const proof = boundIdentities.get(workflow);
-  if (stored === current)
-    return {
-      domain: proof ? 'openslack.workflow-runner.workflow-source.v2' : 'raw-sha256',
-      digest: stored,
-    };
-  if (proof && stored === proof.rawHash) return { domain: 'raw-sha256', digest: stored };
-  return undefined;
+  const current: WorkflowIdentityEvidence = {
+    digest,
+    domain: proof
+      ? 'openslack.workflow-runner.workflow-source.v2'
+      : workflow.hash !== undefined
+        ? 'unknown'
+        : workflow.sourceBody !== undefined
+          ? 'raw-sha256'
+          : 'function-source-sha256',
+    provenance: proof || workflow.hash === undefined ? 'inferred' : 'unknown',
+  };
+  const strong = stored !== undefined && SHA256.test(stored);
+  const inferred =
+    proof && strong
+      ? stored === digest
+        ? 'openslack.workflow-runner.workflow-source.v2'
+        : stored === proof.rawHash
+          ? 'raw-sha256'
+          : undefined
+      : undefined;
+  const domain = recordedDomain ?? inferred ?? 'unknown';
+  const expected = !proof
+    ? undefined
+    : domain === 'raw-sha256'
+      ? proof.rawHash
+      : domain === 'openslack.workflow-runner.workflow-source.v2'
+        ? digest
+        : undefined;
+  return {
+    matches: strong && expected !== undefined && stored === expected,
+    stored:
+      stored === undefined
+        ? undefined
+        : {
+            digest: stored,
+            domain,
+            provenance:
+              recordedDomain !== undefined ? 'recorded' : inferred ? 'inferred' : 'unknown',
+          },
+    current,
+  };
 }
 
 export type WorkflowBindingReason =

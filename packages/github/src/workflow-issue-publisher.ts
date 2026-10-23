@@ -315,21 +315,23 @@ export async function publishWorkflowRunAudit(
   runStatus: WorkflowRunStatusShape,
   opts: { issueNumber?: number; createIssue?: boolean },
 ): Promise<{ issueNumber: number; url: string; isComment: boolean }> {
+  if (!runStatus.workflowIdentity)
+    throw new TypeError('Workflow run audit requires persisted or submitted identity evidence.');
   const runIssue: WorkflowRunIssue = {
-    schema: 'openslack.workflow_run.v1',
+    schema: 'openslack.workflow_run.v2',
     runId: runStatus.runId,
     workflowId: runStatus.workflowName,
-    workflowHash: runStatus.workflowHash ?? '',
+    workflowIdentity: runStatus.workflowIdentity,
     mode: runStatus.mode,
     actor: runStatus.actor ?? 'openslack-agent-operator',
     startedAt: runStatus.startedAt,
     status: runStatus.status,
   };
+  const body = renderWorkflowRunBody(runIssue);
 
   // Append as comment to existing issue
   if (opts.issueNumber) {
     const client = await getClient();
-    const body = renderWorkflowRunBody(runIssue);
 
     if (client.isDryRun) {
       console.log(`[DRY RUN] Would append run audit comment to issue #${opts.issueNumber}`);
@@ -354,7 +356,6 @@ export async function publishWorkflowRunAudit(
 
   // Create new issue
   const title = `[Workflow Run] ${runStatus.workflowName} / ${runStatus.runId}`;
-  const body = renderWorkflowRunBody(runIssue);
   const labels = workflowRunLabels(runStatus.mode, runStatus.status);
 
   const result = await createTaskIssue(title, body, labels);

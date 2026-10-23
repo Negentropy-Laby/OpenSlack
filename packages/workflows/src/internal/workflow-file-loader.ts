@@ -1,10 +1,14 @@
-import { createWorkflowSourceSnapshot } from './workflow-source-snapshot.js';
+import {
+  createWorkflowSourceSnapshot,
+  verifyWorkflowSourceManifest,
+  WorkflowSourceEvidenceError,
+  type WorkflowSourceSnapshot,
+} from './workflow-source-snapshot.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseManifest, validateManifest } from '../manifest.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule } from '../types.js';
-import { canonicalJson } from './canonical-json.js';
 import { WORKFLOW_BINDING_HASH_REGEX } from './workflow-binding-field-rules.js';
 
 export interface WorkflowLoadOptions {
@@ -23,7 +27,7 @@ export interface WorkflowLoadOptions {
 export async function loadWorkflowFile(
   filePath: string,
   options: WorkflowLoadOptions = {},
-): Promise<WorkflowModule> {
+): Promise<WorkflowModule & { sourceSnapshot: WorkflowSourceSnapshot }> {
   if (
     options.moduleCacheKey !== undefined &&
     !WORKFLOW_BINDING_HASH_REGEX.test(options.moduleCacheKey)
@@ -35,15 +39,19 @@ export async function loadWorkflowFile(
   const source = sourceBytes.toString('utf-8');
 
   // Step 2: Static analysis — extract meta without executing module code
-  const meta = analyzeStaticMeta(source);
-
-  // Step 3: Validate extracted meta
-  const errors = validateManifest(meta);
-  if (errors.length > 0) {
-    throw new Error(`Invalid workflow manifest in ${filePath}:\n${errors.join('\n')}`);
+  let meta: WorkflowMeta;
+  let sourceSnapshot: WorkflowSourceSnapshot;
+  try {
+    meta = analyzeStaticMeta(source);
+    if (validateManifest(meta).length > 0) throw new Error('Invalid static manifest');
+    sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
+  } catch {
+    throw new WorkflowSourceEvidenceError(
+      'MANIFEST_INVALID',
+      'Workflow static manifest is invalid; correct the manifest and reload the workflow.',
+    );
   }
 
-  const sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
   const hash = sourceSnapshot.rawHash;
 
   // Step 4: Detect format from source text BEFORE importing
@@ -71,18 +79,13 @@ export async function loadWorkflowFile(
   let runtimeMeta: WorkflowMeta;
   try {
     runtimeMeta = parseManifest(mod.meta);
-  } catch (error) {
-    throw new Error(`Workflow ${filePath} exports an invalid runtime manifest.`, { cause: error });
-  }
-  const runtimeErrors = validateManifest(runtimeMeta);
-  if (runtimeErrors.length > 0) {
-    throw new Error(
-      `Invalid runtime workflow manifest in ${filePath}:\n${runtimeErrors.join('\n')}`,
-    );
-  }
-  if (canonicalJson(runtimeMeta) !== canonicalJson(meta)) {
-    throw new Error(
-      `Workflow ${filePath} runtime manifest does not match its statically analyzed manifest.`,
+    if (validateManifest(runtimeMeta).length > 0) throw new Error('Invalid runtime manifest');
+    verifyWorkflowSourceManifest(sourceSnapshot, runtimeMeta);
+  } catch (cause) {
+    if (cause instanceof WorkflowSourceEvidenceError) throw cause;
+    throw new WorkflowSourceEvidenceError(
+      'MANIFEST_INVALID',
+      'Workflow exports an invalid runtime manifest; correct the manifest and reload the workflow.',
     );
   }
 
