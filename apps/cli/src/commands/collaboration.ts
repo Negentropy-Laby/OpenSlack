@@ -93,6 +93,8 @@ import {
   WorkflowResumeRecoveryRequiredError,
   requireWorkflowSourceSnapshot,
   workflowSourceEvidenceCause,
+  renderWorkflowSourceEvidence,
+  runMetaWorkflowIdentity,
   renderRunHtml,
   renderRunJson,
   renderRunMarkdown,
@@ -135,6 +137,7 @@ import {
   publishWorkflowSplit,
   bootstrapWorkflowLabels,
   finalizeWorkflowPR,
+  previewWorkflowFinalization,
 } from '@openslack/github';
 import { evaluateWorkflowGate, fetchPRDetails, loadPRCodeownerEvidence } from '@openslack/pr';
 import {
@@ -2192,9 +2195,11 @@ export function collaborationCommands(): Command {
         } catch (err) {
           const sourceError = workflowSourceEvidenceCause(err);
           if (sourceError) {
-            console.error(`${sourceError.reasonCode}: ${sourceError.message}`);
-            if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
-            console.error('Reload the workflow and repeat dry-run before approval.');
+            for (const line of renderWorkflowSourceEvidence(
+              sourceError,
+              'Reload the workflow and repeat dry-run before approval.',
+            ))
+              console.error(line);
             process.exitCode = 1;
             return;
           }
@@ -2296,29 +2301,6 @@ export function collaborationCommands(): Command {
           source: found.source,
         });
         const mod = bindGoWorkflowResumeIdentity(resumeContext, loaded, workflowSourceBytes);
-        // Check resumability
-        const check = await preflight.check(mod);
-        if (!check.canResume) {
-          console.error(
-            `${check.reasonCode ?? 'WORKFLOW_RESUME_RECOVERY_REQUIRED'}: Cannot resume run ${runId}: ${check.reason}`,
-          );
-          console.error(historicalExportGuidance(runId));
-          if (check.manifestMatch === false && check.storedIdentity && check.currentIdentity) {
-            console.log(
-              `  Stored hash (${check.storedIdentity.domain}, ${check.storedIdentity.provenance}): ${check.storedIdentity.digest}`,
-            );
-            console.log(
-              `  Current hash (${check.currentIdentity.domain}, ${check.currentIdentity.provenance}): ${check.currentIdentity.digest}`,
-            );
-            console.log(
-              '  Automatic resume is fail-closed; inspect or repair the durable run state.',
-            );
-          }
-          process.exitCode = 1;
-          return;
-        }
-
-        // Prepare resume state
         const resumeState = await preflight.prepare(mod);
 
         console.log(`Resuming: ${mod.meta.name}`);
@@ -2406,9 +2388,11 @@ export function collaborationCommands(): Command {
         }
         const sourceError = workflowSourceEvidenceCause(err);
         if (sourceError) {
-          console.error(`${sourceError.code} [${sourceError.reasonCode}]: ${sourceError.message}`);
-          if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
-          console.error(historicalExportGuidance(runId));
+          for (const line of renderWorkflowSourceEvidence(
+            sourceError,
+            historicalExportGuidance(runId),
+          ))
+            console.error(line);
           process.exitCode = 1;
           return;
         }
@@ -2764,11 +2748,7 @@ export function collaborationCommands(): Command {
         }
 
         // Historical evidence comes only from the durable run, never today's source file.
-        const workflowIdentity = {
-          digest: meta.manifestHash,
-          domain: meta.manifestHashDomain ?? ('unknown' as const),
-          provenance: meta.manifestHashDomain ? ('recorded' as const) : ('unknown' as const),
-        };
+        const workflowIdentity = runMetaWorkflowIdentity(meta);
         try {
           const issueNum = options.issue ? parseInt(options.issue, 10) : undefined;
           if (options.issue !== undefined && !Number.isFinite(issueNum)) {
@@ -2924,25 +2904,30 @@ export function collaborationCommands(): Command {
           trust?: string;
         },
       ) => {
-        const pr = parseInt(prNumber, 10);
-        if (!Number.isFinite(pr) || pr <= 0) {
-          console.log(`Invalid PR number: "${prNumber}". Must be a positive integer.`);
-          process.exit(1);
+        const positiveInteger = (value: string | undefined, role: string): number | undefined => {
+          if (value === undefined) return undefined;
+          if (!/^[1-9][0-9]*$/u.test(value) || !Number.isSafeInteger(Number(value)))
+            throw new TypeError(`${role} must be a positive safe decimal integer.`);
+          return Number(value);
+        };
+        let pr: number;
+        let proposalIssue: number | undefined;
+        let reviewIssue: number | undefined;
+        let governanceIssue: number | undefined;
+        let phaseIssues: number[] | undefined;
+        try {
+          pr = positiveInteger(prNumber, 'PR number')!;
+          proposalIssue = positiveInteger(options.proposalIssue, 'Proposal Issue');
+          reviewIssue = positiveInteger(options.reviewIssue, 'Review Issue');
+          governanceIssue = positiveInteger(options.governanceIssue, 'Governance Issue');
+          phaseIssues = options.phaseIssues
+            ?.split(',')
+            .map((value) => positiveInteger(value.trim(), 'Phase Issue')!);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : 'Invalid finalization target.');
+          process.exitCode = 1;
+          return;
         }
-
-        const proposalIssue = options.proposalIssue
-          ? parseInt(options.proposalIssue, 10)
-          : undefined;
-        const reviewIssue = options.reviewIssue ? parseInt(options.reviewIssue, 10) : undefined;
-        let governanceIssue = options.governanceIssue
-          ? parseInt(options.governanceIssue, 10)
-          : undefined;
-        const phaseIssues = options.phaseIssues
-          ? options.phaseIssues
-              .split(',')
-              .map((s) => parseInt(s.trim(), 10))
-              .filter((n) => Number.isFinite(n))
-          : undefined;
 
         let validTrust =
           options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
@@ -2952,76 +2937,82 @@ export function collaborationCommands(): Command {
         let trustReviewer: string | undefined;
         let trustReviewCommitOid: string | undefined;
 
-        const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true });
-        if (!report.headSha || !report.baseSha) {
-          console.log('Cannot finalize without the reviewed repository head and base.');
-          process.exitCode = 1;
-          return;
-        }
-        if (report.workflowEvidence) {
-          const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
-            requireLive: true,
-            strictEvidence: true,
-          });
-          const gate = evaluateWorkflowGate({
-            changedFiles: report.changedFiles,
-            body: report.body ?? '',
-            author: report.author,
-            baseSha: report.baseSha,
-            headSha: report.headSha,
-            reviews: report.reviews,
-            workflowEvidence: report.workflowEvidence,
-            governanceIssue: report.workflowGovernanceIssue,
-            codeowners,
-          });
-          if (gate.overall !== 'PASS') {
-            console.log(
-              `Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`,
-            );
-            process.exitCode = 1;
-            return;
-          }
-          if (options.hash && options.hash !== gate.evidenceHash) {
-            console.log('Cannot override the repository-derived workflow evidence hash.');
-            process.exitCode = 1;
-            return;
-          }
-          if (options.trust && options.trust !== gate.trustDecision) {
-            console.log('Cannot override the current-head human Workflow-Trust review.');
-            process.exitCode = 1;
-            return;
-          }
-          // A body reference survives even when the governance criterion is
-          // N/A. It is not permission to select that Issue for automatic writes.
-          const boundGovernanceIssue =
-            gate.criteria.some(
-              (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
-            ) &&
-            report.workflowGovernanceIssue?.issueNumber === gate.governanceIssue &&
-            report.workflowGovernanceIssue?.prNumber === pr
-              ? gate.governanceIssue
-              : undefined;
-          if (options.governanceIssue && Number(options.governanceIssue) !== boundGovernanceIssue) {
-            console.log(
-              'Cannot override the governance issue bound to this workflow artifact change.',
-            );
-            process.exitCode = 1;
-            return;
-          }
-          governanceIssue = boundGovernanceIssue;
-          workflowHash = gate.evidenceHash;
-          validTrust = gate.trustDecision;
-          trustReviewer = gate.trustReviewer;
-          trustReviewCommitOid = gate.trustReviewCommitOid;
-        } else if (options.governanceIssue) {
-          console.log(
-            `Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-
         try {
+          if (await previewWorkflowFinalization(pr)) {
+            console.log(
+              `Workflow PR #${pr}: preview only; live merge verification and lifecycle writes were not performed.`,
+            );
+            return;
+          }
+          const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true });
+          if (!report.headSha || !report.baseSha) {
+            console.log('Cannot finalize without the reviewed repository head and base.');
+            process.exitCode = 1;
+            return;
+          }
+          if (report.workflowEvidence) {
+            const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
+              requireLive: true,
+              strictEvidence: true,
+            });
+            const gate = evaluateWorkflowGate({
+              changedFiles: report.changedFiles,
+              body: report.body ?? '',
+              author: report.author,
+              baseSha: report.baseSha,
+              headSha: report.headSha,
+              reviews: report.reviews,
+              workflowEvidence: report.workflowEvidence,
+              governanceIssue: report.workflowGovernanceIssue,
+              codeowners,
+            });
+            if (gate.overall !== 'PASS') {
+              console.log(
+                `Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`,
+              );
+              process.exitCode = 1;
+              return;
+            }
+            if (options.hash && options.hash !== gate.evidenceHash) {
+              console.log('Cannot override the repository-derived workflow evidence hash.');
+              process.exitCode = 1;
+              return;
+            }
+            if (options.trust && options.trust !== gate.trustDecision) {
+              console.log('Cannot override the current-head human Workflow-Trust review.');
+              process.exitCode = 1;
+              return;
+            }
+            // A body reference survives even when the governance criterion is
+            // N/A. It is not permission to select that Issue for automatic writes.
+            const boundGovernanceIssue =
+              gate.criteria.some(
+                (criterion) => criterion.name === 'Governance issue' && criterion.status === 'PASS',
+              ) &&
+              report.workflowGovernanceIssue?.issueNumber === gate.governanceIssue &&
+              report.workflowGovernanceIssue?.prNumber === pr
+                ? gate.governanceIssue
+                : undefined;
+            if (governanceIssue !== undefined && governanceIssue !== boundGovernanceIssue) {
+              console.log(
+                'Cannot override the governance issue bound to this workflow artifact change.',
+              );
+              process.exitCode = 1;
+              return;
+            }
+            governanceIssue = boundGovernanceIssue;
+            workflowHash = gate.evidenceHash;
+            validTrust = gate.trustDecision;
+            trustReviewer = gate.trustReviewer;
+            trustReviewCommitOid = gate.trustReviewCommitOid;
+          } else if (options.governanceIssue) {
+            console.log(
+              `Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+
           const result = await finalizeWorkflowPR(pr, {
             governanceIssue,
             proposalIssue,
@@ -3038,6 +3029,14 @@ export function collaborationCommands(): Command {
           if (result.errors.length > 0) {
             console.log(`Failed to finalize workflow PR #${pr}:`);
             for (const err of result.errors) console.log(`    - ${err}`);
+            console.log(
+              JSON.stringify({
+                closedIssues: result.closedIssues,
+                commentedIssues: result.commentedIssues,
+                updatedLabels: result.updatedLabels,
+                failures: result.failures,
+              }),
+            );
             process.exitCode = 1;
             return;
           }
@@ -3061,7 +3060,8 @@ export function collaborationCommands(): Command {
         } catch (err) {
           console.log(`Failed to finalize workflow PR:`);
           console.log(`  ${(err as Error).message}`);
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
       },
     );
@@ -3342,9 +3342,11 @@ export function collaborationCommands(): Command {
         } catch (err) {
           const sourceError = workflowSourceEvidenceCause(err);
           if (sourceError) {
-            console.error(`${sourceError.reasonCode}: ${sourceError.message}`);
-            if (sourceError.identities) console.error(JSON.stringify(sourceError.identities));
-            console.error('Reload the workflow and repeat dry-run before approval.');
+            for (const line of renderWorkflowSourceEvidence(
+              sourceError,
+              'Reload the workflow and repeat dry-run before approval.',
+            ))
+              console.error(line);
             process.exitCode = 1;
             return;
           }

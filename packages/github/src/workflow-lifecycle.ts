@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { getClient } from './client.js';
 import type { Octokit } from '@octokit/rest';
 
@@ -15,195 +16,276 @@ export interface FinalizeWorkflowPROpts {
   expectedBaseSha?: string;
 }
 
-export async function finalizeWorkflowPR(
-  prNumber: number,
-  opts: FinalizeWorkflowPROpts,
-): Promise<{
+export type FinalizeWorkflowFailureCode =
+  | 'INVALID_TARGET'
+  | 'PR_QUERY_FAILED'
+  | 'PR_NOT_MERGED'
+  | 'GOVERNANCE_EVIDENCE_MISSING'
+  | 'PR_EVIDENCE_DRIFT'
+  | 'COMMENT_LOOKUP_FAILED'
+  | 'COMMENT_RESULT_UNKNOWN'
+  | 'LIFECYCLE_WRITE_FAILED';
+export interface FinalizeWorkflowFailure {
+  code: FinalizeWorkflowFailureCode;
+  stage: 'preflight' | 'comment' | 'labels' | 'close';
+  issueNumber?: number;
+}
+export interface FinalizeWorkflowPRResult {
   closedIssues: number[];
   commentedIssues: number[];
   updatedLabels: number[];
   errors: string[];
+  failures?: FinalizeWorkflowFailure[];
   dryRun?: boolean;
-}> {
-  const client = await getClient();
-  const closedIssues: number[] = [];
-  const commentedIssues: number[] = [];
-  const updatedLabels: number[] = [];
-  const errors: string[] = [];
+}
 
+/** Preparation only: a preview never queries a PR or enters the write boundary. */
+export async function previewWorkflowFinalization(
+  prNumber: number,
+): Promise<FinalizeWorkflowPRResult | undefined> {
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0)
+    throw new TypeError('PR number must be a positive safe integer.');
+  const client = await getClient();
+  return client.isDryRun
+    ? {
+        closedIssues: [],
+        commentedIssues: [],
+        updatedLabels: [],
+        errors: [],
+        failures: [],
+        dryRun: true,
+      }
+    : undefined;
+}
+
+export async function finalizeWorkflowPR(
+  prNumber: number,
+  opts: FinalizeWorkflowPROpts,
+): Promise<FinalizeWorkflowPRResult> {
+  const result: FinalizeWorkflowPRResult & { failures: FinalizeWorkflowFailure[] } = {
+    closedIssues: [],
+    commentedIssues: [],
+    updatedLabels: [],
+    errors: [],
+    failures: [],
+  };
+  const refuse = (code: FinalizeWorkflowFailureCode, message: string) => {
+    result.failures.push({ code, stage: 'preflight' });
+    result.errors.push(message);
+    return result;
+  };
+  if (
+    [
+      prNumber,
+      opts.governanceIssue,
+      opts.proposalIssue,
+      opts.reviewIssue,
+      ...(opts.phaseIssues ?? []),
+    ].some((value) => value !== undefined && (!Number.isSafeInteger(value) || value <= 0))
+  ) {
+    return refuse(
+      'INVALID_TARGET',
+      'Cannot finalize: PR and Issue numbers must be positive safe integers.',
+    );
+  }
+  let client: Awaited<ReturnType<typeof getClient>>;
+  try {
+    client = await getClient();
+  } catch {
+    return refuse(
+      'PR_QUERY_FAILED',
+      'Cannot finalize: GitHub client is unavailable; restore access and retry the read-only gate.',
+    );
+  }
   if (client.isDryRun) {
     console.log(
       `[DRY RUN] Preview only for workflow PR #${prNumber}; live merge and evidence checks not performed.`,
     );
-    return { closedIssues, commentedIssues, updatedLabels, errors, dryRun: true };
+    return { ...result, dryRun: true };
   }
-
-  // The shared write boundary must protect every caller, not just the TUI.
-  // Do not perform any lifecycle write if live evidence cannot be established.
+  let pr;
   try {
-    const { data: pr } = await client.octokit.pulls.get({
-      owner: client.owner,
-      repo: client.repo,
-      pull_number: prNumber,
-    });
-    if (pr.merged !== true) throw new Error('PR is not merged');
-    if (
-      opts.governanceIssue &&
-      (!opts.expectedHeadSha ||
-        !opts.expectedBaseSha ||
-        !opts.workflowHash ||
-        !opts.trustReviewer ||
-        !opts.trustDecision ||
-        opts.trustReviewCommitOid !== opts.expectedHeadSha)
-    )
-      throw new Error('repository governance evidence is incomplete');
-    if (
-      (opts.expectedHeadSha !== undefined && pr.head.sha !== opts.expectedHeadSha) ||
-      (opts.expectedBaseSha !== undefined && pr.base.sha !== opts.expectedBaseSha)
-    ) {
-      throw new Error('PR head/base differs from reviewed repository evidence');
-    }
+    pr = (
+      await client.octokit.pulls.get({
+        owner: client.owner,
+        repo: client.repo,
+        pull_number: prNumber,
+      })
+    ).data;
   } catch {
-    errors.push(
-      'Cannot finalize: live merged PR and matching repository evidence are required. Re-run the repository gate.',
+    return refuse(
+      'PR_QUERY_FAILED',
+      'Cannot finalize: live PR query failed; restore GitHub access and retry the read-only gate.',
     );
-    return { closedIssues, commentedIssues, updatedLabels, errors };
+  }
+  if (pr.merged !== true)
+    return refuse(
+      'PR_NOT_MERGED',
+      `Cannot finalize: PR #${prNumber} is not merged. Complete its governed merge first.`,
+    );
+  if (
+    opts.governanceIssue &&
+    (!opts.expectedHeadSha ||
+      !opts.expectedBaseSha ||
+      !opts.workflowHash ||
+      !opts.trustReviewer ||
+      !opts.trustDecision ||
+      opts.trustReviewCommitOid !== opts.expectedHeadSha)
+  ) {
+    return refuse(
+      'GOVERNANCE_EVIDENCE_MISSING',
+      'Cannot finalize: repository governance evidence is incomplete. Re-run the repository gate.',
+    );
+  }
+  if (
+    (opts.expectedHeadSha !== undefined && pr.head.sha !== opts.expectedHeadSha) ||
+    (opts.expectedBaseSha !== undefined && pr.base.sha !== opts.expectedBaseSha)
+  ) {
+    return refuse(
+      'PR_EVIDENCE_DRIFT',
+      'Cannot finalize: live PR head/base differs from reviewed evidence. Re-run the repository gate; do not substitute another base.',
+    );
   }
 
-  if (opts.governanceIssue) {
-    try {
-      const lines = [
-        '## Workflow Governance Completed',
-        '',
-        `Merged via PR #${prNumber}.`,
-        opts.workflowHash ? `- **Evidence Hash**: ${opts.workflowHash}` : undefined,
-        opts.trustDecision ? `- **Trust Decision**: ${opts.trustDecision}` : undefined,
-        opts.trustReviewer ? `- **Reviewer**: @${opts.trustReviewer}` : undefined,
-        opts.trustReviewCommitOid
-          ? `- **Reviewed Commit**: ${opts.trustReviewCommitOid}`
-          : undefined,
-      ].filter((line): line is string => line !== undefined);
-      await client.octokit.issues.createComment({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.governanceIssue,
-        body: lines.join('\n'),
-      });
-      const labels = ['lifecycle:accepted', `workflow:${opts.trustDecision ?? 'untrusted'}`];
-      await client.octokit.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.governanceIssue,
-        labels,
-      });
-      await client.octokit.issues.update({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.governanceIssue,
-        state: 'closed',
-        state_reason: 'completed',
-      });
-      commentedIssues.push(opts.governanceIssue);
-      updatedLabels.push(opts.governanceIssue);
-      closedIssues.push(opts.governanceIssue);
-    } catch (err) {
-      errors.push(
-        `Failed to finalize governance issue #${opts.governanceIssue}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  // Close proposal issue
-  if (opts.proposalIssue) {
-    try {
-      await client.octokit.issues.update({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.proposalIssue,
-        state: 'closed',
-        state_reason: 'completed',
-      });
-      await client.octokit.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.proposalIssue,
-        labels: ['result:completed', 'lifecycle:accepted'],
-      });
-      closedIssues.push(opts.proposalIssue);
-      updatedLabels.push(opts.proposalIssue);
-    } catch (err) {
-      errors.push(
-        `Failed to close proposal issue #${opts.proposalIssue}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  // Comment on review issue with merge info
-  if (opts.reviewIssue) {
-    try {
-      const lines: string[] = [
-        '## Workflow Merged',
-        '',
-        `This workflow was merged via PR #${prNumber}.`,
-      ];
-      if (opts.workflowHash) {
-        lines.push(`- **Hash**: ${opts.workflowHash}`);
-      }
-      if (opts.trustDecision) {
-        lines.push(`- **Trust Decision**: ${opts.trustDecision}`);
-      }
-
-      await client.octokit.issues.createComment({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.reviewIssue,
-        body: lines.join('\n'),
-      });
-
-      // Update review issue labels based on trust decision
-      const labels = ['lifecycle:accepted'];
-      if (opts.trustDecision === 'trusted') labels.push('workflow:trusted');
-      else if (opts.trustDecision === 'untrusted') labels.push('workflow:untrusted');
-
-      await client.octokit.issues.addLabels({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: opts.reviewIssue,
-        labels,
-      });
-      commentedIssues.push(opts.reviewIssue);
-      updatedLabels.push(opts.reviewIssue);
-    } catch (err) {
-      errors.push(`Failed to update review issue #${opts.reviewIssue}: ${(err as Error).message}`);
-    }
-  }
-
-  // Close phase issues
-  if (opts.phaseIssues && opts.phaseIssues.length > 0) {
-    for (const issueNum of opts.phaseIssues) {
+  // Comments are keyed by their exact target/evidence, not by mutable workflow names.
+  // A failed POST is never retried here: callers must reconcile its unknown result.
+  async function commentOnce(issueNumber: number, lines: string[]): Promise<void> {
+    const plainBody = lines.join('\n');
+    const key = createHash('sha256')
+      .update(
+        JSON.stringify([
+          prNumber,
+          issueNumber,
+          opts.expectedHeadSha ?? null,
+          opts.expectedBaseSha ?? null,
+          plainBody,
+        ]),
+      )
+      .digest('hex');
+    const body = `${plainBody}\n\n<!-- openslack-workflow-finalize:${key} -->`;
+    for (let page = 1; page <= 100; page++) {
+      let comments;
       try {
+        comments = (
+          await client.octokit.issues.listComments({
+            owner: client.owner,
+            repo: client.repo,
+            issue_number: issueNumber,
+            per_page: 100,
+            page,
+          })
+        ).data;
+      } catch {
+        throw new Error('COMMENT_LOOKUP_FAILED');
+      }
+      if (comments.some((comment) => comment.body === body || comment.body === plainBody)) {
+        result.commentedIssues.push(issueNumber);
+        return;
+      }
+      if (comments.length < 100) {
+        try {
+          await client.octokit.issues.createComment({
+            owner: client.owner,
+            repo: client.repo,
+            issue_number: issueNumber,
+            body,
+          });
+        } catch {
+          throw new Error('COMMENT_RESULT_UNKNOWN');
+        }
+        result.commentedIssues.push(issueNumber);
+        return;
+      }
+    }
+    throw new Error('COMMENT_LOOKUP_FAILED');
+  }
+
+  async function target(
+    kind: 'governance' | 'proposal' | 'review' | 'phase',
+    issueNumber: number,
+  ): Promise<boolean> {
+    let stage: FinalizeWorkflowFailure['stage'] = 'comment';
+    try {
+      if (kind === 'governance') {
+        await commentOnce(issueNumber, [
+          '## Workflow Governance Completed',
+          '',
+          `Merged via PR #${prNumber}.`,
+          `- **Evidence Hash**: ${opts.workflowHash}`,
+          `- **Trust Decision**: ${opts.trustDecision}`,
+          `- **Reviewer**: @${opts.trustReviewer}`,
+          `- **Reviewed Commit**: ${opts.trustReviewCommitOid}`,
+        ]);
+      } else if (kind === 'review') {
+        await commentOnce(issueNumber, [
+          '## Workflow Merged',
+          '',
+          `This workflow was merged via PR #${prNumber}.`,
+          ...(opts.workflowHash ? [`- **Hash**: ${opts.workflowHash}`] : []),
+          ...(opts.trustDecision ? [`- **Trust Decision**: ${opts.trustDecision}`] : []),
+        ]);
+      }
+      if (kind === 'proposal' || kind === 'phase') {
+        stage = 'close';
         await client.octokit.issues.update({
           owner: client.owner,
           repo: client.repo,
-          issue_number: issueNum,
+          issue_number: issueNumber,
           state: 'closed',
           state_reason: 'completed',
         });
-        await client.octokit.issues.addLabels({
+        result.closedIssues.push(issueNumber);
+      }
+      stage = 'labels';
+      const labels =
+        kind === 'governance'
+          ? ['lifecycle:accepted', `workflow:${opts.trustDecision}`]
+          : kind === 'review'
+            ? [
+                'lifecycle:accepted',
+                ...(opts.trustDecision === 'trusted' || opts.trustDecision === 'untrusted'
+                  ? [`workflow:${opts.trustDecision}`]
+                  : []),
+              ]
+            : ['result:completed', kind === 'phase' ? 'lifecycle:completed' : 'lifecycle:accepted'];
+      await client.octokit.issues.addLabels({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: issueNumber,
+        labels,
+      });
+      result.updatedLabels.push(issueNumber);
+      if (kind === 'governance') {
+        stage = 'close';
+        await client.octokit.issues.update({
           owner: client.owner,
           repo: client.repo,
-          issue_number: issueNum,
-          labels: ['result:completed', 'lifecycle:completed'],
+          issue_number: issueNumber,
+          state: 'closed',
+          state_reason: 'completed',
         });
-        closedIssues.push(issueNum);
-        updatedLabels.push(issueNum);
-      } catch (err) {
-        errors.push(`Failed to close phase issue #${issueNum}: ${(err as Error).message}`);
+        result.closedIssues.push(issueNumber);
       }
+      return true;
+    } catch (error) {
+      const code =
+        error instanceof Error &&
+        (error.message === 'COMMENT_LOOKUP_FAILED' || error.message === 'COMMENT_RESULT_UNKNOWN')
+          ? error.message
+          : 'LIFECYCLE_WRITE_FAILED';
+      result.failures.push({ code, stage, issueNumber });
+      result.errors.push(
+        `Failed to finalize ${kind} issue #${issueNumber}: ${code === 'COMMENT_RESULT_UNKNOWN' ? 'comment result unknown; reconcile before retrying' : code === 'COMMENT_LOOKUP_FAILED' ? 'comment lookup failed; no comment sent' : 'write failed'}`,
+      );
+      return false;
     }
   }
-
-  return { closedIssues, commentedIssues, updatedLabels, errors };
+  if (opts.governanceIssue && !(await target('governance', opts.governanceIssue))) return result;
+  if (opts.proposalIssue && !(await target('proposal', opts.proposalIssue))) return result;
+  if (opts.reviewIssue && !(await target('review', opts.reviewIssue))) return result;
+  for (const issueNumber of opts.phaseIssues ?? [])
+    if (!(await target('phase', issueNumber))) return result;
+  return result;
 }
 
 export async function transitionWorkflowIssue(

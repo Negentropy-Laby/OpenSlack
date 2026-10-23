@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1073,27 +1073,32 @@ describe('GS8-B workflow runner worker', () => {
     });
   });
 
-  it('rejects a real file replacement after import before binding loaded evidence', async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-worker-after-import-'));
-    roots.push(workspaceRoot);
-    const directory = join(workspaceRoot, '.openslack', 'workflows');
-    await mkdir(directory, { recursive: true });
-    const path = join(directory, 'sealed-test.mjs');
-    const source = workflowSource(1);
-    await writeFile(path, source);
-    const original = fileLoader.loadWorkflowFile;
-    vi.spyOn(fileLoader, 'loadWorkflowFile').mockImplementationOnce(async (...args) => {
-      const loaded = await original(...args);
-      await writeFile(path, workflowSource(2));
-      return loaded;
-    });
-    const descriptor = v2Descriptor(0, source);
-    const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
-    const prepared = await loader.prepare(descriptor);
-    await expect(loader.load(prepared, descriptor)).rejects.toMatchObject({
-      reasonCode: 'LOADER_SOURCE_MISMATCH',
-    });
-  });
+  it.each([false, true])(
+    'diagnoses file replacement after import (identical bytes: %s)',
+    async (identical) => {
+      const workspaceRoot = await mkdtemp(join(tmpdir(), 'openslack-worker-after-import-'));
+      roots.push(workspaceRoot);
+      const directory = join(workspaceRoot, '.openslack', 'workflows');
+      await mkdir(directory, { recursive: true });
+      const path = join(directory, 'sealed-test.mjs');
+      const source = workflowSource(1);
+      await writeFile(path, source);
+      const original = fileLoader.loadWorkflowFile;
+      vi.spyOn(fileLoader, 'loadWorkflowFile').mockImplementationOnce(async (...args) => {
+        const loaded = await original(...args);
+        const replacement = join(directory, 'replacement.mjs');
+        await writeFile(replacement, identical ? source : workflowSource(2));
+        await rename(replacement, path);
+        return loaded;
+      });
+      const descriptor = v2Descriptor(0, source);
+      const loader = createSealedWorkflowRunnerV2SourceLoader(workspaceRoot);
+      const prepared = await loader.prepare(descriptor);
+      await expect(loader.load(prepared, descriptor)).rejects.toMatchObject({
+        reasonCode: identical ? 'SOURCE_IDENTITY_DRIFT' : 'SOURCE_DRIFT',
+      });
+    },
+  );
 
   it('bounds source-error stderr to fixed classifications and valid digests', () => {
     const error = new WorkflowSourceEvidenceError(

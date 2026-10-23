@@ -109,17 +109,6 @@ export function bindWorkflowSourceIdentity(
   return Object.freeze(bound);
 }
 
-/** Decode the legacy storage field without rewriting it or guessing a hash domain. */
-export function matchStoredWorkflowIdentity(
-  stored: string | undefined,
-  workflow: WorkflowIdentitySource,
-  manifest: WorkflowMeta = workflow.meta,
-  recordedDomain?: WorkflowIdentity['domain'],
-): WorkflowIdentity | undefined {
-  const comparison = compareStoredWorkflowIdentity(stored, workflow, manifest, recordedDomain);
-  return comparison.matches ? (comparison.stored as WorkflowIdentity) : undefined;
-}
-
 /** Resolve once against the execution manifest; unknown historical domains stay unknown. */
 export function compareStoredWorkflowIdentity(
   stored: string | undefined,

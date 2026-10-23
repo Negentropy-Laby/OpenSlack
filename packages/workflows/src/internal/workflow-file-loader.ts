@@ -3,9 +3,11 @@ import {
   verifyWorkflowSourceManifest,
   WorkflowSourceEvidenceError,
   type WorkflowSourceSnapshot,
+  withWorkflowManifestDiagnostic,
+  WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS,
 } from './workflow-source-snapshot.js';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseManifest, validateManifest } from '../manifest.js';
 import type { WorkflowMeta, WorkflowFormat, WorkflowModule } from '../types.js';
@@ -17,6 +19,32 @@ export interface WorkflowLoadOptions {
    * entries. By default the exact raw source digest separates revisions.
    */
   moduleCacheKey?: string;
+}
+
+function manifestFailure(
+  filePath: string,
+  phase: 'static' | 'runtime',
+  cause: unknown,
+  missingMeta = false,
+): WorkflowSourceEvidenceError {
+  const path = relative(process.cwd(), resolve(filePath))
+    .replace(/[\u0000-\u001f\u007f]/gu, '?')
+    .slice(0, 512);
+  // Rule messages may quote untrusted input values. Expose only known field names.
+  const detail = cause instanceof Error ? cause.message : '';
+  const fields = WORKFLOW_MANIFEST_DIAGNOSTIC_FIELDS.filter((field) =>
+    new RegExp(`\\b${field}\\b`, 'iu').test(detail),
+  );
+  return withWorkflowManifestDiagnostic(
+    new WorkflowSourceEvidenceError(
+      'MANIFEST_INVALID',
+      `Workflow ${phase} manifest is invalid in ${path}${fields.length ? ` (fields: ${fields.join(', ')})` : ''}; ${missingMeta ? 'no "export const meta = ..." found; declare meta and reload the workflow.' : 'correct the manifest and reload the workflow.'}`,
+      undefined,
+      { cause },
+    ),
+    path,
+    fields,
+  );
 }
 
 /**
@@ -43,15 +71,11 @@ export async function loadWorkflowFile(
   let sourceSnapshot: WorkflowSourceSnapshot;
   try {
     meta = analyzeStaticMeta(source);
-    if (validateManifest(meta).length > 0) throw new Error('Invalid static manifest');
+    const errors = validateManifest(meta);
+    if (errors.length > 0) throw new Error(errors.join('\n'));
     sourceSnapshot = createWorkflowSourceSnapshot(sourceBytes, meta);
-  } catch {
-    throw new WorkflowSourceEvidenceError(
-      'MANIFEST_INVALID',
-      detectFormatFromSource(source) === 'invalid'
-        ? 'Workflow static manifest is invalid: no "export const meta = ..." found; declare meta and reload the workflow.'
-        : 'Workflow static manifest is invalid; correct the manifest and reload the workflow.',
-    );
+  } catch (cause) {
+    throw manifestFailure(filePath, 'static', cause, !/export\s+const\s+meta\b/u.test(source));
   }
 
   const hash = sourceSnapshot.rawHash;
@@ -81,14 +105,12 @@ export async function loadWorkflowFile(
   let runtimeMeta: WorkflowMeta;
   try {
     runtimeMeta = parseManifest(mod.meta);
-    if (validateManifest(runtimeMeta).length > 0) throw new Error('Invalid runtime manifest');
+    const errors = validateManifest(runtimeMeta);
+    if (errors.length > 0) throw new Error(errors.join('\n'));
     verifyWorkflowSourceManifest(sourceSnapshot, runtimeMeta);
   } catch (cause) {
     if (cause instanceof WorkflowSourceEvidenceError) throw cause;
-    throw new WorkflowSourceEvidenceError(
-      'MANIFEST_INVALID',
-      'Workflow exports an invalid runtime manifest; correct the manifest and reload the workflow.',
-    );
+    throw manifestFailure(filePath, 'runtime', cause);
   }
 
   return {

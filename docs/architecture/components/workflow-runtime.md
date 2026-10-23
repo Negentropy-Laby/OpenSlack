@@ -1634,3 +1634,44 @@ completion. Production waits retain absolute lease deadlines.
 Run-path validation distinguishes invalid logical IDs from historical IDs unsupported by the host filesystem. The latter returns `WORKFLOW_RUN_PLATFORM_UNSUPPORTED` and requires inspection on a compatible platform; checkpoint repair cannot rename evidence. Worker admission checks run-path support before local access or authority mutations. Resume completion preserves typed path and identity failures instead of promising cache repair. Indexed RunStore lists retain healthy rows and enumerable per-run diagnostics.
 
 The budget compatibility ledger remains the generation input. Its non-generated `compatibility-history.json` safety baseline must be explicitly extended with each reviewed rotation. Generation requires matching complete history and rejects conflicting inputs under a separate output root before emitting projections. The PR check independently verifies the historical prefix against the exact target-base commit, including the original source constant and manifest bytes on the first migration; deleting generated outputs cannot erase compatibility.
+
+### Source-evidence recovery and lifecycle compatibility
+
+File execution requires the loader's original source snapshot. Embedded builtin
+modules remain available for inspection and preview, but have no file-loader
+proof and cannot be submitted to the sealed runner. Their execution reports
+`SOURCE_KIND_UNSUPPORTED`; reading a later compiled file does not repair that
+proof. Profile-sync approval cards do not recommend an unsupported execution
+command.
+
+Go resume callers first validate the observed run/workspace route with
+`validateGoWorkflowResumeContext`, bind the loaded file and fresh bytes with
+`bindGoWorkflowResumeIdentity`, and call the run-owned preflight's `prepare`.
+Unbound, copied and cross-run identities remain rejected. The preflight captures
+inert private observations and returns copies at public boundaries. Missing
+metadata is an evidence failure, distinct from a weak historical identity.
+Execution still rereads source after confirmation and independently rechecks
+current authority; a prior eligibility result grants no execution permission.
+
+Historical audit publication uses `runMetaWorkflowIdentity` and the persisted
+run identifier, never today's source file. Strong identities use the v2 audit;
+weak untagged history uses the compatible v1 record with an explicit
+`Legacy/unverified` notice. Neither audit authorizes execution or resume. Older
+audit hashes remain historical producer observations and are correlated by run
+ID, without rewriting the original metadata or claiming the hashes are equal.
+
+Workflow finalization has an explicit credential-free preview before live PR
+queries. The live publisher checks merged status and the reviewed head/base
+before any Issue write. A changed base requires fresh gate evaluation, not an
+automatic substitution. TUI finalization selects only the verified governance
+Issue. Governance N/A returns an explicit no-write result; proposal, review and
+phase targets continue to require explicit CLI selection.
+
+Each confirmed lifecycle write retains its receipt, including when a later
+write fails. Completion comments carry a stable target/evidence key, and a
+repeat queries existing matching comments before posting. An unknown comment
+POST result stops further writes and requires reconciliation before retrying.
+This is not a claim of cross-process exactly-once GitHub publication. CLI and TUI
+retain partial receipts and typed failures instead of reporting completion.
+Source diagnostics use fixed reason messages, validated digest fields and safe
+loader path/field details; source text and raw exception causes are not rendered.

@@ -7,8 +7,7 @@ import {
 } from './internal/workflow-source-snapshot.js';
 import { WorkflowResumeRecoveryRequiredError } from './resume.js';
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type { ConfirmationPolicy, RunResult, WorkflowMeta, WorkflowSource } from './types.js';
 import {
   isWorkflowControlAuthorityHeadBoundToRoute,
@@ -80,28 +79,13 @@ export async function readWorkflowRunnerSourceBytes(input: {
   readonly discoveredPath: string;
   readonly source: WorkflowSource;
 }): Promise<Uint8Array> {
-  let path = input.discoveredPath;
-  if (input.source === 'builtin') {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(input.workflowName)) {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
-        'Runner builtin workflow identity is invalid.',
-      );
-    }
-    const root = join(import.meta.dirname, 'builtins');
-    const names = new Set(await readdir(root));
-    const candidates = ['.js', '.mjs', '.ts']
-      .filter((extension) => names.has(`${input.workflowName}${extension}`))
-      .map((extension) => join(root, `${input.workflowName}${extension}`));
-    if (candidates.length !== 1) {
-      throw new WorkflowRunnerControlError(
-        'WORKFLOW_RUNNER_CONTROL_INPUT_INVALID',
-        'Runner builtin workflow source is missing or ambiguous.',
-      );
-    }
-    path = candidates[0]!;
+  if (input.source === 'builtin' && input.discoveredPath.startsWith('openslack:builtin/')) {
+    throw new WorkflowSourceEvidenceError(
+      'SOURCE_KIND_UNSUPPORTED',
+      'Embedded builtin execution is unsupported: it has no file-loader source evidence. Preview or export it; use a reviewed file workflow for execution.',
+    );
   }
-  return readFile(path);
+  return readFile(input.discoveredPath);
 }
 
 function safeGeneratedId(prefix: string): string {

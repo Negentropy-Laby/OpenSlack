@@ -115,6 +115,48 @@ async function initPausedRun(
 }
 
 describe('checkResumable', () => {
+  it('diagnoses missing durable metadata without calling it a legacy weak identity', async () => {
+    const { store } = makeStore();
+    await initPausedRun(store, TEST_MANIFEST);
+    const status = await store.getRunStatus('run-001');
+    vi.spyOn(store, 'getRunStatus').mockResolvedValue(status);
+    vi.spyOn(store, 'loadMeta').mockResolvedValue(null);
+    const observation = await createWorkflowResumePreflight(store, 'run-001');
+    expect(observation.eligibility).toMatchObject({
+      eligible: false,
+      reasonCode: 'EVIDENCE_INVALID',
+    });
+    const result = await observation.check(identity());
+    expect(result.reason).toContain('metadata is missing');
+    expect(result.reason).not.toContain('legacy weak');
+  });
+
+  it.each(['function', 'proxy', 'class', 'getter'])(
+    'turns a %s status into a typed refusal instead of rejecting preflight',
+    async (kind) => {
+      const { store } = makeStore();
+      await initPausedRun(store, TEST_MANIFEST);
+      const status = await store.getRunStatus('run-001');
+      const getter = vi.fn(() => {
+        throw new Error('getter must not execute');
+      });
+      let unsafe = Object.assign({}, status, { unsafe: () => {} });
+      if (kind === 'proxy') unsafe = new Proxy(unsafe, {});
+      if (kind === 'class') unsafe = Object.assign(new (class Evidence {})(), unsafe);
+      if (kind === 'getter') Object.defineProperty(unsafe, 'unsafe', { get: getter });
+      vi.spyOn(store, 'getRunStatus').mockResolvedValue(unsafe);
+      const observation = await createWorkflowResumePreflight(store, 'run-001');
+      expect(observation.eligibility).toMatchObject({
+        eligible: false,
+        reasonCode: 'EVIDENCE_INVALID',
+      });
+      expect(await observation.check(identity())).toMatchObject({
+        canResume: false,
+        reasonCode: 'EVIDENCE_INVALID',
+      });
+      expect(getter).not.toHaveBeenCalled();
+    },
+  );
   it('reuses one owned preflight without accepting observations at another store or run', async () => {
     const { store } = makeStore();
     await initPausedRun(store, TEST_MANIFEST);
@@ -521,7 +563,7 @@ describe('verified Go source identities', () => {
         loaded,
         Buffer.from('changed'),
       ),
-    ).toThrow(expect.objectContaining({ reasonCode: 'LOADER_SOURCE_MISMATCH' }));
+    ).toThrow(expect.objectContaining({ reasonCode: 'SOURCE_DRIFT' }));
   });
   it('owns snapshot bytes and rejects forged or modified snapshots', () => {
     const { bytes, loaded, route, sourceSnapshot } = fixture();

@@ -14,7 +14,7 @@ import {
   registerWorkflowEffectAuthorizationPort,
   type WorkflowEffectAuthorizationPort,
 } from '../internal/workflow-effect-authorization-contract.js';
-import { RunStore } from '../run-store.js';
+import { RunStore, type RunMeta } from '../run-store.js';
 import type { WorkflowMeta, WorkflowModule } from '../types.js';
 import {
   workflowControlAuthorityInitialRecord,
@@ -203,7 +203,8 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
         baseDir: fixture.baseDir,
         access: createWorkflowRunStoreRecoveryAccess(),
       });
-      const { manifestHashDomain: _domain, ...legacyMeta } = meta;
+      const legacyMeta: RunMeta = { ...meta };
+      delete legacyMeta.manifestHashDomain;
       await legacyWriter.initRun(fixture.runId, {
         ...legacyMeta,
         manifestHash:
@@ -251,7 +252,8 @@ describe('sealed Go execution recovery', { timeout: 30_000 }, () => {
     async (domain) => {
       const fixture = await execution('resume');
       const oldMeta = (await fixture.reader.loadMeta(fixture.runId))!;
-      const { manifestHashDomain: _domain, ...untaggedMeta } = oldMeta;
+      const untaggedMeta: RunMeta = { ...oldMeta };
+      delete untaggedMeta.manifestHashDomain;
       const historicalMeta = {
         ...untaggedMeta,
         manifestHash:

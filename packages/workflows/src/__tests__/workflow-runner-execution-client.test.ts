@@ -35,7 +35,10 @@ import type {
   WorkflowRunnerJobView,
   WorkflowRunnerStatusPort,
 } from '../workflow-runner-control-client.js';
-import { executeWorkflowThroughRunnerWithRuntime } from '../workflow-runner-execution-client.js';
+import {
+  executeWorkflowThroughRunnerWithRuntime,
+  readWorkflowRunnerSourceBytes,
+} from '../workflow-runner-execution-client.js';
 import type {
   PreparedWorkflowRunnerV2JobSpec,
   WorkflowRunnerV2ControlPort,
@@ -50,6 +53,20 @@ import {
 const roots: string[] = [];
 const NOW = '2026-08-13T00:00:00.000Z';
 const HASH = '1'.repeat(64);
+
+it('rejects embedded builtins explicitly before trying to manufacture file evidence', async () => {
+  await expect(
+    readWorkflowRunnerSourceBytes({
+      workflowName: 'profile-sync',
+      discoveredPath: 'openslack:builtin/profile-sync',
+      source: 'builtin',
+    }),
+  ).rejects.toMatchObject({
+    code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+    reasonCode: 'SOURCE_KIND_UNSUPPORTED',
+    message: expect.stringContaining('no file-loader source evidence'),
+  });
+});
 
 function authorityRecordHash(record: WorkflowControlAuthorityRunRecord): string {
   return createHash('sha256')
