@@ -516,7 +516,14 @@ export {
   transitionWorkflowIssue,
   fetchWorkflowLifecycleIssues,
 } from './workflow-lifecycle.js';
-export type { FinalizeWorkflowPROpts, WorkflowLifecycleQueryResult } from './workflow-lifecycle.js';
+export type {
+  FinalizeWorkflowPROpts,
+  FinalizeWorkflowPRResult,
+  FinalizeWorkflowFailure,
+  FinalizeWorkflowFailureCode,
+  WorkflowLifecycleQueryResult,
+} from './workflow-lifecycle.js';
+export { previewWorkflowFinalization } from './workflow-lifecycle.js';
 export {
   renderWorkflowProposalBody,
   renderWorkflowGovernanceBody,

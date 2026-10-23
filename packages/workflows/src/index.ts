@@ -1132,7 +1132,10 @@ export {
   requireWorkflowSourceSnapshot,
   WorkflowSourceEvidenceError,
   workflowSourceEvidenceCause,
+  renderWorkflowSourceEvidence,
+  workflowSourceEvidenceDiagnostic,
 } from './internal/workflow-source-snapshot.js';
+export { runMetaWorkflowIdentity } from './internal/workflow-run-identity.js';
 export type { WorkflowSourceSnapshot } from './internal/workflow-source-snapshot.js';
 
 export type { WorkflowIdentity, WorkflowIdentityEvidence } from './types.js';

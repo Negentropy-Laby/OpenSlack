@@ -3,7 +3,11 @@ import {
   compareWorkflowBinding,
 } from './internal/workflow-identity.js';
 import { createHash } from 'node:crypto';
-import { WorkflowSourceEvidenceError } from './internal/workflow-source-snapshot.js';
+import {
+  WorkflowSourceEvidenceError,
+  WORKFLOW_SOURCE_EVIDENCE_REASONS,
+  WORKFLOW_SOURCE_EVIDENCE_DOMAINS,
+} from './internal/workflow-source-snapshot.js';
 import { constants as fsConstants, writeSync, type BigIntStats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -492,9 +496,15 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
       // on every supported platform. Re-verify immediately after import and
       // fail closed if the path or bytes crossed that residual boundary.
       const afterImport = await readSealedWorkflowSource(prepared.path);
-      if (
-        sourceIdentity(afterImport.stat) !== prepared.identity ||
+      const currentManifestHash = policy.hashManifest(workflow.meta);
+      const currentSourceHash = policy.hashSource(afterImport.bytes);
+      const sourceIdentityChanged = sourceIdentity(afterImport.stat) !== prepared.identity;
+      const sourceChanged =
         !afterImport.bytes.equals(prepared.bytes) ||
+        currentSourceHash !== descriptor.workflowSourceHash;
+      if (
+        sourceIdentityChanged ||
+        sourceChanged ||
         compareWorkflowBinding(
           {
             workflowId: descriptor.workflowId,
@@ -505,21 +515,27 @@ function createSealedWorkflowSourceLoaderCore<TDescriptor extends SealedWorkflow
           {
             workflowId: workflow.meta.name,
             workflowVersion: workflow.meta.version ?? '0.0.0',
-            manifestHash: policy.hashManifest(workflow.meta),
-            workflowSourceHash: policy.hashSource(afterImport.bytes),
+            manifestHash: currentManifestHash,
+            workflowSourceHash: currentSourceHash,
           },
         ) !== undefined
       ) {
-        const manifestChanged = policy.hashManifest(workflow.meta) !== descriptor.manifestHash;
+        const manifestChanged = currentManifestHash !== descriptor.manifestHash;
         throw new WorkflowSourceEvidenceError(
-          manifestChanged ? 'MANIFEST_DRIFT' : 'LOADER_SOURCE_MISMATCH',
-          policy.messages.loadedIdentity,
+          manifestChanged
+            ? 'MANIFEST_DRIFT'
+            : sourceChanged
+              ? 'SOURCE_DRIFT'
+              : sourceIdentityChanged
+                ? 'SOURCE_IDENTITY_DRIFT'
+                : 'LOADER_SOURCE_MISMATCH',
+          sourceIdentityChanged && !sourceChanged && !manifestChanged
+            ? 'Workflow file identity changed after import, although its source digest is unchanged.'
+            : policy.messages.loadedIdentity,
           {
             domain: manifestChanged ? 'runner-v2-manifest' : 'runner-v2-source',
             stored: manifestChanged ? descriptor.manifestHash : descriptor.workflowSourceHash,
-            current: manifestChanged
-              ? policy.hashManifest(workflow.meta)
-              : policy.hashSource(afterImport.bytes),
+            current: manifestChanged ? currentManifestHash : currentSourceHash,
           },
         );
       }
@@ -567,25 +583,17 @@ function installProtocolOnlyStreams(): void {
 export function boundedDiagnostic(error: unknown): string {
   if (error instanceof WorkflowSourceEvidenceError) {
     // Never emit module messages, source text or provider replies to stderr.
-    const reasons = [
-      'SOURCE_EVIDENCE_MISSING',
-      'SOURCE_EVIDENCE_UNRECOGNIZED',
-      'SOURCE_BYTES_MISSING',
-      'SOURCE_DRIFT',
-      'MANIFEST_DRIFT',
-      'MANIFEST_INVALID',
-      'LOADER_SOURCE_MISMATCH',
-    ];
-    const domains = ['runner-v2-source', 'runner-v2-manifest', 'raw-sha256'];
     const safeHash = (value: unknown) =>
-      typeof value === 'string' && /^[0-9a-f]{64}$/.test(value) ? value : undefined;
+      typeof value === 'string' && WORKFLOW_BINDING_HASH_REGEX.test(value) ? value : undefined;
     return (
       JSON.stringify({
         code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
-        reasonCode: reasons.includes(error.reasonCode)
+        reasonCode: WORKFLOW_SOURCE_EVIDENCE_REASONS.includes(error.reasonCode)
           ? error.reasonCode
           : 'SOURCE_EVIDENCE_UNRECOGNIZED',
-        domain: domains.includes(error.identities?.domain ?? '')
+        domain: WORKFLOW_SOURCE_EVIDENCE_DOMAINS.some(
+          (domain) => domain === error.identities?.domain,
+        )
           ? error.identities?.domain
           : undefined,
         stored: safeHash(error.identities?.stored),

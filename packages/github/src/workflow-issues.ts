@@ -204,7 +204,11 @@ export function workflowReviewLabels(trustLevel: string): string[] {
 
 export interface WorkflowRunIdentityEvidence {
   digest: string;
-  domain: 'raw-sha256' | 'openslack.workflow-runner.workflow-source.v2' | 'unknown';
+  domain:
+    | 'raw-sha256'
+    | 'openslack.workflow-runner.workflow-source.v2'
+    | 'function-source-sha256'
+    | 'unknown';
   provenance: 'recorded' | 'inferred' | 'unknown';
 }
 
@@ -238,9 +242,12 @@ export function renderWorkflowRunBody(run: WorkflowRunIssue): string {
     if (
       !identity ||
       !/^[a-f0-9]{64}$/.test(identity.digest) ||
-      !['raw-sha256', 'openslack.workflow-runner.workflow-source.v2', 'unknown'].includes(
-        identity.domain,
-      ) ||
+      ![
+        'raw-sha256',
+        'openslack.workflow-runner.workflow-source.v2',
+        'function-source-sha256',
+        'unknown',
+      ].includes(identity.domain) ||
       !['recorded', 'inferred', 'unknown'].includes(identity.provenance) ||
       (identity.domain === 'unknown') !== (identity.provenance === 'unknown')
     ) {

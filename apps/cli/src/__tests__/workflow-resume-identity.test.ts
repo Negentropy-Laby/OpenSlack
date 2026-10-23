@@ -65,6 +65,7 @@ vi.mock('@openslack/github', async () => ({
     updatedLabels: [],
     errors: [],
   })),
+  previewWorkflowFinalization: vi.fn(async () => undefined),
 }));
 vi.mock('@openslack/pr', async () => ({
   ...(await vi.importActual<typeof pr>('@openslack/pr')),
@@ -117,6 +118,33 @@ afterEach(() => {
 const resume = () =>
   collaborationCommands().parseAsync(['workflow', 'resume', 'run.test', '--yes'], { from: 'user' });
 describe('workflow finalize CLI binding', () => {
+  it('runs a real frontend preview without live gate or publisher calls', async () => {
+    vi.mocked(github.previewWorkflowFinalization).mockResolvedValueOnce({
+      dryRun: true,
+      errors: [],
+      closedIssues: [],
+      commentedIssues: [],
+      updatedLabels: [],
+    });
+    await collaborationCommands().parseAsync(['workflow', 'finalize-pr', '42'], { from: 'user' });
+    expect(pr.fetchPRDetails).not.toHaveBeenCalled();
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('preview only'));
+  });
+
+  it.each(['0x2a', '4e1', '0', '-1', '42x', ' 42', '9007199254740992'])(
+    'rejects noncanonical Governance Issue %s before any repository query',
+    async (value) => {
+      await collaborationCommands().parseAsync(
+        ['workflow', 'finalize-pr', '42', '--governance-issue', value],
+        { from: 'user' },
+      );
+      expect(process.exitCode).toBe(1);
+      expect(github.previewWorkflowFinalization).not.toHaveBeenCalled();
+      expect(pr.fetchPRDetails).not.toHaveBeenCalled();
+      expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    },
+  );
   it.each([false, true])(
     'does not auto-select an unbound body issue (explicit=%s)',
     async (explicit) => {

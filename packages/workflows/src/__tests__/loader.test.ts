@@ -375,6 +375,29 @@ export const meta: WorkflowMeta = {
 });
 
 describe('loadWorkflow integration', () => {
+  it('reports safe path and field diagnostics while keeping source out of the message', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'openslack-loader-fields-'));
+    const path = join(directory, 'invalid-name.mjs');
+    writeFileSync(
+      path,
+      'export const meta = { name: 42, description: "PRIVATE_SOURCE_SENTINEL", phases: [] };',
+    );
+    try {
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        reasonCode: 'MANIFEST_INVALID',
+        message: expect.stringContaining('invalid-name.mjs'),
+        cause: expect.any(Error),
+      });
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        message: expect.stringContaining('name'),
+      });
+      await expect(loadWorkflow(path)).rejects.toMatchObject({
+        message: expect.not.stringContaining('PRIVATE_SOURCE_SENTINEL'),
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it.each([
     'static',
     'static-missing-meta',

@@ -1,4 +1,6 @@
 import { WORKFLOW_BINDING_HASH_REGEX } from './internal/workflow-binding-field-rules.js';
+import { types as utilTypes } from 'node:util';
+import { runMetaWorkflowIdentity } from './internal/workflow-run-identity.js';
 import {
   bindWorkflowSourceIdentity,
   compareWorkflowBinding,
@@ -135,7 +137,7 @@ export function bindGoWorkflowResumeIdentity(
       runId,
       'source or manifest changed since loading',
       { cause },
-      'LOADER_SOURCE_MISMATCH',
+      cause instanceof WorkflowSourceEvidenceError ? cause.reasonCode : 'LOADER_SOURCE_MISMATCH',
       cause instanceof WorkflowSourceEvidenceError ? cause.identities : undefined,
     );
   }
@@ -219,6 +221,29 @@ export async function checkResumeEligibility(
   return { eligible: canResume, status, reason, reasonCode, cause };
 }
 
+/** Store observations must be inert plain data before clone/getter traversal. */
+function ownReadEvidence<T>(value: T): T {
+  const pending: unknown[] = [value];
+  const seen = new Set<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === 'function' || typeof current === 'symbol')
+      throw new TypeError('Workflow evidence must be inert data.');
+    if (current === null || typeof current !== 'object') continue;
+    if (utilTypes.isProxy(current)) throw new TypeError('Workflow evidence cannot be a Proxy.');
+    if (seen.has(current)) continue;
+    seen.add(current);
+    const prototype = Object.getPrototypeOf(current);
+    if (prototype !== Object.prototype && prototype !== Array.prototype && prototype !== null)
+      throw new TypeError('Workflow evidence must use plain objects.');
+    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(current))) {
+      if (!('value' in descriptor)) throw new TypeError('Workflow evidence cannot have accessors.');
+      pending.push(descriptor.value);
+    }
+  }
+  return structuredClone(value);
+}
+
 async function checkResumeState(
   runStore: WorkflowRunReadOnlyStore,
   runId: string,
@@ -250,7 +275,7 @@ async function checkResumeState(
   // 2. Load current status
   let status: RunStatus | null;
   try {
-    status = await runStore.getRunStatus(runId);
+    status = ownReadEvidence(await runStore.getRunStatus(runId));
   } catch (error) {
     return {
       canResume: false,
@@ -307,11 +332,19 @@ export async function createWorkflowResumePreflight(
   runId: string,
 ) {
   let eligibility = await checkResumeState(runStore, runId);
-  eligibility = { ...eligibility, status: structuredClone(eligibility.status) };
   let meta: RunMeta | null = null;
   if (eligibility.canResume) {
     try {
-      meta = structuredClone(await runStore.loadMeta(runId));
+      meta = ownReadEvidence(await runStore.loadMeta(runId));
+      if (meta === null) {
+        eligibility = {
+          ...eligibility,
+          canResume: false,
+          manifestMatch: false,
+          reasonCode: 'EVIDENCE_INVALID',
+          reason: `Run ${runId} durable metadata is missing.`,
+        };
+      }
     } catch (cause) {
       eligibility = {
         ...eligibility,
@@ -332,8 +365,10 @@ export async function createWorkflowResumePreflight(
     get meta() {
       return structuredClone(meta);
     },
-    check: (identity: WorkflowResumeIdentity) =>
-      checkObservedResume(runId, identity, eligibility, meta),
+    check: async (identity: WorkflowResumeIdentity) => {
+      const result = await checkObservedResume(runId, identity, eligibility, meta);
+      return { ...result, status: structuredClone(result.status) };
+    },
     prepare: (identity: WorkflowResumeIdentity) =>
       prepareObservedResume(runStore, runId, identity, eligibility, meta),
   });
@@ -345,17 +380,13 @@ async function checkObservedResume(
   observed: ResumeCheckResult,
   meta: RunMeta | null,
 ): Promise<ResumeCheckResult> {
-  const eligibility = { ...observed, status: structuredClone(observed.status) };
+  const eligibility = observed;
   if (!eligibility.canResume) return eligibility;
   const status = eligibility.status;
 
   // A valid source digest alone is not a formally bound resume identity.
   const storedIdentity: WorkflowIdentityEvidence | undefined = meta
-    ? {
-        digest: meta.manifestHash,
-        domain: meta.manifestHashDomain ?? 'unknown',
-        provenance: meta.manifestHashDomain ? 'recorded' : 'unknown',
-      }
+    ? runMetaWorkflowIdentity(meta)
     : undefined;
   if (!isResumeIdentity(identity) || resumeIdentityRuns.get(identity) !== runId) {
     return {

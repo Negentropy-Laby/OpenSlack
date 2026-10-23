@@ -33,7 +33,7 @@ import {
   type WorkflowArgumentsEnvelope,
 } from './internal/workflow-arguments.js';
 import {
-  matchStoredWorkflowIdentity,
+  compareStoredWorkflowIdentity,
   resolveWorkflowIdentityHash,
 } from './internal/workflow-identity.js';
 import { isWorkflowResumeStatus } from './internal/workflow-resume-state.js';
@@ -638,7 +638,7 @@ export async function executeGoAuthorityResume(
   }
   let storedIdentity;
   try {
-    storedIdentity = matchStoredWorkflowIdentity(
+    storedIdentity = compareStoredWorkflowIdentity(
       meta.manifestHash,
       workflow,
       manifest,
@@ -657,9 +657,15 @@ export async function executeGoAuthorityResume(
     meta.runId !== runId ||
     meta.workflowName !== manifest.name ||
     meta.mode !== 'execute' ||
-    !storedIdentity
+    !storedIdentity.matches
   ) {
-    throw new WorkflowResumeRecoveryRequiredError(runId, 'identity or workflow hash has drifted');
+    throw new WorkflowResumeRecoveryRequiredError(
+      runId,
+      'identity or workflow hash has drifted',
+      undefined,
+      'IDENTITY_UNVERIFIED',
+      { stored: storedIdentity.stored, current: storedIdentity.current },
+    );
   }
   let persistedEncodedArgs: EncodedWorkflowArguments;
   let persistedArgsCanonical: string;

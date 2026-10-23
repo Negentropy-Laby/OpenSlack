@@ -62,6 +62,7 @@ vi.mock('@openslack/pr', () => ({
 vi.mock('@openslack/github', () => ({
   publishWorkflowSplit: vi.fn(),
   finalizeWorkflowPR: vi.fn(),
+  previewWorkflowFinalization: vi.fn(),
   fetchWorkflowLifecycleIssues: vi.fn(),
   getPR: vi.fn(),
 }));
@@ -206,8 +207,55 @@ function githubReviewParams(overrides?: Partial<ApprovalExecutionParams>): Appro
 describe('finalizeWorkflowPr evidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(github.previewWorkflowFinalization).mockResolvedValue(undefined);
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue({
+      workflowEvidence: {},
+      workflowGovernanceIssue: { issueNumber: 41, prNumber: 42 },
+      changedFiles: [],
+      reviews: [],
+      baseSha: 'base',
+      headSha: 'head',
+      author: 'author',
+    } as never);
+    vi.mocked(pr.loadPRCodeownerEvidence).mockResolvedValue({ owners: ['reviewer'] } as never);
+    vi.mocked(pr.evaluateWorkflowGate).mockReturnValue({
+      overall: 'PASS',
+      criteria: [{ name: 'Governance issue', status: 'PASS' }],
+      evidenceHash: 'sha256:artifact',
+      trustDecision: 'trusted',
+      governanceIssue: 41,
+      trustReviewer: 'reviewer',
+      trustReviewCommitOid: 'head',
+    } as never);
+    vi.mocked(github.finalizeWorkflowPR).mockResolvedValue({
+      closedIssues: [41],
+      commentedIssues: [41],
+      updatedLabels: [41],
+      errors: [],
+      failures: [],
+    });
   });
-  it('does not auto-select a body issue when the real governance criterion is N/A', async () => {
+
+  it('returns every confirmed partial receipt and the typed failure to the caller', async () => {
+    vi.mocked(github.finalizeWorkflowPR).mockResolvedValueOnce({
+      closedIssues: [],
+      commentedIssues: [41],
+      updatedLabels: [41],
+      errors: ['write failed'],
+      failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close', issueNumber: 41 }],
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: false,
+      data: {
+        closed: [],
+        commented: [41],
+        updatedLabels: [41],
+        failures: [{ code: 'LIFECYCLE_WRITE_FAILED', stage: 'close' }],
+      },
+    });
+  });
+
+  it('does not select an arbitrary body Issue when governance is not required', async () => {
     const path = '.openslack/workflows/existing.mjs';
     const report = {
       workflowEvidence: createWorkflowEvidence({
@@ -232,141 +280,96 @@ describe('finalizeWorkflowPr evidence', () => {
     };
     const gate = evaluateRealWorkflowGate(report);
     expect(gate.overall).toBe('PASS');
-    expect(gate.criteria).toContainEqual(
-      expect.objectContaining({
-        name: 'Governance issue',
-        status: 'N/A',
-      }),
-    );
     expect(gate.governanceIssue).toBe(999);
     vi.mocked(pr.fetchPRDetails).mockResolvedValue(report as never);
-    vi.mocked(pr.loadPRCodeownerEvidence).mockResolvedValue({ owners: [] } as never);
     vi.mocked(pr.evaluateWorkflowGate).mockReturnValue(gate);
-    vi.mocked(github.getPR).mockResolvedValue({
-      merged: true,
-      head: { sha: 'head' },
-      base: { sha: 'base' },
-    } as never);
-    expect(await finalizeWorkflowPr('existing', 42, '/test')).toMatchObject({ success: false });
-    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-  });
-  it('fails closed without repository artifact evidence', async () => {
-    vi.mocked(pr.fetchPRDetails).mockResolvedValue({} as never);
-    expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-      success: false,
+    expect(await finalizeWorkflowPr('existing', 42)).toMatchObject({
+      success: true,
+      data: { governanceRequired: false },
+      message: expect.stringContaining('no lifecycle writes'),
     });
     expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+    expect(github.fetchWorkflowLifecycleIssues).not.toHaveBeenCalled();
   });
-  it.each(['PASS', 'FAIL'] as const)(
-    'uses only the repository gate evidence on %s',
-    async (overall) => {
-      vi.mocked(pr.fetchPRDetails).mockResolvedValue({
+
+  it('reaches credential-free preview before a live repository query', async () => {
+    vi.mocked(github.previewWorkflowFinalization).mockResolvedValueOnce({
+      dryRun: true,
+      errors: [],
+      closedIssues: [],
+      commentedIssues: [],
+      updatedLabels: [],
+    });
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+      success: true,
+      data: { dryRun: true },
+      message: expect.stringContaining('preview only'),
+    });
+    expect(pr.fetchPRDetails).not.toHaveBeenCalled();
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without repository artifact evidence', async () => {
+    vi.mocked(pr.fetchPRDetails).mockResolvedValue({} as never);
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({ success: false });
+    expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
+  });
+
+  it('forwards reviewed head/base once and does not perform an intermediate PR lookup', async () => {
+    expect(await finalizeWorkflowPr('test', 42)).toMatchObject({ success: true });
+    expect(github.finalizeWorkflowPR).toHaveBeenCalledExactlyOnceWith(
+      42,
+      expect.objectContaining({
+        governanceIssue: 41,
+        expectedHeadSha: 'head',
+        expectedBaseSha: 'base',
+      }),
+    );
+    expect(github.getPR).not.toHaveBeenCalled();
+    expect(github.fetchWorkflowLifecycleIssues).not.toHaveBeenCalled();
+  });
+
+  it.each(['PR_NOT_MERGED', 'PR_EVIDENCE_DRIFT', 'PR_QUERY_FAILED'])(
+    'reports the shared publisher refusal %s',
+    async (code) => {
+      vi.mocked(github.finalizeWorkflowPR).mockResolvedValueOnce({
+        closedIssues: [],
+        commentedIssues: [],
+        updatedLabels: [],
+        errors: [code],
+        failures: [{ code: code as 'PR_NOT_MERGED', stage: 'preflight' }],
+      });
+      expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+        success: false,
+        message: expect.stringContaining(code),
+      });
+      expect(github.getPR).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['missing', 'wrong-pr', 'wrong-issue'])(
+    'refuses %s queried governance evidence without throwing a TypeError',
+    async (kind) => {
+      vi.mocked(pr.fetchPRDetails).mockResolvedValueOnce({
         workflowEvidence: {},
-        workflowGovernanceIssue: { issueNumber: 41, prNumber: 42 },
+        workflowGovernanceIssue:
+          kind === 'missing'
+            ? undefined
+            : {
+                issueNumber: kind === 'wrong-issue' ? 99 : 41,
+                prNumber: kind === 'wrong-pr' ? 99 : 42,
+              },
         changedFiles: [],
         reviews: [],
         baseSha: 'base',
         headSha: 'head',
         author: 'author',
       } as never);
-      vi.mocked(pr.loadPRCodeownerEvidence).mockResolvedValue({ owners: ['reviewer'] } as never);
-      vi.mocked(pr.evaluateWorkflowGate).mockReturnValue({
-        overall,
-        criteria: [{ name: 'Governance issue', status: 'PASS' }],
-        evidenceHash: 'sha256:artifact',
-        trustDecision: 'trusted',
-        governanceIssue: 41,
-        trustReviewer: 'reviewer',
-        trustReviewCommitOid: 'head',
-      } as never);
-      vi.mocked(github.fetchWorkflowLifecycleIssues).mockResolvedValue({
-        phaseIssues: [],
-      } as never);
-      vi.mocked(github.finalizeWorkflowPR).mockResolvedValue({
-        closedIssues: [],
-        commentedIssues: [],
-        updatedLabels: [],
-        errors: [],
+      expect(await finalizeWorkflowPr('test', 42)).toMatchObject({
+        success: false,
+        message: expect.stringContaining('governance issue is missing'),
       });
-      vi.mocked(github.getPR).mockResolvedValue({
-        merged: true,
-        head: { sha: 'head' },
-        base: { sha: 'base' },
-      } as never);
-      expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-        success: overall === 'PASS',
-      });
-      if (overall === 'FAIL') expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-      else
-        expect(github.finalizeWorkflowPR).toHaveBeenCalledWith(
-          42,
-          expect.objectContaining({
-            workflowHash: 'sha256:artifact',
-            trustDecision: 'trusted',
-            governanceIssue: 41,
-            trustReviewer: 'reviewer',
-            trustReviewCommitOid: 'head',
-          }),
-        );
-      expect(github.fetchWorkflowLifecycleIssues).not.toHaveBeenCalled();
-      if (overall === 'PASS') {
-        for (const side of ['head', 'base']) {
-          vi.mocked(github.finalizeWorkflowPR).mockClear();
-          vi.mocked(github.getPR).mockResolvedValue({
-            merged: true,
-            head: { sha: side === 'head' ? 'drift' : 'head' },
-            base: { sha: side === 'base' ? 'drift' : 'base' },
-          } as never);
-          expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-            success: false,
-          });
-          expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-        }
-        vi.mocked(github.getPR).mockRejectedValueOnce(new Error('offline'));
-        expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-          success: false,
-        });
-        expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-        vi.mocked(github.getPR).mockResolvedValue({
-          merged: true,
-          head: { sha: 'head' },
-          base: { sha: 'base' },
-        } as never);
-        vi.mocked(github.finalizeWorkflowPR).mockResolvedValueOnce({
-          closedIssues: [],
-          commentedIssues: [],
-          updatedLabels: [],
-          errors: [],
-          dryRun: true,
-        });
-        expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-          message: expect.stringContaining('preview only'),
-        });
-        vi.mocked(pr.evaluateWorkflowGate).mockReturnValueOnce({
-          overall: 'PASS',
-          evidenceHash: 'sha256:artifact',
-          trustDecision: 'trusted',
-        } as never);
-        vi.mocked(github.finalizeWorkflowPR).mockClear();
-        expect(await finalizeWorkflowPr('workflow.test', 42, '/test')).toMatchObject({
-          success: false,
-          message: expect.stringContaining('governance issue is missing'),
-        });
-        expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-      }
-      vi.mocked(github.finalizeWorkflowPR).mockClear();
-      for (const state of ['open', 'closed']) {
-        vi.mocked(github.getPR).mockResolvedValue({
-          merged: false,
-          state,
-          head: { sha: 'head' },
-          base: { sha: 'base' },
-        } as never);
-        expect(await finalizeWorkflowPr('unrelated-workflow', 42, '/test')).toMatchObject({
-          success: false,
-        });
-        expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
-      }
+      expect(github.finalizeWorkflowPR).not.toHaveBeenCalled();
     },
   );
 });
@@ -806,6 +809,33 @@ describe('workflow start and save/share handlers', () => {
 describe('executeWorkflowRun', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('returns a bounded typed loader refusal without leaking message or identity sentinels', async () => {
+    const { findWorkflow, loadWorkflow, WorkflowSourceEvidenceError } =
+      await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValueOnce({
+      name: 'test',
+      path: '/test/invalid.mjs',
+      source: 'openslack-project',
+    });
+    vi.mocked(loadWorkflow).mockRejectedValueOnce(
+      new WorkflowSourceEvidenceError('SOURCE_DRIFT', 'PRIVATE_MESSAGE_SENTINEL', {
+        domain: 'runner-v2-source',
+        stored: 'a'.repeat(64),
+        current: 'PRIVATE_CURRENT_SENTINEL',
+      }),
+    );
+    const result = await executeWorkflowRun('test', 'preview', ROOT);
+    expect(result).toMatchObject({
+      success: false,
+      data: {
+        code: 'WORKFLOW_SOURCE_EVIDENCE_INVALID',
+        reasonCode: 'SOURCE_DRIFT',
+        identities: { stored: 'a'.repeat(64) },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_');
   });
 
   it('returns not found for missing workflow', async () => {
