@@ -161,7 +161,7 @@ func TestSourceManifestBindsOnlyUnreleasedGS9IInputs(t *testing.T) {
 		},
 		"workflowFileLoaderSource": {
 			Path:   "packages/workflows/src/internal/workflow-file-loader.ts",
-			SHA256: "6d7d9984d45bfc54b896b1f1fe2ee8a2a5eca12f7a123a0e55adbd21d7f836af",
+			SHA256: "7cc3d9ad427e12425bc1b2ed9202036d07d3b74934433ee7359ed3cbe65e7eda",
 		},
 		"dockerfile": {
 			Path:   "services/workflow-control/Dockerfile",

@@ -4,7 +4,9 @@
   "issue_number": 415,
   "agent_id": "codex_runtime_source-repair",
   "run_id": "RUN-20261023103014-415delivery",
-  "record_kind": "pre_publication_validation_snapshot",
+  "record_kind": "initial_validation_snapshot_with_additive_followup",
+  "initial_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+  "top_level_validation_scope": "Initial snapshot for initial_candidate_sha; current_validation below supersedes candidate-specific results without replacing the historical evidence.",
   "observation_anchor_at": "2026-10-23T10:58:29.698Z",
   "phase_at_recording": "validated_for_independent_draft_publication",
   "base_sha": "184adb088c6157ceec148061a6b8cef5f8444377",
@@ -63,9 +65,9 @@
       "modules.3:2139->2153",
       "modules.4:4683->4742"
     ],
-    "scope_evidence": "Live task path filters allow .openslack/modules.yaml and docs/status/current.md, but the verified agent principal denies both with path_not_allowed. The effective intersection excludes them; no changes were made.",
+    "scope_evidence": "CORRECTION: the initial filterByPath probe checked forbidden paths, not allowed_paths membership. Explicit live membership excludes .openslack/modules.yaml and docs/status/current.md, and the verified principal also denies both. The effective intersection excludes them; no changes were made.",
     "log": "test-inventory.log",
-    "scope_receipt": "scope-gaps.json"
+    "scope_receipt": "scope-gaps-explicit.json"
   },
   "independent_reviews": [
     {
@@ -91,6 +93,45 @@
   "provider_calls": 0,
   "r_ext": "NOT_RUN",
   "excluded": ["#411", "GS10", "GS11", "GS12", "GS13", "production operations", "release"],
+  "current_validation": {
+    "observed_at": "2026-10-23T11:19:12Z",
+    "parent_candidate_sha": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "reason": "Hosted full tests exposed lost safe missing-meta diagnostic compatibility; restore the fixed hint while retaining typed MANIFEST_INVALID and pre-import rejection.",
+    "source_content_sha256": "f6998535ae0ca6c3d40b4e036a387fe9698fc9f35d9d86c813b3d08a3d45c9be",
+    "implementation_diff_sha256": "9ac563a825d26a0e3e736ed0981c4f742990fd2d51effb52ea56dcdc1c976ec1",
+    "delivery_binding": "The additive commit containing this continuation is the next candidate; bot publication must recheck local/remote/PR/check SHAs. Previous candidate PASS is not inherited.",
+    "focused_tests": {
+      "status": "PASS",
+      "files": 28,
+      "tests": 581,
+      "duration_seconds": 102.5,
+      "log": "followup-focused.log"
+    },
+    "loader_red_green": "Two failing loader diagnostics reproduced, then 76 cases passed. The 581-case run includes these cases; counts are not added.",
+    "build": "PASS",
+    "typecheck": "PASS",
+    "lint": "PASS_0_ERRORS_2_WARNINGS",
+    "documentation": "PASS_161_ACTIVE_DOCUMENTS",
+    "workspace": "PASS",
+    "go_contracts": "PASS",
+    "source_lock": "PASS_229_BINDINGS_INVENTORY_UNCHANGED",
+    "independent_reviews": "review415_identity and review415_lifecycle both re-reviewed the four-file followup and exact 35-file hashes; no new P1/P2",
+    "scope_correction": "Explicit allowed_paths membership, forbidden filter and principal authorization are separate. CLI fixture, count/status paths, Windows timeout fixture paths and claude-loader.test.ts are outside the effective intersection. No excluded file was edited, moved or copied into another test path to bypass the scope.",
+    "remaining": [
+      "Two legacy CLI fixture failures require the exact excluded commands/__tests__/collaboration-workflow-issues.test.ts path; retain production verified-binding checks",
+      "Initial Windows artifact run also reported timeout and suite-launch failures in excluded fixtures; no unsupported baseline/flakiness claim",
+      "Initial inventory measured 8077 registered vs 8149 collected; this followup adds one declared case, so it is not a fresh current-head count result",
+      "Local Docker remains blocked; current-head hosted Linux/Windows must rerun after this push",
+      "Human approval, merge, task completion and release remain unperformed"
+    ]
+  },
+  "initial_hosted_observations": {
+    "head": "6d68634e5970f3737a31b294b29b971f4c4a5377",
+    "full_tests": "8140 passed, 3 failed, 6 skipped; failure logs preserved. One loader failure is addressed by this followup; two excluded CLI fixtures remain.",
+    "windows_runtime": "PASS on the initial head only, not inherited by the followup",
+    "linux_runtime": "Still running at the continuation snapshot",
+    "tag_release": "SKIPPED, zero steps executed"
+  },
   "findings": "findings.md",
   "validation": "validation.md"
 }

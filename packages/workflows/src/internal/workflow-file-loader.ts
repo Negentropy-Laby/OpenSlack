@@ -48,7 +48,9 @@ export async function loadWorkflowFile(
   } catch {
     throw new WorkflowSourceEvidenceError(
       'MANIFEST_INVALID',
-      'Workflow static manifest is invalid; correct the manifest and reload the workflow.',
+      detectFormatFromSource(source) === 'invalid'
+        ? 'Workflow static manifest is invalid: no "export const meta = ..." found; declare meta and reload the workflow.'
+        : 'Workflow static manifest is invalid; correct the manifest and reload the workflow.',
     );
   }
 
