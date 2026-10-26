@@ -16,7 +16,7 @@ writeFileSync(config, JSON.stringify({ compilerOptions: {
   outDir: join(root, 'dist/types'), types: ['node'],
   typeRoots: [join(harnessRoot, 'node_modules/@types')],
   paths: Object.fromEntries(Object.entries(aliases).map(([name, path]) => [name, [path]])),
-}, include: [join(root, 'src/**/*.ts')] }));
+}, include: ['../src/**/*.ts'] }));
 const checked = spawnSync(process.execPath, [join(harnessRoot, 'node_modules/typescript/bin/tsc'), '-p', config], { stdio: 'inherit' });
 if (checked.status !== 0) process.exit(checked.status ?? 1);
 const external = Object.keys(manifest.peerDependencies);

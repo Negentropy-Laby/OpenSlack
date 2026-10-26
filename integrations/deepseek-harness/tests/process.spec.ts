@@ -2,7 +2,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -18,7 +18,22 @@ describe('built peer and actual SDK lifecycle (keyless)', () => {
     const source = fileURLToPath(new URL('../', import.meta.url))
     let installSpec: string | undefined
     if (installation === 'packed') {
-      const [packed] = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', root],
+      const args = ['pack', '--ignore-scripts', '--json', '--pack-destination', root]
+      let command = 'npm'
+      if (process.platform === 'win32') {
+        // Node does not execute npm.cmd with shell:false. Invoke the public npm
+        // bin from this pinned, complete Node installation without a shell.
+        const npmRoot = join(dirname(process.execPath), 'node_modules/npm')
+        const npm = JSON.parse(readFileSync(join(npmRoot, 'package.json'), 'utf8')) as {
+          name: string; bin?: { npm?: string }
+        }
+        if (npm.name !== 'npm' || typeof npm.bin?.npm !== 'string') {
+          throw new Error('The pinned Node installation must include the public npm CLI')
+        }
+        command = process.execPath
+        args.unshift(resolve(npmRoot, npm.bin.npm))
+      }
+      const [packed] = JSON.parse(execFileSync(command, args,
         { cwd: source, encoding: 'utf8' })) as Array<{ filename: string; files: Array<{ path: string }> }>
       expect(packed!.files.map(file => file.path)).toContain('dist/startup.js')
       expect(packed!.files.some(file => /^(src|tests|node_modules|\.build)\//.test(file.path))).toBe(false)
