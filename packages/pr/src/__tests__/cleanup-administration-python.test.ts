@@ -78,6 +78,19 @@ function expectPythonReport(stdout: string, portableOnly: boolean): void {
   expect(report.successful).toBe(true);
 }
 
+// Load host pathlib before simulating another platform: Python 3.14 imports
+// pwd from pathlib on Linux. Application imports remain audited afterwards.
+const unsupportedPlatformAudit = [
+  'import builtins,pathlib,runpy,sys,time',
+  "sys.platform='win32'",
+  "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
+  'original=builtins.__import__',
+  'def audited(name,*args,**kwargs):',
+  " if name in ('pwd','grp'): raise AssertionError('Linux import before platform refusal')",
+  ' return original(name,*args,**kwargs)',
+  'builtins.__import__=audited',
+].join('\n');
+
 describe('cleanup administrator Python tools', () => {
   it('keeps generated Python and TS contracts synchronized on every platform without regeneration', () => {
     const result = run([
@@ -112,14 +125,7 @@ describe('cleanup administrator Python tools', () => {
     try {
       const output = join(owned, 'never-created.json');
       const code = [
-        'import builtins,runpy,sys,time',
-        "sys.platform='win32'",
-        "if hasattr(time,'clock_gettime_ns'): del time.clock_gettime_ns",
-        'original=builtins.__import__',
-        'def audited(name,*args,**kwargs):',
-        " if name in ('pwd','grp'): raise AssertionError('Linux import before platform refusal')",
-        ' return original(name,*args,**kwargs)',
-        'builtins.__import__=audited',
+        unsupportedPlatformAudit,
         'script,output=sys.argv[1:]',
         "sys.argv=[script,'--output',output]",
         "runpy.run_path(script,run_name='__main__')",
@@ -135,6 +141,17 @@ describe('cleanup administrator Python tools', () => {
       rmSync(owned, { recursive: true, force: true });
     }
   });
+
+  it.each(['pwd', 'grp'])(
+    'still audits direct application imports of %s after host preload',
+    (module) => {
+      const result = run(['-c', `${unsupportedPlatformAudit}\n__import__(sys.argv[1])`, module]);
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('AssertionError: Linux import before platform refusal');
+    },
+  );
 
   it('runs the nonsecret portable parser and platform-boundary regressions', () => {
     const result = run([join(tools, 'administration_test.py'), '--portable']);
